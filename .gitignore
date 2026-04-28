@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dev.db
+dev.db-journal
+.env.local
+.env*.local
+test-assets/
+.playwright-mcp/
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp

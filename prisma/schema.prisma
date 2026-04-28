@@ -1,0 +1,271 @@
+// Intera Harness - Prisma Schema
+// Agentic Customer Service Platform
+//
+// Table names use explicit @@map for PostgreSQL compatibility
+// SQLite is the local dev database; production targets Neon PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// B 端客户（游戏供应商 / 商户）
+// ============================================
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  apiKey    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agentConfig AgentConfig?
+  caseTypes   CaseType[]
+  skills      Skill[]
+  policies    Policy[]
+  routings    Routing[]
+  cases       Case[]
+
+  @@map("customers")
+}
+
+// ============================================
+// Agent 编排配置
+// ============================================
+model AgentConfig {
+  id         String   @id @default(cuid())
+  customerId String   @unique
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  model             String  @default("claude-sonnet-4-20250514")
+  temperature       Float   @default(0.5)
+  thinkingBudget    Int     @default(4096)
+  maxIterations     Int     @default(20)
+  systemPrompt      String
+  toolParallelism   Boolean @default(true)
+  isConcurrencySafe Boolean @default(true)
+
+  // JSON fields
+  memoryStrategy String // MemoryStrategy
+  policyHooks    String // PolicyHooks
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("agent_configs")
+}
+
+// ============================================
+// Case 类型定义（动态状态机）
+// ============================================
+model CaseType {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  type        String
+  displayName String
+  description String?
+  icon        String
+
+  requiredFacts       String  // JSON: string[]
+  stages              String  // JSON: string[] — 动态状态机
+  defaultGoal         String
+  escalateOn          String  // JSON: string[]
+  autoCloseConditions String? // JSON
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, type])
+  @@map("case_types")
+}
+
+// ============================================
+// Skill 注册中心
+// ============================================
+model Skill {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String
+
+  inputSchema  String // JSON Schema
+  outputSchema String // JSON Schema
+
+  mode       String  @default("mock") // "mock" | "http"
+  endpoint   String?
+  httpMethod String  @default("POST")
+  headers    String? // JSON
+  timeoutMs  Int     @default(8000)
+
+  mockFixture String? // JSON — [MOCK] mock 默认样本
+
+  guardPhase        String  @default("post") // "pre" | "post"
+  isConcurrencySafe Boolean @default(true)
+  enabled           Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, name])
+  @@map("skills")
+}
+
+// ============================================
+// Policy 规则配置
+// ============================================
+model Policy {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  hook        String // "preTool" | "postTool" | "preFinalize"
+  rule        String // JSON: PolicyRule
+  enabled     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, name])
+  @@map("policies")
+}
+
+// ============================================
+// 人工路由配置
+// ============================================
+model Routing {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  queue          String
+  description    String?
+  skillsAllowed  String  // JSON: string[]
+  priority       Int     @default(0)
+  autoAssign     Boolean @default(true)
+  maxWaitingTime Int     @default(300)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, queue])
+  @@map("routings")
+}
+
+// ============================================
+// Case（工单）
+// ============================================
+model Case {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  userId     String
+
+  type    String
+  status  String @default("created")
+  goal    String?
+  blocker String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  resolvedAt DateTime?
+
+  memory     CaseMemory?
+  messages   Message[]
+  traces     ActionTrace[]
+  humanTasks HumanTask[]
+
+  @@map("cases")
+}
+
+// ============================================
+// Case Memory
+// ============================================
+model CaseMemory {
+  id     String @id @default(cuid())
+  caseId String @unique
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  confirmedFacts  String @default("{}") // JSON
+  missingFacts    String @default("[]") // JSON
+  skillsCalled    String @default("[]") // JSON
+  skillResults    String @default("{}") // JSON
+  keyEvents       String @default("[]") // JSON
+  humanTaskStatus String @default("none")
+  summary         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("case_memories")
+}
+
+// ============================================
+// 消息记录
+// ============================================
+model Message {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  role        String
+  content     String
+  isStreaming Boolean @default(false)
+  streamId    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+  @@map("messages")
+}
+
+// ============================================
+// 操作追踪
+// ============================================
+model ActionTrace {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  actionType String
+  title      String
+  detail     String?
+  payload    String? // JSON
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+  @@map("action_traces")
+}
+
+// ============================================
+// 人工任务
+// ============================================
+model HumanTask {
+  id     String @id @default(cuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  queue   String
+  status  String @default("pending")
+
+  question    String
+  verdict     String?
+  expectedEta String?
+  notes       String?
+
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+
+  @@index([caseId])
+  @@map("human_tasks")
+}
