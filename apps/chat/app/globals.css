@@ -252,6 +252,8 @@ body {
 .animate-fade-up     { animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 .animate-ping-ring   { animation: pingRing 2s cubic-bezier(0, 0.6, 0.4, 1) infinite; }
 .animate-thinking-dots { animation: thinkingDots 1.4s ease-in-out infinite; }
+.animate-shimmer-text  { animation: shimmerText 2s ease-in-out infinite; }
+.animate-form-completed { animation: formCompleted 1s ease-in-out; }
 
 /* Form card — GPU-accelerated floating + flowing gradient border */
 @keyframes formFloat {
@@ -267,6 +269,11 @@ body {
   80%  { transform: translate3d(0.8px, 0, 0); }
   100% { transform: translate3d(0, 0, 0); }
 }
+@keyframes formCompleted {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.01); }
+  100% { transform: scale(1); }
+}
 @keyframes borderFlow {
   0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
@@ -279,6 +286,10 @@ body {
   0%, 20%  { opacity: 0.2; }
   50%     { opacity: 1; }
   80%, 100% { opacity: 0.2; }
+}
+@keyframes shimmerText {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.75; }
 }
 .animate-form-shake {
   animation: formShake 0.5s ease-out;

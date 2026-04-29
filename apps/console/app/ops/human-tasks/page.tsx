@@ -79,10 +79,10 @@ export default function HumanTasksPage() {
         {!loading && tasks.length === 0 && (
           <div className="glass-admin p-16 text-center">
             <p className="text-mist text-[16px] font-medium mb-2">
-              No pending tasks
+              No tasks yet
             </p>
             <p className="text-fog/50 text-[14px] max-w-[320px] mx-auto leading-relaxed">
-              When the agent creates a human task, it will appear here
+              When the agent escalates a case, it will appear here
             </p>
           </div>
         )}

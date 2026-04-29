@@ -51,7 +51,7 @@ export interface AgentLoopDeps {
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete'
   reason?: string
 }
 
@@ -98,6 +98,9 @@ export class AgentLoop {
     })
 
     // 3. ReAct loop
+    let stopReason: string | null = null
+    let usage: { input_tokens?: number; output_tokens?: number } | null = null
+
     while (this.iterationCount < this.deps.config.maxIterations) {
       this.iterationCount++
 
@@ -146,6 +149,9 @@ export class AgentLoop {
       const blocks = new Map<number, StreamContentBlock>()
       let assistantMessage: AssistantMessage | null = null
       let fullText = ''
+      // Reset per-iteration
+      stopReason = null
+      usage = null
 
       for await (const event of stream) {
         switch (event.type) {
@@ -273,10 +279,23 @@ export class AgentLoop {
             break
           }
 
-          // ── message delta (usage) ─────────────────────────────
-          case 'message_delta':
-            // Token usage tracking would go here
+          // ── message delta (usage + stop_reason) ──────────────
+          case 'message_delta': {
+            const msgDelta = event as { type: 'message_delta'; delta: { stop_reason?: string | null; usage?: { input_tokens?: number; output_tokens?: number } }; usage?: unknown }
+            const delta = msgDelta.delta
+            if (delta?.stop_reason != null) {
+              stopReason = delta.stop_reason
+              await this.traceWriter.write(
+                'stream_event',
+                `stop_reason: ${stopReason}`,
+                JSON.stringify({ stopReason, iteration: this.iterationCount }),
+              )
+            }
+            if (msgDelta.usage) {
+              usage = msgDelta.usage as { input_tokens?: number; output_tokens?: number }
+            }
             break
+          }
 
           // ── message stop ──────────────────────────────────────
           case 'message_stop':
@@ -295,11 +314,14 @@ export class AgentLoop {
       const toolResults = await toolExecutor.waitForAll()
 
       if (toolResults.length === 0) {
-        // Plain text response — no tools used
+        // Plain text response — no tools used → exit loop (model wants user input)
+        await this.traceWriter.write('loop_decision', 'Exit: no tools called', JSON.stringify({
+          stopReason, iteration: this.iterationCount, textLength: fullText.length,
+        }))
         this.messages.push(assistantMessage)
         sendEvent({
           type: 'message_stop',
-          data: { reason: 'no_tools' },
+          data: { reason: 'no_tools', stopReason, usage } as any,
           timestamp: new Date().toISOString(),
         })
         return {
@@ -345,6 +367,9 @@ export class AgentLoop {
         (r) => r.name === 'request_user_input',
       )
       if (formResult) {
+        await this.traceWriter.write('loop_decision', 'Exit: form requested', JSON.stringify({
+          stopReason, toolCount: toolResults.length, iteration: this.iterationCount,
+        }))
         const toolInput = formResult.toolUse?.input || {}
         const title = String(toolInput.title || 'Information Needed')
         const description = String(toolInput.description || '')
@@ -451,11 +476,8 @@ export class AgentLoop {
           console.error('[AgentLoop] Failed to persist human task:', err)
         }
 
-        return {
-          messages: this.messages,
-          caseStatus: 'waiting_human',
-          transition: 'waiting_human',
-        }
+        // Continue loop — agent can generate follow-up text for customer
+        continue
       }
 
       // ── Terminal tool: finalize_case ─────────────────────────
@@ -515,6 +537,42 @@ export class AgentLoop {
         }
       }
 
+      // ── Terminal tool: finalize_consultation (human chat) ────
+      const consultResult = toolResults.find(
+        (r) => r.name === 'finalize_consultation',
+      )
+      if (consultResult) {
+        const output = consultResult.output as Record<string, unknown> | undefined
+        const summary = String(output?.summary || 'Your case has been reviewed by our specialist.')
+        const resolution = String(output?.resolution || 'resolved')
+
+        await this.traceWriter.write('final_resolution', `Consultation complete: ${resolution}`, JSON.stringify(output))
+
+        try {
+          await prisma.case.update({
+            where: { id: this.deps.caseId },
+            data: { status: 'investigating', blocker: null },
+          })
+          await prisma.humanTask.updateMany({
+            where: { caseId: this.deps.caseId, status: 'in_progress' },
+            data: { status: 'resolved', verdict: resolution, notes: summary },
+          })
+        } catch (err) {
+          console.error('[AgentLoop] Failed to finalize consultation:', err)
+        }
+
+        sendEvent({
+          type: 'consultation_complete',
+          data: { summary, resolution },
+          timestamp: new Date().toISOString(),
+        })
+        return {
+          messages: this.messages,
+          caseStatus: 'investigating',
+          transition: 'consultation_complete',
+        }
+      }
+
       // ── Tools executed, no terminal action — continue loop ──
       sendEvent({
         type: 'message_stop',
@@ -524,6 +582,9 @@ export class AgentLoop {
     }
 
     // Max iterations reached
+    await this.traceWriter.write('loop_decision', 'Exit: max iterations', JSON.stringify({
+      stopReason, iteration: this.iterationCount, messageCount: this.messages.length,
+    }))
     sendEvent({
       type: 'error',
       data: 'Max iterations reached',
@@ -572,12 +633,47 @@ export class AgentLoop {
     shouldCompact: boolean
     reason?: string
   }> {
-    // [MOCK] Production checks actual token count and invokes
-    // autocompact / snip / microcompact as needed.
+    // CC-style multi-tiered compaction assessment
+    const estimatedTokens = this.caseMemory.estimateTokens() +
+      this.messages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length / 3 : 50), 0)
+
+    const assessment = this.caseMemory.assessCompaction(estimatedTokens, this.messages.length)
+
+    if (assessment.isBlocking) {
+      if (this.caseMemory.isCompactCircuitBroken()) {
+        return { shouldCompact: false, reason: 'circuit_breaker' }
+      }
+      try {
+        this.caseMemory.recordCompaction()
+        this.caseMemory.resetCompactFailures()
+        return { shouldCompact: true, reason: 'blocking' }
+      } catch {
+        this.caseMemory.recordCompactionFailure()
+        return { shouldCompact: false, reason: 'failed' }
+      }
+    }
+
+    if (assessment.shouldCompact) {
+      this.caseMemory.recordCompaction()
+      return { shouldCompact: true, reason: 'auto' }
+    }
+
+    if (assessment.isWarning) {
+      console.warn(`[AgentLoop] Context: ${assessment.percentLeft.toFixed(0)}% remaining`)
+    }
+
     return { shouldCompact: false }
   }
 
   abort() {
     this.abortController.abort()
+  }
+
+  getMemorySummary() {
+    return this.caseMemory.getSummary()
+  }
+
+  loadMemory(data: Parameters<CaseMemoryManager['loadFromDb']>[0]) {
+    this.caseMemory.loadFromDb(data)
   }
 }

@@ -220,6 +220,7 @@ export type SSEEventType =
   | 'finalized'
   | 'message_stop'
   | 'withheld'
+  | 'consultation_complete'
   | 'error'
 
 export interface SSEEvent {

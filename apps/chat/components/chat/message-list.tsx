@@ -1,49 +1,47 @@
 'use client'
 
-// MessageList — scrollable message area, auto-scrolls to bottom
-
 import { useEffect, useRef } from 'react'
 import MessageBubble from './message-bubble'
-
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  isStreaming?: boolean
-  toolUses?: Array<{
-    name: string
-    status: 'executing' | 'completed' | 'error'
-  }>
-  timestamp?: string
-}
+import type { ThinkState } from './thinking-indicator'
+import type { IconType } from '@/lib/spinner-verbs'
+import type { MessageShape } from './message-bubble'
 
 interface MessageListProps {
-  messages: Message[]
+  messages: MessageShape[]
+  thinkState?: ThinkState
+  thinkVerb?: string
+  thinkIcon?: IconType
+  onFormSubmit?: (msgId: string, answers: Record<string, string>) => void
+  onFormCancel?: (msgId: string) => void
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+export default function MessageList({ messages, thinkState, thinkVerb, thinkIcon, onFormSubmit, onFormCancel }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  if (messages.length === 0) {
-    return null
-  }
+  if (messages.length === 0) return null
 
   return (
-    <div className="flex-1 overflow-y-auto py-6 space-y-6 scroll-thin">
-      {messages.map((msg) => (
-        <MessageBubble
-          key={msg.id}
-          role={msg.role}
-          content={msg.content}
-          isStreaming={msg.isStreaming}
-          toolUses={msg.toolUses}
-          timestamp={msg.timestamp}
-        />
-      ))}
+    <div className="flex-1 overflow-y-auto py-6 space-y-4 scroll-thin">
+      {messages.map((msg, i) => {
+        const isLast = i === messages.length - 1
+        const isLastAssistant = isLast && msg.role === 'assistant' && msg.msgType === 'text' && !!msg.isStreaming
+
+        return (
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            thinkState={isLastAssistant ? thinkState : undefined}
+            thinkVerb={isLastAssistant ? thinkVerb : undefined}
+            thinkIcon={isLastAssistant ? thinkIcon : undefined}
+            onFormSubmit={onFormSubmit}
+            onFormCancel={onFormCancel}
+          />
+        )
+      })}
       <div ref={bottomRef} />
     </div>
   )

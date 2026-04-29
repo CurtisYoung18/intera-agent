@@ -16,6 +16,8 @@ export type ActionType =
   | 'human_task_resolved'
   | 'final_resolution'
   | 'cron_tick'
+  | 'loop_decision'
+  | 'stream_event'
 
 export interface TraceEntry {
   id: string

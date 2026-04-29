@@ -2,6 +2,7 @@
 
 // VoiceInputBar — bottom input area with bubble-float animation
 // Shift+Enter for newline, IME-safe Enter to submit
+// Shows loading animation when agent is processing
 
 import { useState, useCallback } from 'react'
 import GlassInput from '@intera/shared/ui/glass-input'
@@ -28,7 +29,6 @@ export default function VoiceInputBar({
   const [value, setValue] = useState('')
   const [floatLevel, setFloatLevel] = useState(0)
 
-  // Bubble float: track content length → compute float level
   const handleChange = useCallback((newValue: string) => {
     setValue(newValue)
     const level = Math.min(newValue.length / 200, 1)
@@ -52,24 +52,36 @@ export default function VoiceInputBar({
 
   return (
     <div className="sticky bottom-0 pb-8 pt-4" style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom, 16px))' }}>
-      {/* Entire input bloc floats like a bubble */}
       <div
         className="transition-all duration-800 ease-out"
         style={{ transform: `translateY(-${floatY}px) scale(${floatScale})` }}
       >
         <div className="flex items-end gap-2">
-          {/* Textarea */}
-          <div className="flex-1 min-w-0">
-            <GlassInput
-              value={value}
-              onChange={handleChange}
-              placeholder="Describe your issue...  (Shift+Enter for new line)"
-              disabled={isLoading}
-              onSubmit={handleSubmit}
-            />
+          <div className="flex-1 min-w-0 relative">
+            {/* Loading pill INSIDE input area — replaces placeholder when agent is responding */}
+            {isLoading ? (
+              <div className="glass-input flex items-center gap-2 pointer-events-none animate-fade-up">
+                <svg width="20" height="6" viewBox="0 0 20 6" fill="rgba(140,138,133,0.5)" aria-hidden="true" className="flex-shrink-0">
+                  {[0, 1, 2].map((i) => (
+                    <circle key={i} cx={3 + i * 7} cy="3" r={i === 1 ? 1.5 : 3} fillOpacity={i === 1 ? 0.3 : 1}>
+                      <animate attributeName="r" values={i === 1 ? '1.5;3;1.5' : '3;1.5;3'} calcMode="linear" begin="0s" dur="0.8s" repeatCount="indefinite" />
+                      <animate attributeName="fill-opacity" values={i === 1 ? '0.3;1;0.3' : '1;0.3;1'} calcMode="linear" begin="0s" dur="0.8s" repeatCount="indefinite" />
+                    </circle>
+                  ))}
+                </svg>
+                <span className="text-[13px] font-serif italic text-fog/50 animate-shimmer-text select-none">Intera is responding…</span>
+              </div>
+            ) : (
+              <GlassInput
+                value={value}
+                onChange={handleChange}
+                placeholder="Describe your issue...  (Shift+Enter for new line)"
+                disabled={isLoading}
+                onSubmit={handleSubmit}
+              />
+            )}
           </div>
 
-          {/* Send */}
           <IconButton
             icon={<SendIcon />}
             label="Send message"
@@ -79,7 +91,6 @@ export default function VoiceInputBar({
             className="flex-shrink-0 mb-0.5"
           />
 
-          {/* Clear (only when there's content) */}
           {value && (
             <button
               type="button"

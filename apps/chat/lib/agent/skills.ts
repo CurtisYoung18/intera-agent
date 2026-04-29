@@ -229,7 +229,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
               label: { type: 'string', description: 'Display label, e.g. "充值金额"' },
               type: {
                 type: 'string',
-                enum: ['text', 'number', 'select', 'textarea', 'file'],
+                enum: ['text', 'number', 'select', 'textarea', 'file', 'date'],
                 description: 'Input type',
               },
               required: {
@@ -252,9 +252,26 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
-    zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
+    zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file","date"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
     // [MOCK] — form is rendered by the Chat UI, not executed here
     mockFixture: { status: 'form_displayed' },
+  },
+  {
+    name: 'finalize_consultation',
+    description: 'End the human consultation. Provide a customer-facing summary and the resolution decision. This closes the consultation chat and notifies the customer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'Message to show the customer explaining what was resolved' },
+        resolution: { type: 'string', description: 'The specialist\'s decision: confirmed_delayed, refund_issued, needs_more_info, resolved, false_alarm' },
+      },
+      required: ['summary', 'resolution'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
+    mockFixture: { status: 'consultation_closed' },
   },
 ]
 

@@ -14,10 +14,28 @@ async function seed() {
   await prisma.message.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.caseMemory.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.case.deleteMany({ where: { id: 'seed-case-1' } })
+  await prisma.caseType.deleteMany({ where: { type: 'deposit_not_received' } })
   await prisma.customer.deleteMany({ where: { id: 'seed-customer' } })
 
   const customer = await prisma.customer.create({
     data: { id: 'seed-customer', name: 'Demo Vendor' },
+  })
+
+  // ── Case Type: Deposit Not Received (生产环境用例) ──
+  await prisma.caseType.create({
+    data: {
+      id: 'seed-case-type-deposit',
+      customerId: customer.id,
+      type: 'deposit_not_received',
+      displayName: 'Deposit Not Received',
+      description: 'Customer reports a deposit that has not arrived in their account',
+      icon: 'credit-card',
+      requiredFacts: JSON.stringify(['txnId', 'amount', 'paymentMethod', 'depositDate']),
+      stages: JSON.stringify(['created', 'investigating', 'collecting', 'waiting_human', 'resolved']),
+      defaultGoal: 'Verify deposit status via order query → check payment channel for delays → confirm resolution or escalate to human',
+      escalateOn: JSON.stringify(['channel_delayed_batch_conflict', 'customer_claims_fraud']),
+      autoCloseConditions: JSON.stringify({ allFactsConfirmed: true, resolutionConfirmed: true }),
+    },
   })
 
   const c = await prisma.case.create({

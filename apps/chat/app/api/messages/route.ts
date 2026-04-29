@@ -7,50 +7,54 @@ import { AgentLoop } from '@/lib/agent/loop'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
 
-const DEFAULT_SYSTEM_PROMPT = `You are an expert customer service agent for a gaming platform.
-Your goal is to help customers resolve their issues completely.
+const DEFAULT_SYSTEM_PROMPT = `You are Intera, an expert customer service agent.
 
-# Using your tools
+**Language: Always respond in the same language the user writes in. Match their language exactly — Chinese, English, or any other language.**
 
-You have access to a set of tools. This is CRITICAL to assisting the user effectively:
+# Your Mission
 
-- To collect information from the customer, use request_user_input. NEVER ask for multiple
-  details in plain text — use this tool. It will show a form to the customer.
-- To check order status, use query_order_status with the transaction ID.
-- To check if a payment channel has delays, use query_payment_channel_status.
-- To search for platform announcements or delay notices, use search_delay_notice.
-- To extract text from uploaded screenshots, use ocr_receipt.
-- To look up the customer's past cases, use read_case_history.
-- To search the knowledge base, use kb_hybrid_retrieve.
-- To escalate to a human operator, use create_human_task. This pauses the case until
-  the human responds.
-- To close a resolved case, use finalize_case with a conclusion and evidence basis.
+RESOLVE customer issues completely. Drive each case forward proactively. After each turn ask:
+"What do I still need to know?" Then take that action with a TOOL immediately.
 
-Do NOT try to do these things through text alone. Use the dedicated tool for each task.
+# The Golden Rule
 
-Key principles:
-1. Acknowledge the customer's concern briefly (1-2 sentences max)
-2. If you are missing information, call request_user_input IMMEDIATELY — do not list questions in text
-3. Verify facts with tools before making conclusions
-4. If there is a conflict or you are unsure, create a human task
-5. Always cite evidence (tool results) when giving conclusions
-6. Only finalize a case when you have sufficient evidence
+**Saying "I will X" without calling the tool for X = FAILURE.**
+If you type "let me escalate", "I'll check", "let me look into" — you MUST call the corresponding tool in the SAME turn. Never end a turn with just a promise.
 
-When a customer reports an issue:
-1. First acknowledge their concern briefly (1-2 sentences)
-2. If you need information (order ID, amount, payment method, receipt, etc.), IMMEDIATELY call request_user_input with a form title, a brief description, and the required fields. Do NOT ask for this information in text — use the tool.
-3. After receiving the form response, use query_order_status to check the order
-4. Use query_payment_channel_status to check if there are delays
-5. If there is a conflict (customer says not received but system shows success), create a human task
-6. Only finalize the case when you have sufficient evidence
+# Triage
 
-# Handling form dismissal
+- **Support issue** (deposit, order, payment, account, refund) → follow Case Stages
+- **Casual chat** (greetings, chitchat) → respond naturally, no tools needed
 
-If the user receives "[Form dismissed by user]", the customer chose not to fill in the form.
-Do NOT repeat the same form. Instead:
-1. Acknowledge their choice briefly (1 sentence)
-2. Try an alternative approach — ask if they can provide the information in a different way, or proceed with what you already know
-3. If you truly cannot proceed without the information, explain why it's needed and offer a simpler alternative
+# Case Stages
+
+1. **Collect** — if missing facts (txnId, amount, paymentMethod, date) → call request_user_input NOW
+2. **Verify** — call query_order_status + query_payment_channel_status
+3. **Resolve** — evidence clear → finalize_case. Conflict found → create_human_task IMMEDIATELY
+
+# Tools
+
+- request_user_input — show form to collect info. Call IMMEDIATELY when data is missing.
+- query_order_status(txnId) — check order
+- query_payment_channel_status(txnId) — check payment channel
+- search_delay_notice(channel) — search delay announcements
+- create_human_task(queue, question) — escalate to human specialist. Call this when there's a conflict.
+- finalize_case(conclusion, basis) — close resolved case
+
+# When to Escalate
+
+Call create_human_task when:
+- System data conflicts with what the customer reports
+- You need authorization you don't have
+- The case requires manual investigation
+
+When escalating, ALWAYS also send a text message telling the customer:
+- Why it's being escalated (specific reason)
+- That they can continue asking questions here
+
+# Form Rules
+
+If user dismissed a form: try a simpler way. NEVER repeat the same form.
 `
 
 // Verify env vars at module load (logged once per cold start)
@@ -169,24 +173,33 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // ── Load case memory from DB if case exists ──
+        // ── Load case memory from DB (CC-style session memory pattern) ──
         let systemPrompt = DEFAULT_SYSTEM_PROMPT
+        let existingMemory: unknown = null
         try {
           const existingCase = await prisma.case.findUnique({
             where: { id: resolvedCaseId },
             include: { memory: true },
           })
           if (existingCase?.memory) {
+            existingMemory = existingCase.memory
+
+            // Inject compaction summary if available (CC session_memory.md pattern)
+            if (existingCase.memory.summary) {
+              systemPrompt += `\n\n## Case Session Memory\n${existingCase.memory.summary}`
+            }
+
+            // Inject current facts/skills as inline context (CC system prompt sections pattern)
             const facts = parseMemoryJson(existingCase.memory.confirmedFacts)
             const skills = parseMemoryJson(existingCase.memory.skillsCalled)
             const missing = parseMemoryJson(existingCase.memory.missingFacts)
             const skillsArr = Array.isArray(skills) ? skills : []
             if (Object.keys(facts as object).length > 0 || skillsArr.length > 0) {
-              systemPrompt += `\n\nPrevious case context (from DB):\n- Confirmed facts: ${JSON.stringify(facts)}\n- Skills already called: ${JSON.stringify(skillsArr)}\n- Still missing: ${JSON.stringify(missing)}`
+              systemPrompt += `\n\n## Current Case State\n- Confirmed: ${JSON.stringify(facts)}\n- Skills used: ${JSON.stringify(skillsArr)}\n- Missing: ${JSON.stringify(missing)}`
             }
           }
         } catch {
-          // Case doesn't exist yet, use defaults
+          // Case doesn't exist yet
         }
 
         const agentLoop = new AgentLoop({
@@ -197,7 +210,54 @@ export async function POST(request: NextRequest) {
           systemPrompt,
         })
 
+        // Restore memory from DB into the in-memory manager
+        if (existingMemory) {
+          agentLoop.loadMemory(existingMemory)
+        }
+
         const result = await agentLoop.run(userMessage, sendEvent)
+
+        // ── Persist case memory — only if real work was done (not casual chat) ──
+        const mem = agentLoop.getMemorySummary()
+        const hasRealWork = mem.skillsCalled.length > 0 ||
+          Object.keys(mem.confirmedFacts).length > 0 ||
+          result.transition !== 'next_turn'
+        if (hasRealWork) {
+          try {
+            await prisma.case.upsert({
+              where: { id: resolvedCaseId },
+              update: { status: result.caseStatus },
+              create: {
+                id: resolvedCaseId,
+                customerId: resolvedCustomerId,
+                userId: resolvedUserId,
+                type: 'general',
+                status: result.caseStatus,
+              },
+            })
+            await prisma.caseMemory.upsert({
+              where: { caseId: resolvedCaseId },
+              update: {
+                confirmedFacts: JSON.stringify(mem.confirmedFacts),
+                missingFacts: JSON.stringify(mem.missingFacts),
+                skillsCalled: JSON.stringify(mem.skillsCalled),
+                skillResults: JSON.stringify(mem.skillResults),
+                keyEvents: JSON.stringify(mem.keyEvents),
+              },
+              create: {
+                caseId: resolvedCaseId,
+                confirmedFacts: JSON.stringify(mem.confirmedFacts),
+                missingFacts: JSON.stringify(mem.missingFacts),
+                skillsCalled: JSON.stringify(mem.skillsCalled),
+                skillResults: JSON.stringify(mem.skillResults),
+                keyEvents: JSON.stringify(mem.keyEvents),
+                humanTaskStatus: 'none',
+              },
+            })
+          } catch (err) {
+            console.error('[Intera] Failed to persist case memory:', err)
+          }
+        }
 
         sendEvent({
           type: 'message_stop',
@@ -220,8 +280,9 @@ export async function POST(request: NextRequest) {
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   })
 }

@@ -11,7 +11,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 interface FormField {
   key: string
   label: string
-  type: 'text' | 'number' | 'select' | 'textarea' | 'file'
+  type: 'text' | 'number' | 'select' | 'textarea' | 'file' | 'date'
   required?: boolean
   placeholder?: string
   options?: string[]
@@ -56,7 +56,8 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
 
   const handleSubmit = useCallback(() => {
     setSubmitted(true)
-    setTimeout(() => onSubmit(answers), 400)
+    // Show completed style for 1s so user perceives the filled form, then notify parent
+    setTimeout(() => onSubmit(answers), 1000)
   }, [answers, onSubmit])
 
   const handleDismiss = useCallback(() => {
@@ -81,7 +82,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
           : entered
             ? 'opacity-100 translate-y-0 scale-100'
             : 'opacity-0 translate-y-6 scale-[0.96]'
-      } ${submitted ? 'animate-tool-done' : ''}`}
+      } ${submitted ? 'animate-form-completed' : ''}`}
     >
       {/* Flowing gradient border wrapper */}
       <div className="relative rounded-2xl p-[1px] will-change-transform">
@@ -94,7 +95,9 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
           <div
             className="absolute inset-[-50%] animate-border-flow"
             style={{
-              background: 'conic-gradient(from 0deg, transparent, rgba(230,69,57,0.4), rgba(91,110,245,0.3), rgba(212,145,46,0.3), transparent)',
+              background: submitted
+                ? 'conic-gradient(from 0deg, transparent, rgba(46,160,74,0.5), rgba(46,160,74,0.2), rgba(46,160,74,0.4), transparent)'
+                : 'conic-gradient(from 0deg, transparent, rgba(230,69,57,0.4), rgba(91,110,245,0.3), rgba(212,145,46,0.3), transparent)',
             }}
           />
         </div>
@@ -216,12 +219,19 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
             <button
               onClick={handleSubmit}
               disabled={!allRequiredFilled || submitted}
-              className="flex-1 py-1.5 rounded-md text-[12px] font-medium transition-all duration-300
-                bg-vermillion/80 hover:bg-vermillion text-white
-                disabled:bg-white/[0.03] disabled:text-fog/20 disabled:cursor-not-allowed
-                shadow-[0_0_12px_rgba(230,69,57,0.08)]"
+              className={`flex-1 py-1.5 rounded-md text-[12px] font-medium transition-all duration-500
+                ${submitted
+                  ? 'bg-malachite/20 border border-malachite/30 text-malachite cursor-default'
+                  : 'bg-vermillion/80 hover:bg-vermillion text-white shadow-[0_0_12px_rgba(230,69,57,0.08)]'
+                }
+                disabled:bg-white/[0.03] disabled:text-fog/20 disabled:cursor-not-allowed disabled:border-0 disabled:shadow-none`}
             >
-              {submitted ? 'Submitted' : 'Submit'}
+              {submitted ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  Completed
+                </span>
+              ) : 'Submit'}
             </button>
           </div>
         </div>
