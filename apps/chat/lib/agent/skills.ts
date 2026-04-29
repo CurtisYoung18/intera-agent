@@ -268,7 +268,6 @@ export class SkillRouter {
   constructor(private customerId: string) {
     // [MOCK] Load built-in skills. Production loads from DB via Prisma:
     //   const rows = await prisma.skill.findMany({ where: { customerId, enabled: true } })
-    zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
     for (const skill of BUILT_IN_SKILLS) {
       this.skills.set(skill.name, skill)
     }

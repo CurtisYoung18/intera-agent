@@ -306,6 +306,29 @@ export default function ChatPage() {
         <MessageList messages={messages} />
       )}
 
+      {/* Form card — inline in message flow */}
+      {formRequest && (
+        <div className="max-w-chat mx-auto w-full px-4 animate-message-in">
+          <FormCard
+            title={formRequest.title}
+            description={formRequest.description}
+            fields={formRequest.fields as Array<{
+              key: string; label: string; type: 'text' | 'number' | 'select' | 'textarea' | 'file';
+              required?: boolean; placeholder?: string; options?: string[]
+            }>}
+            onSubmit={(answers) => {
+              setFormRequest(null)
+              handleSubmit(
+                `[Form submitted]\n${Object.entries(answers)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join('\n')}\n\nPlease continue processing based on this information.`
+              )
+            }}
+            onCancel={() => setFormRequest(null)}
+          />
+        </div>
+      )}
+
       {/* Input bar */}
       <VoiceInputBar
         onSubmit={handleSubmit}
