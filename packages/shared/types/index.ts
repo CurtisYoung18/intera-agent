@@ -89,6 +89,9 @@ export interface SkillDefinition {
   mockFixture?: unknown
   isConcurrencySafe: boolean
   enabled: boolean
+  // Zod validation — catches type errors at runtime, feeds back to LLM for correction
+  // Pattern from Claude Code: tool.inputSchema.safeParse(input)
+  zodSchema?: import('zod').ZodType
 }
 
 // ============================================

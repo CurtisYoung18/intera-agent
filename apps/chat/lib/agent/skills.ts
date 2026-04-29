@@ -9,6 +9,7 @@
 
 import type { SkillDefinition, ToolUse } from '@intera/shared/types'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
+import { z } from 'zod'
 
 /**
  * Built-in Skills — core capabilities available to the Agent.
@@ -34,6 +35,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
     mockFixture: { cases: [], total: 0 },
   },
   {
@@ -49,6 +51,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ txnId: z.string() }),
     // [MOCK] mockFixture is used when mode=mock
     mockFixture: {
       status: 'pending',
@@ -69,6 +72,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ channel: z.string().optional() }),
     // [MOCK]
     mockFixture: {
       delayed_batch: false,
@@ -88,6 +92,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ query: z.string().optional() }),
     // [MOCK]
     mockFixture: { notices: [] },
   },
@@ -107,6 +112,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ attachmentId: z.string() }),
     // [MOCK]
     mockFixture: {
       success: true,
@@ -139,6 +145,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ queue: z.string(), question: z.string(), context: z.object({}).optional() }),
     // [MOCK]
     mockFixture: { taskId: 'htask_mock_001', status: 'pending' },
   },
@@ -165,6 +172,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
     // [MOCK]
     mockFixture: {
       status: 'resolved',
@@ -189,6 +197,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ query: z.string(), topK: z.number().optional() }),
     // [MOCK]
     mockFixture: { results: [], sources: [] },
   },
@@ -243,6 +252,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
     // [MOCK] — form is rendered by the Chat UI, not executed here
     mockFixture: { status: 'form_displayed' },
   },
@@ -258,6 +268,7 @@ export class SkillRouter {
   constructor(private customerId: string) {
     // [MOCK] Load built-in skills. Production loads from DB via Prisma:
     //   const rows = await prisma.skill.findMany({ where: { customerId, enabled: true } })
+    zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
     for (const skill of BUILT_IN_SKILLS) {
       this.skills.set(skill.name, skill)
     }

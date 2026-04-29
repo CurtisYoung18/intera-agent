@@ -100,8 +100,32 @@
 | Agent creates human task → DB persisted | ✅ | Creates Customer/Case/CaseMemory/HumanTask/ActionTrace |
 | Console shows pending task | ✅ | API reads from same SQLite |
 | Human fills verdict → resolves | ✅ | Updates HumanTask + Case + writes Trace |
-| Agent resumes after human resolution | ⬜ | Chat App needs resume endpoint or polling |
+| Agent resumes after human resolution | ✅ | Console POSTs to Chat /api/messages with resumeTrigger |
+| Form-based info collection | ✅ | request_user_input skill + FormCard UI + form_request SSE |
 | Admin configures agent behavior | ⬜ | P1 — hardcoded DEFAULT_AGENT_CONFIG for now |
+
+---
+
+## 8. Claude Code Alignment Gaps
+
+> Layers from CC's 10-layer defense-in-depth tool calling strategy.
+> To be addressed in future iterations.
+
+| # | CC Layer | Intera Status | Priority | Effort |
+|---|----------|---------------|----------|--------|
+| 1 | Strong prompt directives | ✅ "NEVER in text, use tool" + "# Using your tools" section | — | — |
+| 2 | Zod schema validation | ✅ safeParse in tool executor, errors fed back to model | — | — |
+| 3 | Deferred tool loading | ⬜ All skills sent at once. Future: shouldDefer + ToolSearch | P2 | M |
+| 4 | Concurrency default false | ✅ create/finalize/request_user_input all false | — | — |
+| 5 | Permission interlock | 🔧 preTool works. postTool/preFinalize incomplete | P1 | M |
+| 6 | Result budgeting (50KB limit) | ⬜ No size cap on tool results | P2 | S |
+| 7 | Error recovery (compact/fallback) | ⬜ No compaction or fallback model | P2 | L |
+| 8 | Self-correcting error hints | 🔧 Zod errors include "correct and retry". Not for other errors. | P1 | S |
+| 9 | Stop hooks | ⬜ No post-completion verification | P2 | M |
+| 10 | Token budget nudge | ⬜ No token tracking | P3 | S |
+| — | System prompt cache boundary | ⬜ No static/dynamic split for prompt caching | P3 | M |
+| — | Tool description() per context | ⬜ Static descriptions only | P2 | S |
+| — | Microcompact (tool result dedup) | ⬜ Not implemented | P2 | M |
 
 ---
 
@@ -109,10 +133,11 @@
 
 | Area | Done | Remaining |
 |------|------|-----------|
-| Agent Core Engine | 5/8 | Profiler, context compaction, LLM keyEvent extraction |
-| Chat Frontend | 8/10 | CaseRail sidebar, inline trace |
+| Agent Core Engine | 6/8 | Profiler, context compaction |
+| Chat Frontend | 9/11 | CaseRail sidebar, inline trace |
 | Console (Ops) | 3/3 | — |
 | Console (Admin) | 0/5 | All P1 pages |
 | Data Layer | 5/11 | Message persistence, Skill/Policy/CaseType/Routing CRUD, Customer config loading |
 | API Routes | 4/9 | Admin CRUD endpoints |
-| End-to-End Flows | 4/6 | Agent resume after human resolution, admin config loading |
+| End-to-End Flows | 6/6 | — |
+| CC Alignment | 2/12 | 10 remaining gaps (see §8) |

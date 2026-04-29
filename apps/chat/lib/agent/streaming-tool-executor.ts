@@ -160,6 +160,37 @@ export class StreamingToolExecutor {
     }
     this.onStatusChange?.(toolUse, 'executing')
 
+    // ── Zod validation (Claude Code pattern: safeParse before execution) ──
+    try {
+      const zodSchema = tool.definition.zodSchema
+      if (zodSchema) {
+        const result = zodSchema.safeParse(tool.input)
+        if (!result.success) {
+          const errors = result.error.issues
+            .map((i: { path: (string | number)[]; message: string }) =>
+              `  - ${i.path.join('.') || 'input'}: ${i.message}`)
+            .join('\n')
+          tool.status = 'error'
+          tool.result = {
+            ok: false,
+            output: null,
+            error: `Input validation failed:\n${errors}\n\nPlease correct the input and retry.`,
+            latencyMs: 0,
+          }
+          this.onStatusChange?.(
+            { id: tool.id, name: tool.name, input: tool.input, result: tool.result },
+            'error',
+          )
+          this.results.push({ name: tool.name, output: tool.result, latencyMs: 0 })
+          return
+        }
+        // Use the parsed (and potentially default-filled) input
+        tool.input = result.data as Record<string, unknown>
+      }
+    } catch {
+      // Zod schema itself is malformed — skip validation, let execution proceed
+    }
+
     try {
       let output: unknown
 
