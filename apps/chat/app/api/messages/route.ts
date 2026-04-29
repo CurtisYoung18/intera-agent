@@ -1,14 +1,10 @@
 // Intera Harness - Messages API Route
 // POST /api/messages — Main entry point for user messages
-//
-// [MOCK] Uses hardcoded default config and in-memory state.
-// Production path:
-//   - Read Customer / AgentConfig / Skills / Policies from DB via Prisma
-//   - Resolve caseId from request or create new Case row
-//   - Persist all messages, traces, and memory mutations to DB
+// Supports resumeTrigger for human task resolution
 
 import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
+import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
 
 const DEFAULT_SYSTEM_PROMPT = `You are an expert customer service agent for a gaming platform.
@@ -86,9 +82,46 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const { message, caseId, customerId, userId } = body
+        const { message, resumeTrigger, caseId, customerId, userId } = body
 
-        if (!message) {
+        let userMessage = message
+        let resolvedCaseId = caseId || `case_${Date.now()}`
+        let resolvedCustomerId = customerId || 'default'
+        let resolvedUserId = userId || 'anonymous'
+
+        // ── Resume flow: human resolved a task, agent continues ──
+        if (resumeTrigger && !message) {
+          const task = await prisma.humanTask.findUnique({
+            where: { id: resumeTrigger },
+            include: { case: true },
+          })
+
+          if (task && task.status === 'resolved') {
+            resolvedCaseId = task.caseId
+            resolvedCustomerId = task.case.customerId
+            resolvedUserId = task.case.userId
+
+            // Build a synthetic message from human's resolution
+            const parts = ['[Human task resolved]']
+            if (task.verdict) parts.push(`Verdict: ${task.verdict.replace(/_/g, ' ')}`)
+            if (task.expectedEta) parts.push(`ETA: ${task.expectedEta}`)
+            if (task.notes) parts.push(`Notes: ${task.notes}`)
+            parts.push('Please continue assisting the customer based on this information.')
+            userMessage = parts.join('\n')
+
+            console.log(`[Intera] Resuming case ${resolvedCaseId} after human resolution`)
+          } else {
+            sendEvent({
+              type: 'error',
+              data: 'Task not found or not resolved',
+              timestamp: new Date().toISOString(),
+            })
+            controller.close()
+            return
+          }
+        }
+
+        if (!userMessage) {
           sendEvent({
             type: 'error',
             data: 'Message is required',
@@ -98,20 +131,35 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // [MOCK] Uses default config. Production loads from DB:
-        //   const customer = await prisma.customer.findUnique({ where: { id: customerId } })
-        //   const agentConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
-        //   const config = parseAgentConfig(agentConfig)
+        // ── Load case memory from DB if case exists ──
+        let systemPrompt = DEFAULT_SYSTEM_PROMPT
+        try {
+          const existingCase = await prisma.case.findUnique({
+            where: { id: resolvedCaseId },
+            include: { memory: true },
+          })
+          if (existingCase?.memory) {
+            const facts = parseMemoryJson(existingCase.memory.confirmedFacts)
+            const skills = parseMemoryJson(existingCase.memory.skillsCalled)
+            const missing = parseMemoryJson(existingCase.memory.missingFacts)
+            const skillsArr = Array.isArray(skills) ? skills : []
+            if (Object.keys(facts as object).length > 0 || skillsArr.length > 0) {
+              systemPrompt += `\n\nPrevious case context (from DB):\n- Confirmed facts: ${JSON.stringify(facts)}\n- Skills already called: ${JSON.stringify(skillsArr)}\n- Still missing: ${JSON.stringify(missing)}`
+            }
+          }
+        } catch {
+          // Case doesn't exist yet, use defaults
+        }
 
         const agentLoop = new AgentLoop({
           config: DEFAULT_AGENT_CONFIG,
-          caseId: caseId || `case_${Date.now()}`,
-          customerId: customerId || 'default',
-          userId: userId || 'anonymous',
-          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+          caseId: resolvedCaseId,
+          customerId: resolvedCustomerId,
+          userId: resolvedUserId,
+          systemPrompt,
         })
 
-        const result = await agentLoop.run(message, sendEvent)
+        const result = await agentLoop.run(userMessage, sendEvent)
 
         sendEvent({
           type: 'message_stop',
@@ -138,4 +186,9 @@ export async function POST(request: NextRequest) {
       Connection: 'keep-alive',
     },
   })
+}
+
+function parseMemoryJson(raw: string | undefined): unknown {
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
 }

@@ -23,8 +23,11 @@ export async function POST(
     },
   })
 
-  // Get the task to find the case
-  const task = await prisma.humanTask.findUnique({ where: { id } })
+  // Get the task with case info
+  const task = await prisma.humanTask.findUnique({
+    where: { id },
+    include: { case: true },
+  })
   if (task) {
     // Update case: remove blocker, set to investigating so agent can resume
     await prisma.case.update({
@@ -46,11 +49,21 @@ export async function POST(
     })
   }
 
-  // [MOCK] In production, this would trigger the Chat App's agent resume endpoint:
-  //   await fetch('http://localhost:3000/api/messages', {
-  //     method: 'POST',
-  //     body: JSON.stringify({ resumeTrigger: task.caseId })
-  //   })
+  // Notify Chat App to resume agent loop for this case
+  if (task) {
+    try {
+      await fetch('http://localhost:3000/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resumeTrigger: task.caseId,
+          customerId: task.case?.customerId,
+        }),
+      })
+    } catch (err) {
+      console.error('[Resolve] Failed to notify Chat App:', err)
+    }
+  }
 
   return NextResponse.json({ success: true })
 }
