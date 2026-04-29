@@ -126,16 +126,28 @@ function MessageBubble({
 
           {/* Markdown content */}
           <div className="markdown-content">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={MARKDOWN_COMPONENTS}
-            >
-              {content || (isStreaming ? '' : '...')}
-            </ReactMarkdown>
+            {content ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={MARKDOWN_COMPONENTS}
+              >
+                {content}
+              </ReactMarkdown>
+            ) : isStreaming ? (
+              /* Claude Code-style thinking indicator — staggered dots */
+              <ThinkingPlaceholder />
+            ) : (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={MARKDOWN_COMPONENTS}
+              >
+                ...
+              </ReactMarkdown>
+            )}
           </div>
 
-          {/* Streaming cursor */}
-          {isStreaming && (
+          {/* Streaming cursor — only when content is actively streaming */}
+          {isStreaming && content && (
             <span className="inline-block ml-[2px] w-[2px] h-[1em] bg-white/50 animate-pulse align-middle" />
           )}
         </GlassCard>
@@ -187,3 +199,17 @@ function ToolBadge({ tool }: { tool: ToolUseInfo }) {
 }
 
 export default memo(MessageBubble)
+
+// Claude Code-style "Thinking..." with staggered dot animation
+function ThinkingPlaceholder() {
+  return (
+    <span className="inline-flex items-center gap-[3px] text-fog/50 font-serif text-[16px] sm:text-[18px] italic">
+      Thinking
+      <span className="inline-flex gap-[3px]">
+        <span className="inline-block w-1 h-1 rounded-full bg-fog/60 animate-thinking-dots" />
+        <span className="inline-block w-1 h-1 rounded-full bg-fog/60 animate-thinking-dots" style={{ animationDelay: '0.2s' }} />
+        <span className="inline-block w-1 h-1 rounded-full bg-fog/60 animate-thinking-dots" style={{ animationDelay: '0.4s' }} />
+      </span>
+    </span>
+  )
+}

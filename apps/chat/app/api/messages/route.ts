@@ -43,6 +43,14 @@ When a customer reports an issue:
 4. Use query_payment_channel_status to check if there are delays
 5. If there is a conflict (customer says not received but system shows success), create a human task
 6. Only finalize the case when you have sufficient evidence
+
+# Handling form dismissal
+
+If the user receives "[Form dismissed by user]", the customer chose not to fill in the form.
+Do NOT repeat the same form. Instead:
+1. Acknowledge their choice briefly (1 sentence)
+2. Try an alternative approach — ask if they can provide the information in a different way, or proceed with what you already know
+3. If you truly cannot proceed without the information, explain why it's needed and offer a simpler alternative
 `
 
 // Verify env vars at module load (logged once per cold start)

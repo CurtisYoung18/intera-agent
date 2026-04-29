@@ -318,13 +318,19 @@ export default function ChatPage() {
             }>}
             onSubmit={(answers) => {
               setFormRequest(null)
-              handleSubmit(
-                `[Form submitted]\n${Object.entries(answers)
-                  .map(([k, v]) => `${k}: ${v}`)
-                  .join('\n')}\n\nPlease continue processing based on this information.`
-              )
+              // Show a natural user message, not raw form data
+              const answerText = Object.entries(answers)
+                .filter(([, v]) => v)
+                .map(([, v]) => v)
+                .join(', ')
+              handleSubmit(answerText)
             }}
-            onCancel={() => setFormRequest(null)}
+            onCancel={() => {
+              // FormCard handles its own exit animation (350ms), then calls this.
+              // Notify the agent that the user dismissed the form so it can adapt.
+              setFormRequest(null)
+              handleSubmit('[Form dismissed by user]')
+            }}
           />
         </div>
       )}

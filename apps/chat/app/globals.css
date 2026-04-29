@@ -250,23 +250,41 @@ body {
 .animate-tool-spin   { animation: toolSpin 1.5s linear infinite; }
 .animate-tool-done   { animation: toolDone 300ms ease-out forwards; }
 .animate-fade-up     { animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-ping-ring   { animation: pingRing 2s cubic-bezier(0, 0.6, 0.4, 1) infinite; }
+.animate-thinking-dots { animation: thinkingDots 1.4s ease-in-out infinite; }
 
-/* Form card — floating + subtle vibration on entrance */
+/* Form card — GPU-accelerated floating + flowing gradient border */
 @keyframes formFloat {
-  0%   { transform: translateY(0); }
-  50%  { transform: translateY(-3px); }
-  100% { transform: translateY(0); }
+  0%   { transform: translate3d(0, 0, 0); }
+  50%  { transform: translate3d(0, -1.5px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
 @keyframes formShake {
-  0%   { transform: translateX(0); }
-  15%  { transform: translateX(-2px) rotate(-0.3deg); }
-  30%  { transform: translateX(2px) rotate(0.3deg); }
-  45%  { transform: translateX(-1px) rotate(-0.2deg); }
-  60%  { transform: translateX(1px) rotate(0.2deg); }
-  75%  { transform: translateX(-0.5px); }
-  100% { transform: translateX(0); }
+  0%   { transform: translate3d(0, 0, 0); }
+  20%  { transform: translate3d(-1.5px, 0, 0); }
+  40%  { transform: translate3d(1.5px, 0, 0); }
+  60%  { transform: translate3d(-0.8px, 0, 0); }
+  80%  { transform: translate3d(0.8px, 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
-.animate-form-float {
-  animation: formFloat 3s ease-in-out infinite,
-             formShake 0.5s ease-out;
+@keyframes borderFlow {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes pingRing {
+  0%   { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes thinkingDots {
+  0%, 20%  { opacity: 0.2; }
+  50%     { opacity: 1; }
+  80%, 100% { opacity: 0.2; }
+}
+.animate-form-shake {
+  animation: formShake 0.5s ease-out;
+  will-change: transform;
+}
+.animate-border-flow {
+  animation: borderFlow 8s linear infinite;
+  will-change: transform;
 }
