@@ -1,125 +1,79 @@
-# Team Rules — AI Programming File Ownership
+# Intera — Development Rules
 
-> **Purpose:** Prevent AI tools from modifying files outside the intended scope of a session.
-> These rules are enforced by the developer, not automatically. You are responsible for
-> telling your AI which files it may and may not touch.
+> Curtis + Claude, building Intera together.
+
+---
+
+## Project Architecture
+
+```
+intera-agent/                    ← Monorepo, one Git repo
+├── apps/
+│   ├── chat/                    ← Chat App (customer-facing)
+│   └── console/                 ← Harness Console (operator-facing: ops + admin)
+├── packages/
+│   └── shared/                  ← Shared types, Prisma schema, UI primitives
+└── doc/                         ← Specs, roadmap, design docs
+```
+
+Two Next.js apps, one shared database (SQLite locally, Neon PostgreSQL in production).
+Chat App on port 3000. Console on port 3001.
+They communicate via HTTP API + shared SQLite.
 
 ---
 
 ## Current Workflow
 
-- **Primary Developer (Curtis):** Writes all production code with AI assistance.
-- **Other Team Members:** Test, review, and provide feedback/suggestions.
-- **AI Role:** Code generation and refactoring within explicitly stated boundaries.
-
-When the team grows, the role-based ownership rules below become the split template.
+- **Curtis:** Product direction, design decisions, code review, testing
+- **Claude:** Code generation, refactoring, debugging
+- **Session scope:** One module at a time. Don't mix Chat changes with Console changes.
 
 ---
 
-## Rule 0: Universal Rule
+## Development Rules
 
-**Before every AI coding session, tell the AI which files it may touch.**
-If the AI tries to modify a file outside the stated scope, reject the change and remind it
-of the boundaries. Do not let AI drift into unrelated files without explicit permission.
+### Rule 1: Mock vs Production
 
----
+- Code marked `// [MOCK]` is placeholder. May use simulated data.
+- Before removing `// [MOCK]`:
+  1. Implement the real logic (DB query, API call, etc.)
+  2. Test end-to-end
+  3. Remove the comment
+- Never remove `// [MOCK]` without implementing the production path.
 
-## Rule 1: Module Boundaries
+### Rule 2: Build Verification
 
-Even as a solo developer, keep AI changes scoped to one module at a time. Mixing
-Agent engine changes with Admin UI changes in one AI session leads to messy diffs
-and harder review.
+- Run `npx next build` in the relevant app before claiming completion.
+- If Prisma schema changed: also run `npx prisma generate`.
 
-### Module A — Agent Core Engine
+### Rule 3: Shared Code
 
-**Scope:** Agent Loop, Memory, Skills, Policy, Trace, StreamingToolExecutor, LLM integration
+- Types used by both apps belong in `packages/shared/types/`.
+- UI primitives used by both apps belong in `packages/shared/ui/`.
+- Changes to shared code require building both apps to verify.
 
-```
-lib/try/agent/loop.ts
-lib/try/agent/memory.ts
-lib/try/agent/skills.ts
-lib/try/agent/policy.ts
-lib/try/agent/trace.ts
-lib/try/agent/streaming-tool-executor.ts
-app/api/try/messages/route.ts
-```
+### Rule 4: No Blind Merges
 
-### Module B — Admin Console & Data Layer
-
-**Scope:** Admin configuration pages, Prisma schema, database access
-
-```
-prisma/schema.prisma
-lib/prisma.ts
-app/try/admin/**/*
-app/api/try/admin/**/*
-```
-
-### Module C — Human Task System
-
-**Scope:** Human task pages, human task API, case resume flow
-
-```
-app/try/ops/human-tasks/**/*
-app/api/try/human-tasks/**/*
-app/try/ops/cases/**/*
-```
-
-### Shared Infrastructure
-
-Changes to these files should be intentional and minimal:
-
-```
-types/index.ts        — Type definitions used by all modules
-package.json          — Dependencies
-tsconfig.json         — Build config
-next.config.js        — Routing / build config
-.env.example          — Environment template
-```
+- All Claude-generated code must be reviewed by Curtis before merging.
+- Test the feature in browser before declaring it done.
 
 ---
 
-## Rule 2: AI Logging
+## AI Logging
 
-Every AI-assisted change MUST be logged in `.claude/logs/[your-name].md`
-following the template in `TEMPLATE.md`.
+Every Claude-assisted change is logged in `.claude/logs/session-YYYY-MM-DD.md`.
+One file per session. Curtis reviews logs to track what was done.
 
-**Log entries must include:**
-- Date and time
-- AI tool and model
-- Exact files changed
-- Summary of what the AI did
-- Any manual corrections needed
+Log format:
+```markdown
+# Session YYYY-MM-DD
 
----
+## Changes
+- `file/path.ts` — what changed and why
 
-## Rule 3: Code Review
+## Decisions
+- Decision made and rationale
 
-1. **AI-generated code must be reviewed before merging.** Never blind-merge AI output.
-2. **Run `npx prisma generate` and `npm run build`** before marking a PR ready if the schema or types changed.
-3. **Testers verify behavior, not implementation.** They confirm the feature works as expected; the developer owns code correctness.
-
----
-
-## Rule 4: Mock vs Production Code
-
-- Code marked with `// [MOCK]` is placeholder. It may use simulated data or skip real I/O.
-- Before removing a `// [MOCK]` marker:
-  1. Implement the real DB query / API call / logic
-  2. Test it end-to-end
-  3. Remove the `// [MOCK]` comment
-- Do NOT remove `// [MOCK]` markers without implementing the production path.
-
----
-
-## Future: Multi-Developer Split
-
-When the team expands, the boundaries above become hard ownership rules:
-
-| Role | Module | May Also Read |
-|------|--------|---------------|
-| Agent Engine Dev | Module A | types, schema |
-| Admin/Data Dev | Module B | types, agent/ |
-| Human Task Dev | Module C | types, loop.ts, memory.ts, schema |
-
-Cross-module changes require a heads-up in the PR description.
+## Issues
+- Any problems encountered
+```

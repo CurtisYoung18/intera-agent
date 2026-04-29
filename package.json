@@ -1,38 +1,17 @@
 {
-  "name": "intera-harness",
-  "version": "0.1.0",
+  "name": "intera-agent",
   "private": true,
-  "description": "Intera Agentic Customer Service Harness",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
-    "@prisma/client": "^6.6.0",
-    "next": "^15.3.3",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "zod": "^3.24.4",
-    "zustand": "^5.0.5"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.1.6",
-    "@types/react-dom": "^19.1.6",
-    "autoprefixer": "^10.5.0",
-    "eslint": "^9.27.0",
-    "eslint-config-next": "^15.3.3",
-    "postcss": "^8.5.12",
-    "prisma": "^6.6.0",
-    "tailwindcss": "^3.4.19",
-    "typescript": "^5.8.3"
+    "dev:chat": "npm run dev -w apps/chat",
+    "dev:console": "npm run dev -w apps/console",
+    "build:chat": "npm run build -w apps/chat",
+    "build:console": "npm run build -w apps/console",
+    "db:generate": "npm run db:generate -w packages/shared",
+    "db:push": "npm run db:push -w packages/shared",
+    "db:studio": "npm run db:studio -w packages/shared"
   }
 }

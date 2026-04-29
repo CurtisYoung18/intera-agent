@@ -1,0 +1,252 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   Intera Harness — Design Tokens
+   Void + Fluid Glass（虚白 · 流光）
+   ============================================ */
+
+:root {
+  /* ── Void Palette ── */
+  --void:        #08080a;
+  --abyss:       #0f0f12;
+  --basalt:      #1a1a1f;
+  --obsidian:    #24242b;
+
+  /* ── Mist (text) ── */
+  --mist:        #f5f3ef;
+  --fog:         #8c8a85;
+  --smoke:       #3d3b38;
+
+  /* ── Accent (use sparingly) ── */
+  --vermillion:  #e64539;
+  --indigo:      #5b6ef5;
+  --amber:       #d4912e;
+  --malachite:   #2ea04a;
+
+  /* ── Glass tokens ── */
+  --glass-chat:        rgba(255, 255, 255, 0.03);
+  --glass-chat-user:   rgba(255, 255, 255, 0.06);
+  --glass-input:       rgba(255, 255, 255, 0.03);
+  --glass-admin:       rgba(15, 15, 15, 0.70);
+  --glass-pill:        rgba(15, 15, 15, 0.50);
+  --glass-hover:       rgba(255, 255, 255, 0.04);
+  --glass-border:      rgba(255, 255, 255, 0.06);
+  --glass-border-hover: rgba(255, 255, 255, 0.10);
+
+  /* ── Radius ── */
+  --radius-sm:         6px;
+  --radius-md:         12px;
+  --radius-lg:         16px;
+  --radius-xl:         24px;
+
+  /* ── Typography ── */
+  --font-serif:        'Cormorant Garamond', 'Noto Serif SC', serif;
+  --font-sans:         'Inter', 'Noto Sans SC', sans-serif;
+  --font-mono:         'JetBrains Mono', monospace;
+}
+
+/* ── Light Theme ── */
+html[data-theme="light"] {
+  --void:        #fafaf6;
+  --abyss:       #f0efe8;
+  --basalt:      #e6e3db;
+  --obsidian:    #d9d6cc;
+
+  --mist:        #1a1a1a;
+  --fog:         #6b6b6b;
+  --smoke:       #b0ada6;
+
+  --glass-chat:        rgba(0, 0, 0, 0.02);
+  --glass-chat-user:   rgba(0, 0, 0, 0.04);
+  --glass-input:       rgba(0, 0, 0, 0.02);
+  --glass-admin:       rgba(250, 250, 246, 0.85);
+  --glass-pill:        rgba(250, 250, 246, 0.7);
+  --glass-hover:       rgba(0, 0, 0, 0.03);
+  --glass-border:      rgba(0, 0, 0, 0.06);
+  --glass-border-hover: rgba(0, 0, 0, 0.12);
+}
+
+/* ── Global base ── */
+html {
+  background: var(--void);
+}
+
+body {
+  background: var(--void);
+  color: var(--mist);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   Glass Utility Classes
+   ============================================ */
+
+/* Chat message cards */
+.glass-chat-user {
+    background: var(--glass-chat-user, rgba(255, 255, 255, 0.06));
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg);
+  }
+
+  .glass-chat-assistant {
+    background: var(--glass-chat, rgba(255, 255, 255, 0.02));
+    backdrop-filter: blur(16px) saturate(120%);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
+    border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
+  }
+
+  /* Admin / config cards */
+  .glass-admin {
+    background: var(--glass-admin, rgba(15, 15, 15, 0.7));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.05));
+    border-radius: var(--radius-sm);
+  }
+
+  /* Capsule / pill */
+  .glass-pill {
+    background: var(--glass-pill, rgba(15, 15, 15, 0.5));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.06));
+    border-radius: 999px;
+  }
+
+  /* Sidebar */
+  .glass-sidebar {
+    background: var(--glass-admin, rgba(15, 15, 15, 0.8));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid var(--glass-border, rgba(255, 255, 255, 0.05));
+  }
+
+  /* Input field */
+  .glass-input {
+    background: var(--glass-input, rgba(255, 255, 255, 0.03));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.06));
+    border-radius: 20px;
+    padding: 10px 16px;
+    color: var(--mist);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    outline: none;
+    width: 100%;
+    transition: border-color 200ms ease-out, box-shadow 200ms ease-out, font-size 800ms ease-out, padding 800ms ease-out;
+  }
+
+  @media (min-width: 640px) {
+    .glass-input {
+      padding: 12px 20px;
+    }
+  }
+
+  .glass-input::placeholder {
+    color: var(--fog);
+    opacity: 0.4;
+  }
+  html[data-theme="light"] .glass-input::placeholder {
+    color: var(--fog);
+    opacity: 0.6;
+  }
+
+  /* Fluid vignette — dark edge gradient, theme-aware */
+  .fluid-vignette {
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(8,8,10,0.55) 100%);
+  }
+  html[data-theme="light"] .fluid-vignette {
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(250,250,246,0.2) 100%);
+  }
+
+  .glass-input:focus {
+    border-color: rgba(230, 69, 57, 0.3);
+    box-shadow: 0 0 0 3px rgba(230, 69, 57, 0.08);
+  }
+
+  /* Card hover lift */
+  .glass-card-hover {
+    transition: background 200ms ease-out, border-color 200ms ease-out, transform 200ms ease-out;
+  }
+
+  .glass-card-hover:hover {
+    background: var(--glass-hover, rgba(255, 255, 255, 0.04));
+    border-color: var(--glass-border-hover, rgba(255, 255, 255, 0.1));
+    transform: translateY(-1px);
+  }
+
+  /* Text balance for headings */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Custom thin scrollbar */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+  }
+
+/* ============================================
+   Animations
+   ============================================ */
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1.0; }
+}
+
+@keyframes messageIn {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toolSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes toolDone {
+  0%   { transform: scale(1); opacity: 1; }
+  50%  { transform: scale(1.3); opacity: 0.6; }
+  100% { transform: scale(0); opacity: 0; }
+}
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blobFloat {
+  0%   { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(10%, -5%) scale(1.05); }
+  50%  { transform: translate(5%, 8%) scale(0.95); }
+  75%  { transform: translate(-8%, 3%) scale(1.02); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+.animate-breathe     { animation: breathe 2s ease-in-out infinite; }
+.animate-message-in  { animation: messageIn 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-tool-spin   { animation: toolSpin 1.5s linear infinite; }
+.animate-tool-done   { animation: toolDone 300ms ease-out forwards; }
+.animate-fade-up     { animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
