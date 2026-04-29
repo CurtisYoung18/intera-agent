@@ -43,8 +43,26 @@ They communicate via HTTP API + shared SQLite.
 
 ### Rule 2: Build Verification
 
-- Run `npx next build` in the relevant app before claiming completion.
-- If Prisma schema changed: also run `npx prisma generate`.
+- Run `npm run build:chat && npm run build:console` before claiming completion.
+- If Prisma schema changed: also run `npx prisma generate --schema=packages/shared/prisma/schema.prisma`.
+- Never trust dev server alone — the build step catches type errors and Tailwind tree-shaking issues.
+
+### Rule 3: Tailwind Safety
+
+- **Never use `@layer components` or `@layer utilities`** for critical app CSS. Tailwind JIT may tree-shake them. Put custom classes directly after `@tailwind utilities`.
+- **When adding shared packages**, update BOTH apps' `tailwind.config.ts` `content` paths to include the new directory. Without this, Tailwind strips utility classes (e.g. `right-4`, `top-4`) used in shared components.
+
+### Rule 4: Structural Changes
+
+After any of these, run full build:
+- Moving directories (`mv`, `git mv`)
+- Changing `tsconfig.json` paths
+- Changing `tailwind.config.ts` content paths
+- Adding new workspace packages
+
+### Rule 5: DB Path
+
+- `DATABASE_URL` must be an absolute path in `.env.local` (each app needs its own copy). Relative paths break because each app has a different working directory.
 
 ### Rule 3: Shared Code
 

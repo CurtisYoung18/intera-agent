@@ -12,6 +12,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Message, AssistantMessage, ToolUse, SSEEvent } from '@intera/shared/types'
+import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor } from './streaming-tool-executor'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import { CaseMemoryManager } from './memory'
@@ -344,15 +345,84 @@ export class AgentLoop {
         (r) => r.name === 'create_human_task',
       )
       if (humanTaskResult) {
-        await this.traceWriter.write(
-          'human_task_created',
-          'Human task created',
-        )
-        sendEvent({
-          type: 'human_task_created',
-          data: humanTaskResult.output,
-          timestamp: new Date().toISOString(),
-        })
+        const toolInput = humanTaskResult.toolUse?.input || {}
+        const queue = String(toolInput.queue || 'general')
+        const question = String(toolInput.question || 'Human task requested')
+
+        try {
+          // Ensure customer exists
+          await prisma.customer.upsert({
+            where: { id: this.deps.customerId },
+            update: {},
+            create: { id: this.deps.customerId, name: this.deps.customerId },
+          })
+
+          // Ensure case exists
+          await prisma.case.upsert({
+            where: { id: this.deps.caseId },
+            update: { status: 'waiting_human', blocker: `Waiting for ${queue}` },
+            create: {
+              id: this.deps.caseId,
+              customerId: this.deps.customerId,
+              userId: this.deps.userId,
+              type: 'general',
+              status: 'waiting_human',
+              blocker: `Waiting for ${queue}`,
+            },
+          })
+
+          // Persist case memory
+          const mem = this.caseMemory.getSummary()
+          await prisma.caseMemory.upsert({
+            where: { caseId: this.deps.caseId },
+            update: {
+              confirmedFacts: JSON.stringify(mem.confirmedFacts),
+              missingFacts: JSON.stringify(mem.missingFacts),
+              skillsCalled: JSON.stringify(mem.skillsCalled),
+              skillResults: JSON.stringify(mem.skillResults),
+              keyEvents: JSON.stringify(mem.keyEvents),
+              humanTaskStatus: 'pending',
+            },
+            create: {
+              caseId: this.deps.caseId,
+              confirmedFacts: JSON.stringify(mem.confirmedFacts),
+              missingFacts: JSON.stringify(mem.missingFacts),
+              skillsCalled: JSON.stringify(mem.skillsCalled),
+              skillResults: JSON.stringify(mem.skillResults),
+              keyEvents: JSON.stringify(mem.keyEvents),
+              humanTaskStatus: 'pending',
+            },
+          })
+
+          // Create human task
+          const task = await prisma.humanTask.create({
+            data: {
+              caseId: this.deps.caseId,
+              queue,
+              question,
+              status: 'pending',
+            },
+          })
+
+          // Write trace
+          await prisma.actionTrace.create({
+            data: {
+              caseId: this.deps.caseId,
+              actionType: 'human_task_created',
+              title: `Human task created: ${queue}`,
+              payload: JSON.stringify({ taskId: task.id, queue, question }),
+            },
+          })
+
+          sendEvent({
+            type: 'human_task_created',
+            data: { taskId: task.id, queue, status: 'pending' },
+            timestamp: new Date().toISOString(),
+          })
+        } catch (err) {
+          console.error('[AgentLoop] Failed to persist human task:', err)
+        }
+
         return {
           messages: this.messages,
           caseStatus: 'waiting_human',
@@ -386,6 +456,25 @@ export class AgentLoop {
         }
 
         await this.traceWriter.write('final_resolution', 'Case resolved')
+
+        // Persist to DB
+        try {
+          await prisma.case.update({
+            where: { id: this.deps.caseId },
+            data: { status: 'resolved', resolvedAt: new Date(), blocker: null },
+          })
+          await prisma.actionTrace.create({
+            data: {
+              caseId: this.deps.caseId,
+              actionType: 'final_resolution',
+              title: 'Case resolved',
+              payload: JSON.stringify(finalizeResult.output),
+            },
+          })
+        } catch (err) {
+          console.error('[AgentLoop] Failed to persist case resolution:', err)
+        }
+
         sendEvent({
           type: 'finalized',
           data: finalizeResult.output,
