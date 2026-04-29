@@ -9,6 +9,7 @@ import StatusPill from '@intera/shared/ui/status-pill'
 import MessageList from '@/components/chat/message-list'
 import VoiceInputBar from '@/components/chat/voice-input-bar'
 import WelcomeMessage from '@/components/chat/welcome-message'
+import FormCard from '@/components/chat/form-card'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,6 +92,12 @@ export default function ChatPage() {
   )
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('online')
   const [isLoading, setIsLoading] = useState(false)
+  const [formRequest, setFormRequest] = useState<{
+    skillCallId: string
+    title: string
+    description?: string
+    fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>
+  } | null>(null)
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -225,6 +232,11 @@ export default function ChatPage() {
 
                   case 'human_task_created':
                     setAgentStatus('waiting')
+                    break
+
+                  case 'form_request':
+                    setAgentStatus('waiting')
+                    setFormRequest(event.data as typeof formRequest)
                     break
 
                   case 'finalized':

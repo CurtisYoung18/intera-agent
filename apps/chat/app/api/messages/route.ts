@@ -82,12 +82,23 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const { message, resumeTrigger, caseId, customerId, userId } = body
+        const { message, resumeTrigger, formResult, caseId, customerId, userId } = body
 
         let userMessage = message
         let resolvedCaseId = caseId || `case_${Date.now()}`
         let resolvedCustomerId = customerId || 'default'
         let resolvedUserId = userId || 'anonymous'
+
+        // ── Form response: customer submitted form answers ──
+        if (formResult && !message) {
+          resolvedCaseId = formResult.caseId || resolvedCaseId
+          const answers = formResult.answers || {}
+          const answerText = Object.entries(answers as Record<string, string>)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n')
+          userMessage = `[Form submitted]\n${answerText}\n\nPlease continue processing based on this information.`
+          console.log(`[Intera] Form submitted for case ${resolvedCaseId}`)
+        }
 
         // ── Resume flow: human resolved a task, agent continues ──
         if (resumeTrigger && !message) {

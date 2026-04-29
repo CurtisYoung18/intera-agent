@@ -192,6 +192,60 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     // [MOCK]
     mockFixture: { results: [], sources: [] },
   },
+  {
+    name: 'request_user_input',
+    description:
+      'Display a structured form to the customer to collect required information. ' +
+      'Use this when you need the customer to provide specific details (amount, payment method, ' +
+      'screenshots, etc.). The form will appear as a floating glass card in the chat UI. ' +
+      'Once the customer submits, you will receive their answers and can continue.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Form title, e.g. "Order Details Needed"',
+        },
+        description: {
+          type: 'string',
+          description: 'Brief explanation of why this information is needed',
+        },
+        fields: {
+          type: 'array',
+          description: 'Form fields to collect from the customer',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'Field identifier, e.g. "amount"' },
+              label: { type: 'string', description: 'Display label, e.g. "充值金额"' },
+              type: {
+                type: 'string',
+                enum: ['text', 'number', 'select', 'textarea', 'file'],
+                description: 'Input type',
+              },
+              required: {
+                type: 'boolean',
+                description: 'Whether this field is required',
+              },
+              placeholder: { type: 'string', description: 'Placeholder text' },
+              options: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Options for select type',
+              },
+            },
+            required: ['key', 'label', 'type'],
+          },
+        },
+      },
+      required: ['title', 'fields'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    // [MOCK] — form is rendered by the Chat UI, not executed here
+    mockFixture: { status: 'form_displayed' },
+  },
 ]
 
 /**

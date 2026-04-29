@@ -51,7 +51,7 @@ export interface AgentLoopDeps {
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'error'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error'
   reason?: string
 }
 
@@ -339,6 +339,34 @@ export class AgentLoop {
       // ── Add to message history ───────────────────────────────
       this.messages.push(assistantMessage)
       this.addToolResultMessages(toolResults)
+
+      // ── Terminal tool: request_user_input (form) ─────────
+      const formResult = toolResults.find(
+        (r) => r.name === 'request_user_input',
+      )
+      if (formResult) {
+        const toolInput = formResult.toolUse?.input || {}
+        const title = String(toolInput.title || 'Information Needed')
+        const description = String(toolInput.description || '')
+        const fields = (toolInput.fields as Array<Record<string, unknown>>) || []
+
+        sendEvent({
+          type: 'form_request',
+          data: {
+            skillCallId: formResult.toolUse?.id || crypto.randomUUID(),
+            title,
+            description,
+            fields,
+          },
+          timestamp: new Date().toISOString(),
+        })
+
+        return {
+          messages: this.messages,
+          caseStatus: 'collecting',
+          transition: 'waiting_form',
+        }
+      }
 
       // ── Terminal tool: create_human_task ─────────────────────
       const humanTaskResult = toolResults.find(

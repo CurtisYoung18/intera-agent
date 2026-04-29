@@ -64,7 +64,18 @@ After any of these, run full build:
 
 - `DATABASE_URL` must be an absolute path in `.env.local` (each app needs its own copy). Relative paths break because each app has a different working directory.
 
-### Rule 3: Shared Code
+### Rule 6: Built-in Skill Naming
+
+- Use **generic, domain-agnostic names** for built-in skills. Follow Claude Code's pattern: `AskUserQuestion`, `EnterPlanMode`, `TodoWrite` — not `collect_deposit_info` or `check_game_recharge`.
+- Good: `request_user_input`, `query_external_api`, `create_escalation`, `search_knowledge_base`
+- Bad: `collect_customer_info`, `check_recharge_status`, `game_vendor_lookup`
+- **Prefix convention**: Use verb-first naming: `request_*`, `query_*`, `create_*`, `search_*`, `read_*`, `finalize_*`
+
+### Rule 7: Confirm Before Guessing
+
+- If a design decision has trade-offs you're not sure about (e.g., field-level `required` semantics, error handling strategy, UX flow), **ask Curtis before implementing**. Guessing wastes tokens and time on corrections.
+
+### Rule 8: Shared Code
 
 - Types used by both apps belong in `packages/shared/types/`.
 - UI primitives used by both apps belong in `packages/shared/ui/`.

@@ -213,6 +213,7 @@ export type SSEEventType =
   | 'memory_update'
   | 'case_status'
   | 'human_task_created'
+  | 'form_request'
   | 'finalized'
   | 'message_stop'
   | 'withheld'
