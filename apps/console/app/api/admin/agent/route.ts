@@ -2,12 +2,30 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
 
 export async function GET() {
   try {
-    const config = await prisma.agentConfig.findUnique({ where: { customerId: CUSTOMER_ID } })
+    let config = await prisma.agentConfig.findUnique({ where: { customerId: CUSTOMER_ID } })
+
+    // Lazy init: create from defaults if DB is empty
+    if (!config) {
+      config = await prisma.agentConfig.create({
+        data: {
+          customerId: CUSTOMER_ID,
+          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+          model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+          temperature: 0.5,
+          thinkingBudget: 4096,
+          maxIterations: 20,
+          memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
+          policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
+        },
+      })
+    }
+
     return NextResponse.json({ config })
   } catch (err) {
     console.error('[Admin] GET agent config:', err)

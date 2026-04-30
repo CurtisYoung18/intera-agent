@@ -2,15 +2,40 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { DEFAULT_CASE_TYPES } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
 
 export async function GET() {
   try {
-    const types = await prisma.caseType.findMany({
+    let types = await prisma.caseType.findMany({
       where: { customerId: CUSTOMER_ID },
       orderBy: { type: 'asc' },
     })
+
+    // Lazy init: create from defaults if DB is empty
+    if (types.length === 0) {
+      for (const ct of DEFAULT_CASE_TYPES) {
+        await prisma.caseType.create({
+          data: {
+            customerId: CUSTOMER_ID,
+            type: ct.type,
+            displayName: ct.displayName,
+            description: ct.description,
+            icon: ct.icon,
+            requiredFacts: ct.requiredFacts,
+            stages: ct.stages,
+            defaultGoal: ct.defaultGoal,
+            escalateOn: ct.escalateOn,
+          },
+        })
+      }
+      types = await prisma.caseType.findMany({
+        where: { customerId: CUSTOMER_ID },
+        orderBy: { type: 'asc' },
+      })
+    }
+
     return NextResponse.json({ types })
   } catch (err) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

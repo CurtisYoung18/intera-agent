@@ -2,15 +2,37 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
 
 export async function GET() {
   try {
-    const policies = await prisma.policy.findMany({
+    let policies = await prisma.policy.findMany({
       where: { customerId: CUSTOMER_ID },
       orderBy: { name: 'asc' },
     })
+
+    // Lazy init: create from defaults if DB is empty
+    if (policies.length === 0) {
+      for (const p of DEFAULT_POLICIES) {
+        await prisma.policy.create({
+          data: {
+            customerId: CUSTOMER_ID,
+            name: p.name,
+            description: p.description,
+            hook: p.hook,
+            rule: p.rule,
+            enabled: true,
+          },
+        })
+      }
+      policies = await prisma.policy.findMany({
+        where: { customerId: CUSTOMER_ID },
+        orderBy: { name: 'asc' },
+      })
+    }
+
     return NextResponse.json({ policies })
   } catch (err) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

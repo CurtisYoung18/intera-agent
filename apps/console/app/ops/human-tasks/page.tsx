@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import FluidBackground from '@intera/shared/ui/fluid-background'
+// FluidBackground provided by root ConsoleShell layout
 
 interface Task {
   id: string
@@ -48,28 +48,15 @@ export default function HumanTasksPage() {
   }, [])
 
   return (
-    <div className="relative min-h-[100dvh] bg-void">
-      <FluidBackground intensity="subtle" />
-
-      {/* Header */}
-      {/* Header — frosted glass */}
-      <div className="relative z-10 border-b border-white/[0.04]">
-        <div className="absolute inset-0 bg-abyss/80 backdrop-blur-2xl border-b border-white/[0.04]" />
-        <div className="relative max-w-4xl mx-auto px-6 py-5 flex items-center justify-between">
-          <div>
-            <h1 className="text-[16px] font-medium text-mist tracking-[-0.01em]">
-              Human Tasks
-            </h1>
-            <p className="text-[13px] text-fog/60 mt-0.5">Pending operator actions</p>
-          </div>
-          <span className="text-[13px] font-mono text-fog/50 tabular-nums">
-            {tasks.length} pending
-          </span>
+    <div className="max-w-4xl mx-auto px-6 py-6 space-y-3">
+      {/* Page header */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-[16px] font-medium text-mist tracking-[-0.01em]">Human Tasks</h1>
+          <p className="text-[12px] text-fog/50 mt-0.5">Pending operator actions</p>
         </div>
+        <span className="text-[12px] font-mono text-fog/40 tabular-nums">{tasks.length} pending</span>
       </div>
-
-      {/* Task list */}
-      <main className="relative z-10 max-w-4xl mx-auto px-6 py-8 space-y-3">
         {loading && (
           <p className="text-center py-16 text-fog/40 text-[14px] animate-breathe">
             Loading…
@@ -122,7 +109,6 @@ export default function HumanTasksPage() {
             </div>
           </Link>
         ))}
-      </main>
     </div>
   )
 }

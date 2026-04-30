@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import ConsoleShell from '@/components/console-shell'
 
 export const metadata: Metadata = {
   title: 'Intera Console — Harness',
@@ -18,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-[100dvh] bg-void text-mist font-sans antialiased">
-        {children}
+        <ConsoleShell>{children}</ConsoleShell>
       </body>
     </html>
   )

@@ -2,15 +2,36 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { DEFAULT_ROUTING } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
 
 export async function GET() {
   try {
-    const routes = await prisma.routing.findMany({
+    let routes = await prisma.routing.findMany({
       where: { customerId: CUSTOMER_ID },
       orderBy: { priority: 'asc' },
     })
+
+    // Lazy init: create from defaults if DB is empty
+    if (routes.length === 0) {
+      for (const r of DEFAULT_ROUTING) {
+        await prisma.routing.create({
+          data: {
+            customerId: CUSTOMER_ID,
+            queue: r.queue,
+            description: r.description,
+            skillsAllowed: r.skillsAllowed,
+            priority: r.priority,
+          },
+        })
+      }
+      routes = await prisma.routing.findMany({
+        where: { customerId: CUSTOMER_ID },
+        orderBy: { priority: 'asc' },
+      })
+    }
+
     return NextResponse.json({ routes })
   } catch (err) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

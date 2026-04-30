@@ -1,47 +1,132 @@
-// [MOCK] Seed script — creates demo data for human tasks UI
+// Seed script — creates demo data for human tasks UI + admin config
 // Run: npx tsx packages/shared/prisma/seed.ts
 
 import { PrismaClient } from '@prisma/client'
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_MEMORY_STRATEGY,
+  DEFAULT_POLICY_HOOKS,
+  DEFAULT_SKILLS,
+  DEFAULT_POLICIES,
+  DEFAULT_CASE_TYPES,
+  DEFAULT_ROUTING,
+} from '../defaults/index'
 
 const prisma = new PrismaClient()
+const CUSTOMER_ID = 'default'
 
 async function seed() {
   console.log('Seeding…')
 
-  // Clean old seed data
+  // ── Clean old demo data ──
   await prisma.humanTask.deleteMany({ where: { id: 'seed-task-1' } })
   await prisma.actionTrace.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.message.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.caseMemory.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.case.deleteMany({ where: { id: 'seed-case-1' } })
-  await prisma.caseType.deleteMany({ where: { type: 'deposit_not_received' } })
-  await prisma.customer.deleteMany({ where: { id: 'seed-customer' } })
 
-  const customer = await prisma.customer.create({
-    data: { id: 'seed-customer', name: 'Demo Vendor' },
+  // Ensure default customer exists
+  await prisma.customer.upsert({
+    where: { id: CUSTOMER_ID },
+    update: { name: 'Demo Vendor' },
+    create: { id: CUSTOMER_ID, name: 'Demo Vendor' },
   })
 
-  // ── Case Type: Deposit Not Received (生产环境用例) ──
-  await prisma.caseType.create({
-    data: {
-      id: 'seed-case-type-deposit',
-      customerId: customer.id,
-      type: 'deposit_not_received',
-      displayName: 'Deposit Not Received',
-      description: 'Customer reports a deposit that has not arrived in their account',
-      icon: 'credit-card',
-      requiredFacts: JSON.stringify(['txnId', 'amount', 'paymentMethod', 'depositDate']),
-      stages: JSON.stringify(['created', 'investigating', 'collecting', 'waiting_human', 'resolved']),
-      defaultGoal: 'Verify deposit status via order query → check payment channel for delays → confirm resolution or escalate to human',
-      escalateOn: JSON.stringify(['channel_delayed_batch_conflict', 'customer_claims_fraud']),
-      autoCloseConditions: JSON.stringify({ allFactsConfirmed: true, resolutionConfirmed: true }),
+  // ── Admin: AgentConfig ──
+  await prisma.agentConfig.upsert({
+    where: { customerId: CUSTOMER_ID },
+    update: {},
+    create: {
+      customerId: CUSTOMER_ID,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+      temperature: 0.5,
+      thinkingBudget: 4096,
+      maxIterations: 20,
+      memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
+      policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
     },
   })
+  console.log('  ✓ AgentConfig')
 
+  // ── Admin: Skills ──
+  for (const s of DEFAULT_SKILLS) {
+    await prisma.skill.upsert({
+      where: { customerId_name: { customerId: CUSTOMER_ID, name: s.name } },
+      update: {},
+      create: {
+        customerId: CUSTOMER_ID,
+        name: s.name,
+        description: s.description,
+        inputSchema: s.inputSchema,
+        outputSchema: s.outputSchema,
+        mode: s.mode,
+        isConcurrencySafe: s.isConcurrencySafe,
+        enabled: s.enabled,
+        guardPhase: s.guardPhase,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills`)
+
+  // ── Admin: Policies ──
+  for (const p of DEFAULT_POLICIES) {
+    await prisma.policy.upsert({
+      where: { customerId_name: { customerId: CUSTOMER_ID, name: p.name } },
+      update: {},
+      create: {
+        customerId: CUSTOMER_ID,
+        name: p.name,
+        description: p.description,
+        hook: p.hook,
+        rule: p.rule,
+        enabled: true,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies`)
+
+  // ── Admin: Case Types ──
+  for (const ct of DEFAULT_CASE_TYPES) {
+    await prisma.caseType.upsert({
+      where: { customerId_type: { customerId: CUSTOMER_ID, type: ct.type } },
+      update: {},
+      create: {
+        customerId: CUSTOMER_ID,
+        type: ct.type,
+        displayName: ct.displayName,
+        description: ct.description,
+        icon: ct.icon,
+        requiredFacts: ct.requiredFacts,
+        stages: ct.stages,
+        defaultGoal: ct.defaultGoal,
+        escalateOn: ct.escalateOn,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types`)
+
+  // ── Admin: Routing ──
+  for (const r of DEFAULT_ROUTING) {
+    await prisma.routing.upsert({
+      where: { customerId_queue: { customerId: CUSTOMER_ID, queue: r.queue } },
+      update: {},
+      create: {
+        customerId: CUSTOMER_ID,
+        queue: r.queue,
+        description: r.description,
+        skillsAllowed: r.skillsAllowed,
+        priority: r.priority,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues`)
+
+  // ── Demo data: Case + Memory + Messages + Traces + HumanTask ──
   const c = await prisma.case.create({
     data: {
       id: 'seed-case-1',
-      customerId: customer.id,
+      customerId: CUSTOMER_ID,
       userId: 'u_try_1',
       type: 'deposit_issue',
       status: 'waiting_human',

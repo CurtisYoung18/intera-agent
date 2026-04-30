@@ -2,15 +2,40 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
 
 export async function GET() {
   try {
-    const skills = await prisma.skill.findMany({
+    let skills = await prisma.skill.findMany({
       where: { customerId: CUSTOMER_ID },
       orderBy: { name: 'asc' },
     })
+
+    // Lazy init: create from defaults if DB is empty
+    if (skills.length === 0) {
+      for (const s of DEFAULT_SKILLS) {
+        await prisma.skill.create({
+          data: {
+            customerId: CUSTOMER_ID,
+            name: s.name,
+            description: s.description,
+            inputSchema: s.inputSchema,
+            outputSchema: s.outputSchema,
+            mode: s.mode,
+            isConcurrencySafe: s.isConcurrencySafe,
+            enabled: s.enabled,
+            guardPhase: s.guardPhase,
+          },
+        })
+      }
+      skills = await prisma.skill.findMany({
+        where: { customerId: CUSTOMER_ID },
+        orderBy: { name: 'asc' },
+      })
+    }
+
     return NextResponse.json({ skills })
   } catch (err) {
     console.error('[Admin] GET skills:', err)

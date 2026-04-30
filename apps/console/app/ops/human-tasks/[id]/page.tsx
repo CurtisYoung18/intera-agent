@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
-import FluidBackground from '@intera/shared/ui/fluid-background'
+// FluidBackground provided by root ConsoleShell layout
 
 interface CaseMemory {
   confirmedFacts: string
@@ -222,16 +222,13 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
   const skills = parseJson(memory?.skillsCalled, [] as string[])
 
   return (
-    <div className="relative min-h-[100dvh] bg-void flex flex-col">
-      <FluidBackground intensity="subtle" />
-
+    <div className="max-w-6xl mx-auto px-6 py-4 space-y-4">
       {/* Header */}
-      <header className="relative z-10 border-b border-white/[0.04] bg-abyss/40 backdrop-blur-xl flex-shrink-0">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => router.push('/ops/human-tasks')} className="text-[13px] text-fog/50 hover:text-fog transition-colors">
-              ← Back
-            </button>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push('/ops/human-tasks')} className="text-[13px] text-fog/50 hover:text-fog transition-colors">
+            ← Back
+          </button>
             <div>
               <h1 className="text-[14px] font-medium text-mist tracking-[-0.01em]">
                 {task.queue.replace(/_/g, ' ')} · {task.case.type.replace(/_/g, ' ')}
@@ -259,9 +256,8 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
             </span>
           </div>
         </div>
-      </header>
 
-      <div className="relative z-10 flex-1 flex max-w-6xl mx-auto w-full">
+      <div className="flex-1 flex">
         {/* ── Left: Case context (collapsible) ── */}
         {showContext && (
           <aside className="w-72 flex-shrink-0 border-r border-white/[0.04] bg-abyss/20 overflow-y-auto p-4 space-y-3">
