@@ -2,6 +2,7 @@
 
 // Intera Harness — Chat Page
 // Atomic multi-bubble agent responses: each tool call + text segment = independent bubble
+// Always-unlocked input with queue mode: messages submitted while agent is responding are queued and sent on message_stop
 
 import { useState, useCallback, useRef } from 'react'
 import ChatShell from '@/components/chat/chat-shell'
@@ -11,9 +12,7 @@ import VoiceInputBar from '@/components/chat/voice-input-bar'
 import WelcomeMessage from '@/components/chat/welcome-message'
 import CaseCard from '@/components/chat/case-card'
 import type { CaseStatus } from '@/components/chat/case-card'
-import type { ThinkState } from '@/components/chat/thinking-indicator'
-import type { IconType } from '@/lib/spinner-verbs'
-import { pickThinkingVerb, pickToolVerb } from '@/lib/spinner-verbs'
+import { pickToolVerb } from '@/lib/spinner-verbs'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,14 +56,13 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('online')
   const [isLoading, setIsLoading] = useState(false)
-  const [thinkState, setThinkState] = useState<ThinkState>('done')
-  const [thinkVerb, setThinkVerb] = useState('Thinking')
-  const [thinkIcon, setThinkIcon] = useState<IconType>('dots')
-  const thinkStartRef = useRef<number>(0)
-  const verbIndexRef = useRef<number>(-1)
-  const verbIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [queuedCount, setQueuedCount] = useState(0)
+
+  const isLoadingRef = useRef(false)
+  const queuedRef = useRef<string[]>([])
   const caseIdRef = useRef<string>(`case_${Date.now()}`)
   const lastUserMsgRef = useRef<string>('')
+
   const [caseCard, setCaseCard] = useState<{
     caseId: string; title?: string; type?: string; status: CaseStatus;
     confirmedFacts?: Record<string, unknown>; skillsCalled?: string[]; missingFacts?: string[];
@@ -72,25 +70,17 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(
     async (text: string, options?: { silent?: boolean }) => {
-      if (isLoading) return
+      // Queue mode: if already loading, enqueue and return
+      if (isLoadingRef.current) {
+        queuedRef.current = [...queuedRef.current, text]
+        setQueuedCount(queuedRef.current.length)
+        return
+      }
+
       const silent = options?.silent ?? false
+      isLoadingRef.current = true
       setIsLoading(true)
       setAgentStatus('thinking')
-      setThinkState('thinking')
-      thinkStartRef.current = Date.now()
-
-      // Start verb cycling
-      const { verb: initialVerb, index } = pickThinkingVerb()
-      verbIndexRef.current = index
-      setThinkVerb(initialVerb.text)
-      setThinkIcon(initialVerb.icon)
-
-      verbIntervalRef.current = setInterval(() => {
-        const { verb, index: newIdx } = pickThinkingVerb(verbIndexRef.current)
-        verbIndexRef.current = newIdx
-        setThinkVerb(verb.text)
-        setThinkIcon(verb.icon)
-      }, 2500)
 
       // User message (skip for silent — form dismissal / form submit)
       if (!silent) {
@@ -100,7 +90,7 @@ export default function ChatPage() {
         })])
       }
 
-      // First text bubble doubles as the loading placeholder (no separate empty bubble)
+      // First text bubble doubles as placeholder (empty while waiting for text)
       const firstTextMsgId = crypto.randomUUID()
       const textBubbles: string[] = [firstTextMsgId]
       let textMsgId: string | null = firstTextMsgId
@@ -108,7 +98,6 @@ export default function ChatPage() {
       let activeToolCount = 0
       let textHasArrived = false
 
-      // Add placeholder (shows ThinkingIndicator since content='' and isStreaming=true)
       setMessages((prev) => [...prev, makeMsg({
         id: firstTextMsgId, role: 'assistant', msgType: 'text', content: '', isStreaming: true,
       })])
@@ -149,7 +138,6 @@ export default function ChatPage() {
                       missingFacts?: string[]
                       skillsCalled?: string[]
                     }
-                    // Only create case card if there are meaningful facts (not casual chat)
                     const hasFacts = mem.confirmedFacts && Object.keys(mem.confirmedFacts).length > 0
                     const hasSkills = mem.skillsCalled && mem.skillsCalled.length > 0
                     if (hasFacts || hasSkills) {
@@ -175,15 +163,14 @@ export default function ChatPage() {
 
                   case 'text_delta': {
                     textHasArrived = true
+                    setAgentStatus('online')
                     if (textMsgId) {
-                      // Append to current text bubble (includes filling the placeholder)
                       setMessages((prev) =>
                         prev.map((m) => m.id === textMsgId
                           ? { ...m, content: m.content + (event.data as string) }
                           : m),
                       )
                     } else {
-                      // Create fresh text bubble after tool batch
                       const newId = crypto.randomUUID()
                       textMsgId = newId
                       textBubbles.push(newId)
@@ -191,15 +178,6 @@ export default function ChatPage() {
                         id: newId, role: 'assistant', msgType: 'text',
                         content: event.data as string, isStreaming: true,
                       })])
-                    }
-
-                    if (activeToolCount === 0) {
-                      setAgentStatus('online')
-                      if (verbIntervalRef.current) {
-                        clearInterval(verbIntervalRef.current)
-                        verbIntervalRef.current = null
-                      }
-                      setThinkState('done')
                     }
                     break
                   }
@@ -210,20 +188,11 @@ export default function ChatPage() {
 
                   case 'tool_executing': {
                     setAgentStatus('executing')
-                    setThinkState('executing')
                     activeToolCount++
-                    // Reset textMsgId so next text_delta creates a FRESH bubble after tools
                     textMsgId = null
-                    if (verbIntervalRef.current) {
-                      clearInterval(verbIntervalRef.current)
-                      verbIntervalRef.current = null
-                    }
                     const td = event.data as { name: string; status: string }
                     const toolVerb = pickToolVerb(td.name)
-                    setThinkVerb(toolVerb.text)
-                    setThinkIcon(toolVerb.icon)
 
-                    // Track skill in case card
                     setCaseCard((prev) => prev ? {
                       ...prev, status: 'investigating',
                       skillsCalled: [...new Set([...(prev.skillsCalled || []), td.name])],
@@ -263,29 +232,18 @@ export default function ChatPage() {
 
                     if (activeToolCount === 0 && textHasArrived) {
                       setAgentStatus('online')
-                      if (verbIntervalRef.current) {
-                        clearInterval(verbIntervalRef.current)
-                        verbIntervalRef.current = null
-                      }
-                      setThinkState('done')
                     }
                     break
                   }
 
                   case 'human_task_created':
-                    // Agent generates its own escalation message via text — no hardcoded text
-                    setAgentStatus('online') // Allow user to continue chatting while escalated
+                    setAgentStatus('online')
                     setCaseCard((prev) => prev ? { ...prev, status: 'waiting_human' } : null)
-                    if (verbIntervalRef.current) { clearInterval(verbIntervalRef.current); verbIntervalRef.current = null }
-                    setThinkState('done')
                     break
 
                   case 'form_request':
                     setAgentStatus('waiting')
-                    if (verbIntervalRef.current) { clearInterval(verbIntervalRef.current); verbIntervalRef.current = null }
-                    setThinkState('done')
                     setCaseCard((prev) => prev ? { ...prev, status: 'collecting' } : null)
-                    // Add form as inline message (chronological order preserved)
                     const fr = event.data as { title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }> }
                     setMessages((prev) => [...prev, makeMsg({
                       id: crypto.randomUUID(), role: 'assistant', msgType: 'form_active', content: '',
@@ -299,6 +257,16 @@ export default function ChatPage() {
                   case 'consultation_complete':
                     setAgentStatus('online')
                     setCaseCard((prev) => prev ? { ...prev, status: 'investigating' } : null)
+                    {
+                      const ccData = event.data as { summary?: string; resolution?: string }
+                      const detail = ccData.summary || ''
+                      const fallback = detail
+                        ? `人工处理已完成：${detail}\n\nAgent 正在继续为您服务。`
+                        : '人工处理已完成，Agent 正在继续为您服务。'
+                      setMessages((prev) => [...prev, makeMsg({
+                        id: crypto.randomUUID(), role: 'assistant', msgType: 'text', content: fallback,
+                      })])
+                    }
                     break
 
                   case 'finalized':
@@ -306,15 +274,12 @@ export default function ChatPage() {
                     break
 
                   case 'message_stop': {
-                    // Keep input locked for waiting states; unlock only for next_turn/resolved
                     const trans = (event.data as any)?.transition as string | undefined
                     if (trans === 'waiting_form') {
-                      setAgentStatus('waiting') // Lock input only for form
+                      setAgentStatus('waiting')
                     } else {
-                      setAgentStatus('online') // Unlock for next_turn, waiting_human, resolved
+                      setAgentStatus('online')
                     }
-                    if (verbIntervalRef.current) { clearInterval(verbIntervalRef.current); verbIntervalRef.current = null }
-                    setThinkState('done')
                     for (const id of textBubbles) {
                       setMessages((prev) =>
                         prev.map((m) => m.id === id ? { ...m, isStreaming: false } : m),
@@ -329,8 +294,6 @@ export default function ChatPage() {
                   case 'error':
                     console.error('Agent error:', event.data)
                     setAgentStatus('online')
-                    if (verbIntervalRef.current) { clearInterval(verbIntervalRef.current); verbIntervalRef.current = null }
-                    setThinkState('done')
                     break
                 }
               } catch { /* skip malformed SSE */ }
@@ -344,18 +307,31 @@ export default function ChatPage() {
       } catch (error) {
         console.error('Chat error:', error)
         setAgentStatus('offline')
-        // Remove placeholder if still empty
         setMessages((prev) => prev.filter((m) => m.id !== firstTextMsgId || m.content !== ''))
       } finally {
+        isLoadingRef.current = false
         setIsLoading(false)
+
+        // Flush queued messages
+        if (queuedRef.current.length > 0) {
+          const next = queuedRef.current[0]
+          queuedRef.current = queuedRef.current.slice(1)
+          setQueuedCount(queuedRef.current.length)
+          handleSubmit(next)
+        }
       }
     },
-    [isLoading],
+    [],
   )
+
+  const handleClearQueue = useCallback(() => {
+    queuedRef.current = []
+    setQueuedCount(0)
+  }, [])
 
   return (
     <ChatShell>
-      <div className="flex justify-center pt-6 pb-8">
+      <div className="flex justify-center pt-4 pb-5">
         <StatusPill status={agentStatus} label="Intera AI" />
       </div>
 
@@ -364,14 +340,9 @@ export default function ChatPage() {
       ) : (
         <MessageList
           messages={messages}
-          thinkState={thinkState}
-          thinkVerb={thinkVerb}
-          thinkIcon={thinkIcon}
+          isResponding={isLoading}
           onFormSubmit={(msgId, answers) => {
-            // Update form_active → form_submitted
             setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, msgType: 'form_submitted' as MsgType, formData: { ...m.formData!, answers } } : m))
-            // Send silently
-            // Format with field labels so model understands the data
             const answerPairs = Object.entries(answers).filter(([,v]) => v)
             const answerLines = answerPairs.map(([k,v]) => `${k}: ${v}`).join('\n')
             handleSubmit(
@@ -386,7 +357,11 @@ export default function ChatPage() {
         />
       )}
 
-      <VoiceInputBar onSubmit={handleSubmit} isLoading={isLoading} />
+      <VoiceInputBar
+        onSubmit={handleSubmit}
+        queuedCount={queuedCount}
+        onClearQueue={handleClearQueue}
+      />
 
       {/* Customer case dashboard — slides in from right, settles at edge */}
       <CaseCard data={caseCard} />

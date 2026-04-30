@@ -48,7 +48,7 @@ export default function HumanTasksPage() {
   }, [])
 
   return (
-    <div className="relative min-h-screen bg-void">
+    <div className="relative min-h-[100dvh] bg-void">
       <FluidBackground intensity="subtle" />
 
       {/* Header */}

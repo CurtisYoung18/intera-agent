@@ -151,10 +151,13 @@ export default function FluidBackground({
     if (!canvas) return
 
     const resize = () => {
-      canvas.width = window.innerWidth * devicePixelRatio
-      canvas.height = window.innerHeight * devicePixelRatio
-      canvas.style.width = `${window.innerWidth}px`
-      canvas.style.height = `${window.innerHeight}px`
+      const parent = canvas.parentElement
+      const w = parent ? parent.clientWidth : window.innerWidth
+      const h = parent ? parent.clientHeight : window.innerHeight
+      canvas.width = w * devicePixelRatio
+      canvas.height = h * devicePixelRatio
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
       const ctx = canvas.getContext('2d')
       if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio)
     }
@@ -219,18 +222,9 @@ export default function FluidBackground({
         className="absolute inset-0"
       />
 
-      {/* SVG noise/grain overlay */}
-      <svg className="absolute inset-0 w-full h-full opacity-[0.035]" aria-hidden="true">
-        <filter id="grain">
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.65"
-            numOctaves="3"
-            stitchTiles="stitch"
-          />
-          <feColorMatrix type="saturate" values="0" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#grain)" />
+      {/* SVG noise/grain overlay — tiled 256px texture avoids browser filter resolution limits on large viewports */}
+      <svg className="absolute inset-0 w-full h-full opacity-[0.035]" aria-hidden="true" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='256' height='256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/svg%3E")`, backgroundRepeat: 'repeat', backgroundSize: '256px 256px' }}>
+        {/* noise rendered via CSS tiled background-image to stay within GPU texture limits */}
       </svg>
 
       {/* Radial vignette — styled in globals.css, responds to data-theme */}

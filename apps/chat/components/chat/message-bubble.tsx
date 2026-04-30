@@ -5,10 +5,7 @@ import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import GlassCard from '@intera/shared/ui/glass-card'
-import ThinkingIndicator from './thinking-indicator'
 import FormCard from './form-card'
-import type { ThinkState } from './thinking-indicator'
-import type { IconType } from '@/lib/spinner-verbs'
 
 // ─── Shared message shape ───
 
@@ -32,9 +29,6 @@ export interface MessageShape {
 
 interface MessageBubbleProps {
   msg: MessageShape
-  thinkState?: ThinkState
-  thinkVerb?: string
-  thinkIcon?: IconType
   onFormSubmit?: (msgId: string, answers: Record<string, string>) => void
   onFormCancel?: (msgId: string) => void
 }
@@ -80,7 +74,7 @@ const MARKDOWN_COMPONENTS: any = {
 
 // ─── Component ────────────────────────────────────────────────────
 
-function MessageBubble({ msg, thinkState, thinkVerb, thinkIcon, onFormSubmit, onFormCancel }: MessageBubbleProps) {
+function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) {
   const { role, msgType, content, isStreaming, toolStatus, toolName, toolVerb, formData } = msg
 
   if (msgType === 'tool_call') {
@@ -111,26 +105,22 @@ function MessageBubble({ msg, thinkState, thinkVerb, thinkIcon, onFormSubmit, on
   const variant = role === 'user' ? 'chat-user' : 'chat-assistant'
   const align = role === 'user' ? 'items-end' : 'items-start'
   const maxW = role === 'user' ? 'max-w-[85%]' : 'max-w-[90%]'
-  const showThinking = thinkState && thinkState !== 'done'
 
   return (
     <div className={`flex flex-col ${align}`}>
       <div className={`${maxW} animate-message-in`}>
         <GlassCard variant={variant}>
-          {role === 'assistant' && showThinking && (
-            <ThinkingIndicator state={thinkState!} verb={thinkVerb} icon={thinkIcon} />
-          )}
-
-          {!showThinking && (
+          {content ? (
             <div className="markdown-content">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {content || (isStreaming ? '' : '...')}
+                {content}
               </ReactMarkdown>
+              {isStreaming && (
+                <span className="inline-block ml-[2px] w-[2px] h-[1em] bg-white/50 animate-pulse align-middle" />
+              )}
             </div>
-          )}
-
-          {isStreaming && content && !showThinking && (
-            <span className="inline-block ml-[2px] w-[2px] h-[1em] bg-white/50 animate-pulse align-middle" />
+          ) : isStreaming ? null : (
+            <div className="markdown-content">...</div>
           )}
         </GlassCard>
       </div>

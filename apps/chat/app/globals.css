@@ -32,8 +32,8 @@
   --glass-admin:       rgba(15, 15, 15, 0.70);
   --glass-pill:        rgba(15, 15, 15, 0.50);
   --glass-hover:       rgba(255, 255, 255, 0.04);
-  --glass-border:      rgba(255, 255, 255, 0.06);
-  --glass-border-hover: rgba(255, 255, 255, 0.10);
+  --glass-border:      rgba(255, 255, 255, 0.04);
+  --glass-border-hover: rgba(255, 255, 255, 0.08);
 
   /* ── Radius ── */
   --radius-sm:         6px;
@@ -58,22 +58,32 @@ html[data-theme="light"] {
   --fog:         #6b6b6b;
   --smoke:       #b0ada6;
 
-  --glass-chat:        rgba(0, 0, 0, 0.02);
-  --glass-chat-user:   rgba(0, 0, 0, 0.04);
-  --glass-input:       rgba(0, 0, 0, 0.02);
+  --glass-chat:        rgba(0, 0, 0, 0.015);
+  --glass-chat-user:   rgba(0, 0, 0, 0.025);
+  --glass-input:       rgba(0, 0, 0, 0.015);
   --glass-admin:       rgba(250, 250, 246, 0.85);
   --glass-pill:        rgba(250, 250, 246, 0.7);
-  --glass-hover:       rgba(0, 0, 0, 0.03);
-  --glass-border:      rgba(0, 0, 0, 0.06);
-  --glass-border-hover: rgba(0, 0, 0, 0.12);
+  --glass-hover:       rgba(0, 0, 0, 0.02);
+  --glass-border:      rgba(0, 0, 0, 0.03);
+  --glass-border-hover: rgba(0, 0, 0, 0.06);
 }
 
 /* ── Global base ── */
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 html {
   background: var(--void);
 }
 
 body {
+  min-height: 100dvh;
+  overflow-x: hidden;
   background: var(--void);
   color: var(--mist);
   font-family: var(--font-sans);
@@ -85,12 +95,13 @@ body {
    Glass Utility Classes
    ============================================ */
 
-/* Chat message cards */
+/* Chat message bubbles — subtle glass, not cards.
+   Borders are deliberately faint to avoid the "window within window" effect. */
 .glass-chat-user {
     background: var(--glass-chat-user, rgba(255, 255, 255, 0.06));
     backdrop-filter: blur(20px) saturate(150%);
     -webkit-backdrop-filter: blur(20px) saturate(150%);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.05));
     border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg);
   }
 
@@ -98,7 +109,7 @@ body {
     background: var(--glass-chat, rgba(255, 255, 255, 0.02));
     backdrop-filter: blur(16px) saturate(120%);
     -webkit-backdrop-filter: blur(16px) saturate(120%);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.03));
     border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
   }
 
@@ -133,7 +144,7 @@ body {
     background: var(--glass-input, rgba(255, 255, 255, 0.03));
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.06));
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
     border-radius: 20px;
     padding: 10px 16px;
     color: var(--mist);
@@ -159,12 +170,13 @@ body {
     opacity: 0.6;
   }
 
-  /* Fluid vignette — dark edge gradient, theme-aware */
+  /* Fluid vignette — subtle edge darkening, intentionally faint to avoid
+     creating a "spotlight frame" that separates content from background. */
   .fluid-vignette {
-    background: radial-gradient(ellipse at center, transparent 40%, rgba(8,8,10,0.55) 100%);
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(8,8,10,0.2) 100%);
   }
   html[data-theme="light"] .fluid-vignette {
-    background: radial-gradient(ellipse at center, transparent 50%, rgba(250,250,246,0.2) 100%);
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(250,250,246,0.08) 100%);
   }
 
   .glass-input:focus {
@@ -298,4 +310,38 @@ body {
 .animate-border-flow {
   animation: borderFlow 8s linear infinite;
   will-change: transform;
+}
+
+/* ============================================
+   Responding Bubble
+   ============================================ */
+
+.responding-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  max-width: 320px;
+}
+
+.responding-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--indigo);
+}
+
+.dot-1 { animation: breathe 1.4s ease-in-out infinite; }
+.dot-2 { animation: breathe 1.4s ease-in-out 0.25s infinite; }
+.dot-3 { animation: breathe 1.4s ease-in-out 0.5s infinite; }
+
+.responding-verb {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--fog);
+  letter-spacing: 0.01em;
 }

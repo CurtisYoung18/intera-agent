@@ -102,10 +102,13 @@ export default function WaterRipple({
     if (!canvas) return
 
     const resize = () => {
-      canvas.width = window.innerWidth * devicePixelRatio
-      canvas.height = window.innerHeight * devicePixelRatio
-      canvas.style.width = '100vw'
-      canvas.style.height = '100vh'
+      const parent = canvas.parentElement
+      const w = parent ? parent.clientWidth : window.innerWidth
+      const h = parent ? parent.clientHeight : window.innerHeight
+      canvas.width = w * devicePixelRatio
+      canvas.height = h * devicePixelRatio
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
       const ctx = canvas.getContext('2d')
       if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio)
     }

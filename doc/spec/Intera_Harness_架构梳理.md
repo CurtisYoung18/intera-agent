@@ -836,21 +836,47 @@ Agent 调用 send_customer_form
 | `title` | 表单标题 |
 | `description` | 填写说明 |
 
-### 6.3 人工会话的多种结束方式
+### 6.3 人工会话的结束方式
 
-| 结束方式 | 触发条件 | resumeTrigger 内容 |
-|---|---|---|
-| 点击"结束会话" | 人工主动完成 | 人工填写的结构化数据 + 自然语言摘要 |
-| 发送特定自然语言 | 如"处理完毕"、"结束了" | 解析后的结构化结论 |
-| Agent 主动结束 | Agent 判定无需更多人工介入 | 由 Agent 决定 |
+坐席处理完人工任务后，点击 **Close Case** 并填写内部备注。
+
+**Close Case 触发 Agent Resume：**
+
+```
+坐席点击 Close Case → 填写内部 reason
+    │
+    ▼ POST /api/human-tasks/[id]/resolve
+HumanTask.status → resolved
+Case.status → investigating
+    │
+    ▼ 异步触发 resume
+runAgentTurn({ resumeTrigger: taskId })
+    │
+    ├──→ synthetic message 包含：
+    │    - 坐席填写的 verdict（如 "refund_approved"）
+    │    - 坐席填写的 reason（内部备注）
+    │    - 指令："请将此处理结果翻译成对顾客的通知消息"
+    │
+    ▼ Agent 恢复 ReAct Loop
+Agent 生成顾客可见通知消息 → 发送给顾客
+Case 状态保持 investigating（或由 Agent 自行 finalize）
+```
+
+**核心设计原则：**
+- Close Case 的 reason 是**内部备注**，仅供运营复盘，不直接展示给顾客
+- Agent 负责将 verdict + reason **翻译成顾客能理解的话术**，通过正常对话发送给顾客
+- 顾客感知到的是：人工处理完了，Agent 发了一条友好的通知消息
+- Case 可随时通过 **Reopen** 重新打开继续处理
+
+**Reopen：** 任意时刻可点击，将 Case 状态恢复为 `investigating`，Agent 重新开始处理。Reopen 用于顾客补充信息或Case 需要重新评估的场景。
 
 ### 6.4 与旧设计的核心区别
 
-| 旧设计（单轮表单） | 演进后（多轮对话） |
+| 旧设计 | 演进后 |
 |---|---|
-| 人工填一次表单，单轮结束 | Human ↔ Agent 多轮实时对话 |
-| 只能提交结构化 verdict | 支持自然语言 + 表单混合 |
-| 人工提交后直接 resume | 人工主动"结束会话"才触发 resume |
+| 人工提交后直接结束 | 人工 Close Case 后 Agent 通知顾客，再结束 |
+| 内部备注不转化为顾客通知 | Agent 将 reason 翻译成顾客话术 |
+| Reopen 是特殊的 resume 路径 | Reopen = 字面意思，重新打开 case |
 | Agent 不能主动推表单给顾客 | Agent 通过 send_customer_form skill 主动推送表单卡片 |
 
 ---

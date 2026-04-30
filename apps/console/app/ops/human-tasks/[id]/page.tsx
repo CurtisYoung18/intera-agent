@@ -201,7 +201,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-void flex items-center justify-center">
+      <div className="min-h-[100dvh] bg-void flex items-center justify-center">
         <p className="text-fog/40 animate-breathe">Loading…</p>
       </div>
     )
@@ -209,7 +209,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
 
   if (!task) {
     return (
-      <div className="min-h-screen bg-void flex items-center justify-center">
+      <div className="min-h-[100dvh] bg-void flex items-center justify-center">
         <div className="glass-admin p-16 text-center">
           <p className="text-mist text-[16px] font-medium">Task not found</p>
         </div>
@@ -222,7 +222,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
   const skills = parseJson(memory?.skillsCalled, [] as string[])
 
   return (
-    <div className="relative min-h-screen bg-void flex flex-col">
+    <div className="relative min-h-[100dvh] bg-void flex flex-col">
       <FluidBackground intensity="subtle" />
 
       {/* Header */}

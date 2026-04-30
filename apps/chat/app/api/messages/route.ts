@@ -55,6 +55,10 @@ When escalating, ALWAYS also send a text message telling the customer:
 # Form Rules
 
 If user dismissed a form: try a simpler way. NEVER repeat the same form.
+
+# Case Context Compression
+
+When the conversation exceeds context limits, older turns are summarized and prepended as a [Case context] block. This summary contains key facts, skills executed, and missing information — not the full transcript. Always treat [Case context] blocks as authoritative background; do not ask the user to re-explain what is already recorded there.
 `
 
 // Verify env vars at module load (logged once per cold start)
@@ -144,11 +148,17 @@ export async function POST(request: NextRequest) {
             resolvedUserId = task.case.userId
 
             // Build a synthetic message from human's resolution
-            const parts = ['[Human task resolved]']
-            if (task.verdict) parts.push(`Verdict: ${task.verdict.replace(/_/g, ' ')}`)
-            if (task.expectedEta) parts.push(`ETA: ${task.expectedEta}`)
-            if (task.notes) parts.push(`Notes: ${task.notes}`)
-            parts.push('Please continue assisting the customer based on this information.')
+            const parts = ['[Human task resolved — operator closed the case]']
+            if (task.verdict) parts.push(`Operator verdict: ${task.verdict.replace(/_/g, ' ')}`)
+            if (task.expectedEta) parts.push(`Expected resolution time: ${task.expectedEta}`)
+            if (task.notes) parts.push(`Internal notes (do NOT share verbatim with customer): ${task.notes}`)
+            parts.push(
+              `IMPORTANT — Customer communication task:\n` +
+              `1. Translate the operator's verdict and notes into plain, friendly language the customer can understand.\n` +
+              `2. Send this message to the customer NOW in your response — do not ask further questions.\n` +
+              `3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here's what this means for you: [explanation]."\n` +
+              `4. After sending the update, if the case is resolved, call finalize_case. Otherwise continue assisting.`
+            )
             userMessage = parts.join('\n')
 
             console.log(`[Intera] Resuming case ${resolvedCaseId} after human resolution`)

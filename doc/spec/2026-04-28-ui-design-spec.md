@@ -727,22 +727,18 @@ Shown when no messages exist. Sets the tone.
 └─────────────────────────────────┘
 ```
 
-### 4.6 VoiceInputBar
+### 4.6 VoiceInputBar — Always-Unlocked + Queue Mode
 
-Bottom input area, sticky on desktop, fixed on mobile.
+**Design Principles:**
+- Input is **never disabled**. User can type and queue messages at any time, even while Intera is responding.
+- Loading/responding state is shown as a bubble **below** the message list, not inside the input area.
+- When a message is submitted while Intera is responding, it enters a **queue** and is sent automatically when the current response finishes.
 
 ```tsx
-export default function VoiceInputBar({
-  onSubmit,
-  isLoading,
-  caseDuration,  // seconds since case started
-  onSaveMemory,
-}: {
+interface VoiceInputBarProps {
   onSubmit: (text: string) => void
-  isLoading: boolean
-  caseDuration: number
-  onSaveMemory: () => void
-})
+  // isLoading removed — input is always unlocked
+}
 ```
 
 **Layout:**
@@ -750,7 +746,7 @@ export default function VoiceInputBar({
 ┌──────────────────────────────────────────────────┐
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
-│  │  Describe your issue...                   │   │  ← Text input
+│  │  Describe your issue...                   │   │  ← Always unlocked
 │  └──────────────────────────────────────────┘   │
 │                                                  │
 │      00:32       [Save Memory]    [✕]           │
@@ -759,24 +755,103 @@ export default function VoiceInputBar({
 └──────────────────────────────────────────────────┘
 ```
 
-**Timer display:**
-```tsx
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+**Behavior:**
+- `disabled` prop is removed from GlassInput. User can always type.
+- `onSubmit` behavior: if `isLoading`, store message in a `queuedMessages` array (state in page.tsx). When SSE emits `message_stop`, flush the queue in order.
+- When queued messages exist, show a small inline hint below the input: "2 messages queued" with a subtle indicator.
+- Clear button clears both current input AND queued messages.
+
+### 4.7 Responding Bubble — Loading State Below Messages
+
+**Design Principles:**
+- There is **no loading spinner inside the input area**.
+- While Intera is generating a response, a "responding bubble" appears at the bottom of the message list, below all existing messages.
+- This bubble contains a cycling verb + animated indicator, similar to Claude Code's thinking indicator.
+- When Intera stops responding (`message_stop` SSE), the bubble disappears and queued messages (if any) are sent.
+
+**Bubble structure:**
+```
+┌──────────────────────────────────────────────────┐
+│  ○ ○ ○   Intera is examining your order…        │  ← responding bubble
+└──────────────────────────────────────────────────┘
+   ↑ dot ring   cycling verb phrase
+```
+
+**Verb phrase pool** (cycles randomly, ~12-15 varieties, no repetition until exhausted):
+
+| Verb | Tone |
+|------|------|
+| examining your order | neutral |
+| checking payment channels | neutral |
+| reviewing your case | neutral |
+| looking into this | casual |
+| analyzing transaction data | formal |
+| verifying deposit status | formal |
+| tracing the payment | neutral |
+| consulting our records | neutral |
+| investigating | short/neutral |
+| reviewing details | neutral |
+| processing your request | neutral |
+| working on it | casual |
+| checking the status | casual |
+| pulling up your information | casual |
+| following the paper trail | playful |
+
+**Dot ring animation** (3 dots, staggered pulse, same timing as `breathe` keyframe):
+```css
+@keyframes breathe {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 1.0; }
+}
+/* Three dots, each delayed by 0.25s */
+.dot-1 { animation: breathe 1.4s ease-in-out infinite; }
+.dot-2 { animation: breathe 1.4s ease-in-out 0.25s infinite; }
+.dot-3 { animation: breathe 1.4s ease-in-out 0.5s infinite; }
+```
+
+**Bubble CSS:**
+```css
+.responding-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  max-width: 320px;
+  animation: fadeUp 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.responding-bubble .dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.responding-bubble .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--indigo);
+}
+.responding-bubble .verb {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--fog);
+  letter-spacing: 0.01em;
 }
 ```
-- Font: JetBrains Mono, 13px, smoke color
-- Updates every second via `setInterval`
 
-**Save Memory button:**
-- Icon: a small bookmark or save icon
-- On click: fires `onSaveMemory` callback → sends SSE event to save current context to Case Memory
-- Visual feedback: button briefly turns vermillion, particles in background briefly accelerate
-- Text: "Save" on mobile, "Save Memory" on desktop
+**Placement:** Rendered as the last item in `MessageList`, outside the scrollable area, always visible at the bottom — similar to how Claude Code's thinking indicator stays pinned below the latest content.
 
-### 4.7 CaseRail (Desktop only, `< 640px` hidden)
+**Queue hint** (shown below VoiceInputBar when queue is non-empty):
+```
+┌─────────────────────────┐
+│  ⌛ 2 messages queued   │  ← small pill, fog color
+└─────────────────────────┘
+```
+
+### 4.8 CaseRail
 
 A collapsible side panel showing the user's cases. NOT visible in the centered chat layout by default — shown as an overlay when toggled.
 
@@ -792,415 +867,4 @@ A collapsible side panel showing the user's cases. NOT visible in the centered c
 </div>
 ```
 
----
 
-## 5. Admin Console — Complete Specification
-
-### 5.0 Layout
-
-```
-Desktop (≥1024px):
-┌──────┬──────────────────────────────────────────────────┐
-│ 48px │                                                  │
-│ icon │  ┌─ AdminShell ──────────────────────────────┐  │
-│ nav  │  │                                            │  │
-│      │  │  Tab bar: [Agent] [Skills] [Policies] ... │  │
-│ (glass│  │                                            │  │
-│  bg) │  │  <ConfigCard>                              │  │
-│      │  │    <ConfigSection title="Model">           │  │
-│      │  │      ...                                   │  │
-│      │  │    </ConfigSection>                        │  │
-│      │  │  </ConfigCard>                             │  │
-│      │  │                                            │  │
-│      │  └────────────────────────────────────────────┘  │
-│      │                                                  │
-└──────┴──────────────────────────────────────────────────┘
-
-Mobile (<1024px):
-- Sidebar becomes a bottom tab bar (48px tall, glass)
-- Content area full width
-```
-
-### 5.1 AdminSidebar
-
-**File:** `components/admin/admin-sidebar.tsx`
-
-48px wide, full height, glass background. Icons only, no labels.
-
-```tsx
-const NAV_ITEMS = [
-  { icon: 'brain',     href: '/admin/agent',      label: 'Agent' },
-  { icon: 'tool',      href: '/admin/skills',      label: 'Skills' },
-  { icon: 'shield',    href: '/admin/policies',    label: 'Policies' },
-  { icon: 'file',      href: '/admin/case-types',  label: 'Case Types' },
-  { icon: 'users',     href: '/admin/routing',     label: 'Routing' },
-  { icon: 'settings',  href: '/admin/customer',    label: 'Customer' },
-]
-```
-
-**CSS:**
-```css
-.admin-sidebar {
-  width: 48px;
-  min-height: 100vh;
-  background: rgba(15, 15, 15, 0.8);
-  backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 16px;
-  gap: 4px;
-}
-.admin-sidebar-item {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--smoke);
-  transition: all 150ms ease-out;
-}
-.admin-sidebar-item:hover {
-  color: var(--fog);
-  background: rgba(255, 255, 255, 0.04);
-}
-.admin-sidebar-item.active {
-  color: var(--mist);
-  background: rgba(255, 255, 255, 0.06);
-}
-```
-
-### 5.2 AdminShell
-
-**File:** `components/admin/admin-shell.tsx`
-
-```tsx
-export default function AdminShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen bg-void">
-      <AdminSidebar />
-      <div className="flex-1 flex flex-col">
-        {/* Top tab bar */}
-        <nav className="h-12 border-b border-glass-border flex items-center px-6 gap-6
-                        bg-abyss/50 backdrop-blur-glass-sm">
-          {/* Tab items */}
-        </nav>
-        {/* Content area */}
-        <main className="flex-1 p-6 max-w-admin-content">
-          {children}
-        </main>
-      </div>
-    </div>
-  )
-}
-```
-
-### 5.3 ConfigCard
-
-**File:** `components/admin/config-card.tsx`
-
-```typescript
-interface ConfigCardProps {
-  title: string
-  description?: string
-  children: React.ReactNode
-  footer?: React.ReactNode  // Save/Reset buttons
-}
-```
-
-**CSS:**
-```css
-.config-card {
-  background: rgba(15, 15, 15, 0.7);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 24px;
-  margin-bottom: 16px;
-}
-.config-card h2 {
-  font-family: var(--font-sans);
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  color: var(--mist);
-  margin-bottom: 4px;
-}
-.config-card p.description {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--smoke);
-  margin-bottom: 20px;
-}
-```
-
-### 5.4 ConfigSection
-
-```typescript
-interface ConfigSectionProps {
-  label: string
-  htmlFor?: string
-  hint?: string
-  children: React.ReactNode
-}
-```
-
-Renders a labeled form row:
-```
-┌──────────────────────────────────────────────┐
-│  Model                          [dropdown ▼] │
-│  The LLM model used by the agent             │
-│  ↑ label                      ↑ hint (fog, 12px)
-└──────────────────────────────────────────────┘
-```
-
-### 5.5 JsonEditor
-
-For editing JSON fields (skill inputSchema, policy rules, etc.)
-
-```typescript
-interface JsonEditorProps {
-  value: Record<string, unknown>
-  onChange: (value: Record<string, unknown>) => void
-  error?: string
-  height?: string  // default: '200px'
-}
-```
-
-Renders a `<textarea>` with monospace font, glass styling, and JSON syntax validation.
-- Valid JSON → subtle green border-left
-- Invalid JSON → red border-left + error message below
-- Font: JetBrains Mono, 13px
-- Tab key inserts 2 spaces (not changing focus)
-
----
-
-## 6. Animation Specifications
-
-### 6.1 Message Entrance
-
-```css
-@keyframes messageIn {
-  0%   { opacity: 0; transform: translateY(8px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-.message-enter {
-  animation: messageIn 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-```
-
-Multiple messages: stagger by 80ms per message using inline `animation-delay`.
-
-### 6.2 Tool Execution Ring
-
-```css
-@keyframes toolSpin {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-.tool-ring {
-  width: 24px; height: 24px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    rgba(255,255,255,0.02) 0deg,
-    var(--indigo) 360deg
-  );
-  /* Use mask to create ring shape */
-  -webkit-mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - 2px),
-    #000 calc(100% - 2px)
-  );
-  mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - 2px),
-    #000 calc(100% - 2px)
-  );
-  animation: toolSpin 1.5s linear infinite;
-}
-```
-
-### 6.3 Tool Completion
-
-```css
-@keyframes toolDone {
-  0%   { transform: scale(1); opacity: 1; }
-  50%  { transform: scale(1.3); opacity: 0.6; }
-  100% { transform: scale(0); opacity: 0; }
-}
-.tool-done {
-  animation: toolDone 300ms ease-out forwards;
-}
-```
-
-### 6.4 Page Transition
-
-```css
-@keyframes fadeUp {
-  0%   { opacity: 0; transform: translateY(16px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-.page-enter {
-  animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-```
-
-### 6.5 Status Dot Breathe
-
-```css
-@keyframes breathe {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 1.0; }
-}
-.status-dot.online {
-  animation: breathe 2s ease-in-out infinite;
-}
-```
-
-### 6.6 Case Status Transition
-
-When a case changes status (e.g., investigating → waiting_human):
-1. Current status badge color transitions to new color over 600ms
-2. A subtle glow (box-shadow with accent color) appears and fades
-3. The case card briefly lifts (translateY: -2px) and settles
-
-```css
-.case-status-transition {
-  transition: background-color 600ms cubic-bezier(0.22, 1, 0.36, 1),
-              box-shadow 600ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-```
-
----
-
-## 7. Responsive Breakpoints
-
-| Breakpoint | Chat | Admin | Ops |
-|------------|------|-------|-----|
-| < 640px (mobile) | Full width, fixed bottom input | Bottom tab nav, stacked cards | Full width cards |
-| 640-1024px (tablet) | Centered 560px max | Sidebar visible, single column | Sidebar + list |
-| > 1024px (desktop) | Centered 560px max | Sidebar + max-w-[720px] content | Sidebar + split pane |
-
-**Key responsive rules:**
-- Chat never goes wider than 560px — the "narrow column" feel is preserved at all sizes
-- Admin switches from bottom tabs to left sidebar at 1024px
-- All glass cards reduce border-radius slightly on mobile (12px → 8px)
-- Font sizes: desktop 18px chat text → mobile 16px chat text
-
----
-
-## 8. Implementation Order
-
-Build in this exact sequence. Each step produces a testable UI increment.
-
-| Step | What | Files | Test |
-|------|------|-------|------|
-| 0 | Route migration (rename /try → /) | `app/`, `lib/` | `npm run build` |
-| 1 | Design tokens + fonts | `globals.css`, `tailwind.config.ts`, `layout.tsx` | Visual: fonts load, colors correct |
-| 2 | FluidBackground | `components/ui/fluid-background.tsx` | Visual: canvas renders, blobs animate |
-| 3 | Glass UI primitives | `glass-card`, `glass-input`, `status-pill`, `icon-button` | Visual: components render in isolation |
-| 4 | ChatShell (centered layout) | `components/chat/chat-shell.tsx` | Visual: centered column with bg |
-| 5 | MessageBubble | `components/chat/message-bubble.tsx` | Visual: user + assistant bubbles render |
-| 6 | MessageList | `components/chat/message-list.tsx` | Visual: scrollable message list |
-| 7 | VoiceInputBar | `components/chat/voice-input-bar.tsx` | Visual: input + timer + buttons |
-| 8 | WelcomeMessage | In `app/chat/page.tsx` | Visual: empty state |
-| 9 | **Chat page complete** | `app/chat/page.tsx` | Full visual: send a message, see response |
-| 10 | AdminSidebar | `components/admin/admin-sidebar.tsx` | Visual: icon nav bar |
-| 11 | AdminShell | `components/admin/admin-shell.tsx` | Visual: sidebar + content layout |
-| 12 | ConfigCard + ConfigSection | `components/admin/config-card.tsx`, `config-section.tsx` | Visual: config panels |
-| 13 | JsonEditor | `components/admin/json-editor.tsx` | Visual: JSON editing |
-| 14 | Agent config page | `app/admin/agent/page.tsx` | Full: edit agent config |
-| 15 | Skill registry page | `app/admin/skills/page.tsx` | Full: view/add skills |
-| 16 | ToolIndicator | `components/ui/tool-indicator.tsx` | Visual: tool ring animation |
-| 17 | Responsive polish (all pages) | Various | Test at 375px, 768px, 1440px |
-
----
-
-## 9. CSS Utility Classes (supplement Tailwind)
-
-Add these to `globals.css` for glass effects that Tailwind can't express:
-
-```css
-@layer components {
-  .glass-chat-user {
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(20px) saturate(150%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px 4px 16px 16px;
-  }
-  .glass-chat-assistant {
-    background: rgba(255, 255, 255, 0.02);
-    backdrop-filter: blur(16px) saturate(120%);
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    border-radius: 4px 16px 16px 16px;
-  }
-  .glass-admin {
-    background: rgba(15, 15, 15, 0.7);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-  }
-  .glass-pill {
-    background: rgba(15, 15, 15, 0.5);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 999px;
-  }
-  .glass-sidebar {
-    background: rgba(15, 15, 15, 0.8);
-    backdrop-filter: blur(20px);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
-  }
-  .text-balance {
-    text-wrap: balance;
-  }
-  /* Custom scrollbar */
-  .scroll-thin::-webkit-scrollbar { width: 4px; }
-  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
-  .scroll-thin::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 2px;
-  }
-}
-```
-
----
-
-## 10. Mock Data for Development
-
-Until the Agent API is connected, use this hardcoded data for UI development:
-
-```typescript
-// In app/chat/page.tsx, for UI-only development:
-const MOCK_MESSAGES = [
-  {
-    id: '1',
-    role: 'assistant' as const,
-    content: 'Good evening. How can I help you today?',
-    timestamp: new Date(Date.now() - 120000),
-  },
-  {
-    id: '2',
-    role: 'user' as const,
-    content: '我昨天充值了500元，订单号TXU1_12345，但是还没到账',
-    timestamp: new Date(Date.now() - 60000),
-  },
-  {
-    id: '3',
-    role: 'assistant' as const,
-    content: 'I understand your concern. Let me check your transaction TXU1_12345 right away.',
-    timestamp: new Date(Date.now() - 30000),
-    toolUses: [
-      { name: 'query_order_status', status: 'executing' as const },
-    ],
-  },
-]
-```
-
----
-
-*End of design spec. This document is structured for AI implementation — follow sections
-in order, use exact CSS values provided, and verify each step before proceeding.*
