@@ -62,6 +62,8 @@ export default function AgentConfigPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       })
+      // Invalidate the chat app's AgentConfig cache so changes take effect immediately
+      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: 'default' }) }).catch(() => {})
       setSaved(true)
     } catch { /* ignore */ } finally {
       setSaving(false)

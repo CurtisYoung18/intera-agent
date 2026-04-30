@@ -105,14 +105,12 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   },
 }
 
-// Simple in-memory TTL cache for AgentConfig (30s)
-let cachedConfig: { config: AgentConfigData; timestamp: number } | null = null
+// Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.
+import { getCachedConfig, setCachedConfig } from '@/lib/agent/config-cache'
 
 async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
-  const now = Date.now()
-  if (cachedConfig && (now - cachedConfig.timestamp) < 30_000) {
-    return cachedConfig.config
-  }
+  const cached = getCachedConfig(customerId)
+  if (cached) return cached
 
   try {
     const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
@@ -128,7 +126,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
         policyHooks: (parseJson(dbConfig.policyHooks) as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
       }
-      cachedConfig = { config, timestamp: now }
+      setCachedConfig(customerId, config)
       return config
     }
   } catch (err) {

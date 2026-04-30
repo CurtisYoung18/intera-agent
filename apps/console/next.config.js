@@ -15,6 +15,10 @@ const nextConfig = {
         source: '/api/human-chat',
         destination: `${CHAT_API_BASE}/api/human-chat`,
       },
+      {
+        source: '/api/admin/config-changed',
+        destination: `${CHAT_API_BASE}/api/admin/config-changed`,
+      },
     ]
   },
 }
