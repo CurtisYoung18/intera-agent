@@ -76,6 +76,14 @@ export class AgentLoop {
     this.abortController = new AbortController()
   }
 
+  /** Create and initialize an AgentLoop — loads skills/policies from DB. */
+  static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
+    const loop = new AgentLoop(deps)
+    loop.skillRouter = await SkillRouter.create(deps.customerId)
+    loop.policyEngine = await PolicyEngine.create(deps.customerId)
+    return loop
+  }
+
   // -----------------------------------------------------------------------
   // Main entry point
   // -----------------------------------------------------------------------
@@ -138,6 +146,8 @@ export class AgentLoop {
         apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
         baseURL: process.env.ANTHROPIC_BASE_URL,
       })
+      const streamStartTime = Date.now()
+
       const stream = client.messages.stream({
         model: this.deps.config.model,
         max_tokens: MAX_OUTPUT_TOKENS,
@@ -145,6 +155,11 @@ export class AgentLoop {
         messages: this.buildApiMessages(),
         tools: this.skillRouter.getTools(),
       })
+
+      await this.traceWriter.writeLlmRequestStart(
+        this.deps.config.model,
+        this.messages.length,
+      )
 
       const blocks = new Map<number, StreamContentBlock>()
       let assistantMessage: AssistantMessage | null = null
@@ -293,6 +308,7 @@ export class AgentLoop {
             }
             if (msgDelta.usage) {
               usage = msgDelta.usage as { input_tokens?: number; output_tokens?: number }
+              await this.traceWriter.writeLlmResponse(stopReason, usage)
             }
             break
           }
@@ -354,7 +370,7 @@ export class AgentLoop {
         await this.traceWriter.write(
           'skill_result',
           `Skill: ${result.name}`,
-          JSON.stringify(result.output),
+          { output: result.output, latencyMs: result.latencyMs },
         )
       }
 
@@ -457,15 +473,8 @@ export class AgentLoop {
             },
           })
 
-          // Write trace
-          await prisma.actionTrace.create({
-            data: {
-              caseId: this.deps.caseId,
-              actionType: 'human_task_created',
-              title: `Human task created: ${queue}`,
-              payload: JSON.stringify({ taskId: task.id, queue, question }),
-            },
-          })
+          // Write trace via TraceWriter (DB persistence handled internally)
+          await this.traceWriter.writeHumanTaskCreated(task.id, queue)
 
           sendEvent({
             type: 'human_task_created',
@@ -476,11 +485,22 @@ export class AgentLoop {
           console.error('[AgentLoop] Failed to persist human task:', err)
         }
 
-        // Continue loop — agent can generate follow-up text for customer
+        // Continue loop — agent can generate follow-up text for customer.
+        // But skip finalize_case in this same iteration: you can't resolve a case
+        // you just escalated. The next LLM call will see the updated case status
+        // and can decide whether to generate a closing message.
         continue
       }
 
       // ── Terminal tool: finalize_case ─────────────────────────
+      // Guard: if a human task was just created, don't finalize in the same turn.
+      const humanTaskCreatedThisTurn = toolResults.some(
+        (r) => r.name === 'create_human_task',
+      )
+      if (humanTaskCreatedThisTurn) {
+        continue
+      }
+
       const finalizeResult = toolResults.find(
         (r) => r.name === 'finalize_case',
       )
@@ -505,21 +525,14 @@ export class AgentLoop {
           continue // Keep looping
         }
 
-        await this.traceWriter.write('final_resolution', 'Case resolved')
+        // Trace already written via traceWriter.write above (DB persistence handled internally)
+        await this.traceWriter.writeFinalResolution('resolved', JSON.stringify(finalizeResult.output))
 
-        // Persist to DB
+        // Persist case status to DB
         try {
           await prisma.case.update({
             where: { id: this.deps.caseId },
             data: { status: 'resolved', resolvedAt: new Date(), blocker: null },
-          })
-          await prisma.actionTrace.create({
-            data: {
-              caseId: this.deps.caseId,
-              actionType: 'final_resolution',
-              title: 'Case resolved',
-              payload: JSON.stringify(finalizeResult.output),
-            },
           })
         } catch (err) {
           console.error('[AgentLoop] Failed to persist case resolution:', err)

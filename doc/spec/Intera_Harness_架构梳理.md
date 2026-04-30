@@ -1,11 +1,14 @@
 # Intera Agentic Customer Service Harness — 架构梳理文档
 
-> 项目路径：`/Users/curtis/Desktop/Tools/intera`
+> 项目路径：`/Users/curtis/Desktop/Tools/intera-agent`
 > 文档目的：统一对产品架构的认知，梳理模块边界和关键数据链路。
+> 最后更新：2026-04-30
 >
-> **当前确认的产品定位**：Try Harness 是 Intera 的核心产品，一个由 Agent 主导、以问题解决为目标的 AI 客服 SaaS。想法墙（`/api/chat`）是辅助团队头脑风暴的工具，与产品本身无关。
+> **当前确认的产品定位**：Intera Harness 是 Intera 的核心产品，一个由 Agent 主导、以问题解决为目标的 AI 客服 SaaS。
 >
 > **设计理念**：我们不是在做"Flow-Chatbot"（预先设计好的流程图 + 规则树 + 节点跳转），而是做一个 **Agentic Customer Service Harness**（围绕 Case 运行的 Agent 执行系统）。Agent 根据当前目标和证据动态决定下一步，不要求预先写完所有流程，可以中途改计划、串联多个动作、请求人工、恢复执行。核心单位是 **Case / Goal**，系统目标是**解决问题**而不是回答问题。
+>
+> **路由命名变更（2026-04-29）**：`/try/` 前缀已移除。Chat → `/chat`，Console Ops → `/ops/`，Admin → `/admin`。API routes: `/api/messages`, `/api/human-chat`, `/api/human-tasks/*`。
 
 ---
 
@@ -224,7 +227,7 @@ B 端游戏供应商（DemoCustomer）
 │   · message_stop（reason）→ 消息生成结束                  │
 └─────────────────────────────────────────────────────────────┘
 
-### 2.1.1 前端 Skill 执行动画与文字反馈
+### 2.1.1 前端 SSE 事件与 UI 动画（更新于 2026-04-30）
 
 Skills 异步执行期间，前端通过 SSE 实时接收事件，驱动 UI 动画：
 
@@ -239,9 +242,10 @@ Skills 异步执行期间，前端通过 SSE 实时接收事件，驱动 UI 动�
 | `skill_result` | 工具执行完成动画（成功/失败图标），展示结果摘要 |
 | `memory_update` | Case 卡片更新（confirmedFacts / missingFacts 变化） |
 | `case_status` | Case 状态变化高亮动画 |
-| `human_task_created` | "已发起人工确认" 弹窗 + Case 卡片进入 waiting_human 状态 |
+| `human_task_created` | Case 卡片进入 waiting_human 状态 |
+| `consultation_complete` | 人工处理完成通知（事件驱动，含 summary/resolution）。Chat page 显示过渡消息（zh/en 双语自动检测） |
 | `finalized` | 闭环成功动画 + 结果卡片展示 |
-| `message_stop` | 消息生成结束（含 reason） |
+| `message_stop` | 消息生成结束（含 transition reason） |
 | `withheld` | 错误 withheld（恢复成功前暂缓显示） |
 
 动画风格参考 Claude Code：Skill 执行时有明显可辨识的"工具调用中"状态（图标旋转 + 文字描述），完成后有结果反馈。多个并行工具时，各自独立显示进度条。
@@ -733,9 +737,14 @@ Skill 开始执行（或被跳过）
 
 ---
 
-## 六、Human-as-a-Tool（人工任务系统）
+## 六、Human-as-a-Tool（人工任务系统）★ 2026-04-30 更新
 
-**文件：** `lib/try/agent/mock-handlers.ts`（create_human_task / send_customer_form）+ `/api/try/human-tasks/[id]/resolve` 等
+**核心 API：** `POST /api/messages`（Chat 端）、`POST /api/human-chat`（operater-agent 咨询）、`POST /api/human-tasks/[id]/resolve`（Console 端）
+
+**通知机制（2026-04-30 更新）：事件驱动 + await+retry，无轮询。**
+- resolve/route.ts: `notifyAgentResume()` 辅助函数，3 次重试 + 指数退避（500/1000/2000ms）
+- human-chat/route.ts: `finalize_consultation` 后 await+retry 触发 `/api/messages`
+- Chat page: SSE `consultation_complete` 事件直接通知，无需 polling
 
 ### 6.0 解释说明
 
@@ -770,47 +779,50 @@ create_human_task 被调用
     · Case 卡片高亮 waiting_human 状态
 ```
 
-**第二阶段：Human ↔ Agent 实时对话（多轮，不限单次表单）**
+**第二阶段：Operator ↔ Agent 实时咨询对话（多轮，通过 human-chat API）**
 
 ```
-人工在 /try/ops/human-tasks 看到待处理任务
+人工在 /ops/human-tasks 看到待处理任务
     │
-    ▼ 点击进入人工会话
+    ▼ 点击进入人工会话（/ops/human-tasks/[id]）
     │
-    ├──→ 看到 Case 摘要（confirmedFacts / skillResults）
-    ├──→ 看到 Agent 提出的具体问题
+    ├──→ 左侧：Case 摘要（facts / skills / memory）
+    ├──→ 右侧：与 Agent 的咨询聊天界面（SSE 流式）
     └──→ 输入框：支持自然语言对话
 
-人工可以说：
-    · 自然语言："告诉用户需要补充 KYC 和银行账户"
-    · 或点击"发送表单"→ 选择预设模板（如 KYC 表单）
-
-Agent 收到后：
-    · 解析自然语言意图
-    · 调用内置 Skill：send_customer_form
-    · 前端聊天框实时弹出精美表单卡片
-    · 顾客填写 → 作为 user message 入站
-    · Agent 继续推进
+人工消息 → POST /api/human-chat（SSE 流返回）
+    │
+    ▼ Agent 在 consultation 模式下运行
+    ├──→ Agent 可调用 query_order_status / query_payment_channel_status 等工具
+    ├──→ Agent 调用 finalize_consultation(summary, resolution) 结束咨询
+    │     · summary: 面向顾客的消息
+    │     · resolution: resolved / confirmed_delayed / refund_approved / false_alarm
+    └──→ SSE consultation_complete 事件
 
 人工可随时：
-    · 发送自然语言更新（如"已确认2小时后到账"）
-    · 点击"结束人工会话"
+    · 发送自然语言与 Agent 对话
+    · 点击 Close Case 按钮结束并通知顾客
+    · 点击 Reopen 重新打开
 ```
 
-**第三阶段：人工结束会话 → Agent 恢复执行**
+**第三阶段：人工关闭 Case → Agent 通知顾客（事件驱动）**
 
 ```
-人工点击"结束会话"（或发送特定自然语言触发结束）
+人工点击 Close Case / 提交 resolve 表单
     │
-    ▼ POST /api/try/human-tasks/[id]/resolve
-DemoHumanTask.status → resolved
-DemoCase.status → investigating
+    ▼ POST /api/human-tasks/[id]/resolve
+HumanTask.status → resolved
+Case.status → investigating（blocker 清空）
     │
-    ▼ 异步触发
-runAgentTurn({ resumeTrigger })
+    ▼ notifyAgentResume() — await + 3 次重试 + 指数退避
+POST /api/messages（含 spec prompt）
     │
-    ├──→ synthetic message 包含人工的自然语言更新
-    └──→ Agent 恢复 ReAct Loop，继续推进 case
+    ▼ Agent 生成顾客可见通知消息
+    │
+    ▼ 方式 A：通过 human-chat → finalize_consultation 触发
+    │   方式 B：直接 resolve 触发
+    │
+    ▼ SSE consultation_complete → Chat page 显示过渡消息 → Agent 更新顾客 → 结案
 ```
 
 ### 6.2 内置 Skill：send_customer_form
@@ -993,30 +1005,51 @@ DemoCustomer（B 端客户/厂商）
 
 ---
 
-## 十、API 路由清单
+## 十、API 路由清单（更新于 2026-04-30）
+
+### Chat App (port 3000)
 
 | 路由 | 方法 | 职责 |
 |---|---|---|
-| `/api/try/session` | POST | 设置 mock 用户槽位和 B 端客户 |
-| `/api/try/cases` | GET | 获取当前用户的 Case 列表 |
-| `/api/try/cases/[id]` | GET | 获取单个 Case 详情（含 memory/messages/traces） |
-| `/api/try/messages` | POST | **消息入口**，触发 Agent Loop，SSE 流 |
-| `/api/try/human-tasks` | GET | 人工任务列表 |
-| `/api/try/human-tasks/[id]/resolve` | POST | 人工回执提交，触发 Agent Resume |
-| `/api/try/cron/dispatch` | POST | Cron 触发（定时驱动 Agent） |
+| `/api/messages` | POST | **消息入口**，触发 Agent Loop，SSE 流。加载 AgentConfig/Skills/Policies from DB |
+| `/api/human-chat` | POST | Operator-Agent 咨询对话，SSE 流。finalize_consultation 后 await+retry 通知顾客 |
+
+### Console App (port 3001)
+
+| 路由 | 方法 | 职责 |
+|---|---|---|
+| `/api/human-tasks` | GET | 人工任务列表 |
+| `/api/human-tasks/[id]` | GET | 任务详情（含 Case + Memory + Traces） |
+| `/api/human-tasks/[id]/resolve` | POST | 人工回执，await+retry 通知 Agent 恢复 |
+| `/api/human-tasks/[id]/delete` | DELETE | Debug：删除任务及关联数据 |
+| `/api/cases` | GET | Case 列表（?status=&limit=&offset=） |
+| `/api/cases/[id]` | GET | Case 详情 + Memory + Tasks |
+| `/api/cases/[id]/traces` | GET | Trace 时间线（?actionType=） |
+| `/api/cases/[id]/messages` | GET | 对话记录 |
+| `/api/cases/[id]/memory` | GET+PUT | 查看和编辑 Case Memory |
+| `/api/admin/agent` | GET+PUT | Agent 配置 CRUD |
+| `/api/admin/skills` + `/[name]` | CRUD | Skill 注册表 |
+| `/api/admin/policies` + `/[name]` | CRUD | Policy 规则 |
+| `/api/admin/case-types` + `/[name]` | CRUD | Case 类型定义 |
+| `/api/admin/routing` + `/[name]` | CRUD | 人工路由队列 |
 
 ---
 
-## 十一、前台页面清单
+## 十一、前台页面清单（更新于 2026-04-30）
 
 | 页面 | 路由 | 职责 |
 |---|---|---|
-| 入口/选择器 | `/try` | 切换用户槽位和 B 端客户 |
-| 主对话 | `/try/chat` | Case 卡片 + Timeline + ChatPanel |
-| 人工任务列表 | `/try/ops/human-tasks` | 展示待处理人工任务 |
-| 人工任务处理 | `/try/ops/human-tasks/[id]` | 填写结构化回执表单 |
-| Case Trace | `/try/ops/cases/[id]/trace` | 完整操作时间线 |
-| Admin 配置 | `/try/admin` | B 端配置管理界面 |
+| Chat 对话 | `/chat` | 顾客聊天界面，SSE 流式，Markdown 渲染 |
+| 人工任务列表 | `/ops/human-tasks` | 展示待处理人工任务 |
+| 人工任务处理 | `/ops/human-tasks/[id]` | Operator-Agent 咨询聊天 + case 上下文 |
+| Case 详情 + Trace | `/ops/cases/[id]` | Trace 时间线（着色）+ 对话记录 |
+| Case Memory | `/ops/cases/[id]/memory` | 左右栏 Memory 编辑器 |
+| **Admin** | | |
+| Agent 编排 | `/admin/agent` | System Prompt、Model、Policy Hooks |
+| Skill 注册 | `/admin/skills` | 卡片列表 + 增删改 |
+| Policy 规则 | `/admin/policies` | Hook 类型 badge + Rule JSON editor |
+| Case 类型 | `/admin/case-types` | 状态机 stages 可视化 |
+| 人工路由 | `/admin/routing` | 队列 priority + skills allowed |
 
 ---
 

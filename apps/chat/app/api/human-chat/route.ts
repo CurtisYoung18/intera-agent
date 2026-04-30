@@ -31,7 +31,7 @@ You are the CASE OWNER. Tell the operator:
   - resolution: confirmed_delayed / refund_approved / needs_more_info / resolved / false_alarm
 `
 
-const DEFAULT_AGENT_CONFIG: AgentConfigData = {
+const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
   model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
   temperature: 0.5,
   thinkingBudget: 4096,
@@ -59,6 +59,33 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
     postTool: [],
     preFinalize: [],
   },
+}
+
+function parseJson(raw: string): unknown {
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+// Load AgentConfig from DB, fallback to default. Override systemPrompt for consultation.
+async function loadHumanChatConfig(customerId: string): Promise<AgentConfigData> {
+  try {
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
+    if (dbConfig) {
+      return {
+        model: dbConfig.model,
+        temperature: dbConfig.temperature,
+        thinkingBudget: dbConfig.thinkingBudget,
+        maxIterations: DEFAULT_HUMAN_CHAT_CONFIG.maxIterations, // Always 15 for consultation
+        systemPrompt: CONSULTATION_SYSTEM_PROMPT, // Always consultation prompt
+        toolParallelism: dbConfig.toolParallelism,
+        isConcurrencySafe: dbConfig.isConcurrencySafe,
+        memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_HUMAN_CHAT_CONFIG.memoryStrategy,
+        policyHooks: DEFAULT_HUMAN_CHAT_CONFIG.policyHooks, // No policy checks needed for consultation
+      }
+    }
+  } catch (err) {
+    console.warn('[HumanChat] Failed to load agent config from DB, using default:', err)
+  }
+  return { ...DEFAULT_HUMAN_CHAT_CONFIG }
 }
 
 export async function POST(request: NextRequest) {
@@ -103,8 +130,10 @@ export async function POST(request: NextRequest) {
           systemPrompt += `\n\n## Current Case Context\n- Case ID: ${caseData.id}\n- Type: ${caseData.type}\n- Status: ${caseData.status}\n- Goal: ${caseData.goal || 'N/A'}\n- Blocker: ${caseData.blocker || 'N/A'}\n- Confirmed facts: ${memory.confirmedFacts}\n- Skills called: ${memory.skillsCalled}\n- Skill results: ${memory.skillResults}\n- Key events: ${memory.keyEvents}\n- Original escalation question: ${task.question}`
         }
 
-        const agentLoop = new AgentLoop({
-          config: { ...DEFAULT_AGENT_CONFIG, systemPrompt },
+        const baseConfig = await loadHumanChatConfig(caseData.customerId)
+
+        const agentLoop = await AgentLoop.create({
+          config: { ...baseConfig, systemPrompt },
           caseId: caseData.id,
           customerId: caseData.customerId,
           userId: caseData.userId,
@@ -128,6 +157,7 @@ export async function POST(request: NextRequest) {
             skillsCalled: JSON.stringify(mem.skillsCalled),
             skillResults: JSON.stringify(mem.skillResults),
             keyEvents: JSON.stringify(mem.keyEvents),
+            summary: mem.summary || undefined,
           },
           create: {
             caseId: caseData.id,
@@ -137,6 +167,7 @@ export async function POST(request: NextRequest) {
             skillResults: JSON.stringify(mem.skillResults),
             keyEvents: JSON.stringify(mem.keyEvents),
             humanTaskStatus: 'in_progress',
+            summary: mem.summary || undefined,
           },
         })
 
@@ -145,6 +176,37 @@ export async function POST(request: NextRequest) {
           data: { transition: result.transition, reason: result.reason },
           timestamp: new Date().toISOString(),
         })
+
+        // After consultation completes, trigger a customer-facing agent update
+        // so the chat app shows the resolution without the customer needing to send a message.
+        if (result.transition === 'consultation_complete') {
+          const customerMessage = '[System] The human specialist has completed their review of this case. Please send the customer a friendly update summarizing what was resolved and what happens next. Be warm and helpful — do NOT use technical/internal language. If applicable, call finalize_case to close the case.'
+          const maxRetries = 3
+          let delay = 500
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              const res = await fetch(
+                `${process.env.NEXT_PUBLIC_CHAT_API_URL || 'http://localhost:3000'}/api/messages`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    message: customerMessage,
+                    caseId: caseData.id,
+                    customerId: caseData.customerId,
+                    userId: caseData.userId,
+                  }),
+                },
+              )
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+              break
+            } catch (err) {
+              console.error(`[HumanChat] Notify customer agent attempt ${attempt}/${maxRetries} failed:`, err)
+              if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
+              delay *= 2
+            }
+          }
+        }
       } catch (error) {
         console.error('[HumanChat] Error:', error)
         sendEvent({

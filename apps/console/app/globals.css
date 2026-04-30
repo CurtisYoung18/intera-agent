@@ -77,6 +77,12 @@ html[data-theme="light"] .fluid-vignette {
     border: 1px solid var(--glass-border);
     border-radius: 999px;
   }
+  .glass-sidebar {
+    background: var(--glass-admin);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid var(--glass-border);
+  }
   .glass-card-hover {
     transition: background 200ms ease-out, border-color 200ms ease-out, transform 200ms ease-out;
   }
@@ -95,3 +101,15 @@ html[data-theme="light"] .fluid-vignette {
     border-radius: 2px;
   }
 }
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1.0; }
+}
+.animate-breathe { animation: breathe 2s ease-in-out infinite; }
+
+@keyframes fadeUp {
+  0%   { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }

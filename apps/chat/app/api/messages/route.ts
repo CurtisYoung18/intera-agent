@@ -70,7 +70,7 @@ if (AUTH_SET && URL_SET) {
   console.warn('[Intera] ⚠️  ANTHROPIC_AUTH_TOKEN or ANTHROPIC_BASE_URL missing in env')
 }
 
-// [MOCK] Default config. Production loads from AgentConfig table via Customer.
+// Default fallback config. Production loads from AgentConfig table via Customer.
 const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
   temperature: 0.5,
@@ -103,6 +103,43 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
       'must_cite_basis',
     ],
   },
+}
+
+// Simple in-memory TTL cache for AgentConfig (30s)
+let cachedConfig: { config: AgentConfigData; timestamp: number } | null = null
+
+async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
+  const now = Date.now()
+  if (cachedConfig && (now - cachedConfig.timestamp) < 30_000) {
+    return cachedConfig.config
+  }
+
+  try {
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
+    if (dbConfig) {
+      const config: AgentConfigData = {
+        model: dbConfig.model,
+        temperature: dbConfig.temperature,
+        thinkingBudget: dbConfig.thinkingBudget,
+        maxIterations: dbConfig.maxIterations,
+        systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+        toolParallelism: dbConfig.toolParallelism,
+        isConcurrencySafe: dbConfig.isConcurrencySafe,
+        memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
+        policyHooks: (parseJson(dbConfig.policyHooks) as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
+      }
+      cachedConfig = { config, timestamp: now }
+      return config
+    }
+  } catch (err) {
+    console.warn('[Intera] Failed to load agent config from DB, using default:', err)
+  }
+
+  return { ...DEFAULT_AGENT_CONFIG }
+}
+
+function parseJson(raw: string): unknown {
+  try { return JSON.parse(raw) } catch { return null }
 }
 
 export async function POST(request: NextRequest) {
@@ -224,8 +261,10 @@ export async function POST(request: NextRequest) {
           // Case doesn't exist yet
         }
 
-        const agentLoop = new AgentLoop({
-          config: DEFAULT_AGENT_CONFIG,
+        const agentConfig = await loadAgentConfig(resolvedCustomerId)
+
+        const agentLoop = await AgentLoop.create({
+          config: agentConfig,
           caseId: resolvedCaseId,
           customerId: resolvedCustomerId,
           userId: resolvedUserId,
@@ -265,6 +304,7 @@ export async function POST(request: NextRequest) {
                 skillsCalled: JSON.stringify(mem.skillsCalled),
                 skillResults: JSON.stringify(mem.skillResults),
                 keyEvents: JSON.stringify(mem.keyEvents),
+                summary: mem.summary || undefined,
               },
               create: {
                 caseId: resolvedCaseId,
@@ -274,11 +314,38 @@ export async function POST(request: NextRequest) {
                 skillResults: JSON.stringify(mem.skillResults),
                 keyEvents: JSON.stringify(mem.keyEvents),
                 humanTaskStatus: 'none',
+                summary: mem.summary || undefined,
               },
             })
           } catch (err) {
             console.error('[Intera] Failed to persist case memory:', err)
           }
+        }
+
+        // ── Persist messages to DB (always, even for casual chat) ──
+        try {
+          const messagesToPersist = result.messages
+            .filter((m) => m.content?.trim() || m.role === 'user')
+            .map((m) => ({
+              id: m.id,
+              caseId: resolvedCaseId,
+              role: m.role,
+              content: m.content || '',
+              isStreaming: false,
+            }))
+
+          if (messagesToPersist.length > 0) {
+            // Use createMany with skipDuplicates to avoid re-persisting
+            for (const msg of messagesToPersist) {
+              await prisma.message.upsert({
+                where: { id: msg.id },
+                update: { content: msg.content, isStreaming: false },
+                create: msg,
+              })
+            }
+          }
+        } catch (err) {
+          console.error('[Intera] Failed to persist messages:', err)
         }
 
         sendEvent({

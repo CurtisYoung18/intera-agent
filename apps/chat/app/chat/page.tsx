@@ -254,20 +254,22 @@ export default function ChatPage() {
                     })])
                     break
 
-                  case 'consultation_complete':
+                  case 'consultation_complete': {
                     setAgentStatus('online')
                     setCaseCard((prev) => prev ? { ...prev, status: 'investigating' } : null)
-                    {
-                      const ccData = event.data as { summary?: string; resolution?: string }
-                      const detail = ccData.summary || ''
-                      const fallback = detail
-                        ? `人工处理已完成：${detail}\n\nAgent 正在继续为您服务。`
-                        : '人工处理已完成，Agent 正在继续为您服务。'
-                      setMessages((prev) => [...prev, makeMsg({
-                        id: crypto.randomUUID(), role: 'assistant', msgType: 'text', content: fallback,
-                      })])
-                    }
+                    const lang = messages.length > 0 && /[一-鿿]/.test(messages[messages.length - 1]?.content || '')
+                      ? 'zh' : 'en'
+                    const zhMsg = '人工处理已完成，Agent 正在为您更新案件状态，请稍候。'
+                    const enMsg = 'The specialist has finished reviewing your case. Intera is updating you now.'
+                    setMessages((prev) => [...prev, makeMsg({
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      msgType: 'text',
+                      content: lang === 'zh' ? zhMsg : enMsg,
+                      isStreaming: false,
+                    })])
                     break
+                  }
 
                   case 'finalized':
                     setAgentStatus('online')
@@ -361,6 +363,7 @@ export default function ChatPage() {
         onSubmit={handleSubmit}
         queuedCount={queuedCount}
         onClearQueue={handleClearQueue}
+        isResponding={isLoading}
       />
 
       {/* Customer case dashboard — slides in from right, settles at edge */}

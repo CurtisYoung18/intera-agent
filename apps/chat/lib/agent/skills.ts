@@ -282,12 +282,46 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
 export class SkillRouter {
   private skills: Map<string, SkillDefinition> = new Map()
 
-  constructor(private customerId: string) {
-    // [MOCK] Load built-in skills. Production loads from DB via Prisma:
-    //   const rows = await prisma.skill.findMany({ where: { customerId, enabled: true } })
+  constructor(_customerId: string) {
+    // Load built-in skills synchronously (fallback).
+    // Call SkillRouter.create() for DB-loaded skills.
     for (const skill of BUILT_IN_SKILLS) {
       this.skills.set(skill.name, skill)
     }
+  }
+
+  /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills. */
+  static async create(customerId: string): Promise<SkillRouter> {
+    const router = new SkillRouter(customerId)
+
+    // Load DB skills (overlay on top of built-ins already loaded in constructor)
+    try {
+      const { prisma } = await import('@intera/shared/prisma')
+      const dbSkills = await prisma.skill.findMany({
+        where: { customerId, enabled: true },
+      })
+
+      for (const s of dbSkills) {
+        router.skills.set(s.name, {
+          name: s.name,
+          description: s.description,
+          inputSchema: JSON.parse(s.inputSchema || '{}'),
+          outputSchema: s.outputSchema ? JSON.parse(s.outputSchema) : undefined,
+          mode: (s.mode as 'mock' | 'http') || 'mock',
+          endpoint: s.endpoint || undefined,
+          httpMethod: (s.httpMethod as 'GET' | 'POST') || 'POST',
+          headers: s.headers ? JSON.parse(s.headers) : undefined,
+          timeoutMs: s.timeoutMs,
+          mockFixture: s.mockFixture ? JSON.parse(s.mockFixture) : undefined,
+          isConcurrencySafe: s.isConcurrencySafe,
+          enabled: s.enabled,
+        })
+      }
+    } catch (err) {
+      console.warn('[SkillRouter] Failed to load skills from DB, using built-ins only:', err)
+    }
+
+    return router
   }
 
   /** Returns Anthropic tool format for all enabled skills. */

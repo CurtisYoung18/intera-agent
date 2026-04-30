@@ -98,7 +98,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
     setChatMessages((prev) => [...prev, { id: agentId, role: 'agent', content: '', timestamp: new Date().toISOString() }])
 
     try {
-      const response = await fetch('http://localhost:3000/api/human-chat', {
+      const response = await fetch('/api/human-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId: id, message: text }),

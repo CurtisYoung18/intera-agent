@@ -33,9 +33,35 @@ export class PolicyEngine {
   }
 
   constructor(private customerId: string) {
-    // [MOCK] Built-in policies. Production loads from DB:
-    //   const rows = await prisma.policy.findMany({ where: { customerId, enabled: true } })
     this.loadBuiltInPolicies()
+  }
+
+  /** Create and initialize a PolicyEngine — loads built-ins + DB policies. */
+  static async create(customerId: string): Promise<PolicyEngine> {
+    const engine = new PolicyEngine(customerId)
+
+    // Load DB policies (overlay on top of built-ins)
+    try {
+      const { prisma } = await import('@intera/shared/prisma')
+      const dbPolicies = await prisma.policy.findMany({
+        where: { customerId, enabled: true },
+      })
+
+      for (const p of dbPolicies) {
+        const rule = JSON.parse(p.rule || '{}') as Record<string, unknown>
+        engine.policies.set(p.name, rule as any)
+
+        // Wire to the appropriate hook
+        const hook = p.hook as 'preTool' | 'postTool' | 'preFinalize'
+        if (!engine.hooks[hook].includes(p.name)) {
+          engine.hooks[hook].push(p.name)
+        }
+      }
+    } catch (err) {
+      console.warn('[PolicyEngine] Failed to load policies from DB, using built-ins only:', err)
+    }
+
+    return engine
   }
 
   private loadBuiltInPolicies(): void {

@@ -1,9 +1,10 @@
 // Intera Harness - Trace Writer
 // Based on architecture doc: Trace / 可观测性
 //
-// [MOCK] Logs to console. Production path:
-//   - Write to ActionTrace table via Prisma
-//   - Read by Case detail page for timeline display
+// Writes all agent actions to ActionTrace table via Prisma.
+// Fire-and-forget pattern: DB writes never block the agent loop.
+
+import { prisma } from '@intera/shared/prisma'
 
 export type ActionType =
   | 'user_message'
@@ -18,6 +19,8 @@ export type ActionType =
   | 'cron_tick'
   | 'loop_decision'
   | 'stream_event'
+  | 'llm_request_start'
+  | 'llm_response'
 
 export interface TraceEntry {
   id: string
@@ -29,11 +32,6 @@ export interface TraceEntry {
   createdAt: Date
 }
 
-/**
- * Trace Writer — records all actions in a Case for observability.
- * Each trace entry is linked to a caseId and rendered in the Case
- * detail timeline.
- */
 export class TraceWriter {
   constructor(private caseId: string) {}
 
@@ -56,12 +54,20 @@ export class TraceWriter {
       entry.payload = detailOrPayload as Record<string, unknown>
     }
 
-    // [MOCK] Console log. Production writes to DB:
-    //   await prisma.actionTrace.create({ data: { ...entry } })
-    console.log(
-      `[Trace] ${actionType}: ${title}`,
-      entry.payload || entry.detail || '',
-    )
+    // Fire-and-forget: never block the agent loop on trace writes
+    prisma.actionTrace
+      .create({
+        data: {
+          caseId: entry.caseId,
+          actionType: entry.actionType,
+          title: entry.title,
+          detail: entry.detail || null,
+          payload: entry.payload ? JSON.stringify(entry.payload) : null,
+        },
+      })
+      .catch((err) =>
+        console.error(`[TraceWriter] DB write failed (${actionType}):`, err),
+      )
 
     return entry
   }
@@ -115,6 +121,26 @@ export class TraceWriter {
     await this.write('final_resolution', `Case resolved: ${status}`, {
       status,
       conclusion,
+    })
+  }
+
+  async writeLlmRequestStart(
+    model: string,
+    messageCount: number,
+  ): Promise<void> {
+    await this.write('llm_request_start', `LLM request: ${model}`, {
+      model,
+      messageCount,
+    })
+  }
+
+  async writeLlmResponse(
+    stopReason: string | null,
+    usage?: { input_tokens?: number; output_tokens?: number },
+  ): Promise<void> {
+    await this.write('llm_response', `LLM response: ${stopReason || 'complete'}`, {
+      stopReason,
+      usage,
     })
   }
 }

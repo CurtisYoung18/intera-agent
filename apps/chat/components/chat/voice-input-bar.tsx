@@ -12,6 +12,7 @@ interface VoiceInputBarProps {
   onSubmit: (text: string) => void
   queuedCount: number
   onClearQueue: () => void
+  isResponding?: boolean
 }
 
 function SendIcon() {
@@ -27,6 +28,7 @@ export default function VoiceInputBar({
   onSubmit,
   queuedCount,
   onClearQueue,
+  isResponding = false,
 }: VoiceInputBarProps) {
   const [value, setValue] = useState('')
 
@@ -62,7 +64,7 @@ export default function VoiceInputBar({
           <GlassInput
             value={value}
             onChange={handleChange}
-            placeholder="Describe your issue...  (Shift+Enter for new line)"
+            placeholder={isResponding ? 'Agent is responding — queue your next question...' : 'Describe your issue...  (Shift+Enter for new line)'}
             onSubmit={handleSubmit}
           />
         </div>

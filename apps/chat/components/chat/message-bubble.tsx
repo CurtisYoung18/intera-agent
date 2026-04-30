@@ -106,22 +106,21 @@ function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) 
   const align = role === 'user' ? 'items-end' : 'items-start'
   const maxW = role === 'user' ? 'max-w-[85%]' : 'max-w-[90%]'
 
+  // Don't render placeholder bubble while waiting for first text — RespondingBubble handles loading indication
+  if (!content && isStreaming) return null
+
   return (
     <div className={`flex flex-col ${align}`}>
       <div className={`${maxW} animate-message-in`}>
         <GlassCard variant={variant}>
-          {content ? (
-            <div className="markdown-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {content}
-              </ReactMarkdown>
-              {isStreaming && (
-                <span className="inline-block ml-[2px] w-[2px] h-[1em] bg-white/50 animate-pulse align-middle" />
-              )}
-            </div>
-          ) : isStreaming ? null : (
-            <div className="markdown-content">...</div>
-          )}
+          <div className="markdown-content">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+              {content}
+            </ReactMarkdown>
+            {isStreaming && (
+              <span className="inline-block ml-[2px] w-[2px] h-[1em] bg-white/50 animate-pulse align-middle" />
+            )}
+          </div>
         </GlassCard>
       </div>
 
