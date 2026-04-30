@@ -181,24 +181,37 @@ export class CaseMemoryManager {
   }
 
   /**
-   * Returns estimated token count for the conversation so far.
-   * Rough estimate: each key event ~20 tokens, each fact ~10 tokens, each skill ~30 tokens.
+   * Returns estimated token count for memory metadata only.
+   * The caller (loop.ts) adds message content tokens separately.
+   * Rough estimate: 3 chars ≈ 1 token for Latin, 1.5 chars ≈ 1 token for CJK.
    */
-  estimateTokens(): number {
+  estimateTokens(messageContents: string[] = []): number {
     let tokens = 0
     tokens += this.keyEvents.length * 20
     tokens += Object.keys(this.confirmedFacts).length * 15
     tokens += this.skillsCalled.length * 30
-    tokens += this.summary.length / 3 // rough: 3 chars ≈ 1 token
+    tokens += this.summary.length / 3
+    // Add message content estimate
+    for (const content of messageContents) {
+      const cjkChars = (content.match(/[一-鿿]/g) || []).length
+      const otherChars = content.length - cjkChars
+      tokens += Math.ceil(cjkChars / 1.2) + Math.ceil(otherChars / 3)
+    }
     return Math.max(100, tokens)
   }
 
   // ─── Record compaction in memory ─────────────────────────
 
-  recordCompaction(): void {
+  /** Returns the number of messages that should be KEPT after compaction. */
+  compactionKeepCount(messagesTotal: number): number {
+    return Math.max(4, Math.floor(messagesTotal * 0.4))
+  }
+
+  recordCompaction(): string {
     this.summary = this.buildCompactionSummary()
-    // Keep only last 5 key events after compaction
     this.keyEvents = this.keyEvents.slice(-5)
+    this.resetCompactFailures()
+    return this.summary
   }
 
   recordCompactionFailure(): void {
@@ -211,6 +224,10 @@ export class CaseMemoryManager {
 
   isCompactCircuitBroken(maxFailures = 3): boolean {
     return this.consecutiveCompactFailures >= maxFailures
+  }
+
+  hasSummary(): boolean {
+    return this.summary.length > 0
   }
 
   // ─── Accessors ────────────────────────────────────────────

@@ -349,30 +349,34 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
           {/* Input */}
           <div className="border-t border-white/[0.04] bg-abyss/40 backdrop-blur-xl p-4 flex-shrink-0">
             {consultationDone ? (
-              <div className="text-center py-2">
-                <p className="text-[13px] text-malachite/70">Consultation complete. The agent is now updating the customer.</p>
-                <p className="text-[11px] text-fog/30 mt-0.5">You can reopen if needed.</p>
+              <div className="text-center py-2 space-y-2">
+                <p className="text-[13px] text-malachite/70">Consultation complete. The agent is updating the customer.</p>
+                <button onClick={handleReopen} className="text-[12px] text-amber hover:text-amber/80 transition-colors">
+                  Reopen Consultation
+                </button>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                  placeholder="Reply to Intera…"
-                  disabled={sending}
-                  className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[14px] text-mist py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-fog/20 disabled:opacity-50"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || sending}
-                  className="px-5 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200
-                    bg-indigo/20 border border-indigo/30 text-indigo hover:bg-indigo/30
-                    disabled:bg-white/[0.03] disabled:border-white/[0.06] disabled:text-fog/20 disabled:cursor-not-allowed"
-                >
-                  {sending ? '…' : 'Send'}
-                </button>
+              <div>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                    placeholder="Reply to Intera…"
+                    disabled={sending}
+                    className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[14px] text-mist py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-fog/20 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() || sending}
+                    className="px-5 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200
+                      bg-indigo/20 border border-indigo/30 text-indigo hover:bg-indigo/30
+                      disabled:bg-white/[0.03] disabled:border-white/[0.06] disabled:text-fog/20 disabled:cursor-not-allowed"
+                  >
+                    {sending ? '…' : 'Send'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

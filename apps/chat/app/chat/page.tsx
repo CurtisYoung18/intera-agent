@@ -296,6 +296,11 @@ export default function ChatPage() {
                     })])
                     break
 
+                  case 'consultation_complete':
+                    setAgentStatus('online')
+                    setCaseCard((prev) => prev ? { ...prev, status: 'investigating' } : null)
+                    break
+
                   case 'finalized':
                     setAgentStatus('online')
                     break

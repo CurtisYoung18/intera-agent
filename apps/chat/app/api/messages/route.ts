@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // ── Load case memory from DB (CC-style session memory pattern) ──
+        // ── Load case memory + schema from DB (CC-style session memory pattern) ──
         let systemPrompt = DEFAULT_SYSTEM_PROMPT
         let existingMemory: unknown = null
         try {
@@ -181,21 +181,33 @@ export async function POST(request: NextRequest) {
             where: { id: resolvedCaseId },
             include: { memory: true },
           })
-          if (existingCase?.memory) {
-            existingMemory = existingCase.memory
+          if (existingCase) {
+            // Load case type schema if available
+            try {
+              const caseType = await prisma.caseType.findUnique({
+                where: { customerId_type: { customerId: resolvedCustomerId, type: existingCase.type } },
+              })
+              if (caseType) {
+                const stages = parseMemoryJson(caseType.stages) as string[]
+                const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
+                systemPrompt += `\n\n## Case Schema: ${caseType.displayName}\n- Goal: ${caseType.defaultGoal}\n- Stages: ${JSON.stringify(stages)}\n- Required facts: ${JSON.stringify(requiredFacts)}\n- Escalate when: ${caseType.escalateOn}`
+              }
+            } catch { /* schema not found */ }
 
-            // Inject compaction summary if available (CC session_memory.md pattern)
-            if (existingCase.memory.summary) {
-              systemPrompt += `\n\n## Case Session Memory\n${existingCase.memory.summary}`
-            }
+            if (existingCase.memory) {
+              existingMemory = existingCase.memory
 
-            // Inject current facts/skills as inline context (CC system prompt sections pattern)
-            const facts = parseMemoryJson(existingCase.memory.confirmedFacts)
-            const skills = parseMemoryJson(existingCase.memory.skillsCalled)
-            const missing = parseMemoryJson(existingCase.memory.missingFacts)
-            const skillsArr = Array.isArray(skills) ? skills : []
-            if (Object.keys(facts as object).length > 0 || skillsArr.length > 0) {
-              systemPrompt += `\n\n## Current Case State\n- Confirmed: ${JSON.stringify(facts)}\n- Skills used: ${JSON.stringify(skillsArr)}\n- Missing: ${JSON.stringify(missing)}`
+              if (existingCase.memory.summary) {
+                systemPrompt += `\n\n## Case Session Memory\n${existingCase.memory.summary}`
+              }
+
+              const facts = parseMemoryJson(existingCase.memory.confirmedFacts)
+              const skills = parseMemoryJson(existingCase.memory.skillsCalled)
+              const missing = parseMemoryJson(existingCase.memory.missingFacts)
+              const skillsArr = Array.isArray(skills) ? skills : []
+              if (Object.keys(facts as object).length > 0 || skillsArr.length > 0) {
+                systemPrompt += `\n\n## Current Case State\n- Confirmed: ${JSON.stringify(facts)}\n- Skills used: ${JSON.stringify(skillsArr)}\n- Missing: ${JSON.stringify(missing)}`
+              }
             }
           }
         } catch {

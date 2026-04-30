@@ -603,9 +603,17 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
 
   private buildApiMessages() {
-    const recentMessages = this.messages.slice(
-      -this.deps.config.memoryStrategy.l1MaxMessages * 2,
-    )
+    const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
+    const recentMessages = this.messages.slice(-limit)
+
+    // If compaction summary exists, prepend it as context (CC session_memory.md pattern)
+    if (this.caseMemory.hasSummary()) {
+      const summaryMsg = this.makeUserMessage(
+        `[Case context from previous turns — use this to stay oriented]\n${this.caseMemory.getSummary().summary}`
+      )
+      return [summaryMsg, ...recentMessages] as any
+    }
+
     return recentMessages as any
   }
 
@@ -634,8 +642,8 @@ export class AgentLoop {
     reason?: string
   }> {
     // CC-style multi-tiered compaction assessment
-    const estimatedTokens = this.caseMemory.estimateTokens() +
-      this.messages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length / 3 : 50), 0)
+    const messageContents = this.messages.map((m) => typeof m.content === 'string' ? m.content : '')
+    const estimatedTokens = this.caseMemory.estimateTokens(messageContents)
 
     const assessment = this.caseMemory.assessCompaction(estimatedTokens, this.messages.length)
 
@@ -644,8 +652,13 @@ export class AgentLoop {
         return { shouldCompact: false, reason: 'circuit_breaker' }
       }
       try {
+        const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
         this.caseMemory.recordCompaction()
-        this.caseMemory.resetCompactFailures()
+        // Trim old messages — keep only the most recent ones
+        this.messages = this.messages.slice(-keepCount)
+        await this.traceWriter.write('loop_decision', 'Compacted', JSON.stringify({
+          reason: 'blocking', kept: keepCount, percentLeft: assessment.percentLeft,
+        }))
         return { shouldCompact: true, reason: 'blocking' }
       } catch {
         this.caseMemory.recordCompactionFailure()
@@ -654,7 +667,9 @@ export class AgentLoop {
     }
 
     if (assessment.shouldCompact) {
+      const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
       this.caseMemory.recordCompaction()
+      this.messages = this.messages.slice(-keepCount)
       return { shouldCompact: true, reason: 'auto' }
     }
 
