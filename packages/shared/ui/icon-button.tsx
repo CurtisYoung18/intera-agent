@@ -18,9 +18,9 @@ const SIZE_STYLES = {
 
 const VARIANT_STYLES = {
   ghost:
-    'bg-transparent hover:bg-white/5 text-fog hover:text-mist',
+    'bg-transparent hover:bg-[var(--surface-hover)] text-fog hover:text-mist',
   glass:
-    'bg-white/[0.03] backdrop-blur-[12px] border border-white/[0.04] text-fog hover:text-mist hover:bg-white/[0.06]',
+    'bg-[var(--surface)] backdrop-blur-[12px] border border-[var(--border-subtle)] text-fog hover:text-mist hover:bg-[var(--surface-hover)]',
 }
 
 export default function IconButton({

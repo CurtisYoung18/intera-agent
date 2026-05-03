@@ -39,9 +39,9 @@ export default function RoutingPage() {
                 <span className="text-[9px] font-sans uppercase tracking-[0.05em] px-1.5 py-0.5 rounded-full border text-muted/50 border-muted/10">p{r.priority}</span>
                 {r.autoAssign && <span className="text-[9px] text-malachite/60 font-sans">auto</span>}
               </div>
-              <div className="flex flex-wrap gap-1">{skills.map(s => <span key={s} className="text-[9px] font-mono text-muted bg-white/[0.02] px-1 py-0.5 rounded">{s}</span>)}</div>
+              <div className="flex flex-wrap gap-1">{skills.map(s => <span key={s} className="text-[9px] font-mono text-muted bg-[var(--surface)] px-1 py-0.5 rounded">{s}</span>)}</div>
             </div>
-            <div className="flex items-center gap-1"><button onClick={() => { setEditing(r); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-white/[0.04] transition-all"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(r.queue)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-white/[0.04] transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
+            <div className="flex items-center gap-1"><button onClick={() => { setEditing(r); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-all"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(r.queue)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-[var(--surface-hover)] transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
           </GlassCard>
         )
       })}

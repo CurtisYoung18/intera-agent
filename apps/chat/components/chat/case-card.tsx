@@ -119,11 +119,11 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
           {/* ── Skills ── */}
           {skillsCalled && skillsCalled.length > 0 && (
             <div className="px-3 pt-2 pb-3">
-              <div className="border-t border-white/[0.04] pt-2">
+              <div className="border-t border-[var(--border-subtle)] pt-2">
                 <p className="text-[9px] font-sans tracking-[0.05em] uppercase text-fog/30 mb-1.5">Actions</p>
                 <div className="flex flex-wrap gap-1">
                   {skillsCalled.map((s) => (
-                    <span key={s} className="text-[10px] font-mono text-fog/50 bg-white/[0.03] px-1.5 py-0.5 rounded">
+                    <span key={s} className="text-[10px] font-mono text-fog/50 bg-[var(--surface)] px-1.5 py-0.5 rounded">
                       {s.replace(/_/g, ' ')}
                     </span>
                   ))}

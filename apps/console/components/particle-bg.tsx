@@ -62,7 +62,10 @@ export default function ParticleBg() {
 
         ctx!.beginPath()
         ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-        ctx!.fillStyle = `rgba(255, 255, 255, ${p.alpha})`
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+        ctx!.fillStyle = isLight
+          ? `rgba(0, 0, 0, ${p.alpha * 0.6})`
+          : `rgba(255, 255, 255, ${p.alpha})`
         ctx!.fill()
       }
 

@@ -44,8 +44,8 @@ export default function WaterRipple({
     const h = canvas.height
     const isDark = isDarkRef.current
 
-    // Clear with fading trail
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
+    // Clear with fading trail (dark: black trail, light: white trail)
+    ctx.fillStyle = isDark ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.12)'
     ctx.fillRect(0, 0, w, h)
     ctx.clearRect(0, 0, w, h)
 

@@ -52,7 +52,7 @@ export default function VoiceInputBar({
       {/* Queue indicator pill */}
       {queuedCount > 0 && (
         <div className="flex justify-center pb-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-sans tracking-[0.03em] text-fog/60 rounded-full bg-white/[0.03] border border-white/[0.04]">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-sans tracking-[0.03em] text-fog/60 rounded-full bg-[var(--surface)] border border-[var(--border-subtle)]">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo animate-breathe" />
             {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} queued
           </span>

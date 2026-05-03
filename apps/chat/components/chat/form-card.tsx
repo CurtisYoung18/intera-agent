@@ -103,7 +103,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
         </div>
 
         {/* Card body */}
-        <div className="relative rounded-2xl bg-[#0f0f12]/95 backdrop-blur-xl px-5 py-4 border border-white/[0.04]">
+        <div className="relative rounded-2xl bg-abyss/95 backdrop-blur-xl px-5 py-4 border border-[var(--border-subtle)]">
           {/* Title — fades in first */}
           <h3
             className="font-serif text-[18px] text-mist mb-1 transition-all duration-500 delay-75"
@@ -149,7 +149,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
                   <select
                     value={answers[field.key] || ''}
                     onChange={(e) => handleChange(field.key, e.target.value)}
-                    className="w-full bg-white/[0.03] border border-white/[0.06] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 appearance-none cursor-pointer hover:bg-white/[0.05]"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 appearance-none cursor-pointer hover:bg-[var(--surface-hover)]"
                   >
                     <option value="" className="bg-abyss">{field.placeholder || 'Select…'}</option>
                     {field.options?.map((opt) => (
@@ -162,7 +162,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
                     onChange={(e) => handleChange(field.key, e.target.value)}
                     placeholder={field.placeholder}
                     rows={2}
-                    className="w-full bg-white/[0.03] border border-white/[0.06] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 placeholder:text-fog/20 hover:bg-white/[0.05] resize-none"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 placeholder:text-fog/20 hover:bg-[var(--surface-hover)] resize-none"
                   />
                 ) : field.type === 'file' ? (
                   <>
@@ -176,7 +176,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
                     <button
                       type="button"
                       onClick={() => handleFileClick(field.key)}
-                      className="w-full bg-white/[0.03] border border-dashed border-white/[0.08] rounded-md p-4 text-center cursor-pointer hover:bg-white/[0.05] hover:border-vermillion/20 transition-all duration-200"
+                      className="w-full bg-[var(--surface)] border border-dashed border-[var(--border-hover)] rounded-md p-4 text-center cursor-pointer hover:bg-[var(--surface-hover)] hover:border-vermillion/20 transition-all duration-200"
                     >
                       {answers[field.key] ? (
                         <p className="text-[12px] text-malachite">{answers[field.key]}</p>
@@ -194,7 +194,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
                     value={answers[field.key] || ''}
                     onChange={(e) => handleChange(field.key, e.target.value)}
                     placeholder={field.placeholder}
-                    className="w-full bg-white/[0.03] border border-white/[0.06] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 placeholder:text-fog/20 hover:bg-white/[0.05]"
+                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 placeholder:text-fog/20 hover:bg-[var(--surface-hover)]"
                   />
                 )}
               </div>
@@ -212,7 +212,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
           >
             <button
               onClick={handleDismiss}
-              className="flex-1 py-1.5 rounded-md text-[12px] text-fog/40 hover:text-fog border border-white/[0.04] hover:border-white/[0.08] transition-all duration-200"
+              className="flex-1 py-1.5 rounded-md text-[12px] text-fog/40 hover:text-fog border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all duration-200"
             >
               Cancel
             </button>
@@ -224,7 +224,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
                   ? 'bg-malachite/20 border border-malachite/30 text-malachite cursor-default'
                   : 'bg-vermillion/80 hover:bg-vermillion text-white shadow-[0_0_12px_rgba(230,69,57,0.08)]'
                 }
-                disabled:bg-white/[0.03] disabled:text-fog/20 disabled:cursor-not-allowed disabled:border-0 disabled:shadow-none`}
+                disabled:bg-[var(--surface)] disabled:text-fog/20 disabled:cursor-not-allowed disabled:border-0 disabled:shadow-none`}
             >
               {submitted ? (
                 <span className="inline-flex items-center gap-1.5">

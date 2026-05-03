@@ -186,12 +186,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             const payload = parsePayload(trace.payload)
 
             return (
-              <div key={trace.id} className="flex gap-3 py-2 px-3 rounded-lg hover:bg-white/[0.02] transition-colors group">
+              <div key={trace.id} className="flex gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface)] transition-colors group">
                 {/* Timeline dot + line */}
                 <div className="flex flex-col items-center flex-shrink-0 pt-1">
                   <div className={`w-2 h-2 rounded-full ${color.replace('text-', 'bg-')}`} />
                   {i < traces.length - 1 && (
-                    <div className="w-px flex-1 bg-white/[0.03] mt-1" />
+                    <div className="w-px flex-1 bg-[var(--surface)] mt-1" />
                   )}
                 </div>
 
@@ -235,7 +235,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                       <summary className="text-[10px] text-secondary/30 cursor-pointer hover:text-secondary/50 transition-colors">
                         payload
                       </summary>
-                      <pre className="mt-1 text-[10px] font-mono text-secondary/40 bg-white/[0.02] rounded p-2 overflow-x-auto max-h-32">
+                      <pre className="mt-1 text-[10px] font-mono text-secondary/40 bg-[var(--surface)] rounded p-2 overflow-x-auto max-h-32">
                         {JSON.stringify(payload, null, 2)}
                       </pre>
                     </details>
@@ -256,7 +256,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   <div className={`max-w-[75%] rounded-xl px-4 py-2.5 ${
                     msg.role === 'user'
                       ? 'bg-indigo/[0.06] border border-indigo/[0.10] rounded-br-sm'
-                      : 'bg-white/[0.03] border border-white/[0.05] rounded-bl-sm'
+                      : 'bg-[var(--surface)] border border-[var(--border-subtle)] rounded-bl-sm'
                   }`}>
                     <p className="text-[13px] text-primary/85 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                     <p className="text-[10px] text-secondary/30 mt-1">

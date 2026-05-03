@@ -260,7 +260,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
       <div className="flex-1 flex">
         {/* ── Left: Case context (collapsible) ── */}
         {showContext && (
-          <aside className="w-72 flex-shrink-0 border-r border-white/[0.04] bg-abyss/20 overflow-y-auto p-4 space-y-3">
+          <aside className="w-72 flex-shrink-0 border-r border-[var(--border-subtle)] bg-abyss/20 overflow-y-auto p-4 space-y-3">
             {/* Agent's question */}
             <div>
               <h3 className="text-[10px] font-sans tracking-[0.06em] uppercase text-fog/40 mb-1">Agent Question</h3>
@@ -293,7 +293,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
                 <h3 className="text-[10px] font-sans tracking-[0.06em] uppercase text-fog/40 mb-1">Agent Actions</h3>
                 <div className="flex flex-wrap gap-1">
                   {skills.map((s) => (
-                    <span key={s} className="text-[10px] font-mono text-fog/50 bg-white/[0.03] px-1.5 py-0.5 rounded">
+                    <span key={s} className="text-[10px] font-mono text-fog/50 bg-[var(--surface)] px-1.5 py-0.5 rounded">
                       {s.replace(/_/g, ' ')}
                     </span>
                   ))}
@@ -321,7 +321,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
                 <div className={`max-w-[75%] rounded-xl px-4 py-2.5 ${
                   msg.role === 'operator'
                     ? 'bg-indigo/[0.08] border border-indigo/[0.12] rounded-br-sm'
-                    : 'bg-white/[0.03] border border-white/[0.05] rounded-bl-sm'
+                    : 'bg-[var(--surface)] border border-[var(--border-subtle)] rounded-bl-sm'
                 }`}>
                   <p className="text-[13px] text-mist/90 leading-relaxed whitespace-pre-wrap">
                     {msg.content || (
@@ -343,7 +343,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
           </div>
 
           {/* Input */}
-          <div className="border-t border-white/[0.04] bg-abyss/40 backdrop-blur-xl p-4 flex-shrink-0">
+          <div className="border-t border-[var(--border-subtle)] bg-abyss/40 backdrop-blur-xl p-4 flex-shrink-0">
             {consultationDone ? (
               <div className="text-center py-2 space-y-2">
                 <p className="text-[13px] text-malachite/70">Consultation complete. The agent is updating the customer.</p>
@@ -361,14 +361,14 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                     placeholder="Reply to Intera…"
                     disabled={sending}
-                    className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[14px] text-mist py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-fog/20 disabled:opacity-50"
+                    className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg text-[14px] text-mist py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-fog/20 disabled:opacity-50"
                   />
                   <button
                     onClick={handleSend}
                     disabled={!input.trim() || sending}
                     className="px-5 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200
                       bg-indigo/20 border border-indigo/30 text-indigo hover:bg-indigo/30
-                      disabled:bg-white/[0.03] disabled:border-white/[0.06] disabled:text-fog/20 disabled:cursor-not-allowed"
+                      disabled:bg-[var(--surface)] disabled:border-[var(--border-subtle)] disabled:text-fog/20 disabled:cursor-not-allowed"
                   >
                     {sending ? '…' : 'Send'}
                   </button>

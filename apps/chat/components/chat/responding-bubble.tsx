@@ -79,7 +79,7 @@ export default function RespondingBubble({ isVisible }: { isVisible: boolean }) 
           exit={{ opacity: 0, height: 0, marginBottom: 0 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
         >
-          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-white/[0.02] border border-white/[0.03] max-w-[90%]">
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] max-w-[90%]">
             {/* Thin spinning ring */}
             <svg width="16" height="16" viewBox="0 0 16 16" className="flex-shrink-0 animate-spin">
               <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="9 28" strokeLinecap="round" className="text-indigo/50" />

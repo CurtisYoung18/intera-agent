@@ -66,8 +66,8 @@ export default function SkillsPage() {
             <p className="text-[12px] text-secondary truncate">{s.description}</p>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => { setEditing(s); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-white/[0.04] transition-all"><Pencil className="w-3.5 h-3.5" /></button>
-            <button onClick={() => handleDelete(s.name)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-white/[0.04] transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
+            <button onClick={() => { setEditing(s); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-all"><Pencil className="w-3.5 h-3.5" /></button>
+            <button onClick={() => handleDelete(s.name)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-[var(--surface-hover)] transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </GlassCard>
       ))}

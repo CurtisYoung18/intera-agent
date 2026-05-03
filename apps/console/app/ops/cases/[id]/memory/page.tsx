@@ -132,7 +132,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                 onChange={(e) => setSummary(e.target.value)}
                 rows={6}
                 placeholder="No compaction summary yet. This is auto-generated when the conversation exceeds context limits."
-                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-primary py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20 font-mono resize-y"
+                className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg text-[13px] text-primary py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20 font-mono resize-y"
               />
             </section>
 
@@ -160,7 +160,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                         setFacts(next)
                       }}
                       placeholder="key"
-                      className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded text-[12px] font-mono text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
+                      className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded text-[12px] font-mono text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
                     />
                     <input
                       value={f.value}
@@ -170,7 +170,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                         setFacts(next)
                       }}
                       placeholder="value"
-                      className="flex-[2] bg-white/[0.03] border border-white/[0.06] rounded text-[12px] text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
+                      className="flex-[2] bg-[var(--surface)] border border-[var(--border-subtle)] rounded text-[12px] text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
                     />
                     <button
                       onClick={() => setFacts(facts.filter((_, j) => j !== i))}
@@ -210,7 +210,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                         setMissing(next)
                       }}
                       placeholder="Missing fact..."
-                      className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded text-[12px] text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
+                      className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded text-[12px] text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
                     />
                     <button
                       onClick={() => setMissing(missing.filter((_, j) => j !== i))}
@@ -236,7 +236,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
               </h2>
               <div className="flex flex-wrap gap-1">
                 {skillsCalled.map((s) => (
-                  <span key={s} className="text-[10px] font-mono text-secondary/50 bg-white/[0.03] px-1.5 py-0.5 rounded">
+                  <span key={s} className="text-[10px] font-mono text-secondary/50 bg-[var(--surface)] px-1.5 py-0.5 rounded">
                     {s.replace(/_/g, ' ')}
                   </span>
                 ))}
@@ -258,7 +258,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                       <summary className="text-[11px] font-mono text-secondary/50 cursor-pointer hover:text-secondary/70 transition-colors">
                         {name.replace(/_/g, ' ')}
                       </summary>
-                      <pre className="mt-1 text-[10px] font-mono text-secondary/40 bg-white/[0.02] rounded p-2 overflow-x-auto max-h-24">
+                      <pre className="mt-1 text-[10px] font-mono text-secondary/40 bg-[var(--surface)] rounded p-2 overflow-x-auto max-h-24">
                         {JSON.stringify(result, null, 2)}
                       </pre>
                     </details>

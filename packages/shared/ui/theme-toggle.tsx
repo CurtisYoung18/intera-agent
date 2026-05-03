@@ -68,7 +68,7 @@ export default function ThemeToggle() {
         hover:ring-[var(--border-hover)]
         ${theme === 'dark'
           ? 'bg-[var(--surface)] text-fog/60 hover:text-gold shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_6px_24px_var(--gold-glow)]'
-          : 'bg-white/70 text-smoke/60 hover:text-[var(--gold-muted)] shadow-[0_2px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_20px_rgba(200,164,92,0.12)]'
+          : 'bg-black/[0.04] text-smoke/60 hover:text-[var(--gold-muted)] shadow-[0_2px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_20px_rgba(200,164,92,0.12)]'
         }
       `}
     >

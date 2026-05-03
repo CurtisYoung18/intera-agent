@@ -7,7 +7,7 @@ interface SkeletonProps {
 export function Skeleton({ className = '' }: SkeletonProps) {
   return (
     <div
-      className={`animate-shimmer rounded-md bg-white/[0.03] ${className}`}
+      className={`animate-shimmer rounded-md bg-[var(--surface)] ${className}`}
     />
   )
 }

@@ -42,7 +42,7 @@ export default function PoliciesPage() {
             </div>
             {p.description && <p className="text-[12px] text-secondary truncate">{p.description}</p>}
           </div>
-          <div className="flex items-center gap-1"><button onClick={() => { setEditing(p); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-white/[0.04] transition-all"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(p.name)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-white/[0.04] transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
+          <div className="flex items-center gap-1"><button onClick={() => { setEditing(p); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-all"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(p.name)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-[var(--surface-hover)] transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
         </GlassCard>
       ))}
       {editing && (

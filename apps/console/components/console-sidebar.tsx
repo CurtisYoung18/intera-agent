@@ -62,12 +62,12 @@ export default function ConsoleSidebar() {
       }}
     >
       {/* ── Avatar / Project section ── */}
-      <div className="px-2 pt-4 pb-3 border-b border-white/[0.04]">
+      <div className="px-2 pt-4 pb-3 border-b border-[var(--border-subtle)]">
         <button
           onClick={() => setAvatarOpen(!avatarOpen)}
-          className="w-full flex items-center gap-2.5 rounded-xl p-2 hover:bg-white/[0.04] transition-all duration-200"
+          className="w-full flex items-center gap-2.5 rounded-xl p-2 hover:bg-[var(--surface-hover)] transition-all duration-200"
         >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo/40 to-indigo/10 border border-white/[0.08] flex items-center justify-center flex-shrink-0">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo/40 to-indigo/10 border border-[var(--border-hover)] flex items-center justify-center flex-shrink-0">
             <User className="w-4 h-4 text-indigo" strokeWidth={2} />
           </div>
 
@@ -89,11 +89,11 @@ export default function ConsoleSidebar() {
         {/* Dropdown */}
         {avatarOpen && expanded && (
           <div className="mt-2 ml-11 space-y-0.5 animate-fade-up">
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-secondary hover:text-primary hover:bg-white/[0.04] rounded-md transition-all duration-150">
+            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-secondary hover:text-primary hover:bg-[var(--surface-hover)] rounded-md transition-all duration-150">
               <Building2 className="w-3 h-3" />
               Switch Project
             </button>
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-secondary hover:text-vermillion hover:bg-white/[0.04] rounded-md transition-all duration-150">
+            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-secondary hover:text-vermillion hover:bg-[var(--surface-hover)] rounded-md transition-all duration-150">
               <LogOut className="w-3 h-3" />
               Sign Out
             </button>
@@ -121,11 +121,11 @@ export default function ConsoleSidebar() {
       </nav>
 
       {/* ── Footer ── */}
-      <div className="px-2 pb-3 pt-2 border-t border-white/[0.04]">
+      <div className="px-2 pb-3 pt-2 border-t border-[var(--border-subtle)]">
         {expanded ? (
           <p className="text-[10px] text-muted font-mono px-2">v0.1</p>
         ) : (
-          <div className="w-4 h-4 mx-auto rounded-full bg-white/[0.03]" />
+          <div className="w-4 h-4 mx-auto rounded-full bg-[var(--surface)]" />
         )}
       </div>
     </aside>
@@ -163,8 +163,8 @@ function NavGroup({
                 expanded ? 'gap-2.5 px-2.5 py-2' : 'justify-center py-2.5'
               } ${
                 active
-                  ? 'bg-white/[0.06]'
-                  : 'hover:bg-white/[0.03]'
+                  ? 'bg-[var(--surface-hover)]'
+                  : 'hover:bg-[var(--surface)]'
               }`}
               title={!expanded ? item.label : undefined}
             >

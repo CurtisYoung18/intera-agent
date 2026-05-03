@@ -51,9 +51,9 @@ const MARKDOWN_COMPONENTS: any = {
   code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
     const isInline = !className
     if (isInline) {
-      return <code className="font-mono text-[13px] sm:text-[14px] px-1.5 py-0.5 rounded bg-white/[0.06] text-indigo-300">{children}</code>
+      return <code className="font-mono text-[13px] sm:text-[14px] px-1.5 py-0.5 rounded bg-[var(--surface-hover)] text-indigo-300">{children}</code>
     }
-    return <code className="block font-mono text-[13px] leading-relaxed p-3 rounded-md bg-white/[0.04] border border-white/[0.06] overflow-x-auto whitespace-pre-wrap">{children}</code>
+    return <code className="block font-mono text-[13px] leading-relaxed p-3 rounded-md bg-[var(--surface-hover)] border border-[var(--border-subtle)] overflow-x-auto whitespace-pre-wrap">{children}</code>
   },
   pre: ({ children }: { children?: React.ReactNode }) => <pre className="my-2">{children}</pre>,
   ul: ({ children }: { children?: React.ReactNode }) => (
@@ -67,9 +67,9 @@ const MARKDOWN_COMPONENTS: any = {
     <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300 transition-colors">{children}</a>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-2 border-white/[0.08] pl-4 my-2 italic text-mist/70">{children}</blockquote>
+    <blockquote className="border-l-2 border-[var(--border-hover)] pl-4 my-2 italic text-mist/70">{children}</blockquote>
   ),
-  hr: () => <hr className="my-3 border-white/[0.06]" />,
+  hr: () => <hr className="my-3 border-[var(--border-subtle)]" />,
   h1: ({ children }: { children?: React.ReactNode }) => <h1 className="font-serif text-[22px] font-medium text-mist mt-3 mb-2">{children}</h1>,
   h2: ({ children }: { children?: React.ReactNode }) => <h2 className="font-serif text-[20px] font-medium text-mist mt-3 mb-2">{children}</h2>,
   h3: ({ children }: { children?: React.ReactNode }) => <h3 className="font-sans text-[15px] font-medium text-mist mt-2 mb-1">{children}</h3>,
@@ -165,7 +165,7 @@ function ToolCallBubble({ toolName, toolVerb, status, timestamp }: {
   return (
     <div className="flex flex-col items-start">
       <div className="animate-message-in">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border-subtle)]">
           {/* CC-style status dot */}
           {status === 'executing' && (
             <span className="inline-block w-2 h-2 rounded-full border border-indigo/60 border-l-transparent animate-tool-spin flex-shrink-0" />
@@ -199,7 +199,7 @@ function FormSubmittedBubble({ formData }: {
   return (
     <div className="flex flex-col items-start">
       <div className="max-w-[90%] animate-message-in">
-        <div className="relative rounded-2xl bg-[#0f0f12]/80 backdrop-blur-xl px-4 py-3 border border-white/[0.04]">
+        <div className="relative rounded-2xl bg-abyss/80 backdrop-blur-xl px-4 py-3 border border-[var(--border-subtle)]">
           <h3 className="font-serif text-[15px] text-mist mb-0.5">{title}</h3>
           {description && (
             <p className="text-[11px] text-fog/40 mb-3">{description}</p>
