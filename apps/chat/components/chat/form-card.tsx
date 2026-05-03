@@ -76,7 +76,7 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
 
   return (
     <div
-      className={`w-full max-w-[95%] mx-auto transition-all duration-500 ease-out ${
+      className={`w-full transition-all duration-500 ease-out ${
         dismissing
           ? 'opacity-0 translate-y-4 scale-[0.97]'
           : entered
@@ -188,15 +188,23 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
                       )}
                     </button>
                   </>
-                ) : (
-                  <input
-                    type={field.type}
-                    value={answers[field.key] || ''}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
-                    placeholder={field.placeholder}
-                    className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 placeholder:text-fog/20 hover:bg-[var(--surface-hover)]"
-                  />
-                )}
+                ) : (() => {
+                  // Auto-detect date fields from label keywords
+                  const isDateField = field.type === 'date' ||
+                    /\b(date|日期|时间|time|deposit)\b/i.test(field.label)
+                  const inputType = isDateField ? 'date' : field.type
+                  return (
+                    <input
+                      type={inputType}
+                      value={answers[field.key] || ''}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      placeholder={isDateField ? undefined : field.placeholder}
+                      className={`w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-md text-[13px] text-mist py-1.5 px-2.5 outline-none focus:border-vermillion/30 transition-all duration-200 placeholder:text-fog/20 hover:bg-[var(--surface-hover)] ${
+                        isDateField ? '[color-scheme:dark]' : ''
+                      }`}
+                    />
+                  )
+                })()}
               </div>
             ))}
           </div>
