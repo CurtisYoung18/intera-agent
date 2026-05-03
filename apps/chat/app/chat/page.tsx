@@ -27,6 +27,7 @@ interface ChatMessage {
   content: string
   isStreaming?: boolean
   thinking?: string
+  thinkingStartedAt?: string
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
@@ -99,6 +100,7 @@ export default function ChatPage() {
       let activeToolCount = 0
       let textHasArrived = false
       let thinkingBuf = ''
+      let thinkingStartedAt = ''
 
       setMessages((prev) => [...prev, makeMsg({
         id: firstTextMsgId, role: 'assistant', msgType: 'text', content: '', isStreaming: true,
@@ -170,7 +172,7 @@ export default function ChatPage() {
                     if (thinkingBuf && textMsgId) {
                       setMessages((prev) =>
                         prev.map((m) => m.id === textMsgId && !m.thinking
-                          ? { ...m, thinking: thinkingBuf }
+                          ? { ...m, thinking: thinkingBuf, thinkingStartedAt }
                           : m),
                       )
                     }
@@ -195,12 +197,12 @@ export default function ChatPage() {
                   case 'thinking_delta': {
                     setAgentStatus('thinking')
                     const td = event.data as string
+                    if (!thinkingStartedAt) thinkingStartedAt = new Date().toISOString()
                     thinkingBuf += td
-                    // Update first text bubble with accumulated thinking
                     if (textMsgId) {
                       setMessages((prev) =>
                         prev.map((m) => m.id === textMsgId
-                          ? { ...m, thinking: thinkingBuf }
+                          ? { ...m, thinking: thinkingBuf, thinkingStartedAt }
                           : m),
                       )
                     }

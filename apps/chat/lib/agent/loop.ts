@@ -233,11 +233,13 @@ export class AgentLoop {
               cb.content += d.partial_json
             } else if (d.type === 'thinking_delta') {
               cb.content += d.thinking
-              sendEvent({
-                type: 'thinking_delta',
-                data: d.thinking,
-                timestamp: new Date().toISOString(),
-              })
+              if (this.deps.config.showThinking) {
+                sendEvent({
+                  type: 'thinking_delta',
+                  data: d.thinking,
+                  timestamp: new Date().toISOString(),
+                })
+              }
             }
             break
           }

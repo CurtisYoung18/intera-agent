@@ -17,6 +17,7 @@ export interface MessageShape {
   content: string
   isStreaming?: boolean
   thinking?: string
+  thinkingStartedAt?: string
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
@@ -77,7 +78,7 @@ const MARKDOWN_COMPONENTS: any = {
 // ─── Component ────────────────────────────────────────────────────
 
 function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) {
-  const { role, msgType, content, isStreaming, thinking, toolStatus, toolName, toolVerb, formData } = msg
+  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, formData } = msg
 
   if (msgType === 'tool_call') {
     return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} timestamp={msg.timestamp} />
@@ -118,7 +119,11 @@ function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) 
           {role === 'assistant' && thinking && (
             <details className="mb-3 group">
               <summary className="text-[12px] font-sans text-fog/40 hover:text-fog/60 cursor-pointer transition-colors select-none">
-                Thinking…
+                {(() => {
+                  const start = thinkingStartedAt ? new Date(thinkingStartedAt).getTime() : Date.now()
+                  const duration = Math.max(1, Math.round((Date.now() - start) / 1000))
+                  return `Thought ${duration}s`
+                })()}
               </summary>
               <div className="mt-2 pl-3 border-l-2 border-indigo/20 text-[13px] text-fog/50 leading-relaxed whitespace-pre-wrap font-sans">
                 {thinking}
