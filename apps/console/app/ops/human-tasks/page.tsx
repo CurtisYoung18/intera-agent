@@ -1,20 +1,16 @@
 'use client'
 
-// Human Tasks — task queue
-// Void + Fluid Glass design, matching Chat aesthetic
+// Human Tasks — task queue with neumorphic glass styling
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-// FluidBackground provided by root ConsoleShell layout
+import { ClipboardList } from 'lucide-react'
+import { ListSkeleton } from '@/components/ui/skeleton'
+import EmptyState from '@/components/ui/empty-state'
 
 interface Task {
-  id: string
-  caseId: string
-  queue: string
-  status: string
-  question: string
-  verdict: string | null
-  createdAt: string
+  id: string; caseId: string; queue: string; status: string
+  question: string; verdict: string | null; createdAt: string
 }
 
 function timeAgo(iso: string): string {
@@ -40,75 +36,64 @@ export default function HumanTasksPage() {
   useEffect(() => {
     fetch('/api/human-tasks')
       .then((r) => r.json())
-      .then((data) => {
-        setTasks(data.tasks || [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+      .then((data) => setTasks(data.tasks || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-6 space-y-3">
+    <div className="max-w-4xl mx-auto px-8 py-8 animate-fade-up">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[16px] font-medium text-mist tracking-[-0.01em]">Human Tasks</h1>
-          <p className="text-[12px] text-fog/50 mt-0.5">Pending operator actions</p>
+          <h1 className="text-[18px] font-semibold text-primary tracking-[-0.01em]">Human Tasks</h1>
+          <p className="text-[13px] text-secondary mt-1">Pending operator actions from agent escalations</p>
         </div>
-        <span className="text-[12px] font-mono text-fog/40 tabular-nums">{tasks.length} pending</span>
+        {!loading && (
+          <span className="glass-pill text-[12px] font-mono text-secondary tabular-nums">
+            {tasks.length} pending
+          </span>
+        )}
       </div>
-        {loading && (
-          <p className="text-center py-16 text-fog/40 text-[14px] animate-breathe">
-            Loading…
-          </p>
-        )}
 
-        {!loading && tasks.length === 0 && (
-          <div className="glass-admin p-16 text-center">
-            <p className="text-mist text-[16px] font-medium mb-2">
-              No tasks yet
-            </p>
-            <p className="text-fog/50 text-[14px] max-w-[320px] mx-auto leading-relaxed">
-              When the agent escalates a case, it will appear here
-            </p>
-          </div>
-        )}
+      {loading && <ListSkeleton count={3} />}
 
-        {tasks.map((task) => (
-          <Link
-            key={task.id}
-            href={`/ops/human-tasks/${task.id}`}
-            className="glass-admin glass-card-hover block p-5 group"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                {/* Meta row */}
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-[10px] font-sans tracking-[0.06em] uppercase text-amber bg-amber/[0.08] border border-amber/[0.12] px-2.5 py-1 rounded-full">
-                    {task.queue.replace(/_/g, ' ')}
-                  </span>
-                  <span className={`inline-block w-[6px] h-[6px] rounded-full ${STATUS_COLORS[task.status] || 'bg-smoke'} ${task.status === 'pending' ? 'animate-breathe' : ''}`} />
-                  <span className="text-[12px] text-fog/40">{timeAgo(task.createdAt)}</span>
-                </div>
+      {!loading && tasks.length === 0 && (
+        <EmptyState
+          icon={ClipboardList}
+          title="No tasks yet"
+          description="When the agent escalates a case that needs human review, it will appear here."
+        />
+      )}
 
-                {/* Question */}
-                <p className="text-[15px] text-mist leading-relaxed line-clamp-2 group-hover:text-mist/90 transition-colors">
-                  {task.question}
-                </p>
-
-                {/* Case ID */}
-                <p className="text-[12px] text-fog/30 mt-3 font-mono tabular-nums">
-                  {task.caseId.slice(0, 12)}…
-                </p>
+      {tasks.map((task) => (
+        <Link
+          key={task.id}
+          href={`/ops/human-tasks/${task.id}`}
+          className="glass-card block p-5 mb-3 group"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-[10px] font-sans tracking-[0.06em] uppercase text-amber/90 bg-amber/[0.06] border border-amber/[0.1] px-2.5 py-1 rounded-full">
+                  {task.queue.replace(/_/g, ' ')}
+                </span>
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATUS_COLORS[task.status] || 'bg-muted'} ${task.status === 'pending' ? 'animate-breathe' : ''}`} />
+                <span className="text-[11px] text-muted">{timeAgo(task.createdAt)}</span>
               </div>
-
-              {/* Arrow */}
-              <span className="text-fog/20 text-lg flex-shrink-0 group-hover:text-fog/50 group-hover:translate-x-0.5 transition-all duration-200">
-                →
-              </span>
+              <p className="text-[15px] text-primary leading-relaxed line-clamp-2">
+                {task.question}
+              </p>
+              <p className="text-[11px] text-muted mt-3 font-mono tabular-nums">
+                {task.caseId.slice(0, 12)}…
+              </p>
             </div>
-          </Link>
-        ))}
+            <span className="text-muted/30 text-lg flex-shrink-0 group-hover:text-indigo group-hover:translate-x-0.5 transition-all duration-300">
+              →
+            </span>
+          </div>
+        </Link>
+      ))}
     </div>
   )
 }

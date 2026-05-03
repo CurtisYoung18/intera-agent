@@ -1,8 +1,9 @@
-// ConsoleShell — shared layout wrapper with topbar + sidebar + content
+// ConsoleShell v2 — pure sidebar layout, particle background, no topbar
 
 import type { ReactNode } from 'react'
 import FluidBackground from '@intera/shared/ui/fluid-background'
-import ConsoleTopbar from './console-topbar'
+import ThemeToggle from '@intera/shared/ui/theme-toggle'
+import ParticleBg from './particle-bg'
 import ConsoleSidebar from './console-sidebar'
 
 interface ConsoleShellProps {
@@ -11,18 +12,22 @@ interface ConsoleShellProps {
 
 export default function ConsoleShell({ children }: ConsoleShellProps) {
   return (
-    <div className="relative min-h-[100dvh] flex flex-col">
+    <div className="relative min-h-[100dvh] flex">
+      {/* Ambient layers */}
       <FluidBackground intensity="subtle" />
+      <ParticleBg />
 
-      <ConsoleTopbar />
-
-      <div className="relative z-10 flex-1 flex min-h-0">
-        <ConsoleSidebar />
-
-        <main className="flex-1 min-w-0 overflow-y-auto">
-          {children}
-        </main>
+      {/* Theme toggle — fixed position, top-right (not in sidebar) */}
+      <div className="fixed top-3 right-3 z-30">
+        <ThemeToggle />
       </div>
+
+      {/* Layout */}
+      <ConsoleSidebar />
+
+      <main className="relative z-10 flex-1 min-w-0 overflow-y-auto">
+        {children}
+      </main>
     </div>
   )
 }
