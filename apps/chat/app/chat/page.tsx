@@ -9,6 +9,7 @@ import ChatShell from '@/components/chat/chat-shell'
 import StatusPill from '@intera/shared/ui/status-pill'
 import MessageList from '@/components/chat/message-list'
 import VoiceInputBar from '@/components/chat/voice-input-bar'
+import RespondingBubble from '@/components/chat/responding-bubble'
 import WelcomeMessage from '@/components/chat/welcome-message'
 import CaseCard from '@/components/chat/case-card'
 import type { CaseStatus } from '@/components/chat/case-card'
@@ -374,7 +375,6 @@ export default function ChatPage() {
         <>
           <MessageList
             messages={messages}
-            isResponding={isLoading}
             onFormSubmit={(msgId, answers) => {
               setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, msgType: 'form_submitted' as MsgType, formData: { ...m.formData!, answers } } : m))
               const answerPairs = Object.entries(answers).filter(([,v]) => v)
@@ -389,6 +389,9 @@ export default function ChatPage() {
               handleSubmit('[Form dismissed by user]', { silent: true })
             }}
           />
+
+          <RespondingBubble isVisible={isLoading} />
+
           <VoiceInputBar
             onSubmit={handleSubmit}
             queuedCount={queuedCount}
