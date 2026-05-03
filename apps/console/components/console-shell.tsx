@@ -17,10 +17,8 @@ export default function ConsoleShell({ children }: ConsoleShellProps) {
       <FluidBackground intensity="subtle" />
       <ParticleBg />
 
-      {/* Theme toggle — fixed position, top-right (not in sidebar) */}
-      <div className="fixed top-3 right-3 z-30">
-        <ThemeToggle />
-      </div>
+      {/* Theme toggle — positioned by the component itself (top-8 right-8) */}
+      <ThemeToggle />
 
       {/* Layout */}
       <ConsoleSidebar />

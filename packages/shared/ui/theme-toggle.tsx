@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 function SunIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="5" />
       <line x1="12" y1="1" x2="12" y2="3" />
       <line x1="12" y1="21" x2="12" y2="23" />
@@ -23,7 +23,7 @@ function SunIcon() {
 
 function MoonIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
   )
@@ -57,18 +57,18 @@ export default function ThemeToggle() {
       type="button"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       className={`
-        fixed top-6 right-6 z-50
+        fixed top-8 right-8 z-50
         group
-        inline-flex items-center gap-2
-        px-3 py-2.5
+        inline-flex items-center gap-2.5
+        px-4 py-3
         rounded-full
         backdrop-blur-xl
         transition-all duration-500 ease-out
         ring-1 ring-[var(--border-subtle)]
         hover:ring-[var(--border-hover)]
         ${theme === 'dark'
-          ? 'bg-[var(--surface)] text-fog/60 hover:text-gold shadow-[0_2px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_20px_var(--gold-glow)]'
-          : 'bg-white/60 text-smoke/60 hover:text-[var(--gold-muted)] shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(200,164,92,0.1)]'
+          ? 'bg-[var(--surface)] text-fog/60 hover:text-gold shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_6px_24px_var(--gold-glow)]'
+          : 'bg-white/70 text-smoke/60 hover:text-[var(--gold-muted)] shadow-[0_2px_12px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_20px_rgba(200,164,92,0.12)]'
         }
       `}
     >
@@ -85,7 +85,7 @@ export default function ThemeToggle() {
         {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
       </span>
 
-      <span className="relative z-10 text-[11px] font-sans tracking-[0.05em] uppercase select-none hidden sm:inline transition-colors duration-500">
+      <span className="relative z-10 text-[12px] font-sans tracking-[0.06em] uppercase select-none hidden sm:inline transition-colors duration-500 font-medium">
         {theme === 'dark' ? 'Light' : 'Dark'}
       </span>
     </button>
