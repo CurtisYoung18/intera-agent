@@ -1,82 +1,174 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
 /* ============================================
-   Intera Harness — Design Tokens
-   Void + Fluid Glass（虚白 · 流光）
+   Intera Chat — Luxury Concierge
+   Warm-black + Copper-gold + Serif elegance
    ============================================ */
 
+@theme {
+  /* ── Colors from CSS variables ── */
+  --color-void: var(--void);
+  --color-abyss: var(--abyss);
+  --color-basalt: var(--basalt);
+  --color-obsidian: var(--obsidian);
+  --color-mist: var(--mist);
+  --color-fog: var(--fog);
+  --color-smoke: var(--smoke);
+  --color-vermillion: var(--vermillion);
+  --color-indigo: var(--indigo);
+  --color-amber: var(--amber);
+  --color-malachite: var(--malachite);
+  --color-gold: var(--gold);
+  --color-gold-hover: var(--gold-hover);
+  --color-gold-muted: var(--gold-muted);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+
+  /* ── Typography ── */
+  --font-serif: 'Cormorant Garamond', 'Noto Serif SC', serif;
+  --font-sans: 'Inter', 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* ── Layout ── */
+  --max-width-chat: 600px;
+
+  /* ── Animations ── */
+  --animate-breathe: breathe 2s ease-in-out infinite;
+  --animate-fade-up: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-border-flow: borderFlow 8s linear infinite;
+  --animate-tool-spin: toolSpin 1.5s linear infinite;
+  --animate-tool-done: toolDone 300ms ease-out forwards;
+  --animate-float: float 3s ease-in-out infinite;
+
+  @keyframes breathe {
+    0%, 100% { opacity: 0.3; }
+    50%      { opacity: 1.0; }
+  }
+  @keyframes fadeUp {
+    0%   { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes borderFlow {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes toolSpin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes toolDone {
+    0%   { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+  }
+}
+
+/* ────────────────────────────────────────────
+   Design Tokens (CSS Custom Properties)
+   ──────────────────────────────────────────── */
+
 :root {
-  /* ── Void Palette ── */
-  --void:        #08080a;
-  --abyss:       #0f0f12;
-  --basalt:      #1a1a1f;
-  --obsidian:    #24242b;
+  /* Warm-black base */
+  --void:        #0d0b09;
+  --abyss:       #141210;
+  --basalt:      #1c1a16;
+  --obsidian:    #262420;
 
-  /* ── Mist (text) ── */
-  --mist:        #f5f3ef;
-  --fog:         #8c8a85;
-  --smoke:       #3d3b38;
+  /* Warm-white text */
+  --mist:        #f0ede6;
+  --fog:         #9c9688;
+  --smoke:       #5c5850;
 
-  /* ── Accent (use sparingly) ── */
+  /* Accents */
   --vermillion:  #e64539;
   --indigo:      #5b6ef5;
   --amber:       #d4912e;
   --malachite:   #2ea04a;
 
-  /* ── Glass tokens ── */
-  --glass-chat:        rgba(255, 255, 255, 0.03);
-  --glass-chat-user:   rgba(255, 255, 255, 0.06);
-  --glass-input:       rgba(255, 255, 255, 0.03);
-  --glass-admin:       rgba(15, 15, 15, 0.70);
-  --glass-pill:        rgba(15, 15, 15, 0.50);
-  --glass-hover:       rgba(255, 255, 255, 0.04);
-  --glass-border:      rgba(255, 255, 255, 0.04);
-  --glass-border-hover: rgba(255, 255, 255, 0.08);
+  /* Copper-gold brand */
+  --gold:         #c8a45c;
+  --gold-hover:   #d4b468;
+  --gold-muted:   #8c7a50;
+  --gold-glow:    rgba(200, 164, 92, 0.12);
 
-  /* ── Radius ── */
-  --radius-sm:         6px;
-  --radius-md:         12px;
-  --radius-lg:         16px;
-  --radius-xl:         24px;
+  /* Warm-tinted surfaces */
+  --surface:       rgba(255, 252, 245, 0.02);
+  --surface-hover: rgba(255, 252, 245, 0.04);
+  --surface-user:  rgba(255, 252, 245, 0.05);
 
-  /* ── Typography ── */
-  --font-serif:        'Cormorant Garamond', 'Noto Serif SC', serif;
-  --font-sans:         'Inter', 'Noto Sans SC', sans-serif;
-  --font-mono:         'JetBrains Mono', monospace;
+  /* Borders */
+  --border-subtle:  rgba(255, 252, 245, 0.04);
+  --border-hover:   rgba(200, 164, 92, 0.12);
+  --border-focus:   rgba(200, 164, 92, 0.2);
+
+  /* Radius */
+  --radius-sm:  12px;
+  --radius-md:  16px;
+  --radius-lg:  20px;
+  --radius-xl:  24px;
+  --radius:     0.625rem;
+
+  /* shadcn/ui */
+  --background:        #0d0b09;
+  --foreground:        #f0ede6;
+  --card:              rgba(255,252,245,0.02);
+  --card-foreground:   #f0ede6;
+  --primary:           #c8a45c;
+  --primary-foreground:#0d0b09;
+  --secondary:         #1c1a16;
+  --secondary-foreground: #f0ede6;
+  --muted:             rgba(255,252,245,0.04);
+  --muted-foreground:  #9c9688;
+  --accent:            rgba(200,164,92,0.08);
+  --accent-foreground: #c8a45c;
+  --destructive:       #e64539;
+  --border:            rgba(255,252,245,0.06);
+  --input:             rgba(255,252,245,0.04);
+  --ring:              rgba(200,164,92,0.2);
 }
 
 /* ── Light Theme ── */
 html[data-theme="light"] {
-  --void:        #fafaf6;
-  --abyss:       #f0efe8;
-  --basalt:      #e6e3db;
-  --obsidian:    #d9d6cc;
+  --void:        #faf8f3;
+  --abyss:       #f0ede4;
+  --basalt:      #e6e2d6;
+  --obsidian:    #d9d4c4;
+  --mist:        #1a1814;
+  --fog:         #6b6658;
+  --smoke:       #a09880;
+  --surface:       rgba(0, 0, 0, 0.015);
+  --surface-hover: rgba(0, 0, 0, 0.03);
+  --surface-user:  rgba(200, 164, 92, 0.06);
+  --border-subtle:  rgba(0, 0, 0, 0.05);
+  --border-hover:   rgba(200, 164, 92, 0.15);
+  --border-focus:   rgba(200, 164, 92, 0.25);
 
-  --mist:        #1a1a1a;
-  --fog:         #6b6b6b;
-  --smoke:       #b0ada6;
-
-  --glass-chat:        rgba(0, 0, 0, 0.015);
-  --glass-chat-user:   rgba(0, 0, 0, 0.025);
-  --glass-input:       rgba(0, 0, 0, 0.015);
-  --glass-admin:       rgba(250, 250, 246, 0.85);
-  --glass-pill:        rgba(250, 250, 246, 0.7);
-  --glass-hover:       rgba(0, 0, 0, 0.02);
-  --glass-border:      rgba(0, 0, 0, 0.03);
-  --glass-border-hover: rgba(0, 0, 0, 0.06);
+  --background:     #faf8f3;
+  --foreground:     #1a1814;
+  --card:           rgba(0,0,0,0.01);
+  --card-foreground:#1a1814;
+  --primary:        #a88844;
+  --primary-foreground: #faf8f3;
+  --secondary:      #f0ede4;
+  --secondary-foreground: #1a1814;
+  --muted:          rgba(0,0,0,0.03);
+  --muted-foreground: #6b6658;
+  --accent:         rgba(200,164,92,0.1);
+  --accent-foreground: #a88844;
+  --border:         rgba(0,0,0,0.06);
+  --input:          rgba(0,0,0,0.03);
+  --ring:           rgba(200,164,92,0.3);
 }
 
-/* ── Global base ── */
-html,
-body {
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
-  padding: 0;
-}
-
+/* ── Global Base ── */
 html {
   background: var(--void);
 }
@@ -91,238 +183,91 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ============================================
+/* ────────────────────────────────────────────
    Glass Utility Classes
-   ============================================ */
+   ──────────────────────────────────────────── */
 
-/* Chat message bubbles — subtle glass, not cards.
-   Borders are deliberately faint to avoid the "window within window" effect. */
+/* Assistant message — subtle warm glass */
+.glass-chat-assistant {
+  background: var(--surface);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+/* User message — slightly stronger glass */
 .glass-chat-user {
-    background: var(--glass-chat-user, rgba(255, 255, 255, 0.06));
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.05));
-    border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg);
-  }
-
-  .glass-chat-assistant {
-    background: var(--glass-chat, rgba(255, 255, 255, 0.02));
-    backdrop-filter: blur(16px) saturate(120%);
-    -webkit-backdrop-filter: blur(16px) saturate(120%);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.03));
-    border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
-  }
-
-  /* Admin / config cards */
-  .glass-admin {
-    background: var(--glass-admin, rgba(15, 15, 15, 0.7));
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.05));
-    border-radius: var(--radius-sm);
-  }
-
-  /* Capsule / pill */
-  .glass-pill {
-    background: var(--glass-pill, rgba(15, 15, 15, 0.5));
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.06));
-    border-radius: 999px;
-  }
-
-  /* Sidebar */
-  .glass-sidebar {
-    background: var(--glass-admin, rgba(15, 15, 15, 0.8));
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-right: 1px solid var(--glass-border, rgba(255, 255, 255, 0.05));
-  }
-
-  /* Input field */
-  .glass-input {
-    background: var(--glass-input, rgba(255, 255, 255, 0.03));
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.04));
-    border-radius: 20px;
-    padding: 10px 16px;
-    color: var(--mist);
-    font-family: var(--font-sans);
-    font-size: 15px;
-    outline: none;
-    width: 100%;
-    transition: border-color 200ms ease-out, box-shadow 200ms ease-out, font-size 800ms ease-out, padding 800ms ease-out;
-  }
-
-  @media (min-width: 640px) {
-    .glass-input {
-      padding: 12px 20px;
-    }
-  }
-
-  .glass-input::placeholder {
-    color: var(--fog);
-    opacity: 0.4;
-  }
-  html[data-theme="light"] .glass-input::placeholder {
-    color: var(--fog);
-    opacity: 0.6;
-  }
-
-  /* Fluid vignette — subtle edge darkening, intentionally faint to avoid
-     creating a "spotlight frame" that separates content from background. */
-  .fluid-vignette {
-    background: radial-gradient(ellipse at center, transparent 50%, rgba(8,8,10,0.2) 100%);
-  }
-  html[data-theme="light"] .fluid-vignette {
-    background: radial-gradient(ellipse at center, transparent 60%, rgba(250,250,246,0.08) 100%);
-  }
-
-  .glass-input:focus {
-    border-color: rgba(230, 69, 57, 0.3);
-    box-shadow: 0 0 0 3px rgba(230, 69, 57, 0.08);
-  }
-
-  /* Card hover lift */
-  .glass-card-hover {
-    transition: background 200ms ease-out, border-color 200ms ease-out, transform 200ms ease-out;
-  }
-
-  .glass-card-hover:hover {
-    background: var(--glass-hover, rgba(255, 255, 255, 0.04));
-    border-color: var(--glass-border-hover, rgba(255, 255, 255, 0.1));
-    transform: translateY(-1px);
-  }
-
-  /* Text balance for headings */
-  .text-balance {
-    text-wrap: balance;
-  }
-
-  /* Custom thin scrollbar */
-  .scroll-thin {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
-  }
-
-  .scroll-thin::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .scroll-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scroll-thin::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 2px;
-  }
-
-/* ============================================
-   Animations
-   ============================================ */
-
-@keyframes breathe {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 1.0; }
+  background: var(--surface-user);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
 }
 
-@keyframes messageIn {
-  0%   { opacity: 0; transform: translateY(8px); }
-  100% { opacity: 1; transform: translateY(0); }
+/* Input field — warm glass with debossed feel */
+.glass-input {
+  background: var(--surface);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 14px 20px;
+  color: var(--mist);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  outline: none;
+  width: 100%;
+  line-height: 1.6;
+  transition: border-color 300ms ease, box-shadow 300ms ease;
 }
 
-@keyframes toolSpin {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.glass-input::placeholder {
+  color: var(--fog);
+  opacity: 0.35;
 }
 
-@keyframes toolDone {
-  0%   { transform: scale(1); opacity: 1; }
-  50%  { transform: scale(1.3); opacity: 0.6; }
-  100% { transform: scale(0); opacity: 0; }
+.glass-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--gold-glow);
 }
 
-@keyframes fadeUp {
-  0%   { opacity: 0; transform: translateY(16px); }
-  100% { opacity: 1; transform: translateY(0); }
+/* Status pill — rounded capsule */
+.glass-pill {
+  background: var(--surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
 }
 
-@keyframes blobFloat {
-  0%   { transform: translate(0, 0) scale(1); }
-  25%  { transform: translate(10%, -5%) scale(1.05); }
-  50%  { transform: translate(5%, 8%) scale(0.95); }
-  75%  { transform: translate(-8%, 3%) scale(1.02); }
-  100% { transform: translate(0, 0) scale(1); }
+/* Admin card */
+.glass-admin {
+  background: rgba(15, 15, 15, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
 }
 
-.animate-breathe     { animation: breathe 2s ease-in-out infinite; }
-.animate-message-in  { animation: messageIn 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.animate-tool-spin   { animation: toolSpin 1.5s linear infinite; }
-.animate-tool-done   { animation: toolDone 300ms ease-out forwards; }
-.animate-fade-up     { animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-.animate-ping-ring   { animation: pingRing 2s cubic-bezier(0, 0.6, 0.4, 1) infinite; }
-.animate-thinking-dots { animation: thinkingDots 1.4s ease-in-out infinite; }
-.animate-shimmer-text  { animation: shimmerText 2s ease-in-out infinite; }
-.animate-form-completed { animation: formCompleted 1s ease-in-out; }
-
-/* Form card — GPU-accelerated floating + flowing gradient border */
-@keyframes formFloat {
-  0%   { transform: translate3d(0, 0, 0); }
-  50%  { transform: translate3d(0, -1.5px, 0); }
-  100% { transform: translate3d(0, 0, 0); }
-}
-@keyframes formShake {
-  0%   { transform: translate3d(0, 0, 0); }
-  20%  { transform: translate3d(-1.5px, 0, 0); }
-  40%  { transform: translate3d(1.5px, 0, 0); }
-  60%  { transform: translate3d(-0.8px, 0, 0); }
-  80%  { transform: translate3d(0.8px, 0, 0); }
-  100% { transform: translate3d(0, 0, 0); }
-}
-@keyframes formCompleted {
-  0%   { transform: scale(1); }
-  50%  { transform: scale(1.01); }
-  100% { transform: scale(1); }
-}
-@keyframes borderFlow {
-  0%   { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-@keyframes pingRing {
-  0%   { transform: scale(0.8); opacity: 0.7; }
-  100% { transform: scale(2.2); opacity: 0; }
-}
-@keyframes thinkingDots {
-  0%, 20%  { opacity: 0.2; }
-  50%     { opacity: 1; }
-  80%, 100% { opacity: 0.2; }
-}
-@keyframes shimmerText {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 0.75; }
-}
-.animate-form-shake {
-  animation: formShake 0.5s ease-out;
-  will-change: transform;
-}
-.animate-border-flow {
-  animation: borderFlow 8s linear infinite;
-  will-change: transform;
+/* Sidebar */
+.glass-sidebar {
+  background: rgba(15, 15, 15, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* ============================================
-   Responding Bubble
-   ============================================ */
-
+/* Responding bubble */
 .responding-bubble {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--surface);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--border-subtle);
   border-radius: 20px;
   max-width: 320px;
 }
@@ -331,7 +276,7 @@ body {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--indigo);
+  background: var(--gold);
 }
 
 .dot-1 { animation: breathe 1.4s ease-in-out infinite; }
@@ -343,5 +288,36 @@ body {
   font-size: 14px;
   font-style: italic;
   color: var(--fog);
-  letter-spacing: 0.01em;
+}
+
+/* ── Utility ── */
+.text-balance { text-wrap: balance; }
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.06) transparent;
+}
+.scroll-thin::-webkit-scrollbar { width: 4px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+}
+
+/* Fluid vignette */
+.fluid-vignette {
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(13,11,9,0.5) 100%);
+}
+html[data-theme="light"] .fluid-vignette {
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(250,248,243,0.15) 100%);
+}
+
+/* Card hover */
+.glass-card-hover {
+  transition: background 300ms ease, border-color 300ms ease, transform 300ms ease;
+}
+.glass-card-hover:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
 }

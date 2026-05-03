@@ -33,7 +33,7 @@ export default function ChatShell({
       <ThemeToggle />
 
       {/* Layer 3: Content — width-constrained via max-w-chat, background layers are NOT constrained */}
-      <div className="relative z-10 max-w-chat mx-auto min-h-[100dvh] flex flex-col px-4 sm:px-6">
+      <div className="relative z-10 max-w-[600px] mx-auto min-h-[100dvh] flex flex-col px-6 sm:px-8">
         {children}
       </div>
     </div>

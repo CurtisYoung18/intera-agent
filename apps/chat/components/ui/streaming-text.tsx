@@ -39,12 +39,12 @@ export default function StreamingText({ text, isStreaming }: StreamingTextProps)
           return <span key={key}>{word}</span>
         }
 
-        const staggerDelay = (idx - animatedCount) * 0.025
+        const staggerDelay = (idx - animatedCount) * 0.04
 
         return (
           <motion.span
             key={key}
-            initial={{ filter: 'blur(4px)', opacity: 0 }}
+            initial={{ filter: 'blur(3px)', opacity: 0 }}
             animate={{ filter: 'blur(0px)', opacity: 1 }}
             transition={{
               duration: 0.3,
@@ -60,7 +60,7 @@ export default function StreamingText({ text, isStreaming }: StreamingTextProps)
       {/* Streaming cursor */}
       {isStreaming && (
         <motion.span
-          className="inline-block w-[2px] h-[1em] bg-indigo/60 align-middle ml-[1px]"
+          className="inline-block w-[2px] h-[1em] bg-gold/50 align-middle ml-[1px]"
           animate={{ opacity: [0.3, 1, 0.3] }}
           transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
         />
