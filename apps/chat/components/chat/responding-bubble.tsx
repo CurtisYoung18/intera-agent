@@ -2,9 +2,10 @@
 
 // RespondingBubble — CC-style loading bubble at the bottom of the message list
 // Three staggered pulsing dots + cycling verb phrase from a 15-phrase pool
-// Shows while Intera is generating a response, disappears on completion
+// Shows while Intera is generating a response, exits with fade+slide animation
 
 import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
 
 const VERB_POOL = [
   'examining your order',
@@ -68,18 +69,26 @@ export default function RespondingBubble({ isVisible }: { isVisible: boolean }) 
     }
   }, [isVisible])
 
-  if (!isVisible) return null
-
   return (
-    <div className="flex justify-start py-1">
-      <div className="responding-bubble animate-fade-up">
-        <div className="flex gap-1 items-center">
-          <span className="responding-dot dot-1" />
-          <span className="responding-dot dot-2" />
-          <span className="responding-dot dot-3" />
-        </div>
-        <span className="responding-verb">Intera is {verb}…</span>
-      </div>
-    </div>
+    <AnimatePresence mode="wait">
+      {isVisible && (
+        <motion.div
+          className="flex justify-start py-1"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+        >
+          <div className="responding-bubble">
+            <div className="flex gap-1 items-center">
+              <span className="responding-dot dot-1" />
+              <span className="responding-dot dot-2" />
+              <span className="responding-dot dot-3" />
+            </div>
+            <span className="responding-verb">Intera is {verb}…</span>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
