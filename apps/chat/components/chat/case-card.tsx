@@ -59,7 +59,7 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
       {collapsed ? (
         <button
           onClick={() => setCollapsed(false)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-abyss/90 backdrop-blur-sm border border-white/[0.06] hover:border-white/[0.12] transition-all duration-300"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-abyss/90 backdrop-blur-sm border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all duration-300"
         >
           <span className={`inline-block w-[6px] h-[6px] rounded-full flex-shrink-0 ${meta.dot}`} />
           <span className="text-[11px] font-sans tracking-[0.03em] uppercase text-fog/70 truncate max-w-[120px]">
@@ -67,7 +67,7 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
           </span>
         </button>
       ) : (
-        <div className={`w-60 rounded-xl bg-[#0b0b0e]/95 backdrop-blur-sm border border-white/[0.06] ${meta.ring} transition-shadow duration-500`}>
+        <div className={`w-60 rounded-xl bg-abyss/95 backdrop-blur-sm border border-[var(--border-subtle)] ${meta.ring} transition-shadow duration-500`}>
           {/* ── Header: title + collapse ── */}
           <div className="flex items-start justify-between px-3 pt-3 pb-1">
             <div className="min-w-0 flex-1">

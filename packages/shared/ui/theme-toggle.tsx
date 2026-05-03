@@ -1,13 +1,13 @@
 'use client'
 
-// ThemeToggle — switches between dark and light mode
-// Persists to localStorage, defaults to dark
+// ThemeToggle — floating glass orb, elegant and non-intrusive
+// Sits with generous padding from edges, gold glow on hover
 
 import { useState, useEffect, useCallback } from 'react'
 
 function SunIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="5" />
       <line x1="12" y1="1" x2="12" y2="3" />
       <line x1="12" y1="21" x2="12" y2="23" />
@@ -32,7 +32,6 @@ function MoonIcon() {
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
-  // Load saved preference
   useEffect(() => {
     const saved = localStorage.getItem('intera-theme') as 'dark' | 'light' | null
     if (saved) {
@@ -58,19 +57,35 @@ export default function ThemeToggle() {
       type="button"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       className={`
-        fixed top-4 right-4 z-50
+        fixed top-6 right-6 z-50
+        group
         inline-flex items-center gap-2
-        px-3 py-2
+        px-3 py-2.5
         rounded-full
-        transition-all duration-500
+        backdrop-blur-xl
+        transition-all duration-500 ease-out
+        ring-1 ring-[var(--border-subtle)]
+        hover:ring-[var(--border-hover)]
         ${theme === 'dark'
-          ? 'bg-white/[0.04] border border-white/[0.08] text-fog hover:text-mist shadow-[0_0_20px_rgba(255,255,255,0.02)] hover:shadow-[0_0_30px_rgba(255,255,255,0.06)]'
-          : 'bg-black/[0.06] border border-black/[0.08] text-smoke hover:text-mist shadow-[0_0_12px_rgba(0,0,0,0.04)] hover:shadow-[0_0_16px_rgba(0,0,0,0.06)]'
+          ? 'bg-[var(--surface)] text-fog/60 hover:text-gold shadow-[0_2px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_20px_var(--gold-glow)]'
+          : 'bg-white/60 text-smoke/60 hover:text-[var(--gold-muted)] shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(200,164,92,0.1)]'
         }
       `}
     >
-      {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-      <span className="text-[11px] font-sans tracking-[0.04em] uppercase select-none hidden sm:inline">
+      {/* Subtle breathing glow ring */}
+      <span className={`
+        absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500
+        ${theme === 'dark'
+          ? 'shadow-[inset_0_0_8px_var(--gold-glow)]'
+          : 'shadow-[inset_0_0_6px_rgba(200,164,92,0.15)]'
+        }
+      `} />
+
+      <span className="relative z-10 transition-transform duration-500 group-hover:rotate-12">
+        {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+      </span>
+
+      <span className="relative z-10 text-[11px] font-sans tracking-[0.05em] uppercase select-none hidden sm:inline transition-colors duration-500">
         {theme === 'dark' ? 'Light' : 'Dark'}
       </span>
     </button>
