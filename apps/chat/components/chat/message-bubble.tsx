@@ -16,6 +16,7 @@ export interface MessageShape {
   msgType: 'text' | 'tool_call' | 'form_active' | 'form_submitted'
   content: string
   isStreaming?: boolean
+  thinking?: string
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
@@ -76,7 +77,7 @@ const MARKDOWN_COMPONENTS: any = {
 // ─── Component ────────────────────────────────────────────────────
 
 function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) {
-  const { role, msgType, content, isStreaming, toolStatus, toolName, toolVerb, formData } = msg
+  const { role, msgType, content, isStreaming, thinking, toolStatus, toolName, toolVerb, formData } = msg
 
   if (msgType === 'tool_call') {
     return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} timestamp={msg.timestamp} />
@@ -114,17 +115,25 @@ function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) 
     <div className={`flex flex-col ${align}`}>
       <div className={`${maxW} animate-message-in`}>
         <GlassCard variant={variant}>
-          {role === 'assistant' && isStreaming ? (
-            <div className="font-serif text-[16px] sm:text-[18px] leading-relaxed text-mist">
-              <StreamingText text={content} isStreaming />
-            </div>
-          ) : (
-            <div className="markdown-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {content}
-              </ReactMarkdown>
-            </div>
+          {role === 'assistant' && thinking && (
+            <details className="mb-3 group">
+              <summary className="text-[12px] font-sans text-fog/40 hover:text-fog/60 cursor-pointer transition-colors select-none">
+                Thinking…
+              </summary>
+              <div className="mt-2 pl-3 border-l-2 border-indigo/20 text-[13px] text-fog/50 leading-relaxed whitespace-pre-wrap font-sans">
+                {thinking}
+              </div>
+            </details>
           )}
+          <div className="font-serif text-[16px] sm:text-[18px] leading-relaxed text-mist">
+            {role === 'assistant' && isStreaming ? (
+              <StreamingText text={content} isStreaming />
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+                {content || (isStreaming ? '' : '...')}
+              </ReactMarkdown>
+            )}
+          </div>
         </GlassCard>
       </div>
 

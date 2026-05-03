@@ -48,6 +48,7 @@ model AgentConfig {
   systemPrompt      String
   toolParallelism   Boolean @default(true)
   isConcurrencySafe Boolean @default(true)
+  showThinking      Boolean @default(false)
 
   // JSON fields
   memoryStrategy String // MemoryStrategy

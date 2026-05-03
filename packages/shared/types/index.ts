@@ -175,6 +175,7 @@ export interface AgentConfigData {
   systemPrompt: string
   toolParallelism: boolean
   isConcurrencySafe: boolean
+  showThinking: boolean
   memoryStrategy: MemoryStrategy
   policyHooks: PolicyHooks
 }

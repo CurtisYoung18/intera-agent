@@ -79,6 +79,7 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   toolParallelism: true,
   isConcurrencySafe: true,
+  showThinking: false,
   memoryStrategy: {
     l1MaxMessages: 12,
     l2SummaryMaxTokens: 2000,
@@ -123,6 +124,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
         toolParallelism: dbConfig.toolParallelism,
         isConcurrencySafe: dbConfig.isConcurrencySafe,
+        showThinking: (dbConfig as any).showThinking ?? false,
         memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
         policyHooks: (parseJson(dbConfig.policyHooks) as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
       }

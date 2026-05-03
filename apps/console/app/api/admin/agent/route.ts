@@ -39,7 +39,7 @@ export async function PUT(req: NextRequest) {
     const {
       model, temperature, thinkingBudget, maxIterations,
       systemPrompt, toolParallelism, isConcurrencySafe,
-      memoryStrategy, policyHooks,
+      showThinking, memoryStrategy, policyHooks,
     } = body
 
     const data: Record<string, unknown> = {}
@@ -50,6 +50,7 @@ export async function PUT(req: NextRequest) {
     if (systemPrompt !== undefined) data.systemPrompt = systemPrompt
     if (toolParallelism !== undefined) data.toolParallelism = toolParallelism
     if (isConcurrencySafe !== undefined) data.isConcurrencySafe = isConcurrencySafe
+    if (showThinking !== undefined) data.showThinking = showThinking
     if (memoryStrategy !== undefined) data.memoryStrategy = typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy)
     if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
 
@@ -65,6 +66,7 @@ export async function PUT(req: NextRequest) {
         maxIterations: maxIterations ?? 20,
         toolParallelism: toolParallelism ?? true,
         isConcurrencySafe: isConcurrencySafe ?? true,
+        showThinking: showThinking ?? false,
         memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
         policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
       },

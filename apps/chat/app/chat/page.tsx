@@ -26,6 +26,7 @@ interface ChatMessage {
   msgType: MsgType
   content: string
   isStreaming?: boolean
+  thinking?: string
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
@@ -97,6 +98,7 @@ export default function ChatPage() {
       const toolMsgIds = new Map<string, string>()
       let activeToolCount = 0
       let textHasArrived = false
+      let thinkingBuf = ''
 
       setMessages((prev) => [...prev, makeMsg({
         id: firstTextMsgId, role: 'assistant', msgType: 'text', content: '', isStreaming: true,
@@ -164,6 +166,14 @@ export default function ChatPage() {
                   case 'text_delta': {
                     textHasArrived = true
                     setAgentStatus('online')
+                    // Attach thinking to the current text bubble on first text
+                    if (thinkingBuf && textMsgId) {
+                      setMessages((prev) =>
+                        prev.map((m) => m.id === textMsgId && !m.thinking
+                          ? { ...m, thinking: thinkingBuf }
+                          : m),
+                      )
+                    }
                     if (textMsgId) {
                       setMessages((prev) =>
                         prev.map((m) => m.id === textMsgId
@@ -182,9 +192,20 @@ export default function ChatPage() {
                     break
                   }
 
-                  case 'thinking_delta':
+                  case 'thinking_delta': {
                     setAgentStatus('thinking')
+                    const td = event.data as string
+                    thinkingBuf += td
+                    // Update first text bubble with accumulated thinking
+                    if (textMsgId) {
+                      setMessages((prev) =>
+                        prev.map((m) => m.id === textMsgId
+                          ? { ...m, thinking: thinkingBuf }
+                          : m),
+                      )
+                    }
                     break
+                  }
 
                   case 'tool_executing': {
                     setAgentStatus('executing')

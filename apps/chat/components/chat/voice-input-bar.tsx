@@ -59,7 +59,7 @@ export default function VoiceInputBar({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <GlassInput
             value={value}
@@ -75,7 +75,7 @@ export default function VoiceInputBar({
           onClick={handleSubmit}
           variant="glass"
           size="md"
-          className="flex-shrink-0 mb-0.5"
+          className="flex-shrink-0"
         />
 
         {(value || queuedCount > 0) && (

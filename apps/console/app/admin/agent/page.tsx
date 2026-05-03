@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 interface AgentConfigData {
   model: string; temperature: number; thinkingBudget: number
   maxIterations: number; systemPrompt: string; toolParallelism: boolean
-  isConcurrencySafe: boolean; memoryStrategy: string; policyHooks: string
+  isConcurrencySafe: boolean; showThinking: boolean; memoryStrategy: string; policyHooks: string
 }
 
 const MODELS = ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001', 'MiniMax-M2.70-highspeed']
@@ -21,7 +21,7 @@ export default function AgentConfigPage() {
 
   useEffect(() => {
     fetch('/api/admin/agent').then(r => r.json()).then(d => {
-      setConfig(d.config || { model: 'claude-sonnet-4-20250514', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, systemPrompt: '', toolParallelism: true, isConcurrencySafe: true, memoryStrategy: '{}', policyHooks: '{}' })
+      setConfig(d.config || { model: 'claude-sonnet-4-20250514', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, systemPrompt: '', toolParallelism: true, isConcurrencySafe: true, showThinking: false, memoryStrategy: '{}', policyHooks: '{}' })
     }).finally(() => setLoading(false))
   }, [])
 
@@ -80,6 +80,7 @@ export default function AgentConfigPage() {
         <div className="flex gap-6">
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={config.toolParallelism} onChange={e => update('toolParallelism', e.target.checked)} className="accent-indigo rounded" /><span className="text-[12px] text-secondary">Tool Parallelism</span></label>
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={config.isConcurrencySafe} onChange={e => update('isConcurrencySafe', e.target.checked)} className="accent-indigo rounded" /><span className="text-[12px] text-secondary">Concurrency Safe</span></label>
+          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={config.showThinking} onChange={e => update('showThinking', e.target.checked)} className="accent-indigo rounded" /><span className="text-[12px] text-secondary">Show Thinking (Claude-style expandable)</span></label>
         </div>
       </GlassCard>
 

@@ -39,6 +39,7 @@ const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
   systemPrompt: CONSULTATION_SYSTEM_PROMPT,
   toolParallelism: true,
   isConcurrencySafe: true,
+  showThinking: false,
   memoryStrategy: {
     l1MaxMessages: 12,
     l2SummaryMaxTokens: 2000,
@@ -78,6 +79,7 @@ async function loadHumanChatConfig(customerId: string): Promise<AgentConfigData>
         systemPrompt: CONSULTATION_SYSTEM_PROMPT, // Always consultation prompt
         toolParallelism: dbConfig.toolParallelism,
         isConcurrencySafe: dbConfig.isConcurrencySafe,
+        showThinking: (dbConfig as any).showThinking ?? false,
         memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_HUMAN_CHAT_CONFIG.memoryStrategy,
         policyHooks: DEFAULT_HUMAN_CHAT_CONFIG.policyHooks, // No policy checks needed for consultation
       }
