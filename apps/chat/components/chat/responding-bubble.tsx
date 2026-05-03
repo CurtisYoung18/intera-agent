@@ -1,8 +1,8 @@
 'use client'
 
-// RespondingBubble — CC-style loading bubble at the bottom of the message list
-// Three staggered pulsing dots + cycling verb phrase from a 15-phrase pool
-// Shows while Intera is generating a response, exits with fade+slide animation
+// RespondingBubble — Claude-style inline thinking indicator
+// Renders as a subtle assistant message at the bottom of the conversation.
+// Smoothly exits with AnimatePresence when the real response arrives.
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
@@ -73,19 +73,21 @@ export default function RespondingBubble({ isVisible }: { isVisible: boolean }) 
     <AnimatePresence mode="wait">
       {isVisible && (
         <motion.div
-          className="flex justify-start py-1"
-          initial={{ opacity: 0, y: 12 }}
+          className="flex justify-start"
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
+          exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
         >
-          <div className="responding-bubble">
-            <div className="flex gap-1 items-center">
-              <span className="responding-dot dot-1" />
-              <span className="responding-dot dot-2" />
-              <span className="responding-dot dot-3" />
-            </div>
-            <span className="responding-verb">Intera is {verb}…</span>
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-white/[0.02] border border-white/[0.03] max-w-[90%]">
+            {/* Thin spinning ring */}
+            <svg width="16" height="16" viewBox="0 0 16 16" className="flex-shrink-0 animate-spin">
+              <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="9 28" strokeLinecap="round" className="text-indigo/50" />
+            </svg>
+
+            <span className="font-serif text-[14px] italic text-fog/40">
+              Intera is {verb}…
+            </span>
           </div>
         </motion.div>
       )}

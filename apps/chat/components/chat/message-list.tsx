@@ -2,20 +2,22 @@
 
 import { useEffect, useRef } from 'react'
 import MessageBubble from './message-bubble'
+import RespondingBubble from './responding-bubble'
 import type { MessageShape } from './message-bubble'
 
 interface MessageListProps {
   messages: MessageShape[]
+  isResponding?: boolean
   onFormSubmit?: (msgId: string, answers: Record<string, string>) => void
   onFormCancel?: (msgId: string) => void
 }
 
-export default function MessageList({ messages, onFormSubmit, onFormCancel }: MessageListProps) {
+export default function MessageList({ messages, isResponding, onFormSubmit, onFormCancel }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, isResponding])
 
   if (messages.length === 0) return null
 
@@ -29,6 +31,8 @@ export default function MessageList({ messages, onFormSubmit, onFormCancel }: Me
           onFormCancel={onFormCancel}
         />
       ))}
+
+      <RespondingBubble isVisible={!!isResponding} />
 
       <div ref={bottomRef} />
     </div>
