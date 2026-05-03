@@ -338,33 +338,44 @@ export default function ChatPage() {
       </div>
 
       {messages.length === 0 ? (
-        <WelcomeMessage />
+        <div className="flex-1 flex flex-col items-center justify-center pb-10">
+          <WelcomeMessage />
+          <div className="w-full max-w-chat px-4">
+            <VoiceInputBar
+              onSubmit={handleSubmit}
+              queuedCount={queuedCount}
+              onClearQueue={handleClearQueue}
+              isResponding={isLoading}
+            />
+          </div>
+        </div>
       ) : (
-        <MessageList
-          messages={messages}
-          isResponding={isLoading}
-          onFormSubmit={(msgId, answers) => {
-            setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, msgType: 'form_submitted' as MsgType, formData: { ...m.formData!, answers } } : m))
-            const answerPairs = Object.entries(answers).filter(([,v]) => v)
-            const answerLines = answerPairs.map(([k,v]) => `${k}: ${v}`).join('\n')
-            handleSubmit(
-              `[Form submitted]\n${answerLines}`,
-              { silent: true },
-            )
-          }}
-          onFormCancel={(msgId) => {
-            setMessages((prev) => prev.filter((m) => m.id !== msgId))
-            handleSubmit('[Form dismissed by user]', { silent: true })
-          }}
-        />
+        <>
+          <MessageList
+            messages={messages}
+            isResponding={isLoading}
+            onFormSubmit={(msgId, answers) => {
+              setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, msgType: 'form_submitted' as MsgType, formData: { ...m.formData!, answers } } : m))
+              const answerPairs = Object.entries(answers).filter(([,v]) => v)
+              const answerLines = answerPairs.map(([k,v]) => `${k}: ${v}`).join('\n')
+              handleSubmit(
+                `[Form submitted]\n${answerLines}`,
+                { silent: true },
+              )
+            }}
+            onFormCancel={(msgId) => {
+              setMessages((prev) => prev.filter((m) => m.id !== msgId))
+              handleSubmit('[Form dismissed by user]', { silent: true })
+            }}
+          />
+          <VoiceInputBar
+            onSubmit={handleSubmit}
+            queuedCount={queuedCount}
+            onClearQueue={handleClearQueue}
+            isResponding={isLoading}
+          />
+        </>
       )}
-
-      <VoiceInputBar
-        onSubmit={handleSubmit}
-        queuedCount={queuedCount}
-        onClearQueue={handleClearQueue}
-        isResponding={isLoading}
-      />
 
       {/* Customer case dashboard — slides in from right, settles at edge */}
       <CaseCard data={caseCard} />

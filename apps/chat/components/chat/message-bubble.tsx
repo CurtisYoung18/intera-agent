@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import GlassCard from '@intera/shared/ui/glass-card'
 import FormCard from './form-card'
+import StreamingText from '@/components/ui/streaming-text'
 
 // ─── Shared message shape ───
 
@@ -113,14 +114,17 @@ function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) 
     <div className={`flex flex-col ${align}`}>
       <div className={`${maxW} animate-message-in`}>
         <GlassCard variant={variant}>
-          <div className="markdown-content">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-              {content}
-            </ReactMarkdown>
-            {isStreaming && (
-              <span className="inline-block ml-[2px] w-[2px] h-[1em] bg-white/50 animate-pulse align-middle" />
-            )}
-          </div>
+          {role === 'assistant' && isStreaming ? (
+            <div className="font-serif text-[16px] sm:text-[18px] leading-relaxed text-mist">
+              <StreamingText text={content} isStreaming />
+            </div>
+          ) : (
+            <div className="markdown-content">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+                {content}
+              </ReactMarkdown>
+            </div>
+          )}
         </GlassCard>
       </div>
 
