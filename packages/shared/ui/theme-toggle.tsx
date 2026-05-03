@@ -56,8 +56,8 @@ export default function ThemeToggle() {
       onClick={toggle}
       type="button"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      style={{ position: 'fixed', top: '32px', right: '32px', zIndex: 50 }}
       className={`
-        fixed top-8 right-8 z-50
         group
         inline-flex items-center gap-2.5
         px-4 py-3
