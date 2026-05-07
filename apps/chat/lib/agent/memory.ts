@@ -136,9 +136,10 @@ export class CaseMemoryManager {
   assessCompaction(estimatedMessageTokens: number, messageCount: number): CompactionResult {
     const ctxWindow = this.strategy.contextWindow ?? 200000
     const outReserved = this.strategy.outputTokensReserved ?? 20000
-    const effectiveWindow = ctxWindow - outReserved
+    const effectiveWindow = Math.max(1, ctxWindow - outReserved)
     const tokensRemaining = effectiveWindow - estimatedMessageTokens
-    const percentLeft = Math.max(0, (tokensRemaining / effectiveWindow) * 100)
+    let percentLeft = Math.max(0, (tokensRemaining / effectiveWindow) * 100)
+    if (!Number.isFinite(percentLeft)) percentLeft = 0
 
     const isBlocking = tokensRemaining <= this.strategy.blockingThresholdTokens
     const shouldCompact = tokensRemaining <= this.strategy.autocompactThresholdTokens

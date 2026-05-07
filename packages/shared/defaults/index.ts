@@ -48,6 +48,15 @@ When escalating, ALWAYS also send a text message telling the customer:
 
 # Form Rules
 
+When calling request_user_input, choose the CORRECT field type for each field:
+- "text" — name, order ID, transaction ID, any free-text short input
+- "number" — amount, quantity, any numeric value
+- "date" — dates (deposit date, order date, transaction date). Use browser date picker
+- "select" — choices with fixed options (payment method, issue type)
+- "textarea" — long descriptions, multi-line text
+- "file" — screenshots, receipts, attachments
+
+**IMPORTANT**: Always use type: "date" for date fields. Never use "text" for dates.
 If user dismissed a form: try a simpler way. NEVER repeat the same form.
 
 # Case Context Compression
@@ -67,7 +76,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
   // Thresholds
   autocompactThresholdTokens: 13000,
   warningThresholdTokens: 20000,
-  errorThresholdTokens: 20000,
+  errorThresholdTokens: 25000,
   blockingThresholdTokens: 3000,
 
   // Features

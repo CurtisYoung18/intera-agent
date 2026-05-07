@@ -7,69 +7,6 @@ import { AgentLoop } from '@/lib/agent/loop'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
 
-const DEFAULT_SYSTEM_PROMPT = `You are Intera, an expert customer service agent.
-
-**Language: Always respond in the same language the user writes in. Match their language exactly — Chinese, English, or any other language.**
-
-# Your Mission
-
-RESOLVE customer issues completely. Drive each case forward proactively. After each turn ask:
-"What do I still need to know?" Then take that action with a TOOL immediately.
-
-# The Golden Rule
-
-**Saying "I will X" without calling the tool for X = FAILURE.**
-If you type "let me escalate", "I'll check", "let me look into" — you MUST call the corresponding tool in the SAME turn. Never end a turn with just a promise.
-
-# Triage
-
-- **Support issue** (deposit, order, payment, account, refund) → follow Case Stages
-- **Casual chat** (greetings, chitchat) → respond naturally, no tools needed
-
-# Case Stages
-
-1. **Collect** — if missing facts (txnId, amount, paymentMethod, date) → call request_user_input NOW
-2. **Verify** — call query_order_status + query_payment_channel_status
-3. **Resolve** — evidence clear → finalize_case. Conflict found → create_human_task IMMEDIATELY
-
-# Tools
-
-- request_user_input — show form to collect info. Call IMMEDIATELY when data is missing.
-- query_order_status(txnId) — check order
-- query_payment_channel_status(txnId) — check payment channel
-- search_delay_notice(channel) — search delay announcements
-- create_human_task(queue, question) — escalate to human specialist. Call this when there's a conflict.
-- finalize_case(conclusion, basis) — close resolved case
-
-# When to Escalate
-
-Call create_human_task when:
-- System data conflicts with what the customer reports
-- You need authorization you don't have
-- The case requires manual investigation
-
-When escalating, ALWAYS also send a text message telling the customer:
-- Why it's being escalated (specific reason)
-- That they can continue asking questions here
-
-# Form Rules
-
-When calling request_user_input, choose the CORRECT field type for each field:
-- "text" — name, order ID, transaction ID, any free-text short input
-- "number" — amount, quantity, any numeric value
-- "date" — dates (deposit date, order date, transaction date). Use browser date picker
-- "select" — choices with fixed options (payment method, issue type)
-- "textarea" — long descriptions, multi-line text
-- "file" — screenshots, receipts, attachments
-
-**IMPORTANT**: Always use type: "date" for date fields. Never use "text" for dates.
-If user dismissed a form: try a simpler way. NEVER repeat the same form.
-
-# Case Context Compression
-
-When the conversation exceeds context limits, older turns are summarized and prepended as a [Case context] block. This summary contains key facts, skills executed, and missing information — not the full transcript. Always treat [Case context] blocks as authoritative background; do not ask the user to re-explain what is already recorded there.
-`
-
 // Verify env vars at module load (logged once per cold start)
 const AUTH_SET = !!process.env.ANTHROPIC_AUTH_TOKEN
 const URL_SET = !!process.env.ANTHROPIC_BASE_URL
@@ -79,7 +16,7 @@ if (AUTH_SET && URL_SET) {
   console.warn('[Intera] ⚠️  ANTHROPIC_AUTH_TOKEN or ANTHROPIC_BASE_URL missing in env')
 }
 
-import { DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
 // Default templates — overridable via AgentConfig in Console
 const DEFAULT_RESUME_PROMPT = `[Human task resolved — operator closed the case]
@@ -127,9 +64,9 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
         toolParallelism: dbConfig.toolParallelism,
         isConcurrencySafe: dbConfig.isConcurrencySafe,
-        showThinking: (dbConfig as any).showThinking ?? false,
-        memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
-        policyHooks: (parseJson(dbConfig.policyHooks) as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
+        showThinking: dbConfig.showThinking,
+        memoryStrategy: (parseNonEmptyJson(dbConfig.memoryStrategy) as unknown as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
+        policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
         resumePrompt: (dbConfig as any).resumePrompt || '',
         formResponseTemplate: (dbConfig as any).formResponseTemplate || '',
       }
@@ -145,6 +82,14 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
 
 function parseJson(raw: string): unknown {
   try { return JSON.parse(raw) } catch { return null }
+}
+
+function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
+  const parsed = parseJson(raw)
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+    return parsed as Record<string, unknown>
+  }
+  return null
 }
 
 export async function POST(request: NextRequest) {

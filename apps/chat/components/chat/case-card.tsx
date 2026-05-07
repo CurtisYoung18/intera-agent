@@ -73,6 +73,7 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
     setVisible(false)
     exitTimer.current = setTimeout(() => {
       onDismiss?.()
+      setExiting(false)
     }, 350)
   }
 

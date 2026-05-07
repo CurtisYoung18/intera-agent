@@ -21,7 +21,8 @@ export default function CaseTypesPage() {
   useEffect(() => { load() }, [load])
   const handleSave = useCallback(async () => {
     if (!editing?.type) return
-    await fetch(isNew ? '/api/admin/case-types' : `/api/admin/case-types/${encodeURIComponent(editing.type)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+    const res = await fetch(isNew ? '/api/admin/case-types' : `/api/admin/case-types/${encodeURIComponent(editing.type)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+    if (!res.ok) return alert(`Failed to save: ${res.status}`)
     setEditing(null); load()
   }, [editing, isNew, load])
   const handleDelete = useCallback(async (type: string) => { if (!confirm(`Delete "${type}"?`)) return; await fetch(`/api/admin/case-types/${encodeURIComponent(type)}`, { method: 'DELETE' }); load() }, [load])

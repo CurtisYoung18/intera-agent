@@ -64,7 +64,7 @@ export interface LoopResult {
 export class AgentLoop {
   private messages: Message[] = []
   private caseMemory: CaseMemoryManager
-  private policyEngine: PolicyEngine
+  private policyEngine!: PolicyEngine
   private skillRouter: SkillRouter
   private traceWriter: TraceWriter
   private profiler: Profiler = new Profiler()
@@ -73,7 +73,6 @@ export class AgentLoop {
 
   constructor(private deps: AgentLoopDeps) {
     this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
-    this.policyEngine = new PolicyEngine(deps.customerId)
     this.skillRouter = new SkillRouter(deps.customerId)
     this.traceWriter = new TraceWriter(deps.caseId)
     this.abortController = new AbortController()
@@ -365,6 +364,7 @@ export class AgentLoop {
           skillName: result.name,
           skillOutput: result.output,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
+          skillsCalled: this.caseMemory.getSkillsCalled(),
         })
 
         if (policyResult.result === 'escalated') {

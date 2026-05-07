@@ -50,6 +50,10 @@ model AgentConfig {
   isConcurrencySafe Boolean @default(true)
   showThinking      Boolean @default(false)
 
+  maxOutputTokens     Int?    // default 4096
+  resumePrompt        String? // synthetic message for human task resume
+  formResponseTemplate String? // synthetic message for form submission
+
   // JSON fields
   memoryStrategy String // MemoryStrategy
   policyHooks    String // PolicyHooks

@@ -148,21 +148,19 @@ export class PolicyEngine {
         if (outputStr.includes(keyword)) {
           // Special case: conflict_requires_human — does not block, escalates instead
           if (policyName === 'conflict_requires_human') {
-            // Only escalate if the user has also reported the issue
-            // (confirmedFacts signals user's claim exists)
-            const hasUserReport = context.confirmedFacts &&
-              Object.values(context.confirmedFacts).some(
-                (v) => typeof v === 'string' && context.skillOutput &&
-                  outputStr.includes('success'),
-              )
-            if (hasUserReport) {
+            // Escalate when: user reported "not received" AND system/tool says "success"
+            const userReportedNotReceived = context.confirmedFacts?.userReportedNotReceived === true
+            const systemReportsSuccess = outputStr.includes('success') || outputStr.includes('ok')
+            if (userReportedNotReceived && systemReportsSuccess) {
               return {
                 policyName,
                 result: 'escalated',
                 reason: `Conflict detected: system reports success but user reports issue. Escalation required.`,
               }
             }
-            // No user report to conflict with — just warn
+            if (userReportedNotReceived) {
+              return { policyName, result: 'hint', reason: `User reported issue — monitor system result` }
+            }
             return { policyName, result: 'hint', reason: `Potential conflict keyword detected: "${keyword}"` }
           }
 

@@ -48,6 +48,7 @@ interface MemoryStrategy {
   toolResultTokenRatio: number
   // Advanced
   compactPrompt: string
+  toolResultTemplate: string
   contextWindow: number
   outputTokensReserved: number
   maxKeyEventsAfterCompact: number
@@ -74,6 +75,7 @@ const DEFAULT_MEMORY: MemoryStrategy = {
   tokensPerKeyEvent: 20, tokensPerFact: 15, tokensPerSkill: 30,
   cjkCharPerToken: 1.2, latinCharPerToken: 3, minTokenEstimate: 100, toolResultTokenRatio: 3,
   compactPrompt: '',
+  toolResultTemplate: 'Tool {name} result:\n{output}',
   contextWindow: 200000, outputTokensReserved: 20000,
   maxKeyEventsAfterCompact: 5, compactCircuitBreakerMaxFailures: 3, sessionMemoryMaxAgeMs: 1800000,
 }
@@ -174,12 +176,20 @@ export default function AgentConfigPage() {
   const handleSave = useCallback(async () => {
     if (!config) return
     setSaving(true); setSaved(false)
-    await fetch('/api/admin/agent', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...config, memoryStrategy: JSON.stringify(config.memoryStrategy) }) })
     try {
-      await fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: 'default' }) })
-    } catch { /* non-critical — cache will expire via TTL */ }
-    setSaved(true); setSaving(false)
+      const res = await fetch('/api/admin/agent', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...config, memoryStrategy: JSON.stringify(config.memoryStrategy) }) })
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`)
+      try {
+        await fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: 'default' }) })
+      } catch { /* non-critical — cache will expire via TTL */ }
+      setSaved(true)
+    } catch (err) {
+      console.error('Failed to save agent config:', err)
+      alert('Failed to save config. Check console for details.')
+    } finally {
+      setSaving(false)
+    }
   }, [config])
 
   const update = useCallback((field: string, value: unknown) => {

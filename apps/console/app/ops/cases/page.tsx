@@ -55,8 +55,8 @@ export default function CasesPage() {
 
   const handleLoadMore = () => {
     const next = offset + PAGE_SIZE
-    setOffset(next)
     load(statusFilter, next, true)
+    setOffset(next)
   }
 
   const filtered = search

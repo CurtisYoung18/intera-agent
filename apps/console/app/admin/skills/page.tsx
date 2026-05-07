@@ -23,6 +23,7 @@ export default function SkillsPage() {
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Partial<SkillItem> | null>(null)
+  const [originalName, setOriginalName] = useState('')
   const [isNew, setIsNew] = useState(false)
   const [search, setSearch] = useState('')
   const [testing, setTesting] = useState(false)
@@ -32,8 +33,10 @@ export default function SkillsPage() {
 
   const handleSave = useCallback(async () => {
     if (!editing?.name) return
-    const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(editing.name)}`
-    await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+    const urlName = isNew ? editing.name : originalName
+    const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
+    const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+    if (!res.ok) return alert(`Failed to save: ${res.status}`)
     // Invalidate agent config cache in case skills are cached in the future
     fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: 'default' }) }).catch(() => {})
     setEditing(null); load()
@@ -74,7 +77,7 @@ export default function SkillsPage() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted/40" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="glass-input-console text-[12px] pl-8 pr-3 py-2 w-40" />
           </div>
-          <button onClick={() => { setEditing({ ...EMPTY }); setIsNew(true) }}
+          <button onClick={() => { setEditing({ ...EMPTY }); setOriginalName(''); setIsNew(true) }}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all duration-200">
             <Plus className="w-4 h-4" /> New
           </button>
@@ -102,7 +105,7 @@ export default function SkillsPage() {
             <p className="text-[12px] text-secondary truncate">{s.description}</p>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => { setEditing(s); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-all"><Pencil className="w-3.5 h-3.5" /></button>
+            <button onClick={() => { setEditing(s); setOriginalName(s.name); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-all"><Pencil className="w-3.5 h-3.5" /></button>
             <button onClick={() => handleDelete(s.name)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-[var(--surface-hover)] transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </GlassCard>
