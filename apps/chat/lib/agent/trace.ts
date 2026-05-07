@@ -21,6 +21,7 @@ export type ActionType =
   | 'stream_event'
   | 'llm_request_start'
   | 'llm_response'
+  | 'microcompact'
 
 export interface TraceEntry {
   id: string

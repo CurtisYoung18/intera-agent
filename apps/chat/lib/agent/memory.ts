@@ -4,13 +4,10 @@
 //   - Session memory: running summary maintained across turns
 //   - Structured compaction with <analysis>/<summary> format
 
-import type { KeyEvent, CaseMemoryData } from '@intera/shared/types'
+import type { KeyEvent, CaseMemoryData, MemoryStrategy } from '@intera/shared/types'
+import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 
-// ─── Token thresholds (CC-style) ────────────────────────────
-const AUTOCOMPACT_BUFFER_TOKENS = 13000
-const WARNING_THRESHOLD_TOKENS = 20000
-const BLOCKING_BUFFER_TOKENS = 3000
-const MAX_OUTPUT_TOKENS_RESERVED = 20000 // reserved for model output
+const MAX_OUTPUT_TOKENS_RESERVED = 20000
 const DEFAULT_CONTEXT_WINDOW = 200000
 
 export interface CompactionResult {
@@ -28,9 +25,16 @@ export class CaseMemoryManager {
   private skillResults: Record<string, unknown> = {}
   private keyEvents: KeyEvent[] = []
   private summary: string = ''
+  private lastCompactedAt: Date | null = null
   private consecutiveCompactFailures = 0
+  private strategy: MemoryStrategy
 
-  constructor(private caseId: string) {}
+  constructor(
+    private caseId: string,
+    strategy: MemoryStrategy,
+  ) {
+    this.strategy = { ...DEFAULT_MEMORY_STRATEGY, ...strategy }
+  }
 
   // ─── DB load/restore ──────────────────────────────────────
 
@@ -122,12 +126,19 @@ export class CaseMemoryManager {
     const tokensRemaining = effectiveWindow - estimatedMessageTokens
     const percentLeft = Math.max(0, (tokensRemaining / effectiveWindow) * 100)
 
+    const isBlocking = tokensRemaining <= this.strategy.blockingThresholdTokens
+    const shouldCompact = tokensRemaining <= this.strategy.autocompactThresholdTokens
+    const isWarning = tokensRemaining <= this.strategy.warningThresholdTokens
+
+    // enableContextCollapse=false → never signal compaction (messages are kept)
+    const collapseEnabled = this.strategy.enableContextCollapse !== false
+
     return {
-      shouldCompact: tokensRemaining <= AUTOCOMPACT_BUFFER_TOKENS,
-      isWarning: tokensRemaining <= WARNING_THRESHOLD_TOKENS,
-      isBlocking: tokensRemaining <= BLOCKING_BUFFER_TOKENS,
+      shouldCompact: collapseEnabled ? shouldCompact : false,
+      isWarning,
+      isBlocking: collapseEnabled ? isBlocking : false,
       percentLeft,
-      messagesToKeep: Math.max(4, Math.floor(messageCount * 0.4)), // keep 40%
+      messagesToKeep: Math.max(4, Math.floor(messageCount * 0.4)),
     }
   }
 
@@ -209,9 +220,14 @@ export class CaseMemoryManager {
 
   recordCompaction(): string {
     this.summary = this.buildCompactionSummary()
+    this.lastCompactedAt = new Date()
     this.keyEvents = this.keyEvents.slice(-5)
     this.resetCompactFailures()
     return this.summary
+  }
+
+  getLastCompactedAt(): Date | null {
+    return this.lastCompactedAt
   }
 
   recordCompactionFailure(): void {
@@ -228,6 +244,15 @@ export class CaseMemoryManager {
 
   hasSummary(): boolean {
     return this.summary.length > 0
+  }
+
+  setSummary(summary: string): void {
+    this.summary = summary
+    this.lastCompactedAt = new Date()
+  }
+
+  getStrategy(): MemoryStrategy {
+    return { ...this.strategy }
   }
 
   // ─── Accessors ────────────────────────────────────────────

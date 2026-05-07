@@ -190,6 +190,8 @@ export interface MemoryStrategy {
   autocompactThresholdTokens: number
   warningThresholdTokens: number
   errorThresholdTokens: number
+  blockingThresholdTokens: number
+  compactModel: string
   enableSnip?: boolean
   enableMicrocompact?: boolean
   enableContextCollapse?: boolean

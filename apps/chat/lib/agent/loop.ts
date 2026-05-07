@@ -19,6 +19,9 @@ import { CaseMemoryManager } from './memory'
 import { PolicyEngine } from './policy'
 import { SkillRouter } from './skills'
 import { TraceWriter } from './trace'
+import { microCompact } from './microCompact'
+import { trySessionMemoryCompact } from './sessionMemoryCompact'
+import { compactConversation } from './compact'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 
 const MAX_OUTPUT_TOKENS = 4096
@@ -69,7 +72,7 @@ export class AgentLoop {
   private abortController: AbortController
 
   constructor(private deps: AgentLoopDeps) {
-    this.caseMemory = new CaseMemoryManager(deps.caseId)
+    this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.policyEngine = new PolicyEngine(deps.customerId)
     this.skillRouter = new SkillRouter(deps.customerId)
     this.traceWriter = new TraceWriter(deps.caseId)
@@ -621,10 +624,14 @@ export class AgentLoop {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
     const recentMessages = this.messages.slice(-limit)
 
-    // If compaction summary exists, prepend it as context (CC session_memory.md pattern)
     if (this.caseMemory.hasSummary()) {
+      const maxSummaryChars = this.deps.config.memoryStrategy.l2SummaryMaxTokens * 3
+      let summaryText = this.caseMemory.getSummary().summary || ''
+      if (summaryText.length > maxSummaryChars) {
+        summaryText = summaryText.slice(0, maxSummaryChars) + '...'
+      }
       const summaryMsg = this.makeUserMessage(
-        `[Case context from previous turns — use this to stay oriented]\n${this.caseMemory.getSummary().summary}`
+        `[Case context from previous turns — use this to stay oriented]\n${summaryText}`
       )
       return [summaryMsg, ...recentMessages] as any
     }
@@ -656,7 +663,34 @@ export class AgentLoop {
     shouldCompact: boolean
     reason?: string
   }> {
-    // CC-style multi-tiered compaction assessment
+    // Master switch — admin can disable all auto-compaction
+    if (!this.deps.config.memoryStrategy.enableAutocompact) {
+      return { shouldCompact: false }
+    }
+
+    // MicroCompact: clear old tool results before assessment (free, local)
+    if (this.deps.config.memoryStrategy.enableMicrocompact !== false) {
+      const mcResult = microCompact(this.messages)
+      if (mcResult.clearedCount > 0) {
+        this.messages = mcResult.messages
+        await this.traceWriter.write('microcompact', 'Cleared tool results', JSON.stringify({
+          clearedCount: mcResult.clearedCount,
+          tokensSaved: mcResult.tokensSaved,
+        }))
+      }
+    }
+
+    // Session Memory Compact: reuse existing persisted summary if recent enough
+    if (this.caseMemory.hasSummary()) {
+      const smResult = trySessionMemoryCompact(
+        this.caseMemory.getSummary().summary,
+        this.caseMemory.getLastCompactedAt(),
+      )
+      if (smResult.used) {
+        return { shouldCompact: false, reason: 'session_memory_still_fresh' }
+      }
+    }
+
     const messageContents = this.messages.map((m) => typeof m.content === 'string' ? m.content : '')
     const estimatedTokens = this.caseMemory.estimateTokens(messageContents)
 
@@ -667,10 +701,11 @@ export class AgentLoop {
         return { shouldCompact: false, reason: 'circuit_breaker' }
       }
       try {
+        await this.performCompaction()
         const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
-        this.caseMemory.recordCompaction()
-        // Trim old messages — keep only the most recent ones
-        this.messages = this.messages.slice(-keepCount)
+        if (this.deps.config.memoryStrategy.enableSnip !== false) {
+          this.messages = this.messages.slice(-keepCount)
+        }
         await this.traceWriter.write('loop_decision', 'Compacted', JSON.stringify({
           reason: 'blocking', kept: keepCount, percentLeft: assessment.percentLeft,
         }))
@@ -682,9 +717,11 @@ export class AgentLoop {
     }
 
     if (assessment.shouldCompact) {
+      await this.performCompaction()
       const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
-      this.caseMemory.recordCompaction()
-      this.messages = this.messages.slice(-keepCount)
+      if (this.deps.config.memoryStrategy.enableSnip !== false) {
+        this.messages = this.messages.slice(-keepCount)
+      }
       return { shouldCompact: true, reason: 'auto' }
     }
 
@@ -693,6 +730,32 @@ export class AgentLoop {
     }
 
     return { shouldCompact: false }
+  }
+
+  /** Run LLM-driven compaction with fallback to programmatic summary. */
+  private async performCompaction(): Promise<void> {
+    const ms = this.deps.config.memoryStrategy
+    const maxTokens = ms.l2SummaryMaxTokens
+    const model = ms.compactModel || 'MiniMax-M2.5-highspeed'
+
+    try {
+      const result = await compactConversation(this.messages, maxTokens, model)
+      if (result.summary) {
+        this.caseMemory.setSummary(result.summary)
+        await this.traceWriter.write('loop_decision', 'LLM Compact', JSON.stringify({
+          model: result.model,
+          provider: result.provider,
+          tokensUsed: result.tokensUsed,
+        }))
+        return
+      }
+      console.warn('[AgentLoop] LLM compact returned empty summary, falling back to programmatic')
+    } catch (err) {
+      console.warn('[AgentLoop] LLM compact failed, falling back to programmatic:', err)
+    }
+
+    // Fallback: programmatic XML summary
+    this.caseMemory.recordCompaction()
   }
 
   abort() {

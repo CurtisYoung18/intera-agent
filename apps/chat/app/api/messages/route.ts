@@ -99,6 +99,8 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
     autocompactThresholdTokens: 13000,
     warningThresholdTokens: 20000,
     errorThresholdTokens: 20000,
+    blockingThresholdTokens: 3000,
+    compactModel: 'MiniMax-M2.5-highspeed',
     enableSnip: true,
     enableMicrocompact: true,
     enableContextCollapse: true,
