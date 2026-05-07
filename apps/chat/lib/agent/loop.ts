@@ -670,7 +670,8 @@ export class AgentLoop {
 
     // MicroCompact: clear old tool results before assessment (free, local)
     if (this.deps.config.memoryStrategy.enableMicrocompact !== false) {
-      const mcResult = microCompact(this.messages)
+      const ms = this.deps.config.memoryStrategy
+      const mcResult = microCompact(this.messages, ms.compactableTools, ms.toolResultTokenRatio)
       if (mcResult.clearedCount > 0) {
         this.messages = mcResult.messages
         await this.traceWriter.write('microcompact', 'Cleared tool results', JSON.stringify({
@@ -734,12 +735,10 @@ export class AgentLoop {
 
   /** Run LLM-driven compaction with fallback to programmatic summary. */
   private async performCompaction(): Promise<void> {
-    const ms = this.deps.config.memoryStrategy
-    const maxTokens = ms.l2SummaryMaxTokens
-    const model = ms.compactModel || 'MiniMax-M2.5-highspeed'
+    const strategy = this.deps.config.memoryStrategy
 
     try {
-      const result = await compactConversation(this.messages, maxTokens, model)
+      const result = await compactConversation(this.messages, strategy)
       if (result.summary) {
         this.caseMemory.setSummary(result.summary)
         await this.traceWriter.write('loop_decision', 'LLM Compact', JSON.stringify({

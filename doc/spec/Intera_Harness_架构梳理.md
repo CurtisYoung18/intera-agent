@@ -2,27 +2,33 @@
 
 > 项目路径：`/Users/curtis/Desktop/Tools/intera-agent`
 > 文档目的：统一对产品架构的认知，梳理模块边界和关键数据链路。
-> 最后更新：2026-04-30
+> 最后更新：2026-05-07 ｜ 版本：生产就绪 v1.0
 >
-> **当前确认的产品定位**：Intera Harness 是 Intera 的核心产品，一个由 Agent 主导、以问题解决为目标的 AI 客服 SaaS。
+> **产品定位**：Intera 是一个由 AI Agent 主导、以问题解决为目标的客服 SaaS。Agent 作为 Case Owner，对每一个 case 全程负责——理解目标、收集证据、制定计划、调用工具、协调人工、持续推进，直到闭环。系统目标不是"回复消息"，而是"解决问题"。
 >
-> **设计理念**：我们不是在做"Flow-Chatbot"（预先设计好的流程图 + 规则树 + 节点跳转），而是做一个 **Agentic Customer Service Harness**（围绕 Case 运行的 Agent 执行系统）。Agent 根据当前目标和证据动态决定下一步，不要求预先写完所有流程，可以中途改计划、串联多个动作、请求人工、恢复执行。核心单位是 **Case / Goal**，系统目标是**解决问题**而不是回答问题。
+> **核心哲学**：
+> - **Case 不是对话**，是任务。处理单位从 message 升级为 case，Agent 持有完整状态跨轮次推进。
+> - **人工不是转接**，是后台资源。Agent 自己找人工，把问题总结好、把证据准备好，人工只回答结构化问题，结果由 Agent 带给用户——用户面对的始终是同一个 Agent。
+> - **检索不是为了回答**，是为了决策。知识库召回给 Agent 提供可引用、可验证、可行动的证据，而不是直接拼给用户看。
+> - **规则不是流程**，是边界。Policy 定义的是 Agent 的行为红线，不是执行剧本。
 >
-> **路由命名变更（2026-04-29）**：`/try/` 前缀已移除。Chat → `/chat`，Console Ops → `/ops/`，Admin → `/admin`。API routes: `/api/messages`, `/api/human-chat`, `/api/human-tasks/*`。
+> **设计理念**：不做 Flow-Chatbot（预先设计好的流程图 + 规则树 + 节点跳转）。做一个 **Agentic Harness**——围绕 Case 运行的 Agent 执行系统。Agent 根据当前目标和证据动态决定下一步，不要求预先写完所有流程，可以中途改计划、串联多个动作、请求人工、恢复执行。
+>
+> **路由**：`/chat`（顾客端），`/ops/*`（运营后台），`/admin/*`（配置后台）。API: `/api/messages`, `/api/human-chat`, `/api/human-tasks/*`。
 
 ---
 
 ## 一、整体架构总览
 
 ```
-B 端游戏供应商（DemoCustomer）
+B 端商户（B-side Customer）
     │
     └── C 端顾客（user_id）
               │
               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  /try/chat 页面                                              │
-│  DemoChatShell (React Client)                                 │
+│  /chat 页面                                              │
+│  ChatShell (React Client)                                 │
 │   - CaseRail（左侧 Case 列表）★ 与 user_id 绑定              │
 │   │    根据当前顾客的 user_id，展示其所有历史 case             │
 │   │    顾客可切换查看任意 case 的进度                          │
@@ -30,17 +36,17 @@ B 端游戏供应商（DemoCustomer）
 │   - ChatPanel（当前 case 的对话 + 卡片 + Timeline）           │
 │   - 无独立 TracePreview 组件；Trace 已整合进展开的 case 卡片   │
 └─────────────────────────────────────────────────────────────┘
-    │ POST /api/try/messages
+    │ POST /api/messages
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  API Route: /api/try/messages                               │
+│  API Route: /api/messages                               │
 │  职责：接收 user message，调用 runAgentTurn()                 │
-│  文件：app/api/try/messages/route.ts                         │
+│  文件：app/api/messages/route.ts                         │
 └─────────────────────────────────────────────────────────────┘
     │
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Agent Loop: /lib/try/agent/loop.ts          ★ 核心引擎 ★     │
+│  Agent Loop: /lib/agent/loop.ts          ★ 核心引擎 ★     │
 │  ─────────────────────────────────────────────────────────── │
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐   │
@@ -88,7 +94,7 @@ B 端游戏供应商（DemoCustomer）
 │  技术人员可新增（通过 Admin 配置自定义 skill）：              │
 │   ★ query_order_status        — 查平台订单                  │
 │   ★ query_payment_channel_status — 查支付渠道状态           │
-│   ★ search_global_notice       — 检索全局公告                │
+│   ★ search_delay_notice       — 检索全局公告                │
 │   ★ ocr_receipt              — 识别支付凭证截图               │
 └─────────────────────────────────────────────────────────────┘
               │
@@ -99,13 +105,13 @@ B 端游戏供应商（DemoCustomer）
 │                                                              │
 │  ┌──────────────────────┐     ┌────────────────────────┐  │
 │  │  人工 Task 页面       │     │  人工填写结构化回执     │  │
-│  │  /try/ops/human-tasks │ ←── │  verdict / expected_eta │  │
+│  │  /ops/human-tasks │ ←── │  verdict / expected_eta │  │
 │  └──────────────────────┘     └────────────────────────┘  │
-│              │ POST /api/try/human-tasks/[id]/resolve        │
+│              │ POST /api/human-tasks/[id]/resolve        │
 │              │                                            │
 │              ▼                                            │
-│  · DemoHumanTask.status → resolved                        │
-│  · DemoCase.status → investigating（blocker 清空）         │
+│  · HumanTask.status → resolved                        │
+│  · Case.status → investigating（blocker 清空）         │
 │  · 异步触发 runAgentTurn({ resumeTrigger })              │
 │  · Agent Loop 重新启动，从 Observe 恢复执行                 │
 └─────────────────────────────────────────────────────────────┘
@@ -135,7 +141,7 @@ B 端游戏供应商（DemoCustomer）
 
 ## 二、Agent Loop（核心引擎）
 
-**文件：** `lib/try/agent/loop.ts`
+**文件：** `lib/agent/loop.ts`
 
 ### 2.1 Agent Loop 流程图
 
@@ -149,18 +155,18 @@ B 端游戏供应商（DemoCustomer）
 │   · Microcompact      → 工具结果去重                       │
 │   · Context Collapse  → 提交日志方式压缩                   │
 │   · Autocompact       → 生成摘要（阈值 13k buffer tokens）  │
-│  配置项：DemoAgentConfig.contextCompression.l1MaxMessages    │
+│  配置项：AgentConfig.contextCompression.l1MaxMessages    │
 └────────────────────────────────────────────────────────────┘
     │
     ▼
-┌─ 2) 写 DemoMessage（role=user）─────────────────────────────┐
-│  同时写 DemoActionTrace（type=user_message）                  │
+┌─ 2) 写 Message（role=user）─────────────────────────────┐
+│  同时写 ActionTrace（type=user_message）                  │
 └────────────────────────────────────────────────────────────┘
     │
     ▼
 ┌─ 3) ingestUserMessageFacts() ─────────────────────────────┐
 │  从用户文本中启发式抽取事实（txnId / amount / notReceived）    │
-│  更新 DemoCaseMemory.confirmedFacts / missingFacts           │
+│  更新 CaseMemory.confirmedFacts / missingFacts           │
 └────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -172,7 +178,7 @@ B 端游戏供应商（DemoCustomer）
 ┌─ 5) 构造 API 上下文 ───────────────────────────────────────┐
 │  - recentMessages（取最近 N 条，可配置，默认 12 条）           │
 │  - systemPrompt（base + caseContextBlock + memorySummary）   │
-│  - tools（从 DemoSkillRegistry 动态加载）                   │
+│  - tools（从 SkillRegistry 动态加载）                   │
 └────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -260,7 +266,7 @@ Skills 异步执行期间，前端通过 SSE 实时接收事件，驱动 UI 动�
 | tool_execution_total | 工具执行总时长 |
 | compaction_count | 上下文压缩次数 |
 
-Profiler 检查点（在 `lib/try/agent/profiler.ts` 中定义）：
+Profiler 检查点（在 `lib/agent/profiler.ts` 中定义）：
 ```
 query_user_input_received → query_fn_entry
 → query_snip_start / query_snip_end
@@ -300,11 +306,11 @@ Case #12345
   blocker: "等待 payment_ops 人工确认渠道批次状态"
 ```
 
-Case 的状态由 `DemoCaseSchema.stages` 动态配置，不是固定的。
+Case 的状态由 `CaseSchema.stages` 动态配置，不是固定的。
 
 ### 2.3 Case 状态机（动态配置）
 
-Case 的状态**不是写死的**，而是每个 Case Type 有自己的状态机，由 `DemoCaseSchema.stages` 定义。
+Case 的状态**不是写死的**，而是每个 Case Type 有自己的状态机，由 `CaseSchema.stages` 定义。
 
 例如 `deposit_issue` 的 stages：
 ```
@@ -328,31 +334,33 @@ Agent 在 loop 中通过 `finalize_case` 工具将 case 推进到 `resolved` 状
 
 ## 三、Case Memory（案例记忆）
 
-**文件：** `lib/try/agent/memory.ts`
+**文件：** `lib/agent/memory.ts`
 
-**Admin 配置：** `DemoAgentConfig.memoryStrategy`（keyEvent 抽取提示词、四层上下文压缩策略等）
+**Admin 配置：** `AgentConfig.memoryStrategy`（keyEvent 抽取提示词、四层上下文压缩策略等）
 
 ### 3.0 解释说明
 
-> 可以这样理解 Memory：
->
-> **Agent（AI 客服）记性不好，每轮对话之间会忘记之前聊过什么。Memory 就是给 Agent 配了一个"笔记本"，让它能记住：**
->
-> | 字段 | 相当于笔记本里的 |
+> > Case Memory 是 Agent 的工作记忆，不是聊天记录。
+
+> 传统客服靠上下文窗口记住对话，我们靠 Case Memory 让 Agent 跨轮次持有完整任务状态。Agent 不只记住"聊了什么"，而是记住：证据收集到了哪一步、还缺什么、已经调用了哪些工具、当前卡在哪里、人工是否在处理中。
+
+> | 字段 | 含义 |
 > |---|---|
-> | `confirmedFacts` | 已确认的信息（如：用户充了500元，订单号TX12345） |
-> | `missingFacts` | 还缺什么（如：还缺截图） |
-> | `skillsCalled` | 已经查了什么（如：查了订单状态、查了渠道公告） |
-> | `skillResults` | 查到的结果（如：渠道当前是延迟状态） |
-> | `keyEvents` | 关键事件时间线（如：14:00用户提交了充值问题，14:05Agent发起了人工确认） |
-> | `humanTaskStatus` | 人工是否还在处理 |
-> | `summary` | 对话摘要（方便 Agent 快速回顾之前聊了什么） |
+> | `confirmedFacts` | 已确认的证据（订单号、金额、用户声称 vs 系统数据） |
+> | `missingFacts` | 仍缺失的关键字段，驱动 Agent 继续提问或查工具 |
+> | `skillsCalled` | 本 case 已调用的 skill 历史，防止重复调用 |
+> | `skillResults` | skill 执行结果，作为后续决策的输入 |
+> | `keyEvents` | 关键事件时间线，Agent 和人工共享同一个 case 上下文 |
+> | `humanTaskStatus` | 人工介入状态：pending / in_progress / resolved |
+> | `summary` | 对话摘要，用于上下文压缩后仍保留长程记忆 |
+
+> Case Memory 持久化在 DB 中，caseId 不变则 Agent 重启、用户换设备都能恢复同一状态。
 
 ### 3.1 Case Memory 数据结构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  DemoCaseMemory（每个 Case 一个，与 Case 1:1）              │
+│  CaseMemory（每个 Case 一个，与 Case 1:1）              │
 │  ─────────────────────────────────────────────────────────  │
 │                                                             │
 │  confirmedFacts ──→ 从用户文本或 skill 结果中提取并确认的事实 │
@@ -454,9 +462,9 @@ Skill 执行成功
 ┌──────────────────────────────────────────────────────────────┐
 │  L3 · Case Schema + Agent Config（System Context）        │
 │  ──────────────────────────────────────────────────────────  │
-│  · DemoCaseSchema（当前 case type 的 stages / requiredFacts）│
-│  · DemoAgentConfig（systemPrompt / policyHooks）           │
-│  · DemoSkillRegistry（可用 skill 列表）                    │
+│  · CaseSchema（当前 case type 的 stages / requiredFacts）│
+│  · AgentConfig（systemPrompt / policyHooks）           │
+│  · SkillRegistry（可用 skill 列表）                    │
 │  注入位置：system prompt（固定部分，不变）                 │
 └──────────────────────────────────────────────────────────────┘
                           ↓
@@ -501,9 +509,9 @@ keyEvents 是 Case 的"时间线里程碑"，用于：
 
 ## 四、Skills 系统
 
-**文件：** `lib/try/agent/skills.ts` + `lib/try/agent/mock-handlers.ts`
+**文件：** `lib/agent/skills.ts` + `lib/agent/mock-handlers.ts`
 
-**Admin 配置：** `DemoSkillRegistry`（每个 skill 的 name / mode / endpoint / mockFixture 等均可通过 Admin 配置）
+**Admin 配置：** `SkillRegistry`（每个 skill 的 name / mode / endpoint / mockFixture 等均可通过 Admin 配置）
 
 ### 4.0 解释说明
 
@@ -552,7 +560,7 @@ Agent Loop 中 LLM 决定调用 skill
     │
     ▼
 ┌─ Skill 路由分发 ───────────────────────────────────┐
-│  根据 DemoSkillRegistry.mode 决定：                 │
+│  根据 SkillRegistry.mode 决定：                 │
 │                                                      │
 │  ┌────────────┐    ┌─────────────────────────────┐  │
 │  │ mode=mock  │───→│ 内置 mock-handlers          │  │
@@ -575,8 +583,8 @@ Agent Loop 中 LLM 决定调用 skill
 │  }                                                  │
 └────────────────────────────────────────────────────┘
     │
-    ├──→ 写 DemoSkillCall（审计日志）
-    ├──→ 写 DemoActionTrace（type=skill_result）
+    ├──→ 写 SkillCall（审计日志）
+    ├──→ 写 ActionTrace（type=skill_result）
     ├──→ SSE 推送 skill_result → 前端显示结果
     └──→ 若 isConcurrencySafe=true 且有其他工具在队列中，立即并行执行下一个
 ```
@@ -592,6 +600,8 @@ Agent Loop 中 LLM 决定调用 skill
 | `ocr_receipt` | `runMockOcrReceipt` | 无（随机 fixture） | true | 模拟 OCR，按 attachment_id 前缀返回 |
 | `create_human_task` | `runMockCreateHumanTask` | `demo_routing` | false | 创建人工任务，更新 case.status=waiting_human |
 | `finalize_case` | `runMockFinalizeCase` | 无 | false | 闭环 case，更新 status=resolved |
+| `request_user_input` | `runMockRequestUserInput` | 无（动态表单） | false | 向顾客推送动态表单卡片，收集缺失信息 |
+| `finalize_consultation` | `runMockFinalizeConsultation` | 无 | false | 人工咨询结束，Agent 将结果翻译给顾客 |
 | `kb_hybrid_retrieve` | `runMockKbHybridRetrieve` | 无（固定 fixture） | true | 模板知识检索槽位 |
 
 **isConcurrencySafe 说明**：
@@ -600,7 +610,7 @@ Agent Loop 中 LLM 决定调用 skill
 
 ### 4.3 Admin 中 Skill 的可配置项
 
-在 `DemoSkillRegistry` 中：
+在 `SkillRegistry` 中：
 
 | 字段 | 说明 |
 |---|---|
@@ -622,9 +632,9 @@ Agent Loop 中 LLM 决定调用 skill
 
 ## 五、Policy / Guardrail 系统
 
-**文件：** `lib/try/agent/policy.ts`
+**文件：** `lib/agent/policy.ts`
 
-**Admin 配置：** `DemoAgentConfig.policyHooks`（指定该 customer 启用哪些 policy）+ `DemoPolicyConfig`（每条 policy 的 name / rule / enabled）
+**Admin 配置：** `AgentConfig.policyHooks`（指定该 customer 启用哪些 policy）+ `PolicyConfig`（每条 policy 的 name / rule / enabled）
 
 ### 5.0 解释说明
 
@@ -652,13 +662,13 @@ Agent 决定调用某个 Skill
     ▼
 ┌─ runPolicyHooks("preTool", policyNames, ctx) ─────────────┐
 │                                                            │
-│  从 DemoAgentConfig.policyHooks 拿到要检查的 policy 列表：  │
+│  从 AgentConfig.policyHooks 拿到要检查的 policy 列表：  │
 │  → 例如：["no_high_risk_account_change"]                  │
 │                                                            │
 │  for each policy 名称：                                    │
 │       │                                                    │
 │       ▼                                                    │
-│  ┌─ 从 DemoPolicyConfig 找到这条 policy ──────────────┐   │
+│  ┌─ 从 PolicyConfig 找到这条 policy ──────────────┐   │
 │  │  rule = { deny_skills_in_demo: ["refund_money"] } │   │
 │  └─────────────────────────────────────────────────────┘   │
 │       │                                                    │
@@ -671,7 +681,7 @@ Agent 决定调用某个 Skill
 │       │                                                    │
 │       ▼                                                    │
 │  命中？                                                    │
-│   ├── YES → 写 DemoPolicyHit（审计日志）                  │
+│   ├── YES → 写 PolicyHit（审计日志）                  │
 │   │         SSE 推送 policy_hit 事件给前端               │
 │   │         返回 PolicyHitRecord                           │
 │   │         如果 result=blocked → Skill 被跳过，不执行     │
@@ -713,12 +723,12 @@ Skill 开始执行（或被跳过）
 | `conflict_requires_human` | postTool | 平台 success 但用户仍申报未到账 → 必须调 create_human_task |
 | `evidence_required_before_resolution` | preFinalize | 未调用必要 skill（query_order_status 等）不得 finalize |
 | `no_compensation_promise` | preFinalize | finalize 内容含禁用词（赔偿/退款承诺）→ blocked |
-| `vip_care_softer_tone` | preFinalize | 同上，针对 VIP 场景 |
+| `vip_care_softer_tone [PLANNED]` | preFinalize | 同上，针对 VIP 场景 |
 | `must_cite_basis` | preFinalize | finalize 必须提供 basis[]（依据引用） |
 
 ### 5.4 Admin 中 Policy 的可配置项
 
-在 `DemoPolicyConfig` 中：
+在 `PolicyConfig` 中：
 
 | 字段 | 说明 |
 |---|---|
@@ -727,7 +737,7 @@ Skill 开始执行（或被跳过）
 | `rule` | JSON 规则对象（如 `deny_skills: ["refund_money"]` / `require_skills: ["query_order_status"]` / `deny_keywords: ["赔偿", "退款"]`） |
 | `enabled` | 是否启用 |
 
-在 `DemoAgentConfig.policyHooks` 中：
+在 `AgentConfig.policyHooks` 中：
 
 | 字段 | 说明 |
 |---|---|
@@ -737,7 +747,7 @@ Skill 开始执行（或被跳过）
 
 ---
 
-## 六、Human-as-a-Tool（人工任务系统）★ 2026-04-30 更新
+## 六、Human-as-a-Tool（人工任务系统）
 
 **核心 API：** `POST /api/messages`（Chat 端）、`POST /api/human-chat`（operater-agent 咨询）、`POST /api/human-tasks/[id]/resolve`（Console 端）
 
@@ -769,7 +779,7 @@ Case 处理中
     ▼
 create_human_task 被调用
     │
-    ├──→ DemoCase.status → waiting_human
+    ├──→ Case.status → waiting_human
     ├──→ 创建 HumanTask（开启一个"人工会话"）
     └──→ Loop 结束
 
@@ -825,12 +835,12 @@ POST /api/messages（含 spec prompt）
     ▼ SSE consultation_complete → Chat page 显示过渡消息 → Agent 更新顾客 → 结案
 ```
 
-### 6.2 内置 Skill：send_customer_form
+### 6.2 内置 Skill：request_user_input
 
 当 Agent 需要向顾客动态收集信息时，调用此 Skill：
 
 ```
-Agent 调用 send_customer_form
+Agent 调用 request_user_input
     │
     ├──→ skillInput: { formTemplate: string, fields: [...] }
     │
@@ -889,15 +899,15 @@ Case 状态保持 investigating（或由 Agent 自行 finalize）
 | 人工提交后直接结束 | 人工 Close Case 后 Agent 通知顾客，再结束 |
 | 内部备注不转化为顾客通知 | Agent 将 reason 翻译成顾客话术 |
 | Reopen 是特殊的 resume 路径 | Reopen = 字面意思，重新打开 case |
-| Agent 不能主动推表单给顾客 | Agent 通过 send_customer_form skill 主动推送表单卡片 |
+| Agent 不能主动推表单给顾客 | Agent 通过 request_user_input skill 主动推送表单卡片 |
 
 ---
 
 ## 七、Trace / 可观测性
 
-**文件：** `lib/try/agent/trace.ts`
+**文件：** `lib/agent/trace.ts`
 
-**Admin 配置：** 通过 `DemoAgentConfig.memoryStrategy.maxRecentTraces` 控制注入 prompt 的 trace 条数上限
+**Admin 配置：** 通过 `AgentConfig.memoryStrategy.maxRecentTraces` 控制注入 prompt 的 trace 条数上限
 
 ### 7.1 Trace 写入流程
 
@@ -914,7 +924,7 @@ Agent 运行全过程中
     ├──→ Case 闭环 ──────────────→ writeTrace("final_resolution", ...)
     └──→ Cron 触发 ──────────────→ writeTrace("cron_tick", ...)
 
-所有 trace 写入 DemoActionTrace 表
+所有 trace 写入 ActionTrace 表
     │
     ▼
 前端通过 SSE 实时接收（type=trace 事件）
@@ -926,21 +936,26 @@ Agent 运行全过程中
 | ActionType | 触发时机 |
 |---|---|
 | `user_message` | 用户消息入站 |
-| `case_created` | Case 创建 |
-| `fact_extracted` | 从用户消息抽取事实 |
+| `case_created` | Case 创建（由 Console API 写入） |
+| `fact_extracted` | 从用户消息抽取事实（由 Console API 写入） |
 | `policy_hit` | Policy 命中 |
-| `skill_called` | Skill 调用前 |
+| `skill_called` | Skill 调用前（种子数据使用） |
 | `skill_result` | Skill 返回结果 |
 | `human_task_created` | 人工任务创建 |
-| `human_task_resolved` | 人工回执完成 |
+| `human_task_resolved` | 人工回执完成（由 Console API 写入） |
 | `final_resolution` | Case 闭环 |
-| `cron_tick` | Cron 触发（定时任务） |
+| `cron_tick` | Cron 触发（定时任务，预留） |
+| `loop_decision` | Agent Loop 决策（压缩/跳过/重试） |
+| `stream_event` | SSE 流式事件 |
+| `llm_request_start` | LLM API 请求开始 |
+| `llm_response` | LLM API 响应完成 |
+| `microcompact` | MicroCompact 本地工具结果清理 |
 
 ### 7.3 Trace 存储
 
-每条 trace 记录到 `DemoActionTrace` 表：
+每条 trace 记录到 `ActionTrace` 表：
 ```typescript
-DemoActionTrace {
+ActionTrace {
   id: string
   caseId: string
   actionType: ActionType
@@ -961,7 +976,7 @@ DemoActionTrace {
 
 ## 八、Session / 多商户体系
 
-**文件：** `lib/try/session-cookies.ts` + `lib/try/try-customer.ts`
+**文件：** `lib/session-cookies.ts` + `lib/try-customer.ts`
 
 ### 8.1 Cookie 结构
 
@@ -979,7 +994,7 @@ DemoActionTrace {
 | ... | ... | ... |
 | 5 | `u_try_5` | Demo 用户 5 |
 
-每个用户对应隔离的 `DemoCase` 数据，支持多用户并行演示。
+每个用户对应隔离的 `Case` 数据，支持多用户并行演示。
 
 ---
 
@@ -988,19 +1003,19 @@ DemoActionTrace {
 ```
 DemoCustomer（B 端客户/厂商）
     │
-    ├── DemoAgentConfig（1:1）— Agent 编排配置
-    ├── DemoCaseSchema（1:N）— Case 类型定义
-    ├── DemoSkillRegistry（1:N）— Skill 注册表
-    ├── DemoPolicyConfig（1:N）— Policy 规则
-    ├── DemoRouting（1:N）— 人工路由配置
-    └── DemoCase（1:N）— 该客户的 Case
+    ├── AgentConfig（1:1）— Agent 编排配置
+    ├── CaseSchema（1:N）— Case 类型定义
+    ├── SkillRegistry（1:N）— Skill 注册表
+    ├── PolicyConfig（1:N）— Policy 规则
+    ├── Routing（1:N）— 人工路由配置
+    └── Case（1:N）— 该客户的 Case
               │
-              ├── DemoCaseMemory（1:1）— Case 记忆
-              ├── DemoMessage（N:1）— 消息记录
-              ├── DemoActionTrace（N:1）— 操作追踪
-              ├── DemoSkillCall（N:1）— Skill 调用记录
-              ├── DemoHumanTask（N:1）— 人工任务
-              └── DemoPolicyHit（N:1）— Policy 命中记录
+              ├── CaseMemory（1:1）— Case 记忆
+              ├── Message（N:1）— 消息记录
+              ├── ActionTrace（N:1）— 操作追踪
+              ├── SkillCall（N:1）— Skill 调用记录
+              ├── HumanTask（N:1）— 人工任务
+              └── PolicyHit（N:1）— Policy 命中记录
 ```
 
 ---
@@ -1053,11 +1068,11 @@ DemoCustomer（B 端客户/厂商）
 
 ---
 
-## 十二、Admin 配置模块（在 /try/admin 页面展示）
+## 十二、Admin 配置模块（在 /admin 页面展示）
 
 根据代码，Admin 页面配置以下模块：
 
-### 12.1 DemoAgentConfig（Agent 编排）
+### 12.1 AgentConfig（Agent 编排）
 - `systemPrompt` — 系统提示词
 - `model` — 模型名称
 - `maxIterations` — 最大迭代次数
@@ -1067,7 +1082,7 @@ DemoCustomer（B 端客户/厂商）
 - `policyHooks` — Policy hook 配置数组
 - `toolParallelism` — 工具并行度
 
-### 12.2 DemoSkillRegistry（Skill 注册中心）
+### 12.2 SkillRegistry（Skill 注册中心）
 每个 skill 记录：
 - name / description
 - inputSchema / outputSchema（Anthropic tool 格式）
@@ -1077,12 +1092,12 @@ DemoCustomer（B 端客户/厂商）
 - guardPhase（pre / post）
 - enabled
 
-### 12.3 DemoPolicyConfig（Policy 规则）
+### 12.3 PolicyConfig（Policy 规则）
 - name / description
 - rule（JSON，包含 deny_skills / require_skills / deny_keywords 等参数）
 - enabled
 
-### 12.4 DemoCaseSchema（Case 类型定义）— ★ 核心模块 ★
+### 12.4 CaseSchema（Case 类型定义）— ★ 核心模块 ★
 - type（如 `deposit_issue`）
 - displayName / description
 - requiredFacts（该类型 case 必需的字段列表，如 `txnId / amount / channel`）
@@ -1094,7 +1109,7 @@ DemoCustomer（B 端客户/厂商）
 
 **关键设计**：stages 由技术人员通过 Admin 后台配置，保存后下一次发起该类型 case 时生效。Case 的实际状态流转由 Agent 根据业务逻辑驱动。
 
-### 12.5 DemoRouting（人工路由）
+### 12.5 Routing（人工路由）
 - queue（如 `payment_ops` / `finance` / `risk_control`）
 - description
 - skillsAllowed（该队列允许的 skill 列表）
@@ -1111,17 +1126,17 @@ Admin 后台按功能分为以下模块：
 
 | 模块 | 说明 | 对应数据表 |
 |---|---|---|
-| **Agent 编排** | 配置 LLM 模型、system prompt、循环参数 | `DemoAgentConfig` |
-| **Skill 注册** | 管理 Skill 列表、模式、Mock fixture | `DemoSkillRegistry` |
-| **Policy 规则** | 配置安全策略、Guardrail 规则 | `DemoPolicyConfig` |
-| **Case 类型** | 定义 Case 类型、状态机、requiredFacts | `DemoCaseSchema` |
-| **人工路由** | 配置人工队列、技能权限 | `DemoRouting` |
-| **上下文压缩** | 配置各层 token 上限、注入策略 | `DemoAgentConfig.memoryStrategy` |
+| **Agent 编排** | 配置 LLM 模型、system prompt、循环参数 | `AgentConfig` |
+| **Skill 注册** | 管理 Skill 列表、模式、Mock fixture | `SkillRegistry` |
+| **Policy 规则** | 配置安全策略、Guardrail 规则 | `PolicyConfig` |
+| **Case 类型** | 定义 Case 类型、状态机、requiredFacts | `CaseSchema` |
+| **人工路由** | 配置人工队列、技能权限 | `Routing` |
+| **上下文压缩** | 配置各层 token 上限、注入策略 | `AgentConfig.memoryStrategy` |
 | **厂商配置** | B 端厂商的 API 接入、认证信息 | `DemoCustomer` |
 
-### 13.2 Agent 编排配置（DemoAgentConfig）
+### 13.2 Agent 编排配置（AgentConfig）
 
-**文件：** `lib/try/agent/llm.ts` + `loop.ts`
+**文件：** `lib/agent/llm.ts` + `loop.ts`
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -1146,6 +1161,7 @@ policyHooks: {
 
 ### 13.2.1 上下文压缩配置（memoryStrategy）
 
+**保留策略：**
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `l1MaxMessages` | number | `12` | L1 最近消息条数上限 |
@@ -1154,21 +1170,58 @@ policyHooks: {
 | `keyEventExtractionPrompt` | string | — | LLM 抽取 keyEvents 的提示词 |
 | `maxRecentTraces` | number | `20` | 注入 prompt 的最近 trace 条数上限 |
 | `caseRetentionDays` | number | `90` | Case 记忆保留天数 |
-| `autocompactThresholdTokens` | number | `13000` | Autocompact 触发阈值（buffer tokens） |
-| `warningThresholdTokens` | number | `20000` | 警告阈值 |
-| `errorThresholdTokens` | number | `20000` | 错误阈值 |
 
-**L1 内部多层压缩配置：**
+**压缩阈值：**
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `autocompactThresholdTokens` | number | `13000` | Autocompact 触发阈值 |
+| `warningThresholdTokens` | number | `20000` | 警告阈值（纯提示，不触发压缩） |
+| `errorThresholdTokens` | number | `20000` | 错误阈值 |
+| `blockingThresholdTokens` | number | `3000` | 强制压缩硬截止（防上下文溢出） |
+
+**压缩功能开关：**
 | 配置项 | 类型 | 说明 |
 |---|---|---|
-| `enableSnip` | boolean | 是否启用 HISTORY_SNIP |
-| `enableMicrocompact` | boolean | 是否启用 Microcompact |
-| `enableContextCollapse` | boolean | 是否启用 Context Collapse |
-| `enableAutocompact` | boolean | 是否启用 Autocompact |
+| `enableSnip` | boolean | 是否启用消息裁剪 |
+| `enableMicrocompact` | boolean | 是否启用工具结果清理 |
+| `enableContextCollapse` | boolean | 是否启用上下文折叠 |
+| `enableAutocompact` | boolean | 自动压缩总开关 |
 
-### 13.3 Skill 注册配置（DemoSkillRegistry）
+**压缩微调：**
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `compactModel` | string | — | 压缩摘要使用的模型 |
+| `compactMaxMessages` | number | `40` | 压缩时发送的消息上限 |
+| `compactTemperature` | number | `0.3` | 压缩 LLM temperature |
+| `compactMaxTokensCap` | number | `4096` | 压缩 max_tokens 硬上限 |
+| `compactMinSummaryLength` | number | `20` | 摘要最小字符数 |
+| `compactionKeepMin` | number | `4` | 压缩后最少保留消息数 |
+| `compactionKeepRatio` | number | `0.4` | 压缩后保留消息比例 |
+| `compactableTools` | string[] | — | MicroCompact 可清理的工具名列表 |
+| `compactPrompt` | string | — | 自定义压缩摘要 prompt（空=内置） |
 
-**文件：** `lib/try/agent/skills.ts` + `mock-handlers.ts`
+**事实提取模式（跨业务可配）：**
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `txnIdPattern` | string | — | 交易ID提取正则 |
+| `amountPattern` | string | — | 金额提取正则 |
+| `notReceivedKeywords` | string[] | — | "未到账"关键词列表 |
+| `keyEventMaxChars` | number | `100` | KeyEvent 截断字符数 |
+
+**Token 估算参数：**
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `tokensPerKeyEvent` | number | `20` | 每个 keyEvent 估算 token |
+| `tokensPerFact` | number | `15` | 每个 fact 估算 token |
+| `tokensPerSkill` | number | `30` | 每个 skill 估算 token |
+| `cjkCharPerToken` | number | `1.2` | CJK 字符/token 比 |
+| `latinCharPerToken` | number | `3` | Latin 字符/token 比 |
+| `minTokenEstimate` | number | `100` | 最小 token 估算 |
+| `toolResultTokenRatio` | number | `3` | 工具结果 字符/token 比 |
+
+### 13.3 Skill 注册配置（SkillRegistry）
+
+**文件：** `lib/agent/skills.ts` + `mock-handlers.ts`
 
 每个 Skill 的可配置项：
 
@@ -1200,9 +1253,9 @@ policyHooks: {
 | `finalize_case` | `false` | 写操作，有副作用 |
 | `kb_hybrid_retrieve` | `true` | 只读操作 |
 
-### 13.4 Policy 规则配置（DemoPolicyConfig）
+### 13.4 Policy 规则配置（PolicyConfig）
 
-**文件：** `lib/try/agent/policy.ts`
+**文件：** `lib/agent/policy.ts`
 
 每条 Policy 的可配置项：
 
@@ -1233,12 +1286,12 @@ rule: {
 | `conflict_requires_human` | postTool | 平台成功但用户申报未到账 → 必须调 create_human_task |
 | `evidence_required_before_resolution` | preFinalize | 未调用必要 skill 不得 finalize |
 | `no_compensation_promise` | preFinalize | finalize 内容含禁用词（赔偿/退款承诺）→ blocked |
-| `vip_care_softer_tone` | preFinalize | VIP 场景柔软语气 |
+| `vip_care_softer_tone` | preFinalize | **[PLANNED]** VIP 场景柔软语气（未实现） |
 | `must_cite_basis` | preFinalize | finalize 必须提供 basis[]（依据引用） |
 
-### 13.5 Case 类型配置（DemoCaseSchema）
+### 13.5 Case 类型配置（CaseSchema）
 
-**文件：** `lib/try/agent/loop.ts`（case 创建逻辑）
+**文件：** `lib/agent/loop.ts`（case 创建逻辑）
 
 每个 Case Type 的可配置项：
 
@@ -1266,7 +1319,7 @@ stages: ["created", "investigating", "waiting_human", "escalated", "resolved"]
 stages: ["created", "reviewing", "approved", "rejected", "resolved"]
 ```
 
-### 13.6 人工路由配置（DemoRouting）
+### 13.6 人工路由配置（Routing）
 
 | 配置项 | 类型 | 说明 |
 |---|---|---|
@@ -1343,17 +1396,17 @@ stages: ["created", "reviewing", "approved", "rejected", "resolved"]
 ## 十四、关键数据流：一条消息的完整旅程
 
 ```
-1. 用户在 /try/chat 输入"我昨天充值了还没到账"
+1. 用户在 /chat 输入"我昨天充值了还没到账"
        │
-2. DemoChatShell → POST /api/try/messages
+2. ChatShell → POST /api/messages
        │
-3. 写入 DemoMessage（role=user）
-       │ 写入 DemoActionTrace（type=user_message）
+3. 写入 Message（role=user）
+       │ 写入 ActionTrace（type=user_message）
        │
 4. ingestUserMessageFacts()
        │ - 检测到"未到账"→ confirmedFacts.userReportedNotReceived=true
        │ - 尝试匹配订单号/金额
-       │ - 更新 DemoCaseMemory
+       │ - 更新 CaseMemory
        │
 5. 检查 case.status === waiting_human？→ 否，继续
        │
@@ -1371,24 +1424,24 @@ stages: ["created", "reviewing", "approved", "rejected", "resolved"]
        │   → 触发 conflict_requires_human → escalated
        │ - 调用 create_human_task
        │   → preTool 再次检查
-       │   → mock 创建 DemoHumanTask，status=pending
-       │   → 更新 DemoCase.status=waiting_human
+       │   → mock 创建 HumanTask，status=pending
+       │   → 更新 Case.status=waiting_human
        │
 9. SSE 推送 human_task_created 前端高亮
        │
-10. 用户在 /try/ops/human-tasks/[id] 提交回执
+10. 用户在 /ops/human-tasks/[id] 提交回执
        │ verdict=confirmed_success / is_delayed_batch=true / expected_eta=2h
        │
-11. POST /api/try/human-tasks/[id]/resolve
-       │ - 更新 DemoHumanTask.status=resolved
-       │ - 更新 DemoCase.status=investigating（blocker 清空）
+11. POST /api/human-tasks/[id]/resolve
+       │ - 更新 HumanTask.status=resolved
+       │ - 更新 Case.status=investigating（blocker 清空）
        │ - 异步触发 runAgentTurn({ resumeTrigger })
        │
 12. Agent Resume 第三轮：
        │ - synthetic user message 包含人工结论
        │ - 调用 finalize_case
        │   → preFinalize policy 检查 evidence + basis
-       │   → 通过，写 DemoCase.status=resolved
+       │   → 通过，写 Case.status=resolved
        │
 13. SSE 推送 finalized，前端展示闭环结果
 ```
@@ -1401,20 +1454,20 @@ stages: ["created", "reviewing", "approved", "rejected", "resolved"]
 
 经确认，以下几点需要更新：
 
-1. **Case 状态机不是写死的 6 个状态**，而是每个 Case Type 有自己的动态状态机，由 `DemoCaseSchema.stages` 定义，通过 Admin 后台配置，保存后下一次对话生效。这是核心预期。
+1. **Case 状态机不是写死的 6 个状态**，而是每个 Case Type 有自己的动态状态机，由 `CaseSchema.stages` 定义，通过 Admin 后台配置，保存后下一次对话生效。这是核心预期。
 
 2. **多 case 并行**：Demo 阶段暂定做 **B 方案**（同一用户同一时刻只有一个活跃 case，但 UI 上能看到所有 case 状态），后续可演进到 A 方案（多 case 同时跑独立 Agent Loop）。
 
 3. **RAG**：确认现阶段是 mock，不实现真实 RAG。
 
-4. **DemoCaseSchema.stages 的结构**：stages 是动态配置的状态机，每个 case type 有自己的 stages 数组（如 `["created", "collecting", "investigating", "waiting_human", "resolved"]`），状态流转由 Agent 驱动。
+4. **CaseSchema.stages 的结构**：stages 是动态配置的状态机，每个 case type 有自己的 stages 数组（如 `["created", "collecting", "investigating", "waiting_human", "resolved"]`），状态流转由 Agent 驱动。
 
 ### 15.2 项目有两套并行的 Agent 系统
 
 | 路径 | 定位 | 与 Try Harness 的关系 |
 |---|---|---|
 | `/api/chat` + `lib/ai/` + `components/intera-chat.tsx` | **想法墙** — 团队头脑风暴工具（非产品本身） | 用于在设计讨论中将好点子发布到想法墙，与 Case 处理无关 |
-| `/api/try/*` + `lib/try/agent/` | **Try Harness** — 真正的产品核心 | 完整的 Agentic 客服系统，含 Case / Skill / Policy / Human Task |
+| `/api/*` + `lib/agent/` | **Try Harness** — 真正的产品核心 | 完整的 Agentic 客服系统，含 Case / Skill / Policy / Human Task |
 
 **重要澄清**：Intera 产品的核心是 Try Harness（Agentic Customer Service Harness），想法墙只是辅助团队做产品设计的工具，两者完全独立。
 
@@ -1427,7 +1480,7 @@ stages: ["created", "reviewing", "approved", "rejected", "resolved"]
 | `skills.ts` | Skill 路由分发，mock/http 双模式，StreamingToolExecutor 并行执行 |
 | `policy.ts` | Policy 规则引擎，preTool/postTool/preFinalize 三个安检点 |
 | `mock-handlers.ts` | 内置 Skill 的 mock 实现，read_case_history / query_order_status 等 |
-| `trace.ts` | 操作追踪写入，每步操作记录到 DemoActionTrace |
+| `trace.ts` | 操作追踪写入，每步操作记录到 ActionTrace |
 | `profiler.ts` | Query Profiler 检查点埋点，TTFT / latency 追踪 |
 
 ---

@@ -31,8 +31,10 @@ You are the CASE OWNER. Tell the operator:
   - resolution: confirmed_delayed / refund_approved / needs_more_info / resolved / false_alarm
 `
 
+import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+
 const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
-  model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+  model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
   temperature: 0.5,
   thinkingBudget: 4096,
   maxIterations: 15,
@@ -40,28 +42,8 @@ const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
   toolParallelism: true,
   isConcurrencySafe: true,
   showThinking: false,
-  memoryStrategy: {
-    l1MaxMessages: 12,
-    l2SummaryMaxTokens: 2000,
-    l4MaxHistoricalCases: 5,
-    keyEventExtractionPrompt: '',
-    maxRecentTraces: 20,
-    caseRetentionDays: 90,
-    autocompactThresholdTokens: 13000,
-    warningThresholdTokens: 20000,
-    errorThresholdTokens: 20000,
-    blockingThresholdTokens: 3000,
-    compactModel: 'MiniMax-M2.5-highspeed',
-    enableSnip: true,
-    enableMicrocompact: true,
-    enableContextCollapse: true,
-    enableAutocompact: true,
-  },
-  policyHooks: {
-    preTool: [],
-    postTool: [],
-    preFinalize: [],
-  },
+  memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, keyEventExtractionPrompt: '', enableAutocompact: false },
+  policyHooks: { preTool: [], postTool: [], preFinalize: [] },
 }
 
 function parseJson(raw: string): unknown {

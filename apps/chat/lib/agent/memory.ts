@@ -61,22 +61,37 @@ export class CaseMemoryManager {
   // ─── Fact ingestion ───────────────────────────────────────
 
   async ingestUserMessageFacts(message: string): Promise<void> {
-    const txnIdMatch = message.match(/TX[Uu]?\d+/i)
-    if (txnIdMatch) {
-      this.confirmedFacts.txnId = txnIdMatch[0]
-      this.missingFacts = this.missingFacts.filter((f) => f !== 'txnId')
+    // Transaction ID pattern — configurable per customer
+    try {
+      const txnMatch = message.match(new RegExp(this.strategy.txnIdPattern, 'i'))
+      if (txnMatch) {
+        this.confirmedFacts.txnId = txnMatch[0]
+        this.missingFacts = this.missingFacts.filter((f) => f !== 'txnId')
+      }
+    } catch { /* invalid regex, skip */ }
+
+    // Amount pattern — configurable per currency
+    try {
+      const amountMatch = message.match(new RegExp(this.strategy.amountPattern, 'i'))
+      if (amountMatch) {
+        this.confirmedFacts.amount = parseFloat(amountMatch[1])
+        if (amountMatch[2]) this.confirmedFacts.currency = amountMatch[2]
+        this.missingFacts = this.missingFacts.filter((f) => f !== 'amount')
+      }
+    } catch { /* invalid regex, skip */ }
+
+    // "Not received" keyword detection — configurable per language
+    const keywords = this.strategy.notReceivedKeywords
+    if (keywords.length > 0) {
+      const pattern = new RegExp(keywords.join('|'), 'i')
+      if (pattern.test(message)) {
+        this.confirmedFacts.userReportedNotReceived = true
+      }
     }
-    const amountMatch = message.match(/(\d+)\s*元/)
-    if (amountMatch) {
-      this.confirmedFacts.amount = parseInt(amountMatch[1])
-      this.missingFacts = this.missingFacts.filter((f) => f !== 'amount')
-    }
-    if (/未到账|没到账|没收到|not received/i.test(message)) {
-      this.confirmedFacts.userReportedNotReceived = true
-    }
+
     this.keyEvents.push({
       at: new Date().toISOString(),
-      text: `User: ${message.slice(0, 100)}`,
+      text: `User: ${message.slice(0, this.strategy.keyEventMaxChars)}`,
       source: 'heuristic',
     })
   }
@@ -178,7 +193,8 @@ export class CaseMemoryManager {
     // Key events
     if (this.keyEvents.length > 0) {
       parts.push('\n## Key Events')
-      this.keyEvents.slice(-10).forEach((e) => parts.push(`- ${e.at}: ${e.text}`))
+      const maxEvents = Math.min(this.strategy.maxRecentTraces, 20)
+      this.keyEvents.slice(-maxEvents).forEach((e) => parts.push(`- ${e.at}: ${e.text}`))
     }
 
     // Previous summary (if compacted before)
@@ -197,25 +213,28 @@ export class CaseMemoryManager {
    * Rough estimate: 3 chars ≈ 1 token for Latin, 1.5 chars ≈ 1 token for CJK.
    */
   estimateTokens(messageContents: string[] = []): number {
+    const s = this.strategy
     let tokens = 0
-    tokens += this.keyEvents.length * 20
-    tokens += Object.keys(this.confirmedFacts).length * 15
-    tokens += this.skillsCalled.length * 30
-    tokens += this.summary.length / 3
-    // Add message content estimate
+    tokens += this.keyEvents.length * s.tokensPerKeyEvent
+    tokens += Object.keys(this.confirmedFacts).length * s.tokensPerFact
+    tokens += this.skillsCalled.length * s.tokensPerSkill
+    tokens += this.summary.length / s.latinCharPerToken
     for (const content of messageContents) {
       const cjkChars = (content.match(/[一-鿿]/g) || []).length
       const otherChars = content.length - cjkChars
-      tokens += Math.ceil(cjkChars / 1.2) + Math.ceil(otherChars / 3)
+      tokens += Math.ceil(cjkChars / s.cjkCharPerToken) + Math.ceil(otherChars / s.latinCharPerToken)
     }
-    return Math.max(100, tokens)
+    return Math.max(s.minTokenEstimate, tokens)
   }
 
   // ─── Record compaction in memory ─────────────────────────
 
   /** Returns the number of messages that should be KEPT after compaction. */
   compactionKeepCount(messagesTotal: number): number {
-    return Math.max(4, Math.floor(messagesTotal * 0.4))
+    return Math.max(
+      this.strategy.compactionKeepMin,
+      Math.floor(messagesTotal * this.strategy.compactionKeepRatio),
+    )
   }
 
   recordCompaction(): string {

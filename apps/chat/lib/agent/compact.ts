@@ -11,7 +11,7 @@
 //   - Falls back to programmatic buildCompactionSummary on error
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { Message } from '@intera/shared/types'
+import type { Message, MemoryStrategy } from '@intera/shared/types'
 
 // 9-section prompt adapted from Claude Code's summarization prompt,
 // tailored for customer service rather than code.
@@ -119,14 +119,16 @@ function getProviderConfig(model: string): { apiKey: string | undefined; baseURL
  */
 export async function compactConversation(
   messages: Message[],
-  maxSummaryTokens: number,
-  model: string,
+  strategy: MemoryStrategy,
 ): Promise<CompactConversationResult> {
+  const model = strategy.compactModel || 'MiniMax-M2.5-highspeed'
   const { apiKey, baseURL, provider } = getProviderConfig(model)
 
   if (!apiKey) {
     return { summary: null, model, provider, error: `API key not configured for ${provider}` }
   }
+
+  const systemPrompt = strategy.compactPrompt || COMPACT_SYSTEM_PROMPT
 
   const apiMessages = messages
     .filter((m) => typeof m.content === 'string' && m.content.trim().length > 0)
@@ -134,17 +136,17 @@ export async function compactConversation(
       role: m.role === 'user' ? 'user' as const : 'assistant' as const,
       content: m.content as string,
     }))
-    .slice(-40)
+    .slice(-strategy.compactMaxMessages)
 
   try {
     const client = new Anthropic({ apiKey, baseURL })
 
     const response = await client.messages.create({
       model,
-      max_tokens: Math.min(maxSummaryTokens, 4096),
-      system: COMPACT_SYSTEM_PROMPT,
+      max_tokens: Math.min(strategy.l2SummaryMaxTokens, strategy.compactMaxTokensCap),
+      system: systemPrompt,
       messages: apiMessages,
-      temperature: 0.3,
+      temperature: strategy.compactTemperature,
       thinking: { type: 'disabled' as const },
     })
 
@@ -158,7 +160,7 @@ export async function compactConversation(
     }
 
     const summary = formatCompactSummary(rawText)
-    if (!summary || summary.length < 20) {
+    if (!summary || summary.length < strategy.compactMinSummaryLength) {
       return { summary: null, model, provider, error: 'Summary too short' }
     }
 

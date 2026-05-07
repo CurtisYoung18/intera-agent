@@ -79,9 +79,11 @@ if (AUTH_SET && URL_SET) {
   console.warn('[Intera] ⚠️  ANTHROPIC_AUTH_TOKEN or ANTHROPIC_BASE_URL missing in env')
 }
 
+import { DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+
 // Default fallback config. Production loads from AgentConfig table via Customer.
 const DEFAULT_AGENT_CONFIG: AgentConfigData = {
-  model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+  model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
   temperature: 0.5,
   thinkingBudget: 4096,
   maxIterations: 20,
@@ -89,32 +91,8 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   toolParallelism: true,
   isConcurrencySafe: true,
   showThinking: false,
-  memoryStrategy: {
-    l1MaxMessages: 12,
-    l2SummaryMaxTokens: 2000,
-    l4MaxHistoricalCases: 5,
-    keyEventExtractionPrompt: 'Extract key events from the conversation',
-    maxRecentTraces: 20,
-    caseRetentionDays: 90,
-    autocompactThresholdTokens: 13000,
-    warningThresholdTokens: 20000,
-    errorThresholdTokens: 20000,
-    blockingThresholdTokens: 3000,
-    compactModel: 'MiniMax-M2.5-highspeed',
-    enableSnip: true,
-    enableMicrocompact: true,
-    enableContextCollapse: true,
-    enableAutocompact: true,
-  },
-  policyHooks: {
-    preTool: ['no_high_risk_account_change'],
-    postTool: ['conflict_requires_human'],
-    preFinalize: [
-      'evidence_required_before_resolution',
-      'no_compensation_promise',
-      'must_cite_basis',
-    ],
-  },
+  memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY },
+  policyHooks: { ...DEFAULT_POLICY_HOOKS },
 }
 
 // Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.

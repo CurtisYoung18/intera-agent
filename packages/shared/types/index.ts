@@ -181,21 +181,53 @@ export interface AgentConfigData {
 }
 
 export interface MemoryStrategy {
+  // ── Retention ──
   l1MaxMessages: number
   l2SummaryMaxTokens: number
   l4MaxHistoricalCases: number
   keyEventExtractionPrompt: string
   maxRecentTraces: number
   caseRetentionDays: number
+
+  // ── Compaction thresholds ──
   autocompactThresholdTokens: number
   warningThresholdTokens: number
   errorThresholdTokens: number
   blockingThresholdTokens: number
+
+  // ── Compaction features ──
   compactModel: string
   enableSnip?: boolean
   enableMicrocompact?: boolean
   enableContextCollapse?: boolean
   enableAutocompact?: boolean
+
+  // ── Compaction fine-tuning ──
+  compactMaxMessages: number
+  compactTemperature: number
+  compactMaxTokensCap: number
+  compactMinSummaryLength: number
+  compactionKeepMin: number
+  compactionKeepRatio: number
+  compactableTools: string[]
+
+  // ── Fact extraction patterns ──
+  txnIdPattern: string
+  amountPattern: string
+  notReceivedKeywords: string[]
+  keyEventMaxChars: number
+
+  // ── Token estimation ──
+  tokensPerKeyEvent: number
+  tokensPerFact: number
+  tokensPerSkill: number
+  cjkCharPerToken: number
+  latinCharPerToken: number
+  minTokenEstimate: number
+  toolResultTokenRatio: number
+
+  // ── Advanced ──
+  compactPrompt: string
 }
 
 export interface PolicyHooks {

@@ -56,21 +56,60 @@ When the conversation exceeds context limits, older turns are summarized and pre
 `
 
 export const DEFAULT_MEMORY_STRATEGY = {
+  // Retention
   l1MaxMessages: 12,
   l2SummaryMaxTokens: 2000,
   l4MaxHistoricalCases: 5,
   keyEventExtractionPrompt: 'Extract key events from the conversation',
   maxRecentTraces: 20,
   caseRetentionDays: 90,
+
+  // Thresholds
   autocompactThresholdTokens: 13000,
   warningThresholdTokens: 20000,
   errorThresholdTokens: 20000,
   blockingThresholdTokens: 3000,
+
+  // Features
   compactModel: 'MiniMax-M2.5-highspeed',
   enableSnip: true,
   enableMicrocompact: true,
   enableContextCollapse: true,
   enableAutocompact: true,
+
+  // Compaction fine-tuning
+  compactMaxMessages: 40,
+  compactTemperature: 0.3,
+  compactMaxTokensCap: 4096,
+  compactMinSummaryLength: 20,
+  compactionKeepMin: 4,
+  compactionKeepRatio: 0.4,
+  compactableTools: [
+    'query_order_status',
+    'query_payment_channel_status',
+    'search_delay_notice',
+    'read_case_history',
+    'kb_hybrid_retrieve',
+    'ocr_receipt',
+  ],
+
+  // Fact extraction patterns
+  txnIdPattern: 'TX[Uu]?\\d+|[A-Z]{2,6}\\d{8,}',
+  amountPattern: '(\\d+\\.?\\d*)\\s*(元|USD|EUR|JPY|₩|¥|\\$)',
+  notReceivedKeywords: ['未到账', '没到账', '没收到', 'not received', 'not credited', 'missing', '未入金'],
+  keyEventMaxChars: 100,
+
+  // Token estimation
+  tokensPerKeyEvent: 20,
+  tokensPerFact: 15,
+  tokensPerSkill: 30,
+  cjkCharPerToken: 1.2,
+  latinCharPerToken: 3,
+  minTokenEstimate: 100,
+  toolResultTokenRatio: 3,
+
+  // Advanced
+  compactPrompt: '',
 }
 
 export const DEFAULT_POLICY_HOOKS = {

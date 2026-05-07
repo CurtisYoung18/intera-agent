@@ -6,7 +6,7 @@ import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 
 interface CaseTypeItem { id: string; type: string; displayName: string; description: string | null; icon: string; requiredFacts: string; stages: string; defaultGoal: string; escalateOn: string }
-const EMPTY: Partial<CaseTypeItem> = { type: '', displayName: '', icon: '📋', requiredFacts: '[]', stages: '["created","investigating","resolved"]', defaultGoal: '', escalateOn: '[]' }
+const EMPTY: Partial<CaseTypeItem> = { type: '', displayName: '', description: '', icon: '📋', requiredFacts: '[]', stages: '["created","investigating","resolved"]', defaultGoal: '', escalateOn: '[]' }
 
 function renderStages(raw: string) { try { return (JSON.parse(raw) as string[]).join(' → ') } catch { return raw } }
 
@@ -48,7 +48,7 @@ export default function CaseTypesPage() {
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-20 overflow-y-auto" onClick={() => setEditing(null)}>
           <GlassCard className="p-6 w-full max-w-lg space-y-4 max-h-[80vh] overflow-y-auto" onClick={undefined}>
             <h3 className="text-[15px] font-semibold text-primary">{isNew ? 'New Case Type' : 'Edit Case Type'}</h3>
-            {(['type', 'displayName', 'icon', 'defaultGoal'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f}</span><input value={String(editing[f] || '')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} className="glass-input-console text-[13px] font-mono" /></label>)}
+            {(['type', 'displayName', 'icon', 'description', 'defaultGoal'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f}</span><input value={String(editing[f] || '')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} className="glass-input-console text-[13px] font-mono" /></label>)}
             {(['stages', 'requiredFacts', 'escalateOn'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f} (JSON)</span><textarea value={String(editing[f] || '[]')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} rows={3} className="glass-input-console text-[12px] font-mono resize-y" /></label>)}
             <div className="flex gap-2 pt-2"><button onClick={handleSave} className="px-5 py-2.5 rounded-xl text-[12px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">Save</button><button onClick={() => setEditing(null)} className="px-4 py-2.5 rounded-xl text-[12px] text-secondary hover:text-primary transition-all">Cancel</button></div>
           </GlassCard>

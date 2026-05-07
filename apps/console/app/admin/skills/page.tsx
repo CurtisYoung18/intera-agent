@@ -8,12 +8,12 @@ import EmptyState from '@/components/ui/empty-state'
 
 interface SkillItem {
   id: string; name: string; description: string; mode: string
-  inputSchema: string; outputSchema: string; endpoint: string | null
-  httpMethod: string; timeoutMs: number; guardPhase: string
+  inputSchema: string; outputSchema: string; headers: string; mockFixture: string
+  endpoint: string | null; httpMethod: string; timeoutMs: number; guardPhase: string
   isConcurrencySafe: boolean; enabled: boolean
 }
 
-const EMPTY: Partial<SkillItem> = { name: '', description: '', mode: 'mock', inputSchema: '{}', outputSchema: '{}', httpMethod: 'POST', timeoutMs: 8000, guardPhase: 'post', isConcurrencySafe: true, enabled: true }
+const EMPTY: Partial<SkillItem> = { name: '', description: '', mode: 'mock', inputSchema: '{}', outputSchema: '{}', headers: '{}', mockFixture: '{}', httpMethod: 'POST', timeoutMs: 8000, guardPhase: 'post', isConcurrencySafe: true, enabled: true }
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -85,6 +85,15 @@ export default function SkillsPage() {
             ))}
             <label className="block space-y-1"><span className="text-[10px] text-muted uppercase tracking-[0.05em]">inputSchema</span>
               <textarea value={editing.inputSchema || '{}'} onChange={e => setEditing({ ...editing, inputSchema: e.target.value })} rows={3} className="glass-input-console text-[12px] font-mono resize-y" />
+            </label>
+            <label className="block space-y-1"><span className="text-[10px] text-muted uppercase tracking-[0.05em]">outputSchema</span>
+              <textarea value={editing.outputSchema || '{}'} onChange={e => setEditing({ ...editing, outputSchema: e.target.value })} rows={3} className="glass-input-console text-[12px] font-mono resize-y" />
+            </label>
+            <label className="block space-y-1"><span className="text-[10px] text-muted uppercase tracking-[0.05em]">headers (JSON)</span>
+              <textarea value={editing.headers || '{}'} onChange={e => setEditing({ ...editing, headers: e.target.value })} rows={2} className="glass-input-console text-[12px] font-mono resize-y" />
+            </label>
+            <label className="block space-y-1"><span className="text-[10px] text-muted uppercase tracking-[0.05em]">mockFixture (JSON)</span>
+              <textarea value={editing.mockFixture || '{}'} onChange={e => setEditing({ ...editing, mockFixture: e.target.value })} rows={4} className="glass-input-console text-[12px] font-mono resize-y" />
             </label>
             <div className="flex gap-3">
               <label className="flex items-center gap-1.5"><input type="checkbox" checked={editing.isConcurrencySafe ?? true} onChange={e => setEditing({ ...editing, isConcurrencySafe: e.target.checked })} className="accent-indigo" /><span className="text-[11px] text-secondary">Concurrency Safe</span></label>
