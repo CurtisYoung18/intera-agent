@@ -42,6 +42,14 @@ export default function SkillsPage() {
     setEditing(null); load()
   }, [editing, isNew, load])
 
+  // Escape key to close modal
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(null) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing])
+
   const handleDelete = useCallback(async (name: string) => {
     if (!confirm(`Delete "${name}"?`)) return
     await fetch(`/api/admin/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })

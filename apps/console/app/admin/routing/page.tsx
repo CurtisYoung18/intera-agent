@@ -17,10 +17,24 @@ export default function RoutingPage() {
   useEffect(() => { load() }, [load])
   const handleSave = useCallback(async () => {
     if (!editing?.queue) return
-    await fetch(isNew ? '/api/admin/routing' : `/api/admin/routing/${encodeURIComponent(editing.queue)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+    const res = await fetch(isNew ? '/api/admin/routing' : `/api/admin/routing/${encodeURIComponent(editing.queue)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+    if (!res.ok) return alert(`Failed to save: ${res.status}`)
     setEditing(null); load()
   }, [editing, isNew, load])
-  const handleDelete = useCallback(async (queue: string) => { if (!confirm(`Delete "${queue}"?`)) return; await fetch(`/api/admin/routing/${encodeURIComponent(queue)}`, { method: 'DELETE' }); load() }, [load])
+  const handleDelete = useCallback(async (queue: string) => {
+    if (!confirm(`Delete "${queue}"?`)) return
+    const res = await fetch(`/api/admin/routing/${encodeURIComponent(queue)}`, { method: 'DELETE' })
+    if (!res.ok) return alert(`Failed to delete: ${res.status}`)
+    load()
+  }, [load])
+
+  // Escape key to close modal
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(null) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing])
 
   if (loading) return <div className="p-8 max-w-4xl"><ListSkeleton count={2} /></div>
 
@@ -46,8 +60,8 @@ export default function RoutingPage() {
         )
       })}
       {editing && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-20" onClick={() => setEditing(null)}>
-          <GlassCard className="p-6 w-full max-w-lg space-y-4" onClick={undefined}>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-20 overflow-y-auto" onClick={() => setEditing(null)}>
+          <GlassCard className="p-6 w-full max-w-lg space-y-4 max-h-[80vh] overflow-y-auto" onClick={undefined}>
             <h3 className="text-[15px] font-semibold text-primary">{isNew ? 'New Queue' : 'Edit Queue'}</h3>
             {(['queue', 'description'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f}</span><input value={String(editing[f] || '')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} className="glass-input-console text-[13px] font-mono" /></label>)}
             <div className="grid grid-cols-2 gap-3">

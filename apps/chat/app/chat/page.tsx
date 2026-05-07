@@ -319,7 +319,7 @@ export default function ChatPage() {
 
                   case 'error':
                     console.error('Agent error:', event.data)
-                    setAgentStatus('online')
+                    setAgentStatus('offline')
                     break
                 }
               } catch { /* skip malformed SSE */ }
@@ -333,7 +333,14 @@ export default function ChatPage() {
       } catch (error) {
         console.error('Chat error:', error)
         setAgentStatus('offline')
-        setMessages((prev) => prev.filter((m) => m.id !== firstTextMsgId || m.content !== ''))
+        setMessages((prev) => [
+          ...prev.filter((m) => m.id !== firstTextMsgId || m.content !== ''),
+          makeMsg({
+            id: crypto.randomUUID(), role: 'assistant', msgType: 'text',
+            content: 'Sorry, something went wrong. Please try again or refresh the page.',
+            isStreaming: false,
+          }),
+        ])
       } finally {
         isLoadingRef.current = false
         setIsLoading(false)

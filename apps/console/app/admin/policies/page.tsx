@@ -58,11 +58,25 @@ export default function PoliciesPage() {
   const handleSave = useCallback(async () => {
     if (!editing?.name) return
     const body = { ...editing, rule: buildRule(ruleFields), description: editing.description || null }
-    await fetch(isNew ? '/api/admin/policies' : `/api/admin/policies/${encodeURIComponent(editing.name)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const res = await fetch(isNew ? '/api/admin/policies' : `/api/admin/policies/${encodeURIComponent(editing.name)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (!res.ok) return alert(`Failed to save: ${res.status}`)
     setEditing(null); load()
   }, [editing, isNew, load, ruleFields])
 
-  const handleDelete = useCallback(async (name: string) => { if (!confirm(`Delete "${name}"?`)) return; await fetch(`/api/admin/policies/${encodeURIComponent(name)}`, { method: 'DELETE' }); load() }, [load])
+  const handleDelete = useCallback(async (name: string) => {
+    if (!confirm(`Delete "${name}"?`)) return
+    const res = await fetch(`/api/admin/policies/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    if (!res.ok) return alert(`Failed to delete: ${res.status}`)
+    load()
+  }, [load])
+
+  // Escape key to close modal
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(null) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing])
 
   if (loading) return <div className="p-8 max-w-4xl"><ListSkeleton count={3} /></div>
 

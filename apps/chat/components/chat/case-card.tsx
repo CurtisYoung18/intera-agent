@@ -94,6 +94,8 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
 
   return (
     <div
+      onMouseEnter={resetAutoCollapse}
+      onFocus={resetAutoCollapse}
       className={`fixed top-20 left-4 z-40 transition-all duration-500 ease-out
         max-sm:right-4 max-sm:left-auto max-sm:top-16
         ${visible && !exiting ? 'translate-x-0 opacity-100' : '-translate-x-6 opacity-0'}

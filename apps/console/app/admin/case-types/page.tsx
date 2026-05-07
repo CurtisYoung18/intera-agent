@@ -25,7 +25,20 @@ export default function CaseTypesPage() {
     if (!res.ok) return alert(`Failed to save: ${res.status}`)
     setEditing(null); load()
   }, [editing, isNew, load])
-  const handleDelete = useCallback(async (type: string) => { if (!confirm(`Delete "${type}"?`)) return; await fetch(`/api/admin/case-types/${encodeURIComponent(type)}`, { method: 'DELETE' }); load() }, [load])
+  const handleDelete = useCallback(async (type: string) => {
+    if (!confirm(`Delete "${type}"?`)) return
+    const res = await fetch(`/api/admin/case-types/${encodeURIComponent(type)}`, { method: 'DELETE' })
+    if (!res.ok) return alert(`Failed to delete: ${res.status}`)
+    load()
+  }, [load])
+
+  // Escape key to close modal
+  useEffect(() => {
+    if (!editing) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(null) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editing])
 
   const filtered = search ? items.filter(t => t.type.includes(search) || t.displayName.includes(search)) : items
 

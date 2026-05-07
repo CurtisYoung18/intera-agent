@@ -134,6 +134,7 @@ function NumField({ label, tooltip, value, onChange, unit, min, max, step }: {
 export default function AgentConfigPage() {
   const [config, setConfig] = useState<AgentConfigData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
@@ -170,7 +171,8 @@ export default function AgentConfigPage() {
       })
       setAvailableModels(modelsData.models || [])
       setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
-    }).finally(() => setLoading(false))
+      setError(null)
+    }).catch(err => { setError(err.message || 'Failed to load config') }).finally(() => setLoading(false))
   }, [])
 
   const handleSave = useCallback(async () => {
@@ -200,8 +202,14 @@ export default function AgentConfigPage() {
     setConfig(prev => prev ? { ...prev, memoryStrategy: { ...prev.memoryStrategy, [field]: value } } : null); setSaved(false)
   }, [])
 
-  if (loading || !config) return (
+  if (loading) return (
     <div className="p-8 space-y-5 max-w-3xl"><Skeleton className="h-6 w-48" /><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /></div>
+  )
+  if (error || !config) return (
+    <div className="p-8 max-w-3xl mx-auto text-center space-y-4">
+      <p className="text-[14px] text-vermillion/80">{error || 'Failed to load config'}</p>
+      <button onClick={() => { setLoading(true); setError(null); window.location.reload() }} className="px-4 py-2 rounded-xl text-[12px] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">Retry</button>
+    </div>
   )
 
   const ms = config.memoryStrategy
