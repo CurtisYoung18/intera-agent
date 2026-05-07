@@ -135,7 +135,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/40 backdrop-blur-xl flex-shrink-0">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.push('/ops/human-tasks')} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
+            <button onClick={() => router.push('/ops/cases')} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
               ← Back
             </button>
             <div>

@@ -296,6 +296,7 @@ export default function ChatPage() {
 
                   case 'finalized':
                     setAgentStatus('online')
+                    setCaseCard((prev) => prev ? { ...prev, status: 'resolved' } : null)
                     break
 
                   case 'message_stop': {
@@ -402,7 +403,7 @@ export default function ChatPage() {
       )}
 
       {/* Customer case dashboard — slides in from right, settles at edge */}
-      <CaseCard data={caseCard} />
+      <CaseCard data={caseCard} onDismiss={() => setCaseCard(null)} />
     </ChatShell>
   )
 }

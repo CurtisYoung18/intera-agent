@@ -16,7 +16,7 @@ export interface SessionMemoryCompactResult {
  * Check whether we can reuse an existing persisted summary instead of
  * triggering a new compaction cycle. The summary must be:
  *   1. Non-empty
- *   2. Generated within the last 30 minutes (fresh enough)
+ *   2. Generated within maxAgeMs (default 30 minutes)
  *
  * If conditions are met, the caller skips message trimming and LLM summary
  * generation — the existing summary is already in CaseMemoryManager and
@@ -25,6 +25,7 @@ export interface SessionMemoryCompactResult {
 export function trySessionMemoryCompact(
   existingSummary: string | null | undefined,
   lastCompactedAt: Date | null | undefined,
+  maxAgeMs: number = 1800000,
 ): SessionMemoryCompactResult {
   if (!existingSummary || existingSummary.length === 0) {
     return { used: false, reason: 'no_existing_summary' }
@@ -32,7 +33,6 @@ export function trySessionMemoryCompact(
 
   if (lastCompactedAt) {
     const ageMs = Date.now() - lastCompactedAt.getTime()
-    const maxAgeMs = 30 * 60 * 1000 // 30 minutes
     if (ageMs > maxAgeMs) {
       return { used: false, reason: 'summary_stale' }
     }

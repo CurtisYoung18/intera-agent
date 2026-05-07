@@ -22,9 +22,8 @@ import { TraceWriter } from './trace'
 import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation } from './compact'
+import { Profiler } from './profiler'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
-
-const MAX_OUTPUT_TOKENS = 4096
 
 // ---------------------------------------------------------------------------
 // Content block tracking during streaming
@@ -68,6 +67,7 @@ export class AgentLoop {
   private policyEngine: PolicyEngine
   private skillRouter: SkillRouter
   private traceWriter: TraceWriter
+  private profiler: Profiler = new Profiler()
   private iterationCount = 0
   private abortController: AbortController
 
@@ -83,7 +83,7 @@ export class AgentLoop {
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
     loop.skillRouter = await SkillRouter.create(deps.customerId)
-    loop.policyEngine = await PolicyEngine.create(deps.customerId)
+    loop.policyEngine = await PolicyEngine.create(deps.customerId, deps.config.policyHooks)
     return loop
   }
 
@@ -96,6 +96,7 @@ export class AgentLoop {
     sendEvent: (event: SSEEvent) => void,
   ): Promise<LoopResult> {
     // 1. Record user message
+    this.profiler.startTurn()
     const userMsg = this.makeUserMessage(userMessage)
     this.messages.push(userMsg)
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
@@ -114,6 +115,7 @@ export class AgentLoop {
 
     while (this.iterationCount < this.deps.config.maxIterations) {
       this.iterationCount++
+      this.profiler.incrementIteration()
 
       // Context compaction (simplified)
       const compactResult = await this.checkAndCompact()
@@ -153,7 +155,7 @@ export class AgentLoop {
 
       const stream = client.messages.stream({
         model: this.deps.config.model,
-        max_tokens: MAX_OUTPUT_TOKENS,
+        max_tokens: this.deps.config.maxOutputTokens ?? 4096,
         system: this.deps.systemPrompt,
         messages: this.buildApiMessages(),
         tools: this.skillRouter.getTools(),
@@ -225,6 +227,7 @@ export class AgentLoop {
             if (!cb) break
 
             if (d.type === 'text_delta') {
+              if (!fullText) this.profiler.recordFirstToken()
               cb.content += d.text
               fullText += d.text
               sendEvent({
@@ -333,6 +336,9 @@ export class AgentLoop {
 
       // ── Wait for all tools to finish ─────────────────────────
       const toolResults = await toolExecutor.waitForAll()
+      for (const tr of toolResults) {
+        this.profiler.addToolExecution(tr.latencyMs || 0)
+      }
 
       if (toolResults.length === 0) {
         // Plain text response — no tools used → exit loop (model wants user input)
@@ -345,6 +351,7 @@ export class AgentLoop {
           data: { reason: 'no_tools', stopReason, usage } as any,
           timestamp: new Date().toISOString(),
         })
+        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: 'investigating',
@@ -407,6 +414,7 @@ export class AgentLoop {
           timestamp: new Date().toISOString(),
         })
 
+        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: 'collecting',
@@ -514,6 +522,7 @@ export class AgentLoop {
           skillName: 'finalize_case',
           skillOutput: finalizeResult.output,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
+          skillsCalled: this.caseMemory.getSkillsCalled(),
         })
 
         if (policyResult.result === 'blocked') {
@@ -548,6 +557,7 @@ export class AgentLoop {
           data: finalizeResult.output,
           timestamp: new Date().toISOString(),
         })
+        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: 'resolved',
@@ -584,6 +594,7 @@ export class AgentLoop {
           data: { summary, resolution },
           timestamp: new Date().toISOString(),
         })
+        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: 'investigating',
@@ -608,6 +619,7 @@ export class AgentLoop {
       data: 'Max iterations reached',
       timestamp: new Date().toISOString(),
     })
+    await this.writeProfilerSnapshot()
     return {
       messages: this.messages,
       caseStatus: 'escalated',
@@ -686,6 +698,7 @@ export class AgentLoop {
       const smResult = trySessionMemoryCompact(
         this.caseMemory.getSummary().summary,
         this.caseMemory.getLastCompactedAt(),
+        this.deps.config.memoryStrategy.sessionMemoryMaxAgeMs ?? 1800000,
       )
       if (smResult.used) {
         return { shouldCompact: false, reason: 'session_memory_still_fresh' }
@@ -733,8 +746,17 @@ export class AgentLoop {
     return { shouldCompact: false }
   }
 
+  /** Write profiler snapshot to ActionTrace for observability. */
+  private async writeProfilerSnapshot(): Promise<void> {
+    const snapshot = this.profiler.snapshot()
+    if (snapshot.totalDurationMs > 0) {
+      await this.traceWriter.write('loop_decision', 'Profiler Snapshot', JSON.stringify(snapshot))
+    }
+  }
+
   /** Run LLM-driven compaction with fallback to programmatic summary. */
   private async performCompaction(): Promise<void> {
+    this.profiler.incrementCompaction()
     const strategy = this.deps.config.memoryStrategy
 
     try {

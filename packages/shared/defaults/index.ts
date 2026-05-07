@@ -110,6 +110,12 @@ export const DEFAULT_MEMORY_STRATEGY = {
 
   // Advanced
   compactPrompt: '',
+  contextWindow: 200000,
+  outputTokensReserved: 20000,
+  maxKeyEventsAfterCompact: 5,
+  compactCircuitBreakerMaxFailures: 3,
+  sessionMemoryMaxAgeMs: 1800000,
+  toolResultTemplate: 'Tool {name} result:\n{output}',
 }
 
 export const DEFAULT_POLICY_HOOKS = {

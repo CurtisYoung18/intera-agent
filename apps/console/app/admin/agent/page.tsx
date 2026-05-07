@@ -48,6 +48,11 @@ interface MemoryStrategy {
   toolResultTokenRatio: number
   // Advanced
   compactPrompt: string
+  contextWindow: number
+  outputTokensReserved: number
+  maxKeyEventsAfterCompact: number
+  compactCircuitBreakerMaxFailures: number
+  sessionMemoryMaxAgeMs: number
 }
 
 const DEFAULT_MEMORY: MemoryStrategy = {
@@ -69,13 +74,16 @@ const DEFAULT_MEMORY: MemoryStrategy = {
   tokensPerKeyEvent: 20, tokensPerFact: 15, tokensPerSkill: 30,
   cjkCharPerToken: 1.2, latinCharPerToken: 3, minTokenEstimate: 100, toolResultTokenRatio: 3,
   compactPrompt: '',
+  contextWindow: 200000, outputTokensReserved: 20000,
+  maxKeyEventsAfterCompact: 5, compactCircuitBreakerMaxFailures: 3, sessionMemoryMaxAgeMs: 1800000,
 }
 
 interface AgentConfigData {
   model: string; temperature: number; thinkingBudget: number
-  maxIterations: number; systemPrompt: string; toolParallelism: boolean
+  maxIterations: number; maxOutputTokens: number; systemPrompt: string; toolParallelism: boolean
   isConcurrencySafe: boolean; showThinking: boolean
   memoryStrategy: MemoryStrategy; policyHooks: string
+  resumePrompt: string; formResponseTemplate: string
 }
 
 interface ModelInfo { id: string; name: string; provider: string; providerLabel: string }
@@ -151,9 +159,12 @@ export default function AgentConfigPage() {
       setConfig({
         model: raw.model || 'MiniMax-M2.70-highspeed', temperature: raw.temperature ?? 0.5,
         thinkingBudget: raw.thinkingBudget ?? 4096, maxIterations: raw.maxIterations ?? 20,
+        maxOutputTokens: raw.maxOutputTokens ?? 4096,
         systemPrompt: raw.systemPrompt || '', toolParallelism: raw.toolParallelism ?? true,
         isConcurrencySafe: raw.isConcurrencySafe ?? true, showThinking: raw.showThinking ?? false,
         memoryStrategy, policyHooks,
+        resumePrompt: raw.resumePrompt || '',
+        formResponseTemplate: raw.formResponseTemplate || '',
       })
       setAvailableModels(modelsData.models || [])
       setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
@@ -165,7 +176,9 @@ export default function AgentConfigPage() {
     setSaving(true); setSaved(false)
     await fetch('/api/admin/agent', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...config, memoryStrategy: JSON.stringify(config.memoryStrategy) }) })
-    fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: 'default' }) }).catch(() => {})
+    try {
+      await fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId: 'default' }) })
+    } catch { /* non-critical — cache will expire via TTL */ }
     setSaved(true); setSaving(false)
   }, [config])
 
@@ -219,6 +232,9 @@ export default function AgentConfigPage() {
           <label className="space-y-1.5"><span className="text-[11px] text-muted">Max Iterations</span>
             <input type="number" value={config.maxIterations} onChange={e => update('maxIterations', parseInt(e.target.value) || 1)} className="glass-input-console text-[13px] font-mono" />
           </label>
+          <label className="space-y-1.5"><span className="text-[11px] text-muted">Max Output Tokens</span>
+            <input type="number" value={config.maxOutputTokens} onChange={e => update('maxOutputTokens', parseInt(e.target.value) || 4096)} className="glass-input-console text-[13px] font-mono" />
+          </label>
         </div>
         <div className="flex gap-6 flex-wrap">
           <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={config.toolParallelism} onChange={e => update('toolParallelism', e.target.checked)} className="accent-indigo rounded" /><span className="text-[12px] text-secondary">Tool Parallelism</span></label>
@@ -232,6 +248,26 @@ export default function AgentConfigPage() {
         <h3 className="text-[11px] font-sans tracking-[0.08em] uppercase text-muted/50">System Prompt</h3>
         <textarea value={config.systemPrompt} onChange={e => update('systemPrompt', e.target.value)} rows={18}
           className="glass-input-console text-[13px] leading-relaxed font-mono resize-y" placeholder="Enter system prompt…" />
+      </GlassCard>
+
+      {/* Resume & Form Templates */}
+      <GlassCard className="p-5 space-y-3">
+        <h3 className="text-[11px] font-sans tracking-[0.08em] uppercase text-muted/50">Resume &amp; Form Templates</h3>
+        <p className="text-[10px] text-muted">Customize the synthetic messages injected when a human task is resolved or a form is submitted. These templates control how the agent interprets operator notes and user form responses.</p>
+        <label className="space-y-1.5 block">
+          <HoverTooltip content="Template for the synthetic user message injected when a human task is resolved. The agent sees this as instructions on how to communicate the resolution to the customer. Use {verdict}, {reason}, {taskId} as placeholders.">
+            <span className="text-[11px] text-muted cursor-help border-b border-dotted border-[var(--border-hover)]">Resume Prompt (after human task resolved)</span>
+          </HoverTooltip>
+          <textarea value={config.resumePrompt} onChange={e => update('resumePrompt', e.target.value)} rows={8}
+            className="glass-input-console text-[12px] font-mono resize-y" placeholder="Empty = use built-in default…" />
+        </label>
+        <label className="space-y-1.5 block">
+          <HoverTooltip content="Template for the synthetic user message injected when a customer submits a form. The agent uses this to understand how form field values map to case facts.">
+            <span className="text-[11px] text-muted cursor-help border-b border-dotted border-[var(--border-hover)]">Form Response Template</span>
+          </HoverTooltip>
+          <textarea value={config.formResponseTemplate} onChange={e => update('formResponseTemplate', e.target.value)} rows={4}
+            className="glass-input-console text-[12px] font-mono resize-y" placeholder="Empty = use built-in default…" />
+        </label>
       </GlassCard>
 
       {/* ── Thresholds ──────────────────────────────────────── */}
@@ -414,7 +450,24 @@ export default function AgentConfigPage() {
       {/* ── Advanced ────────────────────────────────────────── */}
       <GlassCard className="p-5 space-y-3">
         <h3 className="text-[11px] font-sans tracking-[0.08em] uppercase text-muted/50">Advanced</h3>
-        <label className="space-y-1.5 block">
+        <div className="grid grid-cols-2 gap-3">
+          <NumField label="Context Window" unit="tokens" value={ms.contextWindow}
+            onChange={v => updateMem('contextWindow', v)}
+            tooltip="Total model context window size. Used in assessCompaction() to calculate available tokens: effectiveContextWindow = contextWindow - outputTokensReserved. Default: 200000 (Claude)." />
+          <NumField label="Output Tokens Reserved" unit="tokens" value={ms.outputTokensReserved}
+            onChange={v => updateMem('outputTokensReserved', v)}
+            tooltip="Tokens reserved for model output, subtracted from context window. Ensures the model always has room to respond. Default: 20000." />
+          <NumField label="Max Key Events After Compact" unit="events" value={ms.maxKeyEventsAfterCompact}
+            onChange={v => updateMem('maxKeyEventsAfterCompact', v)}
+            tooltip="Number of key events to retain after compaction. Older events are trimmed: keyEvents.slice(-N). Default: 5." />
+          <NumField label="Circuit Breaker Max Failures" unit="failures" value={ms.compactCircuitBreakerMaxFailures}
+            onChange={v => updateMem('compactCircuitBreakerMaxFailures', v)}
+            tooltip="Consecutive compaction failures before the circuit breaker trips. Prevents infinite retry loops. Default: 3." />
+          <NumField label="Session Memory Max Age" unit="ms" value={ms.sessionMemoryMaxAgeMs}
+            onChange={v => updateMem('sessionMemoryMaxAgeMs', v)} step={60000}
+            tooltip="Maximum age for session memory reuse before it's considered stale. Default: 1800000 (30 min)." />
+        </div>
+        <label className="space-y-1.5 block pt-2">
           <HoverTooltip content="System prompt injected when the LLM extracts key events from conversation history. Each event is tagged source:'heuristic' (regex) or source:'llm' (model). Customize for domain-specific event types.">
             <span className="text-[11px] text-muted cursor-help border-b border-dotted border-[var(--border-hover)]">Key Event Extraction Prompt</span>
           </HoverTooltip>

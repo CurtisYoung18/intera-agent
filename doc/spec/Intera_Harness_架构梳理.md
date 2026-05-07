@@ -29,12 +29,13 @@ B 端商户（B-side Customer）
 ┌─────────────────────────────────────────────────────────────┐
 │  /chat 页面                                              │
 │  ChatShell (React Client)                                 │
-│   - CaseRail（左侧 Case 列表）★ 与 user_id 绑定              │
-│   │    根据当前顾客的 user_id，展示其所有历史 case             │
-│   │    顾客可切换查看任意 case 的进度                          │
-│   │    点击 case 卡片展开 → 内嵌该 case 的交互时间线（Trace）  │
-│   - ChatPanel（当前 case 的对话 + 卡片 + Timeline）           │
-│   - 无独立 TracePreview 组件；Trace 已整合进展开的 case 卡片   │
+│   - CaseCard（浮动 Case 仪表盘）★ Agent 识别到 case 即出现     │
+│   │    浮动于左上角（窄屏自动移至右上角），展示当前活跃 case      │
+│   │    Agent 确认 facts/skills 后卡片滑入，展示实时状态           │
+│   │    无 case 时无卡片；case resolved 后可 Dismiss 关闭        │
+│   │    30 秒无更新自动折叠为 pill 状态，点击展开                  │
+│   - ChatPanel（当前 case 的对话 + 气泡 + Timeline）           │
+│   - Trace 时间线在 Console /ops/cases/[id] 详情页展示          │
 └─────────────────────────────────────────────────────────────┘
     │ POST /api/messages
     ▼
@@ -127,15 +128,10 @@ B 端商户（B-side Customer）
 **为什么 Skills / Policy / Trace / Memory 没有单独画在 ReAct 步骤之间？**
 因为 Act 阶段可能多次调用 Skills（多轮 tool_use），Policy 在 skill 前后都要检查，Trace 每一步都要写，Memory 每一步都要读。把它们平铺在步骤之间会让图变得很复杂。所以用虚线框把它们整体放在 Act 阶段内部，表示"这些是 Act 的支撑能力"。
 
-**CaseRail 与 user_id 的绑定关系：**
-- CaseRail 展示的是**当前 user_id** 对应的所有历史 case
-- 当顾客问"我之前那个充值问题处理好了吗"，Agent 可调用 `read_case_history` skill 查询该 user_id 下的历史 case，引用历史结论继续服务
-- 这使 Agent 具备跨 case 的上下文记忆能力
-
-**Trace 可观测性：**
+**Trace 可观测性（更新于 2026-05-07）：**
 - Trace 的最小单位是 Case
-- Trace 不再是独立组件，而是**嵌入在展开的 case 卡片内部**
-- 点击 CaseRail 中的任意 case 卡片 → 展开 → 显示该 case 的完整交互时间线
+- Trace 时间线在 **Console `/ops/cases/[id]` 详情页**展示（非 Chat 端）
+- CaseCard 仅展示当前 case 的实时摘要（状态/facts/skills/missingFacts）
 
 ---
 

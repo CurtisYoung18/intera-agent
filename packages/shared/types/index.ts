@@ -172,12 +172,15 @@ export interface AgentConfigData {
   temperature: number
   thinkingBudget: number
   maxIterations: number
+  maxOutputTokens?: number
   systemPrompt: string
   toolParallelism: boolean
   isConcurrencySafe: boolean
   showThinking: boolean
   memoryStrategy: MemoryStrategy
   policyHooks: PolicyHooks
+  resumePrompt?: string
+  formResponseTemplate?: string
 }
 
 export interface MemoryStrategy {
@@ -228,6 +231,12 @@ export interface MemoryStrategy {
 
   // ── Advanced ──
   compactPrompt: string
+  contextWindow?: number
+  outputTokensReserved?: number
+  maxKeyEventsAfterCompact?: number
+  compactCircuitBreakerMaxFailures?: number
+  sessionMemoryMaxAgeMs?: number
+  toolResultTemplate?: string
 }
 
 export interface PolicyHooks {

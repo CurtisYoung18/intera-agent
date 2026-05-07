@@ -1,17 +1,15 @@
 // Intera Harness - Policy Engine
-// Based on architecture doc: Policy / Guardrail system
-//
-// [MOCK] Hardcoded built-in policies. Production path:
-//   - Load policies from Policy table (Prisma) for the active Customer
-//   - Policies are configured via Admin console per hook point
+// Guardrail policies evaluated at preTool, postTool, and preFinalize checkpoints.
+// Policies load from DB (overlay on built-in seed) and hooks are driven by AgentConfig.policyHooks.
 
-import type { PolicyHook, PolicyResult, PolicyRule } from '@intera/shared/types'
+import type { PolicyHook, PolicyResult, PolicyRule, PolicyHooks } from '@intera/shared/types'
 
 export interface PolicyContext {
   skillName?: string
   skillInput?: Record<string, unknown>
   skillOutput?: unknown
   confirmedFacts?: Record<string, unknown>
+  skillsCalled?: string[]
 }
 
 export interface PolicyCheckResult {
@@ -20,10 +18,6 @@ export interface PolicyCheckResult {
   reason?: string
 }
 
-/**
- * Policy Engine — evaluates guardrail policies at preTool, postTool,
- * and preFinalize checkpoints.
- */
 export class PolicyEngine {
   private policies: Map<string, PolicyRule> = new Map()
   private hooks: Record<PolicyHook, string[]> = {
@@ -32,15 +26,19 @@ export class PolicyEngine {
     preFinalize: [],
   }
 
-  constructor(private customerId: string) {
+  constructor(private customerId: string, policyHooks?: PolicyHooks) {
     this.loadBuiltInPolicies()
+    if (policyHooks) {
+      this.hooks.preTool = policyHooks.preTool || []
+      this.hooks.postTool = policyHooks.postTool || []
+      this.hooks.preFinalize = policyHooks.preFinalize || []
+    }
   }
 
   /** Create and initialize a PolicyEngine — loads built-ins + DB policies. */
-  static async create(customerId: string): Promise<PolicyEngine> {
-    const engine = new PolicyEngine(customerId)
+  static async create(customerId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
+    const engine = new PolicyEngine(customerId, policyHooks)
 
-    // Load DB policies (overlay on top of built-ins)
     try {
       const { prisma } = await import('@intera/shared/prisma')
       const dbPolicies = await prisma.policy.findMany({
@@ -51,7 +49,6 @@ export class PolicyEngine {
         const rule = JSON.parse(p.rule || '{}') as Record<string, unknown>
         engine.policies.set(p.name, rule as any)
 
-        // Wire to the appropriate hook
         const hook = p.hook as 'preTool' | 'postTool' | 'preFinalize'
         if (!engine.hooks[hook].includes(p.name)) {
           engine.hooks[hook].push(p.name)
@@ -65,28 +62,26 @@ export class PolicyEngine {
   }
 
   private loadBuiltInPolicies(): void {
-    // Block high-risk skills in preTool phase
     this.policies.set('no_high_risk_account_change', {
       deny_skills: ['refund_money', 'change_ban_status', 'delete_account'],
     })
 
-    // Detect conflict between system result and user report
-    this.policies.set('conflict_requires_human', {})
+    this.policies.set('conflict_requires_human', {
+      deny_keywords: ['not received', '未到账', '没到账', '没收到', 'not credited', 'missing', '未入金'],
+    })
 
-    // Require evidence gathering before resolution
     this.policies.set('evidence_required_before_resolution', {
       require_skills: ['query_order_status'],
     })
 
-    // Forbid compensation/refund promises in finalize output
     this.policies.set('no_compensation_promise', {
       deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'],
     })
 
-    // Require evidence citations in conclusions
-    this.policies.set('must_cite_basis', {})
+    this.policies.set('must_cite_basis', {
+      allow_keywords: ['basis'],
+    })
 
-    // Wire hooks (in production, this comes from AgentConfig.policyHooks)
     this.hooks.preTool = ['no_high_risk_account_change']
     this.hooks.postTool = ['conflict_requires_human']
     this.hooks.preFinalize = [
@@ -120,7 +115,7 @@ export class PolicyEngine {
     policyName: string,
     context: PolicyContext,
   ): PolicyCheckResult {
-    // Check deny_skills (preTool)
+    // ── deny_skills (preTool) ──
     if (
       rule.deny_skills &&
       context.skillName &&
@@ -133,11 +128,44 @@ export class PolicyEngine {
       }
     }
 
-    // Check deny_keywords in skill output (postTool / preFinalize)
+    // ── require_skills (preFinalize): verify required skills were actually called ──
+    if (rule.require_skills && context.skillName === 'finalize_case') {
+      const called = context.skillsCalled || []
+      const missing = rule.require_skills.filter((s) => !called.includes(s))
+      if (missing.length > 0) {
+        return {
+          policyName,
+          result: 'blocked',
+          reason: `Required skills not called before finalize: ${missing.join(', ')}`,
+        }
+      }
+    }
+
+    // ── deny_keywords in skill output (postTool / preFinalize) ──
     if (rule.deny_keywords && context.skillOutput) {
       const outputStr = JSON.stringify(context.skillOutput)
       for (const keyword of rule.deny_keywords) {
         if (outputStr.includes(keyword)) {
+          // Special case: conflict_requires_human — does not block, escalates instead
+          if (policyName === 'conflict_requires_human') {
+            // Only escalate if the user has also reported the issue
+            // (confirmedFacts signals user's claim exists)
+            const hasUserReport = context.confirmedFacts &&
+              Object.values(context.confirmedFacts).some(
+                (v) => typeof v === 'string' && context.skillOutput &&
+                  outputStr.includes('success'),
+              )
+            if (hasUserReport) {
+              return {
+                policyName,
+                result: 'escalated',
+                reason: `Conflict detected: system reports success but user reports issue. Escalation required.`,
+              }
+            }
+            // No user report to conflict with — just warn
+            return { policyName, result: 'hint', reason: `Potential conflict keyword detected: "${keyword}"` }
+          }
+
           return {
             policyName,
             result: 'blocked',
@@ -147,9 +175,31 @@ export class PolicyEngine {
       }
     }
 
-    // Check require_skills (preFinalize)
-    if (rule.require_skills && context.skillName === 'finalize_case') {
-      // Production: verify required skills were actually called during this case
+    // ── allow_keywords (preFinalize): require specific content in output ──
+    if (rule.allow_keywords && context.skillName === 'finalize_case' && context.skillOutput) {
+      const outputStr = JSON.stringify(context.skillOutput)
+      const missing = rule.allow_keywords.filter((kw) => !outputStr.includes(kw))
+      if (missing.length > 0) {
+        return {
+          policyName,
+          result: 'blocked',
+          reason: `Finalize output missing required content: ${missing.join(', ')}`,
+        }
+      }
+    }
+
+    // ── min_evidence_count ──
+    if (rule.min_evidence_count) {
+      const factCount = context.confirmedFacts
+        ? Object.keys(context.confirmedFacts).length
+        : 0
+      if (factCount < rule.min_evidence_count) {
+        return {
+          policyName,
+          result: 'hint',
+          reason: `Insufficient evidence: have ${factCount}, need ${rule.min_evidence_count}`,
+        }
+      }
     }
 
     return { policyName: '', result: 'pass' }

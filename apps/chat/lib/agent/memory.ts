@@ -7,9 +7,6 @@
 import type { KeyEvent, CaseMemoryData, MemoryStrategy } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 
-const MAX_OUTPUT_TOKENS_RESERVED = 20000
-const DEFAULT_CONTEXT_WINDOW = 200000
-
 export interface CompactionResult {
   shouldCompact: boolean
   isWarning: boolean
@@ -137,7 +134,9 @@ export class CaseMemoryManager {
    *   - Warning: < WARNING_THRESHOLD (20K) — notify user
    */
   assessCompaction(estimatedMessageTokens: number, messageCount: number): CompactionResult {
-    const effectiveWindow = DEFAULT_CONTEXT_WINDOW - MAX_OUTPUT_TOKENS_RESERVED
+    const ctxWindow = this.strategy.contextWindow ?? 200000
+    const outReserved = this.strategy.outputTokensReserved ?? 20000
+    const effectiveWindow = ctxWindow - outReserved
     const tokensRemaining = effectiveWindow - estimatedMessageTokens
     const percentLeft = Math.max(0, (tokensRemaining / effectiveWindow) * 100)
 
@@ -240,7 +239,7 @@ export class CaseMemoryManager {
   recordCompaction(): string {
     this.summary = this.buildCompactionSummary()
     this.lastCompactedAt = new Date()
-    this.keyEvents = this.keyEvents.slice(-5)
+    this.keyEvents = this.keyEvents.slice(-(this.strategy.maxKeyEventsAfterCompact ?? 5))
     this.resetCompactFailures()
     return this.summary
   }
@@ -257,8 +256,9 @@ export class CaseMemoryManager {
     this.consecutiveCompactFailures = 0
   }
 
-  isCompactCircuitBroken(maxFailures = 3): boolean {
-    return this.consecutiveCompactFailures >= maxFailures
+  isCompactCircuitBroken(maxFailures?: number): boolean {
+    const threshold = maxFailures ?? this.strategy.compactCircuitBreakerMaxFailures ?? 3
+    return this.consecutiveCompactFailures >= threshold
   }
 
   hasSummary(): boolean {

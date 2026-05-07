@@ -1,20 +1,22 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { Layers, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Layers, Plus, Pencil, Trash2, Search, Wand2 } from 'lucide-react'
 import GlassCard from '@/components/ui/glass-card'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 
-interface CaseTypeItem { id: string; type: string; displayName: string; description: string | null; icon: string; requiredFacts: string; stages: string; defaultGoal: string; escalateOn: string }
-const EMPTY: Partial<CaseTypeItem> = { type: '', displayName: '', description: '', icon: '📋', requiredFacts: '[]', stages: '["created","investigating","resolved"]', defaultGoal: '', escalateOn: '[]' }
+interface CaseTypeItem { id: string; type: string; displayName: string; description: string | null; icon: string; requiredFacts: string; stages: string; defaultGoal: string; escalateOn: string; autoCloseConditions?: string }
+const EMPTY: Partial<CaseTypeItem> = { type: '', displayName: '', description: '', icon: '📋', requiredFacts: '[]', stages: '["created","investigating","resolved"]', defaultGoal: '', escalateOn: '[]', autoCloseConditions: '{}' }
 
 function renderStages(raw: string) { try { return (JSON.parse(raw) as string[]).join(' → ') } catch { return raw } }
+function formatJson(text: string): string { try { return JSON.stringify(JSON.parse(text), null, 2) } catch { return text } }
 
 export default function CaseTypesPage() {
   const [items, setItems] = useState<CaseTypeItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Partial<CaseTypeItem> | null>(null)
   const [isNew, setIsNew] = useState(false)
+  const [search, setSearch] = useState('')
   const load = useCallback(() => { fetch('/api/admin/case-types').then(r => r.json()).then(d => setItems(d.types || [])).finally(() => setLoading(false)) }, [])
   useEffect(() => { load() }, [load])
   const handleSave = useCallback(async () => {
@@ -24,14 +26,20 @@ export default function CaseTypesPage() {
   }, [editing, isNew, load])
   const handleDelete = useCallback(async (type: string) => { if (!confirm(`Delete "${type}"?`)) return; await fetch(`/api/admin/case-types/${encodeURIComponent(type)}`, { method: 'DELETE' }); load() }, [load])
 
+  const filtered = search ? items.filter(t => t.type.includes(search) || t.displayName.includes(search)) : items
+
   if (loading) return <div className="p-8 max-w-4xl"><ListSkeleton count={3} /></div>
 
   return (
     <div className="max-w-4xl mx-auto px-8 py-8 animate-fade-up space-y-5">
       <div className="flex items-center justify-between mb-2"><div><h1 className="text-[18px] font-semibold text-primary tracking-[-0.01em]">Case Types</h1><p className="text-[13px] text-secondary mt-1">Dynamic state machines per case type</p></div>
-        <button onClick={() => { setEditing({ ...EMPTY }); setIsNew(true) }} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> New</button></div>
+        <div className="flex items-center gap-2">
+          <div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted/40" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="glass-input-console text-[12px] pl-8 pr-3 py-2 w-36" /></div>
+          <button onClick={() => { setEditing({ ...EMPTY }); setIsNew(true) }} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> New</button>
+        </div></div>
       {items.length === 0 && <EmptyState icon={Layers} title="No case types defined" description="The default 'general' type is used as fallback." />}
-      {items.map(t => (
+      {items.length > 0 && filtered.length === 0 && search && <p className="text-[13px] text-muted text-center py-8">No types matching "{search}"</p>}
+      {filtered.map(t => (
         <GlassCard key={t.id} className="p-5 flex items-center gap-5">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2.5 mb-1.5">
@@ -49,7 +57,8 @@ export default function CaseTypesPage() {
           <GlassCard className="p-6 w-full max-w-lg space-y-4 max-h-[80vh] overflow-y-auto" onClick={undefined}>
             <h3 className="text-[15px] font-semibold text-primary">{isNew ? 'New Case Type' : 'Edit Case Type'}</h3>
             {(['type', 'displayName', 'icon', 'description', 'defaultGoal'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f}</span><input value={String(editing[f] || '')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} className="glass-input-console text-[13px] font-mono" /></label>)}
-            {(['stages', 'requiredFacts', 'escalateOn'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f} (JSON)</span><textarea value={String(editing[f] || '[]')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} rows={3} className="glass-input-console text-[12px] font-mono resize-y" /></label>)}
+            {(['stages', 'requiredFacts', 'escalateOn'] as const).map(f => <label key={f} className="block space-y-1"><div className="flex items-center justify-between"><span className="text-[10px] text-muted uppercase">{f} (JSON)</span><button onClick={() => setEditing({ ...editing, [f]: formatJson(String(editing[f] || '[]')) })} className="flex items-center gap-1 text-[9px] text-muted/50 hover:text-indigo/70 transition-colors"><Wand2 className="w-3 h-3" /> Format</button></div><textarea value={String(editing[f] || '[]')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} rows={3} className="glass-input-console text-[12px] font-mono resize-y" /></label>)}
+            <label className="block space-y-1"><div className="flex items-center justify-between"><span className="text-[10px] text-muted uppercase">autoCloseConditions (JSON)</span><button onClick={() => setEditing({ ...editing, autoCloseConditions: formatJson(String(editing.autoCloseConditions || '{}')) })} className="flex items-center gap-1 text-[9px] text-muted/50 hover:text-indigo/70 transition-colors"><Wand2 className="w-3 h-3" /> Format</button></div><textarea value={String(editing.autoCloseConditions || '{}')} onChange={e => setEditing({ ...editing, autoCloseConditions: e.target.value })} rows={3} className="glass-input-console text-[12px] font-mono resize-y" /></label>
             <div className="flex gap-2 pt-2"><button onClick={handleSave} className="px-5 py-2.5 rounded-xl text-[12px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">Save</button><button onClick={() => setEditing(null)} className="px-4 py-2.5 rounded-xl text-[12px] text-secondary hover:text-primary transition-all">Cancel</button></div>
           </GlassCard>
         </div>
