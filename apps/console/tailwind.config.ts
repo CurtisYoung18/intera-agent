@@ -20,6 +20,13 @@ const config: Config = {
         indigo: 'var(--indigo)',
         amber: 'var(--amber)',
         malachite: 'var(--malachite)',
+        gold: 'var(--gold)',
+        'gold-hover': 'var(--gold-hover)',
+        'gold-muted': 'var(--gold-muted)',
+        lavender: 'var(--lavender)',
+        sky: 'var(--sky)',
+        surface: 'var(--surface)',
+        'surface-hover': 'var(--surface-hover)',
       },
       fontFamily: {
         serif: ['Cormorant Garamond', 'Noto Serif SC', 'serif'],

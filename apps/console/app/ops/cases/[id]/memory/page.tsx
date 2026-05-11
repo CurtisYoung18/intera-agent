@@ -5,7 +5,6 @@
 
 import { useState, useEffect, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
-import FluidBackground from '@intera/shared/ui/fluid-background'
 
 interface MemoryData {
   caseId: string
@@ -90,8 +89,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div className="relative min-h-[100dvh] bg-[var(--bg-root)] flex flex-col">
-      <FluidBackground intensity="subtle" />
+    <div className="relative min-h-[100dvh] flex flex-col">
 
       {/* Header */}
       <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/40 backdrop-blur-xl flex-shrink-0">

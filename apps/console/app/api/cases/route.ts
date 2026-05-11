@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
         include: {
           memory: true,
           humanTasks: { take: 5, orderBy: { createdAt: 'desc' } },
+          _count: { select: { messages: true, traces: true } },
         },
       }),
       prisma.case.count({ where }),

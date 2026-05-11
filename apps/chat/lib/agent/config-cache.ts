@@ -4,7 +4,7 @@
 
 import type { AgentConfigData } from '@intera/shared/types'
 
-const TTL_MS = 30_000
+const TTL_MS = 3_000
 
 const cache = new Map<string, { config: AgentConfigData; timestamp: number }>()
 

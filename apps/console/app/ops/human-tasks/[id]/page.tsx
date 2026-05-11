@@ -5,7 +5,6 @@
 
 import { useState, useEffect, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
-// FluidBackground provided by root ConsoleShell layout
 
 interface CaseMemory {
   confirmedFacts: string

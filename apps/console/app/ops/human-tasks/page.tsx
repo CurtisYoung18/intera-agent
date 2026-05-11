@@ -42,9 +42,9 @@ export default function HumanTasksPage() {
   }, [])
 
   return (
-    <div className="max-w-4xl mx-auto px-8 py-8 animate-fade-up">
+    <div className="max-w-4xl mx-auto px-8 py-8 animate-fade-up flex flex-col min-h-[calc(100dvh-2rem)]">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-shrink-0">
         <div>
           <h1 className="text-[18px] font-semibold text-primary tracking-[-0.01em]">Human Tasks</h1>
           <p className="text-[13px] text-secondary mt-1">Pending operator actions from agent escalations</p>
@@ -59,11 +59,14 @@ export default function HumanTasksPage() {
       {loading && <ListSkeleton count={3} />}
 
       {!loading && tasks.length === 0 && (
-        <EmptyState
-          icon={ClipboardList}
-          title="No tasks yet"
-          description="When the agent escalates a case that needs human review, it will appear here."
-        />
+        <div className="flex-1 flex items-center justify-center py-8 sm:py-12">
+          <EmptyState
+            size="large"
+            icon={ClipboardList}
+            title="No tasks yet"
+            description="When the agent escalates a case that needs human review, it will appear here."
+          />
+        </div>
       )}
 
       {tasks.map((task) => (

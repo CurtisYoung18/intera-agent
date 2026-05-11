@@ -1,38 +1,17 @@
-// ChatShell — centered narrow chat container
-// Layers: FluidBackground → WaterRipple → Content
+// ChatShell — centered narrow chat container with iOS liquid glass background
 
 import type { ReactNode } from 'react'
-import FluidBackground from '@/components/ui/fluid-background'
-import WaterRipple from '@/components/ui/water-ripple'
-import ThemeToggle from '@intera/shared/ui/theme-toggle'
+import LiquidGlassBg from '@intera/shared/ui/liquid-glass-bg'
 
 interface ChatShellProps {
   children: ReactNode
-  backgroundIntensity?: 'subtle' | 'normal'
-  overlayImage?: string
 }
 
-export default function ChatShell({
-  children,
-  backgroundIntensity = 'normal',
-  overlayImage,
-}: ChatShellProps) {
+export default function ChatShell({ children }: ChatShellProps) {
   return (
     <div className="relative min-h-[100dvh] w-full">
-      {/* Layer 0: Fluid art background — uses fixed positioning, covers viewport */}
-      <FluidBackground
-        intensity={backgroundIntensity}
-        interactive
-        overlayImage={overlayImage}
-      />
+      <LiquidGlassBg variant="chat" />
 
-      {/* Layer 1: Water ripple interaction (mouse-driven) — fixed, covers viewport */}
-      <WaterRipple intensity={backgroundIntensity} />
-
-      {/* Layer 2: Theme toggle (fixed, top-right) */}
-      <ThemeToggle />
-
-      {/* Layer 3: Content — width-constrained via max-w-chat, background layers are NOT constrained */}
       <div className="relative z-10 max-w-[600px] mx-auto min-h-[100dvh] flex flex-col px-6 sm:px-8">
         {children}
       </div>

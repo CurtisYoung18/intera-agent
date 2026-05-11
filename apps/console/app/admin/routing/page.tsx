@@ -1,79 +1,81 @@
 'use client'
+
 import { useState, useEffect, useCallback } from 'react'
-import { GitBranch, Plus, Pencil, Trash2 } from 'lucide-react'
-import GlassCard from '@/components/ui/glass-card'
+import { GitBranch, Plus, Pencil, Trash2, Clock } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
+import ImmersiveModal from '@/components/ui/immersive-modal'
+import TiltCard from '@/components/ui/tilt-card'
 
-interface RouteItem { id: string; queue: string; description: string | null; skillsAllowed: string; priority: number; autoAssign: boolean; maxWaitingTime: number }
-const EMPTY: Partial<RouteItem> = { queue: '', description: '', skillsAllowed: '[]', priority: 0, autoAssign: true, maxWaitingTime: 300 }
+interface RoutingItem { id: string; queue: string; description: string; priority: number; maxWaitingTime: number; skillsAllowed: string; autoAssign: boolean }
 
 export default function RoutingPage() {
-  const [items, setItems] = useState<RouteItem[]>([])
+  const [items, setItems] = useState<RoutingItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<Partial<RouteItem> | null>(null)
+  const [editing, setEditing] = useState<RoutingItem | null>(null)
   const [isNew, setIsNew] = useState(false)
-  const load = useCallback(() => { fetch('/api/admin/routing').then(r => r.json()).then(d => setItems(d.routes || [])).finally(() => setLoading(false)) }, [])
+
+  const load = useCallback(async () => { const res = await fetch('/api/admin/routing'); const data = await res.json(); setItems(data.routes || []); setLoading(false) }, [])
   useEffect(() => { load() }, [load])
-  const handleSave = useCallback(async () => {
-    if (!editing?.queue) return
-    const res = await fetch(isNew ? '/api/admin/routing' : `/api/admin/routing/${encodeURIComponent(editing.queue)}`, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
-    if (!res.ok) return alert(`Failed to save: ${res.status}`)
-    setEditing(null); load()
-  }, [editing, isNew, load])
-  const handleDelete = useCallback(async (queue: string) => {
-    if (!confirm(`Delete "${queue}"?`)) return
-    const res = await fetch(`/api/admin/routing/${encodeURIComponent(queue)}`, { method: 'DELETE' })
-    if (!res.ok) return alert(`Failed to delete: ${res.status}`)
-    load()
-  }, [load])
+  const openEdit = (r: RoutingItem) => { setEditing({ ...r }); setIsNew(false) }
+  const openNew = () => { setEditing({ id: '', queue: '', description: '', priority: 0, maxWaitingTime: 300, skillsAllowed: '[]', autoAssign: false }); setIsNew(true) }
+  const handleSave = useCallback(async () => { if (!editing) return; const url = isNew ? '/api/admin/routing' : `/api/admin/routing/${encodeURIComponent(editing.queue)}`; const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) }); if (!res.ok) return alert(`Failed: ${res.status}`); setEditing(null); load() }, [editing, isNew, load])
+  const handleDelete = useCallback(async (queue: string) => { if (!confirm(`Delete "${queue}"?`)) return; await fetch(`/api/admin/routing/${encodeURIComponent(queue)}`, { method: 'DELETE' }); load() }, [load])
+  const skillTags = (s: string) => { try { return JSON.parse(s || '[]') as string[] } catch { return [] } }
 
-  // Escape key to close modal
-  useEffect(() => {
-    if (!editing) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(null) }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [editing])
-
-  if (loading) return <div className="p-8 max-w-4xl"><ListSkeleton count={2} /></div>
+  if (loading) return <div className="p-8"><ListSkeleton /></div>
 
   return (
-    <div className="max-w-4xl mx-auto px-8 py-8 animate-fade-up space-y-5">
-      <div className="flex items-center justify-between mb-2"><div><h1 className="text-[18px] font-semibold text-primary tracking-[-0.01em]">Routing</h1><p className="text-[13px] text-secondary mt-1">Human task queue definitions with skill permissions</p></div>
-        <button onClick={() => { setEditing({ ...EMPTY }); setIsNew(true) }} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> New</button></div>
-      {items.length === 0 && <EmptyState icon={GitBranch} title="No routing queues defined" description="Create queues to route human tasks to the right operators." />}
-      {items.map(r => {
-        const skills = (() => { try { return JSON.parse(r.skillsAllowed) as string[] } catch { return [] } })()
-        return (
-          <GlassCard key={r.id} className="p-5 flex items-center gap-5">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2.5 mb-1.5">
-                <span className="text-[14px] font-semibold text-primary font-mono">{r.queue}</span>
-                <span className="text-[9px] font-sans uppercase tracking-[0.05em] px-1.5 py-0.5 rounded-full border text-muted/50 border-muted/10">p{r.priority}</span>
-                {r.autoAssign && <span className="text-[9px] text-malachite/60 font-sans">auto</span>}
+    <div className="px-8 py-8 animate-fade-up">
+      <div className="flex items-center justify-between mb-6">
+        <div><h1 className="text-[20px] font-semibold text-[var(--mist)]">Routing</h1><p className="text-[13px] text-[var(--fog)] mt-0.5">{items.length} queues configured</p></div>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> New Queue</button>
+      </div>
+      {items.length === 0 ? <EmptyState icon={GitBranch} title="No queues" description="Create your first routing queue" /> : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {items.map(r => (
+            <TiltCard key={r.id || r.queue} accentColor="#5bb8f7" onClick={() => openEdit(r)}>
+              <div className="p-5">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-sky/[0.08] flex-shrink-0"><GitBranch className="w-5 h-5 text-sky" /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-[var(--mist)] font-mono truncate">{r.queue}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber/[0.08] text-amber">p{r.priority}</span>
+                      {r.autoAssign && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-malachite/[0.06] text-malachite">Auto</span>}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{r.description || 'No description'}</p>
+                <div className="flex items-center gap-3 text-[11px] text-[var(--smoke)] mb-2">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{r.maxWaitingTime}s max wait</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {skillTags(r.skillsAllowed).slice(0, 4).map((s: string) => (
+                    <span key={s} className="text-[10px] px-1.5 py-0.5 rounded-full bg-lavender/[0.06] text-lavender">{s}</span>
+                  ))}
+                  {skillTags(r.skillsAllowed).length > 4 && <span className="text-[10px] text-[var(--smoke)]">+{skillTags(r.skillsAllowed).length - 4}</span>}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1">{skills.map(s => <span key={s} className="text-[9px] font-mono text-muted bg-[var(--surface)] px-1 py-0.5 rounded">{s}</span>)}</div>
-            </div>
-            <div className="flex items-center gap-1"><button onClick={() => { setEditing(r); setIsNew(false) }} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-all"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => handleDelete(r.queue)} className="p-2 rounded-lg text-muted/40 hover:text-vermillion hover:bg-[var(--surface-hover)] transition-all"><Trash2 className="w-3.5 h-3.5" /></button></div>
-          </GlassCard>
-        )
-      })}
-      {editing && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-20 overflow-y-auto" onClick={() => setEditing(null)}>
-          <GlassCard className="p-6 w-full max-w-lg space-y-4 max-h-[80vh] overflow-y-auto" onClick={undefined}>
-            <h3 className="text-[15px] font-semibold text-primary">{isNew ? 'New Queue' : 'Edit Queue'}</h3>
-            {(['queue', 'description'] as const).map(f => <label key={f} className="block space-y-1"><span className="text-[10px] text-muted uppercase">{f}</span><input value={String(editing[f] || '')} onChange={e => setEditing({ ...editing, [f]: e.target.value })} className="glass-input-console text-[13px] font-mono" /></label>)}
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1"><span className="text-[10px] text-muted uppercase">Priority</span><input type="number" value={editing.priority ?? 0} onChange={e => setEditing({ ...editing, priority: parseInt(e.target.value) })} className="glass-input-console text-[13px] font-mono" /></label>
-              <label className="block space-y-1"><span className="text-[10px] text-muted uppercase">Max Wait (s)</span><input type="number" value={editing.maxWaitingTime ?? 300} onChange={e => setEditing({ ...editing, maxWaitingTime: parseInt(e.target.value) })} className="glass-input-console text-[13px] font-mono" /></label>
-            </div>
-            <label className="block space-y-1"><span className="text-[10px] text-muted uppercase">Skills Allowed (JSON)</span><textarea value={editing.skillsAllowed || '[]'} onChange={e => setEditing({ ...editing, skillsAllowed: e.target.value })} rows={4} className="glass-input-console text-[12px] font-mono resize-y" /></label>
-            <label className="flex items-center gap-1.5"><input type="checkbox" checked={editing.autoAssign ?? true} onChange={e => setEditing({ ...editing, autoAssign: e.target.checked })} className="accent-indigo" /><span className="text-[11px] text-secondary">Auto Assign</span></label>
-            <div className="flex gap-2 pt-2"><button onClick={handleSave} className="px-5 py-2.5 rounded-xl text-[12px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">Save</button><button onClick={() => setEditing(null)} className="px-4 py-2.5 rounded-xl text-[12px] text-secondary hover:text-primary transition-all">Cancel</button></div>
-          </GlassCard>
+            </TiltCard>
+          ))}
         </div>
       )}
+      <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? 'New Queue' : 'Edit Queue'}>
+        {editing && (
+          <div className="space-y-4">
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Queue Name</span><input value={editing.queue} onChange={e => setEditing({ ...editing, queue: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Description</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1.5"><span className="text-[11px] text-[var(--fog)]">Priority</span><input type="number" value={editing.priority} onChange={e => setEditing({ ...editing, priority: parseInt(e.target.value) || 0 })} className="glass-input-console text-[13px] font-mono" /></label>
+              <label className="space-y-1.5"><span className="text-[11px] text-[var(--fog)]">Max Wait (s)</span><input type="number" value={editing.maxWaitingTime} onChange={e => setEditing({ ...editing, maxWaitingTime: parseInt(e.target.value) || 0 })} className="glass-input-console text-[13px] font-mono" /></label>
+            </div>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Skills Allowed (JSON)</span><textarea value={editing.skillsAllowed || '[]'} onChange={e => setEditing({ ...editing, skillsAllowed: e.target.value })} rows={4} className="glass-input-console text-[12px] font-mono resize-y" /></label>
+            <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.autoAssign} onChange={e => setEditing({ ...editing, autoAssign: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">Auto Assign</span></label>
+            <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">Save</button><button onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">Cancel</button></div>
+          </div>
+        )}
+      </ImmersiveModal>
     </div>
   )
 }
