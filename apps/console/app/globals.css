@@ -311,6 +311,43 @@ body {
   100% { box-shadow: 0 0 0 0 rgba(91, 138, 247, 0); }
 }
 
+/* Agent blueprint CORE — scale + soft glow pulse (readable but not noisy) */
+@keyframes coreBoxBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 40px rgba(139, 111, 245, 0.08),
+      0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+  50% {
+    transform: scale(1.065);
+    box-shadow:
+      0 0 56px rgba(139, 111, 245, 0.2),
+      0 3px 12px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.animate-core-box-breathe {
+  animation: coreBoxBreathe 2.8s ease-in-out infinite;
+}
+
+@keyframes coreZapSoft {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+.animate-core-zap-soft {
+  animation: coreZapSoft 2.8s ease-in-out infinite;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }

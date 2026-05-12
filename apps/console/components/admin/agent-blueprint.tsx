@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Brain, Cpu, Database, Shield, FileText, Settings, Zap } from 'lucide-react'
-import type { AgentConfigData, MemoryStrategy } from '@/app/admin/agent/types'
+import type { AgentConfigData } from '@/app/admin/agent/types'
+import { useConsoleLocale } from '@/components/locale-provider'
 
 type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'advanced'
 
@@ -19,12 +20,103 @@ const NODE_OFFSET = 60  // px, offset from node center for line target
 export default function AgentBlueprint({ config, activeSection, onSelectSection, syncStatus }: BlueprintProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 })
+  const { t } = useConsoleLocale()
 
-  // ResizeObserver — catches both window resize AND flex-layout changes
+  const ms = config.memoryStrategy
+
+  const hookCount = useMemo(() => {
+    try {
+      return Object.keys(JSON.parse(config.policyHooks || '{}')).length
+    } catch {
+      return 0
+    }
+  }, [config.policyHooks])
+
+  const satellites = useMemo(
+    () =>
+      [
+        {
+          id: 'prompt' as const,
+          icon: <Brain className="w-5 h-5" />,
+          label: t('blueprint.nodePrompt'),
+          preview:
+            (config.systemPrompt?.slice(0, 120).replace(/\n/g, ' ') + '…') || t('blueprint.notConfigured'),
+          color: '#8b6ff5',
+          glow: 'rgba(139,111,245,0.15)',
+          angle: -90,
+          distance: 0.65,
+        },
+        {
+          id: 'model' as const,
+          icon: <Cpu className="w-5 h-5" />,
+          label: t('blueprint.nodeModel'),
+          preview: `${config.model} ${t('common.or')} T=${config.temperature}`,
+          color: '#5b8af7',
+          glow: 'rgba(91,138,247,0.15)',
+          angle: -30,
+          distance: 0.65,
+        },
+        {
+          id: 'memory' as const,
+          icon: <Database className="w-5 h-5" />,
+          label: t('blueprint.nodeMemory'),
+          preview: t('blueprint.compactTokens', {
+            n: ms.autocompactThresholdTokens.toLocaleString(),
+          }),
+          color: '#d4912e',
+          glow: 'rgba(212,145,46,0.15)',
+          angle: 30,
+          distance: 0.65,
+        },
+        {
+          id: 'policy' as const,
+          icon: <Shield className="w-5 h-5" />,
+          label: t('blueprint.nodePolicy'),
+          preview: t('blueprint.hooksCount', { n: hookCount }),
+          color: '#2ea04a',
+          glow: 'rgba(46,160,74,0.15)',
+          angle: 90,
+          distance: 0.65,
+        },
+        {
+          id: 'templates' as const,
+          icon: <FileText className="w-5 h-5" />,
+          label: t('blueprint.nodeTemplates'),
+          preview: config.resumePrompt ? t('blueprint.templatesReady') : t('blueprint.notConfigured'),
+          color: '#5bb8f7',
+          glow: 'rgba(91,184,247,0.15)',
+          angle: 150,
+          distance: 0.65,
+        },
+        {
+          id: 'advanced' as const,
+          icon: <Settings className="w-5 h-5" />,
+          label: t('blueprint.nodeAdvanced'),
+          preview: t('blueprint.advancedPreview', {
+            n: ms.compactCircuitBreakerMaxFailures,
+          }),
+          color: '#b8944c',
+          glow: 'rgba(184,148,76,0.15)',
+          angle: 210,
+          distance: 0.65,
+        },
+      ] as const,
+    [
+      t,
+      config.systemPrompt,
+      config.model,
+      config.temperature,
+      config.resumePrompt,
+      ms.autocompactThresholdTokens,
+      ms.compactCircuitBreakerMaxFailures,
+      hookCount,
+    ],
+  )
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(entries => {
+    const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setDimensions({ w: entry.contentRect.width, h: entry.contentRect.height })
       }
@@ -32,17 +124,6 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-
-  const ms = config.memoryStrategy
-
-  const satellites: { id: Section; icon: React.ReactNode; label: string; preview: string; color: string; glow: string; angle: number; distance: number }[] = [
-    { id: 'prompt', icon: <Brain className="w-5 h-5" />, label: 'System Prompt', preview: (config.systemPrompt?.slice(0, 120).replace(/\n/g, ' ') + '…') || 'Not configured', color: '#8b6ff5', glow: 'rgba(139,111,245,0.15)', angle: -90, distance: 0.65 },
-    { id: 'model', icon: <Cpu className="w-5 h-5" />, label: 'Model', preview: `${config.model} · T=${config.temperature}`, color: '#5b8af7', glow: 'rgba(91,138,247,0.15)', angle: -30, distance: 0.65 },
-    { id: 'memory', icon: <Database className="w-5 h-5" />, label: 'Memory', preview: `Compact: ${ms.autocompactThresholdTokens.toLocaleString()} tokens`, color: '#d4912e', glow: 'rgba(212,145,46,0.15)', angle: 30, distance: 0.65 },
-    { id: 'policy', icon: <Shield className="w-5 h-5" />, label: 'Policy Hooks', preview: `${(() => { try { return Object.keys(JSON.parse(config.policyHooks || '{}')).length } catch { return 0 } })()} hooks`, color: '#2ea04a', glow: 'rgba(46,160,74,0.15)', angle: 90, distance: 0.65 },
-    { id: 'templates', icon: <FileText className="w-5 h-5" />, label: 'Templates', preview: config.resumePrompt ? 'Resume + Form ready' : 'Not configured', color: '#5bb8f7', glow: 'rgba(91,184,247,0.15)', angle: 150, distance: 0.65 },
-    { id: 'advanced', icon: <Settings className="w-5 h-5" />, label: 'Advanced', preview: `Fact extraction · Token est. · CB: ${ms.compactCircuitBreakerMaxFailures} failures`, color: '#b8944c', glow: 'rgba(184,148,76,0.15)', angle: 210, distance: 0.65 },
-  ]
 
   const cx = dimensions.w / 2
   const cy = dimensions.h / 2
@@ -108,33 +189,28 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       <div className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center pointer-events-none"
         style={{ transform: 'translate(-50%, -50%)' }}>
 
-        {/* Outer atmosphere — subtle breathing circle */}
-        <div className="absolute w-[140px] h-[140px] rounded-full pointer-events-none"
+        {/* Soft halo — no stroke (avoids dark ring) */}
+        <div
+          className="absolute w-[140px] h-[140px] rounded-full pointer-events-none opacity-[0.38]"
           style={{
-            background: 'radial-gradient(circle, rgba(139,111,245,0.06) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(139,111,245,0.07) 0%, transparent 72%)',
             transform: 'translate(-50%, -50%)',
-            left: '50%', top: '50%',
-            animation: 'breathe 4s ease-in-out infinite',
-          }} />
+            left: '50%',
+            top: '50%',
+          }}
+        />
 
-        {/* Fine ring — well outside the core */}
-        <div className="absolute w-[115px] h-[115px] rounded-full pointer-events-none"
-          style={{
-            border: '1px solid rgba(139,111,245,0.1)',
-            transform: 'translate(-50%, -50%)',
-            left: '50%', top: '50%',
-            animation: 'pingRing 4s ease-out infinite',
-          }} />
-
-        {/* Core orb — the clickable/visual center */}
-        <div className="relative w-[72px] h-[72px] rounded-2xl flex flex-col items-center justify-center pointer-events-auto"
+        {/* Core orb — scale + glow (shadow lives in keyframes, not inline) */}
+        <div
+          className="relative w-[72px] h-[72px] rounded-2xl flex flex-col items-center justify-center pointer-events-auto animate-core-box-breathe"
           style={{
             background: 'linear-gradient(135deg, rgba(139,111,245,0.15), rgba(91,138,247,0.06))',
             border: '1px solid rgba(139,111,245,0.25)',
-            boxShadow: '0 0 48px rgba(139,111,245,0.08), 0 2px 8px rgba(0,0,0,0.04)',
-          }}>
-          <Zap className="w-[22px] h-[22px] text-lavender mb-0.5" />
-          <span className="text-[11px] font-bold text-lavender/70 tracking-[0.1em] uppercase">Core</span>
+            transformOrigin: 'center center',
+          }}
+        >
+          <Zap className="w-[22px] h-[22px] text-lavender mb-0.5 animate-core-zap-soft" />
+          <span className="text-[11px] font-bold text-lavender/70 tracking-[0.1em] uppercase">{t('blueprint.core')}</span>
         </div>
 
         {/* Status label below core */}
@@ -143,7 +219,11 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
             syncStatus === 'synced' ? 'bg-malachite' : syncStatus === 'syncing' ? 'bg-amber animate-breathe' : 'bg-lavender/40'
           }`} />
           <span className="text-[11px] text-[var(--fog)] font-medium">
-            {syncStatus === 'synced' ? 'Synced' : syncStatus === 'syncing' ? 'Saving…' : config.model.split('-')[0]}
+            {syncStatus === 'synced'
+              ? t('blueprint.synced')
+              : syncStatus === 'syncing'
+                ? t('blueprint.saving')
+                : config.model.split('-')[0]}
           </span>
         </div>
       </div>

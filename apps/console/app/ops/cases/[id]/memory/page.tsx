@@ -1,10 +1,8 @@
 'use client'
 
-// Case Memory Editor — view and edit agent's working memory
-// Left: editable fields (summary, facts, missing). Right: read-only (skills, results, events)
-
 import { useState, useEffect, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConsoleLocale } from '@/components/locale-provider'
 
 interface MemoryData {
   caseId: string
@@ -24,17 +22,15 @@ function parseJson<T>(raw: string | undefined, fallback: T): T {
 export default function MemoryEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
-  const [memory, setMemory] = useState<MemoryData | null>(null)
+  const { t } = useConsoleLocale()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  // Editable state
   const [summary, setSummary] = useState('')
   const [facts, setFacts] = useState<Array<{ key: string; value: string }>>([])
   const [missing, setMissing] = useState<string[]>([])
 
-  // Read-only parsed data
   const [skillsCalled, setSkillsCalled] = useState<string[]>([])
   const [skillResults, setSkillResults] = useState<Record<string, unknown>>({})
   const [keyEvents, setKeyEvents] = useState<Array<{ at?: string; text?: string }>>([])
@@ -44,7 +40,6 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
       .then((r) => r.json())
       .then((data) => {
         const mem = data.memory as MemoryData
-        setMemory(mem)
         setSummary(mem.summary || '')
         const f = parseJson<Record<string, unknown>>(mem.confirmedFacts, {})
         setFacts(Object.entries(f).map(([k, v]) => ({ key: k, value: String(v) })))
@@ -83,7 +78,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
   if (loading) {
     return (
       <div className="min-h-[100dvh] bg-[var(--bg-root)] flex items-center justify-center">
-        <p className="text-secondary/40 animate-breathe">Loading…</p>
+        <p className="text-secondary/40 animate-breathe">{t('common.loading')}</p>
       </div>
     )
   }
@@ -91,18 +86,18 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
   return (
     <div className="relative min-h-[100dvh] flex flex-col">
 
-      {/* Header */}
       <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/40 backdrop-blur-xl flex-shrink-0">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.push(`/ops/cases/${id}`)} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
-              ← Case
+            <button type="button" onClick={() => router.push(`/ops/cases/${id}`)} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
+              {t('memory.back')}
             </button>
             <h1 className="text-[14px] font-medium text-primary tracking-[-0.01em]">
-              Memory · {id.slice(0, 12)}…
+              {t('memory.title', { id: id.slice(0, 12) })}
             </h1>
           </div>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving}
             className={`px-4 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 ${
@@ -111,40 +106,38 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                 : 'bg-indigo/20 border border-indigo/30 text-indigo hover:bg-indigo/30'
             } disabled:opacity-50`}
           >
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
+            {saving ? t('memory.saving') : saved ? t('memory.saved') : t('memory.saveChanges')}
           </button>
         </div>
       </header>
 
       <div className="relative z-10 flex-1 max-w-6xl mx-auto w-full px-6 py-6 overflow-y-auto">
         <div className="flex gap-6">
-          {/* Left: Editable fields */}
           <div className="flex-1 space-y-6 min-w-0">
-            {/* Summary */}
             <section className="glass-card p-5 rounded-lg p-4">
               <h2 className="text-[11px] font-sans tracking-[0.05em] uppercase text-secondary/40 mb-2">
-                Summary (compaction context)
+                {t('memory.summaryTitle')}
               </h2>
               <textarea
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
                 rows={6}
-                placeholder="No compaction summary yet. This is auto-generated when the conversation exceeds context limits."
+                placeholder={t('memory.summaryPh')}
                 className="w-full bg-[var(--surface)] border border-[var(--border-subtle)] rounded-lg text-[13px] text-primary py-2.5 px-3 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20 font-mono resize-y"
               />
             </section>
 
-            {/* Confirmed Facts */}
             <section className="glass-card p-5 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[11px] font-sans tracking-[0.05em] uppercase text-secondary/40">
-                  Confirmed Facts ({facts.length})
+                  {t('memory.confirmedFacts', { n: facts.length })}
                 </h2>
                 <button
+                  type="button"
                   onClick={() => setFacts([...facts, { key: '', value: '' }])}
                   className="text-[11px] text-indigo/60 hover:text-indigo transition-colors"
                 >
-                  + Add
+                  {t('common.add')}
                 </button>
               </div>
               <div className="space-y-2">
@@ -157,7 +150,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                         next[i] = { ...next[i], key: e.target.value }
                         setFacts(next)
                       }}
-                      placeholder="key"
+                      placeholder={t('memory.keyPh')}
                       className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded text-[12px] font-mono text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
                     />
                     <input
@@ -167,10 +160,11 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                         next[i] = { ...next[i], value: e.target.value }
                         setFacts(next)
                       }}
-                      placeholder="value"
+                      placeholder={t('memory.valuePh')}
                       className="flex-[2] bg-[var(--surface)] border border-[var(--border-subtle)] rounded text-[12px] text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
                     />
                     <button
+                      type="button"
                       onClick={() => setFacts(facts.filter((_, j) => j !== i))}
                       className="text-[11px] text-secondary/30 hover:text-vermillion transition-colors px-1"
                     >
@@ -179,22 +173,22 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                   </div>
                 ))}
                 {facts.length === 0 && (
-                  <p className="text-[12px] text-secondary/30 italic">No facts confirmed yet.</p>
+                  <p className="text-[12px] text-secondary/30 italic">{t('memory.noFacts')}</p>
                 )}
               </div>
             </section>
 
-            {/* Missing Facts */}
             <section className="glass-card p-5 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[11px] font-sans tracking-[0.05em] uppercase text-secondary/40">
-                  Missing Facts ({missing.length})
+                  {t('memory.missingFacts', { n: missing.length })}
                 </h2>
                 <button
+                  type="button"
                   onClick={() => setMissing([...missing, ''])}
                   className="text-[11px] text-indigo/60 hover:text-indigo transition-colors"
                 >
-                  + Add
+                  {t('common.add')}
                 </button>
               </div>
               <div className="space-y-2">
@@ -207,10 +201,11 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                         next[i] = e.target.value
                         setMissing(next)
                       }}
-                      placeholder="Missing fact..."
+                      placeholder={t('memory.missingPh')}
                       className="flex-1 bg-[var(--surface)] border border-[var(--border-subtle)] rounded text-[12px] text-primary py-1.5 px-2 outline-none focus:border-indigo/30 transition-all duration-200 placeholder:text-secondary/20"
                     />
                     <button
+                      type="button"
                       onClick={() => setMissing(missing.filter((_, j) => j !== i))}
                       className="text-[11px] text-secondary/30 hover:text-vermillion transition-colors px-1"
                     >
@@ -219,18 +214,16 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                   </div>
                 ))}
                 {missing.length === 0 && (
-                  <p className="text-[12px] text-secondary/30 italic">No missing facts.</p>
+                  <p className="text-[12px] text-secondary/30 italic">{t('memory.noMissing')}</p>
                 )}
               </div>
             </section>
           </div>
 
-          {/* Right: Read-only */}
           <div className="w-80 flex-shrink-0 space-y-4">
-            {/* Skills Called */}
             <section className="glass-card p-5 rounded-lg p-4">
               <h2 className="text-[11px] font-sans tracking-[0.05em] uppercase text-secondary/40 mb-2">
-                Skills Called ({skillsCalled.length})
+                {t('memory.skillsCalled', { n: skillsCalled.length })}
               </h2>
               <div className="flex flex-wrap gap-1">
                 {skillsCalled.map((s) => (
@@ -239,15 +232,14 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                   </span>
                 ))}
                 {skillsCalled.length === 0 && (
-                  <p className="text-[12px] text-secondary/30 italic">None yet.</p>
+                  <p className="text-[12px] text-secondary/30 italic">{t('memory.noneYet')}</p>
                 )}
               </div>
             </section>
 
-            {/* Skill Results */}
             <section className="glass-card p-5 rounded-lg p-4">
               <h2 className="text-[11px] font-sans tracking-[0.05em] uppercase text-secondary/40 mb-2">
-                Skill Results
+                {t('memory.skillResults')}
               </h2>
               {Object.keys(skillResults).length > 0 ? (
                 <div className="space-y-2">
@@ -263,14 +255,13 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                   ))}
                 </div>
               ) : (
-                <p className="text-[12px] text-secondary/30 italic">No results yet.</p>
+                <p className="text-[12px] text-secondary/30 italic">{t('memory.noResults')}</p>
               )}
             </section>
 
-            {/* Key Events */}
             <section className="glass-card p-5 rounded-lg p-4">
               <h2 className="text-[11px] font-sans tracking-[0.05em] uppercase text-secondary/40 mb-2">
-                Key Events ({keyEvents.length})
+                {t('memory.keyEvents', { n: keyEvents.length })}
               </h2>
               {keyEvents.length > 0 ? (
                 <div className="space-y-2">
@@ -284,7 +275,7 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
                   ))}
                 </div>
               ) : (
-                <p className="text-[12px] text-secondary/30 italic">No key events recorded.</p>
+                <p className="text-[12px] text-secondary/30 italic">{t('memory.noKeyEvents')}</p>
               )}
             </section>
           </div>

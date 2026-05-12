@@ -1,10 +1,9 @@
 'use client'
 
-// Case Detail — trace timeline + conversation history
-// Shows every agent action: LLM calls, tool executions, policy hits, decisions
-
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConsoleLocale } from '@/components/locale-provider'
+import { translatedCaseStatus, translatedMsgRole } from '@/lib/i18n/dictionaries'
 
 interface TraceItem {
   id: string
@@ -40,7 +39,6 @@ interface CaseData {
   _count?: { messages: number; traces: number }
 }
 
-// ── Color map for action types ──────────────────────────────────
 const ACTION_COLORS: Record<string, string> = {
   user_message: 'text-secondary/70',
   case_created: 'text-secondary/60',
@@ -69,8 +67,8 @@ const ACTION_BADGE_COLORS: Record<string, string> = {
   loop_decision: 'bg-fog/5 border-fog/10',
 }
 
-function formatActionType(t: string): string {
-  return t.replace(/_/g, ' ')
+function formatActionType(actionType: string): string {
+  return actionType.replace(/_/g, ' ')
 }
 
 function parsePayload(raw: string | null): Record<string, unknown> | null {
@@ -86,6 +84,7 @@ function formatTime(iso: string): string {
 export default function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const { t } = useConsoleLocale()
   const [caseData, setCaseData] = useState<CaseData | null>(null)
   const [traces, setTraces] = useState<TraceItem[]>([])
   const [messages, setMessages] = useState<MsgItem[]>([])
@@ -121,33 +120,42 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   if (loading) {
     return (
       <div className="min-h-[100dvh] bg-[var(--bg-root)] flex items-center justify-center">
-        <p className="text-secondary/40 animate-breathe">Loading…</p>
+        <p className="text-secondary/40 animate-breathe">{t('common.loading')}</p>
       </div>
     )
   }
 
+  const dateStr =
+    caseData?.createdAt
+      ? new Date(caseData.createdAt).toLocaleDateString()
+      : '—'
+  const meta =
+    caseData &&
+    t('caseDetail.meta', {
+      type: caseData.type?.replace(/_/g, ' ') ?? '—',
+      user: caseData.userId,
+      date: dateStr,
+    })
+
   return (
     <div className="relative min-h-[100dvh] flex flex-col">
 
-      {/* Header */}
       <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/40 backdrop-blur-xl flex-shrink-0">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.push('/ops/cases')} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
-              ← Back
+            <button type="button" onClick={() => router.push('/ops/cases')} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
+              {t('caseDetail.back')}
             </button>
             <div>
               <h1 className="text-[14px] font-medium text-primary tracking-[-0.01em]">
-                Case {id.slice(0, 12)}…
+                {t('caseDetail.title', { id: id.slice(0, 12) })}
               </h1>
-              <p className="text-[11px] text-secondary/40">
-                {caseData?.type?.replace(/_/g, ' ')} · User {caseData?.userId} · Created {caseData?.createdAt ? new Date(caseData.createdAt).toLocaleDateString() : '—'}
-              </p>
+              <p className="text-[11px] text-secondary/40">{meta}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push(`/ops/cases/${id}/memory`)} className="text-[12px] text-secondary/50 hover:text-secondary transition-colors">
-              Memory
+            <button type="button" onClick={() => router.push(`/ops/cases/${id}/memory`)} className="text-[12px] text-secondary/50 hover:text-secondary transition-colors">
+              {t('caseDetail.memory')}
             </button>
             {caseData && (
               <span className={`text-[11px] font-sans tracking-[0.04em] uppercase ${
@@ -155,7 +163,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 caseData.status === 'waiting_human' ? 'text-amber' :
                 'text-secondary/60'
               }`}>
-                {caseData.status.replace(/_/g, ' ')}
+                {translatedCaseStatus(t, caseData.status)}
               </span>
             )}
           </div>
@@ -163,19 +171,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       </header>
 
       <div className="relative z-10 flex-1 max-w-4xl mx-auto w-full px-6 py-6 overflow-y-auto">
-        {/* Stats row */}
         {caseData && (
           <div className="flex gap-4 mb-6 text-[11px] font-sans text-secondary/40">
-            <span>{caseData._count?.messages || 0} messages</span>
-            <span>{caseData._count?.traces || 0} traces</span>
-            {caseData.blocker && <span className="text-amber/60">Blocker: {caseData.blocker}</span>}
+            <span>{t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? 0 })}</span>
+            <span>{t('caseDetail.statsTraces', { n: caseData._count?.traces ?? 0 })}</span>
+            {caseData.blocker && <span className="text-amber/60">{t('caseDetail.blocker', { text: caseData.blocker })}</span>}
           </div>
         )}
 
-        {/* Trace Timeline */}
         <div className="space-y-1">
           {traces.length === 0 && (
-            <p className="text-secondary/30 text-[13px] py-8 text-center">No traces recorded for this case.</p>
+            <p className="text-secondary/30 text-[13px] py-8 text-center">{t('caseDetail.noTraces')}</p>
           )}
 
           {traces.map((trace, i) => {
@@ -185,7 +191,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
 
             return (
               <div key={trace.id} className="flex gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface)] transition-colors group">
-                {/* Timeline dot + line */}
                 <div className="flex flex-col items-center flex-shrink-0 pt-1">
                   <div className={`w-2 h-2 rounded-full ${color.replace('text-', 'bg-')}`} />
                   {i < traces.length - 1 && (
@@ -193,7 +198,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   )}
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 min-w-0 pb-2">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className={`inline-block px-1.5 py-0 rounded text-[9px] font-sans tracking-[0.04em] uppercase border ${badge} ${color}`}>
@@ -208,30 +212,27 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                     <p className="text-[12px] text-secondary/50 mt-0.5">{trace.detail}</p>
                   )}
 
-                  {/* LLM response: show token usage */}
                   {trace.actionType === 'llm_response' && payload && (() => {
                     const u = payload.usage as Record<string, number> | undefined
                     if (!u) return null
                     return (
                       <div className="mt-1 flex gap-3 text-[10px] font-mono text-secondary/40">
-                        {u.input_tokens != null && <span>in: {u.input_tokens}</span>}
-                        {u.output_tokens != null && <span>out: {u.output_tokens}</span>}
+                        {u.input_tokens != null && <span>{t('caseDetail.tokensIn', { n: u.input_tokens })}</span>}
+                        {u.output_tokens != null && <span>{t('caseDetail.tokensOut', { n: u.output_tokens })}</span>}
                       </div>
                     )
                   })()}
 
-                  {/* Skill result: show latency */}
                   {trace.actionType === 'skill_result' && payload?.latencyMs != null && (
                     <span className="text-[10px] font-mono text-secondary/40">
-                      {payload.latencyMs as number}ms
+                      {t('caseDetail.ms', { n: payload.latencyMs as number })}
                     </span>
                   )}
 
-                  {/* Expandable payload for debugging */}
                   {payload && trace.actionType !== 'llm_response' && trace.actionType !== 'skill_result' && (
                     <details className="mt-1">
                       <summary className="text-[10px] text-secondary/30 cursor-pointer hover:text-secondary/50 transition-colors">
-                        payload
+                        {t('caseDetail.payload')}
                       </summary>
                       <pre className="mt-1 text-[10px] font-mono text-secondary/40 bg-[var(--surface)] rounded p-2 overflow-x-auto max-h-32">
                         {JSON.stringify(payload, null, 2)}
@@ -244,10 +245,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           })}
         </div>
 
-        {/* Conversation */}
         {messages.length > 0 && (
           <section className="mt-10">
-            <h2 className="text-[12px] font-sans tracking-[0.06em] uppercase text-secondary/30 mb-4">Conversation</h2>
+            <h2 className="text-[12px] font-sans tracking-[0.06em] uppercase text-secondary/30 mb-4">{t('caseDetail.conversation')}</h2>
             <div className="space-y-3">
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -258,7 +258,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   }`}>
                     <p className="text-[13px] text-primary/85 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                     <p className="text-[10px] text-secondary/30 mt-1">
-                      {msg.role} · {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {translatedMsgRole(t, msg.role)} · {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </div>
@@ -269,8 +269,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
 
         {messages.length === 0 && (
           <section className="mt-10">
-            <h2 className="text-[12px] font-sans tracking-[0.06em] uppercase text-secondary/30 mb-4">Conversation</h2>
-            <p className="text-[13px] text-secondary/30 py-4">No messages yet. Messages are persisted after the agent responds.</p>
+            <h2 className="text-[12px] font-sans tracking-[0.06em] uppercase text-secondary/30 mb-4">{t('caseDetail.conversation')}</h2>
+            <p className="text-[13px] text-secondary/30 py-4">{t('caseDetail.noMsgs')}</p>
           </section>
         )}
       </div>

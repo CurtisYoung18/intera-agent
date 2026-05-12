@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
 import TiltCard from '@/components/ui/tilt-card'
+import { useConsoleLocale } from '@/components/locale-provider'
 
 interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; enabled: boolean }
 interface RuleFields { deny_skills: string; require_skills: string; deny_keywords: string; min_evidence_count: number }
@@ -18,13 +19,19 @@ function buildRule(f: RuleFields): string {
   return JSON.stringify({ deny_skills: f.deny_skills ? f.deny_skills.split(',').map(s => s.trim()).filter(Boolean) : [], require_skills: f.require_skills ? f.require_skills.split(',').map(s => s.trim()).filter(Boolean) : [], deny_keywords: f.deny_keywords ? f.deny_keywords.split('\n').map(s => s.trim()).filter(Boolean) : [], min_evidence_count: f.min_evidence_count || 0 })
 }
 
-const hookMeta: Record<string, { label: string; icon: typeof Shield; color: string }> = {
-  preTool: { label: 'Pre-Tool', icon: AlertTriangle, color: '#d4912e' },
-  postTool: { label: 'Post-Tool', icon: Eye, color: '#5b8af7' },
-  preFinalize: { label: 'Pre-Finalize', icon: CheckCircle, color: '#2ea04a' },
-}
+const HOOK_SLUGS = ['preTool', 'postTool', 'preFinalize'] as const
 
 export default function PoliciesPage() {
+  const { t } = useConsoleLocale()
+  const hookMeta = useMemo(
+    () =>
+      ({
+        preTool: { label: t('policy.hook.preTool'), icon: AlertTriangle, color: '#d4912e' },
+        postTool: { label: t('policy.hook.postTool'), icon: Eye, color: '#5b8af7' },
+        preFinalize: { label: t('policy.hook.preFinalize'), icon: CheckCircle, color: '#2ea04a' },
+      }) as Record<string, { label: string; icon: typeof Shield; color: string }>,
+    [t],
+  )
   const [items, setItems] = useState<PolicyItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PolicyItem | null>(null)
@@ -48,21 +55,25 @@ export default function PoliciesPage() {
     const payload = { ...editing, rule: buildRule(ruleFields) }
     const url = isNew ? '/api/admin/policies' : `/api/admin/policies/${encodeURIComponent(editing.name)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    if (!res.ok) return alert(`Failed to save: ${res.status}`)
+    if (!res.ok) return alert(t('common.failedSave', { status: res.status }))
     setEditing(null); load()
-  }, [editing, isNew, load, ruleFields])
+  }, [editing, isNew, load, ruleFields, t])
 
-  const handleDelete = useCallback(async (name: string) => { if (!confirm(`Delete "${name}"?`)) return; await fetch(`/api/admin/policies/${encodeURIComponent(name)}`, { method: 'DELETE' }); load() }, [load])
+  const handleDelete = useCallback(async (name: string) => {
+    if (!confirm(t('common.deleteConfirm', { name }))) return
+    await fetch(`/api/admin/policies/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    load()
+  }, [load, t])
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
   return (
     <div className="px-8 py-8 animate-fade-up">
       <div className="flex items-center justify-between mb-6">
-        <div><h1 className="text-[20px] font-semibold text-[var(--mist)]">Policies</h1><p className="text-[13px] text-[var(--fog)] mt-0.5">{items.length} guard rules configured</p></div>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> New Policy</button>
+        <div><h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('policies.title')}</h1><p className="text-[13px] text-[var(--fog)] mt-0.5">{t('policies.subtitle', { n: items.length })}</p></div>
+        <button type="button" onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> {t('policies.new')}</button>
       </div>
-      {items.length === 0 ? <EmptyState icon={Shield} title="No policies" description="Create your first policy" /> : (
+      {items.length === 0 ? <EmptyState icon={Shield} title={t('policies.noPolicies')} description={t('policies.noPoliciesDesc')} /> : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map(p => { const hm = hookMeta[p.hook] || hookMeta.preTool; const Icon = hm.icon
             return (
@@ -78,12 +89,12 @@ export default function PoliciesPage() {
                       {p.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
                     </button>
                   </div>
-                  <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{p.description || 'No description'}</p>
+                  <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{p.description || t('common.noDescription')}</p>
                   <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
-                    <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? 'Active' : 'Inactive'}</span>
+                    <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
                     <div className="flex gap-1">
-                      <button onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
-                      <button onClick={e => { e.stopPropagation(); handleDelete(p.name) }} className="p-1.5 rounded-lg hover:bg-vermillion/5"><Trash2 className="w-3.5 h-3.5 text-vermillion/60" /></button>
+                      <button type="button" onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5" title={t('common.edit')}><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
+                      <button type="button" onClick={e => { e.stopPropagation(); handleDelete(p.name) }} className="p-1.5 rounded-lg hover:bg-vermillion/5" title={t('common.delete')}><Trash2 className="w-3.5 h-3.5 text-vermillion/60" /></button>
                     </div>
                   </div>
                 </div>
@@ -92,19 +103,19 @@ export default function PoliciesPage() {
           })}
         </div>
       )}
-      <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? 'New Policy' : 'Edit Policy'}>
+      <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
         {editing && (
           <div className="space-y-4">
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Name</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Description</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Hook</span><select value={editing.hook} onChange={e => setEditing({ ...editing, hook: e.target.value })} className="glass-input-console text-[13px]"><option value="preTool">preTool</option><option value="postTool">postTool</option><option value="preFinalize">preFinalize</option></select></label>
-            <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">Rule Fields</span></div>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Deny Skills</span><input value={ruleFields.deny_skills} onChange={e => setRuleFields({ ...ruleFields, deny_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder="skill_a, skill_b" /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Require Skills</span><input value={ruleFields.require_skills} onChange={e => setRuleFields({ ...ruleFields, require_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder="skill_a, skill_b" /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Deny Keywords</span><textarea value={ruleFields.deny_keywords} onChange={e => setRuleFields({ ...ruleFields, deny_keywords: e.target.value })} rows={4} className="glass-input-console text-[13px] font-mono resize-y" /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Min Evidence Count</span><input type="number" value={ruleFields.min_evidence_count} onChange={e => setRuleFields({ ...ruleFields, min_evidence_count: parseInt(e.target.value) || 0 })} className="glass-input-console text-[13px] font-mono w-28" /></label>
-            <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">Enabled</span></label>
-            <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">Save</button><button onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">Cancel</button></div>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.hook')}</span><select value={editing.hook} onChange={e => setEditing({ ...editing, hook: e.target.value })} className="glass-input-console text-[13px]">{HOOK_SLUGS.map(h => <option key={h} value={h}>{h}</option>)}</select></label>
+            <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('policies.ruleFields')}</span></div>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span><input value={ruleFields.deny_skills} onChange={e => setRuleFields({ ...ruleFields, deny_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span><input value={ruleFields.require_skills} onChange={e => setRuleFields({ ...ruleFields, require_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.denyKeywords')}</span><textarea value={ruleFields.deny_keywords} onChange={e => setRuleFields({ ...ruleFields, deny_keywords: e.target.value })} rows={4} className="glass-input-console text-[13px] font-mono resize-y" /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.minEvidence')}</span><input type="number" value={ruleFields.min_evidence_count} onChange={e => setRuleFields({ ...ruleFields, min_evidence_count: parseInt(e.target.value) || 0 })} className="glass-input-console text-[13px] font-mono w-28" /></label>
+            <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
+            <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">{t('common.save')}</button><button type="button" onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button></div>
           </div>
         )}
       </ImmersiveModal>

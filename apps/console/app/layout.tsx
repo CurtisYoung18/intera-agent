@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import ConsoleShell from '@/components/console-shell'
+import { LocaleProvider } from '@/components/locale-provider'
 
 export const metadata: Metadata = {
   title: 'Intera Console',
@@ -19,7 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-[100dvh] antialiased">
-        <ConsoleShell>{children}</ConsoleShell>
+        <LocaleProvider>
+          <ConsoleShell>{children}</ConsoleShell>
+        </LocaleProvider>
       </body>
     </html>
   )

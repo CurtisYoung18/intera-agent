@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { FolderOpen, Search, Clock, MessageSquare, Activity } from 'lucide-react'
+import { FolderOpen, Search, MessageSquare, Activity } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
+import { useConsoleLocale } from '@/components/locale-provider'
+import { translatedCaseStatus } from '@/lib/i18n/dictionaries'
 
 interface CaseItem {
   id: string; type: string; status: string; userId: string
@@ -16,17 +18,18 @@ interface CaseItem {
 
 const STATUSES = ['created', 'collecting', 'investigating', 'waiting_human', 'resolved', 'escalated'] as const
 
-const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  created: { label: 'New', color: '#a09888', bg: 'rgba(160,152,136,0.06)' },
-  collecting: { label: 'Collecting', color: '#5b8af7', bg: 'rgba(91,138,247,0.06)' },
-  investigating: { label: 'Investigating', color: '#5b8af7', bg: 'rgba(91,138,247,0.08)' },
-  verifying: { label: 'Verifying', color: '#5b8af7', bg: 'rgba(91,138,247,0.06)' },
-  waiting_human: { label: 'Waiting', color: '#d4912e', bg: 'rgba(212,145,46,0.06)' },
-  resolved: { label: 'Resolved', color: '#2ea04a', bg: 'rgba(46,160,74,0.06)' },
-  escalated: { label: 'Escalated', color: '#e64539', bg: 'rgba(230,69,57,0.06)' },
+const STATUS_STYLE: Record<string, { color: string; bg: string }> = {
+  created: { color: '#a09888', bg: 'rgba(160,152,136,0.06)' },
+  collecting: { color: '#5b8af7', bg: 'rgba(91,138,247,0.06)' },
+  investigating: { color: '#5b8af7', bg: 'rgba(91,138,247,0.08)' },
+  verifying: { color: '#5b8af7', bg: 'rgba(91,138,247,0.06)' },
+  waiting_human: { color: '#d4912e', bg: 'rgba(212,145,46,0.06)' },
+  resolved: { color: '#2ea04a', bg: 'rgba(46,160,74,0.06)' },
+  escalated: { color: '#e64539', bg: 'rgba(230,69,57,0.06)' },
 }
 
 export default function CasesPage() {
+  const { t } = useConsoleLocale()
   const [cases, setCases] = useState<CaseItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -58,64 +61,63 @@ export default function CasesPage() {
     return true
   })
 
-  // Group by status for kanban
-  const kanbanColumns = STATUSES.map(status => ({
+  const kanbanColumns = useMemo(() => STATUSES.map(status => ({
     status,
-    meta: STATUS_META[status] || { label: status, color: '#a09888', bg: 'rgba(0,0,0,0.03)' },
+    style: STATUS_STYLE[status] || { color: '#a09888', bg: 'rgba(0,0,0,0.03)' },
+    label: translatedCaseStatus(t, status),
     items: filtered.filter(c => c.status === status),
-  }))
+  })), [filtered, t])
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
+  const emptyDesc = search ? t('common.noMatches') : t('cases.noCasesDesc')
+
   return (
     <div className="px-6 py-6 animate-fade-up">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--mist)]">Cases</h1>
-          <p className="text-[13px] text-[var(--fog)] mt-0.5">{cases.length} total · {filtered.length} visible</p>
+          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('cases.title')}</h1>
+          <p className="text-[13px] text-[var(--fog)] mt-0.5">
+            {t('cases.subtitle', { total: cases.length, visible: filtered.length })}
+          </p>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--smoke)]" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search cases…" className="glass-input-console text-[13px] pl-10 w-64" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('cases.searchPh')} className="glass-input-console text-[13px] pl-10 w-64" />
         </div>
       </div>
 
-      {/* Status filter pills */}
       <div className="flex gap-2 mb-6 flex-wrap">
         {STATUSES.map(s => {
-          const meta = STATUS_META[s] || { label: s, color: '#a09888' }
+          const style = STATUS_STYLE[s] || { color: '#a09888' }
           const active = activeStatuses.has(s)
           return (
             <button key={s} onClick={() => toggleStatus(s)}
               className="text-[11px] px-3 py-1.5 rounded-full border transition-all font-medium"
               style={{
-                borderColor: active ? meta.color : 'rgba(0,0,0,0.06)',
-                backgroundColor: active ? meta.bg : 'transparent',
-                color: active ? meta.color : 'var(--smoke)',
+                borderColor: active ? style.color : 'rgba(0,0,0,0.06)',
+                backgroundColor: active ? (STATUS_STYLE[s]?.bg || 'transparent') : 'transparent',
+                color: active ? style.color : 'var(--smoke)',
                 opacity: active ? 1 : 0.6,
               }}>
-              {meta.label}
+              {translatedCaseStatus(t, s)}
             </button>
           )
         })}
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon={FolderOpen} title="No cases" description={search ? 'No matches' : 'No cases in selected statuses'} />
+        <EmptyState icon={FolderOpen} title={t('cases.noCases')} description={emptyDesc} />
       ) : (
-        /* Kanban board */
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 overflow-x-auto">
           {kanbanColumns.map(col => (
             <div key={col.status} className="flex flex-col min-w-[180px]">
-              {/* Column header */}
               <div className="flex items-center gap-2 mb-3 px-2">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.meta.color }} />
-                <span className="text-[12px] font-medium text-[var(--mist)]">{col.meta.label}</span>
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.style.color }} />
+                <span className="text-[12px] font-medium text-[var(--mist)]">{col.label}</span>
                 <span className="text-[11px] text-[var(--smoke)] ml-auto">{col.items.length}</span>
               </div>
 
-              {/* Cards */}
               <div className="space-y-2 flex-1">
                 {col.items.map(c => (
                   <Link key={c.id} href={`/ops/cases/${c.id}`}>
@@ -137,7 +139,7 @@ export default function CasesPage() {
                   </Link>
                 ))}
                 {col.items.length === 0 && (
-                  <div className="text-[11px] text-[var(--smoke)]/25 text-center py-6 border border-dashed border-black/5 rounded-lg">No cases</div>
+                  <div className="text-[11px] text-[var(--smoke)]/25 text-center py-6 border border-dashed border-black/5 rounded-lg">{t('cases.colEmpty')}</div>
                 )}
               </div>
             </div>

@@ -6,27 +6,32 @@ import { usePathname } from 'next/navigation'
 import {
   ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers, GitBranch,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
+  Languages,
 } from 'lucide-react'
+import { useConsoleLocale } from '@/components/locale-provider'
+import type { TranslateFn } from '@/lib/i18n/types'
+
+type NavSlug = 'humanTasks' | 'cases' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing'
 
 interface NavItem {
   href: string
-  label: string
+  slug: NavSlug
   icon: typeof ClipboardList
   color: string
   matchPattern?: string
 }
 
 const OPS_ITEMS: NavItem[] = [
-  { href: '/ops/human-tasks', label: 'Human Tasks', icon: ClipboardList, color: '#f0b050' },
-  { href: '/ops/cases', label: 'Cases', icon: FolderOpen, color: '#5b8af7', matchPattern: '/ops/cases' },
+  { href: '/ops/human-tasks', slug: 'humanTasks', icon: ClipboardList, color: '#f0b050' },
+  { href: '/ops/cases', slug: 'cases', icon: FolderOpen, color: '#5b8af7', matchPattern: '/ops/cases' },
 ]
 
 const ADMIN_ITEMS: NavItem[] = [
-  { href: '/admin/agent', label: 'Agent Config', icon: Bot, color: '#2ea04a' },
-  { href: '/admin/skills', label: 'Skills', icon: Puzzle, color: '#5b8af7' },
-  { href: '/admin/policies', label: 'Policies', icon: Shield, color: '#e64539' },
-  { href: '/admin/case-types', label: 'Case Types', icon: Layers, color: '#d4912e' },
-  { href: '/admin/routing', label: 'Routing', icon: GitBranch, color: '#5bb8f7' },
+  { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
+  { href: '/admin/skills', slug: 'skills', icon: Puzzle, color: '#5b8af7' },
+  { href: '/admin/policies', slug: 'policies', icon: Shield, color: '#e64539' },
+  { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
+  { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#5bb8f7' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -34,10 +39,17 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.href
 }
 
+function navLabel(t: TranslateFn, slug: NavSlug): string {
+  return t(`sidebar.${slug}`)
+}
+
 export default function ConsoleSidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
+  const { t, toggleLocale, locale } = useConsoleLocale()
+
+  const langButtonLabel = locale === 'en' ? t('sidebar.switchToZh') : t('sidebar.switchToEn')
 
   return (
     <aside
@@ -45,8 +57,8 @@ export default function ConsoleSidebar() {
         bg-white/50 backdrop-blur-2xl border-r border-black/5
         ${collapsed ? 'w-14' : 'w-56'}`}
     >
-      {/* Collapse toggle */}
       <button
+        type="button"
         onClick={() => setCollapsed(!collapsed)}
         className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-white border border-black/10 shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors z-30"
       >
@@ -56,9 +68,9 @@ export default function ConsoleSidebar() {
         }
       </button>
 
-      {/* Avatar section */}
       <div className="px-3 pt-4 pb-3">
         <button
+          type="button"
           onClick={() => setAvatarOpen(!avatarOpen)}
           className="w-full flex items-center gap-2.5 rounded-xl p-2 hover:bg-black/5 transition-all"
         >
@@ -68,8 +80,8 @@ export default function ConsoleSidebar() {
           {!collapsed && (
             <>
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-[12px] font-medium text-[var(--mist)] truncate">Admin User</p>
-                <p className="text-[10px] text-[var(--fog)] truncate">Demo Vendor</p>
+                <p className="text-[12px] font-medium text-[var(--mist)] truncate">{t('shell.adminUser')}</p>
+                <p className="text-[10px] text-[var(--fog)] truncate">{t('shell.demoVendor')}</p>
               </div>
               <ChevronDown className={`w-3.5 h-3.5 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
             </>
@@ -77,26 +89,39 @@ export default function ConsoleSidebar() {
         </button>
         {avatarOpen && !collapsed && (
           <div className="mt-1 ml-10 space-y-0.5 animate-fade-up">
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all">
-              <Building2 className="w-3 h-3" /> Switch Project
+            <button
+              type="button"
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
+            >
+              <Building2 className="w-3 h-3" /> {t('sidebar.switchProject')}
             </button>
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-vermillion hover:bg-vermillion/5 rounded-lg transition-all">
-              <LogOut className="w-3 h-3" /> Sign Out
+            <button
+              type="button"
+              onClick={() => toggleLocale()}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
+              title={t('sidebar.language')}
+            >
+              <Languages className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{langButtonLabel}</span>
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-vermillion hover:bg-vermillion/5 rounded-lg transition-all"
+            >
+              <LogOut className="w-3 h-3" /> {t('sidebar.signOut')}
             </button>
           </div>
         )}
       </div>
 
-      {/* Nav groups */}
       <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
-        <NavGroup label="Operations" items={OPS_ITEMS} pathname={pathname} collapsed={collapsed} />
-        <NavGroup label="Administration" items={ADMIN_ITEMS} pathname={pathname} collapsed={collapsed} />
+        <NavGroup label={t('sidebar.ops')} items={OPS_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+        <NavGroup label={t('sidebar.admin')} items={ADMIN_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
       </nav>
 
-      {/* Footer */}
       <div className="px-3 pb-3 pt-2 border-t border-black/5">
         {!collapsed ? (
-          <p className="text-[10px] text-[var(--fog)] font-mono px-2">v0.1</p>
+          <p className="text-[10px] text-[var(--fog)] font-mono px-2">{t('shell.version')}</p>
         ) : (
           <div className="w-3 h-3 mx-auto rounded-full bg-black/5" />
         )}
@@ -105,11 +130,18 @@ export default function ConsoleSidebar() {
   )
 }
 
-function NavGroup({ label, items, pathname, collapsed }: {
+function NavGroup({
+  label,
+  items,
+  pathname,
+  collapsed,
+  t,
+}: {
   label: string
   items: NavItem[]
   pathname: string
   collapsed: boolean
+  t: TranslateFn
 }) {
   return (
     <div>
@@ -121,11 +153,12 @@ function NavGroup({ label, items, pathname, collapsed }: {
       <div className="space-y-0.5">
         {items.map(item => {
           const active = isActive(pathname, item)
+          const itemLabel = navLabel(t, item.slug)
           return (
             <Link
               key={item.href}
               href={item.href}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? itemLabel : undefined}
               className={`flex items-center rounded-lg transition-all duration-200 group relative ${
                 collapsed ? 'justify-center py-2.5 px-0' : 'gap-2.5 px-2.5 py-2'
               } ${
@@ -134,7 +167,6 @@ function NavGroup({ label, items, pathname, collapsed }: {
                   : 'hover:bg-black/[0.02]'
               }`}
             >
-              {/* Active indicator bar */}
               {active && (
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full"
                   style={{ background: `linear-gradient(180deg, ${item.color}, transparent)` }} />
@@ -150,11 +182,10 @@ function NavGroup({ label, items, pathname, collapsed }: {
                 <span className={`text-[13px] whitespace-nowrap transition-colors ${
                   active ? 'text-[var(--mist)] font-medium' : 'text-[var(--fog)]'
                 }`}>
-                  {item.label}
+                  {itemLabel}
                 </span>
               )}
 
-              {/* Active dot for collapsed */}
               {active && collapsed && (
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-3 rounded-full"
                   style={{ backgroundColor: item.color }} />
