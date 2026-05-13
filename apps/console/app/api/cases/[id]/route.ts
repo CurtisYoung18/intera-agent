@@ -29,3 +29,29 @@ export async function GET(
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
+
+/** DELETE — remove case and all dependent rows (messages, traces, memory, human tasks). */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+
+  try {
+    const existing = await prisma.case.findUnique({ where: { id }, select: { id: true } })
+    if (!existing) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    await prisma.humanTask.deleteMany({ where: { caseId: id } })
+    await prisma.actionTrace.deleteMany({ where: { caseId: id } })
+    await prisma.message.deleteMany({ where: { caseId: id } })
+    await prisma.caseMemory.deleteMany({ where: { caseId: id } })
+    await prisma.case.delete({ where: { id } })
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('[API] Failed to delete case:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}

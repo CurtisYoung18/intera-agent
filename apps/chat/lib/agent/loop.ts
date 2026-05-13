@@ -110,7 +110,7 @@ export class AgentLoop {
 
     // 3. ReAct loop
     let stopReason: string | null = null
-    let usage: { input_tokens?: number; output_tokens?: number } | null = null
+    let usage: Record<string, unknown> | null = null
 
     while (this.iterationCount < this.deps.config.maxIterations) {
       this.iterationCount++
@@ -303,7 +303,11 @@ export class AgentLoop {
 
           // ── message delta (usage + stop_reason) ──────────────
           case 'message_delta': {
-            const msgDelta = event as { type: 'message_delta'; delta: { stop_reason?: string | null; usage?: { input_tokens?: number; output_tokens?: number } }; usage?: unknown }
+            const msgDelta = event as unknown as {
+              type: 'message_delta'
+              delta: { stop_reason?: string | null; usage?: Record<string, unknown> }
+              usage?: Record<string, unknown>
+            }
             const delta = msgDelta.delta
             if (delta?.stop_reason != null) {
               stopReason = delta.stop_reason
@@ -313,9 +317,9 @@ export class AgentLoop {
                 JSON.stringify({ stopReason, iteration: this.iterationCount }),
               )
             }
-            if (msgDelta.usage) {
-              usage = msgDelta.usage as { input_tokens?: number; output_tokens?: number }
-              await this.traceWriter.writeLlmResponse(stopReason, usage)
+            const mergedUsage = msgDelta.usage ?? delta?.usage
+            if (mergedUsage) {
+              usage = mergedUsage
             }
             break
           }
@@ -324,6 +328,19 @@ export class AgentLoop {
           case 'message_stop':
             break
         }
+      }
+
+      // Final usage per assistant completion (streaming APIs may emit usage on multiple deltas).
+      if (
+        usage &&
+        ((usage.input_tokens as number | undefined) != null ||
+          (usage.output_tokens as number | undefined) != null)
+      ) {
+        await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount)
+        this.profiler.addTokens(
+          (usage.input_tokens as number | undefined) ?? 0,
+          (usage.output_tokens as number | undefined) ?? 0,
+        )
       }
 
       // Stream complete — finalize the assistant message

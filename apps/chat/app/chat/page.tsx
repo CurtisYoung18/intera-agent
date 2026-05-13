@@ -4,7 +4,7 @@
 // Atomic multi-bubble agent responses: each tool call + text segment = independent bubble
 // Always-unlocked input with queue mode: messages submitted while agent is responding are queued and sent on message_stop
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import ChatShell from '@/components/chat/chat-shell'
 import StatusPill from '@intera/shared/ui/status-pill'
 import MessageList from '@/components/chat/message-list'
@@ -50,6 +50,18 @@ function makeMsg(partial: Partial<ChatMessage> & { id: string; role: 'user' | 'a
   return { content: '', timestamp: new Date().toISOString(), ...partial }
 }
 
+function readSessionFromUrl(): { customerId: string; userId: string; caseType: string } {
+  if (typeof window === 'undefined') {
+    return { customerId: 'default', userId: 'anonymous', caseType: 'general' }
+  }
+  const q = new URLSearchParams(window.location.search)
+  return {
+    customerId: q.get('customer') || q.get('tenant') || 'default',
+    userId: q.get('user') || 'anonymous',
+    caseType: (q.get('caseType') || q.get('type') || 'general').replace(/_/g, ' '),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -63,6 +75,11 @@ export default function ChatPage() {
   const isLoadingRef = useRef(false)
   const queuedRef = useRef<string[]>([])
   const caseIdRef = useRef<string>(`case_${Date.now()}`)
+  const [session, setSession] = useState(readSessionFromUrl)
+
+  useEffect(() => {
+    setSession(readSessionFromUrl())
+  }, [])
   const lastUserMsgRef = useRef<string>('')
 
   const [caseCard, setCaseCard] = useState<{
@@ -110,7 +127,12 @@ export default function ChatPage() {
         const response = await fetch('/api/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, customerId: 'default', userId: 'anonymous', caseId: caseIdRef.current }),
+          body: JSON.stringify({
+            message: text,
+            customerId: session.customerId,
+            userId: session.userId,
+            caseId: caseIdRef.current,
+          }),
         })
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -354,7 +376,7 @@ export default function ChatPage() {
         }
       }
     },
-    [],
+    [session],
   )
 
   const handleClearQueue = useCallback(() => {
@@ -362,11 +384,30 @@ export default function ChatPage() {
     setQueuedCount(0)
   }, [])
 
+  const headlineType = (caseCard?.type || session.caseType).replace(/_/g, ' ')
+  const caseLine =
+    caseIdRef.current.length > 36 ? `${caseIdRef.current.slice(0, 28)}…` : caseIdRef.current
+
   return (
     <ChatShell>
-      <div className="flex justify-center pt-4 pb-5">
-        <StatusPill status={agentStatus} label="Intera AI" />
-      </div>
+      <header className="grid grid-cols-[minmax(2rem,2.75rem)_1fr_minmax(2rem,2.75rem)] items-start gap-1 px-2 pt-4 pb-3">
+        <div className="w-10 shrink-0" aria-hidden />
+        <div className="min-w-0 text-center px-2">
+          <p className="text-[14px] sm:text-[15px] leading-snug text-mist">
+            <span className="text-indigo">{session.customerId}</span>
+            <span className="text-fog/35 mx-1.5 font-normal">·</span>
+            <span className="font-semibold capitalize">{headlineType}</span>
+          </p>
+          <p className="mt-1 text-[11px] leading-snug tracking-tight text-fog/55">
+            Case <span className="font-mono tabular-nums text-fog/[0.65]">{caseLine}</span>
+            <span className="mx-1.5 text-fog/35">·</span>
+            User {session.userId}
+          </p>
+        </div>
+        <div className="flex shrink-0 justify-end pt-0.5">
+          <StatusPill status={agentStatus} label="Intera AI" />
+        </div>
+      </header>
 
       {messages.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center pb-10">

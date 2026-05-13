@@ -137,10 +137,12 @@ export class TraceWriter {
 
   async writeLlmResponse(
     stopReason: string | null,
-    usage?: { input_tokens?: number; output_tokens?: number },
+    usage?: Record<string, unknown>,
+    iteration?: number,
   ): Promise<void> {
     await this.write('llm_response', `LLM response: ${stopReason || 'complete'}`, {
       stopReason,
+      iteration,
       usage,
     })
   }
