@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { translatedCaseStatus, translatedMsgRole } from '@/lib/i18n/dictionaries'
+import { ConsoleBackButton, ConsoleStatusPill, ConsoleToolbarButton } from '@/components/ui/console-chrome'
+import { Zap, Clock, Cpu, Brain } from 'lucide-react'
 
 interface TraceItem {
   id: string
@@ -81,6 +83,18 @@ function formatTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
+  return String(n)
+}
+
+function fmtLatency(ms: number): string {
+  if (ms >= 60_000) return (ms / 60_000).toFixed(1) + 'm'
+  if (ms >= 1_000) return (ms / 1_000).toFixed(1) + 's'
+  return ms + 'ms'
+}
+
 export default function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -117,6 +131,33 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
     load()
   }, [id])
 
+  const metrics = useMemo(() => {
+    let inputTokens = 0
+    let outputTokens = 0
+    let totalLatency = 0
+    let llmCalls = 0
+
+    for (const trace of traces) {
+      if (trace.actionType === 'llm_response') {
+        const p = parsePayload(trace.payload)
+        const u = p?.usage as Record<string, number> | undefined
+        if (u) {
+          inputTokens += u.input_tokens ?? 0
+          outputTokens += u.output_tokens ?? 0
+        }
+        llmCalls++
+      }
+      if (trace.actionType === 'skill_result') {
+        const p = parsePayload(trace.payload)
+        if (p?.latencyMs != null) {
+          totalLatency += p.latencyMs as number
+        }
+      }
+    }
+
+    return { inputTokens, outputTokens, totalLatency, llmCalls }
+  }, [traces])
+
   if (loading) {
     return (
       <div className="min-h-[100dvh] bg-[var(--bg-root)] flex items-center justify-center">
@@ -140,46 +181,85 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="relative min-h-[100dvh] flex flex-col">
 
-      <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/40 backdrop-blur-xl flex-shrink-0">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button type="button" onClick={() => router.push('/ops/cases')} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
-              {t('caseDetail.back')}
-            </button>
-            <div>
-              <h1 className="text-[14px] font-medium text-primary tracking-[-0.01em]">
+      <header className="relative z-10 flex-shrink-0 border-b border-black/[0.05] bg-[var(--bg-sidebar)]/50 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
+          <div className="flex min-w-0 items-center gap-4">
+            <ConsoleBackButton
+              label={t('caseDetail.backLabel')}
+              ariaLabel={t('caseDetail.backAria')}
+              onClick={() => router.push('/ops/cases')}
+            />
+            <div className="min-w-0">
+              <h1 className="text-[14px] font-medium tracking-[-0.01em] text-primary">
                 {t('caseDetail.title', { id: id.slice(0, 12) })}
               </h1>
               <p className="text-[11px] text-secondary/40">{meta}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => router.push(`/ops/cases/${id}/memory`)} className="text-[12px] text-secondary/50 hover:text-secondary transition-colors">
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-2 sm:gap-3">
+            <ConsoleToolbarButton icon={Brain} onClick={() => router.push(`/ops/cases/${id}/memory`)}>
               {t('caseDetail.memory')}
-            </button>
+            </ConsoleToolbarButton>
             {caseData && (
-              <span className={`text-[11px] font-sans tracking-[0.04em] uppercase ${
-                caseData.status === 'resolved' ? 'text-malachite' :
-                caseData.status === 'waiting_human' ? 'text-amber' :
-                'text-secondary/60'
-              }`}>
+              <ConsoleStatusPill status={caseData.status}>
                 {translatedCaseStatus(t, caseData.status)}
-              </span>
+              </ConsoleStatusPill>
             )}
           </div>
         </div>
       </header>
 
       <div className="relative z-10 flex-1 max-w-4xl mx-auto w-full px-6 py-6 overflow-y-auto">
+
+        {/* ── Stats Row ── */}
         {caseData && (
-          <div className="flex gap-4 mb-6 text-[11px] font-sans text-secondary/40">
+          <div className="flex gap-4 mb-4 text-[11px] font-sans text-secondary/40">
             <span>{t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? 0 })}</span>
             <span>{t('caseDetail.statsTraces', { n: caseData._count?.traces ?? 0 })}</span>
             {caseData.blocker && <span className="text-amber/60">{t('caseDetail.blocker', { text: caseData.blocker })}</span>}
           </div>
         )}
 
-        <div className="space-y-1">
+        {/* ── Metrics Summary Bar ── */}
+        {(metrics.llmCalls > 0 || metrics.totalLatency > 0) && (
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="glass-card !rounded-xl px-4 py-3 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-indigo/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Zap className="w-4 h-4 text-indigo" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-sans tracking-[0.04em] uppercase text-secondary/40 mb-0.5">{t('caseDetail.totalTokens')}</p>
+                <p className="text-[18px] font-semibold text-primary tracking-[-0.02em] tabular-nums">{fmtNum(metrics.inputTokens + metrics.outputTokens)}</p>
+                <p className="text-[10px] font-mono text-secondary/40 mt-0.5">
+                  {t('caseDetail.tokensIn', { n: fmtNum(metrics.inputTokens) })} · {t('caseDetail.tokensOut', { n: fmtNum(metrics.outputTokens) })}
+                </p>
+              </div>
+            </div>
+
+            <div className="glass-card !rounded-xl px-4 py-3 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Clock className="w-4 h-4 text-amber" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-sans tracking-[0.04em] uppercase text-secondary/40 mb-0.5">{t('caseDetail.totalLatency')}</p>
+                <p className="text-[18px] font-semibold text-primary tracking-[-0.02em] tabular-nums">{fmtLatency(metrics.totalLatency)}</p>
+              </div>
+            </div>
+
+            <div className="glass-card !rounded-xl px-4 py-3 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-malachite/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Cpu className="w-4 h-4 text-malachite" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-sans tracking-[0.04em] uppercase text-secondary/40 mb-0.5">{t('caseDetail.llmCalls')}</p>
+                <p className="text-[18px] font-semibold text-primary tracking-[-0.02em] tabular-nums">{metrics.llmCalls}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Trace Timeline ── */}
+        <div className="space-y-0">
           {traces.length === 0 && (
             <p className="text-secondary/30 text-[13px] py-8 text-center">{t('caseDetail.noTraces')}</p>
           )}
@@ -188,9 +268,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             const color = ACTION_COLORS[trace.actionType] || 'text-secondary/50'
             const badge = ACTION_BADGE_COLORS[trace.actionType] || 'bg-fog/5 border-fog/10'
             const payload = parsePayload(trace.payload)
+            const isLlmResponse = trace.actionType === 'llm_response'
+            const isSkillResult = trace.actionType === 'skill_result'
+            const hasMetrics = isLlmResponse || (isSkillResult && payload?.latencyMs != null)
 
             return (
-              <div key={trace.id} className="flex gap-3 py-2 px-3 rounded-lg hover:bg-[var(--surface)] transition-colors group">
+              <div key={trace.id} className="flex gap-3 py-2.5 px-3 rounded-lg hover:bg-[var(--surface)] transition-colors group">
                 <div className="flex flex-col items-center flex-shrink-0 pt-1">
                   <div className={`w-2 h-2 rounded-full ${color.replace('text-', 'bg-')}`} />
                   {i < traces.length - 1 && (
@@ -199,11 +282,40 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
 
                 <div className="flex-1 min-w-0 pb-2">
-                  <div className="flex items-center gap-2 mb-0.5">
+                  <div className="flex items-center gap-2 mb-1">
                     <span className={`inline-block px-1.5 py-0 rounded text-[9px] font-sans tracking-[0.04em] uppercase border ${badge} ${color}`}>
                       {formatActionType(trace.actionType)}
                     </span>
                     <span className="text-[10px] font-mono text-secondary/30">{formatTime(trace.createdAt)}</span>
+
+                    {/* ── Inline Metrics Badges ── */}
+                    {isLlmResponse && payload && (() => {
+                      const u = payload.usage as Record<string, number> | undefined
+                      if (!u) return null
+                      return (
+                        <>
+                          {u.input_tokens != null && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo/8 border border-indigo/15 text-[10px] font-mono font-medium text-indigo/80">
+                              <Zap className="w-2.5 h-2.5" />
+                              {t('caseDetail.tokensIn', { n: fmtNum(u.input_tokens) })}
+                            </span>
+                          )}
+                          {u.output_tokens != null && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo/8 border border-indigo/15 text-[10px] font-mono font-medium text-indigo/80">
+                              <Zap className="w-2.5 h-2.5" />
+                              {t('caseDetail.tokensOut', { n: fmtNum(u.output_tokens) })}
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
+
+                    {isSkillResult && payload?.latencyMs != null && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber/8 border border-amber/15 text-[10px] font-mono font-medium text-amber/80">
+                        <Clock className="w-2.5 h-2.5" />
+                        {t('caseDetail.ms', { n: payload.latencyMs as number })}
+                      </span>
+                    )}
                   </div>
 
                   <p className="text-[13px] text-primary/80">{trace.title}</p>
@@ -212,25 +324,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                     <p className="text-[12px] text-secondary/50 mt-0.5">{trace.detail}</p>
                   )}
 
-                  {trace.actionType === 'llm_response' && payload && (() => {
-                    const u = payload.usage as Record<string, number> | undefined
-                    if (!u) return null
-                    return (
-                      <div className="mt-1 flex gap-3 text-[10px] font-mono text-secondary/40">
-                        {u.input_tokens != null && <span>{t('caseDetail.tokensIn', { n: u.input_tokens })}</span>}
-                        {u.output_tokens != null && <span>{t('caseDetail.tokensOut', { n: u.output_tokens })}</span>}
-                      </div>
-                    )
-                  })()}
-
-                  {trace.actionType === 'skill_result' && payload?.latencyMs != null && (
-                    <span className="text-[10px] font-mono text-secondary/40">
-                      {t('caseDetail.ms', { n: payload.latencyMs as number })}
-                    </span>
-                  )}
-
-                  {payload && trace.actionType !== 'llm_response' && trace.actionType !== 'skill_result' && (
-                    <details className="mt-1">
+                  {payload && !isLlmResponse && !isSkillResult && (
+                    <details className="mt-1.5">
                       <summary className="text-[10px] text-secondary/30 cursor-pointer hover:text-secondary/50 transition-colors">
                         {t('caseDetail.payload')}
                       </summary>
@@ -245,6 +340,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           })}
         </div>
 
+        {/* ── Conversation ── */}
         {messages.length > 0 && (
           <section className="mt-10">
             <h2 className="text-[12px] font-sans tracking-[0.06em] uppercase text-secondary/30 mb-4">{t('caseDetail.conversation')}</h2>

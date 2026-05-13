@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { ConsoleBackButton } from '@/components/ui/console-chrome'
 
 interface MemoryData {
   caseId: string
@@ -89,9 +90,11 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
       <header className="relative z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)]/40 backdrop-blur-xl flex-shrink-0">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button type="button" onClick={() => router.push(`/ops/cases/${id}`)} className="text-[13px] text-secondary/50 hover:text-secondary transition-colors">
-              {t('memory.back')}
-            </button>
+            <ConsoleBackButton
+              label={t('memory.backLabel')}
+              ariaLabel={t('memory.backAria')}
+              onClick={() => router.push(`/ops/cases/${id}`)}
+            />
             <h1 className="text-[14px] font-medium text-primary tracking-[-0.01em]">
               {t('memory.title', { id: id.slice(0, 12) })}
             </h1>
@@ -100,11 +103,11 @@ export default function MemoryEditorPage({ params }: { params: Promise<{ id: str
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className={`px-4 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 ${
+            className={`inline-flex min-h-[2.375rem] items-center justify-center rounded-xl px-4 text-[12px] font-semibold shadow-sm ring-1 transition-[transform,box-shadow,color,background,border-color] hover:brightness-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/30 focus-visible:ring-offset-1 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 ${
               saved
-                ? 'bg-malachite/20 border border-malachite/30 text-malachite'
-                : 'bg-indigo/20 border border-indigo/30 text-indigo hover:bg-indigo/30'
-            } disabled:opacity-50`}
+                ? 'border border-malachite/35 bg-malachite/[0.12] text-malachite ring-malachite/15'
+                : 'border border-indigo/28 bg-gradient-to-b from-indigo/[0.16] to-indigo/[0.08] text-indigo ring-white/70 hover:border-indigo/35 hover:shadow-[0_4px_14px_-6px_rgba(91,138,247,0.35)]'
+            }`}
           >
             {saving ? t('memory.saving') : saved ? t('memory.saved') : t('memory.saveChanges')}
           </button>

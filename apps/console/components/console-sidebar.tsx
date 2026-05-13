@@ -57,36 +57,50 @@ export default function ConsoleSidebar() {
         bg-white/50 backdrop-blur-2xl border-r border-black/5
         ${collapsed ? 'w-14' : 'w-56'}`}
     >
-      <button
-        type="button"
-        onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-white border border-black/10 shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors z-30"
-      >
-        {collapsed
-          ? <ChevronRight className="w-3 h-3 text-gray-400" />
-          : <ChevronLeft className="w-3 h-3 text-gray-400" />
-        }
-      </button>
-
-      <div className="px-3 pt-4 pb-3">
-        <button
-          type="button"
-          onClick={() => setAvatarOpen(!avatarOpen)}
-          className="w-full flex items-center gap-2.5 rounded-xl p-2 hover:bg-black/5 transition-all"
-        >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo/20 to-indigo/5 border border-indigo/20 flex items-center justify-center flex-shrink-0">
-            <User className="w-4 h-4 text-indigo" />
-          </div>
-          {!collapsed && (
-            <>
-              <div className="flex-1 min-w-0 text-left">
-                <p className="text-[12px] font-medium text-[var(--mist)] truncate">{t('shell.adminUser')}</p>
-                <p className="text-[10px] text-[var(--fog)] truncate">{t('shell.demoVendor')}</p>
+      <div className="relative z-30 flex-shrink-0 border-b border-black/[0.05] pb-3 pt-3">
+        {collapsed ? (
+          <div className="flex flex-col items-center px-2">
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              className="flex w-full flex-col items-center gap-2 rounded-xl p-3 text-[var(--fog)] transition-colors hover:bg-black/[0.04] hover:text-indigo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25 focus-visible:ring-offset-2"
+              aria-label={t('sidebar.expandAria')}
+            >
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
+                <User className="h-4 w-4 text-indigo" />
               </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
-            </>
-          )}
-        </button>
+              <ChevronRight className="h-4 w-4 opacity-75" strokeWidth={2.25} aria-hidden />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-2">
+            <button
+              type="button"
+              onClick={() => setAvatarOpen(!avatarOpen)}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-2 hover:bg-black/5 transition-all"
+              aria-expanded={avatarOpen}
+            >
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
+                <User className="h-4 w-4 text-indigo" />
+              </div>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="truncate text-[12px] font-medium text-[var(--mist)]">{t('shell.adminUser')}</p>
+                <p className="truncate text-[10px] text-[var(--fog)]">{t('shell.demoVendor')}</p>
+              </div>
+              <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="console-sidebar-toggle"
+              aria-expanded
+              aria-label={t('sidebar.collapseAria')}
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2.25} />
+            </button>
+          </div>
+        )}
+
         {avatarOpen && !collapsed && (
           <div className="mt-1 ml-10 space-y-0.5 animate-fade-up">
             <button

@@ -15,6 +15,8 @@ export const en: Record<string, string> = {
   'sidebar.switchProject': 'Switch Project',
   'sidebar.language': 'Language',
   'sidebar.signOut': 'Sign Out',
+  'sidebar.expandAria': 'Expand sidebar',
+  'sidebar.collapseAria': 'Collapse sidebar',
   'sidebar.switchToZh': '中文',
   'sidebar.switchToEn': 'English',
   'shell.adminUser': 'Admin User',
@@ -227,6 +229,7 @@ export const en: Record<string, string> = {
   'humanTasks.pendingBadge': '{n} pending',
   'humanTasks.emptyTitle': 'No tasks yet',
   'humanTasks.emptyDesc': 'When the agent escalates a case that needs human review, it will appear here.',
+  'humanTasks.backAria': 'Back to tasks list',
 
   // ── Ops: human task detail ───────────────────────────────────
   'humanTaskDetail.taskNotFound': 'Task not found',
@@ -254,6 +257,11 @@ export const en: Record<string, string> = {
   'humanTaskDetail.deleteTitle': 'Debug: delete all case data',
   'humanTaskDetail.consultStreamAppend': '\n\n---\n✅ *Consultation complete — {resolution}*\n> {summary}',
   'humanTaskDetail.agentError': 'Error: {msg}',
+  'humanTaskDetail.senderIntera': 'Intera',
+  'humanTaskDetail.senderYou': 'You',
+  'humanTaskDetail.copySkillHint': 'Click to copy skill name',
+  'humanTaskDetail.copied': 'Copied',
+  'humanTaskDetail.chatRoomTitle': 'Consultation',
 
   // ── Ops: cases list ──────────────────────────────────────────
   'cases.title': 'Cases',
@@ -272,6 +280,8 @@ export const en: Record<string, string> = {
 
   // ── Ops: case detail ─────────────────────────────────────────
   'caseDetail.back': '← Back',
+  'caseDetail.backLabel': 'Back',
+  'caseDetail.backAria': 'Return to case list',
   'caseDetail.title': 'Case {id}…',
   'caseDetail.meta': '{type} · User {user} · Created {date}',
   'caseDetail.memory': 'Memory',
@@ -289,9 +299,14 @@ export const en: Record<string, string> = {
   'caseDetail.tokensIn': 'in: {n}',
   'caseDetail.tokensOut': 'out: {n}',
   'caseDetail.ms': '{n} ms',
+  'caseDetail.totalTokens': 'Tokens',
+  'caseDetail.totalLatency': 'Latency',
+  'caseDetail.llmCalls': 'LLM Calls',
 
   // ── Ops: memory editor ───────────────────────────────────────
   'memory.back': '← Case',
+  'memory.backLabel': 'Case',
+  'memory.backAria': 'Back to case overview',
   'memory.title': 'Memory · {id}…',
   'memory.saving': 'Saving…',
   'memory.saved': '✓ Saved',
@@ -326,6 +341,8 @@ export const zh: Record<string, string> = {
   'sidebar.switchProject': '切换项目',
   'sidebar.language': '语言',
   'sidebar.signOut': '退出登录',
+  'sidebar.expandAria': '展开侧栏',
+  'sidebar.collapseAria': '收起侧栏',
   'sidebar.switchToZh': '中文',
   'sidebar.switchToEn': 'English',
   'shell.adminUser': '管理员',
@@ -529,6 +546,7 @@ export const zh: Record<string, string> = {
   'humanTasks.pendingBadge': '{n} 待处理',
   'humanTasks.emptyTitle': '暂无任务',
   'humanTasks.emptyDesc': '当 Agent 将案例升级并需要人工审核时，任务会出现在这里。',
+  'humanTasks.backAria': '返回人工任务列表',
 
   'humanTaskDetail.taskNotFound': '找不到任务',
   'humanTaskDetail.caseLine': '案例 {cid}… {sep} 用户 {uid}',
@@ -555,6 +573,11 @@ export const zh: Record<string, string> = {
   'humanTaskDetail.deleteTitle': '调试：删除本案全部数据',
   'humanTaskDetail.consultStreamAppend': '\n\n---\n✅ *协同结束 — {resolution}*\n> {summary}',
   'humanTaskDetail.agentError': '错误：{msg}',
+  'humanTaskDetail.senderIntera': 'Intera',
+  'humanTaskDetail.senderYou': '您',
+  'humanTaskDetail.copySkillHint': '点击复制技能名称',
+  'humanTaskDetail.copied': '已复制',
+  'humanTaskDetail.chatRoomTitle': '协同',
 
   'cases.title': '案例',
   'cases.subtitle': '共 {total} · 当前可见 {visible}',
@@ -571,6 +594,8 @@ export const zh: Record<string, string> = {
   'cases.status.escalated': '已升级',
 
   'caseDetail.back': '← 返回',
+  'caseDetail.backLabel': '返回',
+  'caseDetail.backAria': '返回案例列表',
   'caseDetail.title': '案例 {id}…',
   'caseDetail.meta': '{type} · 用户 {user} · 创建于 {date}',
   'caseDetail.memory': '记忆',
@@ -588,8 +613,13 @@ export const zh: Record<string, string> = {
   'caseDetail.tokensIn': '输入 {n}',
   'caseDetail.tokensOut': '输出 {n}',
   'caseDetail.ms': '{n} ms',
+  'caseDetail.totalTokens': 'Token 用量',
+  'caseDetail.totalLatency': '总耗时',
+  'caseDetail.llmCalls': 'LLM 调用',
 
   'memory.back': '← 案例',
+  'memory.backLabel': '案例',
+  'memory.backAria': '返回案例概览',
   'memory.title': '记忆 · {id}…',
   'memory.saving': '保存中…',
   'memory.saved': '✓ 已保存',
