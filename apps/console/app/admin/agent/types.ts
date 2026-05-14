@@ -21,9 +21,7 @@ export interface MemoryStrategy {
   compactionKeepMin: number
   compactionKeepRatio: number
   compactableTools: string[]
-  txnIdPattern: string
-  amountPattern: string
-  notReceivedKeywords: string[]
+  factExtractionPrompt: string
   keyEventMaxChars: number
   tokensPerKeyEvent: number
   tokensPerFact: number
@@ -96,9 +94,7 @@ export const DEFAULT_MEMORY: MemoryStrategy = {
   compactionKeepMin: 4,
   compactionKeepRatio: 0.4,
   compactableTools: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve', 'ocr_receipt'],
-  txnIdPattern: 'TX[Uu]?\\d+|[A-Z]{2,6}\\d{8,}',
-  amountPattern: '(\\d+\\.?\\d*)\\s*(元|USD|EUR|JPY|₩|¥|\\$)',
-  notReceivedKeywords: ['未到账', '没到账', '没收到', 'not received', 'not credited', 'missing', '未入金'],
+  factExtractionPrompt: '',
   keyEventMaxChars: 100,
   tokensPerKeyEvent: 20,
   tokensPerFact: 15,

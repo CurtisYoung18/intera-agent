@@ -8,6 +8,7 @@ import ImmersiveModal from '@/components/ui/immersive-modal'
 import TiltCard from '@/components/ui/tilt-card'
 import { chatApiUrl } from '@/lib/chat-api'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 
 interface SkillItem {
   id: string; name: string; description: string; mode: string
@@ -121,8 +122,13 @@ export default function SkillsPage() {
     try { setEditing({ ...editing, [field]: JSON.stringify(JSON.parse(String(editing[field] || '{}')), null, 2) }) } catch {}
   }
 
+  const prefillDefaultMock = (name: string): string | undefined => {
+    const def = DEFAULT_SKILLS.find((s) => s.name === name)
+    return def?.mockFixture ?? undefined
+  }
+
   const openNew = () => {
-    setEditing({ id: '', name: '', description: '', mode: 'mock', isConcurrencySafe: true, enabled: true })
+    setEditing({ id: '', name: '', description: '', mode: 'mock', mockFixture: '{"status":"ok"}', isConcurrencySafe: true, enabled: true })
     setIsNew(true); setOriginalName('')
   }
 
@@ -235,7 +241,14 @@ export default function SkillsPage() {
               <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} />
             </label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.mode')}</span>
-              <select value={editing.mode} onChange={e => setEditing({ ...editing, mode: e.target.value })} className="glass-input-console text-[13px]">
+              <select value={editing.mode} onChange={e => {
+                const newMode = e.target.value
+                const update: Partial<SkillItem> = { mode: newMode }
+                if (newMode === 'mock' && !editing.mockFixture?.trim()) {
+                  update.mockFixture = prefillDefaultMock(editing.name) || '{"status":"ok"}'
+                }
+                setEditing({ ...editing, ...update })
+              }} className="glass-input-console text-[13px]">
                 <option value="mock">{t('common.mock')}</option><option value="http">{t('common.http')}</option>
               </select>
             </label>
@@ -248,9 +261,16 @@ export default function SkillsPage() {
               <div className="rounded-xl border border-lavender/25 bg-lavender/[0.05] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold text-lavender">{t('skills.mockResponseEditor')}</span>
-                  <button type="button" onClick={() => formatField('mockFixture')} className="text-[10px] text-indigo/70 hover:text-indigo flex items-center gap-1 shrink-0">
-                    <Wand2 className="w-3 h-3" />{t('common.format')}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {editing.name && prefillDefaultMock(editing.name) && (
+                      <button type="button" onClick={() => setEditing({ ...editing, mockFixture: prefillDefaultMock(editing.name) })} className="text-[10px] text-lavender/70 hover:text-lavender flex items-center gap-1">
+                        <Zap className="w-3 h-3" />{t('skills.resetDefault')}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => formatField('mockFixture')} className="text-[10px] text-indigo/70 hover:text-indigo flex items-center gap-1">
+                      <Wand2 className="w-3 h-3" />{t('common.format')}
+                    </button>
+                  </div>
                 </div>
                 <div className="grid md:grid-cols-2 gap-3">
                   <label className="space-y-1.5 block min-h-0">

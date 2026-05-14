@@ -5,6 +5,7 @@
 import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
 import { IntentClassifier } from '@/lib/agent/intent-classifier'
+import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig, IntentClassification } from '@intera/shared/types'
 
@@ -279,7 +280,12 @@ export async function POST(request: NextRequest) {
         }
 
         if (shouldClassify && resolvedClassification) {
-          if (resolvedClassification.intent === 'case' && !resolvedClassification.needsClarification && resolvedClassification.matchedCaseTypes.length > 0) {
+          if (
+            resolvedClassification.intent === 'case' &&
+            !resolvedClassification.needsClarification &&
+            resolvedClassification.matchedCaseTypes.length > 0 &&
+            isInvestigableCaseType(resolvedClassification.matchedCaseTypes[0]?.type)
+          ) {
             const matched = resolvedClassification.matchedCaseTypes[0]
             try {
               const newCase = await prisma.case.create({
@@ -334,7 +340,15 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Bootstrap new case from Chat UI (multi-case parallel lanes) ──
-        if (bootstrapNewCase && bodyCaseType && userMessage && !resumeTrigger && !formResult) {
+        // bootstrapNewCase: placeholder slugs (e.g. general) must not open a workflow case
+        if (
+          bootstrapNewCase &&
+          bodyCaseType &&
+          isInvestigableCaseType(bodyCaseType) &&
+          userMessage &&
+          !resumeTrigger &&
+          !formResult
+        ) {
           try {
             const ctRow = await prisma.caseType.findUnique({
               where: { customerId_type: { customerId: resolvedCustomerId, type: bodyCaseType } },
@@ -384,9 +398,11 @@ export async function POST(request: NextRequest) {
         // (manual caseType + skipClassification) never emitted it — tabs/case card/form broke.
         if (!resumeTrigger && !formResult && !createdCaseForIntent && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
           const inferredType =
-            bodyCaseType ||
+            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined) ||
             (resolvedClassification?.intent === 'case' &&
-              resolvedClassification.matchedCaseTypes?.[0]?.type)
+            isInvestigableCaseType(resolvedClassification.matchedCaseTypes?.[0]?.type)
+              ? resolvedClassification.matchedCaseTypes?.[0]?.type
+              : undefined)
           if (inferredType) {
             try {
               const ctRow = await prisma.caseType.findUnique({

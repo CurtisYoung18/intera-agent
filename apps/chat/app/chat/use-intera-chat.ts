@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { IntentClassification } from '@intera/shared/types'
+import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { pickToolVerb } from '@/lib/spinner-verbs'
 
@@ -157,9 +158,13 @@ function readSessionFromUrl(): { customerId: string; userId: string; caseType: s
   }
 }
 
+function investigableMatches(clf: IntentClassification): IntentClassification['matchedCaseTypes'] {
+  return clf.matchedCaseTypes.filter((m) => isInvestigableCaseType(m.type))
+}
+
 function orderSelectedByConfidence(selected: string[], clf: IntentClassification): string[] {
   const set = new Set(selected)
-  return clf.matchedCaseTypes.filter((m) => set.has(m.type)).map((m) => m.type)
+  return investigableMatches(clf).filter((m) => set.has(m.type)).map((m) => m.type)
 }
 
 interface LaneBuffer {
@@ -203,10 +208,21 @@ export function useInteraChat(): UseInteraChatReturn {
   const [splitMode, setSplitMode] = useState(false)
   const [streamingToolName, setStreamingToolName] = useState<string | null>(null)
   const [coreAgentProgress, setCoreAgentProgress] = useState<{
-    stage: string; iteration: number; task: string; pendingSubAgents: string[]
+    stage: string
+    iteration: number
+    task: string
+    pendingSubAgents: string[]
   } | null>(null)
 
-  const isLoadingRef = useRef(false)
+  const splitModeRef = useRef(splitMode)
+
+  /** In-flight /api/messages (+ classify) streams; multiple allowed when splitMode. */
+  const activeStreamsRef = useRef(0)
+
+  useEffect(() => {
+    splitModeRef.current = splitMode
+  }, [splitMode])
+
   const queuedRef = useRef<string[]>([])
   const caseIdRef = useRef<string>(`case_${Date.now()}`)
   const [session, setSession] = useState(readSessionFromUrl)
@@ -337,6 +353,7 @@ export function useInteraChat(): UseInteraChatReturn {
             icon: string
             extractedFacts?: Record<string, string>
           }
+          if (!isInvestigableCaseType(cc.caseType)) break
           setSplitMode(true)
           lane.caseId = cc.caseId
           hooks?.recordBootstrapCaseId?.(cc.caseId)
@@ -365,7 +382,7 @@ export function useInteraChat(): UseInteraChatReturn {
 
         case 'intent_classified': {
           const ic = event.data as IntentClassification
-          if (ic.intent === 'case' && ic.matchedCaseTypes.length > 0) setSplitMode(true)
+          if (ic.intent === 'case' && investigableMatches(ic).length > 0) setSplitMode(true)
           break
         }
 
@@ -738,12 +755,18 @@ export function useInteraChat(): UseInteraChatReturn {
   const submitCaseForm = useCallback(
     async (caseId: string, answers: Record<string, string>) => {
       const preferZh = /[一-鿿]/.test(lastUserMsgRef.current || '')
-      if (isLoadingRef.current) return
-      isLoadingRef.current = true
+      const splitNow = splitModeRef.current
+      if (!splitNow && activeStreamsRef.current > 0) return
+
+      activeStreamsRef.current++
       setIsLoading(true)
       setAgentStatus('thinking')
-      setCoreAgentProgress(null)
-      setStreamingToolName(null)
+
+      const clearHints = !(splitNow && activeStreamsRef.current > 1)
+      if (clearHints) {
+        setCoreAgentProgress(null)
+        setStreamingToolName(null)
+      }
 
       const firstTextMsgId = crypto.randomUUID()
       const lane = createLaneBuffer(firstTextMsgId, caseId)
@@ -780,11 +803,14 @@ export function useInteraChat(): UseInteraChatReturn {
         console.error('Form continuation error:', e)
         setAgentStatus('offline')
       } finally {
-        setStreamingToolName(null)
-        isLoadingRef.current = false
-        setIsLoading(false)
+        activeStreamsRef.current -= 1
+        const remain = activeStreamsRef.current
+        setIsLoading(remain > 0)
+        if (remain <= 0) {
+          setStreamingToolName(null)
+        }
         promoteNextFormInteraction()
-        if (queuedRef.current.length > 0) {
+        if (!splitModeRef.current && queuedRef.current.length > 0) {
           const next = queuedRef.current[0]
           queuedRef.current = queuedRef.current.slice(1)
           setQueuedCount(queuedRef.current.length)
@@ -797,85 +823,93 @@ export function useInteraChat(): UseInteraChatReturn {
 
   const submitMessage = useCallback(
     async (text: string) => {
-      if (isLoadingRef.current) {
+      const splitNow = splitModeRef.current
+
+      if (!splitNow && activeStreamsRef.current > 0) {
         queuedRef.current = [...queuedRef.current, text]
         setQueuedCount(queuedRef.current.length)
         return
       }
 
-      const preferZh = /[一-鿿]/.test(text)
-
-      isLoadingRef.current = true
-      setIsLoading(true)
-      setAgentStatus('thinking')
-      setCoreAgentProgress(null)
-      setStreamingToolName(null)
-
       lastUserMsgRef.current = text
       setMessages((prev) => [...prev, makeMsg({ id: crypto.randomUUID(), role: 'user', msgType: 'text', content: text })])
 
+      activeStreamsRef.current++
+      setIsLoading(true)
+      setAgentStatus('thinking')
+
+      const clearHints = !(splitNow && activeStreamsRef.current > 1)
+      if (clearHints) {
+        setCoreAgentProgress(null)
+        setStreamingToolName(null)
+      }
+
+      const preferZh = /[一-鿿]/.test(text)
       let classification: IntentClassification | null = null
+      let firstTextMsgId: string | undefined
+
       try {
-        const classifyRes = await fetch('/api/intent/classify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, customerId: session.customerId }),
-        })
-        if (classifyRes.ok) classification = await classifyRes.json()
-      } catch {
-        /* ignore */
-      }
+        try {
+          const classifyRes = await fetch('/api/intent/classify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, customerId: session.customerId }),
+          })
+          if (classifyRes.ok) classification = await classifyRes.json()
+        } catch {
+          /* ignore */
+        }
 
-      if (classification && classification.intent === 'case' && classification.matchedCaseTypes.length > 0) {
-        setSplitMode(true)
-      }
+        if (classification && classification.intent === 'case' && investigableMatches(classification).length > 0) {
+          setSplitMode(true)
+        }
 
-      if (
-        classification &&
-        classification.intent === 'case' &&
-        classification.needsClarification &&
-        classification.matchedCaseTypes.length > 1
-      ) {
-        const cardMsgId = crypto.randomUUID()
+        const realMatches = classification ? investigableMatches(classification) : []
+        if (
+          classification &&
+          classification.intent === 'case' &&
+          classification.needsClarification &&
+          realMatches.length > 1
+        ) {
+          const clf = classification
+          const cardMsgId = crypto.randomUUID()
+          setMessages((prev) => [
+            ...prev,
+            makeMsg({
+              id: cardMsgId,
+              role: 'assistant',
+              msgType: 'intent_clarification',
+              content: '',
+              intentOptions: {
+                classification: { ...clf, matchedCaseTypes: realMatches },
+                caseTypes: realMatches.map((m) => ({
+                  type: m.type,
+                  displayName: m.displayName,
+                  icon: m.icon,
+                  confidence: m.confidence,
+                })),
+              },
+            }),
+          ])
+          setAgentStatus('waiting')
+          return
+        }
+
+        const streamMsgId = crypto.randomUUID()
+        firstTextMsgId = streamMsgId
+        const lane = createLaneBuffer(streamMsgId, actualCaseIdRef.current)
+
         setMessages((prev) => [
           ...prev,
           makeMsg({
-            id: cardMsgId,
+            id: streamMsgId,
             role: 'assistant',
-            msgType: 'intent_clarification',
+            msgType: 'text',
             content: '',
-            intentOptions: {
-              classification,
-              caseTypes: classification.matchedCaseTypes.map((m) => ({
-                type: m.type,
-                displayName: m.displayName,
-                icon: m.icon,
-                confidence: m.confidence,
-              })),
-            },
+            isStreaming: true,
           }),
         ])
-        setAgentStatus('waiting')
-        isLoadingRef.current = false
-        setIsLoading(false)
-        return
-      }
 
-      const firstTextMsgId = crypto.randomUUID()
-      const lane = createLaneBuffer(firstTextMsgId, actualCaseIdRef.current)
-
-      setMessages((prev) => [
-        ...prev,
-        makeMsg({
-          id: firstTextMsgId,
-          role: 'assistant',
-          msgType: 'text',
-          content: '',
-          isStreaming: true,
-        }),
-      ])
-
-      try {
         const response = await fetch('/api/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -884,7 +918,7 @@ export function useInteraChat(): UseInteraChatReturn {
             customerId: session.customerId,
             userId: session.userId,
             caseId: actualCaseIdRef.current,
-            classification,
+            ...(classification ? { classification } : {}),
             ...(selectedCaseTypeRef.current
               ? { caseType: selectedCaseTypeRef.current, skipClassification: true }
               : {}),
@@ -902,21 +936,38 @@ export function useInteraChat(): UseInteraChatReturn {
       } catch (error) {
         console.error('Chat error:', error)
         setAgentStatus('offline')
-        setMessages((prev) => [
-          ...prev.filter((m) => m.id !== firstTextMsgId || m.content !== ''),
-          makeMsg({
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            msgType: 'text',
-            content: 'Sorry, something went wrong. Please try again or refresh the page.',
-            isStreaming: false,
-          }),
-        ])
+        if (firstTextMsgId) {
+          setMessages((prev) => [
+            ...prev.filter((m) => m.id !== firstTextMsgId || m.content !== ''),
+            makeMsg({
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              msgType: 'text',
+              content: 'Sorry, something went wrong. Please try again or refresh the page.',
+              isStreaming: false,
+            }),
+          ])
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            makeMsg({
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              msgType: 'text',
+              content: preferZh ? '抱歉，请求失败，请稍后重试。' : 'Sorry, something went wrong. Please try again.',
+              isStreaming: false,
+            }),
+          ])
+        }
       } finally {
-        setStreamingToolName(null)
-        isLoadingRef.current = false
-        setIsLoading(false)
-        if (queuedRef.current.length > 0) {
+        activeStreamsRef.current -= 1
+        const remain = activeStreamsRef.current
+        setIsLoading(remain > 0)
+        if (remain <= 0) {
+          setStreamingToolName(null)
+        }
+
+        if (!splitModeRef.current && queuedRef.current.length > 0) {
           const next = queuedRef.current[0]
           queuedRef.current = queuedRef.current.slice(1)
           setQueuedCount(queuedRef.current.length)
@@ -930,11 +981,15 @@ export function useInteraChat(): UseInteraChatReturn {
   const runParallelBootstrap = useCallback(
     async (classification: IntentClassification, orderedTypes: string[], userText: string) => {
       const preferZh = /[一-鿿]/.test(userText)
-      isLoadingRef.current = true
+      const splitNowBoot = splitModeRef.current
+
+      activeStreamsRef.current++
       setIsLoading(true)
       setAgentStatus('thinking')
-      setCoreAgentProgress(null)
-      setStreamingToolName(null)
+      if (!(splitNowBoot && activeStreamsRef.current > 1)) {
+        setCoreAgentProgress(null)
+        setStreamingToolName(null)
+      }
 
       const laneIds = orderedTypes.map(() => crypto.randomUUID())
       setMessages((prev) => [
@@ -1001,10 +1056,13 @@ export function useInteraChat(): UseInteraChatReturn {
           setAgentStatus('offline')
         }
       } finally {
-        setStreamingToolName(null)
-        isLoadingRef.current = false
-        setIsLoading(false)
-        setAgentStatus('online')
+        activeStreamsRef.current -= 1
+        const remain = activeStreamsRef.current
+        setIsLoading(remain > 0)
+        if (remain <= 0) {
+          setStreamingToolName(null)
+          setAgentStatus('online')
+        }
       }
     },
     [session.customerId, session.userId],

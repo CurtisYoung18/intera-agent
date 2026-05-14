@@ -154,10 +154,10 @@ export interface PolicyRule {
   require_skills?: string[]
   /** At least one listed skill must have been called before finalize_case */
   require_skills_any?: string[]
-  deny_keywords?: string[]
-  allow_keywords?: string[]
   min_evidence_count?: number
   evidence_sources?: string[]
+  /** Natural-language evaluation prompt for LLM-based policy checks (replaces keyword/regex matching) */
+  evaluationPrompt?: string
 }
 
 export interface PolicyCheck {
@@ -236,10 +236,8 @@ export interface MemoryStrategy {
   compactionKeepRatio: number
   compactableTools: string[]
 
-  // ── Fact extraction patterns ──
-  txnIdPattern: string
-  amountPattern: string
-  notReceivedKeywords: string[]
+  // ── Fact extraction (LLM-based, replaces regex patterns) ──
+  factExtractionPrompt?: string
   keyEventMaxChars: number
 
   // ── Token estimation ──

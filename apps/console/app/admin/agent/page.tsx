@@ -93,10 +93,6 @@ export default function AgentConfigPage() {
               ? JSON.parse(raw.memoryStrategy || '{}')
               : raw.memoryStrategy || {}
           memoryStrategy = { ...DEFAULT_MEMORY, ...parsed }
-          if (typeof memoryStrategy.notReceivedKeywords === 'string')
-            memoryStrategy.notReceivedKeywords = (memoryStrategy.notReceivedKeywords as string)
-              .split(',')
-              .map((s: string) => s.trim())
           if (typeof memoryStrategy.compactableTools === 'string')
             memoryStrategy.compactableTools = (memoryStrategy.compactableTools as string)
               .split(',')
@@ -757,23 +753,13 @@ export default function AgentConfigPage() {
                   lead={t('agent.advancedEstimationLead')}
                 >
                   <label className="block space-y-1">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.txnIdPattern')}</span>
-                    <p className="text-[10px] leading-snug text-[var(--smoke)]">{t('agent.hint.txnIdPattern')}</p>
-                    <input
-                      type="text"
-                      value={ms.txnIdPattern}
-                      onChange={(e) => updateMem('txnIdPattern', e.target.value)}
-                      className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.amountPattern')}</span>
-                    <p className="text-[10px] leading-snug text-[var(--smoke)]">{t('agent.hint.amountPattern')}</p>
-                    <input
-                      type="text"
-                      value={ms.amountPattern}
-                      onChange={(e) => updateMem('amountPattern', e.target.value)}
-                      className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.factExtractionPrompt')}</span>
+                    <p className="text-[10px] leading-snug text-[var(--smoke)]">{t('agent.hint.factExtractionPrompt')}</p>
+                    <textarea
+                      value={ms.factExtractionPrompt || ''}
+                      onChange={(e) => updateMem('factExtractionPrompt', e.target.value)}
+                      rows={3}
+                      className={`glass-input-console w-full ${drawerFieldClass(true)} resize-y`}
                     />
                   </label>
                   <div className="grid grid-cols-2 gap-3">

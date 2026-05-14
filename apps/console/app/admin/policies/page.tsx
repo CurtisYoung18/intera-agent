@@ -9,14 +9,20 @@ import TiltCard from '@/components/ui/tilt-card'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; enabled: boolean }
-interface RuleFields { deny_skills: string; require_skills: string; deny_keywords: string; min_evidence_count: number }
+interface RuleFields { deny_skills: string; require_skills: string; require_skills_any: string; evaluationPrompt: string; min_evidence_count: number }
 
 function parseRule(rule: string): RuleFields {
-  try { const r = JSON.parse(rule || '{}'); return { deny_skills: (r.deny_skills || []).join(', '), require_skills: (r.require_skills || []).join(', '), deny_keywords: (r.deny_keywords || []).join('\n'), min_evidence_count: r.min_evidence_count ?? 0 } }
-  catch { return { deny_skills: '', require_skills: '', deny_keywords: '', min_evidence_count: 0 } }
+  try { const r = JSON.parse(rule || '{}'); return { deny_skills: (r.deny_skills || []).join(', '), require_skills: (r.require_skills || []).join(', '), require_skills_any: (r.require_skills_any || []).join(', '), evaluationPrompt: r.evaluationPrompt || '', min_evidence_count: r.min_evidence_count ?? 0 } }
+  catch { return { deny_skills: '', require_skills: '', require_skills_any: '', evaluationPrompt: '', min_evidence_count: 0 } }
 }
 function buildRule(f: RuleFields): string {
-  return JSON.stringify({ deny_skills: f.deny_skills ? f.deny_skills.split(',').map(s => s.trim()).filter(Boolean) : [], require_skills: f.require_skills ? f.require_skills.split(',').map(s => s.trim()).filter(Boolean) : [], deny_keywords: f.deny_keywords ? f.deny_keywords.split('\n').map(s => s.trim()).filter(Boolean) : [], min_evidence_count: f.min_evidence_count || 0 })
+  const rule: Record<string, unknown> = {}
+  if (f.deny_skills) rule.deny_skills = f.deny_skills.split(',').map(s => s.trim()).filter(Boolean)
+  if (f.require_skills) rule.require_skills = f.require_skills.split(',').map(s => s.trim()).filter(Boolean)
+  if (f.require_skills_any) rule.require_skills_any = f.require_skills_any.split(',').map(s => s.trim()).filter(Boolean)
+  if (f.evaluationPrompt) rule.evaluationPrompt = f.evaluationPrompt
+  if (f.min_evidence_count) rule.min_evidence_count = f.min_evidence_count
+  return JSON.stringify(rule)
 }
 
 const HOOK_SLUGS = ['preTool', 'postTool', 'preFinalize'] as const
@@ -36,7 +42,7 @@ export default function PoliciesPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PolicyItem | null>(null)
   const [isNew, setIsNew] = useState(false)
-  const [ruleFields, setRuleFields] = useState<RuleFields>({ deny_skills: '', require_skills: '', deny_keywords: '', min_evidence_count: 0 })
+  const [ruleFields, setRuleFields] = useState<RuleFields>({ deny_skills: '', require_skills: '', require_skills_any: '', evaluationPrompt: '', min_evidence_count: 0 })
 
   const load = useCallback(async () => { const res = await fetch('/api/admin/policies'); const data = await res.json(); setItems(data.policies || []); setLoading(false) }, [])
   useEffect(() => { load() }, [load])
@@ -48,7 +54,7 @@ export default function PoliciesPage() {
   }, [load])
 
   const openEdit = (p: PolicyItem) => { setEditing({ ...p }); setIsNew(false); setRuleFields(parseRule(p.rule)) }
-  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields({ deny_skills: '', require_skills: '', deny_keywords: '', min_evidence_count: 0 }) }
+  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields({ deny_skills: '', require_skills: '', require_skills_any: '', evaluationPrompt: '', min_evidence_count: 0 }) }
 
   const handleSave = useCallback(async () => {
     if (!editing) return
@@ -112,7 +118,8 @@ export default function PoliciesPage() {
             <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('policies.ruleFields')}</span></div>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span><input value={ruleFields.deny_skills} onChange={e => setRuleFields({ ...ruleFields, deny_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span><input value={ruleFields.require_skills} onChange={e => setRuleFields({ ...ruleFields, require_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.denyKeywords')}</span><textarea value={ruleFields.deny_keywords} onChange={e => setRuleFields({ ...ruleFields, deny_keywords: e.target.value })} rows={4} className="glass-input-console text-[13px] font-mono resize-y" /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkillsAny')}</span><input value={ruleFields.require_skills_any} onChange={e => setRuleFields({ ...ruleFields, require_skills_any: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.evaluationPrompt')}</span><textarea value={ruleFields.evaluationPrompt} onChange={e => setRuleFields({ ...ruleFields, evaluationPrompt: e.target.value })} rows={5} className="glass-input-console text-[13px] resize-y" placeholder={t('policies.phEvalPrompt')} /></label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.minEvidence')}</span><input type="number" value={ruleFields.min_evidence_count} onChange={e => setRuleFields({ ...ruleFields, min_evidence_count: parseInt(e.target.value) || 0 })} className="glass-input-console text-[13px] font-mono w-28" /></label>
             <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
             <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">{t('common.save')}</button><button type="button" onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button></div>

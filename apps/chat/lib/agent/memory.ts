@@ -6,6 +6,7 @@
 
 import type { KeyEvent, CaseMemoryData, MemoryStrategy } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import Anthropic from '@anthropic-ai/sdk'
 
 /** Persisted in skillResults — avoids duplicate background sub-agent dispatch across HTTP turns. */
 export const SUB_AGENT_DISPATCH_MARKER_KEY = '__intera_sub_agent_dispatch'
@@ -90,33 +91,74 @@ export class CaseMemoryManager {
 
   // ─── Fact ingestion ───────────────────────────────────────
 
-  async ingestUserMessageFacts(message: string): Promise<void> {
-    // Transaction ID pattern — configurable per customer
-    try {
-      const txnMatch = message.match(new RegExp(this.strategy.txnIdPattern, 'i'))
-      if (txnMatch) {
-        this.confirmedFacts.txnId = txnMatch[0]
-        this.missingFacts = this.missingFacts.filter((f) => f !== 'txnId')
-      }
-    } catch { /* invalid regex, skip */ }
+  private getExtractionClient(): Anthropic {
+    return new Anthropic({
+      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
+      baseURL: process.env.ANTHROPIC_BASE_URL,
+    })
+  }
 
-    // Amount pattern — configurable per currency
-    try {
-      const amountMatch = message.match(new RegExp(this.strategy.amountPattern, 'i'))
-      if (amountMatch) {
-        this.confirmedFacts.amount = parseFloat(amountMatch[1])
-        if (amountMatch[2]) this.confirmedFacts.currency = amountMatch[2]
-        this.missingFacts = this.missingFacts.filter((f) => f !== 'amount')
-      }
-    } catch { /* invalid regex, skip */ }
+  /**
+   * Extract structured facts from a user message using LLM.
+   * Replaces the old regex-based extraction (txnIdPattern, amountPattern, notReceivedKeywords).
+   * Fact names are derived from the case type's requiredFacts when available.
+   */
+  async ingestUserMessageFacts(message: string, requiredFacts?: string[]): Promise<void> {
+    const targetFacts = requiredFacts?.length ? requiredFacts : ['txnId', 'amount', 'paymentMethod', 'date']
+    const extraHint = this.strategy.factExtractionPrompt || ''
 
-    // "Not received" keyword detection — configurable per language
-    const keywords = this.strategy.notReceivedKeywords
-    if (keywords.length > 0) {
-      const pattern = new RegExp(keywords.join('|'), 'i')
-      if (pattern.test(message)) {
-        this.confirmedFacts.userReportedNotReceived = true
+    const systemPrompt = [
+      'You are a fact extraction engine. Extract structured facts from customer support messages.',
+      'Respond with a JSON object: {"extractedFacts": {}, "flags": []}',
+      '',
+      'Rules:',
+      '- extractedFacts: map of fact_name → value. Only include facts you can confidently identify in the message.',
+      '- flags: array of detected sentiment/circumstance labels. Supported: "userReportedNotReceived", "userReportedPartialMissing", "urgent", "angry", "confused"',
+      '- Values should be primitives (string, number, boolean), not nested objects.',
+      '- Do NOT invent facts that are not stated in the message.',
+      '- If the message contains transaction IDs, order numbers, or similar identifiers, extract them as txnId.',
+      '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
+    ].join('\n')
+
+    const userPrompt = [
+      `Customer message: "${message}"`,
+      `Target facts to look for: ${targetFacts.join(', ')}`,
+      extraHint ? `Additional instructions: ${extraHint}` : '',
+    ].filter(Boolean).join('\n')
+
+    try {
+      const client = this.getExtractionClient()
+      const msg = await client.messages.create({
+        model: process.env.FACT_EXTRACTION_MODEL || 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        temperature: 0,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      })
+
+      const text = (msg.content[0] as any)?.text || ''
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0])
+        const facts = parsed.extractedFacts
+        if (facts && typeof facts === 'object') {
+          for (const [key, value] of Object.entries(facts)) {
+            if (value !== null && value !== undefined && value !== '') {
+              this.confirmedFacts[key] = value
+              this.missingFacts = this.missingFacts.filter((f) => f !== key)
+            }
+          }
+        }
+        const flags: string[] = Array.isArray(parsed.flags) ? parsed.flags : []
+        if (flags.includes('userReportedNotReceived')) {
+          this.confirmedFacts.userReportedNotReceived = true
+        }
+        if (flags.includes('userReportedPartialMissing')) {
+          this.confirmedFacts.userReportedPartialMissing = true
+        }
       }
+    } catch (err) {
+      console.warn('[CaseMemory] LLM fact extraction failed, falling back to key event only:', err)
     }
 
     this.keyEvents.push({

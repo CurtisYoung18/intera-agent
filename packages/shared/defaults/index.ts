@@ -90,10 +90,8 @@ export const DEFAULT_MEMORY_STRATEGY = {
     'query_account_status',
   ],
 
-  // Fact extraction patterns
-  txnIdPattern: 'TX[Uu]?\\d+|[A-Z]{2,6}\\d{8,}',
-  amountPattern: '(\\d+\\.?\\d*)\\s*(元|USD|EUR|JPY|₩|¥|\\$)',
-  notReceivedKeywords: ['未到账', '没到账', '没收到', 'not received', 'not credited', 'missing', '未入金'],
+  // Fact extraction (LLM-based, replaces regex/keyword patterns)
+  factExtractionPrompt: '',
   keyEventMaxChars: 100,
 
   // Token estimation
@@ -155,20 +153,22 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     name: 'read_case_history', description: "Read the customer's historical cases for context",
     inputSchema: '{"type":"object","properties":{"userId":{"type":"string","description":"Customer user ID"},"limit":{"type":"number","description":"Max number of cases to return","default":5}},"required":["userId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"cases":[],"total":0}',
+    mockFixture:
+      '{"cases":[{"id":"C2024-0892","type":"deposit_issue","status":"resolved","summary":"User deposited 500 CNY via WeChat Pay, funds credited after 2-hour delay","resolvedAt":"2024-11-15T10:30:00Z"},{"id":"C2024-1034","type":"account_issue","status":"resolved","summary":"Account temporarily restricted due to suspicious login from new device; verified identity and lifted restriction","resolvedAt":"2024-12-03T16:45:00Z"},{"id":"C2025-0017","type":"deposit_issue","status":"resolved","summary":"User reported 200 CNY missing from balance after Alipay top-up; traced to pending batch settlement, resolved within 24h","resolvedAt":"2025-01-22T09:15:00Z"}],"total":3}',
   },
   {
     name: 'query_order_status', description: 'Query the platform order system for transaction status',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
-      '{"status":"pending","amount":0,"time":"2026-05-01T12:00:00.000Z","channel":"unknown"}',
+      '{"txnId":"TX2026051412345678","status":"completed","amount":1000.00,"currency":"CNY","time":"2026-05-14T08:05:00.000Z","channel":"wechat_pay","paymentMethod":"WeChat Pay","merchantRef":"MCH20260514001"}',
   },
   {
     name: 'query_payment_channel_status', description: 'Query the payment channel for current status and delays',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"delayed_batch":false,"channel":"unknown","reason":null}',
+    mockFixture:
+      '{"delayed_batch":false,"channel":"wechat_pay","channelStatus":"normal","lastSettlementAt":"2026-05-14T07:55:00.000Z","currentLoad":"low","reason":null}',
   },
   {
     name: 'query_account_status',
@@ -181,19 +181,21 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     guardPhase: 'post',
     outputSchema: '{}',
     mockFixture:
-      '{"accountStatus":"active","riskFlag":false,"banReason":null,"restrictionTier":"none","lastLoginAt":"2026-05-01T12:00:00.000Z"}',
+      '{"accountStatus":"active","riskFlag":false,"banReason":null,"restrictionTier":"none","lastLoginAt":"2026-05-14T07:50:00.000Z","kycLevel":"L2_verified","registeredSince":"2023-06-15T00:00:00.000Z","totalDeposits":12500.00,"lastDepositAt":"2026-05-14T08:05:00.000Z","lastDepositAmount":1000.00}',
   },
   {
     name: 'search_delay_notice', description: 'Search for any delay notices or announcements',
     inputSchema: '{"type":"object","properties":{"channel":{"type":"string","description":"Payment channel to search"}},"required":["channel"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"notices":[]}',
+    mockFixture:
+      '{"notices":[{"id":"NOT20260514-001","title":"WeChat Pay Scheduled Maintenance","channel":"wechat_pay","severity":"info","content":"WeChat Pay will undergo scheduled maintenance on 2026-05-20 02:00-04:00 UTC. Deposits may be delayed during this window.","publishedAt":"2026-05-10T00:00:00Z","affectsDeposit":false}]}',
   },
   {
     name: 'ocr_receipt', description: 'Extract information from uploaded receipt screenshots',
     inputSchema: '{"type":"object","properties":{"attachmentId":{"type":"string","description":"Attachment ID from file upload"}},"required":["attachmentId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"success":true,"extracted":{"amount":null,"time":null,"channel":null}}',
+    mockFixture:
+      '{"success":true,"extracted":{"amount":1000.00,"currency":"CNY","time":"2026-05-14T08:05:00.000Z","channel":"wechat_pay","merchantRef":"MCH20260514001","txnId":"TX2026051412345678"}}',
   },
   {
     name: 'create_human_task', description: 'Create a human task for manual confirmation or processing',
@@ -211,7 +213,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     name: 'kb_hybrid_retrieve', description: 'Hybrid knowledge base search (BM25 + vector)',
     inputSchema: '{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"results":[],"sources":[]}',
+    mockFixture:
+      '{"results":[{"title":"Why is my deposit not showing in my balance?","snippet":"Deposits via third-party payment channels (WeChat Pay, Alipay) may take up to 2 hours to reflect due to batch settlement cycles. If your deposit still does not appear after 2 hours, please contact support with your transaction ID.","source":"help_center","relevance":0.92},{"title":"Common causes of balance discrepancies","snippet":"Balance discrepancies can occur due to: (1) pending batch settlements from payment providers, (2) cached balance display (try refreshing), (3) recent refunds or adjustments not yet reflected, (4) unauthorized transactions — check your transaction history.","source":"faq","relevance":0.85},{"title":"How to verify your deposit status","snippet":"You can verify your deposit by: (1) checking the payment provider app for the transaction receipt, (2) comparing the transaction ID with our system records, (3) waiting up to 24 hours for settlement delays during peak periods or maintenance windows.","source":"help_center","relevance":0.78}],"sources":["help_center/deposit-faq","faq/balance-issues","help_center/verify-deposit"]}',
   },
   {
     name: 'request_user_input', description: 'Display a structured form to collect required information from the customer',
@@ -236,15 +239,15 @@ export interface DefaultPolicySeed {
 
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
   { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":["refund_money","change_ban_status","delete_account"]}' },
-  { name: 'conflict_requires_human', description: 'Detect conflict between system result and user report', hook: 'postTool', rule: '{}' },
+  { name: 'conflict_requires_human', description: 'Detect conflict between system result and user report', hook: 'postTool', rule: '{"evaluationPrompt":"Check whether the skill outputs (query_order_status, query_payment_channel_status, query_account_status) contradict what the customer reported. Escalate to human (result=escalated) when: (1) the system shows a completed/successful transaction but the customer says funds are missing or not received, (2) the system shows account status is normal but the customer reports access issues, (3) the payment channel shows normal operation but the customer says the payment failed. If outputs are consistent with the customer issue, pass. If data is ambiguous or incomplete, hint."}' },
   {
     name: 'evidence_required_before_resolution',
     description: 'Require order or account verification skill before resolution',
     hook: 'preFinalize',
     rule: '{"require_skills_any":["query_order_status","query_account_status"]}',
   },
-  { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises in finalize output', hook: 'preFinalize', rule: '{"deny_keywords":["赔偿","退款","补偿","compensate","refund"]}' },
-  { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: '{}' },
+  { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises in finalize output', hook: 'preFinalize', rule: '{"evaluationPrompt":"Check whether the finalize conclusion promises or commits to any monetary compensation, refund, cash reimbursement, voucher with cash value, or direct financial remedy to the customer. Block (result=blocked) if the agent makes such a promise — only human operators may authorize compensation. Pass if the conclusion explains findings, policy, or next steps without committing to pay the customer. Also pass if the agent only relays what a human operator already approved."}' },
+  { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: '{"evaluationPrompt":"Check whether the finalize conclusion references specific evidence gathered during the case investigation. The conclusion must cite at least one of: (1) a specific skill result (e.g. query_order_status showed status=completed), (2) confirmed facts collected from the user, (3) a knowledge base article or policy reference. Block (result=blocked) if the conclusion makes claims without any factual grounding. Pass if evidence is properly cited and the reasoning is traceable to collected facts."}' },
 ]
 
 export interface DefaultCaseTypeSeed {
@@ -403,8 +406,8 @@ Respond JSON ONLY:
       description: 'Case resolved, provide conclusion to customer',
       requiredSkills: ['finalize_case'],
       guardrails: [
-        { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises', hook: 'preFinalize', rule: { deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'] } },
-        { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+        { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion promises or commits to monetary compensation, refund, reimbursement, or direct financial remedy. Block if it does — only human operators may authorize compensation.' } },
+        { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if it makes claims without factual grounding.' } },
       ],
       transition: { type: 'manual' },
     },
@@ -465,8 +468,8 @@ Respond JSON ONLY:
       description: 'Case resolved',
       requiredSkills: ['finalize_case'],
       guardrails: [
-        { name: 'no_compensation_promise', description: 'Forbid compensation promises', hook: 'preFinalize', rule: { deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'] } },
-        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+        { name: 'no_compensation_promise', description: 'Forbid compensation promises', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion promises or commits to monetary compensation, refund, reimbursement, or direct financial remedy. Block if it does.' } },
+        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if claims lack factual grounding.' } },
       ],
       transition: { type: 'manual' },
     },
@@ -595,13 +598,13 @@ JSON ONLY:
           name: 'no_compensation_promise',
           description: 'Forbid compensation/refund promises',
           hook: 'preFinalize',
-          rule: { deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'] },
+          rule: { evaluationPrompt: 'Check whether the finalize conclusion promises or commits to monetary compensation, refund, reimbursement, or direct financial remedy. Block if it does.' },
         },
         {
           name: 'must_cite_basis',
           description: 'Require evidence citations',
           hook: 'preFinalize',
-          rule: { allow_keywords: ['basis'] },
+          rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if claims lack factual grounding.' },
         },
       ],
       transition: { type: 'manual' },
@@ -643,7 +646,7 @@ JSON ONLY:
       description: 'Case resolved (approved or rejected)',
       requiredSkills: ['finalize_case'],
       guardrails: [
-        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if claims lack factual grounding.' } },
       ],
       transition: { type: 'manual' },
     },

@@ -152,13 +152,10 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
         {activeSection === 'advanced' && (
           <div className="space-y-5">
             <div>
-              <h4 className="text-[11px] font-medium text-[var(--fog)]/60 uppercase tracking-[0.06em] mb-2">Fact Extraction Patterns</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="space-y-1"><span className="text-[11px] text-[var(--fog)]">Transaction ID Pattern</span>
-                  <input type="text" value={ms.txnIdPattern} onChange={e => updateMem('txnIdPattern', e.target.value)} className="glass-input-console text-[13px] font-mono" />
-                </label>
-                <label className="space-y-1"><span className="text-[11px] text-[var(--fog)]">Amount Pattern</span>
-                  <input type="text" value={ms.amountPattern} onChange={e => updateMem('amountPattern', e.target.value)} className="glass-input-console text-[13px] font-mono" />
+              <h4 className="text-[11px] font-medium text-[var(--fog)]/60 uppercase tracking-[0.06em] mb-2">Fact Extraction (LLM)</h4>
+              <div className="space-y-3">
+                <label className="space-y-1 block"><span className="text-[11px] text-[var(--fog)]">Extraction Hint</span>
+                  <textarea value={ms.factExtractionPrompt || ''} onChange={e => updateMem('factExtractionPrompt', e.target.value)} rows={3} className="glass-input-console text-[13px] resize-y w-full" placeholder="Extra context for the LLM fact extractor..." />
                 </label>
               </div>
             </div>

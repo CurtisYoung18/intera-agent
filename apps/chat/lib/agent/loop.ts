@@ -194,8 +194,9 @@ export class AgentLoop {
     this.messages.push(userMsg)
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
 
-    // 2. Ingest facts into Case Memory
-    await this.caseMemory.ingestUserMessageFacts(userMessage)
+    // 2. Ingest facts into Case Memory (LLM-based extraction)
+    const requiredFacts = this.deps.caseSchema?.requiredFacts
+    await this.caseMemory.ingestUserMessageFacts(userMessage, requiredFacts)
     sendEvent({
       type: 'memory_update',
       data: this.caseMemory.getSummary(),
@@ -630,24 +631,6 @@ export class AgentLoop {
         }
       }
 
-      // ── PostTool policy checks ───────────────────────────────
-      for (const result of toolResults) {
-        const policyResult = await this.policyEngine.check('postTool', {
-          skillName: result.name,
-          skillOutput: unwrapToolExecutionPayload(result.output),
-          confirmedFacts: this.caseMemory.getConfirmedFacts(),
-          skillsCalled: this.caseMemory.getSkillsCalled(),
-        })
-
-        if (policyResult.result === 'escalated') {
-          await this.traceWriter.write(
-            'policy_hit',
-            `Escalated: ${result.name}`,
-            JSON.stringify(policyResult),
-          )
-        }
-      }
-
       // ── Apply tool results to Case Memory ────────────────────
       for (const result of toolResults) {
         const payload = unwrapToolExecutionPayload(result.output)
@@ -657,6 +640,26 @@ export class AgentLoop {
           `Skill: ${result.name}`,
           { output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, skillName: result.name },
         )
+      }
+
+      // ── Batch postTool policy evaluation (LLM-based, single call) ──
+      if (toolResults.length > 0) {
+        const postToolInputs = toolResults.map((r) => ({
+          name: r.name,
+          output: unwrapToolExecutionPayload(r.output),
+        }))
+        const batchResults = await this.policyEngine.evaluatePostToolBatch(
+          postToolInputs,
+          this.caseMemory.getConfirmedFacts(),
+        )
+        for (const pr of batchResults) {
+          if (pr.result === 'escalated') {
+            await this.traceWriter.write('policy_hit', `Escalated: ${pr.policyName}`, JSON.stringify(pr))
+          }
+          if (pr.result === 'blocked') {
+            await this.traceWriter.write('policy_hit', `Blocked: ${pr.policyName}`, JSON.stringify(pr))
+          }
+        }
       }
 
       // ── Add to message history ───────────────────────────────

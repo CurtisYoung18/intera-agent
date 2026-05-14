@@ -736,7 +736,7 @@ Skill 开始执行（或被跳过）
 |---|---|
 | `name` | Policy 名称（与 policyHooks 数组中的名字对应） |
 | `description` | 描述 |
-| `rule` | JSON 规则对象（如 `deny_skills: ["refund_money"]` / `require_skills: ["query_order_status"]` / `deny_keywords: ["赔偿", "退款"]`） |
+| `rule` | JSON 规则对象（如 `deny_skills: ["refund_money"]` / `require_skills: ["query_order_status"]` / `evaluationPrompt: "用自然语言描述策略检查内容"`） |
 | `enabled` | 是否启用 |
 
 在 `AgentConfig.policyHooks` 中：
@@ -1097,7 +1097,7 @@ DemoCustomer（B 端客户/厂商）
 
 ### 12.3 PolicyConfig（Policy 规则）
 - name / description
-- rule（JSON，包含 deny_skills / require_skills / deny_keywords 等参数）
+- rule（JSON，包含 deny_skills / require_skills / require_skills_any / evaluationPrompt 等参数，策略检查已从关键词匹配迁移到 LLM 评估）
 - enabled
 
 ### 12.4 CaseSchema（Case 类型定义）— ★ 核心模块 ★
@@ -1203,12 +1203,10 @@ policyHooks: {
 | `compactableTools` | string[] | — | MicroCompact 可清理的工具名列表 |
 | `compactPrompt` | string | — | 自定义压缩摘要 prompt（空=内置） |
 
-**事实提取模式（跨业务可配）：**
+**事实提取（LLM 驱动，已替代正则模式）：**
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `txnIdPattern` | string | — | 交易ID提取正则 |
-| `amountPattern` | string | — | 金额提取正则 |
-| `notReceivedKeywords` | string[] | — | "未到账"关键词列表 |
+| `factExtractionPrompt` | string | — | LLM 事实提取的额外提示词（可选） |
 | `keyEventMaxChars` | number | `100` | KeyEvent 截断字符数 |
 
 **Token 估算参数：**
@@ -1275,22 +1273,22 @@ policyHooks: {
 rule: {
   deny_skills?: string[],           // 禁止调用的 skill 列表
   require_skills?: string[],        // 必须调用才能通过的 skill 列表
-  deny_keywords?: string[],         // 禁止出现的关键词列表
-  allow_keywords?: string[],        // 必须出现的关键词列表
+  require_skills_any?: string[],    // 至少调用其中之一的 skill 列表
+  evaluationPrompt?: string,        // LLM 评估提示词（替代 deny_keywords/allow_keywords）
   min_evidence_count?: number,      // 最少证据数量
   evidence_sources?: string[],      // 证据来源类型
 }
 ```
 
 **内置 Policy 规则：**
-| Policy Name | hook | 说明 |
-|---|---|---|
-| `no_high_risk_account_change` | preTool | 拦截配置中的高危 skill |
-| `conflict_requires_human` | postTool | 平台成功但用户申报未到账 → 必须调 create_human_task |
-| `evidence_required_before_resolution` | preFinalize | 未调用必要 skill 不得 finalize |
-| `no_compensation_promise` | preFinalize | finalize 内容含禁用词（赔偿/退款承诺）→ blocked |
+| Policy Name | hook | 评估方式 | 说明 |
+|---|---|---|---|
+| `no_high_risk_account_change` | preTool | 精确名称匹配 | 拦截配置中的高危 skill |
+| `conflict_requires_human` | postTool | LLM 评估 | 系统数据与用户申报矛盾时升级人工 |
+| `evidence_required_before_resolution` | preFinalize | 精确名称匹配 | 未调用必要 skill 不得 finalize |
+| `no_compensation_promise` | preFinalize | LLM 评估 | finalize 内容承诺赔偿 → blocked |
+| `must_cite_basis` | preFinalize | LLM 评估 | finalize 必须引用证据来源 |
 | `vip_care_softer_tone` | preFinalize | **[PLANNED]** VIP 场景柔软语气（未实现） |
-| `must_cite_basis` | preFinalize | finalize 必须提供 basis[]（依据引用） |
 
 ### 13.5 Case 类型配置（CaseSchema）
 

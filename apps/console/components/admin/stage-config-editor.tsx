@@ -627,7 +627,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                                 updateStage(activeStage, { guardrails: next }, stageConfigs, onChange)
                               } catch { /* invalid JSON, don't update */ }
                             }}
-                            placeholder='{"deny_keywords": ["refund"]}'
+                            placeholder='{"evaluationPrompt": "Describe the policy check in natural language..."}'
                           />
                         </div>
                       </div>
