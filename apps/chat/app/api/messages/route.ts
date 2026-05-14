@@ -16,17 +16,13 @@ if (AUTH_SET && URL_SET) {
   console.warn('[Intera] ⚠️  ANTHROPIC_AUTH_TOKEN or ANTHROPIC_BASE_URL missing in env')
 }
 
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
-
-// Default templates — overridable via AgentConfig in Console
-const DEFAULT_RESUME_PROMPT = `[Human task resolved — operator closed the case]
-IMPORTANT — Customer communication task:
-1. Translate the operator's verdict and notes into plain, friendly language the customer can understand.
-2. Send this message to the customer NOW in your response — do not ask further questions.
-3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here's what this means for you: [explanation]."
-4. After sending the update, if the case is resolved, call finalize_case. Otherwise continue assisting.`
-
-const DEFAULT_FORM_TEMPLATE = 'Please continue processing based on this information.'
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_MEMORY_STRATEGY,
+  DEFAULT_POLICY_HOOKS,
+  HARNESS_DEFAULT_FORM_RESPONSE_APPEND,
+  HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
+} from '@intera/shared/defaults'
 
 // Default fallback config. Production loads from AgentConfig table via Customer.
 const DEFAULT_AGENT_CONFIG: AgentConfigData = {
@@ -142,7 +138,8 @@ export async function POST(request: NextRequest) {
           const answerText = Object.entries(answers as Record<string, string>)
             .map(([key, value]) => `${key}: ${value}`)
             .join('\n')
-          const template = (await loadAgentConfig(resolvedCustomerId)).formResponseTemplate || DEFAULT_FORM_TEMPLATE
+          const template =
+            (await loadAgentConfig(resolvedCustomerId)).formResponseTemplate || HARNESS_DEFAULT_FORM_RESPONSE_APPEND
           userMessage = `[Form submitted]\n${answerText}\n\n${template}`
           console.log(`[Intera] Form submitted for case ${resolvedCaseId}`)
         }
@@ -159,7 +156,8 @@ export async function POST(request: NextRequest) {
             resolvedCustomerId = task.case.customerId
             resolvedUserId = task.case.userId
 
-            const resumeTmpl = (await loadAgentConfig(resolvedCustomerId)).resumePrompt || DEFAULT_RESUME_PROMPT
+            const resumeTmpl =
+              (await loadAgentConfig(resolvedCustomerId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
             const parts = ['[Human task resolved — operator closed the case]']
             if (task.verdict) parts.push(`Operator verdict: ${task.verdict.replace(/_/g, ' ')}`)
             if (task.expectedEta) parts.push(`Expected resolution time: ${task.expectedEta}`)

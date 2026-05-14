@@ -1,12 +1,21 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Settings } from 'lucide-react'
+import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Settings, X } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
+import AgentPolicyHooksPicker from '@/components/admin/agent-policy-hooks-picker'
+import AgentSyntheticTemplatesPanel from '@/components/admin/agent-synthetic-templates-panel'
+import {
+  DrawerCheckboxRail,
+  DrawerSection,
+  DrawerShell,
+  drawerFieldClass,
+} from '@/components/admin/agent-config-drawer-ui'
 import { chatApiUrl } from '@/lib/chat-api'
 import type { AgentConfigData, MemoryStrategy, ModelInfo } from './types'
 import { DEFAULT_MEMORY } from './types'
+import { DEFAULT_SYSTEM_PROMPT } from '@intera/shared/defaults'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -236,11 +245,11 @@ export default function AgentConfigPage() {
     ['showThinking', 'agent.showThinking'],
   ]
 
-  const memToggles: Array<[keyof MemoryStrategy, string]> = [
-    ['enableAutocompact', 'agent.ms.toggleAutocompact'],
-    ['enableMicrocompact', 'agent.ms.toggleMicrocompact'],
-    ['enableContextCollapse', 'agent.ms.toggleContextCollapse'],
-    ['enableSnip', 'agent.ms.toggleSnip'],
+  const memToggles: Array<[keyof MemoryStrategy, string, string]> = [
+    ['enableAutocompact', 'agent.ms.toggleAutocompact', 'agent.ms.hintAutocompact'],
+    ['enableMicrocompact', 'agent.ms.toggleMicrocompact', 'agent.ms.hintMicrocompact'],
+    ['enableContextCollapse', 'agent.ms.toggleContextCollapse', 'agent.ms.hintContextCollapse'],
+    ['enableSnip', 'agent.ms.toggleSnip', 'agent.ms.hintSnip'],
   ]
 
   return (
@@ -255,389 +264,456 @@ export default function AgentConfigPage() {
       </div>
 
       <div
-        className={`flex-shrink-0 border-l border-black/5 bg-white/90 overflow-y-auto transition-all duration-300 ease-out ${
-          activeSection ? 'w-[400px] opacity-100' : 'w-0 opacity-0 overflow-hidden'
+        className={`relative flex flex-col flex-shrink-0 self-stretch h-full min-h-0 overflow-hidden transition-all duration-300 ease-out ${
+          activeSection
+            ? 'w-[480px] opacity-100 border-l border-black/[0.05] bg-transparent'
+            : 'w-0 opacity-0 border-transparent shadow-none pointer-events-none'
         }`}
       >
+        {/* Left accent rail */}
+        <div
+          aria-hidden
+          className={`absolute left-0 top-10 bottom-10 w-[3px] rounded-full transition-opacity duration-300 ${
+            activeSection ? 'opacity-70' : 'opacity-0'
+          }`}
+          style={{
+            background: activeSection
+              ? `linear-gradient(180deg, ${sectionMeta[activeSection].color}aa 0%, ${sectionMeta[activeSection].color}22 52%, transparent 100%)`
+              : undefined,
+          }}
+        />
+
         {activeSection && (
-          <div className="p-6 animate-slide-right">
-            <div className="flex items-center gap-3 mb-6">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{
-                  background: `${sectionMeta[activeSection].color}15`,
-                  color: sectionMeta[activeSection].color,
-                }}
-              >
-                {sectionMeta[activeSection].icon}
-              </div>
-              <div>
-                <h2 className="text-[15px] font-semibold">{sectionMeta[activeSection].title}</h2>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <div
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      syncStatus === 'synced'
-                        ? 'bg-malachite'
+          <div className="relative z-[1] flex flex-col flex-1 min-h-0 animate-slide-right">
+            <header className="mx-4 mt-4 mb-2 flex flex-shrink-0 items-start justify-between gap-3 rounded-2xl border border-white/55 bg-white/[0.38] px-4 py-3.5 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.45)] backdrop-blur-xl backdrop-saturate-[1.15]">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ring-4 ring-white/50 shadow-sm"
+                  style={{
+                    background: `linear-gradient(135deg, ${sectionMeta[activeSection].color}22 0%, ${sectionMeta[activeSection].color}08 100%)`,
+                    color: sectionMeta[activeSection].color,
+                  }}
+                >
+                  {sectionMeta[activeSection].icon}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--mist)]">
+                    {sectionMeta[activeSection].title}
+                  </h2>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <div
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        syncStatus === 'synced'
+                          ? 'bg-malachite'
+                          : syncStatus === 'syncing'
+                            ? 'bg-amber animate-breathe'
+                            : 'bg-[var(--fog)]'
+                      }`}
+                    />
+                    <span className="text-[10px] text-[var(--fog)]">
+                      {syncStatus === 'synced'
+                        ? t('agent.sync.saved')
                         : syncStatus === 'syncing'
-                          ? 'bg-amber animate-breathe'
-                          : 'bg-[var(--fog)]'
-                    }`}
-                  />
-                  <span className="text-[10px] text-[var(--fog)]">
-                    {syncStatus === 'synced'
-                      ? t('agent.sync.saved')
-                      : syncStatus === 'syncing'
-                        ? t('agent.sync.saving')
-                        : t('agent.sync.editing')}
-                  </span>
+                          ? t('agent.sync.saving')
+                          : t('agent.sync.editing')}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection(null)}
+                className="shrink-0 rounded-xl p-2 text-[var(--fog)] hover:bg-black/[0.06] hover:text-[var(--mist)] transition-colors"
+                title={t('agent.drawerClose')}
+                aria-label={t('agent.drawerClose')}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </header>
 
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-3 pt-0">
+              <div
+                className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+                style={
+                  syncStatus === 'syncing' && activeSection
+                    ? {
+                        boxShadow: `inset 0 0 0 1px ${sectionMeta[activeSection].color}40`,
+                        borderRadius: '14px',
+                      }
+                    : undefined
+                }
+              >
+                <DrawerShell>
             {activeSection === 'prompt' && (
-              <div className="space-y-3">
-                <p className="text-[12px] text-[var(--fog)]">{t('agent.promptHelp')}</p>
-                <textarea
-                  value={config.systemPrompt}
-                  onChange={(e) => update('systemPrompt', e.target.value)}
-                  rows={22}
-                  className="glass-input-console text-[13px] leading-relaxed font-mono resize-y w-full"
-                />
-              </div>
+              <DrawerSection
+                accent="#8b6ff5"
+                eyebrow={t('agent.promptEyebrow')}
+                title={t('agent.section.prompt')}
+                lead={t('agent.promptHelp')}
+                actions={
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(t('agent.promptResetConfirm')))
+                        update('systemPrompt', DEFAULT_SYSTEM_PROMPT)
+                    }}
+                    className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
+                  >
+                    {t('agent.promptResetDefault')}
+                  </button>
+                }
+              >
+                <div className="flex flex-col gap-3">
+                  <textarea
+                    value={config.systemPrompt}
+                    onChange={(e) => update('systemPrompt', e.target.value)}
+                    spellCheck={false}
+                    className={`min-h-[min(340px,40vh)] w-full resize-y px-3.5 py-3 text-[13px] leading-relaxed ${drawerFieldClass(true)}`}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
+                    <span>{t('agent.promptAutosaveHint')}</span>
+                    <span className="font-mono tabular-nums opacity-95">
+                      {t('agent.promptCharCount', { n: config.systemPrompt?.length ?? 0 })}
+                    </span>
+                  </div>
+                </div>
+              </DrawerSection>
             )}
 
             {activeSection === 'model' && (
-              <div className="space-y-4">
-                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.modelCaseTypeNote')}</p>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.modelMain')}</span>
-                  <select
-                    value={config.model}
-                    onChange={(e) => update('model', e.target.value)}
-                    className="glass-input-console text-[13px] font-mono w-full"
-                  >
-                    {mainModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
+              <>
+                <DrawerSection
+                  accent="#5b8af7"
+                  title={t('agent.section.model')}
+                  lead={t('agent.modelCaseTypeNote')}
+                >
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.modelMain')}</span>
+                    <select
+                      value={config.model}
+                      onChange={(e) => update('model', e.target.value)}
+                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                    >
+                      {mainModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.modelMainHint')}</span>
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.intentModel')}</span>
+                    <select
+                      value={config.intentModel}
+                      onChange={(e) => update('intentModel', e.target.value)}
+                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                    >
+                      <option value="">— Default (haiku) —</option>
+                      {mainModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-[var(--fog)]/55 leading-snug block">{t('agent.intentModelHint')}</span>
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.evaluationModel')}</span>
+                    <select
+                      value={config.evaluationModel}
+                      onChange={(e) => update('evaluationModel', e.target.value)}
+                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                    >
+                      <option value="">— Default (haiku) —</option>
+                      {mainModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-[var(--fog)]/55 leading-snug block">
+                      {t('agent.evaluationModelHint')}
+                    </span>
+                  </label>
+                </DrawerSection>
+                <DrawerSection accent="#5b8af7" title={t('agent.drawer.perfTitle')}>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">
+                      {t('agent.temperature', { n: config.temperature })}
+                    </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={config.temperature}
+                      onChange={(e) => update('temperature', parseFloat(e.target.value))}
+                      className="w-full accent-indigo mt-1"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumField
+                      label={t('agent.thinkingBudget')}
+                      value={config.thinkingBudget}
+                      onChange={(v) => update('thinkingBudget', v)}
+                    />
+                    <NumField
+                      label={t('agent.maxIterations')}
+                      value={config.maxIterations}
+                      onChange={(v) => update('maxIterations', v)}
+                    />
+                    <NumField
+                      label={t('agent.maxOutputTokens')}
+                      value={config.maxOutputTokens}
+                      onChange={(v) => update('maxOutputTokens', v)}
+                      unit={u.tokens}
+                    />
+                  </div>
+                  <DrawerCheckboxRail accent="#5b8af7">
+                    {modelCheckboxes.map(([key, tk]) => (
+                      <label key={String(key)} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-white/50">
+                        <input
+                          type="checkbox"
+                          checked={!!config[key]}
+                          onChange={(e) => update(key, e.target.checked)}
+                          className="accent-indigo rounded"
+                        />
+                        <span className="text-[12px] text-[var(--mist)]">{t(tk)}</span>
+                      </label>
                     ))}
-                  </select>
-                  <span className="text-[10px] text-[var(--fog)]/70 mt-0.5 block leading-snug">
-                    {t('agent.modelMainHint')}
-                  </span>
-                </label>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.intentModel')}</span>
-                  <select
-                    value={config.intentModel}
-                    onChange={(e) => update('intentModel', e.target.value)}
-                    className="glass-input-console text-[13px] font-mono w-full"
-                  >
-                    <option value="">— Default (haiku) —</option>
-                    {mainModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-[var(--fog)]/50 mt-0.5 block">
-                    {t('agent.intentModelHint')}
-                  </span>
-                </label>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.evaluationModel')}</span>
-                  <select
-                    value={config.evaluationModel}
-                    onChange={(e) => update('evaluationModel', e.target.value)}
-                    className="glass-input-console text-[13px] font-mono w-full"
-                  >
-                    <option value="">— Default (haiku) —</option>
-                    {mainModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[10px] text-[var(--fog)]/50 mt-0.5 block">
-                    {t('agent.evaluationModelHint')}
-                  </span>
-                </label>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">
-                    {t('agent.temperature', { n: config.temperature })}
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={config.temperature}
-                    onChange={(e) => update('temperature', parseFloat(e.target.value))}
-                    className="w-full accent-indigo"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <NumField
-                    label={t('agent.thinkingBudget')}
-                    value={config.thinkingBudget}
-                    onChange={(v) => update('thinkingBudget', v)}
-                  />
-                  <NumField
-                    label={t('agent.maxIterations')}
-                    value={config.maxIterations}
-                    onChange={(v) => update('maxIterations', v)}
-                  />
-                  <NumField
-                    label={t('agent.maxOutputTokens')}
-                    value={config.maxOutputTokens}
-                    onChange={(v) => update('maxOutputTokens', v)}
-                    unit={u.tokens}
-                  />
-                </div>
-                <div className="space-y-2">
-                  {modelCheckboxes.map(([key, tk]) => (
-                    <label key={String(key)} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!config[key]}
-                        onChange={(e) => update(key, e.target.checked)}
-                        className="accent-indigo rounded"
-                      />
-                      <span className="text-[12px] text-[var(--fog)]">{t(tk)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+                  </DrawerCheckboxRail>
+                </DrawerSection>
+              </>
             )}
 
             {activeSection === 'memory' && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <NumField
-                    label={t('agent.mem.autocompact')}
-                    value={ms.autocompactThresholdTokens}
-                    onChange={(v) => updateMem('autocompactThresholdTokens', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.warning')}
-                    value={ms.warningThresholdTokens}
-                    onChange={(v) => updateMem('warningThresholdTokens', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.error')}
-                    value={ms.errorThresholdTokens}
-                    onChange={(v) => updateMem('errorThresholdTokens', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.blocking')}
-                    value={ms.blockingThresholdTokens}
-                    onChange={(v) => updateMem('blockingThresholdTokens', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.l1Max')}
-                    value={ms.l1MaxMessages}
-                    onChange={(v) => updateMem('l1MaxMessages', v)}
-                    unit={u.msgs}
-                  />
-                  <NumField
-                    label={t('agent.mem.l2Summary')}
-                    value={ms.l2SummaryMaxTokens}
-                    onChange={(v) => updateMem('l2SummaryMaxTokens', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.l4Historical')}
-                    value={ms.l4MaxHistoricalCases}
-                    onChange={(v) => updateMem('l4MaxHistoricalCases', v)}
-                    unit={u.cases}
-                  />
-                  <NumField
-                    label={t('agent.mem.maxTraces')}
-                    value={ms.maxRecentTraces}
-                    onChange={(v) => updateMem('maxRecentTraces', v)}
-                    unit={u.traces}
-                  />
-                </div>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.mem.compactModel')}</span>
-                  <select
-                    value={ms.compactModel}
-                    onChange={(e) => updateMem('compactModel', e.target.value)}
-                    className="glass-input-console text-[13px] font-mono w-full"
-                  >
-                    {mainModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
+              <>
+                <DrawerSection
+                  accent="#d4912e"
+                  title={t('agent.drawer.memoryTiers')}
+                  lead={t('agent.drawer.memoryTiersLead')}
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumField
+                      label={t('agent.mem.autocompact')}
+                      hint={t('agent.mem.hint.autocompact')}
+                      value={ms.autocompactThresholdTokens}
+                      onChange={(v) => updateMem('autocompactThresholdTokens', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.warning')}
+                      hint={t('agent.mem.hint.warning')}
+                      value={ms.warningThresholdTokens}
+                      onChange={(v) => updateMem('warningThresholdTokens', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.error')}
+                      hint={t('agent.mem.hint.error')}
+                      value={ms.errorThresholdTokens}
+                      onChange={(v) => updateMem('errorThresholdTokens', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.blocking')}
+                      hint={t('agent.mem.hint.blocking')}
+                      value={ms.blockingThresholdTokens}
+                      onChange={(v) => updateMem('blockingThresholdTokens', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.l1Max')}
+                      hint={t('agent.mem.hint.l1Max')}
+                      value={ms.l1MaxMessages}
+                      onChange={(v) => updateMem('l1MaxMessages', v)}
+                      unit={u.msgs}
+                    />
+                    <NumField
+                      label={t('agent.mem.l2Summary')}
+                      hint={t('agent.mem.hint.l2Summary')}
+                      value={ms.l2SummaryMaxTokens}
+                      onChange={(v) => updateMem('l2SummaryMaxTokens', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.l4Historical')}
+                      hint={t('agent.mem.hint.l4Historical')}
+                      value={ms.l4MaxHistoricalCases}
+                      onChange={(v) => updateMem('l4MaxHistoricalCases', v)}
+                      unit={u.cases}
+                    />
+                    <NumField
+                      label={t('agent.mem.maxTraces')}
+                      hint={t('agent.mem.hint.maxTraces')}
+                      value={ms.maxRecentTraces}
+                      onChange={(v) => updateMem('maxRecentTraces', v)}
+                      unit={u.traces}
+                    />
+                  </div>
+                </DrawerSection>
+                <DrawerSection
+                  accent="#d4912e"
+                  title={t('agent.drawer.memoryCompact')}
+                  lead={t('agent.drawer.memoryCompactLead')}
+                >
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.mem.compactModel')}</span>
+                    <select
+                      value={ms.compactModel}
+                      onChange={(e) => updateMem('compactModel', e.target.value)}
+                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                    >
+                      {mainModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('agent.mem.hint.compactModel')}</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumField
+                      label={t('agent.mem.compactMaxMsgs')}
+                      hint={t('agent.mem.hint.compactMaxMsgs')}
+                      value={ms.compactMaxMessages}
+                      onChange={(v) => updateMem('compactMaxMessages', v)}
+                      unit={u.msgs}
+                    />
+                    <NumField
+                      label={t('agent.mem.compactTemp')}
+                      hint={t('agent.mem.hint.compactTemp')}
+                      value={ms.compactTemperature}
+                      onChange={(v) => updateMem('compactTemperature', v)}
+                      step={0.1}
+                      min={0}
+                      max={1}
+                    />
+                    <NumField
+                      label={t('agent.mem.compactMaxTokens')}
+                      hint={t('agent.mem.hint.compactMaxTokens')}
+                      value={ms.compactMaxTokensCap}
+                      onChange={(v) => updateMem('compactMaxTokensCap', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.minSummaryLen')}
+                      hint={t('agent.mem.hint.minSummaryLen')}
+                      value={ms.compactMinSummaryLength}
+                      onChange={(v) => updateMem('compactMinSummaryLength', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.mem.keepMin')}
+                      hint={t('agent.mem.hint.keepMin')}
+                      value={ms.compactionKeepMin}
+                      onChange={(v) => updateMem('compactionKeepMin', v)}
+                      unit={u.msgs}
+                    />
+                    <NumField
+                      label={t('agent.mem.keepRatio')}
+                      hint={t('agent.mem.hint.keepRatio')}
+                      value={ms.compactionKeepRatio}
+                      onChange={(v) => updateMem('compactionKeepRatio', v)}
+                      step={0.1}
+                      min={0}
+                      max={1}
+                    />
+                  </div>
+                  <DrawerCheckboxRail accent="#d4912e" layout="stack">
+                    {memToggles.map(([key, tk, hintKey]) => (
+                      <label
+                        key={key}
+                        className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!ms[key]}
+                          onChange={(e) => updateMem(key, e.target.checked)}
+                          className="accent-amber mt-0.5 shrink-0 rounded"
+                        />
+                        <span className="min-w-0 space-y-0.5">
+                          <span className="block text-[12px] font-medium text-[var(--mist)]">{t(tk)}</span>
+                          <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t(hintKey)}</span>
+                        </span>
+                      </label>
                     ))}
-                  </select>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <NumField
-                    label={t('agent.mem.compactMaxMsgs')}
-                    value={ms.compactMaxMessages}
-                    onChange={(v) => updateMem('compactMaxMessages', v)}
-                    unit={u.msgs}
-                  />
-                  <NumField
-                    label={t('agent.mem.compactTemp')}
-                    value={ms.compactTemperature}
-                    onChange={(v) => updateMem('compactTemperature', v)}
-                    step={0.1}
-                    min={0}
-                    max={1}
-                  />
-                  <NumField
-                    label={t('agent.mem.compactMaxTokens')}
-                    value={ms.compactMaxTokensCap}
-                    onChange={(v) => updateMem('compactMaxTokensCap', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.minSummaryLen')}
-                    value={ms.compactMinSummaryLength}
-                    onChange={(v) => updateMem('compactMinSummaryLength', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.mem.keepMin')}
-                    value={ms.compactionKeepMin}
-                    onChange={(v) => updateMem('compactionKeepMin', v)}
-                    unit={u.msgs}
-                  />
-                  <NumField
-                    label={t('agent.mem.keepRatio')}
-                    value={ms.compactionKeepRatio}
-                    onChange={(v) => updateMem('compactionKeepRatio', v)}
-                    step={0.1}
-                    min={0}
-                    max={1}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {memToggles.map(([key, tk]) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!ms[key]}
-                        onChange={(e) => updateMem(key, e.target.checked)}
-                        className="accent-amber rounded"
-                      />
-                      <span className="text-[12px] text-[var(--fog)]">{t(tk)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+                  </DrawerCheckboxRail>
+                </DrawerSection>
+              </>
             )}
 
             {activeSection === 'policy' && (
-              <div className="space-y-3">
-                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.policyLead')}</p>
-                <ul className="text-[11px] text-[var(--fog)]/90 list-disc pl-4 space-y-1 leading-relaxed">
-                  <li>{t('agent.policyHookPreToolDesc')}</li>
-                  <li>{t('agent.policyHookPostToolDesc')}</li>
-                  <li>{t('agent.policyHookPreFinalizeDesc')}</li>
-                </ul>
-                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.policyNamesNote')}</p>
-                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.policyCaseTypeNote')}</p>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wide text-[var(--fog)]/60">
-                    {t('agent.policyExampleLabel')}
-                  </span>
-                  <pre className="rounded-lg border border-black/[0.06] bg-black/[0.03] p-3 text-[11px] font-mono text-[var(--mist)] leading-relaxed overflow-x-auto whitespace-pre">
-                    {t('agent.policyExampleBlock')}
-                  </pre>
+              <DrawerSection accent="#2ea04a" title={t('agent.section.policy')} lead={t('agent.policyLead')} dense>
+                <div className="flex flex-1 flex-col min-h-0">
+                  <AgentPolicyHooksPicker value={config.policyHooks} onChange={(v) => update('policyHooks', v)} />
                 </div>
-                <textarea
-                  value={config.policyHooks}
-                  onChange={(e) => update('policyHooks', e.target.value)}
-                  rows={14}
-                  spellCheck={false}
-                  className="glass-input-console text-[12px] font-mono resize-y w-full"
-                />
-              </div>
+              </DrawerSection>
             )}
 
             {activeSection === 'templates' && (
-              <div className="space-y-4">
-                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.templatesLead')}</p>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.resumePrompt')}</span>
-                  <textarea
-                    value={config.resumePrompt}
-                    onChange={(e) => update('resumePrompt', e.target.value)}
-                    rows={10}
-                    className="glass-input-console text-[12px] font-mono resize-y w-full"
-                  />
-                  <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.resumePromptHint')}</span>
-                </label>
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.formResponseTemplate')}</span>
-                  <textarea
-                    value={config.formResponseTemplate}
-                    onChange={(e) => update('formResponseTemplate', e.target.value)}
-                    rows={10}
-                    className="glass-input-console text-[12px] font-mono resize-y w-full"
-                  />
-                  <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">
-                    {t('agent.formResponseTemplateHint')}
-                  </span>
-                </label>
-              </div>
+              <DrawerSection accent="#5bb8f7" title={t('agent.section.templates')} lead={t('agent.templatesLead')}>
+                <AgentSyntheticTemplatesPanel
+                  resumePrompt={config.resumePrompt}
+                  formResponseTemplate={config.formResponseTemplate}
+                  onResumeChange={(v) => update('resumePrompt', v)}
+                  onFormChange={(v) => update('formResponseTemplate', v)}
+                />
+              </DrawerSection>
             )}
 
             {activeSection === 'advanced' && (
-              <div className="space-y-5">
-                {/* Composer assist — compact */}
-                <div className="rounded-xl border border-black/[0.06] bg-white/[0.35] px-4 py-3 space-y-3">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={config.prefixContinuationEnabled}
-                        onClick={() => update('prefixContinuationEnabled', !config.prefixContinuationEnabled)}
-                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                          config.prefixContinuationEnabled ? 'bg-indigo' : 'bg-black/[0.12]'
+              <>
+                <DrawerSection
+                  accent="#b8944c"
+                  eyebrow={t('agent.drawer.composerEyebrow')}
+                  title={t('agent.prefixToggle')}
+                  lead={t('agent.prefixSubtitle')}
+                  actions={
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={config.prefixContinuationEnabled}
+                      aria-label={t('agent.prefixToggle')}
+                      onClick={() => update('prefixContinuationEnabled', !config.prefixContinuationEnabled)}
+                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                        config.prefixContinuationEnabled
+                          ? 'bg-indigo shadow-[0_0_0_3px_rgba(99,102,241,0.15)]'
+                          : 'bg-black/[0.12]'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                          config.prefixContinuationEnabled ? 'translate-x-5' : 'translate-x-0'
                         }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-                            config.prefixContinuationEnabled ? 'translate-x-5' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-[var(--mist)]">{t('agent.prefixToggle')}</p>
-                        <p className="text-[10px] text-[var(--smoke)] mt-0.5 leading-snug">{t('agent.prefixSubtitle')}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-[var(--fog)] border-t border-black/[0.05] pt-2">{t('agent.prefixEnvHint')}</p>
-                  {config.prefixContinuationEnabled && (
-                    <div className="space-y-3 border-t border-black/[0.06] pt-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <label className="space-y-1 block">
-                          <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixBaseUrl')}</span>
+                      />
+                    </button>
+                  }
+                >
+                  <p className="rounded-lg border border-black/[0.05] bg-black/[0.025] px-3 py-2 text-[10px] leading-relaxed text-[var(--fog)]">
+                    {t('agent.prefixEnvHint')}
+                  </p>
+                  {config.prefixContinuationEnabled ? (
+                    <div className="space-y-3 rounded-xl border border-black/[0.06] bg-white/30 p-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="block space-y-1">
+                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixBaseUrl')}</span>
                           <input
                             type="text"
                             value={config.prefixContinuationBaseUrl}
                             onChange={(e) => update('prefixContinuationBaseUrl', e.target.value)}
-                            className="glass-input-console text-[12px] font-mono w-full"
+                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
                             spellCheck={false}
                           />
                         </label>
-                        <label className="space-y-1 block">
-                          <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixChatModel')}</span>
+                        <label className="block space-y-1">
+                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixChatModel')}</span>
                           <input
                             type="text"
                             value={config.prefixContinuationChatModel}
                             onChange={(e) => update('prefixContinuationChatModel', e.target.value)}
-                            className="glass-input-console text-[13px] font-mono w-full"
+                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
                             spellCheck={false}
                           />
                         </label>
@@ -651,53 +727,53 @@ export default function AgentConfigPage() {
                         max={120}
                         step={1}
                       />
-                      <label className="space-y-1 block">
-                        <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixComposerNotes')}</span>
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixComposerNotes')}</span>
                         <textarea
                           value={config.prefixContinuationAssistantPrefix}
                           onChange={(e) => update('prefixContinuationAssistantPrefix', e.target.value)}
                           rows={3}
-                          className="glass-input-console text-[12px] resize-y w-full leading-relaxed"
+                          className={`glass-input-console w-full resize-y leading-relaxed ${drawerFieldClass()}`}
                           placeholder=""
                         />
                       </label>
-                      <label className="space-y-1 block">
-                        <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixStop')}</span>
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixStop')}</span>
                         <textarea
                           value={config.prefixContinuationStopText}
                           onChange={(e) => update('prefixContinuationStopText', e.target.value)}
                           rows={2}
-                          className="glass-input-console text-[12px] font-mono resize-y w-full"
+                          className={`glass-input-console w-full resize-y ${drawerFieldClass(true)}`}
                         />
                       </label>
                     </div>
-                  )}
-                </div>
+                  ) : null}
+                </DrawerSection>
 
-                {/* Memory compaction heuristics */}
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-[12px] font-medium text-[var(--mist)]">{t('agent.advancedEstimationTitle')}</p>
-                    <p className="text-[10px] text-[var(--smoke)] mt-1 leading-snug">{t('agent.advancedEstimationLead')}</p>
-                  </div>
-                  <label className="space-y-1 block">
-                    <span className="text-[11px] text-[var(--fog)]">{t('agent.txnIdPattern')}</span>
-                    <p className="text-[10px] text-[var(--smoke)] leading-snug">{t('agent.hint.txnIdPattern')}</p>
+                <DrawerSection
+                  accent="#b8944c"
+                  eyebrow={t('agent.drawer.estimationEyebrow')}
+                  title={t('agent.advancedEstimationTitle')}
+                  lead={t('agent.advancedEstimationLead')}
+                >
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.txnIdPattern')}</span>
+                    <p className="text-[10px] leading-snug text-[var(--smoke)]">{t('agent.hint.txnIdPattern')}</p>
                     <input
                       type="text"
                       value={ms.txnIdPattern}
                       onChange={(e) => updateMem('txnIdPattern', e.target.value)}
-                      className="glass-input-console text-[13px] font-mono w-full"
+                      className={`glass-input-console w-full ${drawerFieldClass(true)}`}
                     />
                   </label>
-                  <label className="space-y-1 block">
-                    <span className="text-[11px] text-[var(--fog)]">{t('agent.amountPattern')}</span>
-                    <p className="text-[10px] text-[var(--smoke)] leading-snug">{t('agent.hint.amountPattern')}</p>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.amountPattern')}</span>
+                    <p className="text-[10px] leading-snug text-[var(--smoke)]">{t('agent.hint.amountPattern')}</p>
                     <input
                       type="text"
                       value={ms.amountPattern}
                       onChange={(e) => updateMem('amountPattern', e.target.value)}
-                      className="glass-input-console text-[13px] font-mono w-full"
+                      className={`glass-input-console w-full ${drawerFieldClass(true)}`}
                     />
                   </label>
                   <div className="grid grid-cols-2 gap-3">
@@ -776,9 +852,12 @@ export default function AgentConfigPage() {
                       unit={u.ms}
                     />
                   </div>
-                </div>
-              </div>
+                </DrawerSection>
+              </>
             )}
+                </DrawerShell>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -817,7 +896,7 @@ function NumField({
           min={min}
           max={max}
           step={step}
-          className="glass-input-console text-[13px] font-mono w-full"
+          className={`glass-input-console w-full font-mono ${drawerFieldClass(true)}`}
         />
         {unit && <span className="text-[10px] text-[var(--smoke)] flex-shrink-0">{unit}</span>}
       </div>
