@@ -56,6 +56,15 @@ model AgentConfig {
   evaluationModel     String? // Model for stage transition evaluation
   intentModel         String? // Model for intent classification (defaults to evaluationModel or haiku)
 
+  /// Chat app only: DeepSeek beta chat + prefix row — customer **composer** drafting assist (not agent loop).
+  prefixContinuationEnabled         Boolean @default(false)
+  prefixContinuationChatModel       String? // e.g. deepseek-chat
+  prefixContinuationBaseUrl         String? // e.g. https://api.deepseek.com/beta
+  prefixContinuationAssistantPrefix String? // extra system notes for completion (accessibility / tone)
+  prefixContinuationStop            String? // JSON string[] optional stop sequences
+  /// Composer: min draft chars before continuation request (CJK-aware).
+  prefixContinuationMinDraftChars   Int @default(4)
+
   // JSON fields
   memoryStrategy String // MemoryStrategy
   policyHooks    String // PolicyHooks

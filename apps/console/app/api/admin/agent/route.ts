@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, ensureSqliteSchemaCompat } from '@intera/shared/prisma'
+import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
@@ -51,6 +52,12 @@ export async function PUT(req: NextRequest) {
       systemPrompt, toolParallelism, isConcurrencySafe,
       showThinking, memoryStrategy, policyHooks,
       resumePrompt, formResponseTemplate, evaluationModel, intentModel,
+      prefixContinuationEnabled,
+      prefixContinuationChatModel,
+      prefixContinuationBaseUrl,
+      prefixContinuationAssistantPrefix,
+      prefixContinuationStop,
+      prefixContinuationMinDraftChars,
     } = body
 
     const data: Record<string, unknown> = {}
@@ -69,6 +76,15 @@ export async function PUT(req: NextRequest) {
     if (formResponseTemplate !== undefined) data.formResponseTemplate = formResponseTemplate
     if (evaluationModel !== undefined) data.evaluationModel = evaluationModel
     if (intentModel !== undefined) data.intentModel = intentModel
+    if (prefixContinuationEnabled !== undefined)
+      data.prefixContinuationEnabled = prefixContinuationEnabled !== false && prefixContinuationEnabled !== 0 && prefixContinuationEnabled !== 'false'
+    if (prefixContinuationChatModel !== undefined) data.prefixContinuationChatModel = prefixContinuationChatModel
+    if (prefixContinuationBaseUrl !== undefined) data.prefixContinuationBaseUrl = prefixContinuationBaseUrl
+    if (prefixContinuationAssistantPrefix !== undefined) data.prefixContinuationAssistantPrefix = prefixContinuationAssistantPrefix
+    if (prefixContinuationStop !== undefined) data.prefixContinuationStop = prefixContinuationStop
+    if (prefixContinuationMinDraftChars !== undefined) {
+      data.prefixContinuationMinDraftChars = clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4)
+    }
 
     const config = await prisma.agentConfig.upsert({
       where: { customerId: CUSTOMER_ID },
@@ -88,6 +104,17 @@ export async function PUT(req: NextRequest) {
         formResponseTemplate: formResponseTemplate ?? null,
         evaluationModel: evaluationModel ?? null,
         intentModel: intentModel ?? null,
+        prefixContinuationEnabled:
+          prefixContinuationEnabled !== undefined
+            ? prefixContinuationEnabled !== false &&
+              prefixContinuationEnabled !== 0 &&
+              prefixContinuationEnabled !== 'false'
+            : false,
+        prefixContinuationChatModel: prefixContinuationChatModel ?? null,
+        prefixContinuationBaseUrl: prefixContinuationBaseUrl ?? null,
+        prefixContinuationAssistantPrefix: prefixContinuationAssistantPrefix ?? null,
+        prefixContinuationStop: prefixContinuationStop ?? null,
+        prefixContinuationMinDraftChars: clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4),
         memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
         policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
       },

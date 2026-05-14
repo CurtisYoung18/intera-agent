@@ -43,6 +43,7 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   policyHooks: { ...DEFAULT_POLICY_HOOKS },
   resumePrompt: '',
   formResponseTemplate: '',
+  prefixContinuationEnabled: false,
 }
 
 // Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.
@@ -67,9 +68,29 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         showThinking: dbConfig.showThinking,
         memoryStrategy: (parseNonEmptyJson(dbConfig.memoryStrategy) as unknown as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
         policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
-        resumePrompt: (dbConfig as any).resumePrompt || '',
-        formResponseTemplate: (dbConfig as any).formResponseTemplate || '',
-        evaluationModel: (dbConfig as any).evaluationModel || undefined,
+        resumePrompt: (dbConfig as Record<string, unknown>).resumePrompt
+          ? String((dbConfig as Record<string, unknown>).resumePrompt)
+          : '',
+        formResponseTemplate: (dbConfig as Record<string, unknown>).formResponseTemplate
+          ? String((dbConfig as Record<string, unknown>).formResponseTemplate)
+          : '',
+        evaluationModel: (dbConfig as Record<string, unknown>).evaluationModel
+          ? String((dbConfig as Record<string, unknown>).evaluationModel)
+          : undefined,
+        intentModel: (dbConfig as Record<string, unknown>).intentModel
+          ? String((dbConfig as Record<string, unknown>).intentModel)
+          : undefined,
+        prefixContinuationEnabled: Boolean((dbConfig as Record<string, unknown>).prefixContinuationEnabled),
+        prefixContinuationChatModel: (dbConfig as Record<string, unknown>).prefixContinuationChatModel as
+          | string
+          | undefined,
+        prefixContinuationBaseUrl: (dbConfig as Record<string, unknown>).prefixContinuationBaseUrl as
+          | string
+          | undefined,
+        prefixContinuationAssistantPrefix:
+          ((dbConfig as Record<string, unknown>).prefixContinuationAssistantPrefix as string | null | undefined) ??
+          '',
+        prefixContinuationStop: ((dbConfig as Record<string, unknown>).prefixContinuationStop as string | undefined) ?? undefined,
       }
       setCachedConfig(customerId, config)
       return config

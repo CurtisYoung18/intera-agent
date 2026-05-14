@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { IntentClassification } from '@intera/shared/types'
+import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { pickToolVerb } from '@/lib/spinner-verbs'
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,13 @@ export interface UseInteraChatReturn {
   setMessages: (messages: ChatMessage[]) => void
   onFormSubmit: (msgId: string, answers: Record<string, string>) => void
   onFormCancel: (msgId: string) => void
+  customerId: string
+  /** Operator-toggled; requires DEEPSEEK_API_KEY — suggestions only in the composer */
+  composerAssistEnabled: boolean
+  /** Console switch on but Chat server lacks DEEPSEEK_API_KEY */
+  composerAssistMissingDeepseekKey?: boolean
+  /** Threshold from Console before composer calls DeepSeek */
+  composerMinDraftChars: number
 }
 
 // ---------------------------------------------------------------------------
@@ -121,10 +129,35 @@ export function useInteraChat(): UseInteraChatReturn {
   const caseIdRef = useRef<string>(`case_${Date.now()}`)
   const [session, setSession] = useState(readSessionFromUrl)
   const lastUserMsgRef = useRef<string>('')
+  const [composerAssistEnabled, setComposerAssistEnabled] = useState(false)
+  const [composerAssistMissingDeepseekKey, setComposerAssistMissingDeepseekKey] = useState(false)
+  const [composerMinDraftChars, setComposerMinDraftChars] = useState(4)
 
   useEffect(() => {
     setSession(readSessionFromUrl())
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/composer-assist/feature?customerId=${encodeURIComponent(session.customerId)}`)
+      .then((r) => r.json())
+      .then((d: { enabled?: unknown; missingDeepseekKey?: unknown; minDraftChars?: unknown }) => {
+        if (cancelled) return
+        setComposerAssistEnabled(Boolean(d?.enabled))
+        setComposerAssistMissingDeepseekKey(Boolean(d?.missingDeepseekKey))
+        setComposerMinDraftChars(clampComposerMinDraftChars(d?.minDraftChars, 4))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setComposerAssistEnabled(false)
+          setComposerAssistMissingDeepseekKey(false)
+          setComposerMinDraftChars(4)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session.customerId])
 
   const activeCaseId = cases.length > 0 ? cases[activeCaseIndex]?.caseId ?? null : null
   const actualCaseIdRef = useRef<string>(caseIdRef.current)
@@ -582,5 +615,9 @@ export function useInteraChat(): UseInteraChatReturn {
     clearQueue,
     onFormSubmit,
     onFormCancel,
+    customerId: session.customerId,
+    composerAssistEnabled,
+    composerAssistMissingDeepseekKey,
+    composerMinDraftChars,
   }
 }

@@ -238,13 +238,6 @@ export class AgentLoop {
       )
 
       // ── Stream API call ──────────────────────────────────────────
-      const client = new Anthropic({
-        apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-        baseURL: process.env.ANTHROPIC_BASE_URL,
-      })
-      const streamStartTime = Date.now()
-
-      // Build stage-aware system prompt and tools
       const stagePrompt = this.stageExecutor
         ? this.stageExecutor.buildStagePrompt(this.currentStage)
         : this.deps.systemPrompt
@@ -252,6 +245,18 @@ export class AgentLoop {
       const stageTools = this.stageExecutor
         ? this.stageExecutor.filterTools(this.currentStage, allTools)
         : allTools
+
+      const blocks = new Map<number, StreamContentBlock>()
+      let assistantMessage: AssistantMessage | null = null
+      let fullText = ''
+      // Reset per-iteration
+      stopReason = null
+      usage = null
+
+      const client = new Anthropic({
+        apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
+        baseURL: process.env.ANTHROPIC_BASE_URL,
+      })
 
       const stream = client.messages.stream({
         model: this.deps.config.model,
@@ -261,17 +266,7 @@ export class AgentLoop {
         tools: stageTools,
       })
 
-      await this.traceWriter.writeLlmRequestStart(
-        this.deps.config.model,
-        this.messages.length,
-      )
-
-      const blocks = new Map<number, StreamContentBlock>()
-      let assistantMessage: AssistantMessage | null = null
-      let fullText = ''
-      // Reset per-iteration
-      stopReason = null
-      usage = null
+      await this.traceWriter.writeLlmRequestStart(this.deps.config.model, this.messages.length)
 
       for await (const event of stream) {
         switch (event.type) {

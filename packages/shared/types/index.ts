@@ -183,6 +183,22 @@ export interface AgentConfigData {
   formResponseTemplate?: string
   evaluationModel?: string
   intentModel?: string
+
+  /**
+   * DeepSeek beta chat completions — **customer-side composer** drafting assist only (`/api/composer-assist/*`).
+   * Field names are legacy; they do not alter the main agent / tool loop.
+   */
+  prefixContinuationEnabled?: boolean
+  /** DeepSeek Chat model id (e.g. deepseek-chat). */
+  prefixContinuationChatModel?: string
+  /** Beta base URL, e.g. https://api.deepseek.com/beta */
+  prefixContinuationBaseUrl?: string
+  /** Optional extra instructions appended to the fixed composer system prompt (accessibility, tone). */
+  prefixContinuationAssistantPrefix?: string
+  /** JSON-encoded string[] optional `stop` sequences for the completion API. */
+  prefixContinuationStop?: string
+  /** Min draft characters before composer continuation runs (default 4). */
+  prefixContinuationMinDraftChars?: number
 }
 
 export interface MemoryStrategy {

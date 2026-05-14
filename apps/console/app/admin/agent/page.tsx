@@ -7,9 +7,33 @@ import AgentBlueprint from '@/components/admin/agent-blueprint'
 import { chatApiUrl } from '@/lib/chat-api'
 import type { AgentConfigData, MemoryStrategy, ModelInfo } from './types'
 import { DEFAULT_MEMORY } from './types'
+import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'advanced'
+
+function parseStopJsonSafe(raw: unknown): string[] {
+  if (!raw || typeof raw !== 'string') return []
+  try {
+    const j = JSON.parse(raw)
+    return Array.isArray(j) ? j.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function stopArrayToMultiline(arr: string[]): string {
+  return arr.join('\n')
+}
+
+/** One stop marker per non-empty line → JSON array for DB. */
+function multilineToStopJson(text: string): string {
+  const lines = text
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return JSON.stringify(lines.length ? lines : [])
+}
 
 export default function AgentConfigPage() {
   const { t } = useConsoleLocale()
@@ -93,6 +117,20 @@ export default function AgentConfigPage() {
           formResponseTemplate: raw.formResponseTemplate || '',
           evaluationModel: raw.evaluationModel || '',
           intentModel: raw.intentModel || '',
+          prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
+          prefixContinuationChatModel:
+            String((raw as Record<string, unknown>).prefixContinuationChatModel || '') || 'deepseek-chat',
+          prefixContinuationBaseUrl:
+            String((raw as Record<string, unknown>).prefixContinuationBaseUrl || '') || 'https://api.deepseek.com/beta',
+          prefixContinuationAssistantPrefix:
+            ((raw as Record<string, unknown>).prefixContinuationAssistantPrefix as string | null | undefined) ?? '',
+          prefixContinuationStopText: stopArrayToMultiline(
+            parseStopJsonSafe((raw as Record<string, unknown>).prefixContinuationStop),
+          ),
+          prefixContinuationMinDraftChars: clampComposerMinDraftChars(
+            (raw as Record<string, unknown>).prefixContinuationMinDraftChars,
+            4,
+          ),
         })
         setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
         setError(null)
@@ -108,10 +146,16 @@ export default function AgentConfigPage() {
       const current = configRef.current
       if (!current) return
       try {
+        const { prefixContinuationStopText, memoryStrategy, policyHooks: ph, ...persist } = current
         const res = await fetch('/api/admin/agent', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...current, memoryStrategy: JSON.stringify(current.memoryStrategy) }),
+          body: JSON.stringify({
+            ...persist,
+            policyHooks: ph,
+            memoryStrategy: JSON.stringify(memoryStrategy),
+            prefixContinuationStop: multilineToStopJson(prefixContinuationStopText),
+          }),
         })
         if (!res.ok) throw new Error(`Save: ${res.status}`)
         const cacheBody = JSON.stringify({ customerId: 'default' })
@@ -264,6 +308,7 @@ export default function AgentConfigPage() {
 
             {activeSection === 'model' && (
               <div className="space-y-4">
+                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.modelCaseTypeNote')}</p>
                 <label className="space-y-1.5 block">
                   <span className="text-[11px] text-[var(--fog)]">{t('agent.modelMain')}</span>
                   <select
@@ -277,6 +322,9 @@ export default function AgentConfigPage() {
                       </option>
                     ))}
                   </select>
+                  <span className="text-[10px] text-[var(--fog)]/70 mt-0.5 block leading-snug">
+                    {t('agent.modelMainHint')}
+                  </span>
                 </label>
                 <label className="space-y-1.5 block">
                   <span className="text-[11px] text-[var(--fog)]">{t('agent.intentModel')}</span>
@@ -487,12 +535,28 @@ export default function AgentConfigPage() {
             )}
 
             {activeSection === 'policy' && (
-              <div className="space-y-2">
-                <p className="text-[12px] text-[var(--fog)]">{t('agent.policyHelp')}</p>
+              <div className="space-y-3">
+                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.policyLead')}</p>
+                <ul className="text-[11px] text-[var(--fog)]/90 list-disc pl-4 space-y-1 leading-relaxed">
+                  <li>{t('agent.policyHookPreToolDesc')}</li>
+                  <li>{t('agent.policyHookPostToolDesc')}</li>
+                  <li>{t('agent.policyHookPreFinalizeDesc')}</li>
+                </ul>
+                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.policyNamesNote')}</p>
+                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.policyCaseTypeNote')}</p>
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wide text-[var(--fog)]/60">
+                    {t('agent.policyExampleLabel')}
+                  </span>
+                  <pre className="rounded-lg border border-black/[0.06] bg-black/[0.03] p-3 text-[11px] font-mono text-[var(--mist)] leading-relaxed overflow-x-auto whitespace-pre">
+                    {t('agent.policyExampleBlock')}
+                  </pre>
+                </div>
                 <textarea
                   value={config.policyHooks}
                   onChange={(e) => update('policyHooks', e.target.value)}
-                  rows={16}
+                  rows={14}
+                  spellCheck={false}
                   className="glass-input-console text-[12px] font-mono resize-y w-full"
                 />
               </div>
@@ -500,6 +564,7 @@ export default function AgentConfigPage() {
 
             {activeSection === 'templates' && (
               <div className="space-y-4">
+                <p className="text-[12px] text-[var(--fog)] leading-relaxed">{t('agent.templatesLead')}</p>
                 <label className="space-y-1.5 block">
                   <span className="text-[11px] text-[var(--fog)]">{t('agent.resumePrompt')}</span>
                   <textarea
@@ -508,6 +573,7 @@ export default function AgentConfigPage() {
                     rows={10}
                     className="glass-input-console text-[12px] font-mono resize-y w-full"
                   />
+                  <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.resumePromptHint')}</span>
                 </label>
                 <label className="space-y-1.5 block">
                   <span className="text-[11px] text-[var(--fog)]">{t('agent.formResponseTemplate')}</span>
@@ -517,94 +583,199 @@ export default function AgentConfigPage() {
                     rows={10}
                     className="glass-input-console text-[12px] font-mono resize-y w-full"
                   />
+                  <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">
+                    {t('agent.formResponseTemplateHint')}
+                  </span>
                 </label>
               </div>
             )}
 
             {activeSection === 'advanced' && (
-              <div className="space-y-4">
-                <label className="space-y-1 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.txnIdPattern')}</span>
-                  <input
-                    type="text"
-                    value={ms.txnIdPattern}
-                    onChange={(e) => updateMem('txnIdPattern', e.target.value)}
-                    className="glass-input-console text-[13px] font-mono w-full"
-                  />
-                </label>
-                <label className="space-y-1 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('agent.amountPattern')}</span>
-                  <input
-                    type="text"
-                    value={ms.amountPattern}
-                    onChange={(e) => updateMem('amountPattern', e.target.value)}
-                    className="glass-input-console text-[13px] font-mono w-full"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <NumField
-                    label={t('agent.tokensKeyEvent')}
-                    value={ms.tokensPerKeyEvent}
-                    onChange={(v) => updateMem('tokensPerKeyEvent', v)}
-                  />
-                  <NumField
-                    label={t('agent.tokensFact')}
-                    value={ms.tokensPerFact}
-                    onChange={(v) => updateMem('tokensPerFact', v)}
-                  />
-                  <NumField
-                    label={t('agent.tokensSkill')}
-                    value={ms.tokensPerSkill}
-                    onChange={(v) => updateMem('tokensPerSkill', v)}
-                  />
-                  <NumField
-                    label={t('agent.cjkCharToken')}
-                    value={ms.cjkCharPerToken}
-                    onChange={(v) => updateMem('cjkCharPerToken', v)}
-                    step={0.1}
-                  />
-                  <NumField
-                    label={t('agent.latinCharToken')}
-                    value={ms.latinCharPerToken}
-                    onChange={(v) => updateMem('latinCharPerToken', v)}
-                    step={0.1}
-                  />
-                  <NumField
-                    label={t('agent.minTokenEst')}
-                    value={ms.minTokenEstimate}
-                    onChange={(v) => updateMem('minTokenEstimate', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.toolResultRatio')}
-                    value={ms.toolResultTokenRatio}
-                    onChange={(v) => updateMem('toolResultTokenRatio', v)}
-                    step={0.1}
-                  />
-                  <NumField
-                    label={t('agent.contextWindow')}
-                    value={ms.contextWindow}
-                    onChange={(v) => updateMem('contextWindow', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.outputReserved')}
-                    value={ms.outputTokensReserved}
-                    onChange={(v) => updateMem('outputTokensReserved', v)}
-                    unit={u.tokens}
-                  />
-                  <NumField
-                    label={t('agent.circuitBreaker')}
-                    value={ms.compactCircuitBreakerMaxFailures}
-                    onChange={(v) => updateMem('compactCircuitBreakerMaxFailures', v)}
-                    unit={u.failures}
-                  />
-                  <NumField
-                    label={t('agent.sessionMaxAge')}
-                    value={ms.sessionMemoryMaxAgeMs}
-                    onChange={(v) => updateMem('sessionMemoryMaxAgeMs', v)}
-                    unit={u.ms}
-                  />
+              <div className="space-y-5">
+                {/* Composer assist — compact */}
+                <div className="rounded-xl border border-black/[0.06] bg-white/[0.35] px-4 py-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={config.prefixContinuationEnabled}
+                        onClick={() => update('prefixContinuationEnabled', !config.prefixContinuationEnabled)}
+                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                          config.prefixContinuationEnabled ? 'bg-indigo' : 'bg-black/[0.12]'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                            config.prefixContinuationEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-medium text-[var(--mist)]">{t('agent.prefixToggle')}</p>
+                        <p className="text-[10px] text-[var(--smoke)] mt-0.5 leading-snug">{t('agent.prefixSubtitle')}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-[var(--fog)] border-t border-black/[0.05] pt-2">{t('agent.prefixEnvHint')}</p>
+                  {config.prefixContinuationEnabled && (
+                    <div className="space-y-3 border-t border-black/[0.06] pt-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="space-y-1 block">
+                          <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixBaseUrl')}</span>
+                          <input
+                            type="text"
+                            value={config.prefixContinuationBaseUrl}
+                            onChange={(e) => update('prefixContinuationBaseUrl', e.target.value)}
+                            className="glass-input-console text-[12px] font-mono w-full"
+                            spellCheck={false}
+                          />
+                        </label>
+                        <label className="space-y-1 block">
+                          <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixChatModel')}</span>
+                          <input
+                            type="text"
+                            value={config.prefixContinuationChatModel}
+                            onChange={(e) => update('prefixContinuationChatModel', e.target.value)}
+                            className="glass-input-console text-[13px] font-mono w-full"
+                            spellCheck={false}
+                          />
+                        </label>
+                      </div>
+                      <NumField
+                        label={t('agent.prefixMinDraft')}
+                        hint={t('agent.prefixMinDraftHint')}
+                        value={config.prefixContinuationMinDraftChars}
+                        onChange={(v) => update('prefixContinuationMinDraftChars', clampComposerMinDraftChars(v, 4))}
+                        min={1}
+                        max={120}
+                        step={1}
+                      />
+                      <label className="space-y-1 block">
+                        <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixComposerNotes')}</span>
+                        <textarea
+                          value={config.prefixContinuationAssistantPrefix}
+                          onChange={(e) => update('prefixContinuationAssistantPrefix', e.target.value)}
+                          rows={3}
+                          className="glass-input-console text-[12px] resize-y w-full leading-relaxed"
+                          placeholder=""
+                        />
+                      </label>
+                      <label className="space-y-1 block">
+                        <span className="text-[11px] text-[var(--fog)]">{t('agent.prefixStop')}</span>
+                        <textarea
+                          value={config.prefixContinuationStopText}
+                          onChange={(e) => update('prefixContinuationStopText', e.target.value)}
+                          rows={2}
+                          className="glass-input-console text-[12px] font-mono resize-y w-full"
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Memory compaction heuristics */}
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[12px] font-medium text-[var(--mist)]">{t('agent.advancedEstimationTitle')}</p>
+                    <p className="text-[10px] text-[var(--smoke)] mt-1 leading-snug">{t('agent.advancedEstimationLead')}</p>
+                  </div>
+                  <label className="space-y-1 block">
+                    <span className="text-[11px] text-[var(--fog)]">{t('agent.txnIdPattern')}</span>
+                    <p className="text-[10px] text-[var(--smoke)] leading-snug">{t('agent.hint.txnIdPattern')}</p>
+                    <input
+                      type="text"
+                      value={ms.txnIdPattern}
+                      onChange={(e) => updateMem('txnIdPattern', e.target.value)}
+                      className="glass-input-console text-[13px] font-mono w-full"
+                    />
+                  </label>
+                  <label className="space-y-1 block">
+                    <span className="text-[11px] text-[var(--fog)]">{t('agent.amountPattern')}</span>
+                    <p className="text-[10px] text-[var(--smoke)] leading-snug">{t('agent.hint.amountPattern')}</p>
+                    <input
+                      type="text"
+                      value={ms.amountPattern}
+                      onChange={(e) => updateMem('amountPattern', e.target.value)}
+                      className="glass-input-console text-[13px] font-mono w-full"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumField
+                      label={t('agent.tokensKeyEvent')}
+                      hint={t('agent.hint.tokensKeyEvent')}
+                      value={ms.tokensPerKeyEvent}
+                      onChange={(v) => updateMem('tokensPerKeyEvent', v)}
+                    />
+                    <NumField
+                      label={t('agent.tokensFact')}
+                      hint={t('agent.hint.tokensFact')}
+                      value={ms.tokensPerFact}
+                      onChange={(v) => updateMem('tokensPerFact', v)}
+                    />
+                    <NumField
+                      label={t('agent.tokensSkill')}
+                      hint={t('agent.hint.tokensSkill')}
+                      value={ms.tokensPerSkill}
+                      onChange={(v) => updateMem('tokensPerSkill', v)}
+                    />
+                    <NumField
+                      label={t('agent.cjkCharToken')}
+                      hint={t('agent.hint.cjkCharToken')}
+                      value={ms.cjkCharPerToken}
+                      onChange={(v) => updateMem('cjkCharPerToken', v)}
+                      step={0.1}
+                    />
+                    <NumField
+                      label={t('agent.latinCharToken')}
+                      hint={t('agent.hint.latinCharToken')}
+                      value={ms.latinCharPerToken}
+                      onChange={(v) => updateMem('latinCharPerToken', v)}
+                      step={0.1}
+                    />
+                    <NumField
+                      label={t('agent.minTokenEst')}
+                      hint={t('agent.hint.minTokenEst')}
+                      value={ms.minTokenEstimate}
+                      onChange={(v) => updateMem('minTokenEstimate', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.toolResultRatio')}
+                      hint={t('agent.hint.toolResultRatio')}
+                      value={ms.toolResultTokenRatio}
+                      onChange={(v) => updateMem('toolResultTokenRatio', v)}
+                      step={0.1}
+                    />
+                    <NumField
+                      label={t('agent.contextWindow')}
+                      hint={t('agent.hint.contextWindow')}
+                      value={ms.contextWindow}
+                      onChange={(v) => updateMem('contextWindow', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.outputReserved')}
+                      hint={t('agent.hint.outputReserved')}
+                      value={ms.outputTokensReserved}
+                      onChange={(v) => updateMem('outputTokensReserved', v)}
+                      unit={u.tokens}
+                    />
+                    <NumField
+                      label={t('agent.circuitBreaker')}
+                      hint={t('agent.hint.circuitBreaker')}
+                      value={ms.compactCircuitBreakerMaxFailures}
+                      onChange={(v) => updateMem('compactCircuitBreakerMaxFailures', v)}
+                      unit={u.failures}
+                    />
+                    <NumField
+                      label={t('agent.sessionMaxAge')}
+                      hint={t('agent.hint.sessionMaxAge')}
+                      value={ms.sessionMemoryMaxAgeMs}
+                      onChange={(v) => updateMem('sessionMemoryMaxAgeMs', v)}
+                      unit={u.ms}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -617,6 +788,7 @@ export default function AgentConfigPage() {
 
 function NumField({
   label,
+  hint,
   value,
   onChange,
   unit,
@@ -625,6 +797,7 @@ function NumField({
   step,
 }: {
   label: string
+  hint?: string
   value: number
   onChange: (v: number) => void
   unit?: string
@@ -635,6 +808,7 @@ function NumField({
   return (
     <label className="space-y-1">
       <span className="text-[11px] text-[var(--fog)]">{label}</span>
+      {hint ? <p className="text-[10px] text-[var(--smoke)] leading-snug -mt-0.5">{hint}</p> : null}
       <div className="flex items-center gap-2">
         <input
           type="number"

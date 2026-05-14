@@ -16,18 +16,6 @@ import CaseTabBar from '@/components/chat/case-tab-bar'
 import { useInteraChat } from './use-intera-chat'
 import type { CaseStatus } from '@/components/chat/case-card'
 
-function readSessionFromUrl(): { customerId: string; userId: string; caseType: string } {
-  if (typeof window === 'undefined') {
-    return { customerId: 'default', userId: 'anonymous', caseType: 'general' }
-  }
-  const q = new URLSearchParams(window.location.search)
-  return {
-    customerId: q.get('customer') || q.get('tenant') || 'default',
-    userId: q.get('user') || 'anonymous',
-    caseType: (q.get('caseType') || q.get('type') || 'general').replace(/_/g, ' '),
-  }
-}
-
 export default function ChatPage() {
   const {
     messages,
@@ -46,9 +34,12 @@ export default function ChatPage() {
     clearQueue,
     onFormSubmit,
     onFormCancel,
+    customerId,
+    composerAssistEnabled,
+    composerAssistMissingDeepseekKey,
+    composerMinDraftChars,
   } = useInteraChat()
 
-  const session = readSessionFromUrl()
   const activeCase = cases[activeCaseIndex] ?? null
 
   const caseCard = activeCase
@@ -63,11 +54,6 @@ export default function ChatPage() {
       }
     : null
 
-  const headlineType = (activeCase?.caseType || session.caseType).replace(/_/g, ' ')
-  const caseLine = activeCase?.caseId
-    ? (activeCase.caseId.length > 36 ? `${activeCase.caseId.slice(0, 28)}…` : activeCase.caseId)
-    : `case_${Date.now().toString(36)}`
-
   // ── Chat content (shared between single and split layouts) ──
   const chatPanel = (
     <div className="flex-1 flex flex-col min-h-0">
@@ -80,6 +66,10 @@ export default function ChatPage() {
               queuedCount={queuedCount}
               onClearQueue={clearQueue}
               isResponding={isLoading}
+              composerAssistEnabled={composerAssistEnabled}
+              customerId={customerId}
+              assistMissingDeepseekKey={composerAssistMissingDeepseekKey}
+              composerMinDraftChars={composerMinDraftChars}
             />
           </div>
         </div>
@@ -96,6 +86,10 @@ export default function ChatPage() {
             queuedCount={queuedCount}
             onClearQueue={clearQueue}
             isResponding={isLoading}
+            composerAssistEnabled={composerAssistEnabled}
+            customerId={customerId}
+            assistMissingDeepseekKey={composerAssistMissingDeepseekKey}
+            composerMinDraftChars={composerMinDraftChars}
           />
         </>
       )}
@@ -104,24 +98,9 @@ export default function ChatPage() {
 
   return (
     <ChatShell>
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <header className="grid grid-cols-[minmax(2rem,2.75rem)_1fr_minmax(2rem,2.75rem)] items-start gap-1 px-2 pt-4 pb-3 flex-shrink-0">
-        <div className="w-10 shrink-0" aria-hidden />
-        <div className="min-w-0 text-center px-2">
-          <p className="text-[14px] sm:text-[15px] leading-snug text-mist">
-            <span className="text-indigo">{session.customerId}</span>
-            <span className="text-fog/35 mx-1.5 font-normal">·</span>
-            <span className="font-semibold capitalize">{headlineType}</span>
-          </p>
-          <p className="mt-1 text-[11px] leading-snug tracking-tight text-fog/55">
-            Case <span className="font-mono tabular-nums text-fog/[0.65]">{caseLine}</span>
-            <span className="mx-1.5 text-fog/35">·</span>
-            User {session.userId}
-          </p>
-        </div>
-        <div className="flex shrink-0 justify-end pt-0.5">
-          <StatusPill status={agentStatus} label="Intera AI" />
-        </div>
+      {/* ── Header — brand pill only (session/case/debug lines removed) ─ */}
+      <header className="flex flex-shrink-0 justify-center px-2 pt-4 pb-3">
+        <StatusPill status={agentStatus} label="Intera AI" />
       </header>
 
       {/* ── Split layout with side panel ─────────────────────────── */}

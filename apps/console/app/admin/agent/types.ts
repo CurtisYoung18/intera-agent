@@ -57,6 +57,13 @@ export interface AgentConfigData {
   formResponseTemplate: string
   evaluationModel: string
   intentModel: string
+  prefixContinuationEnabled: boolean
+  prefixContinuationChatModel: string
+  prefixContinuationBaseUrl: string
+  prefixContinuationAssistantPrefix: string
+  /** One stop sequence per line in UI; stored as JSON string[] server-side */
+  prefixContinuationStopText: string
+  prefixContinuationMinDraftChars: number
 }
 
 export interface ModelInfo {

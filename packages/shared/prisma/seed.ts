@@ -1,7 +1,12 @@
 // Seed script — creates demo data for human tasks UI + admin config
-// Run: npx tsx packages/shared/prisma/seed.ts
+// Run from repo root: `npm run db:seed`
+// Loads `.env.local` / `.env` so `DATABASE_URL` and API model env vars match your machine.
 
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { config as loadDotEnv } from 'dotenv'
 import { PrismaClient } from '@prisma/client'
+
 import {
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
@@ -13,6 +18,27 @@ import {
   DEFAULT_STAGE_CONFIGS,
   DEFAULT_ORCHESTRATOR_CONFIG,
 } from '../defaults/index'
+
+function loadEnv(): void {
+  let dir = resolve(process.cwd())
+  for (let i = 0; i < 10; i++) {
+    const local = resolve(dir, '.env.local')
+    const plain = resolve(dir, '.env')
+    if (existsSync(local)) {
+      loadDotEnv({ path: local })
+      return
+    }
+    if (existsSync(plain)) {
+      loadDotEnv({ path: plain })
+      return
+    }
+    const parent = resolve(dir, '..')
+    if (parent === dir) break
+    dir = parent
+  }
+}
+
+loadEnv()
 
 const prisma = new PrismaClient()
 const CUSTOMER_ID = 'default'
@@ -34,19 +60,45 @@ async function seed() {
     create: { id: CUSTOMER_ID, name: 'Demo Vendor' },
   })
 
-  // ── Admin: AgentConfig ──
+  // ── Admin: AgentConfig — full demo defaults every run ━━━━━━━━━━━
+  const agentPayload = {
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
+    temperature: 0.5,
+    thinkingBudget: 4096,
+    maxIterations: 20,
+    maxOutputTokens: 4096,
+    memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
+    policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
+    toolParallelism: true,
+    isConcurrencySafe: true,
+    showThinking: true,
+    evaluationModel:
+      process.env.EVALUATION_MODEL || process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
+    intentModel:
+      process.env.INTENT_MODEL ||
+      process.env.EVALUATION_MODEL ||
+      process.env.ANTHROPIC_MODEL ||
+      'MiniMax-M2.70-highspeed',
+    resumePrompt:
+      `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
+    formResponseTemplate: 'Please continue processing based on this information.',
+    prefixContinuationEnabled: true,
+    prefixContinuationChatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-chat',
+    prefixContinuationBaseUrl:
+      process.env.DEEPSEEK_BETA_CHAT_BASE_URL?.trim() || 'https://api.deepseek.com/beta',
+    prefixContinuationAssistantPrefix:
+      "Keep completions brief; mirror the visitor's language; supportive, plain wording.",
+    prefixContinuationStop: null as string | null,
+    prefixContinuationMinDraftChars: 4,
+  }
+
   await prisma.agentConfig.upsert({
     where: { customerId: CUSTOMER_ID },
-    update: {},
+    update: agentPayload,
     create: {
       customerId: CUSTOMER_ID,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
-      temperature: 0.5,
-      thinkingBudget: 4096,
-      maxIterations: 20,
-      memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-      policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
+      ...agentPayload,
     },
   })
   console.log('  ✓ AgentConfig')
@@ -55,7 +107,15 @@ async function seed() {
   for (const s of DEFAULT_SKILLS) {
     await prisma.skill.upsert({
       where: { customerId_name: { customerId: CUSTOMER_ID, name: s.name } },
-      update: {},
+      update: {
+        description: s.description,
+        inputSchema: s.inputSchema,
+        outputSchema: s.outputSchema,
+        mode: s.mode,
+        isConcurrencySafe: s.isConcurrencySafe,
+        enabled: s.enabled,
+        guardPhase: s.guardPhase,
+      },
       create: {
         customerId: CUSTOMER_ID,
         name: s.name,
@@ -75,7 +135,12 @@ async function seed() {
   for (const p of DEFAULT_POLICIES) {
     await prisma.policy.upsert({
       where: { customerId_name: { customerId: CUSTOMER_ID, name: p.name } },
-      update: {},
+      update: {
+        description: p.description,
+        hook: p.hook,
+        rule: p.rule,
+        enabled: true,
+      },
       create: {
         customerId: CUSTOMER_ID,
         name: p.name,
@@ -129,7 +194,11 @@ async function seed() {
   for (const r of DEFAULT_ROUTING) {
     await prisma.routing.upsert({
       where: { customerId_queue: { customerId: CUSTOMER_ID, queue: r.queue } },
-      update: {},
+      update: {
+        description: r.description,
+        skillsAllowed: r.skillsAllowed,
+        priority: r.priority,
+      },
       create: {
         customerId: CUSTOMER_ID,
         queue: r.queue,

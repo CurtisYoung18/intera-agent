@@ -10,6 +10,10 @@ interface GlassInputProps {
   placeholder?: string
   disabled?: boolean
   onSubmit?: () => void
+  /** Runs before built-in Enter handling; call `preventDefault` to override. */
+  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
+  /** Outer glass shell handled by parent (e.g. unified composer capsule). */
+  variant?: 'default' | 'composerInner'
   className?: string
 }
 
@@ -19,6 +23,8 @@ export default function GlassInput({
   placeholder = '',
   disabled = false,
   onSubmit,
+  onKeyDown,
+  variant = 'default',
   className = '',
 }: GlassInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -41,6 +47,8 @@ export default function GlassInput({
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    onKeyDown?.(e)
+    if (e.defaultPrevented) return
     // Shift+Enter → newline (default behavior, don't prevent)
     if (e.key === 'Enter' && e.shiftKey) {
       return
@@ -71,7 +79,11 @@ export default function GlassInput({
       placeholder={placeholder}
       disabled={disabled}
       rows={1}
-      className={`glass-input resize-none ${disabled ? 'opacity-40 cursor-not-allowed' : ''} ${className}`}
+      className={`resize-none ${disabled ? 'opacity-40 cursor-not-allowed' : ''} ${
+        variant === 'composerInner'
+          ? 'glass-input-composer-field'
+          : 'glass-input'
+      } ${className}`}
     />
   )
 }
