@@ -2,7 +2,7 @@
 // Guardrail policies evaluated at preTool, postTool, and preFinalize checkpoints.
 // Policies load from DB (overlay on built-in seed) and hooks are driven by AgentConfig.policyHooks.
 
-import type { PolicyHook, PolicyResult, PolicyRule, PolicyHooks } from '@intera/shared/types'
+import type { PolicyHook, PolicyResult, PolicyRule, PolicyHooks, StageGuardrail } from '@intera/shared/types'
 
 export interface PolicyContext {
   skillName?: string
@@ -211,5 +211,31 @@ export class PolicyEngine {
   /** Register or update a policy rule (used by Admin console). */
   setPolicy(name: string, rule: PolicyRule): void {
     this.policies.set(name, rule)
+  }
+
+  // Stage-loaded guardrail tracking — for cleanup on stage transition
+  private stageLoadedPolicyNames: string[] = []
+
+  /** Load stage-specific guardrails on top of global policies. */
+  loadStageGuardrails(guardrails: StageGuardrail[]): void {
+    for (const g of guardrails) {
+      const stagePolicyName = `stage:${g.name}`
+      this.policies.set(stagePolicyName, g.rule)
+      if (!this.hooks[g.hook].includes(stagePolicyName)) {
+        this.hooks[g.hook].push(stagePolicyName)
+      }
+      this.stageLoadedPolicyNames.push(stagePolicyName)
+    }
+  }
+
+  /** Remove previously loaded stage-specific guardrails. */
+  clearStageGuardrails(): void {
+    for (const name of this.stageLoadedPolicyNames) {
+      this.policies.delete(name)
+      for (const hook of ['preTool', 'postTool', 'preFinalize'] as PolicyHook[]) {
+        this.hooks[hook] = this.hooks[hook].filter((n) => n !== name)
+      }
+    }
+    this.stageLoadedPolicyNames = []
   }
 }

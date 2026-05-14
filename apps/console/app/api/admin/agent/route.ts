@@ -1,13 +1,14 @@
 // GET + PUT /api/admin/agent — Agent config CRUD (upsert)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat } from '@intera/shared/prisma'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
 
 export async function GET() {
   try {
+    await ensureSqliteSchemaCompat(prisma)
     let config = await prisma.agentConfig.findUnique({ where: { customerId: CUSTOMER_ID } })
 
     // Lazy init: create from defaults if DB is empty
@@ -20,6 +21,14 @@ export async function GET() {
           temperature: 0.5,
           thinkingBudget: 4096,
           maxIterations: 20,
+          maxOutputTokens: 4096,
+          toolParallelism: true,
+          isConcurrencySafe: true,
+          showThinking: false,
+          resumePrompt: null,
+          formResponseTemplate: null,
+          evaluationModel: null,
+          intentModel: null,
           memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
           policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
         },
@@ -35,12 +44,13 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
+    await ensureSqliteSchemaCompat(prisma)
     const body = await req.json()
     const {
       model, temperature, thinkingBudget, maxIterations, maxOutputTokens,
       systemPrompt, toolParallelism, isConcurrencySafe,
       showThinking, memoryStrategy, policyHooks,
-      resumePrompt, formResponseTemplate,
+      resumePrompt, formResponseTemplate, evaluationModel, intentModel,
     } = body
 
     const data: Record<string, unknown> = {}
@@ -57,6 +67,8 @@ export async function PUT(req: NextRequest) {
     if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
     if (resumePrompt !== undefined) data.resumePrompt = resumePrompt
     if (formResponseTemplate !== undefined) data.formResponseTemplate = formResponseTemplate
+    if (evaluationModel !== undefined) data.evaluationModel = evaluationModel
+    if (intentModel !== undefined) data.intentModel = intentModel
 
     const config = await prisma.agentConfig.upsert({
       where: { customerId: CUSTOMER_ID },
@@ -68,9 +80,14 @@ export async function PUT(req: NextRequest) {
         temperature: temperature ?? 0.5,
         thinkingBudget: thinkingBudget ?? 4096,
         maxIterations: maxIterations ?? 20,
+        maxOutputTokens: maxOutputTokens ?? 4096,
         toolParallelism: toolParallelism ?? true,
         isConcurrencySafe: isConcurrencySafe ?? true,
         showThinking: showThinking ?? false,
+        resumePrompt: resumePrompt ?? null,
+        formResponseTemplate: formResponseTemplate ?? null,
+        evaluationModel: evaluationModel ?? null,
+        intentModel: intentModel ?? null,
         memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
         policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
       },

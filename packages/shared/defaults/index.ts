@@ -229,11 +229,14 @@ export interface DefaultCaseTypeSeed {
 
 export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
   {
-    type: 'deposit_issue', displayName: '充值未到账', description: 'Customer reports a deposit not received',
+    type: 'deposit_issue',
+    displayName: '存款未到账',
+    description:
+      '用户反映已向平台充值或划转资金（银行卡、支付宝、微信、USDT 等），但账户余额未增加或未看到到账确认；包含「扣款成功但余额没变」「流水有、游戏/钱包里没点数」「长时间未到账」等说法。',
     icon: '💰',
     requiredFacts: '["txnId","amount","paymentMethod","date"]',
     stages: '["created","collecting","investigating","waiting_human","resolved"]',
-    defaultGoal: '确认充值是否到账，如未到账申请补单',
+    defaultGoal: '核实订单与支付渠道状态，判断是否延迟、失败或需补单；系统与客户说法冲突时升级人工核查。',
     escalateOn: '["conflict"]',
   },
   {
@@ -261,6 +264,214 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
     escalateOn: '["large_amount","policy_violation"]',
   },
 ]
+
+// Per-stage configs for each case type (used when stageConfigs is not set on CaseType)
+export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string, unknown>>> = {
+  deposit_issue: {
+    created: {
+      name: 'created',
+      description:
+        '案例已开立，占位阶段：**本阶段不要求调用任何 Skill**（Required/Allowed 留空）；满足「最少迭代次数」后自动进入 collecting。',
+      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+    },
+    collecting: {
+      name: 'collecting',
+      description: '向用户收集流水号、金额、渠道、时间等；可用 request_user_input 表单一次收齐。',
+      requiredSkills: ['request_user_input'],
+      evidenceRequirements: [
+        { factKey: 'txnId', description: '交易流水号 / 充值单号', source: 'user_input', required: true },
+        { factKey: 'amount', description: '充值金额', source: 'user_input', required: true },
+        { factKey: 'paymentMethod', description: '支付方式', source: 'user_input', required: true },
+        { factKey: 'date', description: '到账或发起时间（如有）', source: 'user_input', required: false },
+      ],
+      transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
+    },
+    investigating: {
+      name: 'investigating',
+      description: '调用订单与渠道技能核对平台记录；可申请公告检索与历史工单。',
+      requiredSkills: ['query_order_status', 'query_payment_channel_status'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve'],
+      evidenceRequirements: [
+        {
+          factKey: 'status',
+          description: 'query_order_status 返回的订单/流水状态（mock 字段 `status`）',
+          source: 'skill_output',
+          skillName: 'query_order_status',
+          required: true,
+        },
+        {
+          factKey: 'channel',
+          description: 'query_payment_channel_status 返回的渠道标识（mock 字段 `channel`）',
+          source: 'skill_output',
+          skillName: 'query_payment_channel_status',
+          required: true,
+        },
+      ],
+      guardrails: [
+        { name: 'conflict_requires_human', description: 'Detect conflict between system data and user report', hook: 'postTool', rule: {} },
+      ],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationPrompt: 'Based on the investigation results, determine next stage. If system data conflicts with user report → escalate to waiting_human. If all clear with evidence → transition to resolved. If still collecting → transition to collecting.',
+      },
+    },
+    waiting_human: {
+      name: 'waiting_human',
+      description: 'Waiting for human specialist to review and respond',
+      requiredSkills: ['create_human_task'],
+      transition: { type: 'manual' },
+    },
+    resolved: {
+      name: 'resolved',
+      description: 'Case resolved, provide conclusion to customer',
+      requiredSkills: ['finalize_case'],
+      guardrails: [
+        { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises', hook: 'preFinalize', rule: { deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'] } },
+        { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+      ],
+      transition: { type: 'manual' },
+    },
+  },
+  order_issue: {
+    created: {
+      name: 'created',
+      description: 'Case created, waiting for initial assessment',
+      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+    },
+    verifying: {
+      name: 'verifying',
+      description: 'Verify order details and collect missing information',
+      requiredSkills: ['query_order_status'],
+      availableSkills: ['query_order_status', 'request_user_input', 'read_case_history'],
+      evidenceRequirements: [
+        { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
+        { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
+        {
+          factKey: 'status',
+          description: '订单系统返回的状态（skill 字段 `status`）',
+          source: 'skill_output',
+          skillName: 'query_order_status',
+          required: true,
+        },
+      ],
+      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'Check if order details are verified. If order found and matches → investigating. If missing info → back to collecting.' },
+    },
+    investigating: {
+      name: 'investigating',
+      description: 'Investigate order issue',
+      requiredSkills: ['query_payment_channel_status'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve'],
+      guardrails: [
+        { name: 'conflict_requires_human', description: 'Detect conflict between system and user', hook: 'postTool', rule: {} },
+      ],
+      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If conflict detected → waiting_human. If resolved → resolved.' },
+    },
+    waiting_human: {
+      name: 'waiting_human',
+      description: 'Waiting for human specialist',
+      requiredSkills: ['create_human_task'],
+      transition: { type: 'manual' },
+    },
+    resolved: {
+      name: 'resolved',
+      description: 'Case resolved',
+      requiredSkills: ['finalize_case'],
+      guardrails: [
+        { name: 'no_compensation_promise', description: 'Forbid compensation promises', hook: 'preFinalize', rule: { deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'] } },
+        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+      ],
+      transition: { type: 'manual' },
+    },
+  },
+  account_issue: {
+    created: {
+      name: 'created',
+      description: 'Case created',
+      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+    },
+    investigating: {
+      name: 'investigating',
+      description: 'Investigate account status',
+      requiredSkills: ['read_case_history'],
+      availableSkills: ['read_case_history', 'request_user_input', 'kb_hybrid_retrieve'],
+      evidenceRequirements: [
+        { factKey: 'userId', description: 'User ID', source: 'user_input', required: true },
+        { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
+      ],
+      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If high_risk detected → escalated. If needs human → waiting_human. If resolved → resolved.' },
+    },
+    waiting_human: {
+      name: 'waiting_human',
+      description: 'Waiting for human specialist',
+      requiredSkills: ['create_human_task'],
+      transition: { type: 'manual' },
+    },
+    escalated: {
+      name: 'escalated',
+      description: 'Escalated to higher authority',
+      requiredSkills: ['create_human_task'],
+      transition: { type: 'manual' },
+    },
+    resolved: {
+      name: 'resolved',
+      description: 'Case resolved',
+      requiredSkills: ['finalize_case'],
+      guardrails: [
+        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+      ],
+      transition: { type: 'manual' },
+    },
+  },
+  refund_request: {
+    created: {
+      name: 'created',
+      description: 'Case created',
+      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+    },
+    reviewing: {
+      name: 'reviewing',
+      description: 'Review refund eligibility',
+      requiredSkills: ['query_order_status'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'read_case_history', 'request_user_input'],
+      evidenceRequirements: [
+        { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
+        { factKey: 'amount', description: 'Refund amount', source: 'user_input', required: true },
+        { factKey: 'reason', description: 'Refund reason', source: 'user_input', required: true },
+        {
+          factKey: 'status',
+          description: '订单查询返回的状态（skill 字段 `status`）',
+          source: 'skill_output',
+          skillName: 'query_order_status',
+          required: true,
+        },
+      ],
+      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If large_amount or policy_violation → waiting_human. If eligible → approved. If not eligible → resolved with rejection.' },
+    },
+    approved: {
+      name: 'approved',
+      description: 'Refund approved',
+      requiredSkills: ['finalize_case'],
+      transition: { type: 'manual' },
+    },
+    resolved: {
+      name: 'resolved',
+      description: 'Case resolved (approved or rejected)',
+      requiredSkills: ['finalize_case'],
+      guardrails: [
+        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+      ],
+      transition: { type: 'manual' },
+    },
+  },
+}
+
+// Default orchestrator config
+export const DEFAULT_ORCHESTRATOR_CONFIG = {
+  enabled: false,
+  maxParallelAgents: 3,
+  dispatchPrompt: 'Analyze the case and determine which specialized sub-agents to dispatch for parallel investigation.',
+}
 
 export interface DefaultRoutingSeed {
   queue: string

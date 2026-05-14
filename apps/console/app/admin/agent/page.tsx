@@ -91,6 +91,8 @@ export default function AgentConfigPage() {
           policyHooks,
           resumePrompt: raw.resumePrompt || '',
           formResponseTemplate: raw.formResponseTemplate || '',
+          evaluationModel: raw.evaluationModel || '',
+          intentModel: raw.intentModel || '',
         })
         setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
         setError(null)
@@ -275,6 +277,42 @@ export default function AgentConfigPage() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">{t('agent.intentModel')}</span>
+                  <select
+                    value={config.intentModel}
+                    onChange={(e) => update('intentModel', e.target.value)}
+                    className="glass-input-console text-[13px] font-mono w-full"
+                  >
+                    <option value="">— Default (haiku) —</option>
+                    {mainModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-[var(--fog)]/50 mt-0.5 block">
+                    {t('agent.intentModelHint')}
+                  </span>
+                </label>
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">{t('agent.evaluationModel')}</span>
+                  <select
+                    value={config.evaluationModel}
+                    onChange={(e) => update('evaluationModel', e.target.value)}
+                    className="glass-input-console text-[13px] font-mono w-full"
+                  >
+                    <option value="">— Default (haiku) —</option>
+                    {mainModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-[var(--fog)]/50 mt-0.5 block">
+                    {t('agent.evaluationModelHint')}
+                  </span>
                 </label>
                 <label className="space-y-1.5 block">
                   <span className="text-[11px] text-[var(--fog)]">

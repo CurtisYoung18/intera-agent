@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import LiquidGlassBg from '@intera/shared/ui/liquid-glass-bg'
+import ConsoleBackToTop from '@/components/console-back-to-top'
 import ConsoleSidebar from './console-sidebar'
 
 interface ConsoleShellProps {
@@ -10,7 +11,7 @@ interface ConsoleShellProps {
 
 export default function ConsoleShell({ children }: ConsoleShellProps) {
   return (
-    <div className="relative min-h-[100dvh] flex">
+    <div className="relative flex h-[100dvh] min-h-0 overflow-hidden">
       {/* Liquid glass background */}
       <LiquidGlassBg variant="console" />
 
@@ -25,8 +26,12 @@ export default function ConsoleShell({ children }: ConsoleShellProps) {
 
       <ConsoleSidebar />
 
-      <main className="relative z-10 flex-1 min-w-0 overflow-y-auto">
+      <main
+        id="console-scroll-root"
+        className="relative z-10 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
+      >
         {children}
+        <ConsoleBackToTop />
       </main>
     </div>
   )

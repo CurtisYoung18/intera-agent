@@ -181,6 +181,8 @@ export interface AgentConfigData {
   policyHooks: PolicyHooks
   resumePrompt?: string
   formResponseTemplate?: string
+  evaluationModel?: string
+  intentModel?: string
 }
 
 export interface MemoryStrategy {
@@ -265,6 +267,12 @@ export type SSEEventType =
   | 'message_stop'
   | 'withheld'
   | 'consultation_complete'
+  | 'intent_classified'
+  | 'case_created'
+  | 'sub_agent_start'
+  | 'sub_agent_progress'
+  | 'sub_agent_complete'
+  | 'sub_agent_error'
   | 'error'
 
 export interface SSEEvent {
@@ -284,9 +292,98 @@ export interface CaseSchemaConfig {
   icon: string
   requiredFacts: string[]
   stages: string[]
+  stageConfigs?: Record<string, StageConfig>
   defaultGoal: string
   escalateOn: string[]
   autoCloseConditions?: Record<string, unknown>
+  orchestrator?: OrchestratorConfig
+}
+
+// ============================================
+// Stage Configuration (per-stage)
+// ============================================
+
+export interface StageConfig {
+  name: string
+  description?: string
+  model?: string
+  systemPrompt?: string
+  temperature?: number
+  thinkingBudget?: number
+  requiredSkills?: string[]
+  availableSkills?: string[]
+  guardrails?: StageGuardrail[]
+  evidenceRequirements?: EvidenceRequirement[]
+  transition?: StageTransitionRule
+  subAgents?: SubAgentConfig[]
+}
+
+export interface StageGuardrail {
+  name: string
+  description?: string
+  hook: PolicyHook
+  rule: PolicyRule
+}
+
+export interface EvidenceRequirement {
+  factKey: string
+  description: string
+  source: 'user_input' | 'skill_output' | 'evaluation'
+  skillName?: string
+  required: boolean
+}
+
+export interface StageTransitionRule {
+  type: 'auto' | 'evaluation' | 'manual'
+  conditions?: StageTransitionCondition[]
+  evaluationModel?: string
+  evaluationPrompt?: string
+}
+
+export interface StageTransitionCondition {
+  type: 'all_evidence_gathered' | 'all_skills_called' | 'min_iterations' | 'llm_decision'
+  value?: number | string | boolean
+}
+
+// ============================================
+// Sub-Agent Configuration
+// ============================================
+
+export interface SubAgentConfig {
+  name: string
+  model: string
+  systemPrompt: string
+  skills: string[]
+  taskTemplate: string
+  maxIterations?: number
+  parallel: boolean
+}
+
+export interface OrchestratorConfig {
+  enabled: boolean
+  dispatchPrompt?: string
+  maxParallelAgents?: number
+}
+
+export interface SubAgentTask {
+  id: string
+  agentConfig: SubAgentConfig
+  taskPrompt: string
+  context: {
+    caseId: string
+    caseMemory: CaseMemoryData
+    stageGoal: string
+  }
+}
+
+export interface SubAgentResult {
+  taskId: string
+  agentName: string
+  findings: Record<string, unknown>
+  evidence: Record<string, unknown>[]
+  recommendation?: string
+  tokensUsed: number
+  durationMs: number
 }
 
 // ============================================
@@ -311,3 +408,32 @@ export type TransitionReason =
   | 'collapse_drain_retry'
   | 'reactive_compact_retry'
   | 'max_output_tokens_escalate'
+  | 'stage_continue'
+
+export interface LoopResult {
+  messages: Message[]
+  caseStatus: CaseStatus
+  transition: TransitionReason
+  currentStage?: string
+  reason?: string
+  pendingSubAgents?: string[]
+}
+
+// ============================================
+// Intent Classification
+// ============================================
+
+export interface MatchedCaseType {
+  type: string
+  displayName: string
+  icon: string
+  confidence: number
+}
+
+export interface IntentClassification {
+  intent: 'qa' | 'case'
+  matchedCaseTypes: MatchedCaseType[]
+  needsClarification: boolean
+  reasoning: string
+  extractedFacts: Record<string, string>
+}

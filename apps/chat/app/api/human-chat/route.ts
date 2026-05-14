@@ -116,6 +116,30 @@ export async function POST(request: NextRequest) {
           systemPrompt += `\n\n## Current Case Context\n- Case ID: ${caseData.id}\n- Type: ${caseData.type}\n- Status: ${caseData.status}\n- Goal: ${caseData.goal || 'N/A'}\n- Blocker: ${caseData.blocker || 'N/A'}\n- Confirmed facts: ${memory.confirmedFacts}\n- Skills called: ${memory.skillsCalled}\n- Skill results: ${memory.skillResults}\n- Key events: ${memory.keyEvents}\n- Original escalation question: ${task.question}`
         }
 
+        // Load case schema for stage-aware execution
+        let caseSchema = null
+        try {
+          const caseType = await prisma.caseType.findUnique({
+            where: { customerId_type: { customerId: caseData.customerId, type: caseData.type } },
+          })
+          if (caseType) {
+            const parseJson = (raw: string | null | undefined) => { try { return raw ? JSON.parse(raw) : null } catch { return null } }
+            caseSchema = {
+              type: caseType.type,
+              displayName: caseType.displayName,
+              description: caseType.description || undefined,
+              icon: caseType.icon,
+              requiredFacts: (parseJson(caseType.requiredFacts) as string[]) || [],
+              stages: (parseJson(caseType.stages) as string[]) || [],
+              stageConfigs: (parseJson(caseType.stageConfigs) as any) || undefined,
+              defaultGoal: caseType.defaultGoal,
+              escalateOn: (parseJson(caseType.escalateOn) as string[]) || [],
+              autoCloseConditions: (parseJson(caseType.autoCloseConditions) as any) || undefined,
+              orchestrator: (parseJson(caseType.orchestratorConfig) as any) || undefined,
+            }
+          }
+        } catch { /* schema not found */ }
+
         const baseConfig = await loadHumanChatConfig(caseData.customerId)
 
         const agentLoop = await AgentLoop.create({
@@ -124,6 +148,7 @@ export async function POST(request: NextRequest) {
           customerId: caseData.customerId,
           userId: caseData.userId,
           systemPrompt,
+          caseSchema,
         })
 
         // Restore memory

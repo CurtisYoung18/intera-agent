@@ -625,3 +625,72 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Ops harness guide ── animated flow readability */
+@keyframes guide-node-pulse {
+  0%, 100% {
+    opacity: 0.88;
+    transform: translateY(0);
+    box-shadow:
+      var(--shadow-card),
+      inset 0 1px 0 rgba(255, 255, 255, 0.55),
+      0 0 0 0 rgba(91, 138, 247, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+    box-shadow:
+      var(--shadow-card-hover),
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      0 0 24px -8px rgba(91, 138, 247, 0.18);
+  }
+}
+
+@keyframes guide-beam-dash {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -56;
+  }
+}
+
+@keyframes guide-chip-shine {
+  0%, 100% {
+    opacity: 0.45;
+    transform: translateX(-100%);
+  }
+  50% {
+    opacity: 0.12;
+    transform: translateX(200%);
+  }
+}
+
+.guide-flow-node {
+  animation: guide-node-pulse var(--guide-pulse-duration, 2.4s) ease-in-out infinite;
+  animation-delay: var(--guide-pulse-delay, 0s);
+}
+
+.guide-beam-vertical {
+  animation: guide-beam-dash 2.8s linear infinite;
+}
+
+[data-guide-shine='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+[data-guide-shine='true']::after {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.42) 45%,
+    transparent 72%
+  );
+  animation: guide-chip-shine 3.8s ease-in-out infinite;
+  animation-delay: var(--guide-shine-delay, 0s);
+}

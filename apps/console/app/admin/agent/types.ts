@@ -55,6 +55,8 @@ export interface AgentConfigData {
   policyHooks: string
   resumePrompt: string
   formResponseTemplate: string
+  evaluationModel: string
+  intentModel: string
 }
 
 export interface ModelInfo {

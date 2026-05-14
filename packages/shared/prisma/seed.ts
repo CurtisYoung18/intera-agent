@@ -10,6 +10,8 @@ import {
   DEFAULT_POLICIES,
   DEFAULT_CASE_TYPES,
   DEFAULT_ROUTING,
+  DEFAULT_STAGE_CONFIGS,
+  DEFAULT_ORCHESTRATOR_CONFIG,
 } from '../defaults/index'
 
 const prisma = new PrismaClient()
@@ -86,11 +88,25 @@ async function seed() {
   }
   console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies`)
 
+  const orch = JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG)
+
   // ── Admin: Case Types ──
   for (const ct of DEFAULT_CASE_TYPES) {
+    const stageMap = DEFAULT_STAGE_CONFIGS[ct.type] as Record<string, unknown> | undefined
     await prisma.caseType.upsert({
       where: { customerId_type: { customerId: CUSTOMER_ID, type: ct.type } },
-      update: {},
+      update: {
+        displayName: ct.displayName,
+        description: ct.description,
+        icon: ct.icon,
+        requiredFacts: ct.requiredFacts,
+        stages: ct.stages,
+        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
+        orchestratorConfig: orch,
+        defaultGoal: ct.defaultGoal,
+        escalateOn: ct.escalateOn,
+        enabled: true,
+      },
       create: {
         customerId: CUSTOMER_ID,
         type: ct.type,
@@ -99,8 +115,11 @@ async function seed() {
         icon: ct.icon,
         requiredFacts: ct.requiredFacts,
         stages: ct.stages,
+        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
+        orchestratorConfig: orch,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
+        enabled: true,
       },
     })
   }

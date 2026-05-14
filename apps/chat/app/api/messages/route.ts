@@ -5,7 +5,7 @@
 import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
 import { prisma } from '@intera/shared/prisma'
-import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
+import type { SSEEvent, AgentConfigData, CaseSchemaConfig, IntentClassification } from '@intera/shared/types'
 
 // Verify env vars at module load (logged once per cold start)
 const AUTH_SET = !!process.env.ANTHROPIC_AUTH_TOKEN
@@ -69,6 +69,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
         resumePrompt: (dbConfig as any).resumePrompt || '',
         formResponseTemplate: (dbConfig as any).formResponseTemplate || '',
+        evaluationModel: (dbConfig as any).evaluationModel || undefined,
       }
       setCachedConfig(customerId, config)
       return config
@@ -104,12 +105,14 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const { message, resumeTrigger, formResult, caseId, customerId, userId } = body
+        const { message, resumeTrigger, formResult, caseId, customerId, userId, classification, caseType: bodyCaseType, skipClassification } = body
 
         let userMessage = message
         let resolvedCaseId = caseId || `case_${Date.now()}`
         let resolvedCustomerId = customerId || 'default'
         let resolvedUserId = userId || 'anonymous'
+        let resolvedClassification = classification as IntentClassification | undefined
+        let createdCaseForIntent = false
 
         // ── Form response: customer submitted form answers ──
         if (formResult && !message) {
@@ -165,9 +168,62 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // ── Load case memory + schema from DB (CC-style session memory pattern) ──
+        // ── System prompt (initialized early for classification additions) ──
         let systemPrompt = DEFAULT_SYSTEM_PROMPT
+
+        // ── Intent classification + auto case creation ──
+        // Skip for resume/form flows or when explicitly disabled
+        const shouldClassify = !skipClassification && !resumeTrigger && !formResult && !bodyCaseType
+        if (shouldClassify && resolvedClassification) {
+          if (resolvedClassification.intent === 'case' && !resolvedClassification.needsClarification && resolvedClassification.matchedCaseTypes.length > 0) {
+            const matched = resolvedClassification.matchedCaseTypes[0]
+            try {
+              const newCase = await prisma.case.create({
+                data: {
+                  customerId: resolvedCustomerId,
+                  userId: resolvedUserId,
+                  type: matched.type,
+                  status: 'created',
+                },
+              })
+              resolvedCaseId = newCase.id
+              createdCaseForIntent = true
+
+              sendEvent({
+                type: 'case_created',
+                data: {
+                  caseId: newCase.id,
+                  caseType: matched.type,
+                  displayName: matched.displayName,
+                  icon: matched.icon,
+                  extractedFacts: resolvedClassification.extractedFacts,
+                },
+                timestamp: new Date().toISOString(),
+              })
+              console.log(`[Intera] Auto-created case ${newCase.id} with type "${matched.type}" from intent classification`)
+            } catch (err) {
+              console.error('[Intera] Failed to create case from intent:', err)
+            }
+          }
+
+          if (resolvedClassification.needsClarification && resolvedClassification.matchedCaseTypes.length > 0) {
+            // Multiple ambiguous matches — Core Agent should ask user to clarify
+            const options = resolvedClassification.matchedCaseTypes
+              .map((m) => `"${m.displayName}"`)
+              .join(', ')
+            const clarifyNote = `\n\n[Intent Classification]: The user's message could match multiple case types: ${options}. Ask the user which issue they want help with first, then create the appropriate case using create_case tool.`
+            systemPrompt += clarifyNote
+          }
+        }
+
+        if (bodyCaseType && !createdCaseForIntent) {
+          // Manual case type override from UI
+          systemPrompt += `\n\n[Manual Case Type]: The user has selected case type "${bodyCaseType}".`
+        }
+
+        // ── Load case memory + schema from DB (CC-style session memory pattern) ──
         let existingMemory: unknown = null
+        let caseSchema: CaseSchemaConfig | null = null
         try {
           const existingCase = await prisma.case.findUnique({
             where: { id: resolvedCaseId },
@@ -182,6 +238,24 @@ export async function POST(request: NextRequest) {
               if (caseType) {
                 const stages = parseMemoryJson(caseType.stages) as string[]
                 const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
+                const stageConfigs = parseMemoryJson(caseType.stageConfigs) as Record<string, unknown> | null
+                const orchestrator = parseMemoryJson(caseType.orchestratorConfig) as Record<string, unknown> | null
+
+                // Build full CaseSchemaConfig
+                caseSchema = {
+                  type: caseType.type,
+                  displayName: caseType.displayName,
+                  description: caseType.description || undefined,
+                  icon: caseType.icon,
+                  requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
+                  stages: Array.isArray(stages) ? stages : [],
+                  stageConfigs: stageConfigs as unknown as CaseSchemaConfig['stageConfigs'],
+                  defaultGoal: caseType.defaultGoal,
+                  escalateOn: parseMemoryJson(caseType.escalateOn) as string[] || [],
+                  autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
+                  orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
+                }
+
                 systemPrompt += `\n\n## Case Schema: ${caseType.displayName}\n- Goal: ${caseType.defaultGoal}\n- Stages: ${JSON.stringify(stages)}\n- Required facts: ${JSON.stringify(requiredFacts)}\n- Escalate when: ${caseType.escalateOn}`
               }
             } catch { /* schema not found */ }
@@ -214,6 +288,7 @@ export async function POST(request: NextRequest) {
           customerId: resolvedCustomerId,
           userId: resolvedUserId,
           systemPrompt,
+          caseSchema,
         })
 
         // Restore memory from DB into the in-memory manager
@@ -230,14 +305,15 @@ export async function POST(request: NextRequest) {
           result.transition !== 'next_turn'
         if (hasRealWork) {
           try {
+            const caseTypeForUpsert = caseSchema?.type || 'general'
             await prisma.case.upsert({
               where: { id: resolvedCaseId },
-              update: { status: result.caseStatus },
+              update: { status: result.caseStatus, type: caseTypeForUpsert },
               create: {
                 id: resolvedCaseId,
                 customerId: resolvedCustomerId,
                 userId: resolvedUserId,
-                type: 'general',
+                type: caseTypeForUpsert,
                 status: result.caseStatus,
               },
             })
@@ -321,7 +397,7 @@ export async function POST(request: NextRequest) {
   })
 }
 
-function parseMemoryJson(raw: string | undefined): unknown {
+function parseMemoryJson(raw: string | null | undefined): unknown {
   if (!raw) return {}
   try { return JSON.parse(raw) } catch { return {} }
 }

@@ -2,7 +2,7 @@
 
 > 项目路径：`/Users/curtis/Desktop/Tools/intera-agent`
 > 文档目的：统一对产品架构的认知，梳理模块边界和关键数据链路。
-> 最后更新：2026-05-07 ｜ 版本：生产就绪 v1.0
+> 最后更新：2026-05-13 ｜ 版本：生产就绪 v1.1
 >
 > **产品定位**：Intera 是一个由 AI Agent 主导、以问题解决为目标的客服 SaaS。Agent 作为 Case Owner，对每一个 case 全程负责——理解目标、收集证据、制定计划、调用工具、协调人工、持续推进，直到闭环。系统目标不是"回复消息"，而是"解决问题"。
 >
@@ -246,6 +246,12 @@ Skills 异步执行期间，前端通过 SSE 实时接收事件，驱动 UI 动�
 | `case_status` | Case 状态变化高亮动画 |
 | `human_task_created` | Case 卡片进入 waiting_human 状态 |
 | `consultation_complete` | 人工处理完成通知（事件驱动，含 summary/resolution）。Chat page 显示过渡消息（zh/en 双语自动检测） |
+| `intent_classified` | 意图分类完成，前端决定是否展示 Split 动画 |
+| `case_created` | 自动建案成功，前端创建 Case Tab + 右面板滑入 |
+| `sub_agent_start` | 专职 Agent 开始执行，前端显示进度卡片 |
+| `sub_agent_progress` | 专职 Agent 工具调用/思考中，更新卡片状态 |
+| `sub_agent_complete` | 专职 Agent 完成，卡片变绿展示发现详情 |
+| `sub_agent_error` | 专职 Agent 超时/失败，卡片变红展示错误 |
 | `finalized` | 闭环成功动画 + 结果卡片展示 |
 | `message_stop` | 消息生成结束（含 transition reason） |
 | `withheld` | 错误 withheld（恢复成功前暂缓显示） |
@@ -1022,8 +1028,9 @@ DemoCustomer（B 端客户/厂商）
 
 | 路由 | 方法 | 职责 |
 |---|---|---|
-| `/api/messages` | POST | **消息入口**，触发 Agent Loop，SSE 流。加载 AgentConfig/Skills/Policies from DB |
+| `/api/messages` | POST | **消息入口**，触发 Agent Loop，SSE 流。加载 AgentConfig/Skills/Policies from DB。接受 `classification` 字段跳过二次分类 |
 | `/api/human-chat` | POST | Operator-Agent 咨询对话，SSE 流。finalize_consultation 后 await+retry 通知顾客 |
+| `/api/intent/classify` | POST | **意图分类**，轻量端点。前端先调用获取分类结果，再调 `/api/messages` |
 
 ### Console App (port 3001)
 
@@ -1471,13 +1478,321 @@ stages: ["created", "reviewing", "approved", "rejected", "resolved"]
 
 | 文件 | 职责 |
 |---|---|
-| `loop.ts` | Agent Loop 入口，transition-driven 循环，StreamingToolExecutor 调度 |
+| `loop.ts` | Agent Loop 入口，transition-driven 循环，StageExecutor 集成，Nudge 机制，StreamingToolExecutor 调度 |
+| `stage-executor.ts` | **NEW** Stage-gated 执行引擎：阶段感知提示词构建、工具过滤、证据检查、阶段转换评估 |
+| `orchestrator.ts` | **NEW** 编排器：案例类型识别、子Agent 派遣规划、并行调查调度 |
+| `sub-agent.ts` | **NEW** 子Agent：隔离模型+提示词+技能集，独立运行调查任务 |
 | `memory.ts` | Case Memory 维护，事实抽取，四层上下文注入 |
 | `skills.ts` | Skill 路由分发，mock/http 双模式，StreamingToolExecutor 并行执行 |
-| `policy.ts` | Policy 规则引擎，preTool/postTool/preFinalize 三个安检点 |
+| `policy.ts` | Policy 规则引擎，preTool/postTool/preFinalize 三个安检点 + 阶段级 guardrail 加载 |
 | `mock-handlers.ts` | 内置 Skill 的 mock 实现，read_case_history / query_order_status 等 |
 | `trace.ts` | 操作追踪写入，每步操作记录到 ActionTrace |
 | `profiler.ts` | Query Profiler 检查点埋点，TTFT / latency 追踪 |
+
+---
+
+## 十六、Stage-Gated 执行引擎（2026-05-13 新增）
+
+### 16.1 问题背景
+
+原始 Agent Loop 存在以下健壮性问题：
+
+1. **Loop 过早终止**：当 LLM 返回纯文本（无 tool_use）时，Loop 直接退出。如果 Agent 说"让我上报"但没有调用 `create_human_task`，Case 会卡住。
+2. **阶段仅作建议**：CaseSchema 的 stages 仅注入 system prompt 作为文本指导，没有程序化执行。
+3. **无阶段级护栏**：同一个 Policy 配置应用于所有阶段，无法区分"收集阶段"和"解决阶段"的行为边界。
+4. **无子Agent派遣**：单一 Loop 处理一切，无法并行调查。
+
+### 16.2 StageExecutor 引擎
+
+**文件：** `lib/agent/stage-executor.ts`
+
+StageExecutor 将阶段从"建议文本"升级为"可执行合约"：
+
+```
+Stage: collecting
+  ├── requiredSkills: [request_user_input]    ← 必须调用的工具
+  ├── availableSkills: [request_user_input]    ← 允许的工具白名单
+  ├── evidenceRequirements: [                  ← 阶段完成条件
+  │     { factKey: "txnId", source: "user_input" },
+  │     { factKey: "amount", source: "user_input" },
+  │   ]
+  ├── guardrails: []                           ← 阶段级护栏
+  └── transition: {                            ← 转换规则
+        type: "auto",
+        conditions: [{ type: "all_evidence_gathered" }]
+      }
+```
+
+**三种转换类型：**
+| 类型 | 说明 |
+|---|---|
+| `auto` | 条件满足即自动转换（如 all_evidence_gathered） |
+| `evaluation` | 调用评估模型（轻量 Haiku）判断是否转换 |
+| `manual` | 永不自动转换（如 waiting_human、resolved） |
+
+### 16.3 Nudge 机制
+
+当 LLM 返回文本但未调用阶段必需工具时：
+
+```
+LLM: "Let me escalate this to our specialist team."
+     ↓ (no tool_use blocks)
+StageExecutor.checkRequiredSkills("investigating")
+     → { met: false, missing: ["create_human_task"] }
+     ↓
+Inject [SYSTEM NUDGE]:
+  "Stage investigating requires: create_human_task.
+   You MUST call these tools. Do not just describe
+   what you will do — actually call the tools now."
+     ↓
+Continue loop (不退出！)
+```
+
+连续 3 次 Nudge 后升级为 human intervention（防止无限循环）。
+
+### 16.4 阶段转换评估
+
+```typescript
+// Auto: 条件检查
+StageExecutor.evaluateTransition("collecting")
+  → checkEvidenceRequirements() → all met?
+  → YES: shouldTransition=true, nextStage="investigating"
+
+// Evaluation: LLM 判断
+StageExecutor.evaluateTransition("investigating")
+  → sends case facts + skill results to Haiku model
+  → "System says success, user says not received → conflict"
+  → shouldTransition=true, nextStage="waiting_human"
+```
+
+### 16.5 Per-Stage 模型与提示词
+
+CaseSchema 的 `stageConfigs` 支持每个阶段独立配置：
+
+```json
+{
+  "investigating": {
+    "model": "claude-sonnet-4-20250514",
+    "systemPrompt": "You are investigating a deposit issue...",
+    "temperature": 0.3,
+    "thinkingBudget": 8192
+  }
+}
+```
+
+未配置时回退到 AgentConfig 的默认模型和提示词。
+
+---
+
+## 十七、Sub-Agent 派遣系统（2026-05-13 新增）
+
+### 17.1 架构
+
+```
+Agent Core (主脑)
+   │ AgentConfig 配置
+   │
+   ├── 识别 Case Type → 加载 CaseSchema
+   │
+   ├── 进入 "investigating" 阶段
+   │    │ stageConfig.investigating.subAgents = [
+   │    │   { name: "order_investigator", skills: ["query_order_status"] },
+   │    │   { name: "payment_investigator", skills: ["query_payment_channel_status"] }
+   │    │ ]
+   │    │
+   │    ├── [并行] SubAgent: order_investigator
+   │    │    ├── 模型: claude-haiku-4-5-20251001
+   │    │    ├── 提示词: "Investigate order TXU1_12345..."
+   │    │    └── 工具: [query_order_status]
+   │    │
+   │    └── [并行] SubAgent: payment_investigator
+   │         ├── 模型: claude-haiku-4-5-20251001
+   │         ├── 提示词: "Check payment channel status..."
+   │         └── 工具: [query_payment_channel_status]
+   │
+   └── 合并结果 → CaseMemory → 主Agent 综合决策
+```
+
+### 17.2 核心文件
+
+| 文件 | 职责 |
+|---|---|
+| `orchestrator.ts` | 派遣计划、并行/串行调度、非阻塞后台派发 (`dispatchInBackground`)、增量结果合并 (`mergeSingleResult`)、新结果轮询 (`hasNewResults`) |
+| `sub-agent.ts` | 隔离执行：独立 Anthropic 客户端、独立模型+提示词+技能集。**已去 mock**：通过 `StreamingToolExecutor.executeAll()` 真实执行工具。支持多轮 ReAct (`maxIterations`) 和流式进度 (`investigateStreaming`) |
+
+### 17.3 配置
+
+```json
+// CaseSchema.orchestrator
+{
+  "enabled": true,
+  "maxParallelAgents": 3,
+  "dispatchPrompt": "Analyze and determine which sub-agents to dispatch."
+}
+
+// StageConfig.subAgents
+[{
+  "name": "order_investigator",
+  "model": "claude-haiku-4-5-20251001",
+  "systemPrompt": "You are an order investigator...",
+  "skills": ["query_order_status"],
+  "taskTemplate": "Investigate order for case {{caseId}}...",
+  "maxIterations": 3,
+  "parallel": true
+}]
+```
+
+### 17.4 Sub-Agent 实例化与依赖注入（2026-05-13 更新）
+
+SubAgent 通过 `SkillRouter` 获取真实的 `SkillDefinition[]`，不再使用硬编码 mock：
+
+```typescript
+// loop.ts — 构造函数
+this.orchestrator = new OrchestratorAgent(deps.caseSchema, this.skillRouter.getToolDefinitions())
+
+// orchestrator.ts — 传递给 SubAgent
+agent = new SubAgent(task.agentConfig, this.skillDefinitions)
+```
+
+SubAgent 通过 `StreamingToolExecutor.executeAll()` 执行工具，与 Core Agent 共享相同的工具执行路径（mock / http 双模式）。
+
+---
+
+## 十八、智能意图路由与并行 Agent 系统（2026-05-13 新增）
+
+### 18.1 问题背景
+
+原始系统中，Case Type 由 URL 参数 (`?caseType=deposit_issue`) 或硬编码 `'general'` 决定。这意味着：
+
+1. 顾客无法"随便开口" — 必须通过特定 URL 进入才能触发对应的 Case Type 流程
+2. 没有自动意图识别 — 用户说"充值没到账"与"账号被封"在系统中无区别
+3. Case 类型路由是手动的 — 无法从聊天内容自动分类并建案
+
+### 18.2 架构概览
+
+```
+用户输入 "我的充值500元还没到账，交易号TX123456"
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  1) Intent Classification（意图分类）                          │
+│  ─────────────────────────────────────────────────────────────  │
+│  POST /api/intent/classify（轻量端点，前端先调用）               │
+│    │                                                            │
+│    ├── 加载该客户所有 enabled:true 的 CaseType 列表             │
+│    ├── 调用轻量分类 LLM（默认 haiku）                           │
+│    └── 返回意图分类结果：                                       │
+│         · intent: "qa" | "case"                                │
+│         · matchedCaseTypes[] (按置信度降序)                     │
+│         · confidence / reasoning / extractedFacts              │
+│         · needsClarification: 多匹配模糊时标记                   │
+└─────────────────────────────────────────────────────────────────┘
+    │
+    ├─── intent=qa ───→ 纯聊天模式，无 Split，不建案
+    │
+    └─── intent=case ───→
+            │
+            ├── 高分明确匹配 → 自动建案 + Split 动画
+            │     │
+            │     ├── prisma.case.create({ type: matchedType })
+            │     ├── SSE: case_created → 前端展示 Split 面板
+            │     │
+            │     └── AgentLoop 启动
+            │           │
+            │           ├── Orchestrator.dispatchInBackground()
+            │           │     并行派发专职 Sub-Agent
+            │           │
+            │           └── Core Agent ReAct 循环
+            │                 每轮检查 hasNewResults()
+            │                 合并专职 Agent 结果到 CaseMemory
+            │
+            └── 多匹配模糊 → needsClarification=true
+                  Core Agent 先追问用户，确认后再建案
+```
+
+### 18.3 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `apps/chat/lib/agent/intent-classifier.ts` | 意图分类引擎：LLM 调用 → 匹配 CaseType → 智能追问逻辑 |
+| `apps/chat/app/api/intent/classify/route.ts` | `POST /api/intent/classify` 轻量分类端点（非流式） |
+| `apps/chat/lib/agent/config-cache.ts` | CaseType 列表缓存（30s TTL），通过 `config-changed` 失效 |
+
+### 18.4 IntentClassification 数据结构
+
+```typescript
+interface IntentClassification {
+  intent: 'qa' | 'case'
+  matchedCaseTypes: Array<{
+    type: string        // e.g. "deposit_issue"
+    displayName: string // e.g. "充值未到账"
+    icon: string        // e.g. "💰"
+    confidence: number  // 0.0-1.0
+  }>
+  needsClarification: boolean
+  reasoning: string
+  extractedFacts: Record<string, string>  // { txnId: "TX123456", amount: "500" }
+}
+```
+
+### 18.5 智能追问策略
+
+| 条件 | 行为 |
+|------|------|
+| `topConfidence > 0.8` 且 `gap(1st, 2nd) > 0.3` | 高分明确 → 自动建案，不追问 |
+| `topConfidence < 0.8` 或 `gap ≤ 0.3` | 模糊匹配 → `needsClarification=true`，Core Agent 先问用户 |
+| 无匹配 CaseType | `intent: "qa"`，纯聊天，不建案 |
+| 分类 LLM 超时（2s）或失败 | 降级为 `intent: "qa"` |
+
+### 18.6 并行专职 Agent
+
+**改进点：**
+- **非阻塞派发**：`Orchestrator.dispatchInBackground()` 在后台运行，Core Agent ReAct 循环同时启动
+- **增量合并**：每个专职 Agent 完成后立即通过 `mergeSingleResult()` 写入 CaseMemory
+- **轮询检查**：Core Agent 每轮迭代开始时检查 `orchestrator.hasNewResults()` → 合并最新结果
+- **SubAgent 去 mock**：接入 `StreamingToolExecutor` 真实执行工具，不再返回硬编码数据
+- **多轮 ReAct**：SubAgent 支持 `maxIterations` 配置（默认 5），可以调用工具 → 获取结果 → 继续调用
+
+### 18.7 新增 SSE 事件
+
+| SSE 事件 | 触发时机 | 前端行为 |
+|----------|----------|----------|
+| `intent_classified` | 分类完成 | 决定是否展示 Split 动画 |
+| `case_created` | 自动建案成功 | 创建 Case Tab，右面板滑入 |
+| `sub_agent_start` | 专职 Agent 开始执行 | 显示 Agent 进度卡片（旋转状态） |
+| `sub_agent_progress` | 专职 Agent 工具调用/思考中 | 更新卡片状态文本 |
+| `sub_agent_complete` | 专职 Agent 完成 | 卡片变绿，展示发现详情 |
+| `sub_agent_error` | 专职 Agent 超时/失败 | 卡片变红，展示错误信息 |
+
+### 18.8 Chat UI 交互
+
+| 功能 | 描述 |
+|------|------|
+| **Split 动画** | 单列聊天 → 水平双面板（左 Core 对话，右 Agent 进度）的 spring 动画过渡 |
+| **Agent 进度卡片** | 右面板展示每个专职 Agent：状态图标（旋转/完成/错误）+ 耗时 + 可展开发现详情 |
+| **折叠/展开** | 右面板可折叠为 48px 窄条（仅图标+状态点），点击展开查看详情 |
+| **多 Case Tab** | 底部 Tab 栏切换多个活跃 Case，每个 Case 有独立的 Split 面板和 Agent 状态 |
+| **不可打断** | 专职 Agent 运行中不接受用户中断，但用户可继续与 Core Agent 对话 |
+
+### 18.9 配置点
+
+| 配置项 | 位置 | 说明 |
+|--------|------|------|
+| `intentModel` | `AgentConfig` (Console → Agent 编排 → Model 段) | 分类用的模型，默认 haiku |
+| CaseType `enabled` | `CaseType` (Console → Case 类型) | false = 不参与意图路由 |
+| `orchestratorConfig.enabled` | CaseType 的 `orchestratorConfig` | 是否启用专职 Agent 派遣 |
+| `subAgents[].maxIterations` | CaseType StageConfig 的 subAgents | 专职 Agent 最大轮次 |
+| `subAgents[].model` | StageConfig 的 subAgents | 专职 Agent 模型 |
+
+### 18.10 降级与容错
+
+| 场景 | 行为 |
+|------|------|
+| 分类 LLM 超时（2s） | 降级为 `qa`，不阻塞对话 |
+| 建案 DB 写入失败 | 继续 Agent Loop，用默认 caseId |
+| 专职 Agent 30s 超时 | 发 `sub_agent_error`，Core Agent 告知用户部分结果 |
+| 快速连发两条消息触发建案 | 使用第一条消息已建的 caseId，不重复创建 |
+| CaseType 缓存过期（30s） | 自动从 DB 重新加载 |
 
 ---
 

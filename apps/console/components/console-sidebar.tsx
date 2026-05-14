@@ -7,11 +7,12 @@ import {
   ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers, GitBranch,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Languages,
+  BookOpen,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'cases' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing'
+type NavSlug = 'humanTasks' | 'cases' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing'
 
 interface NavItem {
   href: string
@@ -24,6 +25,7 @@ interface NavItem {
 const OPS_ITEMS: NavItem[] = [
   { href: '/ops/human-tasks', slug: 'humanTasks', icon: ClipboardList, color: '#f0b050' },
   { href: '/ops/cases', slug: 'cases', icon: FolderOpen, color: '#5b8af7', matchPattern: '/ops/cases' },
+  { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
 ]
 
 const ADMIN_ITEMS: NavItem[] = [
@@ -53,9 +55,9 @@ export default function ConsoleSidebar() {
 
   return (
     <aside
-      className={`relative z-20 flex-shrink-0 flex flex-col transition-[width] duration-300 ease-out
+      className={`relative z-20 flex min-h-0 flex-shrink-0 flex-col overflow-hidden transition-[width] duration-300 ease-out
         bg-white/50 backdrop-blur-2xl border-r border-black/5
-        ${collapsed ? 'w-14' : 'w-56'}`}
+        ${collapsed ? 'w-14' : 'w-56'} h-full`}
     >
       <div className="relative z-30 flex-shrink-0 border-b border-black/[0.05] pb-3 pt-3">
         {collapsed ? (

@@ -12,6 +12,341 @@ export const en: Record<string, string> = {
   'sidebar.policies': 'Policies',
   'sidebar.caseTypes': 'Case Types',
   'sidebar.routing': 'Routing',
+  'sidebar.guide': 'Guide',
+
+  'guide.hero.eyebrow': 'Intera',
+  'guide.hero.title': 'How Intera runs',
+  'guide.hero.lead':
+    'Intera solves **whole problems** behind a persistent **Case**, not disposable chat snippets. Think of each section below as another station on the same conveyor—same order Intera evaluates a customer send.',
+  'guide.toc.title': 'Read in execution order',
+  'guide.toc.aria': 'Guide sections',
+
+  'guide.nav.intro': 'Overview',
+  'guide.nav.routes': 'Pages & URLs',
+  'guide.nav.caseHuman': 'Case + human checkpoints',
+  'guide.nav.loop': 'Main harness loop',
+  'guide.nav.react': 'Streaming model lap',
+  'guide.nav.stage': 'Stages & nudges',
+  'guide.nav.facts': 'Memory & facts',
+  'guide.nav.toolsPolicy': 'Tools & safeguards',
+  'guide.nav.observe': 'Signals for operators',
+  'guide.nav.intentRouting': 'Intent routing',
+  'guide.nav.codes': 'Code reference (deep dive)',
+
+  'guide.doc.intro.eyebrow': 'Start here',
+  'guide.doc.intro.title': 'Why Intera feels different',
+  'guide.doc.intro.p1':
+    'One AI **owns** a Case: tracked goal, guarded actions, audited memory, occasional human checkpoints, and closure.',
+  'guide.doc.intro.p2':
+    'This Guide walks **what happens**, in chronological order—the same path the runtime takes. Paths, modules, timeouts, and parse behavior live only under **Code reference**.',
+  'guide.doc.intro.li1':
+    '**Case-first** — the unit of work is the problem ledger, not a chat tab.',
+  'guide.doc.intro.li2':
+    '**Hands-on helpers** — people answer structured questionnaires; automation picks up afterward.',
+  'guide.doc.intro.li3':
+    '**Knowledge as evidence** — retrieval feeds decisions, not copy-pasted scripts.',
+  'guide.doc.intro.li4':
+    '**Safeguards, not rigid scripts** — policies draw red lines instead of brittle flowcharts.',
+  'guide.doc.intro.callout':
+    'Illustrations are simplified. Naming of tools, stages, facts, and policies follows what you configured in Console Admin.',
+
+  'guide.doc.routes.eyebrow': 'Where people land',
+  'guide.doc.routes.title': 'Interfaces at a glance',
+  'guide.doc.routes.lead':
+    'Humans browse different URLs, but automation always funnels toward the **same reasoning engine**. Here is how teams touch the harness.',
+  'guide.doc.routes.li1':
+    '**Shoppers / players** interact through the standalone chat experience—they send text, uploads, confirmations.',
+  'guide.doc.routes.li2':
+    '**Operators** use Cases, Human Tasks, and deep dive panels to unblock stuck work and edit memory.',
+  'guide.doc.routes.li3':
+    '**Administrators** shape models, intents, staged requirements, tooling, queues, policies—anything the loop reads.',
+  'guide.doc.routes.li4':
+    'Structured human answers close open tasks and implicitly tell automation "you may resume with this packet of facts".',
+  'guide.doc.routes.note':
+    'Exact HTTPS paths, SSE event names, and resume payloads are enumerated in **Code reference** so this page stays lightweight.',
+
+  'guide.doc.casehum.eyebrow': 'After routing',
+  'guide.doc.casehum.title': 'The Case record keeps everyone aligned',
+  'guide.doc.casehum.lead':
+    'Regardless of intent, persistence is keyed on a Case: statuses, checkpoints, timelines, audit trail. That continuity is why refresh, retries, and async human replies still feel like one storyline.',
+  'guide.doc.casehum.li1':
+    'Cases carry one **scenario template**, store structured evidence, recall which tools fired, narrate checkpoints, sometimes keep a distilled summary.',
+  'guide.doc.casehum.li2':
+    'Progress labels (creating → probing → awaiting staff → wrapping up…) come entirely from templates you authored in Console.',
+  'guide.doc.casehum.li3':
+    'When automation drafts a staffed ticket, substantive progress pauses until the ticket returns structured answers—and then resumes without throwing the shopper to a stranger mid-story.',
+  'guide.doc.casehum.li4':
+    'Closing actions mark the dossier solved or escalated; operators see the rationale on their timeline.',
+  'guide.doc.casehum.note':
+    'Many demos still keep one energetic loop session per shopper; juggling multiple dossiers concurrently is roadmap work described in architecture notes.',
+
+  'guide.doc.loop.eyebrow': 'Orchestration layer',
+  'guide.doc.loop.title': 'Main harness loop — one shopper send',
+  'guide.doc.loop.lead':
+    'For each shopper message tied to an active dossier, the harness may spin several reasoning laps before yielding a coherent exit, pause, or safety stop.',
+  'guide.doc.loop.li1':
+    'Whenever context grows heavy, pruning or summarisation brings the transcript back toward budget—the loop does this proactively.',
+  'guide.doc.loop.li2':
+    'Facts mentioned in prose are peeled into structured fields early so dashboards and safeguards see them immediately.',
+  'guide.doc.loop.li3':
+    'Safeguards, skill wiring, timings, timelines, staged checks, optional specialist deputies—all plug in once a template attaches.',
+  'guide.doc.loop.li4':
+    'After every lap the latest model reply may launch tools that stream progress to the storefront while results flow back into the dossier.',
+  'guide.doc.loop.li5':
+    'If the model chats without invoking mandatory tools/evidence for the stage, the harness emits a corrective whisper, increments a breaker, and immediately schedules another lap (see staged diagram below).',
+
+  'guide.doc.loop.note':
+    'Staged policing only appears when Case Types contain stage authoring. Pure chat-without-scenes behaves like legacy assistants.',
+
+  'guide.doc.react.eyebrow': 'Inside one lap',
+  'guide.doc.react.title': 'Streaming model iteration',
+  'guide.doc.react.lead':
+    'Each lap is still observe → decide → act, but streamed tokens and safeguards make the engineering story richer than textbook ReAct.',
+
+  'guide.doc.react.li1':
+    'Context stacks system instructions, dossier synopsis, freshest shopper lines, condensed history, optional evidence cards, then attaches callable skills.',
+  'guide.doc.react.li2':
+    'Safe tooling may start executing while fragments of a tool-call still dribble off the socket; concurrency obeys per-skill badges.',
+  'guide.doc.react.li3':
+    'Safeguards can veto or annotate calls before execution and annotate outcomes afterward, always logging for audit.',
+  'guide.doc.react.li4':
+    'Tool payloads normalize into dossier slots so downstream gates read crisp fields instead of pasted JSON.',
+  'guide.doc.react.li5':
+    'Live storefront widgets piggy-back on granular stream events—typing indicators, wrench spinners, fact chips—all mirroring harness truth.',
+
+  'guide.doc.stage.eyebrow': 'Compliance',
+  'guide.doc.stage.title': 'Stages & corrective nudges',
+  'guide.doc.stage.lead':
+    'Templates declare what counts as “stage complete”. The executor checks mandates every lap so automation cannot silently skip prerequisites.',
+  'guide.doc.stage.li1':
+    'Mandatory tooling and documentary evidence arrive from configuration—engineering does not bury extra rules in code forks.',
+  'guide.doc.stage.li2':
+    'Shortfalls differentiate “ask the shopper” vs “call platform tooling” paths so coaching text matches expectations.',
+  'guide.doc.stage.li3':
+    'Coaching never erases shopper-visible answers; it inserts another assistant-aligned instruction for the subsequent lap.',
+
+  'guide.doc.stage.callout':
+    'The swimlane below follows the infamous **text-only** exit: shopper sees a plausible paragraph, yet stage mandates remain unsatisfied—the harness forces another lap quietly.',
+
+  'guide.doc.facts.eyebrow': 'State',
+  'guide.doc.facts.title': 'Working memory anchors trust',
+  'guide.doc.facts.lead':
+    'Facts and payloads sit outside the conversational transcript; every consumer (gates, storefront cards, investigator screens) listens to this shared slate.',
+
+  'guide.doc.facts.li1':
+    'Confirmed vs missing shopper facts fuel both scripted prompts and backstage readiness gauges.',
+  'guide.doc.facts.li2':
+    'Historical tool payloads stay queryable—auditors and adjudicators cite them verbatim.',
+  'guide.doc.facts.li3':
+    'Highlighted beats and shorthand summaries endure aggressive condensation so marathon cases keep plot continuity.',
+  'guide.doc.facts.li4':
+    'Messy chatter is distilled into predictable keys whenever possible so automation stops re-asking what was already sworn.',
+
+  'guide.doc.tools.eyebrow': 'Doing work',
+  'guide.doc.tools.title': 'Skills, parallelism, deputies',
+  'guide.doc.tools.lead':
+    'Tools are governed workers: concurrency policy, safeguards, streamed lifecycle, optional specialist spin-outs.',
+
+  'guide.doc.tools.li1':
+    'Bread-and-butter skills cover historical lookup, manned ticket creation, case closure, knowledge pulls—teams extend with mocked or HTTPS adapters.',
+  'guide.doc.tools.li2':
+    'Long jobs publish intermediate states (`queued → working → wrapped`) which UI can animate honestly.',
+  'guide.doc.tools.li3':
+    'Parallel bursts only apply to skills flagged safe; everything contentious runs strictly one-at-a-time.',
+  'guide.doc.tools.li4':
+    'Registries marry factory defaults with per-tenant Admin rows so onboarding stays scripted yet flexible.',
+  'guide.doc.tools.li5':
+    'Optional deputies run parallel specialist loops and fold findings back—useful without cloning the dossier.',
+
+  'guide.doc.observe.eyebrow': 'Signals',
+  'guide.doc.observe.title': 'Traces & operator lenses',
+  'guide.doc.observe.lead':
+    'Every substantive branch should confess itself in timelines, stream mirrors, profiler slices—nothing should be “oracle only”.',
+
+  'guide.doc.observe.li1':
+    'Structured traces annotate nudges, exits, withheld recoveries—the Case detail reconstructs timelines without replay spam.',
+  'guide.doc.observe.li2':
+    'Shopfront cards echo live dossier deltas; auditors dive into investigative consoles for diff-level forensics.',
+  'guide.doc.observe.li3':
+    'Queued human choreography emits explicit stream hints so storefront animation matches backstage status.',
+  'guide.doc.observe.li4':
+    'Profiler donuts expose whether latency sits in condensation, cognition, tooling, enabling release comparisons.',
+  'guide.doc.observe.li5':
+    'Incidents juxtapose dossier deltas against authored templates to pinpoint misconfigured prerequisites.',
+
+  'guide.doc.intent.eyebrow': 'Before heavy reasoning',
+  'guide.doc.intent.title': 'Intent routing — match problem to dossier archetype',
+  'guide.doc.intent.lead':
+    'Immediately after shoppers press send on the storefront chat, automation asks a speedy side-brain whether this is casual banter versus a monetarily sensitive scenario. Outputs inform whether a dossier spins up automatically, whether the storefront splits into shopper + deputies panes, and what facts were spotted from raw wording. **No simplistic keyword scraping** against stored blurbs—a compact scenario menu plus the shopper utterance go to one compact model.',
+
+  'guide.doc.intent.li1':
+    '**Catalog composition** — only scenario templates toggled ON participate; each line blends internal codename, customer-facing headline, explanatory blurb fallbacking to outcome goal text, checklist of prized facts—not description-only matching.',
+
+  'guide.doc.intent.li2':
+    '**Confidence dance** — if two archetypes vie neck-and-neck the Core brain must confirm with shoppers before spawning a dossier; big leads auto-open dossiers.',
+
+  'guide.doc.intent.li3':
+    '**Split storefront** — when deputies exist for a scenario, storefront widens dual panes tracking specialist progress shoppers can skim while chatting Core.',
+
+  'guide.doc.intent.li4':
+    '**Hand-off hygiene** — shoppers keep talking Primary while deputies churn; deputies cannot be cancelled mid-flight but chatter continues uninterrupted.',
+
+  'guide.doc.intent.li5':
+    '**Failure posture** — hard stops (slow networks, malformed classifier outputs) degrade to conversational mode so storefront never bricks; gritty recovery rules live exclusively in Code reference.',
+
+  'guide.doc.intent.callout':
+    'Tune storefront routing under Admin ▸ Agent (**intent classifier model**) plus Case Types (**on/off**, descriptions, prized facts). Sub-deputy choreography remains per-stage under Stage authoring.',
+
+  'guide.doc.codes.eyebrow': 'For engineers',
+  'guide.doc.codes.title': 'Code & parameter reference',
+
+  'guide.doc.codes.lead':
+    'Use this appendix when onboarding engineers or auditors: concrete paths, verbs, durations, parsers. Narrative explanations above purposely avoided file names.',
+
+  'guide.doc.codes.httpTitle': 'Primary HTTP boundaries',
+  'guide.doc.codes.h1': '`POST …/intent/classify` — lightweight shopper utterance classifier (tenant-scoped catalogue). Returns JSON `{ intent, matchedCaseTypes, needsClarification, extractedFacts }`.',
+
+  'guide.doc.codes.h2': '`POST …/messages` — core streaming orchestration; honours optional `classification` payload, emits `case_created`, tool stream, dossier churn.',
+
+  'guide.doc.codes.h3': '`POST …/human-tasks/[id]/resolve` — structured human payloads → resume envelopes → same orchestration restarted.',
+
+  'guide.doc.codes.h4': '`POST …/human-chat` — staff assist harness sharing engines with storefront chat.',
+
+  'guide.doc.codes.h5': '`POST …/admin/config-changed` — invalidates in-process Agent template + catalogue caches (~30 s TTL by default).',
+
+  'guide.doc.codes.modulesTitle': 'Module map (filesystem)',
+
+  'guide.doc.codes.p1': 'apps/chat/app/api/messages/route.ts — storefront turns → AgentLoop entry',
+  'guide.doc.codes.p2': 'apps/chat/app/api/human-chat/route.ts — operator harness',
+  'guide.doc.codes.p3': 'apps/chat/lib/agent/loop.ts — transition loop, corrective nudge fuse (3 strikes → escalate)',
+  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — prerequisites, evidence manifests, corrective copy',
+  'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — partial token execution, parallelism flags',
+  'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingestion + persistence helpers',
+  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — guardrails & telemetry',
+  'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts — optional deputy reactors',
+  'guide.doc.codes.p9': 'apps/console/app/ops/cases/* — investigator UX & timeline readers',
+  'guide.doc.codes.p10': 'packages/shared/types & defaults — schemas shared chat ↔ console',
+
+  'guide.doc.codes.p11': 'apps/chat/app/api/intent/classify/route.ts & apps/chat/lib/agent/intent-classifier.ts — prompt assembly (`buildClassificationPrompt`), `Promise.race` timeout, `parseResponse`',
+
+  'guide.doc.codes.intentParamsTitle': 'Intent classifier safeguards (explicit implementation)',
+
+  'guide.doc.codes.ir1':
+    '`enabled: true` filter on CaseType catalogue; TTL cache ~30000 ms per tenant; invalidated via `clearConfigCache` + `clearCaseTypeCache`.',
+
+  'guide.doc.codes.ir2':
+    'Model cascade: `$INTENT_MODEL` env → persisted `intentModel` → fall back `evaluationModel` → literal default `claude-haiku-4-5-20251001`; `Promise.race` with 2000 ms timer → degraded `{ intent:\"qa\" }`.',
+
+  'guide.doc.codes.ir3':
+    'Parse ladder: greedy `/\\{[\\s\\S]*\\}/` slice → single `JSON.parse`; failures yield `{ intent:\"qa\", matchedCaseTypes: [], needsClarification:false }`; **zero** heuristic slug guessing, **zero** corrective second LLM call.',
+
+  'guide.doc.codes.ir4':
+    'Clarification false only when `(topConfidence > 0.8) && ((topConfidence - runnerUpConfidence) > 0.3)`; auto dossier spawn requires `intent===\"case\" && !needsClarification`.',
+
+  'guide.doc.codes.ir5':
+    'Prompt row template: `- "<typeSlug>": <displayName> — <description ?? defaultGoal>. Required facts: <JSON array flattened>` sourced from prisma selections.',
+
+  'guide.doc.codes.footer':
+    '`doc/spec/Intera_Harness_架构梳理.md` expands architectural narrative; authoritative runtime behavior mirrors code + Console configuration—not marketing prose.',
+
+  'guide.intentDiag.figureTitle': 'Diagram · Intent cascade',
+  'guide.intentDiag.caption': 'Every shopper send starts here before the heavyweight harness loop grabs the dossier blueprint.',
+  'guide.intentDiag.s1.title': 'Shopper language arrives',
+  'guide.intentDiag.s1.body': 'Captured verbatim from storefront chat—including IDs, receipts, slang.',
+  'guide.intentDiag.s2.title': 'Fast matcher skims archetypes',
+  'guide.intentDiag.s2.body':
+    'A tiny model consumes the utterance plus the active scenario catalogue lines (human headlines, explanatory blurbs, prized facts checklist). Casual tone vs operational crisis is decided here—not via warehouse keyword scanners.',
+  'guide.intentDiag.qa.title': 'Stay conversational',
+  'guide.intentDiag.qa.body': 'Hellos, FAQs, exploratory chatter bypass dossier spawning; Core stays in light dialogue.',
+  'guide.intentDiag.caseBranch.title': 'Operational signal',
+  'guide.intentDiag.caseBranch.body': 'Monetarily sensitive phrasing flows through guards before minting dossiers.',
+  'guide.intentDiag.caseBranch.grey': 'Confidence neck-and-neck → Primary brain clarifies scenario before spawning.',
+  'guide.intentDiag.caseBranch.green': 'Clear leader → dossier opens immediately; split panes animate if deputies exist.',
+  'guide.intentDiag.s3.title': 'Hand-off to dossier reasoning',
+  'guide.intentDiag.s3.body':
+    'Successful auto-open notifies streams about id + archetype; otherwise stealth hints keep coaching sans premature filing.',
+  'guide.intentDiag.strip.label': 'Operational constants',
+  'guide.intentDiag.strip.detail':
+    'Typical gates: strongest belief **>** **80 %** *and* **>** **30 points** versus runner-up. Classifier **2 s** SLA; timeouts or malformed payloads fall back to chat—recovery detail in Code reference.',
+  'guide.intentDiag.uiHint': 'Deputy choreography presents split storefront UX: chatter rail + specialist progress carousel—purely optional per scenario template.',
+
+  'guide.turnDiag.figureTitle': 'Diagram · Harness lap assembly line',
+  'guide.turnDiag.caption': 'After routing, **each** heavyweight lap follows this conveyor until exit criteria satisfy.',
+  'guide.turnDiag.s1.title': 'Load dossier slate',
+  'guide.turnDiag.s1.body': 'Merge newest facts, stage mandates, recent transcript, condensation buffers.',
+  'guide.turnDiag.s2.title': 'Trim & budget',
+  'guide.turnDiag.s2.body': 'Clamp transcript weight so cognition stays reproducible billing-wise.',
+  'guide.turnDiag.s3.title': 'Stream cognition',
+  'guide.turnDiag.s3.body': 'Model emits language; guarded tool intents may commence mid-token.',
+  'guide.turnDiag.s4.title': 'Safeguards + skills',
+  'guide.turnDiag.s4.body': 'Policies wrap calls; streamed lifecycles animate UI; deputies may append parallel dossier notes.',
+  'guide.turnDiag.s5.title': 'Stage audit & persistence',
+  'guide.turnDiag.s5.body': 'Mandatory checks, optional corrective pulses, memory/trace writes, loop-or-stop verdict.',
+  'guide.turnDiag.loopHint':
+    'Iterate until shopper closure, manned pause, escalate fuse (`max_nudges`), iteration ceiling, withheld disaster—the next schematic zooms “smooth talk missing tools”.',
+
+  'guide.section1.eyebrow': 'Corrective pulses',
+  'guide.section1.title': 'Fluent reply hiding missing tooling',
+  'guide.section1.lead':
+    'Applies when StageExecutor is active for the case type: no tool calls in this iteration, but required skills or evidence are still missing.',
+  'guide.flow.step1.title': 'Model chats without tooling',
+  'guide.flow.step1.body':
+    'The streamed answer lands, yet this lap never recorded completions from mandated workers—signals “polished words, unfinished homework”.',
+
+  'guide.flow.step1.detail':
+    '(Engineers inspect the tool-result deque length in Code reference—it is deliberately omitted here.)',
+  'guide.flow.checkSkills.label': 'Required skills',
+  'guide.flow.checkSkills.body': 'Did every skill the blueprint demands for this stage actually run?',
+  'guide.flow.checkSkills.met': 'Skills gate: unfinished',
+  'guide.flow.checkSkills.chip': 'missing: [ create_human_task ]',
+  'guide.flow.checkEvidence.label': 'Evidence rows',
+  'guide.flow.checkEvidence.body': 'Are evidentiary slots required by Administration actually populated in dossier memory (shopper chatter or tooling)?',
+  'guide.flow.checkEvidence.met': 'Evidence gate: unfinished',
+  'guide.flow.checkEvidence.chip': 'missing: [ orderStatus, channelStatus ]',
+  'guide.flow.step3.title': 'Targeted system nudge',
+  'guide.flow.step3.quote':
+    '[SYSTEM NUDGE]\nStage investigating still needs: create_human_task.\nYou MUST use the tool-calling channel (not plain prose).\nMissing evidence from skills: orderStatus, channelStatus.\nCall the required tools now.',
+  'guide.flow.counter.label': 'Guard counter',
+  'guide.flow.counter.valueLabel': '+1 corrective lap',
+  'guide.flow.counter.hint': 'Each incomplete pass increments the counter.',
+  'guide.flow.loop.label': 'Stay in the same user turn',
+  'guide.flow.loop.continueCta': 'Schedule another harness lap',
+  'guide.flow.loop.badge': 'Continue',
+  'guide.flow.fuse.title': 'Circuit breaker — 3 corrective laps',
+  'guide.flow.fuse.body':
+    'After three consecutive corrective pulses fail the blueprint, autonomous work halts—operators inherit the dossier visibly.',
+  'guide.flow.fuse.badge': 'Fuse fires → escalate',
+  'guide.flow.fuse.follow': 'Dossier status moves to manned queue',
+
+  'guide.section2.eyebrow': 'Data model',
+  'guide.section2.title': 'Facts & evidence are gate currency',
+  'guide.section2.lead':
+    'CaseMemory is not cosmetic copy: stage transitions and nudges read confirmed facts and skill outputs to decide whether the agent may exit or must keep acting.',
+  'guide.facts.inUser.title': 'From the customer',
+  'guide.facts.inUser.body': 'Utterances and forms are parsed into atomic facts (txn id, amount, dates…).',
+  'guide.facts.inSkill.title': 'From skills',
+  'guide.facts.inSkill.body': 'Each tool run can append structured fields — that is evidence the stage configuration can require before advancing.',
+  'guide.facts.vault.title': 'CaseMemory (single source per case)',
+  'guide.facts.vault.body': 'confirmedFacts merges user + tool-derived keys; skillResults keeps raw payloads for audit and UI.',
+  'guide.facts.vault.colFacts': 'Trusted facts blob',
+  'guide.facts.vault.colSkills': 'Worker payloads',
+  'guide.facts.vault.factsLine': 'txnId, amount, orderStatus?, channelStatus? …',
+  'guide.facts.vault.skillsLine': 'query_order_status, query_payment_channel_status …',
+  'guide.facts.gate.title': 'Each loop iteration re-evaluates the stage',
+  'guide.facts.gate.body': 'The executor compares live memory against the schema for the active stage.',
+  'guide.facts.gate.badge': 'Gate verdict · still open',
+  'guide.facts.gate.row1': 'txnId — satisfied (user_input)',
+  'guide.facts.gate.row2': 'amount — satisfied (user_input)',
+  'guide.facts.gate.row3': 'orderStatus, channelStatus — still missing (expect skill output)',
+  'guide.facts.gate.outcomes': '→ nudge the model to call tools, or surface request_user_input if the schema says to ask the user.',
+  'guide.facts.transAuto.title': 'Auto transition',
+  'guide.facts.transAuto.body':
+    'When transition.type is auto and the “all evidence gathered” condition is true, the schema can advance the stage without another LLM debate.',
+  'guide.facts.transEval.title': 'Evaluation / judgment',
+  'guide.facts.transEval.body':
+    'For evaluation-type transitions, a separate pass (or model) can compare system evidence vs. user claims—routing to waiting_human on conflict or resolved when the story is clean.',
+  'guide.footer.note':
+    'Spec narrative: `doc/spec/Intera_Harness_架构梳理.md`. Behaviour always defers to code + Console configuration.',
   'sidebar.switchProject': 'Switch Project',
   'sidebar.language': 'Language',
   'sidebar.signOut': 'Sign Out',
@@ -22,6 +357,8 @@ export const en: Record<string, string> = {
   'shell.adminUser': 'Admin User',
   'shell.demoVendor': 'Demo Vendor',
   'shell.version': 'v0.1',
+  'shell.backToTop': 'Back to top',
+  'shell.backToTopAria': 'Scroll to top',
 
   // ── Common ───────────────────────────────────────────────────
   'common.save': 'Save',
@@ -88,6 +425,10 @@ export const en: Record<string, string> = {
   'agent.sync.editing': 'Editing',
   'agent.promptHelp': 'Core agent persona and behavioral rules.',
   'agent.modelMain': 'Model',
+  'agent.intentModel': 'Intent Classification Model',
+  'agent.intentModelHint': 'Lightweight model for intent classification. Defaults to haiku if unset.',
+  'agent.evaluationModel': 'Stage Evaluation Model',
+  'agent.evaluationModelHint': 'Model for stage transition evaluation. Defaults to haiku if unset.',
   'agent.temperature': 'Temperature ({n})',
   'agent.thinkingBudget': 'Thinking Budget',
   'agent.maxIterations': 'Max Iterations',
@@ -207,6 +548,14 @@ export const en: Record<string, string> = {
   'caseTypes.f.requiredFacts': 'Required facts (JSON)',
   'caseTypes.f.escalateOn': 'Escalate on (JSON)',
   'caseTypes.f.autoCloseConditions': 'Auto-close (JSON)',
+  'caseTypes.tab.basic': 'Basic',
+  'caseTypes.tab.stages': 'Stage Config',
+  'caseTypes.stages.configFor': 'Configure stage: {stage}',
+  'caseTypes.stages.clearConfig': 'Clear Stage Config',
+  'caseTypes.stages.copyJson': 'Copy JSON',
+  'caseTypes.stages.defineFirst': 'Define stages in the Basic tab first, then configure each stage here.',
+  'caseTypes.enabledForRouting':
+    'Eligible for intent routing / new case classification (existing cases keep their schema)',
 
   // ── Routing ──────────────────────────────────────────────────
   'routing.title': 'Routing',
@@ -358,6 +707,320 @@ export const zh: Record<string, string> = {
   'sidebar.policies': '策略',
   'sidebar.caseTypes': '案例类型',
   'sidebar.routing': '路由',
+  'sidebar.guide': '指南',
+
+  'guide.hero.eyebrow': 'Intera',
+  'guide.hero.title': 'Intera 如何运转',
+  'guide.hero.lead':
+    'Intera 以 **案例（Case）** 为中心把问题跑完，而不是「聊完即焚」。下面各节按 **运行时真实顺序** 排版：从顾客一句话如何被分类，到主循环、阶段、记忆、工具与排障信号。文件路径、接口名、阈值等 **只出现在文末「代码导读」**。',
+  'guide.toc.title': '按执行顺序阅读',
+  'guide.toc.aria': '指南章节导航',
+
+  'guide.nav.intro': '心智模型',
+  'guide.nav.routes': '页面入口',
+  'guide.nav.caseHuman': '案例与人机',
+  'guide.nav.loop': '主 Harness 循环',
+  'guide.nav.react': '流式推理一圈',
+  'guide.nav.stage': '阶段门槛与纠偏',
+  'guide.nav.facts': '案例记忆',
+  'guide.nav.toolsPolicy': '工具与策略',
+  'guide.nav.observe': '排障与可视化',
+  'guide.nav.intentRouting': '意图路由',
+  'guide.nav.codes': '代码导读（工程向）',
+
+  'guide.doc.intro.eyebrow': '从这里建立直觉',
+  'guide.doc.intro.title': 'Intera 和「聊天机器人」有何不同',
+  'guide.doc.intro.p1':
+    '**案例即工单**：每个案子有目标、证据账本、阶段门槛、可选的人工质询点，以及最终闭环方式——不是无限滚动的闲聊线程。',
+  'guide.doc.intro.p2':
+    '本页按 **一次顾客发送在系统里怎么走** 来写，先讲清业务因果，再让读者在最后一节自己查代码。若需全貌，可参阅仓库里的架构长文（仍以后台配置 + 代码为准）。',
+  'guide.doc.intro.li1': '**案子优先** —— 业务以可恢复、可追责的案子为最小单位。',
+  'guide.doc.intro.li2': '**人工是可调用能力** —— 机器人先整理好问题，再把结构化问卷交给后台专家。',
+  'guide.doc.intro.li3': '**知识是证据** —— 检索结果供模型引用与决策，而非直接粘给用户当答案。',
+  'guide.doc.intro.li4': '**策略是红线** —— Policy 描述「绝不能做什么」，不是死板的流程图。',
+  'guide.doc.intro.callout':
+    '示意图会做抽象。技能名、字段名、阶段拓扑一律来自 **Console ▸ 管理后台** 的案例类型 / 技能 / 策略配置。',
+
+  'guide.doc.routes.eyebrow': '谁从哪里进来',
+  'guide.doc.routes.title': '界面分工（不讲 URL 细节）',
+  'guide.doc.routes.lead':
+    '顾客、运营、管理员看到的是不同页面，但底层复用 **同一套推理引擎**：区别只在于上下文与权限。',
+  'guide.doc.routes.li1':
+    '**顾客** 在独立聊天窗里说话、确认表单、上传凭证——所有动作最终都会进入自动化 harness。',
+  'guide.doc.routes.li2':
+    '**运营** 在 Console 里查看案例、处理人工任务、修订记忆，用于排障与取证。',
+  'guide.doc.routes.li3':
+    '**管理员** 负责模型、案例类型、技能、策略、路由队列等「规则层」配置，决定机器人能做什么、不能做什么。',
+  'guide.doc.routes.li4':
+    '人工以结构化回执结束任务时，相当于告诉系统「障碍已清，可继续自动推进」。',
+  'guide.doc.routes.note':
+    '具体的 HTTP 路径、SSE 事件名、恢复载荷请翻到 **代码导读**；此处保持产品语言。',
+
+  'guide.doc.casehum.eyebrow': '意图之后',
+  'guide.doc.casehum.title': '案例本体：大家共同盯着的账本',
+  'guide.doc.casehum.lead':
+    '一旦需要正式「立案」，系统就围绕 **案例记录** 展开：状态、记忆、时间线、人工节点都挂在这张账本上，保证刷新/重试不会丢语境。',
+  'guide.doc.casehum.li1':
+    '案例绑定顾客身份，引用你在后台定义的一种 **场景模板**，并保存结构化事实、工具产物、关键事件，有时还有自动摘要。',
+  'guide.doc.casehum.li2':
+    '「收集中 / 调查中 / 等待人工 / 已解决」等标签来自模板，而不是前端写死。',
+  'guide.doc.casehum.li3':
+    '当机器人创建人工任务时，自动化会停在 **等待专家** 状态；专家提交结构化结论后，同一顾客仍由同一机器人继续服务。',
+  'guide.doc.casehum.li4':
+    '收尾技能把案例标记为已解决或升级，运营时间线可复盘全过程。',
+  'guide.doc.casehum.note':
+    '演示环境通常 **一次只跑一个活跃会话**；多案例并行是后续规模化课题。',
+
+  'guide.doc.loop.eyebrow': '调度层',
+  'guide.doc.loop.title': '主循环：处理一次顾客输入',
+  'guide.doc.loop.lead':
+    '针对已关联案例的顾客消息，外层循环可以跑多轮「模型 + 工具 + 体检」，直到安全退出、等待人工或触发熔断。',
+  'guide.doc.loop.li1':
+    '上下文过长时会自动裁剪 / 摘要，把提示控制在策略预算内。',
+  'guide.doc.loop.li2':
+    '自然语言里提到的事实会尽快写入结构化记忆，供门槛与界面使用。',
+  'guide.doc.loop.li3':
+    '策略引擎、技能路由、追踪、性能埋点、阶段执行器、可选的多代理编排都会在这一层挂载。',
+  'guide.doc.loop.li4':
+    '每一小轮都会流式生成答案，按安全策略执行工具，并把结果写回记忆与追踪。',
+  'guide.doc.loop.li5':
+    '若模型 **只说话不调工具** 但阶段仍缺证据，系统会悄悄插入 **纠偏提示** 并累计计数——详见下方泳道图。',
+
+  'guide.doc.loop.note':
+    '只有案例类型启用了阶段配置时才会出现「纠偏 + 门槛」；否则行为更像传统对话助手。',
+
+  'guide.doc.react.eyebrow': '单轮内部',
+  'guide.doc.react.title': '流式推理的一圈',
+  'guide.doc.react.lead':
+    '仍是「观察 → 决策 → 行动」，但多了流式展示、并发安全、策略钩子等工程细节。',
+
+  'guide.doc.react.li1':
+    '系统提示、案例摘要、近期对话、记忆摘要叠加后，再挂上可用技能目录。',
+  'guide.doc.react.li2':
+    '对标记为安全的技能，可以在工具调用尚未完全生成完时就开始执行；危险技能必须串行。',
+  'guide.doc.react.li3':
+    '策略可在技能前后拦截或附加提示，并写入追踪/推流事件。',
+  'guide.doc.react.li4':
+    '工具输出会规范化进记忆，使下一轮看到的是「事实表」而不是聊天记录。',
+  'guide.doc.react.li5':
+    'CaseCard、运营视图通过细粒度推流事件保持与后台一致。',
+
+  'guide.doc.stage.eyebrow': '约束',
+  'guide.doc.stage.title': '阶段门槛与纠偏（nudge）',
+  'guide.doc.stage.lead':
+    '后台案例类型描述「这个阶段必须集齐什么证据、必须跑到哪些技能」。执行器每轮对照记忆做体检。',
+  'guide.doc.stage.li1':
+    '技能清单、证据字段全部来自配置，而不是代码里藏业务规则。',
+  'guide.doc.stage.li2':
+    '缺口会区分「要找顾客补」还是「必须让平台技能产出」，纠偏文案随之不同。',
+  'guide.doc.stage.li3':
+    '纠偏不会删除顾客已看到的自然语言回答，只是追加一条内部指令逼下一轮真的去调工具。',
+
+  'guide.doc.stage.callout':
+    '下方泳道聚焦 **说话很漂亮却没干活** 的场景：模型输出纯文本，但阶段义务未满足。',
+
+  'guide.doc.facts.eyebrow': '状态',
+  'guide.doc.facts.title': '案例记忆：跨轮复用的事实库',
+  'guide.doc.facts.lead':
+    '记忆不是聊天日志复制，而是 **门槛、界面、运营** 共用的结构化工作区。',
+
+  'guide.doc.facts.li1': '已确认 / 待补齐事实同时影响对客话术与内部准备度。',
+  'guide.doc.facts.li2': '技能产物被长久保存，供审计与自动流转判断引用。',
+  'guide.doc.facts.li3': '关键事件与摘要帮助长会话在压缩上下文后仍保留剧情。',
+  'guide.doc.facts.li4': '尽量把口语变成稳定字段，减少机器人反复追问。',
+
+  'guide.doc.tools.eyebrow': '执行',
+  'guide.doc.tools.title': '技能、并发、子代理',
+  'guide.doc.tools.lead':
+    '工具层决定 **怎么安全地干活**：排队、并行、策略包裹、可选子任务。',
+
+  'guide.doc.tools.li1':
+    '内置技能覆盖查历史、开人工单、结案、知识检索等；团队可在后台扩展 mock/HTTP 技能。',
+  'guide.doc.tools.li2':
+    '长耗时任务会广播「排队 / 执行中 / 完成」状态，驱动真实的前端动效。',
+  'guide.doc.tools.li3':
+    '只有标记为并发安全的技能才能并行，其余默认串行保护外部系统。',
+  'guide.doc.tools.li4':
+    '技能注册表合并出厂默认与租户配置，方便多品牌部署。',
+  'guide.doc.tools.li5':
+    '若启用编排器，可把部分调查委托给子代理并行跑，再合并结果。',
+
+  'guide.doc.observe.eyebrow': '信号',
+  'guide.doc.observe.title': '追踪、推流、运营视角',
+  'guide.doc.observe.lead':
+    '任何「为什么停在这」都应该能在时间线 + 记忆差分 + 推流事件里找到解释。',
+
+  'guide.doc.observe.li1': '追踪记录纠偏、退出、故障等决策，支持案件详情页复盘。',
+  'guide.doc.observe.li2': '顾客端卡片显示实时摘要；深挖进运营案件页。',
+  'guide.doc.observe.li3': '人工任务相关事件驱动聊天动效与后台状态对齐。',
+  'guide.doc.observe.li4': '性能快照帮助判断瓶颈在压缩、模型还是工具。',
+  'guide.doc.observe.li5': '事故排查时对比记忆与当前案例类型配置，可快速发现门槛配错。',
+
+  'guide.doc.intent.eyebrow': '重推理之前',
+  'guide.doc.intent.title': '意图路由：把口语映射到案例模板',
+  'guide.doc.intent.lead':
+    '顾客点发送后，系统先用 **极轻量的侧路模型** 判断：这是闲聊，还是某种你在后台打开过的业务场景？该步骤 **不是** 简单关键词扫库，而是把「场景菜单 + 顾客原话」一起交给小模型。随后才进入重量级的案例循环。',
+
+  'guide.doc.intent.li1':
+    '**目录怎么来** —— 仅 **启用** 的案例类型会进入菜单；每行包含内部代号、对客标题、描述（缺省则用默认目标）、以及「关键事实清单」帮助模型判断像不像这一类。',
+  'guide.doc.intent.li2':
+    '**置信度舞蹈** —— 若多个模板咬得很紧，主脑会先澄清；只有第一名显著领先才自动开案。',
+  'guide.doc.intent.li3':
+    '**分屏体验** —— 若模板挂了子代理，聊天窗可展开双栏：左聊主脑，右看调查进度。',
+  'guide.doc.intent.li4':
+    '**并存对话** —— 子代理不可被顾客强行打断，但顾客仍能继续和主脑说话；结果在回合末汇总。',
+  'guide.doc.intent.li5':
+    '**失败兜底** —— 网络慢、解析失败等都退回「纯聊天」，避免 storefront 崩死；工程细节仅在代码导读展开。',
+
+  'guide.doc.intent.callout':
+    '请在 **Console ▸ Agent** 选好意图模型，并在 **案例类型** 中维护文案、开关与事实字段；子代理仍在阶段编辑器里配置。',
+
+  'guide.doc.codes.eyebrow': '工程师附录',
+  'guide.doc.codes.title': '代码与参数台账',
+  'guide.doc.codes.lead':
+    '需要对接或审计时查阅：精确的模块路径、HTTP 动词、阈值、降级策略都在这里，正文刻意避免堆栈。',
+  'guide.doc.codes.httpTitle': 'HTTP 边界',
+  'guide.doc.codes.h1': '`POST …/intent/classify` —— 租户级意图分类，返回 `{ intent, matchedCaseTypes, needsClarification, extractedFacts }`。',
+  'guide.doc.codes.h2': '`POST …/messages` —— 主 SSE 管道，消费可选 `classification`，可发 `case_created` 与工具流水。',
+  'guide.doc.codes.h3': '`POST …/human-tasks/[id]/resolve` —— 人工结构化回执 → resume。',
+  'guide.doc.codes.h4': '`POST …/human-chat` —— 坐席 harness，可与顾客端共用核心循环。',
+  'guide.doc.codes.h5': '`POST …/admin/config-changed` —— 清空内存中的 Agent / 目录缓存（约 30 s TTL）。',
+
+  'guide.doc.codes.modulesTitle': '模块地图（filesystem）',
+
+  'guide.doc.codes.p1': 'apps/chat/app/api/messages/route.ts — 顾客回合 → AgentLoop',
+  'guide.doc.codes.p2': 'apps/chat/app/api/human-chat/route.ts — 内部坐席 harness',
+  'guide.doc.codes.p3': 'apps/chat/lib/agent/loop.ts — Transition 循环、纠偏熔断（三连 → 升级）',
+  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — 阶段门槛 / 证据 / 纠偏文案',
+  'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — 并发 vs 串行工具执行',
+  'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingest / persist',
+  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts',
+  'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts',
+  'guide.doc.codes.p9': 'apps/console/app/ops/cases/* —— 案件运营 UI',
+  'guide.doc.codes.p10': 'packages/shared/types & defaults',
+
+  'guide.doc.codes.p11':
+    'apps/chat/app/api/intent/classify/route.ts · apps/chat/lib/agent/intent-classifier.ts — `buildClassificationPrompt` / `Promise.race` / `parseResponse`',
+
+  'guide.doc.codes.intentParamsTitle': '意图分类实现细节',
+
+  'guide.doc.codes.ir1':
+    'CaseType `enabled:true` + `customerId` 过滤；`config-cache.ts` TTL ≈ 30000 ms；`config-changed` 同步 `clearCaseTypeCache` + `clearConfigCache`。',
+
+  'guide.doc.codes.ir2':
+    '模型链路：`process.env.INTENT_MODEL` → `intentModel` → `evaluationModel` → `claude-haiku-4-5-20251001`；`CLASSIFIER_TIMEOUT_MS = 2000`，超时 → `{ intent:\"qa\" }`。',
+
+  'guide.doc.codes.ir3':
+    '`parseResponse`: `/\\{[\\s\\S]*\\}/` 截取 + 单次 `JSON.parse`；失败 → `qa`，**无** second pass LLM / slug 兜底。',
+
+  'guide.doc.codes.ir4':
+    '`needsClarification` unless `(topConfidence>0.8) && (top-runnerUp>0.3)`；auto `case.create` 需 `intent===\"case\" && !needsClarification`。',
+  'guide.doc.codes.ir5':
+    'Prompt bullet: `- "${type}": ${displayName} — ${description||defaultGoal}. Required facts: ...` （`requiredFacts` JSON 解析）。',
+
+  'guide.doc.codes.footer':
+    '架构长篇见 `doc/spec/Intera_Harness_架构梳理.md`；真实行为 **=** 仓库代码 + Console 配置。',
+
+  'guide.intentDiag.figureTitle': '示意图 · 意图链路',
+  'guide.intentDiag.caption': '顾客的每一次发送都从这里开始，随后才交给重量级的案例主循环去拿「场景蓝图」。',
+  'guide.intentDiag.s1.title': '自然语言就绪',
+  'guide.intentDiag.s1.body': '原话取自聊天窗——可含流水号、小票话术、口头简称等。',
+  'guide.intentDiag.s2.title': '轻量模型对照场景菜单',
+  'guide.intentDiag.s2.body':
+    '小模型同时看到顾客这句话 + 后台「已启用」场景列表（标题、描述、要点事实）。在此区分闲聊 vs 要像业务工单一样开案——**不是**对照描述做简陋关键词。',
+  'guide.intentDiag.qa.title': '继续闲聊模式',
+  'guide.intentDiag.qa.body': '寒暄、泛泛 FAQ、打探式闲聊不自动开案，主脑保持轻对话。',
+  'guide.intentDiag.caseBranch.title': '业务意图成立',
+  'guide.intentDiag.caseBranch.body': '牵涉资金/履约等敏感话术时，会先过一层护栏再决定是否立新案。',
+  'guide.intentDiag.caseBranch.grey': '两三个模板难分高下 → 主脑先向顾客澄清要选哪条路，再开案。',
+  'guide.intentDiag.caseBranch.green': '第一名甩开第二名 → 可立刻开案；若配置了子调查员，可分屏动画展示进度。',
+  'guide.intentDiag.s3.title': '交给案例推理主干',
+  'guide.intentDiag.s3.body':
+    '若自动建案成功，会向推流写明案号与模板；否则会悄悄带着提示继续会话，而不会错误地抢先立卷。',
+  'guide.intentDiag.strip.label': '常见阈值（细则见文末代码导读）',
+  'guide.intentDiag.strip.detail':
+    '典型规则：最高分 **高于 80%** *且* **领先第二名超过 30 个百分点**；分类器有约 **2 秒** SLA，超时或坏 JSON 会降级为闲聊——精确行为以代码导读为准。',
+  'guide.intentDiag.uiHint': '专职子代理可走分屏 UX：一侧主对话，一侧调查进度卡片——是否出现完全取决于模板是否配置了子代理。',
+
+  'guide.turnDiag.figureTitle': '示意图 · 主力循环的一圈',
+  'guide.turnDiag.caption': '意图敲定之后，**每一圈**重量级推理大致按这条流水线走，直到满足退出条件。',
+  'guide.turnDiag.s1.title': '装载案例画布',
+  'guide.turnDiag.s1.body': '合并最新事实、阶段要求、近期对话摘要与压缩缓冲区。',
+  'guide.turnDiag.s2.title': '裁剪与预算',
+  'guide.turnDiag.s2.body': '控制上下文体量，既省成本也让行为更易复现。',
+  'guide.turnDiag.s3.title': '流式推理',
+  'guide.turnDiag.s3.body': '模型边吐字边可能发起受控的工具意向；合规技能甚至可在指令尚未完全收尾时开动。',
+  'guide.turnDiag.s4.title': '策略 + 技能执行',
+  'guide.turnDiag.s4.body': '策略包裹调用全过程；前端跟推流看懂排队/执行中/完成；子代理可把增量写回同一案卷。',
+  'guide.turnDiag.s5.title': '阶段体检与落盘',
+  'guide.turnDiag.s5.body': '对照模板做必选检查，必要时下发纠偏，写记忆与追踪，再决定再来一圈还是收口。',
+  'guide.turnDiag.loopHint':
+    '循环直到对话自然结束、卡住等人、熔断（纠偏用尽）、迭代上限、`withheld` 灾难场景等——下一张 Swimlane 专门放大「嘴上说得好听却没调工具」。',
+
+  'guide.section1.eyebrow': '纠偏脉冲',
+  'guide.section1.title': '话术漂亮，但活儿没干完',
+  'guide.section1.lead':
+    '仅当该案类型配置了阶段引擎时启用：这一轮没有任何工具收成，但阶段要求的技能或证据仍不满足。',
+
+  'guide.flow.step1.title': '模型只说了这么多，没走工具通道',
+  'guide.flow.step1.body':
+    '流已经结束，但这一圈没有记入任何「必选工人」的产物——可以理解为：回答听起来完整，家庭作业还没交。',
+  'guide.flow.step1.detail':
+    '（工程师在文末「代码导读」里可查工具结果队列长度；示意图刻意不写具体变量名，方便非研发阅读。）',
+  'guide.flow.checkSkills.label': '必选技能齐了没？',
+  'guide.flow.checkSkills.body':
+    '对照当前阶段蓝图：模板点名的每一个技能是否都在本轮（或已累计）真实跑过？',
+  'guide.flow.checkSkills.met': '技能闸：仍未通过',
+  'guide.flow.checkSkills.chip': '缺口示例：[ 创建人工工单 ]',
+  'guide.flow.checkEvidence.label': '证据字段齐了没？',
+  'guide.flow.checkEvidence.body':
+    '管理员在模板里要的「台账格子」是否已经写进案例记忆——无论来自顾客自述还是上一轮工具回填？',
+  'guide.flow.checkEvidence.met': '证据闸：仍未通过',
+  'guide.flow.checkEvidence.chip': '缺口示例：[ 订单履约态, 渠道态 ]',
+  'guide.flow.step3.title': '系统自动纠偏（nudge）',
+  'guide.flow.step3.quote':
+    '[SYSTEM NUDGE]\n阶段 investigating 仍需要技能：创建人工工单。\n你必须使用「工具调用」通道完成动作（不能只说不做）。\n尚缺来自技能的证据字段：订单履约态、渠道态。\n请立刻调用模板要求的工具。',
+  'guide.flow.counter.label': '纠偏计数 / 熔断用',
+  'guide.flow.counter.valueLabel': '+1 纠偏小圈',
+  'guide.flow.counter.hint': '每轮体检若仍有缺口，计数加一。',
+  'guide.flow.loop.label': '仍在同一次顾客发送里追问',
+  'guide.flow.loop.badge': '继续',
+  'guide.flow.loop.continueCta': '预定下一圈推理',
+  'guide.flow.fuse.title': '三连纠偏仍未过 → 熔断',
+  'guide.flow.fuse.body':
+    '连续三轮纠偏仍达不到蓝图要求时，自动化主动停下，把工作显式交到人工队列，避免无限烧 token。',
+  'guide.flow.fuse.badge': '熔断触发 → 升级人工',
+  'guide.flow.fuse.follow': '案例状态转入「待人接手」队列',
+
+  'guide.section2.eyebrow': '数据结构',
+  'guide.section2.title': 'Fact / Evidence 是硬通货，不是摆设',
+  'guide.section2.lead':
+    'CaseMemory 不仅影响展示文案：阶段是否放行、是否要 nudge、能否自动流转，都依赖已确认事实与技能写回的结构化字段。',
+  'guide.facts.inUser.title': '来自用户',
+  'guide.facts.inUser.body': '对话与表单会解析成离散事实（如交易号、金额、日期）。',
+  'guide.facts.inSkill.title': '来自技能',
+  'guide.facts.inSkill.body': '每次工具调用可回填结构化字段——阶段配置可把其中一部分标为必须通过工具获得的「证据」。',
+  'guide.facts.vault.title': 'CaseMemory（单案例单一事实来源）',
+  'guide.facts.vault.body':
+    '「已确认事实」合并顾客陈述与工具回填；「技能产物」保留审计与界面展示所需的结构化负载。',
+  'guide.facts.vault.colFacts': '可信事实区',
+  'guide.facts.vault.colSkills': '技能产物区',
+  'guide.facts.vault.factsLine': 'txnId, amount, orderStatus?, channelStatus? …',
+  'guide.facts.vault.skillsLine': 'query_order_status, query_payment_channel_status …',
+  'guide.facts.gate.title': '每一圈都会重算阶段闸口',
+  'guide.facts.gate.body': '执行器拿「当前激活阶段」在模板里的定义，对照实时记忆做体检。',
+  'guide.facts.gate.badge': '闸口结论：尚有关卡未过',
+  'guide.facts.gate.row1': 'txnId — 已满足（user_input）',
+  'guide.facts.gate.row2': 'amount — 已满足（user_input）',
+  'guide.facts.gate.row3': 'orderStatus, channelStatus — 仍缺失（期待 skill 输出）',
+  'guide.facts.gate.outcomes': '→ nudge 模型去调工具；若模板要求则 request_user_input 向用户追问。',
+  'guide.facts.transAuto.title': '自动流转',
+  'guide.facts.transAuto.body': '当 transition.type 为 auto 且「证据齐备」条件成立时，可在无需额外辩论的情况下推进阶段。',
+  'guide.facts.transEval.title': '评估 / 裁决型流转',
+  'guide.facts.transEval.body':
+    '对 evaluation 类流转，可用独立评估模型比对系统证据与用户主张——发现冲突走 waiting_human，证据链清晰则可进入 resolved。',
+  'guide.footer.note':
+    '架构全貌请参阅仓库规格长文「Intera Harness 架构梳理」；线上真实行为始终以 **代码 + Console 后台配置** 为准，本页示意图为便于理解的抽象。',
   'sidebar.switchProject': '切换项目',
   'sidebar.language': '语言',
   'sidebar.signOut': '退出登录',
@@ -368,6 +1031,8 @@ export const zh: Record<string, string> = {
   'shell.adminUser': '管理员',
   'shell.demoVendor': '演示租户',
   'shell.version': 'v0.1',
+  'shell.backToTop': '回到顶部',
+  'shell.backToTopAria': '滚动到页面顶部',
 
   'common.save': '保存',
   'common.cancel': '取消',
@@ -431,6 +1096,10 @@ export const zh: Record<string, string> = {
   'agent.sync.editing': '编辑中',
   'agent.promptHelp': 'Agent 人设与行为规范。',
   'agent.modelMain': '模型',
+  'agent.intentModel': '意图分类模型',
+  'agent.intentModelHint': '用于意图分类的轻量模型。不设置则默认使用 haiku。',
+  'agent.evaluationModel': '阶段评估模型',
+  'agent.evaluationModelHint': '用于阶段转换评估的模型。不设置则默认使用 haiku。',
   'agent.temperature': '温度（{n}）',
   'agent.thinkingBudget': '思考预算',
   'agent.maxIterations': '最大轮次',
@@ -546,6 +1215,13 @@ export const zh: Record<string, string> = {
   'caseTypes.f.requiredFacts': '必需事实（JSON）',
   'caseTypes.f.escalateOn': '升级条件（JSON）',
   'caseTypes.f.autoCloseConditions': '自动结案（JSON）',
+  'caseTypes.tab.basic': '基础',
+  'caseTypes.tab.stages': '阶段配置',
+  'caseTypes.stages.configFor': '配置阶段：{stage}',
+  'caseTypes.stages.clearConfig': '清除阶段配置',
+  'caseTypes.stages.copyJson': '复制 JSON',
+  'caseTypes.stages.defineFirst': '请先在基础标签页中定义阶段，然后在此处配置每个阶段。',
+  'caseTypes.enabledForRouting': '参与路由与意图建案类型（进行中案件不受影响）',
 
   'routing.title': '路由',
   'routing.subtitle': '已配置 {n} 个队列',

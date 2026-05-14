@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
-export type CaseStatus = 'created' | 'investigating' | 'collecting' | 'waiting_human' | 'resolved'
+export type CaseStatus = 'created' | 'investigating' | 'collecting' | 'waiting_human' | 'resolved' | 'escalated'
 
 interface CaseCardData {
   caseId: string
@@ -28,6 +28,7 @@ const STATUS_META: Record<CaseStatus, { label: string; dot: string; ring: string
   created:        { label: 'New',       dot: 'bg-smoke',                          ring: '' },
   investigating:  { label: 'Processing', dot: 'bg-indigo animate-breathe',         ring: 'shadow-[0_0_16px_rgba(91,110,245,0.12)]' },
   collecting:     { label: 'Need Info',  dot: 'bg-amber animate-breathe',          ring: 'shadow-[0_0_16px_rgba(212,145,46,0.1)]' },
+  escalated:      { label: 'Escalated',  dot: 'bg-red animate-breathe',            ring: 'shadow-[0_0_16px_rgba(239,68,68,0.12)]' },
   waiting_human:  { label: 'Escalated',  dot: 'bg-vermillion animate-breathe',     ring: 'shadow-[0_0_16px_rgba(230,69,57,0.12)]' },
   resolved:       { label: 'Resolved',   dot: 'bg-malachite',                      ring: 'shadow-[0_0_16px_rgba(46,160,74,0.1)]' },
 }

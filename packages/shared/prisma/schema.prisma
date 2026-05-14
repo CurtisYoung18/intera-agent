@@ -53,6 +53,8 @@ model AgentConfig {
   maxOutputTokens     Int?    // default 4096
   resumePrompt        String? // synthetic message for human task resume
   formResponseTemplate String? // synthetic message for form submission
+  evaluationModel     String? // Model for stage transition evaluation
+  intentModel         String? // Model for intent classification (defaults to evaluationModel or haiku)
 
   // JSON fields
   memoryStrategy String // MemoryStrategy
@@ -79,9 +81,13 @@ model CaseType {
 
   requiredFacts       String  // JSON: string[]
   stages              String  // JSON: string[] — 动态状态机
+  stageConfigs        String? // JSON: Record<string, StageConfig> — per-stage config
+  orchestratorConfig  String? // JSON: OrchestratorConfig — sub-agent dispatch rules
   defaultGoal         String
   escalateOn          String  // JSON: string[]
   autoCloseConditions String? // JSON
+
+  enabled   Boolean @default(true) // false = excluded from routing / intent classification UI
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
