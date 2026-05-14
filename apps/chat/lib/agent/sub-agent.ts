@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse } from '@intera/shared/types'
-import { StreamingToolExecutor } from './streaming-tool-executor'
+import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 
 const DEFAULT_MAX_ITERATIONS = 5
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -109,26 +109,27 @@ export class SubAgent {
           const toolResults = await StreamingToolExecutor.executeAll(this.skillDefinitions, toolUses)
 
           for (const result of toolResults) {
+            const payload = unwrapToolExecutionPayload(result.output)
             onProgress({
               type: 'tool_result',
               agentName: this.config.name,
               toolName: result.name,
-              detail: JSON.stringify(result.output).slice(0, 200),
+              detail: JSON.stringify(payload).slice(0, 200),
             })
 
-            if (result.output && typeof result.output === 'object') {
-              Object.assign(allFindings, result.output as Record<string, unknown>)
+            if (payload && typeof payload === 'object') {
+              Object.assign(allFindings, payload as Record<string, unknown>)
             }
             allEvidence.push({
               source: result.name,
-              result: result.output,
+              result: payload,
               latencyMs: result.latencyMs,
             })
 
             // Add tool result as assistant message for next iteration
             messages.push({
               role: 'assistant',
-              content: JSON.stringify({ tool_call: result.name, result: result.output }),
+              content: JSON.stringify({ tool_call: result.name, result: payload }),
             })
           }
 
@@ -151,6 +152,7 @@ export class SubAgent {
       return {
         taskId: task.id,
         agentName: this.config.name,
+        caseId: task.context.caseId,
         findings: allFindings,
         evidence: allEvidence,
         recommendation: recommendation || 'Investigation completed',
@@ -163,6 +165,7 @@ export class SubAgent {
       return {
         taskId: task.id,
         agentName: this.config.name,
+        caseId: task.context.caseId,
         findings: { error: String(err), ...allFindings },
         evidence: allEvidence,
         recommendation: undefined,

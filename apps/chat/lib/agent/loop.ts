@@ -13,12 +13,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
-import { StreamingToolExecutor } from './streaming-tool-executor'
-import type { ToolExecutionResult } from './streaming-tool-executor'
+import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { CaseMemoryManager } from './memory'
 import { PolicyEngine } from './policy'
 import { SkillRouter } from './skills'
-import { StageExecutor } from './stage-executor'
+import { StageExecutor, type TransitionEval } from './stage-executor'
 import { OrchestratorAgent } from './orchestrator'
 import { TraceWriter } from './trace'
 import { microCompact } from './microCompact'
@@ -92,11 +91,12 @@ export class AgentLoop {
         deps.caseSchema,
         deps.config,
         this.caseMemory,
+        deps.userId,
       )
       this.currentStage = this.stageExecutor.getCurrentStage()
 
       // Initialize orchestrator for sub-agent dispatch (pass skill defs for real tool execution)
-      this.orchestrator = new OrchestratorAgent(deps.caseSchema, this.skillRouter.getToolDefinitions())
+      this.orchestrator = new OrchestratorAgent(deps.caseSchema, this.skillRouter.getToolDefinitions(), deps.userId)
     }
   }
 
@@ -121,6 +121,11 @@ export class AgentLoop {
     const stageCfg = this.stageExecutor?.getStageConfig(this.currentStage)
     if (!stageCfg?.subAgents?.length) return
 
+    const agentNames = stageCfg.subAgents.map((c) => c.name)
+    if (this.caseMemory.hasDispatchedSubAgentsFor(this.currentStage, agentNames)) {
+      return
+    }
+
     const mem = this.caseMemory.getSummary()
     try {
       const tasks = await this.orchestrator.planInvestigation(
@@ -140,6 +145,7 @@ export class AgentLoop {
               agentName: task.agentConfig.name,
               taskDescription: task.taskPrompt.slice(0, 200),
               stage: this.currentStage,
+              caseId: this.deps.caseId,
             },
             timestamp: new Date().toISOString(),
           })
@@ -148,10 +154,26 @@ export class AgentLoop {
         // Non-blocking — results merge as they arrive, ReAct loop checks each iteration
         this.orchestrator.dispatchInBackground(tasks, sendEvent, mem as any)
 
-        await this.traceWriter.write('loop_decision', 'Sub-agents dispatched (background)', JSON.stringify({
+        this.caseMemory.recordSubAgentsDispatched(
+          this.currentStage,
+          tasks.map((t) => t.agentConfig.name),
+        )
+
+        sendEvent({
+          type: 'core_agent_progress',
+          data: {
+            stage: this.currentStage,
+            iteration: 0,
+            task: `Coordinating ${tasks.length} sub-agent(s) for parallel investigation`,
+            pendingSubAgents: tasks.map((t) => t.agentConfig.name),
+          },
+          timestamp: new Date().toISOString(),
+        })
+
+        await this.traceWriter.write('loop_decision', 'Sub-agents dispatched (background)', {
           stage: this.currentStage,
           subAgents: tasks.map((t) => t.agentConfig.name),
-        }))
+        })
       }
     } catch (err) {
       console.error('[AgentLoop] Start-dispatch failed:', err)
@@ -190,6 +212,28 @@ export class AgentLoop {
     while (this.iterationCount < this.deps.config.maxIterations) {
       this.iterationCount++
       this.profiler.incrementIteration()
+
+      // Emit core agent progress for UI visibility
+      const CS_STAGE_PROGRESS: Record<string, string> = {
+        created: 'Opening your ticket',
+        collecting: 'Gathering the details we need',
+        investigating: 'Checking records against what you shared',
+        waiting_human: 'Lining up a specialist for you',
+        resolved: 'Wrapping up your case',
+      }
+      const stageLabel =
+        CS_STAGE_PROGRESS[this.currentStage] ?? 'Handling your request'
+      const taskDesc = `${stageLabel} · step ${this.iterationCount}`
+      sendEvent({
+        type: 'core_agent_progress',
+        data: {
+          stage: this.currentStage,
+          iteration: this.iterationCount,
+          task: taskDesc,
+          pendingSubAgents: this.orchestrator?.getPendingAgentNames() ?? [],
+        },
+        timestamp: new Date().toISOString(),
+      })
 
       // Check for new sub-agent results (from background dispatch)
       if (this.orchestrator?.hasNewResults()) {
@@ -239,8 +283,8 @@ export class AgentLoop {
 
       // ── Stream API call ──────────────────────────────────────────
       const stagePrompt = this.stageExecutor
-        ? this.stageExecutor.buildStagePrompt(this.currentStage)
-        : this.deps.systemPrompt
+        ? this.stageExecutor.buildStagePrompt(this.currentStage, this.deps.systemPrompt)
+        : `${this.deps.systemPrompt}${this.harnessUserBinding()}`
       const allTools = this.skillRouter.getTools()
       const stageTools = this.stageExecutor
         ? this.stageExecutor.filterTools(this.currentStage, allTools)
@@ -257,6 +301,9 @@ export class AgentLoop {
         apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
         baseURL: process.env.ANTHROPIC_BASE_URL,
       })
+
+      const iterationStartTime = Date.now()
+      let streamEndedAt = iterationStartTime
 
       const stream = client.messages.stream({
         model: this.deps.config.model,
@@ -379,7 +426,7 @@ export class AgentLoop {
                 await this.traceWriter.write(
                   'policy_hit',
                   `Blocked: ${toolUse.name}`,
-                  JSON.stringify(policyResult),
+                  policyResult as unknown as Record<string, unknown>,
                 )
                 sendEvent({
                   type: 'error',
@@ -410,7 +457,7 @@ export class AgentLoop {
               await this.traceWriter.write(
                 'stream_event',
                 `stop_reason: ${stopReason}`,
-                JSON.stringify({ stopReason, iteration: this.iterationCount }),
+                { stopReason, iteration: this.iterationCount },
               )
             }
             const mergedUsage = msgDelta.usage ?? delta?.usage
@@ -426,16 +473,20 @@ export class AgentLoop {
         }
       }
 
+      streamEndedAt = Date.now()
+
       // Final usage per assistant completion (streaming APIs may emit usage on multiple deltas).
       if (
         usage &&
         ((usage.input_tokens as number | undefined) != null ||
-          (usage.output_tokens as number | undefined) != null)
+          (usage.output_tokens as number | undefined) != null ||
+          (usage.inputTokens as number | undefined) != null ||
+          (usage.outputTokens as number | undefined) != null)
       ) {
         await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount)
         this.profiler.addTokens(
-          (usage.input_tokens as number | undefined) ?? 0,
-          (usage.output_tokens as number | undefined) ?? 0,
+          Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
+          Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
         )
       }
 
@@ -452,9 +503,64 @@ export class AgentLoop {
         this.profiler.addToolExecution(tr.latencyMs || 0)
       }
 
+      if (
+        usage &&
+        ((usage.input_tokens as number | undefined) != null ||
+          (usage.output_tokens as number | undefined) != null ||
+          (usage.inputTokens as number | undefined) != null ||
+          (usage.outputTokens as number | undefined) != null)
+      ) {
+        const iterationEndedAt = Date.now()
+        const llmWallMs = Math.max(0, streamEndedAt - iterationStartTime)
+        const toolsWallMs = Math.max(0, iterationEndedAt - streamEndedAt)
+        await this.traceWriter.write('loop_decision', 'Iteration Snapshot', {
+          iteration: this.iterationCount,
+          llmWallMs,
+          toolsWallMs,
+          iterationWallMs: iterationEndedAt - iterationStartTime,
+          wallMs: iterationEndedAt - iterationStartTime,
+          inputTokens: Number(
+            (usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0,
+          ),
+          outputTokens: Number(
+            (usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0,
+          ),
+        })
+      }
+
       if (toolResults.length === 0) {
-        // No tools called — check if stage goals are met before allowing exit
+        // No tools called — stage evaluator may still advance (e.g. created → collecting)
         if (this.stageExecutor && this.stageExecutor.hasStageConfigs()) {
+          let transitionEval = await this.stageExecutor.evaluateTransition(
+            this.currentStage,
+            this.iterationCount,
+          )
+
+          if (
+            !(transitionEval.shouldTransition && transitionEval.nextStage) &&
+            this.currentStage === 'created'
+          ) {
+            const fbNext = this.stageExecutor.getNextStageName('created')
+            if (fbNext) {
+              transitionEval = {
+                shouldTransition: true,
+                nextStage: fbNext,
+                reason: 'Fallback advance from created after first assistant turn (evaluator returned no transition).',
+              }
+            }
+          }
+
+          const advanced = await this.applyStageTransitionFromEval(transitionEval, sendEvent)
+          if (advanced) {
+            this.messages.push(assistantMessage)
+            sendEvent({
+              type: 'message_stop',
+              data: { reason: 'stage_transition', stage: this.currentStage },
+              timestamp: new Date().toISOString(),
+            })
+            continue
+          }
+
           const skillCheck = this.stageExecutor.checkRequiredSkills(this.currentStage)
           const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(this.currentStage)
 
@@ -465,19 +571,19 @@ export class AgentLoop {
             this.messages.push(assistantMessage)
             this.messages.push(this.makeUserMessage(nudgeMsg))
 
-            await this.traceWriter.write('loop_decision', 'Nudge: stage incomplete', JSON.stringify({
+            await this.traceWriter.write('loop_decision', 'Nudge: stage incomplete', {
               stage: this.currentStage,
               nudgeCount: this.nudgeCount,
               missingSkills: skillCheck.missing,
               missingEvidence: evidenceCheck.missing,
               iteration: this.iterationCount,
-            }))
+            })
 
             // After 3 consecutive nudges, escalate to human
             if (this.nudgeCount >= 3) {
-              await this.traceWriter.write('loop_decision', 'Exit: max nudges', JSON.stringify({
+              await this.traceWriter.write('loop_decision', 'Exit: max nudges', {
                 stage: this.currentStage, nudgeCount: this.nudgeCount,
-              }))
+              })
               sendEvent({
                 type: 'error',
                 data: `Agent stuck in stage "${this.currentStage}" — needs human intervention`,
@@ -503,10 +609,10 @@ export class AgentLoop {
         }
 
         // Stage goals met (or no stage config) — legitimate exit, model wants user input
-        await this.traceWriter.write('loop_decision', 'Exit: no tools called', JSON.stringify({
+        await this.traceWriter.write('loop_decision', 'Exit: no tools called', {
           stopReason, iteration: this.iterationCount, textLength: fullText.length,
           stage: this.currentStage,
-        }))
+        })
         this.messages.push(assistantMessage)
         sendEvent({
           type: 'message_stop',
@@ -516,7 +622,9 @@ export class AgentLoop {
         await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
-          caseStatus: 'investigating',
+          // Persist actual workflow stage — never hard-code investigating or the next HTTP turn
+          // mis-reads StageExecutor.getCurrentStage() and skips collecting / request_user_input.
+          caseStatus: this.currentStage as CaseStatus,
           transition: 'next_turn',
           currentStage: this.currentStage,
         }
@@ -526,7 +634,7 @@ export class AgentLoop {
       for (const result of toolResults) {
         const policyResult = await this.policyEngine.check('postTool', {
           skillName: result.name,
-          skillOutput: result.output,
+          skillOutput: unwrapToolExecutionPayload(result.output),
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
           skillsCalled: this.caseMemory.getSkillsCalled(),
         })
@@ -542,11 +650,12 @@ export class AgentLoop {
 
       // ── Apply tool results to Case Memory ────────────────────
       for (const result of toolResults) {
-        await this.caseMemory.applySkillResult(result.name, result.output)
+        const payload = unwrapToolExecutionPayload(result.output)
+        await this.caseMemory.applySkillResult(result.name, payload)
         await this.traceWriter.write(
           'skill_result',
           `Skill: ${result.name}`,
-          { output: result.output, latencyMs: result.latencyMs },
+          { output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, skillName: result.name },
         )
       }
 
@@ -559,9 +668,9 @@ export class AgentLoop {
         (r) => r.name === 'request_user_input',
       )
       if (formResult) {
-        await this.traceWriter.write('loop_decision', 'Exit: form requested', JSON.stringify({
+        await this.traceWriter.write('loop_decision', 'Exit: form requested', {
           stopReason, toolCount: toolResults.length, iteration: this.iterationCount,
-        }))
+        })
         const toolInput = formResult.toolUse?.input || {}
         const title = String(toolInput.title || 'Information Needed')
         const description = String(toolInput.description || '')
@@ -570,6 +679,7 @@ export class AgentLoop {
         sendEvent({
           type: 'form_request',
           data: {
+            caseId: this.deps.caseId,
             skillCallId: formResult.toolUse?.id || crypto.randomUUID(),
             title,
             description,
@@ -684,9 +794,10 @@ export class AgentLoop {
         (r) => r.name === 'finalize_case',
       )
       if (finalizeResult) {
+        const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
         const policyResult = await this.policyEngine.check('preFinalize', {
           skillName: 'finalize_case',
-          skillOutput: finalizeResult.output,
+          skillOutput: finalizedPayload,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
           skillsCalled: this.caseMemory.getSkillsCalled(),
         })
@@ -695,7 +806,7 @@ export class AgentLoop {
           await this.traceWriter.write(
             'policy_hit',
             'Finalize blocked',
-            JSON.stringify(policyResult),
+            policyResult as unknown as Record<string, unknown>,
           )
           sendEvent({
             type: 'error',
@@ -706,7 +817,7 @@ export class AgentLoop {
         }
 
         // Trace already written via traceWriter.write above (DB persistence handled internally)
-        await this.traceWriter.writeFinalResolution('resolved', JSON.stringify(finalizeResult.output))
+        await this.traceWriter.writeFinalResolution('resolved', JSON.stringify(finalizedPayload))
 
         // Persist case status to DB
         try {
@@ -720,7 +831,7 @@ export class AgentLoop {
 
         sendEvent({
           type: 'finalized',
-          data: finalizeResult.output,
+          data: finalizedPayload,
           timestamp: new Date().toISOString(),
         })
         await this.writeProfilerSnapshot()
@@ -737,11 +848,11 @@ export class AgentLoop {
         (r) => r.name === 'finalize_consultation',
       )
       if (consultResult) {
-        const output = consultResult.output as Record<string, unknown> | undefined
+        const output = unwrapToolExecutionPayload(consultResult.output) as Record<string, unknown> | undefined
         const summary = String(output?.summary || 'Your case has been reviewed by our specialist.')
         const resolution = String(output?.resolution || 'resolved')
 
-        await this.traceWriter.write('final_resolution', `Consultation complete: ${resolution}`, JSON.stringify(output))
+        await this.traceWriter.write('final_resolution', `Consultation complete: ${resolution}`, output ?? {})
 
         try {
           await prisma.case.update({
@@ -776,69 +887,7 @@ export class AgentLoop {
           this.currentStage,
           this.iterationCount,
         )
-
-        if (transitionEval.shouldTransition && transitionEval.nextStage) {
-          const prevStage = this.currentStage
-          this.currentStage = transitionEval.nextStage
-          this.nudgeCount = 0 // Reset nudge counter on stage transition
-
-          await this.traceWriter.write('loop_decision', 'Stage transition', JSON.stringify({
-            from: prevStage,
-            to: this.currentStage,
-            reason: transitionEval.reason,
-          }))
-
-          sendEvent({
-            type: 'case_status',
-            data: {
-              stage: this.currentStage,
-              previousStage: prevStage,
-              reason: transitionEval.reason,
-            },
-            timestamp: new Date().toISOString(),
-          })
-
-          // Rebuild system prompt for the new stage
-          this.deps.systemPrompt = this.stageExecutor.buildStagePrompt(this.currentStage)
-
-          // Swap stage guardrails in PolicyEngine
-          this.policyEngine.clearStageGuardrails()
-          const stageGuardrails = this.stageExecutor.getStageGuardrails(this.currentStage)
-          if (stageGuardrails.length > 0) {
-            this.policyEngine.loadStageGuardrails(stageGuardrails)
-          }
-
-          // Dispatch sub-agents if configured for the new stage
-          if (this.orchestrator?.isEnabled()) {
-            const stageCfg = this.stageExecutor.getStageConfig(this.currentStage)
-            if (stageCfg?.subAgents?.length) {
-              try {
-                const mem = this.caseMemory.getSummary()
-                const tasks = await this.orchestrator.planInvestigation(
-                  this.currentStage,
-                  stageCfg.subAgents,
-                  mem as any,
-                  stageCfg.description || this.currentStage,
-                )
-                if (tasks.length > 0) {
-                  const results = await this.orchestrator.dispatch(tasks, sendEvent)
-                  this.orchestrator.mergeResults(
-                    results,
-                    mem.confirmedFacts as Record<string, unknown>,
-                    mem.skillResults as Record<string, unknown>,
-                    mem.keyEvents as Array<{ at: string; text: string; source: string }>,
-                  )
-                  await this.traceWriter.write('loop_decision', 'Sub-agents dispatched', JSON.stringify({
-                    stage: this.currentStage,
-                    subAgents: results.map((r) => r.agentName),
-                  }))
-                }
-              } catch (err) {
-                console.error('[AgentLoop] Sub-agent dispatch failed:', err)
-              }
-            }
-          }
-        }
+        await this.applyStageTransitionFromEval(transitionEval, sendEvent)
       }
 
       sendEvent({
@@ -849,9 +898,9 @@ export class AgentLoop {
     }
 
     // Max iterations reached
-    await this.traceWriter.write('loop_decision', 'Exit: max iterations', JSON.stringify({
+    await this.traceWriter.write('loop_decision', 'Exit: max iterations', {
       stopReason, iteration: this.iterationCount, messageCount: this.messages.length,
-    }))
+    })
     sendEvent({
       type: 'error',
       data: 'Max iterations reached',
@@ -870,6 +919,94 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
+
+  /** Apply evaluator-approved stage transition; returns true if stage changed. */
+  private async applyStageTransitionFromEval(
+    transitionEval: TransitionEval,
+    sendEvent: (event: SSEEvent) => void,
+  ): Promise<boolean> {
+    if (
+      !this.stageExecutor ||
+      !this.deps.caseSchema ||
+      !transitionEval.shouldTransition ||
+      !transitionEval.nextStage
+    ) {
+      return false
+    }
+
+    const next = transitionEval.nextStage
+    if (!this.deps.caseSchema.stages.includes(next)) {
+      console.warn('[AgentLoop] Ignoring evaluator nextStage not in schema:', next)
+      return false
+    }
+
+    const prevStage = this.currentStage
+    if (next === prevStage) return false
+
+    this.currentStage = next
+    this.caseMemory.setCaseStatus(next)
+    this.nudgeCount = 0
+
+    await this.traceWriter.write('loop_decision', 'Stage transition', {
+      from: prevStage,
+      to: this.currentStage,
+      reason: transitionEval.reason,
+    })
+
+    sendEvent({
+      type: 'case_status',
+      data: {
+        stage: this.currentStage,
+        previousStage: prevStage,
+        reason: transitionEval.reason,
+      },
+      timestamp: new Date().toISOString(),
+    })
+
+    this.policyEngine.clearStageGuardrails()
+    const stageGuardrails = this.stageExecutor.getStageGuardrails(this.currentStage)
+    if (stageGuardrails.length > 0) {
+      this.policyEngine.loadStageGuardrails(stageGuardrails)
+    }
+
+    if (this.orchestrator?.isEnabled()) {
+      const stageCfg = this.stageExecutor.getStageConfig(this.currentStage)
+      if (stageCfg?.subAgents?.length) {
+        try {
+          const mem = this.caseMemory.getSummary()
+          const tasks = await this.orchestrator.planInvestigation(
+            this.currentStage,
+            stageCfg.subAgents,
+            mem as any,
+            stageCfg.description || this.currentStage,
+          )
+          if (tasks.length > 0) {
+            const results = await this.orchestrator.dispatch(tasks, sendEvent)
+            this.orchestrator.mergeResults(
+              results,
+              mem.confirmedFacts as Record<string, unknown>,
+              mem.skillResults as Record<string, unknown>,
+              mem.keyEvents as Array<{ at: string; text: string; source: string }>,
+            )
+            await this.traceWriter.write('loop_decision', 'Sub-agents dispatched', {
+              stage: this.currentStage,
+              subAgents: results.map((r) => r.agentName),
+            })
+          }
+        } catch (err) {
+          console.error('[AgentLoop] Sub-agent dispatch failed:', err)
+        }
+      }
+    }
+
+    return true
+  }
+
+  /** Session user id hint when Case schema / stage executor is absent */
+  private harnessUserBinding(): string {
+    const u = this.deps.userId.trim() || 'anonymous'
+    return `\n\n## Session binding\n- **platformUserId** for tools (\`read_case_history\`, etc.): \`${u}\`\nPass this string as the \`userId\` argument unless the customer explicitly states a different authoritative account identifier.\n`
+  }
 
   private buildApiMessages() {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
@@ -901,10 +1038,11 @@ export class AgentLoop {
 
   private addToolResultMessages(results: ToolExecutionResult[]) {
     for (const result of results) {
+      const payload = unwrapToolExecutionPayload(result.output)
       this.messages.push({
         id: crypto.randomUUID(),
         role: 'assistant' as const,
-        content: `Tool ${result.name} result: ${JSON.stringify(result.output)}`,
+        content: `Tool ${result.name} result: ${JSON.stringify(payload)}`,
         createdAt: new Date(),
       })
     }
@@ -925,10 +1063,10 @@ export class AgentLoop {
       const mcResult = microCompact(this.messages, ms.compactableTools, ms.toolResultTokenRatio)
       if (mcResult.clearedCount > 0) {
         this.messages = mcResult.messages
-        await this.traceWriter.write('microcompact', 'Cleared tool results', JSON.stringify({
+        await this.traceWriter.write('microcompact', 'Cleared tool results', {
           clearedCount: mcResult.clearedCount,
           tokensSaved: mcResult.tokensSaved,
-        }))
+        })
       }
     }
 
@@ -959,9 +1097,9 @@ export class AgentLoop {
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
           this.messages = this.messages.slice(-keepCount)
         }
-        await this.traceWriter.write('loop_decision', 'Compacted', JSON.stringify({
+        await this.traceWriter.write('loop_decision', 'Compacted', {
           reason: 'blocking', kept: keepCount, percentLeft: assessment.percentLeft,
-        }))
+        })
         return { shouldCompact: true, reason: 'blocking' }
       } catch {
         this.caseMemory.recordCompactionFailure()
@@ -989,7 +1127,7 @@ export class AgentLoop {
   private async writeProfilerSnapshot(): Promise<void> {
     const snapshot = this.profiler.snapshot()
     if (snapshot.totalDurationMs > 0) {
-      await this.traceWriter.write('loop_decision', 'Profiler Snapshot', JSON.stringify(snapshot))
+      await this.traceWriter.write('loop_decision', 'Profiler Snapshot', snapshot as unknown as Record<string, unknown>)
     }
   }
 
@@ -1002,11 +1140,11 @@ export class AgentLoop {
       const result = await compactConversation(this.messages, strategy)
       if (result.summary) {
         this.caseMemory.setSummary(result.summary)
-        await this.traceWriter.write('loop_decision', 'LLM Compact', JSON.stringify({
+        await this.traceWriter.write('loop_decision', 'LLM Compact', {
           model: result.model,
           provider: result.provider,
           tokensUsed: result.tokensUsed,
-        }))
+        })
         return
       }
       console.warn('[AgentLoop] LLM compact returned empty summary, falling back to programmatic')

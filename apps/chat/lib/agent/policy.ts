@@ -71,7 +71,7 @@ export class PolicyEngine {
     })
 
     this.policies.set('evidence_required_before_resolution', {
-      require_skills: ['query_order_status'],
+      require_skills_any: ['query_order_status', 'query_account_status'],
     })
 
     this.policies.set('no_compensation_promise', {
@@ -137,6 +137,18 @@ export class PolicyEngine {
           policyName,
           result: 'blocked',
           reason: `Required skills not called before finalize: ${missing.join(', ')}`,
+        }
+      }
+    }
+
+    if (rule.require_skills_any && rule.require_skills_any.length > 0 && context.skillName === 'finalize_case') {
+      const called = context.skillsCalled || []
+      const ok = rule.require_skills_any.some((s) => called.includes(s))
+      if (!ok) {
+        return {
+          policyName,
+          result: 'blocked',
+          reason: `Before finalize, call at least one of: ${rule.require_skills_any.join(', ')}`,
         }
       }
     }

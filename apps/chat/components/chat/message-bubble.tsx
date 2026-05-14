@@ -2,10 +2,13 @@
 // Supports 3 types: text, tool_call (CC-style dot), form_submitted (read-only record)
 
 import { memo } from 'react'
+import { createPortal } from 'react-dom'
+import { motion } from 'motion/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import GlassCard from '@intera/shared/ui/glass-card'
 import FormCard from './form-card'
+import IntentClarificationCard from './intent-clarification-card'
 import StreamingText from '@/components/ui/streaming-text'
 
 // ─── Shared message shape ───
@@ -13,7 +16,13 @@ import StreamingText from '@/components/ui/streaming-text'
 export interface MessageShape {
   id: string
   role: 'user' | 'assistant'
-  msgType: 'text' | 'tool_call' | 'form_active' | 'form_submitted'
+  msgType:
+    | 'text'
+    | 'tool_call'
+    | 'form_active'
+    | 'form_submitted'
+    | 'intent_clarification'
+    | 'intent_resolved'
   content: string
   isStreaming?: boolean
   thinking?: string
@@ -21,19 +30,36 @@ export interface MessageShape {
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
+  relatedCaseId?: string
   formData?: {
     title: string
     description?: string
     fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>
     answers?: Record<string, string>
   }
+  intentOptions?: {
+    caseTypes: Array<{
+      type: string
+      displayName: string
+      icon: string
+      confidence: number
+    }>
+  }
+  intentResolution?: {
+    selectedCaseTypes: string[]
+    labelsByType: Record<string, string>
+    locale: 'zh' | 'en'
+  }
   timestamp: string
 }
 
 interface MessageBubbleProps {
   msg: MessageShape
-  onFormSubmit?: (msgId: string, answers: Record<string, string>) => void
+  priorUserContent?: string
+  elevateInteractiveForms?: boolean
+  onFormSubmit?: (msgId: string, answers: Record<string, string>) => void | Promise<void>
   onFormCancel?: (msgId: string) => void
+  onIntentConfirm?: (msgId: string, selectedTypes: string[]) => void | Promise<void>
 }
 
 // ─── Markdown components ──────────────────────────────────────────
@@ -77,8 +103,15 @@ const MARKDOWN_COMPONENTS: any = {
 
 // ─── Component ────────────────────────────────────────────────────
 
-function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) {
-  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, formData } = msg
+function MessageBubble({
+  msg,
+  priorUserContent,
+  elevateInteractiveForms = false,
+  onFormSubmit,
+  onFormCancel,
+  onIntentConfirm,
+}: MessageBubbleProps) {
+  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, formData, intentOptions, intentResolution } = msg
 
   if (msgType === 'tool_call') {
     return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} timestamp={msg.timestamp} />
@@ -89,15 +122,83 @@ function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) 
   }
 
   if (msgType === 'form_active' && formData) {
+    const typedFields = formData.fields as Array<{
+      key: string
+      label: string
+      type: 'text' | 'number' | 'select' | 'textarea' | 'file' | 'date'
+      required?: boolean
+      placeholder?: string
+      options?: string[]
+    }>
+
+    const formUi = (
+      <FormCard
+        title={formData.title}
+        description={formData.description}
+        fields={typedFields}
+        onSubmit={(answers) => onFormSubmit?.(msg.id, answers)}
+        onCancel={() => onFormCancel?.(msg.id)}
+      />
+    )
+
+    if (elevateInteractiveForms && typeof document !== 'undefined') {
+      const hintZh =
+        !!(priorUserContent && /[\u3400-\u9fff]/.test(priorUserContent)) ||
+        /[\u3400-\u9fff]/.test(formData.title)
+      return (
+        <>
+          {createPortal(
+            <div
+              className="fixed inset-0 z-[130] flex items-center justify-center bg-[oklch(0.21_0.02_75/0.34)] p-4 backdrop-blur-[2px]"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={`case-form-${msg.id}`}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 44 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                className="relative w-[min(100%,26rem)]"
+              >
+                <span id={`case-form-${msg.id}`} className="sr-only">
+                  {formData.title}
+                </span>
+                {formUi}
+              </motion.div>
+            </div>,
+            document.body,
+          )}
+          <div className="animate-message-in w-full max-w-chat rounded-xl border border-dashed border-indigo/22 bg-white/[0.03] px-4 py-3">
+            <p className="text-[11px] leading-relaxed text-fog/50">
+              {hintZh
+                ? '工单需要从您这里确认的信息已在屏幕中央弹出；填完后表单会收口到对话记录，您可以继续与 Core 闲聊。'
+                : 'Information needed for your case is in the center window. After submit, it records here—you can keep chatting with the assistant.'}
+            </p>
+          </div>
+        </>
+      )
+    }
+
+    return (
+      <div className="flex flex-col items-start">
+        <div className="max-w-[95%] animate-message-in">{formUi}</div>
+      </div>
+    )
+  }
+
+  if (msgType === 'intent_resolved' && intentResolution) {
+    return <IntentResolvedBubble intentResolution={intentResolution} timestamp={msg.timestamp} />
+  }
+
+  if (msgType === 'intent_clarification' && intentOptions) {
+    const locale: 'zh' | 'en' = priorUserContent && /[一-鿿]/.test(priorUserContent) ? 'zh' : 'en'
     return (
       <div className="flex flex-col items-start">
         <div className="max-w-[95%] animate-message-in">
-          <FormCard
-            title={formData.title}
-            description={formData.description}
-            fields={formData.fields as Array<{ key: string; label: string; type: 'text' | 'number' | 'select' | 'textarea' | 'file'; required?: boolean; placeholder?: string; options?: string[] }>}
-            onSubmit={(answers) => onFormSubmit?.(msg.id, answers)}
-            onCancel={() => onFormCancel?.(msg.id)}
+          <IntentClarificationCard
+            locale={locale}
+            options={intentOptions.caseTypes}
+            onConfirm={(selectedTypes) => void onIntentConfirm?.(msg.id, selectedTypes)}
           />
         </div>
       </div>
@@ -145,6 +246,45 @@ function MessageBubble({ msg, onFormSubmit, onFormCancel }: MessageBubbleProps) 
       {msg.timestamp && (
         <span className="mt-1.5 text-[11px] font-sans text-fog/30 px-2 select-none">
           {formatTime(msg.timestamp)}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function IntentResolvedBubble({
+  intentResolution,
+  timestamp,
+}: {
+  intentResolution: NonNullable<MessageShape['intentResolution']>
+  timestamp: string
+}) {
+  const { selectedCaseTypes, labelsByType, locale } = intentResolution
+  const joined = selectedCaseTypes.map((t) => labelsByType[t] ?? t).join(locale === 'zh' ? '、' : ', ')
+  const eyebrow = locale === 'zh' ? '已确认的工单类型' : 'Confirmed issue types'
+  const line =
+    locale === 'zh'
+      ? `您选择了「${joined}」，系统将并行开启对应专项并按顺序处理交互请求…`
+      : `You selected “${joined}”. Parallel investigations start now; interactions queue one at a time…`
+
+  return (
+    <div className="flex flex-col items-start">
+      <div className="max-w-[90%] animate-message-in">
+        <div className="relative rounded-2xl bg-abyss/80 backdrop-blur-xl px-4 py-3 border border-[var(--border-subtle)]">
+          <p className="text-[10px] font-sans tracking-[0.12em] uppercase text-fog/45">{eyebrow}</p>
+          <ul className="mt-2 space-y-1">
+            {selectedCaseTypes.map((t) => (
+              <li key={t} className="font-serif text-[15px] text-mist">
+                · {labelsByType[t] ?? t}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[12px] text-fog/55 mt-2 leading-relaxed">{line}</p>
+        </div>
+      </div>
+      {timestamp && (
+        <span className="mt-1.5 text-[11px] font-sans text-fog/30 px-2 select-none">
+          {formatTime(timestamp)}
         </span>
       )}
     </div>

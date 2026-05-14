@@ -106,6 +106,7 @@ export interface CaseMemoryData {
   skillResults: Record<string, unknown>
   keyEvents: KeyEvent[]
   summary?: string
+  caseStatus?: string
 }
 
 export interface KeyEvent {
@@ -149,7 +150,10 @@ export type PolicyResult = 'pass' | 'blocked' | 'hint' | 'escalated'
 
 export interface PolicyRule {
   deny_skills?: string[]
+  /** All listed skills must have been called before finalize_case */
   require_skills?: string[]
+  /** At least one listed skill must have been called before finalize_case */
+  require_skills_any?: string[]
   deny_keywords?: string[]
   allow_keywords?: string[]
   min_evidence_count?: number
@@ -289,6 +293,7 @@ export type SSEEventType =
   | 'sub_agent_progress'
   | 'sub_agent_complete'
   | 'sub_agent_error'
+  | 'core_agent_progress'
   | 'error'
 
 export interface SSEEvent {
@@ -395,6 +400,8 @@ export interface SubAgentTask {
 export interface SubAgentResult {
   taskId: string
   agentName: string
+  /** Parent case — for split UI / SSE routing */
+  caseId: string
   findings: Record<string, unknown>
   evidence: Record<string, unknown>[]
   recommendation?: string

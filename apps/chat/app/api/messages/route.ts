@@ -4,6 +4,7 @@
 
 import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
+import { IntentClassifier } from '@/lib/agent/intent-classifier'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig, IntentClassification } from '@intera/shared/types'
 
@@ -110,6 +111,60 @@ function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
   return null
 }
 
+/** Build harness CaseSchemaConfig from a CaseType DB row (shared load / hydrate paths). */
+function schemaFromCaseTypeRow(caseType: {
+  type: string
+  displayName: string
+  description: string | null
+  icon: string
+  requiredFacts: string
+  stages: string
+  stageConfigs: string | null
+  orchestratorConfig: string | null
+  defaultGoal: string
+  escalateOn: string
+  autoCloseConditions: string | null
+}): CaseSchemaConfig {
+  const stages = parseMemoryJson(caseType.stages) as string[]
+  const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
+  const stageConfigs = parseMemoryJson(caseType.stageConfigs) as Record<string, unknown> | null
+  const orchestrator = parseMemoryJson(caseType.orchestratorConfig) as Record<string, unknown> | null
+
+  return {
+    type: caseType.type,
+    displayName: caseType.displayName,
+    description: caseType.description || undefined,
+    icon: caseType.icon,
+    requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
+    stages: Array.isArray(stages) ? stages : [],
+    stageConfigs: stageConfigs as unknown as CaseSchemaConfig['stageConfigs'],
+    defaultGoal: caseType.defaultGoal,
+    escalateOn: parseMemoryJson(caseType.escalateOn) as string[] || [],
+    autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
+    orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
+  }
+}
+
+function parseMemoryJson(raw: string | null | undefined): unknown {
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
+function appendCaseSchemaToPrompt(
+  systemPrompt: string,
+  caseType: {
+    displayName: string
+    defaultGoal: string
+    escalateOn: string
+    stages: string
+    requiredFacts: string
+  },
+): string {
+  const stages = parseMemoryJson(caseType.stages) as string[]
+  const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
+  return `${systemPrompt}\n\n## Case Schema: ${caseType.displayName}\n- Goal: ${caseType.defaultGoal}\n- Stages: ${JSON.stringify(stages)}\n- Required facts: ${JSON.stringify(requiredFacts)}\n- Escalate when: ${caseType.escalateOn}`
+}
+
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -122,7 +177,20 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const { message, resumeTrigger, formResult, caseId, customerId, userId, classification, caseType: bodyCaseType, skipClassification } = body
+        const {
+          message,
+          resumeTrigger,
+          formResult,
+          caseId,
+          customerId,
+          userId,
+          classification,
+          caseType: bodyCaseType,
+          skipClassification,
+          bootstrapNewCase: rawBootstrapNewCase,
+        } = body
+
+        const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
         let userMessage = message
         let resolvedCaseId = caseId || `case_${Date.now()}`
@@ -130,6 +198,7 @@ export async function POST(request: NextRequest) {
         let resolvedUserId = userId || 'anonymous'
         let resolvedClassification = classification as IntentClassification | undefined
         let createdCaseForIntent = false
+        const emittedCaseCreated = new Set<string>()
 
         // ── Form response: customer submitted form answers ──
         if (formResult && !message) {
@@ -193,6 +262,22 @@ export async function POST(request: NextRequest) {
         // ── Intent classification + auto case creation ──
         // Skip for resume/form flows or when explicitly disabled
         const shouldClassify = !skipClassification && !resumeTrigger && !formResult && !bodyCaseType
+
+        const classificationLooksWeak =
+          !resolvedClassification ||
+          !resolvedClassification.matchedCaseTypes?.length ||
+          /\b(timed out|Classification error|API error|Failed to parse|DB error loading)\b/i.test(
+            resolvedClassification.reasoning || '',
+          )
+
+        if (shouldClassify && userMessage && classificationLooksWeak) {
+          try {
+            resolvedClassification = await IntentClassifier.classify(userMessage, resolvedCustomerId)
+          } catch (e) {
+            console.error('[Intera] Server-side intent classify failed:', e)
+          }
+        }
+
         if (shouldClassify && resolvedClassification) {
           if (resolvedClassification.intent === 'case' && !resolvedClassification.needsClarification && resolvedClassification.matchedCaseTypes.length > 0) {
             const matched = resolvedClassification.matchedCaseTypes[0]
@@ -219,13 +304,17 @@ export async function POST(request: NextRequest) {
                 },
                 timestamp: new Date().toISOString(),
               })
+              emittedCaseCreated.add(newCase.id)
               console.log(`[Intera] Auto-created case ${newCase.id} with type "${matched.type}" from intent classification`)
             } catch (err) {
               console.error('[Intera] Failed to create case from intent:', err)
             }
           }
 
-          if (resolvedClassification.needsClarification && resolvedClassification.matchedCaseTypes.length > 0) {
+          if (
+            resolvedClassification.needsClarification &&
+            resolvedClassification.matchedCaseTypes.length > 1
+          ) {
             // Multiple ambiguous matches — Core Agent should ask user to clarify
             const options = resolvedClassification.matchedCaseTypes
               .map((m) => `"${m.displayName}"`)
@@ -235,9 +324,95 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        if (bodyCaseType && !createdCaseForIntent) {
-          // Manual case type override from UI
+        // Emit intent_classified SSE event for frontend split-mode activation
+        if (resolvedClassification) {
+          sendEvent({
+            type: 'intent_classified',
+            data: resolvedClassification,
+            timestamp: new Date().toISOString(),
+          })
+        }
+
+        // ── Bootstrap new case from Chat UI (multi-case parallel lanes) ──
+        if (bootstrapNewCase && bodyCaseType && userMessage && !resumeTrigger && !formResult) {
+          try {
+            const ctRow = await prisma.caseType.findUnique({
+              where: { customerId_type: { customerId: resolvedCustomerId, type: bodyCaseType } },
+            })
+            const newCase = await prisma.case.create({
+              data: {
+                customerId: resolvedCustomerId,
+                userId: resolvedUserId,
+                type: bodyCaseType,
+                status: 'created',
+              },
+            })
+            resolvedCaseId = newCase.id
+            createdCaseForIntent = true
+
+            sendEvent({
+              type: 'case_created',
+              data: {
+                caseId: newCase.id,
+                caseType: bodyCaseType,
+                displayName: ctRow?.displayName ?? bodyCaseType,
+                icon: ctRow?.icon ?? '📋',
+                extractedFacts: resolvedClassification?.extractedFacts,
+              },
+              timestamp: new Date().toISOString(),
+            })
+            emittedCaseCreated.add(newCase.id)
+            console.log(`[Intera] bootstrapNewCase → ${newCase.id} (${bodyCaseType})`)
+          } catch (err) {
+            console.error('[Intera] bootstrapNewCase failed:', err)
+            sendEvent({
+              type: 'error',
+              data: err instanceof Error ? err.message : 'Failed to create case',
+              timestamp: new Date().toISOString(),
+            })
+            controller.close()
+            return
+          }
+        }
+
+        if (bodyCaseType) {
+          // Manual case type override from UI (including bootstrap lanes)
           systemPrompt += `\n\n[Manual Case Type]: The user has selected case type "${bodyCaseType}".`
+        }
+
+        // Chat UI binds SSE events to lane.caseId via case_created. Paths that skip prisma bootstrap
+        // (manual caseType + skipClassification) never emitted it — tabs/case card/form broke.
+        if (!resumeTrigger && !formResult && !createdCaseForIntent && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
+          const inferredType =
+            bodyCaseType ||
+            (resolvedClassification?.intent === 'case' &&
+              resolvedClassification.matchedCaseTypes?.[0]?.type)
+          if (inferredType) {
+            try {
+              const ctRow = await prisma.caseType.findUnique({
+                where: {
+                  customerId_type: {
+                    customerId: resolvedCustomerId,
+                    type: inferredType,
+                  },
+                },
+              })
+              sendEvent({
+                type: 'case_created',
+                data: {
+                  caseId: resolvedCaseId,
+                  caseType: inferredType,
+                  displayName: ctRow?.displayName ?? inferredType,
+                  icon: ctRow?.icon ?? '📋',
+                  extractedFacts: resolvedClassification?.extractedFacts,
+                },
+                timestamp: new Date().toISOString(),
+              })
+              emittedCaseCreated.add(resolvedCaseId)
+            } catch {
+              /* ignore */
+            }
+          }
         }
 
         // ── Load case memory + schema from DB (CC-style session memory pattern) ──
@@ -255,27 +430,8 @@ export async function POST(request: NextRequest) {
                 where: { customerId_type: { customerId: resolvedCustomerId, type: existingCase.type } },
               })
               if (caseType) {
-                const stages = parseMemoryJson(caseType.stages) as string[]
-                const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
-                const stageConfigs = parseMemoryJson(caseType.stageConfigs) as Record<string, unknown> | null
-                const orchestrator = parseMemoryJson(caseType.orchestratorConfig) as Record<string, unknown> | null
-
-                // Build full CaseSchemaConfig
-                caseSchema = {
-                  type: caseType.type,
-                  displayName: caseType.displayName,
-                  description: caseType.description || undefined,
-                  icon: caseType.icon,
-                  requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
-                  stages: Array.isArray(stages) ? stages : [],
-                  stageConfigs: stageConfigs as unknown as CaseSchemaConfig['stageConfigs'],
-                  defaultGoal: caseType.defaultGoal,
-                  escalateOn: parseMemoryJson(caseType.escalateOn) as string[] || [],
-                  autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
-                  orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
-                }
-
-                systemPrompt += `\n\n## Case Schema: ${caseType.displayName}\n- Goal: ${caseType.defaultGoal}\n- Stages: ${JSON.stringify(stages)}\n- Required facts: ${JSON.stringify(requiredFacts)}\n- Escalate when: ${caseType.escalateOn}`
+                caseSchema = schemaFromCaseTypeRow(caseType)
+                systemPrompt = appendCaseSchemaToPrompt(systemPrompt, caseType)
               }
             } catch { /* schema not found */ }
 
@@ -299,6 +455,56 @@ export async function POST(request: NextRequest) {
           // Case doesn't exist yet
         }
 
+        // FK: traces/messages reference Case.caseId — rows must exist before AgentLoop writes ActionTrace/Message.
+        const inferredCaseTypeForRecord =
+          caseSchema?.type ??
+          bodyCaseType ??
+          (resolvedClassification?.intent === 'case'
+            ? resolvedClassification.matchedCaseTypes?.[0]?.type
+            : undefined) ??
+          'general'
+
+        try {
+          await prisma.customer.upsert({
+            where: { id: resolvedCustomerId },
+            update: {},
+            create: { id: resolvedCustomerId, name: resolvedCustomerId },
+          })
+          await prisma.case.upsert({
+            where: { id: resolvedCaseId },
+            update: {},
+            create: {
+              id: resolvedCaseId,
+              customerId: resolvedCustomerId,
+              userId: resolvedUserId,
+              type: inferredCaseTypeForRecord,
+              status: 'created',
+            },
+          })
+        } catch (err) {
+          console.error('[Intera] Failed to ensure Customer/Case row before agent loop:', err)
+        }
+
+        // First-touch lanes: Case row now exists but schema was only attached when existingCase was found earlier.
+        if (!caseSchema && inferredCaseTypeForRecord !== 'general') {
+          try {
+            const ctRow = await prisma.caseType.findUnique({
+              where: {
+                customerId_type: {
+                  customerId: resolvedCustomerId,
+                  type: inferredCaseTypeForRecord,
+                },
+              },
+            })
+            if (ctRow) {
+              caseSchema = schemaFromCaseTypeRow(ctRow)
+              systemPrompt = appendCaseSchemaToPrompt(systemPrompt, ctRow)
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
         const agentConfig = await loadAgentConfig(resolvedCustomerId)
 
         const agentLoop = await AgentLoop.create({
@@ -312,7 +518,13 @@ export async function POST(request: NextRequest) {
 
         // Restore memory from DB into the in-memory manager
         if (existingMemory) {
-          agentLoop.loadMemory(existingMemory)
+          const memData = { ...(existingMemory as Record<string, unknown>) }
+          // Inject caseStatus from the Case table so StageExecutor.getCurrentStage() works
+          try {
+            const c = await prisma.case.findUnique({ where: { id: resolvedCaseId } })
+            if (c?.status) memData.caseStatus = c.status
+          } catch { /* ignore */ }
+          agentLoop.loadMemory(memData)
         }
 
         const result = await agentLoop.run(userMessage, sendEvent)
@@ -375,14 +587,15 @@ export async function POST(request: NextRequest) {
             }))
 
           if (messagesToPersist.length > 0) {
-            // Use createMany with skipDuplicates to avoid re-persisting
-            for (const msg of messagesToPersist) {
-              await prisma.message.upsert({
-                where: { id: msg.id },
-                update: { content: msg.content, isStreaming: false },
-                create: msg,
-              })
-            }
+            await prisma.$transaction(
+              messagesToPersist.map((msg) =>
+                prisma.message.upsert({
+                  where: { id: msg.id },
+                  update: { content: msg.content, isStreaming: false },
+                  create: msg,
+                }),
+              ),
+            )
           }
         } catch (err) {
           console.error('[Intera] Failed to persist messages:', err)
@@ -414,9 +627,4 @@ export async function POST(request: NextRequest) {
       'X-Accel-Buffering': 'no',
     },
   })
-}
-
-function parseMemoryJson(raw: string | null | undefined): unknown {
-  if (!raw) return {}
-  try { return JSON.parse(raw) } catch { return {} }
 }

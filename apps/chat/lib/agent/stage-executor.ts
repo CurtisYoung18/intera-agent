@@ -35,9 +35,16 @@ export class StageExecutor {
     private caseSchema: CaseSchemaConfig,
     private agentConfig: AgentConfigData,
     private caseMemory: CaseMemoryManager,
+    /** Session user id — tell the model to pass this as read_case_history.userId unless customer overrides */
+    private platformUserId: string,
   ) {
     // Parse stage configs from case schema, with fallback to defaults
     this.stageConfigs = this.loadStageConfigs()
+  }
+
+  private harnessBinding(): string {
+    const u = this.platformUserId.trim() || 'anonymous'
+    return `\n\n## Session binding\n- **platformUserId** for tools (\`read_case_history\`, etc.): \`${u}\`\nPass this string as the \`userId\` argument unless the customer explicitly states a different authoritative account identifier.\n`
   }
 
   // -----------------------------------------------------------------------
@@ -47,10 +54,8 @@ export class StageExecutor {
   /** Map case status to the current stage name from the schema. */
   getCurrentStage(): string {
     const mem = this.caseMemory.getSummary()
-    const status = (mem as any).caseStatus as string | undefined
+    const status = mem.caseStatus
 
-    // CaseMemory doesn't store caseStatus directly — derive from CaseSchema stages
-    // The case status maps to a stage name (e.g. 'investigating' → stage 'investigating')
     if (status && this.caseSchema.stages.includes(status)) {
       return status
     }
@@ -82,12 +87,12 @@ export class StageExecutor {
   // Prompt building
   // -----------------------------------------------------------------------
 
-  /** Build the system prompt for the current stage. */
-  buildStagePrompt(stage: string): string {
+  buildStagePrompt(stage: string, basePrompt?: string): string {
     const cfg = this.getStageConfig(stage)
-    const base = this.agentConfig.systemPrompt
+    const base = basePrompt || this.agentConfig.systemPrompt
+    const bind = this.harnessBinding()
 
-    if (!cfg) return base
+    if (!cfg) return `${base}${bind}`
 
     const parts: string[] = [base]
 
@@ -115,7 +120,7 @@ export class StageExecutor {
       parts.push(`**Stage transition:** ${cfg.transition.type} — you may proceed when conditions are met.`)
     }
 
-    return parts.join('\n')
+    return `${parts.join('\n')}${bind}`
   }
 
   // -----------------------------------------------------------------------
@@ -246,7 +251,7 @@ export class StageExecutor {
           }
         }
         if (cond.type === 'min_iterations') {
-          const min = (cond.value as number) || 1
+          const min = Number(cond.value) || 1
           if (iterationCount < min) {
             return { shouldTransition: false, reason: `min iterations not met (${iterationCount} < ${min})` }
           }
@@ -387,19 +392,50 @@ export class StageExecutor {
   // Helpers
   // -----------------------------------------------------------------------
 
+  private mergeStageLayer(base: StageConfig | undefined, over: StageConfig | undefined): StageConfig | null {
+    if (!base && !over) return null
+    if (!base) return over ?? null
+    if (!over) return base
+
+    return {
+      name: over.name ?? base.name,
+      description: over.description !== undefined ? over.description : base.description,
+      model: over.model !== undefined ? over.model : base.model,
+      systemPrompt: over.systemPrompt !== undefined ? over.systemPrompt : base.systemPrompt,
+      temperature: over.temperature !== undefined ? over.temperature : base.temperature,
+      thinkingBudget: over.thinkingBudget !== undefined ? over.thinkingBudget : base.thinkingBudget,
+      requiredSkills: over.requiredSkills !== undefined ? over.requiredSkills : base.requiredSkills,
+      availableSkills: over.availableSkills !== undefined ? over.availableSkills : base.availableSkills,
+      guardrails: over.guardrails !== undefined ? over.guardrails : base.guardrails,
+      evidenceRequirements:
+        over.evidenceRequirements !== undefined ? over.evidenceRequirements : base.evidenceRequirements,
+      transition: over.transition !== undefined ? over.transition : base.transition,
+      subAgents: over.subAgents !== undefined ? over.subAgents : base.subAgents,
+    }
+  }
+
+  private mergeStageRecord(
+    defaults: Record<string, StageConfig>,
+    overlay: Record<string, StageConfig>,
+  ): Record<string, StageConfig> {
+    const keys = new Set([...Object.keys(defaults), ...Object.keys(overlay)])
+    const result: Record<string, StageConfig> = {}
+    for (const k of keys) {
+      const merged = this.mergeStageLayer(defaults[k], overlay[k])
+      if (merged) result[k] = merged
+    }
+    return result
+  }
+
   private loadStageConfigs(): Record<string, StageConfig> {
-    // 1. CaseSchema has explicit stageConfigs → use them
-    if (this.caseSchema.stageConfigs && Object.keys(this.caseSchema.stageConfigs).length > 0) {
-      return this.caseSchema.stageConfigs
+    const defaultsRaw = (DEFAULT_STAGE_CONFIGS as Record<string, Record<string, unknown>>)[this.caseSchema.type]
+    const defaults = (defaultsRaw || {}) as Record<string, StageConfig>
+    const overlay = (this.caseSchema.stageConfigs || {}) as Record<string, StageConfig>
+
+    if (Object.keys(defaults).length === 0 && Object.keys(overlay).length === 0) {
+      return {}
     }
 
-    // 2. Fall back to defaults for known case types
-    const defaults = (DEFAULT_STAGE_CONFIGS as Record<string, Record<string, unknown>>)[this.caseSchema.type]
-    if (defaults) {
-      return defaults as Record<string, StageConfig>
-    }
-
-    // 3. No stage configs — gated execution disabled (backward compat)
-    return {}
+    return this.mergeStageRecord(defaults, overlay)
   }
 }

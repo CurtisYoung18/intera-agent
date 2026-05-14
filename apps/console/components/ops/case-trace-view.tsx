@@ -54,6 +54,10 @@ function parsePayload(raw: string | null): Record<string, unknown> | null {
   }
 }
 
+function parseTracePayload(trace: TraceRow): Record<string, unknown> | null {
+  return parsePayload(trace.payload) ?? parsePayload(trace.detail)
+}
+
 function formatActionLabel(actionType: string): string {
   return actionType.replace(/_/g, ' ')
 }
@@ -190,9 +194,11 @@ export function StructuredDataPanel({
 function LlmSummary({ payload }: { payload: Record<string, unknown> }) {
   const model = typeof payload.model === 'string' ? payload.model : null
   const stop = typeof payload.stop_reason === 'string' ? payload.stop_reason : null
-  const u = payload.usage as Record<string, number> | undefined
+  const u = payload.usage as Record<string, number | undefined> | undefined
+  const inTok = u?.input_tokens ?? u?.inputTokens
+  const outTok = u?.output_tokens ?? u?.outputTokens
 
-  if (!model && !stop && !u) return null
+  if (!model && !stop && (inTok == null && outTok == null)) return null
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">
@@ -206,18 +212,18 @@ function LlmSummary({ payload }: { payload: Record<string, unknown> }) {
           {humanizeKey(stop)}
         </span>
       )}
-      {u && (u.input_tokens != null || u.output_tokens != null) && (
+      {(inTok != null || outTok != null) && (
         <span className="inline-flex items-center gap-2 rounded-lg border border-indigo/12 bg-white/55 px-2.5 py-1 text-[11px] tabular-nums text-indigo/90">
-          {u.input_tokens != null && (
+          {inTok != null && (
             <span className="inline-flex items-center gap-1">
               <Zap className="h-3 w-3 opacity-70" aria-hidden />
-              in {fmtNum(u.input_tokens)}
+              in {fmtNum(inTok)}
             </span>
           )}
-          {u.output_tokens != null && (
+          {outTok != null && (
             <span className="inline-flex items-center gap-1">
               <Zap className="h-3 w-3 opacity-70" aria-hidden />
-              out {fmtNum(u.output_tokens)}
+              out {fmtNum(outTok)}
             </span>
           )}
         </span>
@@ -226,12 +232,20 @@ function LlmSummary({ payload }: { payload: Record<string, unknown> }) {
   )
 }
 
+function fmtLatency(ms: number): string {
+  if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`
+  if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`
+  return `${ms}ms`
+}
+
 export function CaseTraceTimeline({
   traces,
   t,
+  groupByIteration = true,
 }: {
   traces: TraceRow[]
   t: TranslateFn
+  groupByIteration?: boolean
 }) {
   const lineStyle = useMemo(
     () => ({
@@ -243,120 +257,291 @@ export function CaseTraceTimeline({
   const fieldCountLabel = (n: number) => t('caseDetail.fieldCount', { n })
   const moreItemsLabel = (n: number) => t('caseDetail.moreItems', { n })
 
+  // ── Iteration grouping ──
+  const iterationGroups = useMemo(() => {
+    if (!groupByIteration) return null
+
+    const groups = new Map<number, { traces: TraceRow[]; snapshot: Record<string, unknown> | null }>()
+    const unassigned: TraceRow[] = []
+
+    // Find iteration snapshots and build groups
+    for (const trace of traces) {
+      const payload = parseTracePayload(trace)
+      if (trace.actionType === 'loop_decision' && trace.title === 'Iteration Snapshot' && payload && typeof payload.iteration === 'number') {
+        const iter = payload.iteration as number
+        if (!groups.has(iter)) {
+          groups.set(iter, { traces: [], snapshot: payload })
+        } else {
+          groups.get(iter)!.snapshot = payload
+        }
+      }
+    }
+
+    // Assign traces to iterations (indexed scan — avoids O(n²) indexOf per row)
+    for (let i = 0; i < traces.length; i++) {
+      const trace = traces[i]
+      const payload = parseTracePayload(trace)
+      let iter: number | null = null
+
+      if (payload && typeof payload.iteration === 'number') {
+        iter = payload.iteration as number
+      } else if (trace.actionType === 'llm_request_start') {
+        for (let j = i + 1; j < traces.length; j++) {
+          const rp = parseTracePayload(traces[j])
+          if (traces[j].actionType === 'llm_response' && rp && typeof rp.iteration === 'number') {
+            iter = rp.iteration as number
+            break
+          }
+        }
+      }
+
+      if (iter != null && groups.has(iter)) {
+        groups.get(iter)!.traces.push(trace)
+      } else if (trace.actionType === 'loop_decision' && trace.title === 'Iteration Snapshot') {
+        // Already accounted for via snapshot
+      } else {
+        unassigned.push(trace)
+      }
+    }
+
+    return { groups, unassigned }
+  }, [traces, groupByIteration])
+
   if (traces.length === 0) {
     return <p className="py-12 text-center text-[13px] text-[var(--smoke)]/50">{t('caseDetail.noTraces')}</p>
   }
 
+  // ── Single trace card (shared between flat and grouped views) ──
+  const renderTraceCard = (trace: TraceRow) => {
+    const accent = ACCENTS[trace.actionType] ?? {
+      stroke: '#a09888',
+      fill: 'rgba(160, 152, 136, 0.06)',
+      icon: MessageSquare,
+    }
+    const Icon = accent.icon
+    const payload = parseTracePayload(trace)
+    const isUser = trace.actionType === 'user_message'
+    const isLlm = trace.actionType === 'llm_response'
+    const isSkill = trace.actionType === 'skill_result'
+    const isNoisy =
+      trace.actionType === 'stream_event' ||
+      trace.actionType === 'loop_decision' ||
+      trace.actionType === 'llm_request_start'
+
+    const userBody =
+      isUser && payload && typeof payload.content === 'string'
+        ? (payload.content as string)
+        : isUser && typeof trace.detail === 'string'
+          ? trace.detail
+          : null
+
+    const skillLatency =
+      isSkill && payload && typeof payload.latencyMs === 'number' ? payload.latencyMs : null
+
+    const showStructuredPayload =
+      payload &&
+      Object.keys(payload).length > 0 &&
+      !(isUser && userBody && Object.keys(payload).length <= 2)
+
+    const payloadDefaultOpen = !isNoisy && !isLlm && !isSkill
+
+    return (
+      <li key={trace.id} className="relative pl-11">
+        <div
+          className="absolute left-[13px] top-5 z-[1] h-2.5 w-2.5 rounded-full ring-[3px] ring-[var(--void)]"
+          style={{ backgroundColor: accent.stroke }}
+        />
+
+        <article
+          className="overflow-hidden rounded-2xl border border-black/[0.06] border-l-[3px] bg-gradient-to-br from-white/70 via-white/45 to-[var(--void)]/30 shadow-[var(--shadow-card)] backdrop-blur-md transition-[box-shadow,transform] duration-200 hover:shadow-[var(--shadow-card-hover)]"
+          style={{ borderLeftColor: accent.stroke }}
+        >
+          <div className="flex flex-col gap-1 border-b border-black/[0.04] bg-white/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
+                style={{ backgroundColor: accent.fill }}
+              >
+                <Icon className="h-[18px] w-[18px]" style={{ color: accent.stroke }} strokeWidth={2} aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--fog)]">
+                  {formatActionLabel(trace.actionType)}
+                </p>
+                <p className="truncate text-[13px] font-medium text-[var(--mist)]">{trace.title}</p>
+              </div>
+            </div>
+            <time
+              className="flex flex-shrink-0 items-center gap-1 text-[12px] tabular-nums text-[var(--smoke)] sm:pl-2"
+              dateTime={trace.createdAt}
+            >
+              <Clock className="h-3.5 w-3.5 opacity-50" aria-hidden />
+              {formatClock(trace.createdAt)}
+            </time>
+          </div>
+
+          <div className="px-4 pb-4 pt-3">
+            {isLlm && payload && <LlmSummary payload={payload} />}
+
+            {isUser && userBody ? (
+              <div className="rounded-2xl rounded-tl-md border border-indigo/[0.12] bg-gradient-to-br from-indigo/[0.08] to-indigo/[0.02] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                <p className="text-[13px] leading-relaxed text-[var(--mist)]/90 whitespace-pre-wrap">{userBody}</p>
+              </div>
+            ) : (
+              <>
+                {trace.detail && !showStructuredPayload && (
+                  <p className="text-[13px] leading-relaxed text-[var(--mist)]/75">{trace.detail}</p>
+                )}
+              </>
+            )}
+
+            {skillLatency != null && (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber/15 bg-amber/[0.06] px-2.5 py-1 text-[11px] font-medium tabular-nums text-amber/90">
+                <Clock className="h-3.5 w-3.5" aria-hidden />
+                {t('caseDetail.ms', { n: skillLatency })}
+              </p>
+            )}
+
+            {showStructuredPayload && (
+              <StructuredDataPanel
+                data={payload}
+                label={t('caseDetail.structuredData')}
+                defaultOpen={payloadDefaultOpen}
+                fieldCountLabel={fieldCountLabel}
+                moreItemsLabel={moreItemsLabel}
+              />
+            )}
+          </div>
+        </article>
+      </li>
+    )
+  }
+
+  // ── Flat timeline (no grouping) ──
+  if (!groupByIteration || !iterationGroups) {
+    return (
+      <section className="relative">
+        <div className="absolute bottom-4 left-[17px] top-4 w-px rounded-full opacity-90" style={lineStyle} aria-hidden />
+        <ul className="relative space-y-4">
+          {traces.map(renderTraceCard)}
+        </ul>
+      </section>
+    )
+  }
+
+  // ── Grouped by iteration ──
+  const { groups, unassigned } = iterationGroups
+  const sortedIterations = Array.from(groups.keys()).sort((a, b) => a - b)
+
   return (
-    <section className="relative">
+    <section className="relative space-y-6">
       <div className="absolute bottom-4 left-[17px] top-4 w-px rounded-full opacity-90" style={lineStyle} aria-hidden />
 
-      <ul className="relative space-y-4">
-        {traces.map((trace) => {
-          const accent = ACCENTS[trace.actionType] ?? {
-            stroke: '#a09888',
-            fill: 'rgba(160, 152, 136, 0.06)',
-            icon: MessageSquare,
-          }
-          const Icon = accent.icon
-          const payload = parsePayload(trace.payload)
-          const isUser = trace.actionType === 'user_message'
-          const isLlm = trace.actionType === 'llm_response'
-          const isSkill = trace.actionType === 'skill_result'
-          const isNoisy =
-            trace.actionType === 'stream_event' ||
-            trace.actionType === 'loop_decision' ||
-            trace.actionType === 'llm_request_start'
+      {/* Unassigned traces first (user_message, case_created, etc.) */}
+      {unassigned.length > 0 && (
+        <ul className="relative space-y-4">
+          {unassigned.map(renderTraceCard)}
+        </ul>
+      )}
 
-          const userBody =
-            isUser && payload && typeof payload.content === 'string'
-              ? (payload.content as string)
-              : isUser && typeof trace.detail === 'string'
-                ? trace.detail
-                : null
+      {/* Iteration groups */}
+      {sortedIterations.map((iter) => {
+        const group = groups.get(iter)!
+        const snap = group.snapshot
+        const iterationWallMs =
+          snap && typeof snap.iterationWallMs === 'number'
+            ? snap.iterationWallMs
+            : snap && typeof snap.wallMs === 'number'
+              ? snap.wallMs
+              : 0
+        const llmWallMs = snap && typeof snap.llmWallMs === 'number' ? snap.llmWallMs : null
+        const toolsWallMs = snap && typeof snap.toolsWallMs === 'number' ? snap.toolsWallMs : null
+        const inTokens = snap && typeof snap.inputTokens === 'number' ? snap.inputTokens : 0
+        const outTokens = snap && typeof snap.outputTokens === 'number' ? snap.outputTokens : 0
+        const skillTraces = group.traces.filter((t) => t.actionType === 'skill_result')
 
-          const skillLatency =
-            isSkill && payload && typeof payload.latencyMs === 'number' ? payload.latencyMs : null
-
-          const showStructuredPayload =
-            payload &&
-            Object.keys(payload).length > 0 &&
-            !(isUser && userBody && Object.keys(payload).length <= 2)
-
-          const payloadDefaultOpen = !isNoisy && !isLlm && !isSkill
-
-          return (
-            <li key={trace.id} className="relative pl-11">
-              <div
-                className="absolute left-[13px] top-5 z-[1] h-2.5 w-2.5 rounded-full ring-[3px] ring-[var(--void)]"
-                style={{ backgroundColor: accent.stroke }}
-              />
-
-              <article
-                className="overflow-hidden rounded-2xl border border-black/[0.06] border-l-[3px] bg-gradient-to-br from-white/70 via-white/45 to-[var(--void)]/30 shadow-[var(--shadow-card)] backdrop-blur-md transition-[box-shadow,transform] duration-200 hover:shadow-[var(--shadow-card-hover)]"
-                style={{ borderLeftColor: accent.stroke }}
-              >
-                <div className="flex flex-col gap-1 border-b border-black/[0.04] bg-white/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
-                      style={{ backgroundColor: accent.fill }}
-                    >
-                      <Icon className="h-[18px] w-[18px]" style={{ color: accent.stroke }} strokeWidth={2} aria-hidden />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--fog)]">
-                        {formatActionLabel(trace.actionType)}
-                      </p>
-                      <p className="truncate text-[13px] font-medium text-[var(--mist)]">{trace.title}</p>
-                    </div>
-                  </div>
-                  <time
-                    className="flex flex-shrink-0 items-center gap-1 text-[12px] tabular-nums text-[var(--smoke)] sm:pl-2"
-                    dateTime={trace.createdAt}
-                  >
-                    <Clock className="h-3.5 w-3.5 opacity-50" aria-hidden />
-                    {formatClock(trace.createdAt)}
-                  </time>
-                </div>
-
-                <div className="px-4 pb-4 pt-3">
-                  {isLlm && payload && <LlmSummary payload={payload} />}
-
-                  {isUser && userBody ? (
-                    <div className="rounded-2xl rounded-tl-md border border-indigo/[0.12] bg-gradient-to-br from-indigo/[0.08] to-indigo/[0.02] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-                      <p className="text-[13px] leading-relaxed text-[var(--mist)]/90 whitespace-pre-wrap">{userBody}</p>
-                    </div>
-                  ) : (
-                    <>
-                      {trace.detail && (
-                        <p className="text-[13px] leading-relaxed text-[var(--mist)]/75">{trace.detail}</p>
-                      )}
-                    </>
-                  )}
-
-                  {skillLatency != null && (
-                    <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber/15 bg-amber/[0.06] px-2.5 py-1 text-[11px] font-medium tabular-nums text-amber/90">
-                      <Clock className="h-3.5 w-3.5" aria-hidden />
-                      {t('caseDetail.ms', { n: skillLatency })}
-                    </p>
-                  )}
-
-                  {showStructuredPayload && (
-                    <StructuredDataPanel
-                      data={payload}
-                      label={t('caseDetail.structuredData')}
-                      defaultOpen={payloadDefaultOpen}
-                      fieldCountLabel={fieldCountLabel}
-                      moreItemsLabel={moreItemsLabel}
-                    />
-                  )}
-                </div>
-              </article>
-            </li>
-          )
-        })}
-      </ul>
+        return (
+          <IterationGroupCard
+            key={iter}
+            iteration={iter}
+            iterationWallMs={iterationWallMs}
+            llmWallMs={llmWallMs}
+            toolsWallMs={toolsWallMs}
+            inputTokens={inTokens}
+            outputTokens={outTokens}
+            skillCount={skillTraces.length}
+            traces={group.traces}
+            renderTraceCard={renderTraceCard}
+            t={t}
+          />
+        )
+      })}
     </section>
+  )
+}
+
+function IterationGroupCard({
+  iteration,
+  iterationWallMs,
+  llmWallMs,
+  toolsWallMs,
+  inputTokens,
+  outputTokens,
+  skillCount,
+  traces,
+  renderTraceCard,
+  t,
+}: {
+  iteration: number
+  iterationWallMs: number
+  llmWallMs: number | null
+  toolsWallMs: number | null
+  inputTokens: number
+  outputTokens: number
+  skillCount: number
+  traces: TraceRow[]
+  renderTraceCard: (trace: TraceRow) => ReactNode
+  t: TranslateFn
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const showPhaseBreakdown = llmWallMs != null && toolsWallMs != null && (llmWallMs > 0 || toolsWallMs > 0)
+
+  return (
+    <div className="rounded-2xl border border-indigo/10 bg-indigo/[0.02] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((o) => !o)}
+        className="w-full flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-indigo/[0.03] transition-colors"
+      >
+        <span className="text-[13px] font-semibold text-indigo/80">
+          {t('caseDetail.iterationRound', { n: iteration })}
+        </span>
+        {(inputTokens > 0 || outputTokens > 0) && (
+          <span className="text-[11px] tabular-nums text-fog/60">
+            in {fmtNum(inputTokens)} / out {fmtNum(outputTokens)} tokens
+          </span>
+        )}
+        <span className="text-[11px] tabular-nums text-amber/70" title={t('caseDetail.iterationWallHint')}>
+          {fmtLatency(iterationWallMs)}
+        </span>
+        {showPhaseBreakdown && (
+          <span className="text-[10px] tabular-nums text-fog/45 w-full sm:w-auto sm:ml-0 basis-full sm:basis-auto">
+            {t('caseDetail.iterationPhaseBreakdown', {
+              llm: fmtLatency(llmWallMs!),
+              tools: fmtLatency(toolsWallMs!),
+            })}
+          </span>
+        )}
+        <span className="text-[11px] text-fog/50">{t('caseDetail.iterationSkillsLabel', { n: skillCount })}</span>
+        <ChevronDown className={`h-3.5 w-3.5 ml-auto text-fog/40 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+      {expanded && (
+        <div className="border-t border-indigo/[0.06] px-2 pb-2">
+          <ul className="relative space-y-3 pt-3">
+            {traces.map(renderTraceCard)}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }

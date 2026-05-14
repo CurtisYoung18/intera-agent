@@ -1,63 +1,40 @@
 'use client'
 
 import { type ReactNode } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
 
 interface SplitLayoutProps {
   splitMode: boolean
-  collapsed: boolean
-  onToggleCollapse: () => void
+  /** Case rail + investigation timeline */
+  leftRail?: ReactNode
   mainPanel: ReactNode
-  sidePanel: ReactNode
   tabBar?: ReactNode
 }
 
-export default function SplitLayout({
-  splitMode,
-  collapsed,
-  onToggleCollapse,
-  mainPanel,
-  sidePanel,
-  tabBar,
-}: SplitLayoutProps) {
-  return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* Tab bar (multi-case switching) */}
-      {tabBar && (
-        <div className="flex-shrink-0">{tabBar}</div>
-      )}
+export default function SplitLayout({ splitMode, leftRail, mainPanel, tabBar }: SplitLayoutProps) {
+  const rowClass = splitMode
+    ? 'flex min-h-0 flex-1 flex-col gap-3 pt-2 lg:flex-row lg:gap-5 lg:items-stretch xl:gap-6'
+    : 'relative flex min-h-0 flex-1'
 
-      {/* Main content area */}
-      <div className="flex-1 flex min-h-0 relative">
-        {/* ── Main panel (core agent chat) ── */}
-        <motion.div
-          layout
-          className="flex-1 flex flex-col min-w-0"
-          animate={{
-            marginRight: splitMode && !collapsed ? '0px' : '0px',
-          }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
+
+      <div className={rowClass}>
+        {splitMode && leftRail && (
+          <aside className="flex shrink-0 flex-col lg:w-[clamp(154px,16vw,200px)]">
+            <div className="lg:sticky lg:top-20">{leftRail}</div>
+          </aside>
+        )}
+
+        <main
+          className={
+            splitMode && leftRail
+              ? 'flex min-h-0 min-w-0 flex-1 flex-col lg:rounded-2xl lg:bg-white/[0.03] lg:ring-1 lg:ring-[var(--border-subtle)] lg:backdrop-blur-[2px]'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col'
+          }
         >
           {mainPanel}
-        </motion.div>
-
-        {/* ── Side panel (dedicated agents) ── */}
-        <AnimatePresence>
-          {splitMode && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{
-                width: collapsed ? 48 : 340,
-                opacity: 1,
-              }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              className="overflow-hidden border-l border-white/5 flex-shrink-0"
-            >
-              {sidePanel}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </main>
       </div>
     </div>
   )

@@ -17,6 +17,34 @@ interface SkillItem {
   isConcurrencySafe: boolean; enabled: boolean
 }
 
+function parseJsonField(raw: string | undefined): { ok: true; value: unknown } | { ok: false; error: string } {
+  const trimmed = raw?.trim()
+  if (!trimmed) return { ok: true, value: undefined }
+  try {
+    return { ok: true, value: JSON.parse(trimmed) }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+function mockFixtureChips(raw?: string | null): string[] | null {
+  const p = parseJsonField(raw ?? undefined)
+  if (!p.ok) return null
+  if (p.value === undefined) return []
+  const v = p.value
+  if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+    const entries = Object.entries(v as Record<string, unknown>)
+    if (entries.length === 0) return []
+    return entries.slice(0, 6).map(([k, val]) => {
+      const s =
+        val !== null && typeof val === 'object' ? JSON.stringify(val) : String(val)
+      const short = s.length > 36 ? `${s.slice(0, 36)}…` : s
+      return `${k}: ${short}`
+    })
+  }
+  return [JSON.stringify(v).slice(0, 120)]
+}
+
 export default function SkillsPage() {
   const { t } = useConsoleLocale()
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -45,6 +73,14 @@ export default function SkillsPage() {
 
   const handleSave = useCallback(async () => {
     if (!editing) return
+    const mf = editing.mockFixture?.trim()
+    if (mf) {
+      const parsed = parseJsonField(editing.mockFixture)
+      if (!parsed.ok) {
+        alert(t('skills.mockInvalidJson', { detail: parsed.error }))
+        return
+      }
+    }
     const urlName = isNew ? editing.name : originalName
     const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
@@ -147,6 +183,30 @@ export default function SkillsPage() {
                 {/* Description */}
                 <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{s.description || t('common.noDescription')}</p>
 
+                {s.mode === 'mock' && (
+                  <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
+                    {(() => {
+                      const chips = mockFixtureChips(s.mockFixture)
+                      if (!s.mockFixture?.trim()) {
+                        return <p className="text-[11px] text-[var(--smoke)] italic">{t('skills.noMockYet')}</p>
+                      }
+                      if (chips === null) {
+                        return <p className="text-[11px] text-vermillion/80">{t('skills.mockMalformedCard')}</p>
+                      }
+                      if (chips.length === 0) {
+                        return <span className="text-[11px] font-mono text-[var(--fog)]">{'{}'}</span>
+                      }
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {chips.map((c, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md bg-lavender/[0.08] text-lavender/90 font-mono max-w-full truncate border border-lavender/15" title={c}>{c}</span>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
                 {/* Bottom actions — slide up on hover */}
                 <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
                   <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
@@ -182,6 +242,81 @@ export default function SkillsPage() {
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span>
               <input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" />
             </label>
+
+            {/* Mock fixture — primary when mode is mock */}
+            {editing.mode === 'mock' ? (
+              <div className="rounded-xl border border-lavender/25 bg-lavender/[0.05] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-lavender">{t('skills.mockResponseEditor')}</span>
+                  <button type="button" onClick={() => formatField('mockFixture')} className="text-[10px] text-indigo/70 hover:text-indigo flex items-center gap-1 shrink-0">
+                    <Wand2 className="w-3 h-3" />{t('common.format')}
+                  </button>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <label className="space-y-1.5 block min-h-0">
+                    <span className="text-[10px] text-[var(--fog)]">{t('skills.mockSourceJson')}</span>
+                    <textarea
+                      value={editing.mockFixture || ''}
+                      onChange={e => setEditing({ ...editing, mockFixture: e.target.value })}
+                      rows={14}
+                      spellCheck={false}
+                      className="glass-input-console text-[12px] font-mono resize-y min-h-[220px] w-full"
+                      placeholder={`{\n  "status": "pending"\n}`}
+                    />
+                  </label>
+                  <div className="flex flex-col min-h-0">
+                    <span className="text-[10px] text-[var(--fog)] mb-1">{t('skills.mockLivePreview')}</span>
+                    {(() => {
+                      const p = parseJsonField(editing.mockFixture)
+                      if (!editing.mockFixture?.trim()) {
+                        return (
+                          <pre className="flex-1 text-[11px] font-mono text-[var(--smoke)] p-3 rounded-lg bg-black/[0.03] border border-[var(--border-subtle)] whitespace-pre-wrap">{t('skills.mockPreviewEmpty')}</pre>
+                        )
+                      }
+                      if (!p.ok) {
+                        return (
+                          <pre className="flex-1 text-[11px] font-mono text-vermillion/90 p-3 rounded-lg bg-vermillion/[0.06] border border-vermillion/20 whitespace-pre-wrap">{t('skills.mockInvalidJson', { detail: p.error })}</pre>
+                        )
+                      }
+                      return (
+                        <pre className="flex-1 text-[11px] font-mono text-[var(--mist)] p-3 rounded-lg bg-black/[0.04] border border-[var(--border-subtle)] overflow-auto max-h-[340px] whitespace-pre-wrap">{JSON.stringify(p.value, null, 2)}</pre>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <details className="rounded-xl border border-[var(--border-subtle)] bg-black/[0.02] px-4 py-3 group/mockfix">
+                <summary className="text-[11px] font-medium text-[var(--fog)] cursor-pointer list-none flex items-center justify-between">
+                  <span>{t('skills.mockOptionalHttp')}</span>
+                  <span className="text-[10px] text-[var(--smoke)] opacity-70">{t('skills.mockOptionalToggle')}</span>
+                </summary>
+                <div className="mt-3 space-y-2 pt-2 border-t border-[var(--border-subtle)]">
+                  <div className="flex justify-end">
+                    <button type="button" onClick={() => formatField('mockFixture')} className="text-[10px] text-indigo/70 hover:text-indigo flex items-center gap-1">
+                      <Wand2 className="w-3 h-3" />{t('common.format')}
+                    </button>
+                  </div>
+                  <textarea
+                    value={editing.mockFixture || ''}
+                    onChange={e => setEditing({ ...editing, mockFixture: e.target.value })}
+                    rows={5}
+                    spellCheck={false}
+                    className="glass-input-console text-[12px] font-mono resize-y w-full"
+                  />
+                  {(() => {
+                    const p = parseJsonField(editing.mockFixture)
+                    if (!editing.mockFixture?.trim()) return null
+                    if (!p.ok) {
+                      return <p className="text-[11px] text-vermillion/85">{t('skills.mockInvalidJson', { detail: p.error })}</p>
+                    }
+                    return (
+                      <pre className="text-[11px] font-mono text-[var(--mist)] p-3 rounded-lg bg-black/[0.03] border border-[var(--border-subtle)] overflow-auto max-h-[160px]">{JSON.stringify(p.value, null, 2)}</pre>
+                    )
+                  })()}
+                </div>
+              </details>
+            )}
             <div className={`space-y-3 ${editing.mode === 'mock' ? 'opacity-40 pointer-events-none' : ''}`}>
               <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('skills.httpConfig')}</span></div>
               <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('skills.endpoint')}</span>
@@ -202,13 +337,12 @@ export default function SkillsPage() {
                 <Zap className="w-3.5 h-3.5" />{testing ? t('skills.testing') : t('skills.testEndpoint')}
               </button>
             </div>
-            {(['inputSchema', 'outputSchema', 'headers', 'mockFixture'] as const).map(f => {
+            {(['inputSchema', 'outputSchema', 'headers'] as const).map(f => {
               const fk = (
                 {
                   inputSchema: 'skills.inputSchema',
                   outputSchema: 'skills.outputSchema',
                   headers: 'skills.headers',
-                  mockFixture: 'skills.mockFixture',
                 } as const
               )[f]
               return (

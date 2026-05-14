@@ -1,18 +1,20 @@
 'use client'
 
 import { motion, AnimatePresence } from 'motion/react'
-import { PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Bot, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import AgentProgressCard from './agent-progress-card'
-import type { DedicatedAgentState } from '@/app/chat/use-intera-chat'
+import type { DedicatedAgentState, ActiveCase } from '@/app/chat/use-intera-chat'
 
 interface DedicatedAgentsPanelProps {
   agents: DedicatedAgentState[]
+  cases: ActiveCase[]
   collapsed: boolean
   onToggleCollapse: () => void
 }
 
 export default function DedicatedAgentsPanel({
   agents,
+  cases,
   collapsed,
   onToggleCollapse,
 }: DedicatedAgentsPanelProps) {
@@ -41,11 +43,11 @@ export default function DedicatedAgentsPanel({
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5 flex-shrink-0">
-        <span className="text-[11px] font-medium text-fog/70 uppercase tracking-wider">
-          Dedicated Agents
+    <div className="flex h-full flex-col">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3 py-2.5">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-fog/75">
+          <Bot className="h-3.5 w-3.5 opacity-55" aria-hidden />
+          Side agents
         </span>
         <button
           onClick={onToggleCollapse}
@@ -57,16 +59,19 @@ export default function DedicatedAgentsPanel({
       </div>
 
       {/* Agent cards */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+      <div className="flex-1 space-y-2 overflow-y-auto p-2.5 pb-8">
         <AnimatePresence>
           {agents.length === 0 ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-center justify-center h-full"
+              className="flex h-full flex-col items-center justify-center gap-3 px-4 py-10"
             >
-              <p className="text-[11px] text-fog/40 text-center px-4">
-                No dedicated agents running. Agents are dispatched when a case stage requires parallel investigation.
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--surface)] ring-1 ring-[var(--border-subtle)]">
+                <Bot className="h-4 w-4 text-fog/35" aria-hidden />
+              </div>
+              <p className="text-center text-[12px] leading-relaxed text-fog/42">
+                No parallel agents yet. When a stage needs background checks, runners show up here with live progress.
               </p>
             </motion.div>
           ) : (
@@ -78,7 +83,15 @@ export default function DedicatedAgentsPanel({
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.25 }}
               >
-                <AgentProgressCard agent={agent} />
+                <AgentProgressCard
+                  agent={agent}
+                  caseLabel={
+                    agent.caseId
+                      ? cases.find((c) => c.caseId === agent.caseId)?.displayName ??
+                        `…${agent.caseId.slice(-6)}`
+                      : undefined
+                  }
+                />
               </motion.div>
             ))
           )}

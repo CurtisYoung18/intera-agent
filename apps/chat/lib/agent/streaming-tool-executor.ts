@@ -9,6 +9,14 @@
 
 import type { ToolUse, ToolResult, SkillDefinition } from '@intera/shared/types'
 
+/** Tool execution stores `{ ok, output, latencyMs }`; consumers need the inner skill payload. */
+export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknown {
+  if (!toolExecutionOutput || typeof toolExecutionOutput !== 'object') return toolExecutionOutput
+  const tr = toolExecutionOutput as ToolResult
+  if ('ok' in tr && tr.ok === true && 'output' in tr) return tr.output
+  return toolExecutionOutput
+}
+
 type StatusCallback = (
   toolUse: ToolUse,
   status: 'executing' | 'completed' | 'error',
@@ -140,15 +148,6 @@ export class StreamingToolExecutor {
   }
 
   private async runTrackedTool(tool: TrackedTool): Promise<void> {
-    // Wait if a non-concurrent tool is currently executing
-    while (
-      !tool.isConcurrencySafe &&
-      this.executingNonConcurrent &&
-      this.nonConcurrentQueue.includes(tool)
-    ) {
-      await this.sleep(10)
-    }
-
     tool.status = 'executing'
     const startTime = Date.now()
 
@@ -255,6 +254,13 @@ export class StreamingToolExecutor {
       query_payment_channel_status: {
         delayed_batch: false,
         channel: 'unknown',
+      },
+      query_account_status: {
+        accountStatus: 'active',
+        riskFlag: false,
+        banReason: null,
+        restrictionTier: 'none',
+        lastLoginAt: new Date().toISOString(),
       },
       search_delay_notice: { notices: [] },
       ocr_receipt: { success: true, extracted: {} },

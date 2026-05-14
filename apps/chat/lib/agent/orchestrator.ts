@@ -22,6 +22,7 @@ export class OrchestratorAgent {
   constructor(
     private caseSchema: CaseSchemaConfig,
     private skillDefinitions: SkillDefinition[] = [],
+    private platformUserId: string = 'anonymous',
   ) {}
 
   /** Whether sub-agent dispatch is enabled for this case type. */
@@ -49,12 +50,15 @@ export class OrchestratorAgent {
     const tasks: SubAgentTask[] = []
 
     for (const config of subAgentConfigs) {
-      const taskPrompt = config.taskTemplate
+      let taskPrompt = config.taskTemplate
         .replace(/\{\{caseId\}\}/g, caseMemory.caseId)
         .replace(/\{\{stage\}\}/g, stage)
         .replace(/\{\{stageGoal\}\}/g, stageGoal)
         .replace(/\{\{confirmedFacts\}\}/g, JSON.stringify(caseMemory.confirmedFacts))
         .replace(/\{\{missingFacts\}\}/g, JSON.stringify(caseMemory.missingFacts))
+
+      const uid = this.platformUserId.trim() || 'anonymous'
+      taskPrompt += `\n\n[Harness] platformUserId for tools (e.g. read_case_history): "${uid}". Use this as userId unless the customer explicitly gives another authoritative ID.`
 
       tasks.push({
         id: `subagent_${config.name}_${Date.now()}`,
@@ -270,6 +274,7 @@ export class OrchestratorAgent {
       data: {
         agentId: result.taskId,
         agentName: result.agentName,
+        caseId: result.caseId,
         findings: result.findings,
         recommendation: result.recommendation,
         evidence: result.evidence,

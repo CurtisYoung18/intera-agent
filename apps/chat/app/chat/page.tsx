@@ -1,8 +1,7 @@
 'use client'
 
 // Intera Harness — Chat Page
-// Single-column chat with split-to-side-panel animation on case creation.
-// Multi-case support via bottom tab bar.
+// Single-column chat; with an active case, a slim investigation rail on the left.
 
 import ChatShell from '@/components/chat/chat-shell'
 import StatusPill from '@intera/shared/ui/status-pill'
@@ -11,7 +10,7 @@ import VoiceInputBar from '@/components/chat/voice-input-bar'
 import WelcomeMessage from '@/components/chat/welcome-message'
 import CaseCard from '@/components/chat/case-card'
 import SplitLayout from '@/components/chat/split-layout'
-import DedicatedAgentsPanel from '@/components/chat/dedicated-agents-panel'
+import CaseInvestigationRail from '@/components/chat/case-investigation-rail'
 import CaseTabBar from '@/components/chat/case-tab-bar'
 import { useInteraChat } from './use-intera-chat'
 import type { CaseStatus } from '@/components/chat/case-card'
@@ -25,15 +24,16 @@ export default function ChatPage() {
     cases,
     activeCaseIndex,
     dedicatedAgents,
+    coreAgentProgress,
     splitMode,
-    rightPanelCollapsed,
+    streamingToolName,
     submitMessage,
     switchCase,
-    toggleRightPanel,
     dismissCase,
     clearQueue,
     onFormSubmit,
     onFormCancel,
+    onIntentConfirm,
     customerId,
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,
@@ -41,6 +41,12 @@ export default function ChatPage() {
   } = useInteraChat()
 
   const activeCase = cases[activeCaseIndex] ?? null
+  const coreAgentTask = coreAgentProgress?.task
+
+  const filteredDedicatedAgents =
+    activeCase?.caseId != null
+      ? dedicatedAgents.filter((a) => !a.caseId || a.caseId === activeCase.caseId)
+      : dedicatedAgents
 
   const caseCard = activeCase
     ? {
@@ -51,14 +57,16 @@ export default function ChatPage() {
         confirmedFacts: activeCase.confirmedFacts,
         skillsCalled: activeCase.skillsCalled,
         missingFacts: activeCase.missingFacts,
+        stage: coreAgentProgress?.stage,
+        subAgentCount: filteredDedicatedAgents.length,
+        subAgentsRunning: filteredDedicatedAgents.some((a) => a.status === 'executing'),
       }
     : null
 
-  // ── Chat content (shared between single and split layouts) ──
   const chatPanel = (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex min-h-0 flex-1 flex-col">
       {messages.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center pb-10">
+        <div className="flex flex-1 flex-col items-center justify-center pb-10">
           <WelcomeMessage />
           <div className="w-full max-w-chat px-4">
             <VoiceInputBar
@@ -77,9 +85,15 @@ export default function ChatPage() {
         <>
           <MessageList
             messages={messages}
+            activeCaseId={activeCase?.caseId ?? null}
             isResponding={isLoading}
+            coreAgentTask={coreAgentTask}
+            executingToolName={streamingToolName}
+            skillsCalled={activeCase?.skillsCalled}
+            elevateInteractiveForms={splitMode}
             onFormSubmit={onFormSubmit}
             onFormCancel={onFormCancel}
+            onIntentConfirm={onIntentConfirm}
           />
           <VoiceInputBar
             onSubmit={submitMessage}
@@ -96,26 +110,28 @@ export default function ChatPage() {
     </div>
   )
 
+  const caseRail =
+    splitMode && caseCard ? (
+      <CaseInvestigationRail
+        casePayload={caseCard}
+        onDismissCase={activeCase ? () => dismissCase(activeCase.caseId) : undefined}
+        dedicatedAgents={filteredDedicatedAgents}
+        cases={cases}
+        coreAgentProgress={coreAgentProgress}
+        executingToolName={streamingToolName}
+      />
+    ) : undefined
+
   return (
-    <ChatShell>
-      {/* ── Header — brand pill only (session/case/debug lines removed) ─ */}
-      <header className="flex flex-shrink-0 justify-center px-2 pt-4 pb-3">
+    <ChatShell spacious={splitMode}>
+      <header className="flex shrink-0 justify-center px-2 pb-3 pt-4">
         <StatusPill status={agentStatus} label="Intera AI" />
       </header>
 
-      {/* ── Split layout with side panel ─────────────────────────── */}
       <SplitLayout
         splitMode={splitMode}
-        collapsed={rightPanelCollapsed}
-        onToggleCollapse={toggleRightPanel}
+        leftRail={caseRail}
         mainPanel={chatPanel}
-        sidePanel={
-          <DedicatedAgentsPanel
-            agents={dedicatedAgents}
-            collapsed={rightPanelCollapsed}
-            onToggleCollapse={toggleRightPanel}
-          />
-        }
         tabBar={
           cases.length > 0 ? (
             <CaseTabBar
@@ -128,8 +144,9 @@ export default function ChatPage() {
         }
       />
 
-      {/* ── Floating Case Dashboard ──────────────────────────────── */}
-      <CaseCard data={caseCard} onDismiss={() => dismissCase(activeCase?.caseId || '')} />
+      {!splitMode && (
+        <CaseCard data={caseCard} onDismiss={() => dismissCase(activeCase?.caseId || '')} />
+      )}
     </ChatShell>
   )
 }

@@ -8,9 +8,11 @@ import type { DedicatedAgentState } from '@/app/chat/use-intera-chat'
 
 interface AgentProgressCardProps {
   agent: DedicatedAgentState
+  /** Tab / case display name when split by caseId */
+  caseLabel?: string
 }
 
-export default function AgentProgressCard({ agent }: AgentProgressCardProps) {
+export default function AgentProgressCard({ agent, caseLabel }: AgentProgressCardProps) {
   const [expanded, setExpanded] = useState(false)
 
   const isComplete = agent.status === 'completed'
@@ -46,6 +48,9 @@ export default function AgentProgressCard({ agent }: AgentProgressCardProps) {
           <div className="text-[12px] font-medium text-fog/90 truncate">
             {agent.agentName}
           </div>
+          {caseLabel && (
+            <div className="text-[10px] text-indigo/55 truncate mt-0.5">{caseLabel}</div>
+          )}
           {isExecuting && agent.taskDescription && (
             <div className="text-[10px] text-fog/50 truncate mt-0.5">
               {agent.taskDescription.slice(0, 80)}
@@ -53,7 +58,7 @@ export default function AgentProgressCard({ agent }: AgentProgressCardProps) {
           )}
           {isComplete && (
             <div className="text-[10px] text-emerald/70 mt-0.5">
-              {(agent.durationMs ?? 0) > 0 ? `${(agent.durationMs! / 1000).toFixed(1)}s` : 'Done'}
+              {agent.durationMs != null && agent.durationMs > 0 ? `${(agent.durationMs / 1000).toFixed(1)}s` : 'Done'}
             </div>
           )}
         </div>

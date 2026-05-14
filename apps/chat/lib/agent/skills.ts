@@ -81,6 +81,29 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     },
   },
   {
+    name: 'query_account_status',
+    description:
+      'Query the platform account/security service for restriction tier, ban state, risk flags, and recent login snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'Customer platform user ID' },
+      },
+      required: ['userId'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    zodSchema: z.object({ userId: z.string() }),
+    mockFixture: {
+      accountStatus: 'active',
+      riskFlag: false,
+      banReason: null,
+      restrictionTier: 'none',
+      lastLoginAt: new Date().toISOString(),
+    },
+  },
+  {
     name: 'search_delay_notice',
     description: 'Search for any delay notices or announcements',
     inputSchema: {

@@ -27,6 +27,7 @@ export async function GET() {
             isConcurrencySafe: s.isConcurrencySafe,
             enabled: s.enabled,
             guardPhase: s.guardPhase,
+            mockFixture: s.mockFixture ?? null,
           },
         })
       }

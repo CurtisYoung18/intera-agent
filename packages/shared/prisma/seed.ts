@@ -115,6 +115,7 @@ async function seed() {
         isConcurrencySafe: s.isConcurrencySafe,
         enabled: s.enabled,
         guardPhase: s.guardPhase,
+        mockFixture: s.mockFixture ?? null,
       },
       create: {
         customerId: CUSTOMER_ID,
@@ -126,6 +127,7 @@ async function seed() {
         isConcurrencySafe: s.isConcurrencySafe,
         enabled: s.enabled,
         guardPhase: s.guardPhase,
+        mockFixture: s.mockFixture ?? null,
       },
     })
   }

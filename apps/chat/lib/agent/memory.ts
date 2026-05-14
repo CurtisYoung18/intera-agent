@@ -7,6 +7,31 @@
 import type { KeyEvent, CaseMemoryData, MemoryStrategy } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 
+/** Persisted in skillResults — avoids duplicate background sub-agent dispatch across HTTP turns. */
+export const SUB_AGENT_DISPATCH_MARKER_KEY = '__intera_sub_agent_dispatch'
+
+/** Maps workflow stage → sorted agent roster signature for which dispatch already ran. */
+export interface SubAgentDispatchMarker {
+  stages: Record<string, string>
+}
+
+function signatureForAgentNames(names: string[]): string {
+  return [...names].filter(Boolean).sort().join('|')
+}
+
+function normalizeDispatchMarker(raw: unknown): SubAgentDispatchMarker {
+  if (!raw || typeof raw !== 'object') return { stages: {} }
+  const o = raw as Record<string, unknown>
+  if (o.stages && typeof o.stages === 'object' && !Array.isArray(o.stages)) {
+    return { stages: { ...(o.stages as Record<string, string>) } }
+  }
+  // Legacy single-stage shape from earlier drafts
+  if (typeof o.stage === 'string' && typeof o.agentsSignature === 'string') {
+    return { stages: { [o.stage]: o.agentsSignature } }
+  }
+  return { stages: {} }
+}
+
 export interface CompactionResult {
   shouldCompact: boolean
   isWarning: boolean
@@ -21,6 +46,7 @@ export class CaseMemoryManager {
   private skillsCalled: string[] = []
   private skillResults: Record<string, unknown> = {}
   private keyEvents: KeyEvent[] = []
+  private caseStatus: string | undefined = undefined
   private summary: string = ''
   private lastCompactedAt: Date | null = null
   private consecutiveCompactFailures = 0
@@ -38,6 +64,7 @@ export class CaseMemoryManager {
   loadFromDb(data: {
     confirmedFacts?: unknown; missingFacts?: unknown; skillsCalled?: unknown
     skillResults?: unknown; keyEvents?: unknown; summary?: string | null
+    caseStatus?: string | null
   }): void {
     try {
       const facts = typeof data.confirmedFacts === 'string' ? JSON.parse(data.confirmedFacts) : (data.confirmedFacts || {})
@@ -52,7 +79,13 @@ export class CaseMemoryManager {
       if (results && typeof results === 'object') this.skillResults = results as Record<string, unknown>
       if (Array.isArray(events)) this.keyEvents = events
       if (data.summary) this.summary = data.summary
+      if (data.caseStatus) this.caseStatus = data.caseStatus
     } catch { /* ignore parse errors */ }
+  }
+
+  /** Align in-memory status with AgentLoop mid-request stage transitions (persisted on HTTP return). */
+  setCaseStatus(status: string): void {
+    this.caseStatus = status
   }
 
   // ─── Fact ingestion ───────────────────────────────────────
@@ -101,7 +134,9 @@ export class CaseMemoryManager {
     }
     this.skillResults[skillName] = output
 
-    const result = output as Record<string, unknown>
+    const result = (output && typeof output === 'object' && !Array.isArray(output))
+      ? output as Record<string, unknown>
+      : {}
     if (skillName === 'query_order_status' && result.status) {
       this.confirmedFacts.orderStatus = result.status
       if (result.amount) this.confirmedFacts.orderAmount = result.amount
@@ -110,6 +145,15 @@ export class CaseMemoryManager {
     if (skillName === 'query_payment_channel_status') {
       this.confirmedFacts.channelDelayedBatch = result.delayed_batch
       if (result.delayed_batch) this.confirmedFacts.delayReason = result.reason
+    }
+    if (skillName === 'query_account_status') {
+      if (result.accountStatus !== undefined) this.confirmedFacts.accountStatus = result.accountStatus
+      if (result.riskFlag !== undefined) this.confirmedFacts.accountRiskFlag = result.riskFlag
+      if (result.banReason !== undefined) this.confirmedFacts.banReason = result.banReason
+      if (result.restrictionTier !== undefined) this.confirmedFacts.restrictionTier = result.restrictionTier
+    }
+    if (skillName === 'read_case_history' && typeof result.total === 'number') {
+      this.confirmedFacts.priorCaseCount = result.total
     }
 
     this.keyEvents.push({
@@ -291,8 +335,26 @@ export class CaseMemoryManager {
       skillResults: this.skillResults,
       keyEvents: this.keyEvents,
       summary: this.summary,
+      caseStatus: this.caseStatus,
     }
   }
 
   setMissingFacts(facts: string[]): void { this.missingFacts = [...facts] }
+
+  /** Whether sub-agents for this stage + agent roster were already dispatched for this case. */
+  hasDispatchedSubAgentsFor(stage: string, agentNames: string[]): boolean {
+    const raw = this.skillResults[SUB_AGENT_DISPATCH_MARKER_KEY]
+    const marker = normalizeDispatchMarker(raw)
+    const sig = signatureForAgentNames(agentNames)
+    return marker.stages[stage] === sig
+  }
+
+  /** Record after a successful background dispatch (persisted via skillResults JSON). */
+  recordSubAgentsDispatched(stage: string, agentNames: string[]): void {
+    const prev = normalizeDispatchMarker(this.skillResults[SUB_AGENT_DISPATCH_MARKER_KEY])
+    const marker: SubAgentDispatchMarker = {
+      stages: { ...prev.stages, [stage]: signatureForAgentNames(agentNames) },
+    }
+    this.skillResults = { ...this.skillResults, [SUB_AGENT_DISPATCH_MARKER_KEY]: marker }
+  }
 }

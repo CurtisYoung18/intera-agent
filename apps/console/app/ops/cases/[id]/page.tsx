@@ -36,7 +36,18 @@ interface CaseData {
 
 function parsePayload(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null
-  try { return JSON.parse(raw) } catch { return null }
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function parseTracePayload(trace: {
+  payload: string | null
+  detail: string | null
+}): Record<string, unknown> | null {
+  return parsePayload(trace.payload) ?? parsePayload(trace.detail)
 }
 
 function fmtNum(n: number): string {
@@ -68,6 +79,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   >([])
   const [messages, setMessages] = useState<MsgItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [groupByIteration, setGroupByIteration] = useState(true)
 
   useEffect(() => {
     async function load() {
@@ -108,16 +120,18 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
 
     for (const trace of traces) {
       if (trace.actionType === 'llm_response') {
-        const p = parsePayload(trace.payload)
-        const u = (p?.usage as Record<string, number> | undefined) ?? {}
-        inputTokens += u.input_tokens ?? 0
-        outputTokens += u.output_tokens ?? 0
-        cacheReadTokens += u.cache_read_input_tokens ?? 0
-        cacheWriteTokens += u.cache_creation_input_tokens ?? 0
+        const p = parseTracePayload(trace)
+        const u = (p?.usage as Record<string, number | undefined> | undefined) ?? {}
+        inputTokens +=
+          u.input_tokens ?? u.inputTokens ?? 0
+        outputTokens +=
+          u.output_tokens ?? u.outputTokens ?? 0
+        cacheReadTokens += u.cache_read_input_tokens ?? u.cacheReadInputTokens ?? 0
+        cacheWriteTokens += u.cache_creation_input_tokens ?? u.cacheCreationInputTokens ?? 0
         llmCalls++
       }
       if (trace.actionType === 'loop_decision') {
-        const p = parsePayload(trace.payload)
+        const p = parseTracePayload(trace)
         if (!p) continue
         if (trace.title === 'Profiler Snapshot') {
           if (typeof p.totalDurationMs === 'number') turnWallMs += p.totalDurationMs
@@ -125,6 +139,25 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         }
         if (trace.title === 'LLM Compact' && typeof p.tokensUsed === 'number') {
           compactTokens += p.tokensUsed
+        }
+      }
+    }
+
+    // Legacy rows: Profiler / iteration stats lived in detail; llm_response sometimes missing — count tokens once.
+    if (inputTokens === 0 && outputTokens === 0) {
+      for (const trace of traces) {
+        if (trace.actionType !== 'loop_decision') continue
+        const p = parseTracePayload(trace)
+        if (!p || trace.title !== 'Profiler Snapshot') continue
+        const pi = typeof p.inputTokens === 'number' ? p.inputTokens : 0
+        const po = typeof p.outputTokens === 'number' ? p.outputTokens : 0
+        if (pi === 0 && po === 0) continue
+        inputTokens += pi
+        outputTokens += po
+        if (typeof p.iterationCount === 'number' && p.iterationCount > 0) {
+          llmCalls += p.iterationCount
+        } else {
+          llmCalls += 1
         }
       }
     }
@@ -224,10 +257,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         )}
 
         {/* ── Metrics Summary Bar ── */}
-        {(metrics.llmCalls > 0 ||
-          metrics.turnWallMs > 0 ||
-          metrics.compactTokens > 0 ||
-          metrics.billableTokensEnvelope > 0) && (
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="glass-card !rounded-xl px-4 py-3 flex items-start gap-3">
               <div className="w-8 h-8 rounded-lg bg-indigo/10 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -278,14 +307,26 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             </div>
           </div>
-        )}
 
         {/* ── Trace timeline ── */}
         <section className="mb-10">
-          <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--fog)]">
-            {t('caseDetail.timelineSection')}
-          </h2>
-          <CaseTraceTimeline traces={traces} t={t} />
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--fog)]">
+              {t('caseDetail.timelineSection')}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setGroupByIteration((v) => !v)}
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
+                groupByIteration
+                  ? 'border-indigo/20 bg-indigo/[0.06] text-indigo/80'
+                  : 'border-black/[0.06] bg-white/40 text-fog/50'
+              }`}
+            >
+              {groupByIteration ? 'Grouped by iteration' : 'Flat timeline'}
+            </button>
+          </div>
+          <CaseTraceTimeline traces={traces} t={t} groupByIteration={groupByIteration} />
         </section>
 
         {/* ── Conversation (persisted thread) ── */}

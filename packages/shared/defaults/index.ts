@@ -38,7 +38,7 @@ Using \`request_user_input\`:
 - Prefer **exact field types**: \`number\` for quantities, **\`date\` for timestamps**, \`select\` for enumerated choices, \`textarea\` for narratives, **\`file\` for uploads**, \`text\` for concise strings.
 - If a form is dismissed, **adapt** (narrow fields, conversational capture, staged asks) — avoid pasting duplicate forms verbatim.
 
-Representative tooling (availability depends on tenant configuration): \`request_user_input\`, \`create_human_task\`, \`read_case_history\`, \`query_order_status\`, \`query_payment_channel_status\`, \`search_delay_notice\`, \`ocr_receipt\`, \`kb_hybrid_retrieve\`, \`finalize_case\`, plus any additional skills registered by operators.
+Representative tooling (availability depends on tenant configuration): \`request_user_input\`, \`create_human_task\`, \`read_case_history\`, \`query_order_status\`, \`query_payment_channel_status\`, \`query_account_status\`, \`search_delay_notice\`, \`ocr_receipt\`, \`kb_hybrid_retrieve\`, \`finalize_case\`, plus any additional skills registered by operators.
 
 ## Memory & compaction
 
@@ -87,6 +87,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
     'read_case_history',
     'kb_hybrid_retrieve',
     'ocr_receipt',
+    'query_account_status',
   ],
 
   // Fact extraction patterns
@@ -145,6 +146,8 @@ export interface DefaultSkillSeed {
   isConcurrencySafe: boolean
   enabled: boolean
   guardPhase: string
+  /** JSON string — mock executor returns this payload when mode is mock */
+  mockFixture?: string
 }
 
 export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
@@ -152,51 +155,75 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     name: 'read_case_history', description: "Read the customer's historical cases for context",
     inputSchema: '{"type":"object","properties":{"userId":{"type":"string","description":"Customer user ID"},"limit":{"type":"number","description":"Max number of cases to return","default":5}},"required":["userId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"cases":[],"total":0}',
   },
   {
     name: 'query_order_status', description: 'Query the platform order system for transaction status',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture:
+      '{"status":"pending","amount":0,"time":"2026-05-01T12:00:00.000Z","channel":"unknown"}',
   },
   {
     name: 'query_payment_channel_status', description: 'Query the payment channel for current status and delays',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"delayed_batch":false,"channel":"unknown","reason":null}',
+  },
+  {
+    name: 'query_account_status',
+    description: 'Query platform account/security status (restrictions, bans, risk flags, last login)',
+    inputSchema:
+      '{"type":"object","properties":{"userId":{"type":"string","description":"Customer platform user ID"}},"required":["userId"]}',
+    mode: 'mock',
+    isConcurrencySafe: true,
+    enabled: true,
+    guardPhase: 'post',
+    outputSchema: '{}',
+    mockFixture:
+      '{"accountStatus":"active","riskFlag":false,"banReason":null,"restrictionTier":"none","lastLoginAt":"2026-05-01T12:00:00.000Z"}',
   },
   {
     name: 'search_delay_notice', description: 'Search for any delay notices or announcements',
     inputSchema: '{"type":"object","properties":{"channel":{"type":"string","description":"Payment channel to search"}},"required":["channel"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"notices":[]}',
   },
   {
     name: 'ocr_receipt', description: 'Extract information from uploaded receipt screenshots',
     inputSchema: '{"type":"object","properties":{"attachmentId":{"type":"string","description":"Attachment ID from file upload"}},"required":["attachmentId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"success":true,"extracted":{"amount":null,"time":null,"channel":null}}',
   },
   {
     name: 'create_human_task', description: 'Create a human task for manual confirmation or processing',
     inputSchema: '{"type":"object","properties":{"queue":{"type":"string","description":"Queue to route to"},"question":{"type":"string","description":"Question for the human operator"}},"required":["queue","question"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"taskId":"htask_mock_001","status":"pending"}',
   },
   {
     name: 'finalize_case', description: 'Mark the case as resolved with a conclusion',
     inputSchema: '{"type":"object","properties":{"conclusion":{"type":"string","description":"Case conclusion"},"basis":{"type":"array","items":{"type":"string"},"description":"Evidence basis"}},"required":["conclusion","basis"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"status":"resolved","resolvedAt":"2026-05-01T12:00:00.000Z"}',
   },
   {
     name: 'kb_hybrid_retrieve', description: 'Hybrid knowledge base search (BM25 + vector)',
     inputSchema: '{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"results":[],"sources":[]}',
   },
   {
     name: 'request_user_input', description: 'Display a structured form to collect required information from the customer',
     inputSchema: '{"type":"object","properties":{"title":{"type":"string","description":"Form title"},"fields":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"label":{"type":"string"},"type":{"type":"string","enum":["text","number","select","textarea","file"]},"required":{"type":"boolean"},"placeholder":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["key","label","type"]}}},"required":["title","fields"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"status":"form_displayed"}',
   },
   {
     name: 'finalize_consultation', description: 'End the human consultation with a summary and resolution',
     inputSchema: '{"type":"object","properties":{"summary":{"type":"string","description":"Customer-facing message about what was resolved"},"resolution":{"type":"string","enum":["confirmed_delayed","refund_approved","needs_more_info","resolved","false_alarm"]}},"required":["summary","resolution"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"status":"consultation_closed"}',
   },
 ]
 
@@ -210,7 +237,12 @@ export interface DefaultPolicySeed {
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
   { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":["refund_money","change_ban_status","delete_account"]}' },
   { name: 'conflict_requires_human', description: 'Detect conflict between system result and user report', hook: 'postTool', rule: '{}' },
-  { name: 'evidence_required_before_resolution', description: 'Require evidence gathering before resolution', hook: 'preFinalize', rule: '{"require_skills":["query_order_status"]}' },
+  {
+    name: 'evidence_required_before_resolution',
+    description: 'Require order or account verification skill before resolution',
+    hook: 'preFinalize',
+    rule: '{"require_skills_any":["query_order_status","query_account_status"]}',
+  },
   { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises in finalize output', hook: 'preFinalize', rule: '{"deny_keywords":["赔偿","退款","补偿","compensate","refund"]}' },
   { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: '{}' },
 ]
@@ -247,12 +279,16 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
     escalateOn: '["conflict","refund_request"]',
   },
   {
-    type: 'account_issue', displayName: '账号问题', description: 'Customer reports an account access or ban issue',
+    type: 'account_issue',
+    displayName: '账号问题',
+    description:
+      '用户反馈无法正常登录、账号被封禁或冻结、风控/实名提示异常、疑似被盗号、验证码或二次验证异常、设备与环境绑定争议等——核心是「账户主体与安全策略下的状态」，不含单笔充值未到账（属存款未到账）。',
     icon: '🔒',
     requiredFacts: '["userId","issueType"]',
-    stages: '["created","investigating","waiting_human","escalated","resolved"]',
-    defaultGoal: '确认账号状态并解决访问问题',
-    escalateOn: '["high_risk"]',
+    stages: '["created","collecting","investigating","waiting_human","resolved"]',
+    defaultGoal:
+      '拉取账号侧记录与知识库依据，判断是否限制/封禁/误拦；与客户自述冲突或高风险场景升级账号运营人工复核，并给出可执行的下一步。',
+    escalateOn: '["high_risk","conflict"]',
   },
   {
     type: 'refund_request', displayName: '退款申请', description: 'Customer requests a refund',
@@ -270,8 +306,22 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
     created: {
       name: 'created',
       description:
-        '案例已开立，占位阶段：**本阶段不要求调用任何 Skill**（Required/Allowed 留空）；满足「最少迭代次数」后自动进入 collecting。',
-      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+        '工单刚开立。**禁止**调用 query_* / read_case_history / kb_hybrid_retrieve 等核查类工具；可先简短安抚。是否进入收集或提前调查完全由阶段评估器根据 **Confirmed facts / Skills called / Skill results** 判定；结构化字段主要在 collecting 用 request_user_input。',
+      availableSkills: ['request_user_input'],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationPrompt: `You are the stage transition evaluator for stage "created" only.
+
+Use the Case context block: Confirmed facts, Missing facts, Skills called, Skill results, Key events.
+
+Deposit case rules:
+- If confirmedFacts already has non-empty **txnId**, **amount**, and **paymentMethod** → nextStage MUST be **investigating** (ledger verification may proceed).
+- Otherwise → nextStage MUST be **collecting** so structured intake runs before any investigative tools.
+
+Respond with JSON ONLY:
+{"shouldTransition": true, "nextStage": "collecting" | "investigating", "reason": "cite which keys are present or missing"}`,
+      },
     },
     collecting: {
       name: 'collecting',
@@ -309,10 +359,37 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
       guardrails: [
         { name: 'conflict_requires_human', description: 'Detect conflict between system data and user report', hook: 'postTool', rule: {} },
       ],
+      subAgents: [
+        {
+          name: 'transaction_verifier',
+          model: 'claude-haiku-4-5-20251001',
+          systemPrompt: 'You are a transaction verification specialist. Verify the transaction status and payment channel status for the given case. Report findings as structured facts only — no speculation.',
+          skills: ['query_order_status', 'query_payment_channel_status'],
+          taskTemplate: 'Verify the transaction for case {{caseId}}. The stage goal is: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call query_order_status and query_payment_channel_status, then report findings.',
+          maxIterations: 3,
+          parallel: true,
+        },
+        {
+          name: 'history_reviewer',
+          model: 'claude-haiku-4-5-20251001',
+          systemPrompt: 'You are a case history reviewer. Check if the customer has had similar issues before. Look for patterns in historical cases and knowledge base.',
+          skills: ['read_case_history', 'kb_hybrid_retrieve'],
+          taskTemplate: 'Review historical cases and knowledge base for patterns related to case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Look for similar past deposit issues.',
+          maxIterations: 2,
+          parallel: true,
+        },
+      ],
       transition: {
         type: 'evaluation',
         evaluationModel: 'claude-haiku-4-5-20251001',
-        evaluationPrompt: 'Based on the investigation results, determine next stage. If system data conflicts with user report → escalate to waiting_human. If all clear with evidence → transition to resolved. If still collecting → transition to collecting.',
+        evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
+
+- If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative → **waiting_human**.
+- If **txnId**, **amount**, or **paymentMethod** are missing from confirmedFacts → **collecting** (do not finalize investigation).
+- If evidence supports closure → **resolved**.
+
+Respond JSON ONLY:
+{"shouldTransition": true/false, "nextStage": "collecting"|"investigating"|"waiting_human"|"resolved", "reason": "..."}`,
       },
     },
     waiting_human: {
@@ -364,6 +441,17 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
       guardrails: [
         { name: 'conflict_requires_human', description: 'Detect conflict between system and user', hook: 'postTool', rule: {} },
       ],
+      subAgents: [
+        {
+          name: 'order_verifier',
+          model: 'claude-haiku-4-5-20251001',
+          systemPrompt: 'You are an order verification specialist. Verify the order status and check for any platform notices or delays.',
+          skills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice'],
+          taskTemplate: 'Verify order for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Check order status, payment channel, and any delay notices.',
+          maxIterations: 3,
+          parallel: true,
+        },
+      ],
       transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If conflict detected → waiting_human. If resolved → resolved.' },
     },
     waiting_human: {
@@ -386,38 +474,135 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
   account_issue: {
     created: {
       name: 'created',
-      description: 'Case created',
-      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+      description:
+        '工单刚开立。**禁止**调用 query_account_status / read_case_history / kb_hybrid_retrieve；可先简短安抚。下一站点由评估器依据 **Confirmed facts / Skill results** 决定 collecting 或 investigating。',
+      availableSkills: ['request_user_input'],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationPrompt: `Stage transition evaluator for **created** only.
+
+Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
+
+Rules:
+- If **userId** and **issueType** are present (non-empty in confirmedFacts) → nextStage **investigating**.
+- Else → nextStage **collecting**.
+
+JSON ONLY:
+{"shouldTransition": true, "nextStage": "collecting"|"investigating", "reason": "..."}`,
+      },
+    },
+    collecting: {
+      name: 'collecting',
+      description:
+        '收集用户标识、问题类型与现象描述；可用 request_user_input 一次性收集 UID、登录渠道、报错文案或截图。',
+      requiredSkills: ['request_user_input'],
+      evidenceRequirements: [
+        { factKey: 'userId', description: '平台用户 ID / UID', source: 'user_input', required: true },
+        {
+          factKey: 'issueType',
+          description: '问题类型（登录失败 / 封号 / 风控提示 / 疑似盗号 / 验证异常等）',
+          source: 'user_input',
+          required: true,
+        },
+        {
+          factKey: 'symptoms',
+          description: '现象简述（报错码、页面提示、大概起始时间）',
+          source: 'user_input',
+          required: false,
+        },
+      ],
+      transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
     },
     investigating: {
       name: 'investigating',
-      description: 'Investigate account status',
-      requiredSkills: ['read_case_history'],
-      availableSkills: ['read_case_history', 'request_user_input', 'kb_hybrid_retrieve'],
-      evidenceRequirements: [
-        { factKey: 'userId', description: 'User ID', source: 'user_input', required: true },
-        { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
+      description:
+        '并行核对账号侧快照与历史工单/政策条目；若 records 与用户说法冲突，准备人工复核话术。',
+      requiredSkills: ['query_account_status', 'read_case_history'],
+      availableSkills: [
+        'query_account_status',
+        'read_case_history',
+        'kb_hybrid_retrieve',
+        'request_user_input',
       ],
-      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If high_risk detected → escalated. If needs human → waiting_human. If resolved → resolved.' },
+      evidenceRequirements: [
+        {
+          factKey: 'accountStatus',
+          description: 'query_account_status 返回的账户状态（mock 字段 `accountStatus`）',
+          source: 'skill_output',
+          skillName: 'query_account_status',
+          required: true,
+        },
+        {
+          factKey: 'total',
+          description: 'read_case_history 已执行且返回历史工单计数（字段 `total`）',
+          source: 'skill_output',
+          skillName: 'read_case_history',
+          required: true,
+        },
+      ],
+      guardrails: [
+        {
+          name: 'conflict_requires_human',
+          description: 'Detect conflict between account system state and user report',
+          hook: 'postTool',
+          rule: {},
+        },
+      ],
+      subAgents: [
+        {
+          name: 'account_platform_checker',
+          model: 'claude-haiku-4-5-20251001',
+          systemPrompt:
+            'You are an account security specialist. Query platform account status only — structured facts, no speculation.',
+          skills: ['query_account_status'],
+          taskTemplate:
+            'Check account/security status for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call query_account_status with userId from facts.',
+          maxIterations: 3,
+          parallel: true,
+        },
+        {
+          name: 'account_history_policy',
+          model: 'claude-haiku-4-5-20251001',
+          systemPrompt:
+            'You review historical tickets and KB articles for ban patterns, appeal flows, and known outages.',
+          skills: ['read_case_history', 'kb_hybrid_retrieve'],
+          taskTemplate:
+            'For case {{caseId}}, review prior cases and KB for patterns matching the issue type. Stage goal: {{stageGoal}}. Facts: {{confirmedFacts}}. Use read_case_history and kb_hybrid_retrieve.',
+          maxIterations: 3,
+          parallel: true,
+        },
+      ],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationPrompt:
+          'If account_status conflicts with customer narrative or risk_flag/ban → waiting_human (account_ops). If KB indicates mandatory human appeal → waiting_human. If status is clearly explained with evidence → resolved. If facts still missing → collecting.',
+      },
     },
     waiting_human: {
       name: 'waiting_human',
-      description: 'Waiting for human specialist',
-      requiredSkills: ['create_human_task'],
-      transition: { type: 'manual' },
-    },
-    escalated: {
-      name: 'escalated',
-      description: 'Escalated to higher authority',
+      description: '等待账号运营或风控人工复核',
       requiredSkills: ['create_human_task'],
       transition: { type: 'manual' },
     },
     resolved: {
       name: 'resolved',
-      description: 'Case resolved',
+      description: '结案并向客户说明依据与下一步',
       requiredSkills: ['finalize_case'],
       guardrails: [
-        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { allow_keywords: ['basis'] } },
+        {
+          name: 'no_compensation_promise',
+          description: 'Forbid compensation/refund promises',
+          hook: 'preFinalize',
+          rule: { deny_keywords: ['赔偿', '退款', '补偿', 'compensate', 'refund'] },
+        },
+        {
+          name: 'must_cite_basis',
+          description: 'Require evidence citations',
+          hook: 'preFinalize',
+          rule: { allow_keywords: ['basis'] },
+        },
       ],
       transition: { type: 'manual' },
     },
@@ -467,7 +652,7 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
 
 // Default orchestrator config
 export const DEFAULT_ORCHESTRATOR_CONFIG = {
-  enabled: false,
+  enabled: true,
   maxParallelAgents: 3,
   dispatchPrompt: 'Analyze the case and determine which specialized sub-agents to dispatch for parallel investigation.',
 }
@@ -483,6 +668,12 @@ export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
   {
     queue: 'payment_ops', description: 'Payment operations — handles deposit, order, and refund issues',
     skillsAllowed: '["query_order_status","query_payment_channel_status","search_delay_notice"]',
+    priority: 0,
+  },
+  {
+    queue: 'account_ops',
+    description: 'Account & security — login failures, bans, risk flags, appeals',
+    skillsAllowed: '["query_account_status","read_case_history","kb_hybrid_retrieve"]',
     priority: 0,
   },
   {

@@ -1,37 +1,16 @@
 'use client'
 
-// RespondingBubble — prominent interim state while assistant stream connects
-// Large kinetic orb + glass card aligned with assistant message styling.
+// RespondingBubble — interim state while assistant stream connects
+// Random eyebrow + line; line prefers active tool → stage task → skillsCalled trail → generic pool.
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-
-const VERB_POOL = [
-  'examining your order',
-  'checking payment channels',
-  'reviewing your case',
-  'looking into this',
-  'analyzing transaction data',
-  'verifying deposit status',
-  'tracing the payment',
-  'consulting our records',
-  'investigating',
-  'reviewing details',
-  'processing your request',
-  'working on it',
-  'checking the status',
-  'pulling up your information',
-  'following the paper trail',
-]
-
-function shuffledPool(): string[] {
-  const pool = [...VERB_POOL]
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
-  }
-  return pool
-}
+import {
+  pickRandomEyebrow,
+  pickRandomGeneralLine,
+  pickRandomToolVerb,
+  pickCaptionFromSkillsCalled,
+} from '@/lib/spinner-verbs'
 
 function RespondingOrb() {
   return (
@@ -83,32 +62,73 @@ function RespondingOrb() {
   )
 }
 
-export default function RespondingBubble({ isVisible }: { isVisible: boolean }) {
-  const [verb, setVerb] = useState(VERB_POOL[0])
-  const poolRef = useRef<string[]>(shuffledPool())
-  const indexRef = useRef(0)
+function pickStatusLine(opts: {
+  executingToolName?: string | null
+  coreAgentTask?: string
+  skillsCalled?: string[]
+  previous?: string
+}): string {
+  const { executingToolName, coreAgentTask, skillsCalled, previous } = opts
+  if (executingToolName) {
+    let line = pickRandomToolVerb(executingToolName).text
+    let g = 0
+    while (line === previous && g++ < 6) {
+      line = pickRandomToolVerb(executingToolName).text
+    }
+    return line
+  }
+  if (coreAgentTask) return coreAgentTask
+  if (skillsCalled?.length) return pickCaptionFromSkillsCalled(skillsCalled, previous)
+  return pickRandomGeneralLine(previous)
+}
+
+export default function RespondingBubble({
+  isVisible,
+  coreAgentTask,
+  executingToolName,
+  skillsCalled,
+}: {
+  isVisible: boolean
+  coreAgentTask?: string
+  executingToolName?: string | null
+  skillsCalled?: string[]
+}) {
+  const [eyebrow, setEyebrow] = useState(() => pickRandomEyebrow())
+  const [line, setLine] = useState(() => pickRandomGeneralLine())
+  const lineRef = useRef(line)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    if (isVisible) {
-      indexRef.current = 0
-      poolRef.current = shuffledPool()
-      setVerb(poolRef.current[0])
+    lineRef.current = line
+  }, [line])
 
-      intervalRef.current = setInterval(() => {
-        indexRef.current++
-        if (indexRef.current >= poolRef.current.length) {
-          poolRef.current = shuffledPool()
-          indexRef.current = 0
-        }
-        setVerb(poolRef.current[indexRef.current])
-      }, 2200)
-    } else {
+  useEffect(() => {
+    if (!isVisible) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
+      return
     }
+
+    const tick = () => {
+      setEyebrow((prev) => pickRandomEyebrow(prev))
+      setLine((prev) => {
+        const next = pickStatusLine({
+          executingToolName,
+          coreAgentTask,
+          skillsCalled,
+          previous: prev,
+        })
+        lineRef.current = next
+        return next
+      })
+    }
+
+    // Immediate refresh when tool / task / skills change
+    tick()
+
+    intervalRef.current = setInterval(tick, 2300)
 
     return () => {
       if (intervalRef.current) {
@@ -116,7 +136,9 @@ export default function RespondingBubble({ isVisible }: { isVisible: boolean }) 
         intervalRef.current = null
       }
     }
-  }, [isVisible])
+  }, [isVisible, executingToolName, coreAgentTask, skillsCalled])
+
+  const isTaskLine = !executingToolName && Boolean(coreAgentTask) && line === coreAgentTask
 
   return (
     <AnimatePresence mode="wait">
@@ -136,26 +158,41 @@ export default function RespondingBubble({ isVisible }: { isVisible: boolean }) 
             <RespondingOrb />
 
             <div className="flex flex-col gap-2 sm:gap-2.5 min-w-0 flex-1 pt-1">
-              <span className="font-sans text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.2em] text-fog/60">
-                Composing
-              </span>
+              <motion.span
+                key={eyebrow}
+                initial={{ opacity: 0.6, y: 2 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35 }}
+                className="font-sans text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.2em] text-fog/60"
+              >
+                {eyebrow}
+              </motion.span>
 
               <div className="relative min-h-[3rem] flex items-center">
                 <AnimatePresence mode="wait">
                   <motion.span
-                    key={verb}
+                    key={`${line}-${executingToolName ?? ''}`}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.38, ease: 'easeOut' }}
-                    className="block font-serif text-[17px] sm:text-[18px] leading-snug text-mist/[0.88]"
+                    className={`block font-serif leading-snug text-mist/[0.88] ${
+                      isTaskLine ? 'text-[15px] sm:text-[16px]' : 'text-[17px] sm:text-[18px]'
+                    }`}
                   >
                     <span className="italic text-mist/[0.78]">Intera is </span>
-                    <span className="font-medium text-indigo/[0.85]">{verb}</span>
+                    <span className="font-medium text-indigo/[0.85]">{line}</span>
                     <span className="italic text-mist/[0.78]">…</span>
                   </motion.span>
                 </AnimatePresence>
               </div>
+
+              {skillsCalled && skillsCalled.length > 0 && !executingToolName && (
+                <p className="text-[10px] uppercase tracking-[0.12em] text-fog/45 font-medium">
+                  Skills in this case: {skillsCalled.slice(-4).join(' · ')}
+                  {skillsCalled.length > 4 ? ' · …' : ''}
+                </p>
+              )}
 
               <div className="relative mt-1 h-1 w-full max-w-[220px] rounded-full bg-fog/[0.12] overflow-hidden">
                 <motion.div

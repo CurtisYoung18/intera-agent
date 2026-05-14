@@ -9,7 +9,7 @@ import { X } from 'lucide-react'
 
 export type CaseStatus = 'created' | 'investigating' | 'collecting' | 'waiting_human' | 'resolved' | 'escalated'
 
-interface CaseCardData {
+export interface CaseCardData {
   caseId: string
   title?: string
   type?: string
@@ -17,11 +17,16 @@ interface CaseCardData {
   confirmedFacts?: Record<string, unknown>
   skillsCalled?: string[]
   missingFacts?: string[]
+  stage?: string
+  subAgentCount?: number
+  subAgentsRunning?: boolean
 }
 
 interface CaseCardProps {
   data: CaseCardData | null
   onDismiss?: () => void
+  /** rail = dock in split-layout left column; floating = overlay (narrow mode) */
+  variant?: 'floating' | 'rail'
 }
 
 const STATUS_META: Record<CaseStatus, { label: string; dot: string; ring: string }> = {
@@ -35,18 +40,26 @@ const STATUS_META: Record<CaseStatus, { label: string; dot: string; ring: string
 
 const AUTO_COLLAPSE_MS = 30000
 
-export default function CaseCard({ data, onDismiss }: CaseCardProps) {
+export default function CaseCard({ data, onDismiss, variant = 'floating' }: CaseCardProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [visible, setVisible] = useState(false)
   const [exiting, setExiting] = useState(false)
   const autoCollapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Reset auto-collapse timer on data change
+  // Reset auto-collapse timer on data change (floating only — rail stays open)
   const resetAutoCollapse = () => {
+    if (variant === 'rail') return
     if (autoCollapseTimer.current) clearTimeout(autoCollapseTimer.current)
     autoCollapseTimer.current = setTimeout(() => setCollapsed(true), AUTO_COLLAPSE_MS)
   }
+
+  useEffect(() => {
+    if (variant === 'rail') {
+      setCollapsed(false)
+      if (autoCollapseTimer.current) clearTimeout(autoCollapseTimer.current)
+    }
+  }, [variant])
 
   useEffect(() => {
     if (data) {
@@ -59,7 +72,7 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
     return () => {
       if (autoCollapseTimer.current) clearTimeout(autoCollapseTimer.current)
     }
-  }, [data?.caseId])
+  }, [data?.caseId, variant])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -85,7 +98,7 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
 
   if (!data && !exiting) return null
 
-  const { title, type, status, confirmedFacts, skillsCalled, missingFacts } = data || {}
+  const { title, type, status, confirmedFacts, skillsCalled, missingFacts, stage, subAgentCount, subAgentsRunning } = data || {}
   const facts = Object.entries(confirmedFacts || {})
   const meta = (status && STATUS_META[status]) || STATUS_META.created
   const displayTitle = title || type || 'Case'
@@ -93,24 +106,30 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
   const shownMissing = (missingFacts || []).slice(0, 3)
   const remainingMissing = (missingFacts || []).length - 3
 
+  const isRail = variant === 'rail'
+
   return (
     <div
       onMouseEnter={resetAutoCollapse}
       onFocus={resetAutoCollapse}
-      className={`fixed top-20 left-4 z-40 transition-all duration-500 ease-out
-        max-sm:right-4 max-sm:left-auto max-sm:top-16
+      className={
+        isRail
+          ? visible && !exiting
+            ? 'w-full translate-y-0 opacity-100 transition-all duration-300 ease-out'
+            : 'w-full -translate-y-1 opacity-0 transition-all duration-300 ease-out'
+          : `fixed left-4 top-20 z-40 transition-all duration-500 ease-out max-sm:right-4 max-sm:left-auto max-sm:top-16
         ${visible && !exiting ? 'translate-x-0 opacity-100' : '-translate-x-6 opacity-0'}
-      `}
+      `
+      }
     >
       {collapsed && !exiting ? (
         <button
           onClick={handleExpand}
           aria-expanded="false"
           aria-label={`Expand case: ${displayTitle}`}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full
-            bg-abyss/90 backdrop-blur-xl border border-[var(--border-subtle)]
-            hover:border-[var(--border-hover)] hover:shadow-[0_0_20px_rgba(91,110,245,0.06)]
-            transition-all duration-300"
+          className={`flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-abyss/90 px-3 py-1.5 backdrop-blur-xl transition-all duration-300 hover:border-[var(--border-hover)] hover:shadow-[0_0_20px_rgba(91,110,245,0.06)] ${
+            isRail ? 'w-full justify-center' : ''
+          }`}
         >
           <span className={`inline-block w-[6px] h-[6px] rounded-full flex-shrink-0 ${meta.dot}`} />
           <span className="text-[11px] font-sans tracking-[0.03em] uppercase text-fog/70 truncate max-w-[140px]">
@@ -119,10 +138,9 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
         </button>
       ) : (
         <div
-          className={`w-64 rounded-2xl backdrop-blur-xl border
-            bg-abyss/90 border-[var(--border-subtle)]
-            ${meta.ring} transition-shadow duration-500
-          `}
+          className={`w-full rounded-2xl border border-[var(--border-subtle)] bg-abyss/90 backdrop-blur-xl transition-shadow duration-500 ${
+            isRail ? 'max-w-none shadow-sm' : 'w-64'
+          } ${meta.ring}`}
         >
           {/* Header */}
           <div className="flex items-start justify-between px-4 pt-4 pb-1">
@@ -136,6 +154,18 @@ export default function CaseCard({ data, onDismiss }: CaseCardProps) {
                   {meta.label}
                 </span>
               </div>
+              {stage && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[10px] font-sans text-fog/40 capitalize">
+                    {stage.replace(/_/g, ' ')}
+                  </span>
+                  {subAgentsRunning && subAgentCount ? (
+                    <span className="text-[10px] font-mono text-indigo/60">
+                      +{subAgentCount} agent{subAgentCount !== 1 ? 's' : ''}
+                    </span>
+                  ) : null}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
               {showDismiss && (
