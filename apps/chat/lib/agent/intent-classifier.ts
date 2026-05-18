@@ -141,7 +141,7 @@ function buildClassificationPrompt(caseTypes: CachedCaseType[]): string {
     return `You are an intent classifier. No case types are currently available.
 Classify the user's message. If it's casual chat (greeting, general question), use "qa".
 If it's a specific issue but no matching types exist, use "qa".
-Respond with JSON only.`
+Call the classify_intent tool with your decision.`
   }
 
   const typeList = caseTypes
@@ -156,13 +156,7 @@ Respond with JSON only.`
 Available case types (only match if the user's issue clearly fits):
 ${typeList}
 
-Respond with JSON only — no markdown, no explanation outside the JSON:
-{
-  "intent": "qa" | "case",
-  "matchedCaseTypes": [{ "type": "type_slug", "displayName": "Human Name", "icon": "emoji", "confidence": 0.0-1.0 }],
-  "reasoning": "one sentence explaining the classification",
-  "extractedFacts": { "key": "value" }
-}
+Call the classify_intent tool with your decision.
 
 Rules:
 - "qa": casual chat, greeting, general question, or no issue to resolve. matchedCaseTypes must be [].
@@ -279,6 +273,35 @@ export class IntentClassifier {
 
     const systemPrompt = buildClassificationPrompt(caseTypes)
 
+    // Native tool_use: model MUST call classify_intent with structured input.
+    // The API protocol guarantees valid JSON — no regex extraction needed.
+    const classifyTool: Anthropic.Tool = {
+      name: 'classify_intent',
+      description: 'Record the intent classification decision with structured fields.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          intent: { type: 'string' as const, enum: ['qa', 'case'], description: 'Whether the message is casual chat (qa) or reports an issue (case)' },
+          matchedCaseTypes: {
+            type: 'array' as const,
+            items: {
+              type: 'object' as const,
+              properties: {
+                type: { type: 'string' as const },
+                displayName: { type: 'string' as const },
+                icon: { type: 'string' as const },
+                confidence: { type: 'number' as const },
+              },
+              required: ['type', 'confidence'],
+            },
+          },
+          reasoning: { type: 'string' as const, description: 'One sentence explaining the classification' },
+          extractedFacts: { type: 'object' as const, description: 'Any IDs, amounts, dates, payment methods found in the message' },
+        },
+        required: ['intent', 'reasoning'],
+      },
+    }
+
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
       baseURL: process.env.ANTHROPIC_BASE_URL,
@@ -291,6 +314,7 @@ export class IntentClassifier {
           max_tokens: 256,
           temperature: 0.1,
           system: systemPrompt,
+          tools: [classifyTool],
           messages: [{ role: 'user', content: message }],
         }),
         new Promise<never>((_, reject) =>
@@ -298,25 +322,52 @@ export class IntentClassifier {
         ),
       ])
 
+      // Read tool_use block first (native path, guaranteed valid JSON)
+      for (const block of response.content) {
+        if (block.type === 'tool_use') {
+          const input = (block as any).input as Record<string, unknown> | undefined
+          if (input) {
+            return IntentClassifier.parseToolUseInput(input)
+          }
+        }
+      }
+
+      // Fallback: text response (provider doesn't support tool_use)
       const textContent = response.content
         .filter((b) => b.type === 'text')
         .map((b) => (b as any).text)
         .join('')
 
-      const parsed = IntentClassifier.parseResponse(textContent)
-
-      const parsedBroken =
-        parsed.matchedCaseTypes.length === 0 &&
-        /\b(parse|failed)\b/i.test(parsed.reasoning || '')
-
-      if (parsedBroken) {
-        return { ...heuristicFallbackClassification(message, caseTypes), modelUsed: `${model} (heuristic)` }
-      }
-
-      return { ...parsed, modelUsed: model }
-    } catch (err) {
+      return IntentClassifier.parseResponse(textContent)
+    } catch (err: any) {
       console.error('[IntentClassifier] Classification failed:', err)
-      return { ...heuristicFallbackClassification(message, caseTypes), modelUsed: `${model} (heuristic fallback after error)` }
+      return { ...heuristicFallbackClassification(message, caseTypes), modelUsed: `${model} (heuristic fallback after error)`, extractedFacts: {}, needsClarification: false, reasoning: `Classification error: ${err?.message || 'unknown'}` }
+    }
+  }
+
+  /** Parse tool_use input from the native classify_intent tool (guaranteed valid JSON by API protocol). */
+  private static parseToolUseInput(input: Record<string, unknown>): IntentClassification & { modelUsed?: string } {
+    const rawTypes = Array.isArray(input.matchedCaseTypes) ? input.matchedCaseTypes : []
+    const matchedCaseTypes: MatchedCaseType[] = rawTypes
+      .map((m: any) => ({
+        type: String(m.type || ''),
+        displayName: String(m.displayName || m.type || ''),
+        icon: String(m.icon || '📋'),
+        confidence: typeof m.confidence === 'number' ? m.confidence : 0,
+      }))
+      .filter((m) => isInvestigableCaseType(m.type))
+
+    const intent = input.intent === 'case' && matchedCaseTypes.length > 0 ? 'case' : 'qa'
+    const needsClarification = intent === 'case' && matchedCaseTypes.length > 1
+
+    return {
+      intent: intent as 'qa' | 'case',
+      matchedCaseTypes,
+      needsClarification,
+      reasoning: String(input.reasoning || ''),
+      extractedFacts: (input.extractedFacts && typeof input.extractedFacts === 'object')
+        ? input.extractedFacts as Record<string, string>
+        : {},
     }
   }
 }

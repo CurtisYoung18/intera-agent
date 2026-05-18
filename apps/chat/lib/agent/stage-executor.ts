@@ -320,7 +320,7 @@ export class StageExecutor {
     return { shouldTransition: false, reason: 'no applicable transition rule' }
   }
 
-  /** Run LLM-based transition evaluation. */
+  /** Run LLM-based transition evaluation using native tool_use (not text-JSON prompt). */
   private async runEvaluation(
     stage: string,
     evalPrompt?: string,
@@ -335,7 +335,7 @@ export class StageExecutor {
       `Determine if the case should transition from "${stage}" to the next stage. ` +
       `Available stages: ${stages.join(' → ')}. ` +
       `Next stage: ${nextStage || 'none'}. ` +
-      `Respond with JSON: {"shouldTransition": true/false, "nextStage": "stage_name", "reason": "explanation"}`
+      `Call the stage_transition_decision tool with your decision.`
 
     const contextBlock = [
       `Current stage: ${stage}`,
@@ -347,48 +347,54 @@ export class StageExecutor {
       `Key events: ${JSON.stringify(mem.keyEvents)}`,
     ].join('\n')
 
+    // Native tool_use: model MUST call this tool with structured input.
+    // The API protocol guarantees the input is valid JSON — no regex extraction needed.
+    const transitionTool: Tool = {
+      name: 'stage_transition_decision',
+      description: 'Record your stage transition decision with structured fields.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          shouldTransition: { type: 'boolean' as const, description: 'Whether the case should move to the next stage' },
+          nextStage: { type: 'string' as const, description: `Target stage name. Must be one of: ${stages.join(', ')}` },
+          reason: { type: 'string' as const, description: 'Brief explanation of why this decision was made' },
+        },
+        required: ['shouldTransition', 'reason'],
+      },
+    }
+
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
       baseURL: process.env.ANTHROPIC_BASE_URL,
     })
 
-    // Assistant pre-fill: force the model to start with `{"` so the response
-    // begins with valid JSON. Pattern: Anthropic Messages API trailing assistant
-    // message (Claude Code acknowledges this in speculation.ts line 888).
-    // Falls back gracefully if the provider doesn't support it.
-    const usePrefill = this.agentConfig.evaluationPrefillEnabled ?? true
-    const messages: Array<{ role: string; content: string }> = [
-      { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
-    ]
-    if (usePrefill) {
-      messages.push({ role: 'assistant', content: '{"' })
-    }
+    const msg = await client.messages.create({
+      model,
+      max_tokens: 256,
+      temperature: 0.1,
+      system: 'You are a case stage transition evaluator. Call the stage_transition_decision tool with your decision.',
+      tools: [transitionTool],
+      messages: [
+        { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
+      ],
+    })
 
-    let msg: any
-    try {
-      msg = await client.messages.create({
-        model,
-        max_tokens: 256,
-        temperature: 0.1,
-        system: 'You are a case stage transition evaluator. Respond with JSON only.',
-        messages: messages as any,
-      })
-    } catch (prefillErr) {
-      // If pre-fill is rejected by the provider, retry without it
-      if (usePrefill) {
-        console.warn('[StageExecutor] Pre-fill rejected by provider, retrying without pre-fill:', prefillErr)
-        msg = await client.messages.create({
-          model,
-          max_tokens: 256,
-          temperature: 0.1,
-          system: 'You are a case stage transition evaluator. Respond with JSON only.',
-          messages: [{ role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` }],
-        })
-      } else {
-        throw prefillErr
+    // Read tool_use block — the input is guaranteed valid JSON by the API protocol
+    for (const block of msg.content) {
+      if (block.type === 'tool_use') {
+        const input = (block as any).input as Record<string, unknown> | undefined
+        if (input) {
+          this.consecutiveEvalParseFailures = 0
+          return {
+            shouldTransition: !!input.shouldTransition,
+            nextStage: (input.nextStage as string) || nextStage || undefined,
+            reason: (input.reason as string) || 'evaluation complete',
+          }
+        }
       }
     }
 
+    // Fallback: model returned text instead of tool_use (provider limitation)
     const text = (msg.content[0] as any)?.text || ''
     const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
     if (parsed) {
@@ -401,11 +407,9 @@ export class StageExecutor {
     }
 
     this.consecutiveEvalParseFailures++
-    console.warn('[StageExecutor] Could not parse JSON from evaluation response:', text.slice(0, 200))
+    console.warn('[StageExecutor] Tool_use not found and could not parse JSON from evaluation response:', text.slice(0, 200))
 
-    // Circuit breaker: after 3 consecutive parse failures, fall back to
-    // rule-based auto transition (check evidence + skills) instead of calling LLM again.
-    // Pattern: Claude Code's MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES circuit breaker.
+    // Circuit breaker: after 3 consecutive failures, fall back to rule-based auto transition
     if (this.consecutiveEvalParseFailures >= 3) {
       const failCount = this.consecutiveEvalParseFailures
       const check = this.checkEvidenceRequirements(stage)
@@ -416,18 +420,18 @@ export class StageExecutor {
         return {
           shouldTransition: true,
           nextStage,
-          reason: `fallback auto-transition after ${failCount} parse failures (evidence + skills met)`,
+          reason: `fallback auto-transition after ${failCount} failures (evidence + skills met)`,
           evaluationFallbackTriggered: true,
         }
       }
       return {
         shouldTransition: false,
-        reason: `evaluation could not parse result (${failCount} consecutive failures, fallback not met — missing: ${[...check.missing, ...skillCheck.missing].join(', ')})`,
+        reason: `evaluation failed (${failCount} consecutive failures, fallback not met — missing: ${[...check.missing, ...skillCheck.missing].join(', ')})`,
         evaluationFallbackTriggered: true,
       }
     }
 
-    return { shouldTransition: false, reason: 'evaluation could not parse result' }
+    return { shouldTransition: false, reason: 'evaluation could not produce valid result' }
   }
 
   // -----------------------------------------------------------------------

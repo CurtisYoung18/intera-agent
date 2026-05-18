@@ -129,7 +129,7 @@ export class CaseMemoryManager {
 
     const systemPrompt = [
       'You are a fact extraction engine. Extract structured facts from customer support messages.',
-      'Respond with a JSON object: {"extractedFacts": {}, "flags": []}',
+      'Call the extract_facts tool with the facts and flags you identify.',
       '',
       'Rules:',
       '- extractedFacts: map of fact_name → value. Only include facts you can confidently identify in the message.',
@@ -139,8 +139,22 @@ export class CaseMemoryManager {
       '- If the message contains transaction IDs, order numbers, or similar identifiers, extract them as txnId.',
       '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
       '- If the message starts with "[Form submitted]", parse each "key: value" line as a fact directly. Map aliases: channel/deposit_method/payment_method → paymentMethod, deposit_time/time → date.',
-      '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
     ].join('\n')
+
+    // Native tool_use: model MUST call extract_facts with structured input.
+    // The API protocol guarantees valid JSON — no regex extraction needed.
+    const extractTool = {
+      name: 'extract_facts',
+      description: 'Record extracted facts and flags from the customer message.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          extractedFacts: { type: 'object' as const, description: 'Map of fact_name → value (primitive values only)' },
+          flags: { type: 'array' as const, items: { type: 'string' as const }, description: 'Detected labels: userReportedNotReceived, userReportedPartialMissing, urgent, angry, confused' },
+        },
+        required: ['extractedFacts'],
+      },
+    }
 
     const userPrompt = [
       `Customer message: "${message}"`,
@@ -155,11 +169,25 @@ export class CaseMemoryManager {
         max_tokens: 256,
         temperature: 0,
         system: systemPrompt,
+        tools: [extractTool as any],
         messages: [{ role: 'user', content: userPrompt }],
       })
 
-      const text = (msg.content[0] as any)?.text || ''
-      const parsed = extractJsonFromLlmOutput(text)
+      // Read tool_use block first (native path, guaranteed valid JSON)
+      let parsed: Record<string, unknown> | null = null
+      for (const block of msg.content) {
+        if (block.type === 'tool_use') {
+          parsed = (block as any).input as Record<string, unknown> | null
+          break
+        }
+      }
+
+      // Fallback: text response (provider doesn't support tool_use)
+      if (!parsed) {
+        const text = (msg.content[0] as any)?.text || ''
+        parsed = extractJsonFromLlmOutput(text)
+      }
+
       if (parsed) {
         const facts = parsed.extractedFacts
         if (facts && typeof facts === 'object') {
@@ -178,7 +206,7 @@ export class CaseMemoryManager {
           this.confirmedFacts.userReportedPartialMissing = true
         }
       } else {
-        console.warn('[CaseMemory] Could not parse JSON from extraction response:', text.slice(0, 200))
+        console.warn('[CaseMemory] Could not extract facts from response')
       }
     } catch (err) {
       console.warn('[CaseMemory] LLM fact extraction failed:', err)

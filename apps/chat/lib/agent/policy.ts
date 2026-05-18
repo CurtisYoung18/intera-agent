@@ -251,7 +251,7 @@ export class PolicyEngine {
 
     const systemPrompt = [
       'You are a policy evaluation engine. Your job is to check whether an agent action violates a policy rule.',
-      'Respond with a JSON object: {"result": "pass"|"blocked"|"hint"|"escalated", "reason": "brief explanation in English"}',
+      'Call the evaluate_policy tool with your decision.',
       '',
       'Guidelines:',
       '- "pass" — the action complies with the policy',
@@ -268,14 +268,46 @@ export class PolicyEngine {
       `Skill output: ${output}`,
     ].join('\n')
 
+    // Native tool_use: model MUST call evaluate_policy with structured input.
+    // The API protocol guarantees valid JSON — no regex extraction needed.
+    const policyTool: Anthropic.Tool = {
+      name: 'evaluate_policy',
+      description: 'Record the policy evaluation decision.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          result: { type: 'string' as const, enum: ['pass', 'blocked', 'hint', 'escalated'], description: 'The evaluation result' },
+          reason: { type: 'string' as const, description: 'Brief explanation of the decision' },
+        },
+        required: ['result', 'reason'],
+      },
+    }
+
     const msg = await this.llmClient.messages.create({
       model: this.policyModel,
       max_tokens: 128,
       temperature: 0,
       system: systemPrompt,
+      tools: [policyTool as any],
       messages: [{ role: 'user', content: userPrompt }],
     })
 
+    // Read tool_use block first (native path, guaranteed valid JSON)
+    for (const block of msg.content) {
+      if (block.type === 'tool_use') {
+        const input = (block as any).input as Record<string, unknown> | undefined
+        if (input) {
+          const validResults = new Set<PolicyResult>(['pass', 'blocked', 'hint', 'escalated'])
+          return {
+            policyName,
+            result: validResults.has(input.result as PolicyResult) ? (input.result as PolicyResult) : 'pass',
+            reason: (input.reason as string) || 'LLM evaluation complete',
+          }
+        }
+      }
+    }
+
+    // Fallback: text response (provider doesn't support tool_use)
     const text = (msg.content[0] as any)?.text || ''
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/)
