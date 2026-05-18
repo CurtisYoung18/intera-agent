@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
 import AgentPolicyHooksPicker from '@/components/admin/agent-policy-hooks-picker'
-import AgentSyntheticTemplatesPanel from '@/components/admin/agent-synthetic-templates-panel'
+import AgentHumanInteractionPanel from '@/components/admin/agent-human-interaction-panel'
 import {
   DrawerCheckboxRail,
   DrawerSection,
@@ -63,7 +63,7 @@ export default function AgentConfigPage() {
         model: { icon: <Cpu className="w-4 h-4" />, title: t('agent.section.model'), color: '#5b8af7' },
         memory: { icon: <Database className="w-4 h-4" />, title: t('agent.section.memory'), color: '#d4912e' },
         policy: { icon: <Shield className="w-4 h-4" />, title: t('agent.section.policy'), color: '#2ea04a' },
-        templates: { icon: <FileText className="w-4 h-4" />, title: t('agent.section.templates'), color: '#5bb8f7' },
+        templates: { icon: <FileText className="w-4 h-4" />, title: t('agent.section.humanOps'), color: '#5bb8f7' },
         advanced: { icon: <Settings className="w-4 h-4" />, title: t('agent.section.advanced'), color: '#b8944c' },
       }) satisfies Record<Section, { icon: React.ReactNode; title: string; color: string }>,
     [t],
@@ -121,6 +121,8 @@ export default function AgentConfigPage() {
           policyHooks,
           resumePrompt: raw.resumePrompt || '',
           formResponseTemplate: raw.formResponseTemplate || '',
+          humanSkills: raw.humanSkills || '',
+          consultationPrompt: raw.consultationPrompt || '',
           evaluationModel: raw.evaluationModel || '',
           intentModel: raw.intentModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
@@ -689,12 +691,26 @@ export default function AgentConfigPage() {
             )}
 
             {activeSection === 'templates' && (
-              <DrawerSection accent="#5bb8f7" title={t('agent.section.templates')} lead={t('agent.templatesLead')}>
-                <AgentSyntheticTemplatesPanel
+              <DrawerSection accent="#5bb8f7" title={t('agent.section.humanOps')} lead={t('agent.section.humanOpsLead')}>
+                <AgentHumanInteractionPanel
                   resumePrompt={config.resumePrompt}
                   formResponseTemplate={config.formResponseTemplate}
+                  humanSkills={config.humanSkills}
                   onResumeChange={(v) => update('resumePrompt', v)}
                   onFormChange={(v) => update('formResponseTemplate', v)}
+                  onHumanSkillsChange={(v) => update('humanSkills', v)}
+                  composerEnabled={config.prefixContinuationEnabled}
+                  composerModel={config.prefixContinuationChatModel}
+                  composerBaseUrl={config.prefixContinuationBaseUrl}
+                  composerAssistantPrefix={config.prefixContinuationAssistantPrefix}
+                  composerStopText={config.prefixContinuationStopText}
+                  composerMinDraftChars={config.prefixContinuationMinDraftChars}
+                  onComposerEnabledChange={(v) => update('prefixContinuationEnabled', v)}
+                  onComposerModelChange={(v) => update('prefixContinuationChatModel', v)}
+                  onComposerBaseUrlChange={(v) => update('prefixContinuationBaseUrl', v)}
+                  onComposerAssistantPrefixChange={(v) => update('prefixContinuationAssistantPrefix', v)}
+                  onComposerStopTextChange={(v) => update('prefixContinuationStopText', v)}
+                  onComposerMinDraftCharsChange={(v) => update('prefixContinuationMinDraftChars', v)}
                 />
               </DrawerSection>
             )}

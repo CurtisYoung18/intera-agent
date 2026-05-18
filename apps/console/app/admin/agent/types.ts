@@ -54,6 +54,8 @@ export interface AgentConfigData {
   policyHooks: string
   resumePrompt: string
   formResponseTemplate: string
+  humanSkills: string
+  consultationPrompt: string
   evaluationModel: string
   intentModel: string
   prefixContinuationEnabled: boolean

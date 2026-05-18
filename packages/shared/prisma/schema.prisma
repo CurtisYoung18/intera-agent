@@ -51,9 +51,11 @@ model AgentConfig {
   showThinking      Boolean @default(false)
 
   maxOutputTokens     Int?    // default 4096
-  resumePrompt        String? // synthetic message for human task resume
+  resumePrompt         String? // synthetic message for human task resume
   formResponseTemplate String? // synthetic message for form submission
-  evaluationModel     String? // Model for stage transition evaluation
+  humanSkills          String? // JSON array of skill names available to human operator during consultation
+  consultationPrompt   String? // override for consultation system prompt (human-chat route)
+  evaluationModel      String? // Model for stage transition evaluation
   intentModel         String? // Model for intent classification (defaults to evaluationModel or haiku)
 
   /// Chat app only: DeepSeek beta chat + prefix row — customer **composer** drafting assist (not agent loop).

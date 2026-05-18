@@ -55,22 +55,24 @@ async function loadHumanChatConfig(customerId: string): Promise<AgentConfigData>
   try {
     const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
     if (dbConfig) {
+      const humanSkills = (dbConfig as any).humanSkills as string | null
+      const consultationPrompt = (dbConfig as any).consultationPrompt as string | null
+
       return {
         model: dbConfig.model,
         temperature: dbConfig.temperature,
         thinkingBudget: dbConfig.thinkingBudget,
-        maxIterations: DEFAULT_HUMAN_CHAT_CONFIG.maxIterations, // Always 15 for consultation
-        systemPrompt: CONSULTATION_SYSTEM_PROMPT, // Always consultation prompt
+        maxIterations: DEFAULT_HUMAN_CHAT_CONFIG.maxIterations,
+        systemPrompt: consultationPrompt?.trim() || CONSULTATION_SYSTEM_PROMPT,
         toolParallelism: dbConfig.toolParallelism,
         isConcurrencySafe: dbConfig.isConcurrencySafe,
         showThinking: (dbConfig as any).showThinking ?? false,
+        humanSkills: humanSkills || undefined,
         memoryStrategy: {
           ...((parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_HUMAN_CHAT_CONFIG.memoryStrategy),
-          // Consultation mode: keep tool results fresh for context continuity.
-          // 5-minute minimum age before microcompact clears anything — matches prompt cache TTL.
           microcompactMinAgeMs: 300000,
         },
-        policyHooks: DEFAULT_HUMAN_CHAT_CONFIG.policyHooks, // No policy checks needed for consultation
+        policyHooks: DEFAULT_HUMAN_CHAT_CONFIG.policyHooks,
       }
     }
   } catch (err) {

@@ -185,6 +185,10 @@ export interface AgentConfigData {
   policyHooks: PolicyHooks
   resumePrompt?: string
   formResponseTemplate?: string
+  /** JSON array of skill names available to human operator during consultation. */
+  humanSkills?: string
+  /** Custom consultation system prompt override (human-chat route). */
+  consultationPrompt?: string
   evaluationModel?: string
   intentModel?: string
   /** Pre-fill assistant response with `{"` to force JSON output from stage/intent evaluators. */

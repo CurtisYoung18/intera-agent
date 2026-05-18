@@ -51,7 +51,8 @@ export async function PUT(req: NextRequest) {
       model, temperature, thinkingBudget, maxIterations, maxOutputTokens,
       systemPrompt, toolParallelism, isConcurrencySafe,
       showThinking, memoryStrategy, policyHooks,
-      resumePrompt, formResponseTemplate, evaluationModel, intentModel,
+      resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
+      evaluationModel, intentModel,
       prefixContinuationEnabled,
       prefixContinuationChatModel,
       prefixContinuationBaseUrl,
@@ -74,6 +75,8 @@ export async function PUT(req: NextRequest) {
     if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
     if (resumePrompt !== undefined) data.resumePrompt = resumePrompt
     if (formResponseTemplate !== undefined) data.formResponseTemplate = formResponseTemplate
+    if (humanSkills !== undefined) data.humanSkills = humanSkills
+    if (consultationPrompt !== undefined) data.consultationPrompt = consultationPrompt
     if (evaluationModel !== undefined) data.evaluationModel = evaluationModel
     if (intentModel !== undefined) data.intentModel = intentModel
     if (prefixContinuationEnabled !== undefined)
@@ -102,6 +105,8 @@ export async function PUT(req: NextRequest) {
         showThinking: showThinking ?? false,
         resumePrompt: resumePrompt ?? null,
         formResponseTemplate: formResponseTemplate ?? null,
+        humanSkills: humanSkills ?? null,
+        consultationPrompt: consultationPrompt ?? null,
         evaluationModel: evaluationModel ?? null,
         intentModel: intentModel ?? null,
         prefixContinuationEnabled:
