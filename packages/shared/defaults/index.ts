@@ -55,15 +55,18 @@ export const DEFAULT_MEMORY_STRATEGY = {
   caseRetentionDays: 90,
 
   // Thresholds
-  autocompactThresholdTokens: 13000,
-  warningThresholdTokens: 20000,
-  errorThresholdTokens: 25000,
-  blockingThresholdTokens: 3000,
+  // Measured as remaining tokens below context window (contextWindow - outputReserved - currentTokens).
+  // Lower values = compaction fires less often (more context preserved).
+  autocompactThresholdTokens: 40000,
+  warningThresholdTokens: 50000,
+  errorThresholdTokens: 60000,
+  blockingThresholdTokens: 15000,
 
   // Features
   compactModel: 'MiniMax-M2.5-highspeed',
   enableSnip: true,
   enableMicrocompact: true,
+  microcompactMinAgeMs: 60000,
   enableContextCollapse: true,
   enableAutocompact: true,
 
@@ -71,9 +74,9 @@ export const DEFAULT_MEMORY_STRATEGY = {
   compactMaxMessages: 40,
   compactTemperature: 0.3,
   compactMaxTokensCap: 4096,
-  compactMinSummaryLength: 20,
-  compactionKeepMin: 4,
-  compactionKeepRatio: 0.4,
+  compactMinSummaryLength: 100,
+  compactionKeepMin: 6,
+  compactionKeepRatio: 0.65,
   compactableTools: [
     'query_order_status',
     'query_payment_channel_status',
@@ -92,10 +95,10 @@ export const DEFAULT_MEMORY_STRATEGY = {
   tokensPerKeyEvent: 20,
   tokensPerFact: 15,
   tokensPerSkill: 30,
-  cjkCharPerToken: 1.2,
-  latinCharPerToken: 3,
+  cjkCharPerToken: 1.5,
+  latinCharPerToken: 4,
   minTokenEstimate: 100,
-  toolResultTokenRatio: 3,
+  toolResultTokenRatio: 4,
 
   // Advanced
   compactPrompt: '',
@@ -108,7 +111,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
 }
 
 export const DEFAULT_POLICY_HOOKS = {
-  preTool: ['no_high_risk_account_change'],
+  preTool: ['no_high_risk_account_change', 'investigate_before_escalation'],
   postTool: ['conflict_requires_human'],
   preFinalize: [
     'evidence_required_before_resolution',
@@ -250,6 +253,7 @@ export interface DefaultPolicySeed {
 
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
   { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":["refund_money","change_ban_status","delete_account"]}' },
+  { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"require_skills_any":["query_order_status","query_payment_channel_status","query_account_status"]}' },
   { name: 'conflict_requires_human', description: 'Detect conflict between system result and user report', hook: 'postTool', rule: '{"evaluationPrompt":"Check whether the skill outputs (query_order_status, query_payment_channel_status, query_account_status) contradict what the customer reported. Escalate to human (result=escalated) when: (1) the system shows a completed/successful transaction but the customer says funds are missing or not received, (2) the system shows account status is normal but the customer reports access issues, (3) the payment channel shows normal operation but the customer says the payment failed. If outputs are consistent with the customer issue, pass. If data is ambiguous or incomplete, hint."}' },
   {
     name: 'evidence_required_before_resolution',
@@ -339,7 +343,7 @@ Respond with JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: '向用户收集流水号、金额、渠道、时间等；用 request_user_input 表单一次收齐。表单字段 key 必须使用: txnId, amount, paymentMethod, date（与证据系统对齐）。',
+      description: '向用户收集流水号、金额、渠道、时间等；用 request_user_input 表单一次收齐。表单字段 key 必须使用: txnId, amount, paymentMethod, date（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
       requiredSkills: ['request_user_input'],
       availableSkills: ['request_user_input'],
       evidenceRequirements: [
@@ -496,7 +500,7 @@ JSON ONLY:
     collecting: {
       name: 'collecting',
       description:
-        '收集用户标识、问题类型与现象描述；用 request_user_input 一次性收集。表单字段 key 必须使用: userId, issueType, symptoms（与证据系统对齐）。',
+        '收集用户标识、问题类型与现象描述；用 request_user_input 一次性收集。表单字段 key 必须使用: userId, issueType, symptoms（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
       requiredSkills: ['request_user_input'],
       availableSkills: ['request_user_input'],
       evidenceRequirements: [

@@ -104,7 +104,11 @@ export class PolicyEngine {
         'If evidence is properly cited, return "pass".',
     })
 
-    this.hooks.preTool = ['no_high_risk_account_change']
+    this.policies.set('investigate_before_escalation', {
+      require_skills_any: ['query_order_status', 'query_payment_channel_status', 'query_account_status'],
+    })
+
+    this.hooks.preTool = ['no_high_risk_account_change', 'investigate_before_escalation']
     this.hooks.postTool = ['conflict_requires_human']
     this.hooks.preFinalize = [
       'evidence_required_before_resolution',
@@ -181,21 +185,21 @@ export class PolicyEngine {
       }
     }
 
-    // ── require_skills (preFinalize) — exact name match ──
-    if (rule.require_skills && context.skillName === 'finalize_case') {
+    // ── require_skills — exact name match (checked for finalize_case and create_human_task) ──
+    if (rule.require_skills && (context.skillName === 'finalize_case' || context.skillName === 'create_human_task')) {
       const called = context.skillsCalled || []
       const missing = rule.require_skills.filter((s) => !called.includes(s))
       if (missing.length > 0) {
         return {
           policyName,
           result: 'blocked',
-          reason: `Required skills not called before finalize: ${missing.join(', ')}`,
+          reason: `Required skills not called before ${context.skillName}: ${missing.join(', ')}`,
         }
       }
     }
 
-    // ── require_skills_any (preFinalize) — exact name match ──
-    if (rule.require_skills_any && rule.require_skills_any.length > 0 && context.skillName === 'finalize_case') {
+    // ── require_skills_any — exact name match (checked for finalize_case and create_human_task) ──
+    if (rule.require_skills_any && rule.require_skills_any.length > 0 && (context.skillName === 'finalize_case' || context.skillName === 'create_human_task')) {
       const called = context.skillsCalled || []
       const ok = rule.require_skills_any.some((s) => called.includes(s))
       if (!ok) {

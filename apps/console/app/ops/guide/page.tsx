@@ -106,7 +106,7 @@ export default function OpsGuidePage() {
           {/* 6. Stage Runtime */}
           <DocSection id="guide-stage-runtime" eyebrow={t('guide.doc.stage.eyebrow')} title={t('guide.doc.stage.title')}>
             <DocParagraph text={t('guide.doc.stage.lead')} />
-            <DocList items={[t('guide.doc.stage.li1'), t('guide.doc.stage.li2'), t('guide.doc.stage.li3')]} />
+            <DocList items={[t('guide.doc.stage.li1'), t('guide.doc.stage.li2'), t('guide.doc.stage.li3'), t('guide.doc.stage.li4')]} />
             <DocCallout>{t('guide.doc.stage.callout')}</DocCallout>
             <div className="!mt-8 rounded-[1.25rem] border border-black/[0.06] bg-gradient-to-br from-white/55 via-white/35 to-[var(--void)]/30 p-5 shadow-[var(--shadow-card)] backdrop-blur-xl sm:p-7">
               <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]">{t('guide.section1.title')}</p>

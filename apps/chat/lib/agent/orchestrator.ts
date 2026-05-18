@@ -216,12 +216,46 @@ export class OrchestratorAgent {
     return Array.from(this.pendingNames)
   }
 
+  /**
+   * Keys that sub-agents commonly return but should NOT pollute confirmedFacts.
+   * These are sub-agent internal metadata or findings that shadow user-provided facts.
+   */
+  private static readonly SUB_AGENT_INTERNAL_KEYS = new Set([
+    'results', 'cases', 'total', 'sources', 'evidence',
+  ])
+
   /** Merge a single sub-agent result into case memory (incremental). */
   mergeSingleResult(
     result: SubAgentResult,
     caseMemory: CaseMemoryData,
   ): void {
-    Object.assign(caseMemory.confirmedFacts, result.findings)
+    // Filter findings: only merge keys that don't pollute confirmedFacts.
+    // - Skip sub-agent-internal metadata keys (results, cases, total, etc.)
+    // - Don't overwrite existing user-provided facts with sub-agent data
+    const safeFindings: Record<string, unknown> = {}
+    const dropped: string[] = []
+    for (const [key, value] of Object.entries(result.findings)) {
+      if (OrchestratorAgent.SUB_AGENT_INTERNAL_KEYS.has(key)) {
+        dropped.push(key)
+        continue
+      }
+      const existing = caseMemory.confirmedFacts[key]
+      if (existing !== undefined && existing !== null && existing !== '' && existing !== 0) {
+        // Existing fact looks intentional — don't let sub-agent overwrite it
+        if (JSON.stringify(existing) !== JSON.stringify(value)) {
+          console.warn(`[Orchestrator] Sub-agent "${result.agentName}" finding "${key}"=${JSON.stringify(value)} conflicts with existing confirmedFacts.${key}=${JSON.stringify(existing)} — keeping user value`)
+        }
+        continue
+      }
+      safeFindings[key] = value
+    }
+    if (dropped.length > 0) {
+      console.warn(`[Orchestrator] Filtered sub-agent internal keys from confirmedFacts: ${dropped.join(', ')}`)
+    }
+
+    if (Object.keys(safeFindings).length > 0) {
+      Object.assign(caseMemory.confirmedFacts, safeFindings)
+    }
 
     caseMemory.skillResults[`subagent:${result.agentName}`] = {
       findings: result.findings,
@@ -246,21 +280,7 @@ export class OrchestratorAgent {
     keyEvents: Array<{ at: string; text: string; source: string }>,
   ): void {
     for (const result of results) {
-      Object.assign(confirmedFacts, result.findings)
-
-      skillResults[`subagent:${result.agentName}`] = {
-        findings: result.findings,
-        evidence: result.evidence,
-        recommendation: result.recommendation,
-        tokensUsed: result.tokensUsed,
-        durationMs: result.durationMs,
-      }
-
-      keyEvents.push({
-        at: new Date().toISOString(),
-        text: `Sub-agent ${result.agentName} completed: ${result.recommendation || 'no recommendation'}`,
-        source: 'llm',
-      })
+      this.mergeSingleResult(result, { confirmedFacts, skillResults, keyEvents } as CaseMemoryData)
     }
   }
 

@@ -147,11 +147,11 @@ B 端商户（B-side Customer）
     ▼
 ┌─ 1) 上下文压缩 ────────────────────────────────────────────┐
 │  按需触发以下策略（参考 Claude Code compact.ts）：           │
-│   · HISTORY_SNIP      → 删除特定范围消息                   │
-│   · Microcompact      → 工具结果去重                       │
+│   · Microcompact      → 工具结果去重（minAgeMs 保护新鲜缓存） │
 │   · Context Collapse  → 提交日志方式压缩                   │
-│   · Autocompact       → 生成摘要（阈值 13k buffer tokens）  │
-│  配置项：AgentConfig.contextCompression.l1MaxMessages    │
+│   · Autocompact       → 生成摘要（阈值 40k buffer tokens）  │
+│   · Snip              → 消息裁剪（保留 65%，最低 6 条）     │
+│  配置项：AgentConfig.memoryStrategy                         │
 └────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -239,8 +239,10 @@ B 端商户（B-side Customer）
 | safeSendEvent | `run()` 入口包装 sendEvent：try/catch + 失败时设 `aborted=true`，后续调用静默跳过 |
 | Stream 错误恢复 | for-await 包 try/catch，异常时 drain 已入队 tools 后继续 |
 | 阶段评估保护 | `evaluateTransition` 包 try/catch，失败 fallback `shouldTransition: false` |
+| 阶段评估 JSON 稳定 | Assistant pre-fill（`{"`）强制模型输出 JSON。Provider 不支持时自动回退重试。连续 3 次解析失败后断路器降级为基于规则的自动推进（evidence + skills 满足即前进） |
 | PostTool 评估保护 | `evaluatePostToolBatch` 包 try/catch，失败跳过 postTool 检查 |
 | 策略引擎降级 | LLM 评估失败返回 `{ result: 'hint' }` 而非静默 `pass`，避免 API 抖动时安全策略失效 |
+| 升级前调查保护 | `investigate_before_escalation` 策略：preTool 阶段阻止 `create_human_task`，直到 `query_order_status` / `query_payment_channel_status` / `query_account_status` 任一已调用 |
 | Anthropic client 复用 | AgentLoop 构造时创建单一实例，迭代间复用（不再每轮 `new Anthropic()`） |
 | 输入校验 | API 路由 body 上限 100KB、customerId 格式限制 `[a-zA-Z0-9_-]+` ≤64字符、message 上限 50K 字符 |
 
@@ -459,14 +461,16 @@ Skill 执行成功
 │  · 注入位置：LLM messages 数组                             │
 │                                                              │
 │  ★ L1 内部多层压缩（按需触发）：                            │
-│   · HISTORY_SNIP      → 删除特定范围消息                   │
-│   · Microcompact      → 工具结果去重                       │
+│   · Microcompact      → 工具结果去重（minAgeMs=60s 保护     │
+│                         新鲜缓存，consultation 模式 5min）   │
 │   · Context Collapse  → 提交日志方式压缩                   │
 │   · Autocompact       → 生成摘要                           │
-│  阈值：AUTOCOMPACT_BUFFER_TOKENS = 13_000                    │
-│        WARNING_THRESHOLD_BUFFER_TOKENS = 20_000              │
-│  ★ 2026-05: blocking + shouldCompact 双路径均含 circuit      │
-│    breaker（连续 3 次失败后熔断，避免反复调用 API）          │
+│  阈值：AUTOCOMPACT_BUFFER_TOKENS = 40_000                    │
+│        WARNING_THRESHOLD_BUFFER_TOKENS = 50_000              │
+│        BLOCKING_THRESHOLD_TOKENS = 15_000                    │
+│  Snip: compactionKeepRatio = 0.65（保留 65%），keepMin = 6   │
+│  Token 估计：latinCharPerToken = 4，cjkCharPerToken = 1.5  │
+│  ★ circuit breaker（连续 3 次失败后熔断，避免反复调用 API） │
 └──────────────────────────────────────────────────────────────┘
                           ↓
 ┌──────────────────────────────────────────────────────────────┐
@@ -663,7 +667,7 @@ Agent Loop 中 LLM 决定调用 skill
 >
 > | Policy Hook | 时机 | 评估方式 |
 > |---|---|---|
-> | `preTool` | tool 调用前 | `deny_skills` 精确名称匹配（无需 LLM） |
+> | `preTool` | tool 调用前 | `deny_skills` 精确名称匹配 + `require_skills` / `require_skills_any` 前置条件检查（均无需 LLM） |
 > | `postTool` | tool 结果后 | **批量 LLM 评估**（单次 API 调用覆盖所有 tool results） |
 > | `preFinalize` | finalize_case 前 | `require_skills` 精确匹配 + **LLM 评估** |
 >
@@ -679,6 +683,7 @@ Agent Loop 中 LLM 决定调用 skill
 | Policy Name | Hook | 评估方式 | 说明 |
 |---|---|---|---|
 | `no_high_risk_account_change` | preTool | 精确名称匹配 | 拦截配置中的高危 skill |
+| `investigate_before_escalation` | preTool | 精确名称匹配 | 未调用调查类 skill（query_order_status / query_payment_channel_status / query_account_status）不得调用 create_human_task |
 | `conflict_requires_human` | postTool | **LLM 评估** | 系统数据（completed/normal）与用户申报（未到账/缺失）矛盾时 → escalated |
 | `evidence_required_before_resolution` | preFinalize | 精确名称匹配 | 未调用必要 skill 不得 finalize |
 | `no_compensation_promise` | preFinalize | **LLM 评估** | finalize 承诺赔偿/退款 → blocked |

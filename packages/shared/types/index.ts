@@ -187,6 +187,8 @@ export interface AgentConfigData {
   formResponseTemplate?: string
   evaluationModel?: string
   intentModel?: string
+  /** Pre-fill assistant response with `{"` to force JSON output from stage/intent evaluators. */
+  evaluationPrefillEnabled?: boolean
 
   /**
    * DeepSeek beta chat completions — **customer-side composer** drafting assist only (`/api/composer-assist/*`).
@@ -224,6 +226,7 @@ export interface MemoryStrategy {
   compactModel: string
   enableSnip?: boolean
   enableMicrocompact?: boolean
+  microcompactMinAgeMs?: number
   enableContextCollapse?: boolean
   enableAutocompact?: boolean
 

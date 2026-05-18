@@ -64,7 +64,12 @@ async function loadHumanChatConfig(customerId: string): Promise<AgentConfigData>
         toolParallelism: dbConfig.toolParallelism,
         isConcurrencySafe: dbConfig.isConcurrencySafe,
         showThinking: (dbConfig as any).showThinking ?? false,
-        memoryStrategy: (parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_HUMAN_CHAT_CONFIG.memoryStrategy,
+        memoryStrategy: {
+          ...((parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_HUMAN_CHAT_CONFIG.memoryStrategy),
+          // Consultation mode: keep tool results fresh for context continuity.
+          // 5-minute minimum age before microcompact clears anything — matches prompt cache TTL.
+          microcompactMinAgeMs: 300000,
+        },
         policyHooks: DEFAULT_HUMAN_CHAT_CONFIG.policyHooks, // No policy checks needed for consultation
       }
     }

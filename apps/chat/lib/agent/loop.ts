@@ -440,6 +440,7 @@ export class AgentLoop {
                 skillName: toolUse.name,
                 skillInput: toolUse.input,
                 confirmedFacts: this.caseMemory.getConfirmedFacts(),
+                skillsCalled: this.caseMemory.getSkillsCalled(),
               })
 
               if (policyResult.result === 'blocked') {
@@ -870,6 +871,8 @@ export class AgentLoop {
       }
 
       // ── Terminal tool: create_human_task ─────────────────────
+      // Pre-escalation guard is enforced via PolicyEngine preTool hook
+      // (policy: investigate_before_escalation) — see policy.ts.
       const humanTaskResult = toolResults.find(
         (r) => r.name === 'create_human_task',
       )
@@ -1152,6 +1155,7 @@ export class AgentLoop {
     this.currentStage = next
     this.caseMemory.setCaseStatus(next)
     this.nudgeCount = 0
+    this.stageExecutor.resetEvalParseFailures()
 
     await this.traceWriter.write('loop_decision', 'Stage transition', {
       from: prevStage,
@@ -1267,7 +1271,8 @@ export class AgentLoop {
     // MicroCompact: clear old tool results before assessment (free, local)
     if (this.deps.config.memoryStrategy.enableMicrocompact !== false) {
       const ms = this.deps.config.memoryStrategy
-      const mcResult = microCompact(this.messages, ms.compactableTools, ms.toolResultTokenRatio)
+      const minAge = ms.microcompactMinAgeMs ?? 60000
+      const mcResult = microCompact(this.messages, ms.compactableTools, ms.toolResultTokenRatio, minAge)
       if (mcResult.clearedCount > 0) {
         this.messages = mcResult.messages
         await this.traceWriter.write('microcompact', 'Cleared tool results', {

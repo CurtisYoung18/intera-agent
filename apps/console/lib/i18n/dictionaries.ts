@@ -124,6 +124,8 @@ export const en: Record<string, string> = {
     'Shortfalls differentiate “ask the shopper” vs “call platform tooling” paths so coaching text matches expectations.',
   'guide.doc.stage.li3':
     'Coaching never erases shopper-visible answers; it inserts another assistant-aligned instruction for the subsequent lap.',
+  'guide.doc.stage.li4':
+    'Stage evaluators use assistant pre-fill (`{"`) to force clean JSON output from the model. If the provider rejects pre-fill, the harness retries transparently. After 3 consecutive parse failures, a circuit breaker falls back to rule-based auto-transition so the case never stalls on malformed LLM output.',
 
   'guide.doc.stage.callout':
     'The swimlane below follows the infamous **text-only** exit: shopper sees a plausible paragraph, yet stage mandates remain unsatisfied—the harness forces another lap quietly.',
@@ -156,7 +158,7 @@ export const en: Record<string, string> = {
   'guide.doc.tools.li4':
     'Registries marry factory defaults with per-tenant Admin rows so onboarding stays scripted yet flexible.',
   'guide.doc.tools.li5':
-    'Policy guardrails (preTool / postTool / preFinalize) use LLM evaluation against natural-language descriptions, not brittle keyword matching. A single batch API call evaluates all postTool policies at once.',
+    'Policy guardrails (preTool / postTool / preFinalize) check hard rules and LLM-evaluated rules. The preTool hook can enforce skill prerequisites — e.g. `investigate_before_escalation` blocks `create_human_task` until order/payment/account verification skills have run. PostTool policies batch into a single LLM call against natural-language descriptions, without brittle keyword matching.',
   'guide.doc.tools.li6':
     'If the policy LLM is temporarily unavailable, policies degrade to "hint" rather than silently passing — ensuring safety rules are never quietly disabled.',
 
@@ -221,10 +223,10 @@ export const en: Record<string, string> = {
   'guide.doc.codes.p1': 'apps/chat/app/api/messages/route.ts — storefront turns → AgentLoop entry',
   'guide.doc.codes.p2': 'apps/chat/app/api/human-chat/route.ts — operator harness',
   'guide.doc.codes.p3': 'apps/chat/lib/agent/loop.ts — transition loop, corrective nudge fuse (3 strikes → escalate)',
-  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — prerequisites, evidence manifests, corrective copy',
+  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — prerequisites, evidence manifests, corrective copy, assistant pre-fill JSON stabilisation, circuit breaker fallback',
   'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — partial token execution, parallelism flags',
   'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingestion + persistence helpers',
-  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — guardrails & telemetry',
+  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — guardrails (incl. investigate_before_escalation), skill registry, trace writer, profiler telemetry',
   'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts — optional deputy reactors',
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* — investigator UX & timeline readers',
   'guide.doc.codes.p10': 'packages/shared/types & defaults — schemas shared chat ↔ console',
@@ -1045,6 +1047,8 @@ export const zh: Record<string, string> = {
     '缺口会区分「要找顾客补」还是「必须让平台技能产出」，纠偏文案随之不同。',
   'guide.doc.stage.li3':
     '纠偏不会删除顾客已看到的自然语言回答，只是追加一条内部指令逼下一轮真的去调工具。',
+  'guide.doc.stage.li4':
+    '阶段评估器使用 assistant pre-fill（`{"`）强制模型输出干净的 JSON。如果服务商拒绝 pre-fill，harness 会自动重试。三次连续解析失败后，断路器会降级为基于规则的自动推进，确保 case 不会因为 LLM 输出格式错误而卡住。',
 
   'guide.doc.stage.callout':
     '下方泳道聚焦 **说话很漂亮却没干活** 的场景：模型输出纯文本，但阶段义务未满足。',
@@ -1073,7 +1077,7 @@ export const zh: Record<string, string> = {
   'guide.doc.tools.li4':
     '技能注册表合并出厂默认与租户配置，方便多品牌部署。',
   'guide.doc.tools.li5':
-    '策略护栏（preTool / postTool / preFinalize）使用 LLM 对自然语言描述进行语义评估，不再依赖僵化的关键词匹配。postTool 全部策略通过单次批量 LLM 调用评估。',
+    '策略护栏（preTool / postTool / preFinalize）同时支持硬规则检查和 LLM 语义评估。preTool 钩子可强制技能前置条件——例如 `investigate_before_escalation` 策略会阻止 agent 在未运行订单/支付/账号验证技能前直接调用 `create_human_task`。PostTool 策略全部通过单次批量 LLM 调用评估。',
   'guide.doc.tools.li6':
     '如果策略评估 LLM 暂时不可用，策略降级为"hint"而非静默通过——确保安全规则不会在 API 抖动时悄然失效。',
 
@@ -1123,10 +1127,10 @@ export const zh: Record<string, string> = {
   'guide.doc.codes.p1': 'apps/chat/app/api/messages/route.ts — 顾客回合 → AgentLoop',
   'guide.doc.codes.p2': 'apps/chat/app/api/human-chat/route.ts — 内部坐席 harness',
   'guide.doc.codes.p3': 'apps/chat/lib/agent/loop.ts — Transition 循环、纠偏熔断（三连 → 升级）',
-  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — 阶段门槛 / 证据 / 纠偏文案',
+  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — 阶段门槛 / 证据 / 纠偏文案 / assistant pre-fill JSON 稳定 / 断路器降级',
   'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — 并发 vs 串行工具执行',
   'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingest / persist',
-  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts',
+  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — 护栏引擎（含 investigate_before_escalation）、技能注册、链路追踪、性能剖析',
   'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts',
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* —— 案件运营 UI',
   'guide.doc.codes.p10': 'packages/shared/types & defaults',

@@ -18,12 +18,38 @@ import type { CaseMemoryManager } from './memory'
 
 /** Extract a JSON object from LLM output that may be wrapped in markdown code fences. */
 function extractJsonFromLlmOutput(text: string): Record<string, unknown> | null {
-  // Try ```json ... ``` block first
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  const jsonStr = fenceMatch ? fenceMatch[1].trim() : text
-  const match = jsonStr.match(/\{[\s\S]*\}/)
-  if (!match) return null
-  try { return JSON.parse(match[0]) } catch { return null }
+  const trimmed = text.trim()
+
+  // 1. Direct parse (works when assistant pre-fill forces clean JSON start)
+  if (trimmed.startsWith('{')) {
+    try { return JSON.parse(trimmed) } catch { /* fall through */ }
+    // Retry: truncate at last complete brace pair (model may append trailing text)
+    const lastBrace = trimmed.lastIndexOf('}')
+    if (lastBrace > 0) {
+      try { return JSON.parse(trimmed.slice(0, lastBrace + 1)) } catch { /* fall through */ }
+    }
+    // Retry: auto-close unclosed braces
+    const openCount = (trimmed.match(/\{/g) || []).length
+    const closeCount = (trimmed.match(/\}/g) || []).length
+    if (openCount > closeCount) {
+      try { return JSON.parse(trimmed + '}'.repeat(openCount - closeCount)) } catch { /* fall through */ }
+    }
+  }
+
+  // 2. Try ```json ... ``` fence
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fenceMatch) {
+    const inner = fenceMatch[1].trim()
+    try { return JSON.parse(inner) } catch { /* fall through */ }
+  }
+
+  // 3. Try regex extraction (last resort)
+  const match = trimmed.match(/\{[\s\S]*\}/)
+  if (match) {
+    try { return JSON.parse(match[0]) } catch { /* fall through */ }
+  }
+
+  return null
 }
 
 export interface StageCheckResult {
@@ -37,10 +63,12 @@ export interface TransitionEval {
   nextStage?: string
   reason: string
   modelUsed?: string
+  evaluationFallbackTriggered?: boolean
 }
 
 export class StageExecutor {
   private stageConfigs: Record<string, StageConfig>
+  private consecutiveEvalParseFailures = 0
 
   constructor(
     private caseSchema: CaseSchemaConfig,
@@ -71,6 +99,11 @@ export class StageExecutor {
   /** Get the stage config for a given stage name. */
   getStageConfig(stage: string): StageConfig | null {
     return this.stageConfigs[stage] || null
+  }
+
+  /** Reset the evaluation parse failure counter (called on successful stage transition). */
+  resetEvalParseFailures(): void {
+    this.consecutiveEvalParseFailures = 0
   }
 
   /** Get the index of the next stage (for transition). */
@@ -273,6 +306,10 @@ export class StageExecutor {
       const evalModel = rule.evaluationModel || this.agentConfig.evaluationModel || this.agentConfig.model
       try {
         const result = await this.runEvaluation(stage, rule.evaluationPrompt, rule.evaluationModel)
+        if (result.evaluationFallbackTriggered) {
+          return { ...result, modelUsed: evalModel }
+        }
+        this.consecutiveEvalParseFailures = 0
         return { ...result, modelUsed: evalModel }
       } catch (err) {
         console.warn('[StageExecutor] Evaluation failed, defaulting to stay:', err)
@@ -315,19 +352,47 @@ export class StageExecutor {
       baseURL: process.env.ANTHROPIC_BASE_URL,
     })
 
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 256,
-      temperature: 0.1,
-      system: 'You are a case stage transition evaluator. Respond with JSON only.',
-      messages: [
-        { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
-      ],
-    })
+    // Assistant pre-fill: force the model to start with `{"` so the response
+    // begins with valid JSON. Pattern: Anthropic Messages API trailing assistant
+    // message (Claude Code acknowledges this in speculation.ts line 888).
+    // Falls back gracefully if the provider doesn't support it.
+    const usePrefill = this.agentConfig.evaluationPrefillEnabled ?? true
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
+    ]
+    if (usePrefill) {
+      messages.push({ role: 'assistant', content: '{"' })
+    }
+
+    let msg: any
+    try {
+      msg = await client.messages.create({
+        model,
+        max_tokens: 256,
+        temperature: 0.1,
+        system: 'You are a case stage transition evaluator. Respond with JSON only.',
+        messages: messages as any,
+      })
+    } catch (prefillErr) {
+      // If pre-fill is rejected by the provider, retry without it
+      if (usePrefill) {
+        console.warn('[StageExecutor] Pre-fill rejected by provider, retrying without pre-fill:', prefillErr)
+        msg = await client.messages.create({
+          model,
+          max_tokens: 256,
+          temperature: 0.1,
+          system: 'You are a case stage transition evaluator. Respond with JSON only.',
+          messages: [{ role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` }],
+        })
+      } else {
+        throw prefillErr
+      }
+    }
 
     const text = (msg.content[0] as any)?.text || ''
     const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
     if (parsed) {
+      this.consecutiveEvalParseFailures = 0
       return {
         shouldTransition: !!parsed.shouldTransition,
         nextStage: (parsed.nextStage as string) || nextStage || undefined,
@@ -335,7 +400,33 @@ export class StageExecutor {
       }
     }
 
+    this.consecutiveEvalParseFailures++
     console.warn('[StageExecutor] Could not parse JSON from evaluation response:', text.slice(0, 200))
+
+    // Circuit breaker: after 3 consecutive parse failures, fall back to
+    // rule-based auto transition (check evidence + skills) instead of calling LLM again.
+    // Pattern: Claude Code's MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES circuit breaker.
+    if (this.consecutiveEvalParseFailures >= 3) {
+      const failCount = this.consecutiveEvalParseFailures
+      const check = this.checkEvidenceRequirements(stage)
+      const skillCheck = this.checkRequiredSkills(stage)
+      if (check.met && skillCheck.met && nextStage) {
+        console.warn(`[StageExecutor] Circuit breaker triggered — falling back to auto transition (${stage} → ${nextStage})`)
+        this.consecutiveEvalParseFailures = 0
+        return {
+          shouldTransition: true,
+          nextStage,
+          reason: `fallback auto-transition after ${failCount} parse failures (evidence + skills met)`,
+          evaluationFallbackTriggered: true,
+        }
+      }
+      return {
+        shouldTransition: false,
+        reason: `evaluation could not parse result (${failCount} consecutive failures, fallback not met — missing: ${[...check.missing, ...skillCheck.missing].join(', ')})`,
+        evaluationFallbackTriggered: true,
+      }
+    }
+
     return { shouldTransition: false, reason: 'evaluation could not parse result' }
   }
 
