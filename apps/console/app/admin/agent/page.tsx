@@ -123,6 +123,7 @@ export default function AgentConfigPage() {
           formResponseTemplate: raw.formResponseTemplate || '',
           humanSkills: raw.humanSkills || '',
           consultationPrompt: raw.consultationPrompt || DEFAULT_CONSULTATION_PROMPT,
+          debugMode: Boolean(raw.debugMode),
           evaluationModel: raw.evaluationModel || '',
           intentModel: raw.intentModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
@@ -678,6 +679,26 @@ export default function AgentConfigPage() {
                       </label>
                     ))}
                   </DrawerCheckboxRail>
+                </DrawerSection>
+
+                <DrawerSection
+                  accent="#b8944c"
+                  eyebrow="Debug"
+                  title="API Data Flow Logging"
+                  lead="Write full API request/response payloads to debug-logs/ directory for troubleshooting."
+                  actions={
+                    <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={config.debugMode}
+                        onChange={(e) => update('debugMode', e.target.checked)}
+                        className="accent-amber rounded"
+                      />
+                      <span className="text-[11px] font-medium text-[var(--mist)]">Enable</span>
+                    </label>
+                  }
+                >
+                  <p className="text-[10px] text-[var(--fog)]/60">When enabled, raw API payloads are written to <code className="text-[10px] bg-black/[0.04] px-1 rounded">debug-logs/&lt;caseId&gt;/</code> as JSON files. Restart not required.</p>
                 </DrawerSection>
               </>
             )}

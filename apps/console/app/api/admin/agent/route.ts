@@ -52,7 +52,7 @@ export async function PUT(req: NextRequest) {
       systemPrompt, toolParallelism, isConcurrencySafe,
       showThinking, memoryStrategy, policyHooks,
       resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
-      evaluationModel, intentModel,
+      debugMode, evaluationModel, intentModel,
       prefixContinuationEnabled,
       prefixContinuationChatModel,
       prefixContinuationBaseUrl,
@@ -77,6 +77,7 @@ export async function PUT(req: NextRequest) {
     if (formResponseTemplate !== undefined) data.formResponseTemplate = formResponseTemplate
     if (humanSkills !== undefined) data.humanSkills = humanSkills
     if (consultationPrompt !== undefined) data.consultationPrompt = consultationPrompt
+    if (debugMode !== undefined) data.debugMode = debugMode
     if (evaluationModel !== undefined) data.evaluationModel = evaluationModel
     if (intentModel !== undefined) data.intentModel = intentModel
     if (prefixContinuationEnabled !== undefined)
@@ -107,6 +108,7 @@ export async function PUT(req: NextRequest) {
         formResponseTemplate: formResponseTemplate ?? null,
         humanSkills: humanSkills ?? null,
         consultationPrompt: consultationPrompt ?? null,
+        debugMode: debugMode ?? false,
         evaluationModel: evaluationModel ?? null,
         intentModel: intentModel ?? null,
         prefixContinuationEnabled:

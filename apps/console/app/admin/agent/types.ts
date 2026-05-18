@@ -56,6 +56,7 @@ export interface AgentConfigData {
   formResponseTemplate: string
   humanSkills: string
   consultationPrompt: string
+  debugMode: boolean
   evaluationModel: string
   intentModel: string
   prefixContinuationEnabled: boolean

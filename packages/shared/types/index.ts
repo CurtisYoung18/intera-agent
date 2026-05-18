@@ -155,6 +155,10 @@ export interface PolicyRule {
   require_skills?: string[]
   /** At least one listed skill must have been called before finalize_case */
   require_skills_any?: string[]
+  /** postTool only: only evaluate this policy when these skills were called in the iteration. Empty = all tools. */
+  hook_skills?: string[]
+  /** Enable LLM-based evaluation. When false, only exact-match rules (deny/require) apply. Default true. */
+  enableLlm?: boolean
   /** Natural-language evaluation prompt for LLM-based policy checks.
    * Supports placeholders: {{skill_name}} {{skill_output}} {{confirmed_facts}} {{skills_called}} */
   evaluationPrompt?: string
@@ -203,6 +207,8 @@ export interface AgentConfigData {
   intentModel?: string
   /** Pre-fill assistant response with `{"` to force JSON output from stage/intent evaluators. */
   evaluationPrefillEnabled?: boolean
+  /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */
+  debugMode?: boolean
 
   /**
    * DeepSeek beta chat completions — **customer-side composer** drafting assist only (`/api/composer-assist/*`).
@@ -303,7 +309,6 @@ export type SSEEventType =
   | 'message_stop'
   | 'withheld'
   | 'consultation_complete'
-  | 'intent_classified'
   | 'case_created'
   | 'sub_agent_start'
   | 'sub_agent_progress'

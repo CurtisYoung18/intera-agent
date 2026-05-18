@@ -55,6 +55,7 @@ model AgentConfig {
   formResponseTemplate String? // synthetic message for form submission
   humanSkills          String? // JSON array of skill names available to human operator during consultation
   consultationPrompt   String? // override for consultation system prompt (human-chat route)
+  debugMode            Boolean @default(false) // write full API request/response to debug-logs/
   evaluationModel      String? // Model for stage transition evaluation
   intentModel         String? // Model for intent classification (defaults to evaluationModel or haiku)
 

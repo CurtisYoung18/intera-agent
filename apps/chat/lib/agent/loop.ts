@@ -24,6 +24,7 @@ import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation } from './compact'
 import { Profiler } from './profiler'
+import { writeDebugRequest, writeDebugResponse } from './debug-logger'
 import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 
@@ -226,6 +227,37 @@ export class AgentLoop {
       this.iterationCount++
       this.profiler.incrementIteration()
 
+      // ── Graduated policy escalation check ─────────────────────
+      // If any policy has been violated 3+ times in this session, escalate.
+      {
+        const policyNames = this.policyEngine.getPolicyNames()
+        let maxPolicyHits = 0
+        for (const name of policyNames) {
+          const count = this.caseMemory.getPolicyHitCount(name)
+          if (count > maxPolicyHits) maxPolicyHits = count
+        }
+        if (maxPolicyHits >= 3) {
+          await this.traceWriter.write('loop_decision', 'Exit: max policy violations', {
+            policyEscalation: true,
+            maxPolicyHits,
+            iteration: this.iterationCount,
+          })
+          sendEvent({
+            type: 'error',
+            data: `Agent repeatedly violated policies (${maxPolicyHits} hits) — needs human intervention`,
+            timestamp: new Date().toISOString(),
+          })
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: 'escalated',
+            transition: 'error',
+            currentStage: this.currentStage,
+            reason: 'max_policy_violations',
+          }
+        }
+      }
+
       // Emit core agent progress — only when a Case is active. Keep label short for UI.
       if (this.stageExecutor) {
         const stageCfg = this.stageExecutor.getStageConfig(this.currentStage)
@@ -316,16 +348,28 @@ export class AgentLoop {
 
       if (this.abortController.signal.aborted) break
 
+      const apiMessages = this.buildApiMessages()
       const stream = this.anthropicClient.messages.stream({
         model: this.deps.config.model,
         max_tokens: this.deps.config.maxOutputTokens ?? 4096,
         system: stagePrompt,
-        messages: this.buildApiMessages(),
+        messages: apiMessages,
         tools: stageTools,
         ...(this.deps.config.showThinking ? {
           thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
         } : {}),
       }, { signal: this.abortController.signal })
+
+      // Debug: full API request
+      if (this.deps.config.debugMode) {
+        writeDebugRequest(this.deps.caseId, this.iterationCount, this.deps.config.model, {
+          system: stagePrompt,
+          messages: apiMessages as any,
+          tools: stageTools as any,
+          max_tokens: this.deps.config.maxOutputTokens ?? 4096,
+          temperature: this.deps.config.temperature,
+        })
+      }
 
       await this.traceWriter.writeLlmRequestStart(
         this.deps.config.model,
@@ -436,24 +480,33 @@ export class AgentLoop {
               }
 
               // PreTool policy check
-              const policyResult = await this.policyEngine.check('preTool', {
+              const preToolEval = await this.policyEngine.evaluate('preTool', {
                 skillName: toolUse.name,
                 skillInput: toolUse.input,
                 confirmedFacts: this.caseMemory.getConfirmedFacts(),
                 skillsCalled: this.caseMemory.getSkillsCalled(),
               })
 
-              if (policyResult.result === 'blocked') {
+              if (preToolEval.summary === 'blocked') {
+                // Record policy hit for graduated response
+                for (const r of preToolEval.results) {
+                  if (r.result !== 'pass') this.caseMemory.recordPolicyHit(r.policyName)
+                }
                 await this.traceWriter.write(
                   'policy_hit',
                   `Blocked: ${toolUse.name}`,
-                  policyResult as unknown as Record<string, unknown>,
+                  preToolEval as unknown as Record<string, unknown>,
                 )
                 sendEvent({
                   type: 'error',
                   data: `Tool blocked by policy: ${toolUse.name}`,
                   timestamp: new Date().toISOString(),
                 })
+                // Inject feedback so the agent knows why and what to do instead
+                if (preToolEval.feedbackMessage && assistantMessage) {
+                  this.messages.push(assistantMessage)
+                  this.messages.push(this.makeUserMessage(preToolEval.feedbackMessage))
+                }
                 continue
               }
 
@@ -511,6 +564,14 @@ export class AgentLoop {
           (usage.outputTokens as number | undefined) != null)
       ) {
         const calledToolNames = [...blocks.values()].filter(b => b.type === 'tool_use').map(b => b.name)
+        // Debug: full API response
+        if (this.deps.config.debugMode) {
+          writeDebugResponse(this.deps.caseId, this.iterationCount, this.deps.config.model, {
+            stop_reason: stopReason,
+            usage,
+            text: fullText.slice(0, 100000),
+          })
+        }
         await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames)
         this.profiler.addTokens(
           Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
@@ -678,27 +739,59 @@ export class AgentLoop {
         )
       }
 
-      // ── Batch postTool policy evaluation (LLM-based, single call) ──
+      // ── PostTool policy evaluation (batched LLM, single call) ──
       if (toolResults.length > 0) {
         try {
-        const postToolInputs = toolResults.map((r) => ({
-          name: r.name,
-          output: unwrapToolExecutionPayload(r.output),
-        }))
-        const batchResults = await this.policyEngine.evaluatePostToolBatch(
-          postToolInputs,
-          this.caseMemory.getConfirmedFacts(),
-        )
-        for (const pr of batchResults) {
-          if (pr.result === 'escalated') {
-            await this.traceWriter.write('policy_hit', `Escalated: ${pr.policyName}`, { result: pr.result, reason: pr.reason, model: pr.modelUsed })
-          }
-          if (pr.result === 'blocked') {
-            await this.traceWriter.write('policy_hit', `Blocked: ${pr.policyName}`, { result: pr.result, reason: pr.reason, model: pr.modelUsed })
+        const ctxSummary = toolResults
+          .map((r) => `[${r.name}]: ${JSON.stringify(unwrapToolExecutionPayload(r.output))}`)
+          .join('\n')
+        const executedSkills = toolResults.map((r) => r.name)
+        const postToolEval = await this.policyEngine.evaluate('postTool', {
+          skillOutput: ctxSummary,
+          confirmedFacts: this.caseMemory.getConfirmedFacts(),
+          executedSkills,
+        })
+
+        for (const r of postToolEval.results) {
+          if (r.result !== 'pass') {
+            this.caseMemory.recordPolicyHit(r.policyName)
+            await this.traceWriter.write(
+              'policy_hit',
+              `${r.result === 'escalated' ? 'Escalated' : 'Blocked'}: ${r.policyName}`,
+              { result: r.result, reason: r.reason, model: r.modelUsed },
+            )
           }
         }
+
+        // Inject policy feedback into message stream
+        if (postToolEval.feedbackMessage) {
+          this.messages.push(this.makeUserMessage(postToolEval.feedbackMessage))
+        }
+
+        // Auto-escalate on escalated: create human task without waiting for agent decision
+        if (postToolEval.summary === 'escalated') {
+          const escalatedReasons = postToolEval.results
+            .filter((r) => r.result === 'escalated')
+            .map((r) => `${r.policyName}: ${r.reason || 'conflict detected'}`)
+            .join('; ')
+          // Directly create human task — the escalated policy has detected a
+          // system-data vs customer-report contradiction that needs human review.
+          await this.traceWriter.write('loop_decision', 'Auto-escalate from postTool policy', {
+            policyNames: postToolEval.results.filter((r) => r.result === 'escalated').map((r) => r.policyName),
+            reasons: escalatedReasons,
+          })
+          sendEvent({
+            type: 'error',
+            data: `Case escalated by policy: ${escalatedReasons}`,
+            timestamp: new Date().toISOString(),
+          })
+          // Inject create_human_task-like nudge so the agent knows what happened
+          this.messages.push(this.makeUserMessage(
+            `[POLICY] Post-tool evaluation detected a conflict requiring human review: ${escalatedReasons}. Call create_human_task to escalate this case.`,
+          ))
+        }
         } catch (policyErr) {
-          console.error('[AgentLoop] PostTool batch evaluation failed:', policyErr)
+          console.error('[AgentLoop] PostTool evaluation failed:', policyErr)
         }
       }
 
@@ -1042,24 +1135,32 @@ export class AgentLoop {
       )
       if (finalizeResult) {
         const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
-        const policyResult = await this.policyEngine.check('preFinalize', {
+        const preFinalizeEval = await this.policyEngine.evaluate('preFinalize', {
           skillName: 'finalize_case',
           skillOutput: finalizedPayload,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
           skillsCalled: this.caseMemory.getSkillsCalled(),
         })
 
-        if (policyResult.result === 'blocked') {
+        if (preFinalizeEval.summary === 'blocked') {
+          // Record policy hit for graduated response
+          for (const r of preFinalizeEval.results) {
+            if (r.result !== 'pass') this.caseMemory.recordPolicyHit(r.policyName)
+          }
           await this.traceWriter.write(
             'policy_hit',
             'Finalize blocked',
-            policyResult as unknown as Record<string, unknown>,
+            preFinalizeEval as unknown as Record<string, unknown>,
           )
           sendEvent({
             type: 'error',
-            data: 'Finalize blocked by policy',
+            data: `Finalize blocked by policy: ${preFinalizeEval.results.filter((r) => r.result === 'blocked').map((r) => r.policyName).join(', ')}`,
             timestamp: new Date().toISOString(),
           })
+          // Inject feedback so the agent knows what to fix
+          if (preFinalizeEval.feedbackMessage) {
+            this.messages.push(this.makeUserMessage(preFinalizeEval.feedbackMessage))
+          }
           continue // Keep looping
         }
 
@@ -1202,6 +1303,7 @@ export class AgentLoop {
     this.currentStage = next
     this.caseMemory.setCaseStatus(next)
     this.nudgeCount = 0
+    this.caseMemory.resetPolicyHits()
     this.stageExecutor.resetEvalParseFailures()
 
     await this.traceWriter.write('loop_decision', 'Stage transition', {
