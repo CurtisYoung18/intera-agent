@@ -149,14 +149,14 @@ export type PolicyHook = 'preTool' | 'postTool' | 'preFinalize'
 export type PolicyResult = 'pass' | 'blocked' | 'hint' | 'escalated'
 
 export interface PolicyRule {
+  /** Block specific skills by exact name match (preTool only) */
   deny_skills?: string[]
   /** All listed skills must have been called before finalize_case */
   require_skills?: string[]
   /** At least one listed skill must have been called before finalize_case */
   require_skills_any?: string[]
-  min_evidence_count?: number
-  evidence_sources?: string[]
-  /** Natural-language evaluation prompt for LLM-based policy checks (replaces keyword/regex matching) */
+  /** Natural-language evaluation prompt for LLM-based policy checks.
+   * Supports placeholders: {{skill_name}} {{skill_output}} {{confirmed_facts}} {{skills_called}} */
   evaluationPrompt?: string
 }
 

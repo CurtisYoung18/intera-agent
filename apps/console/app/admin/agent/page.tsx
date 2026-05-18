@@ -693,11 +693,9 @@ export default function AgentConfigPage() {
             {activeSection === 'templates' && (
               <DrawerSection accent="#5bb8f7" title={t('agent.section.humanOps')} lead={t('agent.section.humanOpsLead')}>
                 <AgentHumanInteractionPanel
-                  resumePrompt={config.resumePrompt}
-                  formResponseTemplate={config.formResponseTemplate}
+                  consultationPrompt={config.consultationPrompt}
                   humanSkills={config.humanSkills}
-                  onResumeChange={(v) => update('resumePrompt', v)}
-                  onFormChange={(v) => update('formResponseTemplate', v)}
+                  onConsultationPromptChange={(v) => update('consultationPrompt', v)}
                   onHumanSkillsChange={(v) => update('humanSkills', v)}
                   composerEnabled={config.prefixContinuationEnabled}
                   composerModel={config.prefixContinuationChatModel}

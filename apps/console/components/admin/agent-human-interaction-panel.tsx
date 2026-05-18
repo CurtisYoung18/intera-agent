@@ -1,20 +1,21 @@
 'use client'
 
-import { MessageSquareText, Zap, Wand2 } from 'lucide-react'
-import {
-  HARNESS_DEFAULT_FORM_RESPONSE_APPEND,
-  HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
-} from '@intera/shared/defaults'
+import { Brain, Zap, Wand2 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-const SAMPLE_FORM_LINES = '[Form submitted]\namount: 100 USD\ntxnId: demo-order-9821'
+const PLACEHOLDER_HELP = [
+  '{{caseId}} — current case ID',
+  '{{caseType}} — case type slug (e.g. deposit_issue)',
+  '{{confirmedFacts}} — JSON of confirmed facts',
+  '{{skillsCalled}} — skills already called',
+  '{{question}} — agent\'s escalation question',
+  '{{userId}} — customer user ID',
+].join('\n')
 
 interface Props {
-  resumePrompt: string
-  formResponseTemplate: string
+  consultationPrompt: string
   humanSkills: string
-  onResumeChange: (v: string) => void
-  onFormChange: (v: string) => void
+  onConsultationPromptChange: (v: string) => void
   onHumanSkillsChange: (v: string) => void
   // Composer assist (DeepSeek beta prefix continuation)
   composerEnabled: boolean
@@ -32,11 +33,9 @@ interface Props {
 }
 
 export default function AgentHumanInteractionPanel({
-  resumePrompt,
-  formResponseTemplate,
+  consultationPrompt,
   humanSkills,
-  onResumeChange,
-  onFormChange,
+  onConsultationPromptChange,
   onHumanSkillsChange,
   composerEnabled,
   composerModel,
@@ -53,71 +52,34 @@ export default function AgentHumanInteractionPanel({
 }: Props) {
   const { t } = useConsoleLocale()
 
-  const resumeAppend = resumePrompt.trim() ? resumePrompt : HARNESS_DEFAULT_RESUME_PROMPT_APPEND
-  const formTail = formResponseTemplate.trim()
-    ? formResponseTemplate.trim()
-    : HARNESS_DEFAULT_FORM_RESPONSE_APPEND
-
-  const resumeMock = `${t('agent.human.resumeMockHeader')}\n${resumeAppend}`
-  const formMock = `${SAMPLE_FORM_LINES}\n\n${formTail}`
-
   return (
     <div className="space-y-5">
-      {/* ── Consultation Prompts ── */}
+      {/* ── Consultation System Prompt ── */}
       <div className="rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-400/8 via-white/40 to-transparent overflow-hidden shadow-sm">
         <div className="px-4 py-3 border-b border-black/[0.05] flex items-center gap-2 bg-sky-500/10">
-          <MessageSquareText className="w-4 h-4 text-sky-600" />
+          <Brain className="w-4 h-4 text-sky-600" />
           <div>
-            <h3 className="text-[13px] font-semibold text-[var(--mist)]">{t('agent.human.resumeTitle')}</h3>
-            <p className="text-[10px] text-[var(--fog)]">{t('agent.human.resumeLead')}</p>
+            <h3 className="text-[13px] font-semibold text-[var(--mist)]">{t('agent.human.promptTitle')}</h3>
+            <p className="text-[10px] text-[var(--fog)]">{t('agent.human.promptLead')}</p>
           </div>
         </div>
-        <div className="p-4 space-y-4">
-          <div className="rounded-lg bg-black/[0.03] border border-black/[0.06] p-3">
-            <div className="text-[10px] uppercase tracking-wide text-[var(--fog)]/60 mb-2">{t('agent.template.previewLabel')}</div>
-            <pre className="text-[11px] font-mono text-[var(--mist)] whitespace-pre-wrap leading-relaxed opacity-92">{resumeMock}</pre>
-          </div>
-          {!resumePrompt.trim() && (
-            <p className="text-[11px] text-[var(--fog)] rounded-lg bg-black/[0.04] px-3 py-2 border border-black/[0.05]">{t('agent.template.resumeFallbackNote')}</p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="text-[11px] px-2.5 py-1.5 rounded-lg border border-black/[0.08] bg-white/60 hover:border-indigo/30 hover:text-indigo" onClick={() => onResumeChange(HARNESS_DEFAULT_RESUME_PROMPT_APPEND)}>{t('agent.template.fillHarnessDefault')}</button>
-            <button type="button" className="text-[11px] px-2.5 py-1.5 rounded-lg border border-black/[0.08] bg-white/60 hover:border-indigo/30 hover:text-indigo" onClick={() => onResumeChange('')}>{t('agent.template.clearUseBuiltin')}</button>
-          </div>
+        <div className="p-4 space-y-3">
           <label className="space-y-1 block">
-            <span className="text-[11px] text-[var(--fog)]">{t('agent.human.resumePromptLabel')}</span>
-            <textarea value={resumePrompt} rows={4} onChange={(e) => onResumeChange(e.target.value)} spellCheck={false} className="glass-input-console text-[12px] font-mono resize-y w-full leading-relaxed" />
-            <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.resumePromptHint')}</span>
+            <span className="text-[11px] text-[var(--fog)]">{t('agent.human.promptLabel')}</span>
+            <textarea
+              value={consultationPrompt}
+              rows={12}
+              onChange={(e) => onConsultationPromptChange(e.target.value)}
+              spellCheck={false}
+              placeholder={t('agent.human.promptPlaceholder')}
+              className="glass-input-console text-[12px] font-mono resize-y w-full leading-relaxed"
+            />
+            <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.promptHint')}</span>
           </label>
-        </div>
-      </div>
-
-      {/* ── Form Response ── */}
-      <div className="rounded-xl border border-malachite/25 bg-gradient-to-br from-malachite/10 via-white/40 to-transparent overflow-hidden shadow-sm">
-        <div className="px-4 py-3 border-b border-black/[0.05] flex items-center gap-2 bg-malachite/15">
-          <MessageSquareText className="w-4 h-4 text-malachite" />
-          <div>
-            <h3 className="text-[13px] font-semibold text-[var(--mist)]">{t('agent.human.formTitle')}</h3>
-            <p className="text-[10px] text-[var(--fog)]">{t('agent.human.formLead')}</p>
-          </div>
-        </div>
-        <div className="p-4 space-y-4">
-          <div className="rounded-lg bg-black/[0.03] border border-black/[0.06] p-3">
-            <div className="text-[10px] uppercase tracking-wide text-[var(--fog)]/60 mb-2">{t('agent.template.previewLabel')}</div>
-            <pre className="text-[11px] font-mono text-[var(--mist)] whitespace-pre-wrap leading-relaxed opacity-92">{formMock}</pre>
-          </div>
-          {!formResponseTemplate.trim() && (
-            <p className="text-[11px] text-[var(--fog)] rounded-lg bg-black/[0.04] px-3 py-2 border border-black/[0.05]">{t('agent.template.formFallbackNote')}</p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="text-[11px] px-2.5 py-1.5 rounded-lg border border-black/[0.08] bg-white/60 hover:border-indigo/30 hover:text-indigo" onClick={() => onFormChange(HARNESS_DEFAULT_FORM_RESPONSE_APPEND)}>{t('agent.template.fillHarnessDefault')}</button>
-            <button type="button" className="text-[11px] px-2.5 py-1.5 rounded-lg border border-black/[0.08] bg-white/60 hover:border-indigo/30 hover:text-indigo" onClick={() => onFormChange('')}>{t('agent.template.clearUseBuiltin')}</button>
-          </div>
-          <label className="space-y-1 block">
-            <span className="text-[11px] text-[var(--fog)]">{t('agent.human.formPromptLabel')}</span>
-            <textarea value={formResponseTemplate} rows={3} onChange={(e) => onFormChange(e.target.value)} spellCheck={false} className="glass-input-console text-[12px] font-mono resize-y w-full leading-relaxed" />
-            <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.formPromptHint')}</span>
-          </label>
+          <details className="text-[10px] text-[var(--fog)]/60 rounded-lg bg-black/[0.02] border border-black/[0.05] overflow-hidden">
+            <summary className="px-3 py-2 cursor-pointer hover:text-[var(--mist)] select-none">{t('agent.human.placeholdersTitle')}</summary>
+            <pre className="px-3 pb-2.5 font-mono text-[10px] whitespace-pre-wrap leading-relaxed">{PLACEHOLDER_HELP}</pre>
+          </details>
         </div>
       </div>
 
@@ -143,6 +105,10 @@ export default function AgentHumanInteractionPanel({
             />
             <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.skillsHint')}</span>
           </label>
+          <details className="text-[10px] text-[var(--fog)]/60 rounded-lg bg-black/[0.02] border border-black/[0.05] overflow-hidden">
+            <summary className="px-3 py-2 cursor-pointer hover:text-[var(--mist)] select-none">{t('agent.human.skillsPlaceholdersTitle')}</summary>
+            <pre className="px-3 pb-2.5 font-mono text-[10px] whitespace-pre-wrap leading-relaxed">{t('agent.human.skillsPlaceholdersHelp')}</pre>
+          </details>
         </div>
       </div>
 
@@ -171,58 +137,27 @@ export default function AgentHumanInteractionPanel({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1 block">
                 <span className="text-[10px] text-[var(--fog)]">{t('agent.human.composerModel')}</span>
-                <input
-                  type="text"
-                  value={composerModel}
-                  onChange={(e) => onComposerModelChange(e.target.value)}
-                  className="glass-input-console text-[12px] font-mono w-full"
-                  placeholder="deepseek-chat"
-                />
+                <input type="text" value={composerModel} onChange={(e) => onComposerModelChange(e.target.value)} className="glass-input-console text-[12px] font-mono w-full" placeholder="deepseek-chat" />
               </label>
               <label className="space-y-1 block">
                 <span className="text-[10px] text-[var(--fog)]">{t('agent.human.composerBaseUrl')}</span>
-                <input
-                  type="text"
-                  value={composerBaseUrl}
-                  onChange={(e) => onComposerBaseUrlChange(e.target.value)}
-                  className="glass-input-console text-[12px] font-mono w-full"
-                  placeholder="https://api.deepseek.com/beta"
-                />
+                <input type="text" value={composerBaseUrl} onChange={(e) => onComposerBaseUrlChange(e.target.value)} className="glass-input-console text-[12px] font-mono w-full" placeholder="https://api.deepseek.com/beta" />
               </label>
             </div>
             <label className="space-y-1 block">
               <span className="text-[10px] text-[var(--fog)]">{t('agent.human.composerPrefix')}</span>
-              <input
-                type="text"
-                value={composerAssistantPrefix}
-                onChange={(e) => onComposerAssistantPrefixChange(e.target.value)}
-                className="glass-input-console text-[12px] font-mono w-full"
-              />
+              <input type="text" value={composerAssistantPrefix} onChange={(e) => onComposerAssistantPrefixChange(e.target.value)} className="glass-input-console text-[12px] font-mono w-full" />
               <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.composerPrefixHint')}</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1 block">
                 <span className="text-[10px] text-[var(--fog)]">{t('agent.human.composerStopText')}</span>
-                <textarea
-                  value={composerStopText}
-                  rows={2}
-                  onChange={(e) => onComposerStopTextChange(e.target.value)}
-                  className="glass-input-console text-[12px] font-mono resize-y w-full"
-                  placeholder={'"\\n\\n"' + '\n' + '"\\n"'}
-                />
+                <textarea value={composerStopText} rows={2} onChange={(e) => onComposerStopTextChange(e.target.value)} className="glass-input-console text-[12px] font-mono resize-y w-full" placeholder={'"\\n\\n"' + '\n' + '"\\n"'} />
                 <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.composerStopHint')}</span>
               </label>
               <label className="space-y-1 block">
                 <span className="text-[10px] text-[var(--fog)]">{t('agent.human.composerMinDraft')}</span>
-                <input
-                  type="number"
-                  value={composerMinDraftChars}
-                  min={1}
-                  max={20}
-                  step={1}
-                  onChange={(e) => onComposerMinDraftCharsChange(Math.max(1, parseInt(e.target.value, 10) || 4))}
-                  className="glass-input-console text-[12px] font-mono w-full"
-                />
+                <input type="number" value={composerMinDraftChars} min={1} max={20} step={1} onChange={(e) => onComposerMinDraftCharsChange(Math.max(1, parseInt(e.target.value, 10) || 4))} className="glass-input-console text-[12px] font-mono w-full" />
                 <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.composerMinDraftHint')}</span>
               </label>
             </div>
