@@ -56,7 +56,7 @@ export interface AgentLoopDeps {
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification' | 'awaiting_interaction'
   currentStage?: string
   reason?: string
   pendingSubAgents?: string[]
@@ -867,6 +867,51 @@ export class AgentLoop {
           caseStatus: 'collecting',
           transition: 'waiting_form',
           currentStage: this.currentStage,
+        }
+      }
+
+      // ── Terminal tool: propose_interaction ──────────────────
+      const interactionResult = toolResults.find(
+        (r) => r.name === 'propose_interaction',
+      )
+      if (interactionResult) {
+        const toolInput = interactionResult.toolUse?.input || {}
+        const opts = (toolInput.options as Array<Record<string, unknown>>) || []
+        if (opts.length > 0) {
+          await this.traceWriter.write('loop_decision', 'Exit: interaction proposed', {
+            iteration: this.iterationCount, optionCount: opts.length,
+          })
+
+          sendEvent({
+            type: 'interaction_proposed',
+            data: {
+              caseId: this.deps.caseId,
+              skillCallId: interactionResult.toolUse?.id || crypto.randomUUID(),
+              title: String(toolInput.title || ''),
+              description: String(toolInput.description || ''),
+              options: opts,
+              multiSelect: !!toolInput.multiSelect,
+            },
+            timestamp: new Date().toISOString(),
+          })
+
+          // Replace mock result so the model sees the interaction is pending
+          for (let i = this.messages.length - 1; i >= 0; i--) {
+            const m = this.messages[i]
+            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool propose_interaction result:')) {
+              m.content = `Tool propose_interaction result: ${JSON.stringify({ status: 'presented', message: 'The customer will respond. Wait for their selection before proceeding.' })}`
+              break
+            }
+          }
+
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: this.currentStage as CaseStatus,
+            transition: 'awaiting_interaction',
+            currentStage: this.currentStage,
+            reason: 'interaction_proposed',
+          }
         }
       }
 

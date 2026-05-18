@@ -35,6 +35,7 @@ export default function ChatPage() {
     onFormSubmit,
     onFormCancel,
     onIntentConfirm,
+    onInteractionSelect,
     userId,
     customerId,
     activeCaseId,
@@ -99,6 +100,7 @@ export default function ChatPage() {
             onFormSubmit={onFormSubmit}
             onFormCancel={onFormCancel}
             onIntentConfirm={onIntentConfirm}
+            onInteractionSelect={onInteractionSelect}
           />
           <VoiceInputBar
             onSubmit={submitMessage}

@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm'
 import GlassCard from '@intera/shared/ui/glass-card'
 import FormCard from './form-card'
 import IntentClarificationCard from './intent-clarification-card'
+import InteractionCard from './interaction-card'
 import StreamingText from '@/components/ui/streaming-text'
 
 // ─── Shared message shape ───
@@ -23,6 +24,8 @@ export interface MessageShape {
     | 'form_submitted'
     | 'intent_clarification'
     | 'intent_resolved'
+    | 'interaction_proposed'
+    | 'interaction_resolved'
   content: string
   isStreaming?: boolean
   thinking?: string
@@ -50,6 +53,7 @@ export interface MessageShape {
     labelsByType: Record<string, string>
     locale: 'zh' | 'en'
   }
+  interactionOptions?: any
   timestamp: string
 }
 
@@ -60,6 +64,7 @@ interface MessageBubbleProps {
   onFormSubmit?: (msgId: string, answers: Record<string, string>) => void | Promise<void>
   onFormCancel?: (msgId: string) => void
   onIntentConfirm?: (msgId: string, selectedTypes: string[]) => void | Promise<void>
+  onInteractionSelect?: (msgId: string, optionId: string, input?: string) => void | Promise<void>
 }
 
 // ─── Markdown components ──────────────────────────────────────────
@@ -110,8 +115,9 @@ function MessageBubble({
   onFormSubmit,
   onFormCancel,
   onIntentConfirm,
+  onInteractionSelect,
 }: MessageBubbleProps) {
-  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, formData, intentOptions, intentResolution } = msg
+  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, formData, intentOptions, intentResolution, interactionOptions } = msg
 
   if (msgType === 'tool_call') {
     return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} timestamp={msg.timestamp} />
@@ -188,6 +194,35 @@ function MessageBubble({
 
   if (msgType === 'intent_resolved' && intentResolution) {
     return <IntentResolvedBubble intentResolution={intentResolution} timestamp={msg.timestamp} />
+  }
+
+  if (msgType === 'interaction_proposed' && interactionOptions) {
+    const locale: 'zh' | 'en' = priorUserContent && /[一-鿿]/.test(priorUserContent) ? 'zh' : 'en'
+    return (
+      <div className="flex flex-col items-start">
+        <div className="max-w-[95%] animate-message-in">
+          <InteractionCard
+            locale={locale}
+            title={interactionOptions.title || ''}
+            description={interactionOptions.description || ''}
+            options={interactionOptions}
+            multiSelect={!!interactionOptions.multiSelect}
+            onSelect={(optionId, input) => void onInteractionSelect?.(msg.id, optionId, input)}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  if (msgType === 'interaction_resolved') {
+    return (
+      <div className="flex items-start px-3 py-2 text-[var(--fog)] text-xs select-none gap-1.5">
+        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[var(--success)]/15 shrink-0">
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--success)]" /></svg>
+        </span>
+        {content || '已确认'}
+      </div>
+    )
   }
 
   if (msgType === 'intent_clarification' && intentOptions) {

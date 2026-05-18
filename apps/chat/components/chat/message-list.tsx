@@ -17,6 +17,7 @@ interface MessageListProps {
   onFormSubmit?: (msgId: string, answers: Record<string, string>) => void | Promise<void>
   onFormCancel?: (msgId: string) => void
   onIntentConfirm?: (msgId: string, selectedCaseTypes: string[]) => void | Promise<void>
+  onInteractionSelect?: (msgId: string, optionId: string, input?: string) => void | Promise<void>
 }
 
 const SCROLL_THRESHOLD = 80 // px from bottom to consider "at bottom"
@@ -43,6 +44,7 @@ export default function MessageList({
   onFormSubmit,
   onFormCancel,
   onIntentConfirm,
+  onInteractionSelect,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -95,6 +97,7 @@ export default function MessageList({
           onFormSubmit={onFormSubmit}
           onFormCancel={onFormCancel}
           onIntentConfirm={onIntentConfirm}
+          onInteractionSelect={onInteractionSelect}
         />
       ))}
 

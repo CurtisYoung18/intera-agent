@@ -284,6 +284,7 @@ export type SSEEventType =
   | 'case_status'
   | 'human_task_created'
   | 'form_request'
+  | 'interaction_proposed'
   | 'finalized'
   | 'message_stop'
   | 'withheld'
@@ -297,6 +298,15 @@ export type SSEEventType =
   | 'core_agent_progress'
   | 'clarification'
   | 'error'
+
+/** Option presented in a propose_interaction card. */
+export interface InteractionOption {
+  id: string
+  label: string
+  description?: string
+  inputType?: 'none' | 'text' | 'number'
+  inputPlaceholder?: string
+}
 
 export interface SSEEvent {
   type: SSEEventType

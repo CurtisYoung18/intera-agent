@@ -17,6 +17,8 @@ export type MsgType =
   | 'form_submitted'
   | 'intent_clarification'
   | 'intent_resolved'
+  | 'interaction_proposed'
+  | 'interaction_resolved'
 
 export interface ChatMessage {
   id: string
@@ -51,6 +53,7 @@ export interface ChatMessage {
     labelsByType: Record<string, string>
     locale: 'zh' | 'en'
   }
+  interactionOptions?: any
   timestamp: string
 }
 
@@ -132,6 +135,7 @@ export interface UseInteraChatReturn {
   onFormSubmit: (msgId: string, answers: Record<string, string>) => Promise<void>
   onFormCancel: (msgId: string) => void
   onIntentConfirm: (msgId: string, selectedTypes: string[]) => Promise<void>
+  onInteractionSelect: (msgId: string, optionId: string, input?: string) => Promise<void>
   userId: string
   customerId: string
   loadHistoricalCase: (caseId: string) => Promise<void>
@@ -438,6 +442,36 @@ export function useInteraChat(): UseInteraChatReturn {
         case 'intent_classified': {
           const ic = event.data as IntentClassification
           if (ic.intent === 'case' && investigableMatches(ic).length > 0) setSplitMode(true)
+          break
+        }
+
+        case 'interaction_proposed': {
+          const idata = event.data as {
+            caseId: string
+            skillCallId: string
+            title: string
+            description: string
+            options: Array<{ id: string; label: string; description?: string; inputType?: string; inputPlaceholder?: string }>
+            multiSelect?: boolean
+          }
+          if (idata.options?.length > 0) {
+            setMessages((prev) => [
+              ...prev,
+              makeMsg({
+                id: `interaction_${crypto.randomUUID()}`,
+                role: 'assistant',
+                msgType: 'interaction_proposed',
+                relatedCaseId: idata.caseId,
+                content: '',
+                interactionOptions: {
+                  title: idata.title,
+                  description: idata.description,
+                  multiSelect: !!idata.multiSelect,
+                  ...idata.options,
+                } as any,
+              }),
+            ])
+          }
           break
         }
 
@@ -1260,6 +1294,70 @@ export function useInteraChat(): UseInteraChatReturn {
     [promoteNextFormInteraction, submitMessage],
   )
 
+  const onInteractionSelect = useCallback(
+    async (msgId: string, optionId: string, input?: string) => {
+      let caseIdForInteraction: string | undefined
+      setMessages((prev) => {
+        const found = prev.find((m) => m.id === msgId)
+        caseIdForInteraction = found?.relatedCaseId
+        return prev.map((m) =>
+          m.id === msgId
+            ? { ...m, msgType: 'interaction_resolved' as MsgType, content: `已选择: ${optionId}` }
+            : m,
+        )
+      })
+      if (!caseIdForInteraction) return
+
+      const preferZh = /[一-鿿]/.test(lastUserMsgRef.current || '')
+      activeStreamsRef.current++
+      setIsLoading(true)
+      setAgentStatus('thinking')
+      setCoreAgentProgress(null)
+      setStreamingToolName(null)
+
+      const firstTextMsgId = crypto.randomUUID()
+      const lane = createLaneBuffer(firstTextMsgId, caseIdForInteraction)
+
+      setMessages((prev) => [
+        ...prev,
+        makeMsg({
+          id: firstTextMsgId,
+          role: 'assistant',
+          msgType: 'text',
+          relatedCaseId: caseIdForInteraction,
+          content: '',
+          isStreaming: true,
+        }),
+      ])
+
+      try {
+        const response = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: session.customerId,
+            userId: session.userId,
+            interactionResult: { caseId: caseIdForInteraction, optionId, input },
+          }),
+        })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const reader = response.body?.getReader()
+        if (reader)
+          await consumeAgentReadableStream(reader, lane, preferZh, {
+            onStreamingTool: setStreamingToolName,
+          })
+      } catch (e) {
+        console.error('Interaction continuation error:', e)
+        setAgentStatus('offline')
+      } finally {
+        activeStreamsRef.current -= 1
+        setIsLoading(activeStreamsRef.current > 0)
+        if (activeStreamsRef.current <= 0) setStreamingToolName(null)
+      }
+    },
+    [session.customerId, session.userId],
+  )
+
   return {
     messages,
     setMessages,
@@ -1280,6 +1378,7 @@ export function useInteraChat(): UseInteraChatReturn {
     onFormSubmit,
     onFormCancel,
     onIntentConfirm,
+    onInteractionSelect,
     userId: session.userId,
     customerId: session.customerId,
     loadHistoricalCase,

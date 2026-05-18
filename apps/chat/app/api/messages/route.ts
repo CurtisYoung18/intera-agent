@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
           message,
           resumeTrigger,
           formResult,
+          interactionResult,
           caseId,
           customerId,
           userId,
@@ -214,6 +215,16 @@ export async function POST(request: NextRequest) {
           // tool execution result — matching CC's AskUserQuestion pattern.
           userMessage = `Tool request_user_input result: ${JSON.stringify(answers)}`
           console.log(`[Intera] Form submitted for case ${resolvedCaseId}`)
+        }
+
+        // ── Interaction response: customer selected an option ──
+        if (interactionResult && !message && !formResult) {
+          resolvedCaseId = interactionResult.caseId || resolvedCaseId
+          const { optionId, input } = interactionResult as { caseId?: string; optionId: string; input?: string }
+          const payload: Record<string, unknown> = { optionId }
+          if (input) payload.input = input
+          userMessage = `Tool propose_interaction result: ${JSON.stringify(payload)}`
+          console.log(`[Intera] Interaction resolved for case ${resolvedCaseId}: option=${optionId}`)
         }
 
         // ── Resume flow: human resolved a task, agent continues ──

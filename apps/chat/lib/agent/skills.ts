@@ -330,6 +330,55 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
     mockFixture: { status: 'consultation_closed' },
   },
+  {
+    name: 'propose_interaction',
+    description:
+      'Present an interactive choice card to the customer. Use when you need to confirm a correction, clarify intent, ' +
+      'ask a follow-up question with specific options, or get a quick yes/no/alternative decision. ' +
+      'This is a terminal tool — the loop pauses until the customer responds. ' +
+      'Example use cases: correcting a previously submitted fact ("was 100, now it\'s 1000"), ' +
+      'confirming before a destructive action, or offering multiple resolution paths.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Card title, e.g. "确认金额修改"' },
+        description: { type: 'string', description: 'What needs to be resolved, e.g. "您刚才填的金额是100，但现在您说的是1000。需要修改吗？"' },
+        options: {
+          type: 'array',
+          description: 'Options presented to the customer. The first option is the recommended/default choice.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Unique option key, e.g. "accept", "keep", "other"' },
+              label: { type: 'string', description: 'Button/option text, e.g. "是的，改为1000"' },
+              description: { type: 'string', description: 'Subtitle explaining the consequence of this choice' },
+              inputType: { type: 'string', enum: ['none', 'text', 'number'], description: 'Whether this option needs user input. "none" for simple tap-to-select.' },
+              inputPlaceholder: { type: 'string', description: 'Placeholder text for the input field (only relevant if inputType is not "none")' },
+            },
+            required: ['id', 'label'],
+          },
+        },
+        multiSelect: { type: 'boolean', description: 'Allow selecting multiple options at once. Default false.' },
+      },
+      required: ['title', 'options'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    zodSchema: z.object({
+      title: z.string(),
+      description: z.string().optional(),
+      options: z.array(z.object({
+        id: z.string(),
+        label: z.string(),
+        description: z.string().optional(),
+        inputType: z.enum(['none', 'text', 'number']).optional(),
+        inputPlaceholder: z.string().optional(),
+      })),
+      multiSelect: z.boolean().optional(),
+    }),
+    mockFixture: { status: 'presented' },
+  },
 ]
 
 /**
