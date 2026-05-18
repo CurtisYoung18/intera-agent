@@ -279,6 +279,8 @@ model HumanTask {
   status  String @default("pending")
 
   question    String
+  fields      String? // JSON: array of {key, label, type, required?, options?} — structured form for human operator
+  answers     String? // JSON: Record<string, string> — structured answers from operator
   verdict     String?
   expectedEta String?
   notes       String?

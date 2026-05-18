@@ -26,12 +26,23 @@ interface CaseMemory {
   summary: string | null
 }
 
+interface TaskField {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'select' | 'textarea'
+  required?: boolean
+  placeholder?: string
+  options?: string[]
+}
+
 interface TaskDetail {
   id: string
   caseId: string
   queue: string
   status: string
   question: string
+  fields: string | null
+  answers: string | null
   verdict: string | null
   createdAt: string
   case: {
@@ -51,7 +62,7 @@ interface ChatMsg {
   timestamp: string
 }
 
-function parseJson<T>(raw: string | undefined, fallback: T): T {
+function parseJson<T>(raw: string | undefined | null, fallback: T): T {
   if (!raw) return fallback
   try { return JSON.parse(raw) as T } catch { return fallback }
 }
@@ -68,6 +79,8 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
   const [consultationDone, setConsultationDone] = useState(false)
   const [showContext, setShowContext] = useState(true)
   const [copiedSkill, setCopiedSkill] = useState<string | null>(null)
+  const [formAnswers, setFormAnswers] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const copyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
@@ -216,6 +229,24 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
     router.refresh()
   }, [id, router, t])
 
+  const handleResolveWithAnswers = useCallback(async () => {
+    if (!task || submitting) return
+    const parsedFields = parseJson(task.fields, [] as TaskField[])
+    setSubmitting(true)
+    const answers: Record<string, string> = {}
+    for (const f of parsedFields) {
+      const val = formAnswers[f.key]?.trim()
+      if (val) answers[f.key] = val
+    }
+    await fetch(`/api/human-tasks/${id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict: 'reviewed', notes: 'Structured answers submitted', answers }),
+    })
+    setConsultationDone(true)
+    setSubmitting(false)
+  }, [id, task, formAnswers, submitting])
+
   const handleCloseCase = useCallback(async () => {
     const reason = prompt(t('humanTaskDetail.closePrompt'))
     if (!reason || !reason.trim()) return
@@ -269,6 +300,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
   const memory = task.case.memory
   const facts = parseJson(memory?.confirmedFacts, {}) as Record<string, unknown>
   const skills = parseJson(memory?.skillsCalled, [] as string[])
+  const taskFields: TaskField[] = parseJson(task.fields, [] as TaskField[])
   const caseLine = t('humanTaskDetail.caseLine', {
     cid: task.caseId.slice(0, 12),
     sep: ' · ',
@@ -363,6 +395,89 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
               </div>
               <p className="text-[13px] leading-relaxed text-[var(--mist)]/92">{task.question}</p>
             </section>
+
+            {/* Structured form for operator answers */}
+            {taskFields.length > 0 && !consultationDone && (
+              <section className="glass-card rounded-2xl p-5 shadow-[var(--shadow-card)] ring-1 ring-indigo/10">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-malachite/[0.08] ring-1 ring-malachite/[0.15]">
+                    <ClipboardList className="h-4 w-4 text-malachite" />
+                  </div>
+                  <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--fog)]">
+                    {t('humanTaskDetail.structuredFields') || 'Structured Answers'}
+                  </h2>
+                </div>
+                <div className="space-y-3">
+                  {taskFields.map((f) => (
+                    <div key={f.key}>
+                      <label className="mb-1 block text-[11px] font-medium text-[var(--mist)]/80">
+                        {f.label}{f.required ? ' *' : ''}
+                      </label>
+                      {f.type === 'select' && f.options?.length ? (
+                        <select
+                          value={formAnswers[f.key] || ''}
+                          onChange={(e) => setFormAnswers((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          className="w-full rounded-lg border border-black/[0.08] bg-white/80 px-3 py-2 text-[12px] text-[var(--mist)] outline-none focus:border-indigo/25 focus:ring-2 focus:ring-indigo/[0.1]"
+                        >
+                          <option value="">—</option>
+                          {f.options.map((o) => (
+                            <option key={o} value={o}>{o}</option>
+                          ))}
+                        </select>
+                      ) : f.type === 'textarea' ? (
+                        <textarea
+                          value={formAnswers[f.key] || ''}
+                          onChange={(e) => setFormAnswers((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          placeholder={f.placeholder}
+                          rows={2}
+                          className="w-full rounded-lg border border-black/[0.08] bg-white/80 px-3 py-2 text-[12px] text-[var(--mist)] outline-none focus:border-indigo/25 focus:ring-2 focus:ring-indigo/[0.1] resize-y"
+                        />
+                      ) : (
+                        <input
+                          type={f.type === 'number' ? 'number' : 'text'}
+                          value={formAnswers[f.key] || ''}
+                          onChange={(e) => setFormAnswers((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          placeholder={f.placeholder}
+                          className="w-full rounded-lg border border-black/[0.08] bg-white/80 px-3 py-2 text-[12px] text-[var(--mist)] outline-none focus:border-indigo/25 focus:ring-2 focus:ring-indigo/[0.1]"
+                        />
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleResolveWithAnswers}
+                    disabled={submitting}
+                    className="w-full mt-2 rounded-xl bg-gradient-to-b from-indigo/[0.22] to-indigo/[0.12] px-4 py-2.5 text-[12px] font-semibold text-indigo shadow-sm ring-1 ring-indigo/20 transition-all hover:brightness-105 active:scale-[0.98] disabled:opacity-40"
+                  >
+                    {submitting
+                      ? (t('common.submitting') || 'Submitting…')
+                      : (t('humanTaskDetail.submitAnswers') || 'Submit Answers & Resolve')}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {/* Show submitted answers after resolution */}
+            {taskFields.length > 0 && consultationDone && parseJson(task.answers, {} as Record<string, string>) && Object.keys(parseJson(task.answers, {} as Record<string, string>)).length > 0 && (
+              <section className="glass-card rounded-2xl p-5 shadow-[var(--shadow-card)]">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-malachite/[0.08] ring-1 ring-malachite/[0.15]">
+                    <CheckCircle2 className="h-4 w-4 text-malachite" />
+                  </div>
+                  <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--fog)]">
+                    {t('humanTaskDetail.answersSubmitted') || 'Answers Submitted'}
+                  </h2>
+                </div>
+                <dl className="divide-y divide-black/[0.04]">
+                  {Object.entries(parseJson(task.answers, {} as Record<string, string>)).map(([k, v]) => (
+                    <div key={k} className="flex gap-3 py-2 first:pt-0 last:pb-0">
+                      <dt className="w-[42%] flex-shrink-0 text-[11px] font-medium text-[var(--fog)]">{k}</dt>
+                      <dd className="truncate text-right font-mono text-[11px] text-[var(--mist)]/85" title={String(v)}>{String(v)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            )}
 
             {task.case.goal && (
               <section className="glass-card rounded-2xl p-5 shadow-[var(--shadow-card)] transition-shadow duration-300 hover:shadow-[var(--shadow-card-hover)]">

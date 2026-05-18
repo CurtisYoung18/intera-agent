@@ -42,7 +42,7 @@ export async function POST(
 ) {
   const { id } = await params
   const body = await req.json()
-  const { verdict, expectedEta, notes, manualClose } = body
+  const { verdict, expectedEta, notes, manualClose, answers } = body
 
   // Update the human task
   await prisma.humanTask.update({
@@ -52,6 +52,7 @@ export async function POST(
       verdict: verdict || 'manually_closed',
       expectedEta: expectedEta || null,
       notes: notes || null,
+      answers: answers ? JSON.stringify(answers) : null,
       resolvedAt: new Date(),
     },
   })
@@ -98,21 +99,50 @@ export async function POST(
       where: { id: task.caseId },
       data: { status: 'investigating', blocker: null },
     })
+
+    // Ingest structured answers as confirmedFacts (if fields were provided)
+    if (answers && typeof answers === 'object' && Object.keys(answers).length > 0) {
+      try {
+        const mem = await prisma.caseMemory.findUnique({ where: { caseId: task.caseId } })
+        if (mem) {
+          const facts = JSON.parse(mem.confirmedFacts || '{}')
+          for (const [key, value] of Object.entries(answers)) {
+            if (value && String(value).trim()) {
+              facts[key] = String(value).trim()
+            }
+          }
+          await prisma.caseMemory.update({
+            where: { caseId: task.caseId },
+            data: { confirmedFacts: JSON.stringify(facts) },
+          })
+        }
+      } catch (err) {
+        console.error('[Resolve] Failed to ingest structured answers as facts:', err)
+      }
+    }
+
     await prisma.actionTrace.create({
       data: {
         caseId: task.caseId,
         actionType: 'human_task_resolved',
         title: `Human task resolved: ${verdict || 'completed'}`,
-        payload: JSON.stringify({ verdict, expectedEta, notes }),
+        payload: JSON.stringify({ verdict, expectedEta, notes, answers }),
       },
     })
 
+    // Build resume message — structured answers are injected as tool result format
+    // so the agent reads them like any other skill output
+    const answerBlock = answers && typeof answers === 'object' && Object.keys(answers).length > 0
+      ? `\nTool create_human_task result: ${JSON.stringify({ taskId: id, status: 'resolved', answers })}`
+      : ''
+
     const message = [
       '[Human task resolved — operator closed the case]',
-      verdict ? `Operator verdict: ${verdict.replace(/_/g, ' ')}` : '',
+      answerBlock,
+      verdict ? `\nOperator verdict: ${verdict.replace(/_/g, ' ')}` : '',
       expectedEta ? `Expected resolution time: ${expectedEta}` : '',
       notes ? `Internal notes (do NOT share verbatim with customer): ${notes}` : '',
-      'IMPORTANT — Customer communication task:\n1. Translate the operator\'s verdict and notes into plain, friendly language the customer can understand.\n2. Send this message to the customer NOW in your response — do not ask further questions.\n3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here\'s what this means for you: [explanation]."\n4. After sending the update, if the case is resolved, call finalize_case. Otherwise continue assisting.',
+      '\nIMPORTANT — Customer communication task:\n1. Translate the operator\'s verdict and notes into plain, friendly language the customer can understand.\n2. Send this message to the customer NOW in your response — do not ask further questions.\n3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here\'s what this means for you: [explanation]."\n4. After sending the update, if the case is resolved, call finalize_case. Otherwise continue assisting.',
     ].filter(Boolean).join('\n')
 
     await notifyAgentResume({

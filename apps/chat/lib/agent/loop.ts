@@ -925,6 +925,7 @@ export class AgentLoop {
         const toolInput = humanTaskResult.toolUse?.input || {}
         const queue = String(toolInput.queue || 'general')
         const question = String(toolInput.question || 'Human task requested')
+        const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
         try {
           // Ensure customer exists
@@ -978,6 +979,7 @@ export class AgentLoop {
               caseId: this.deps.caseId,
               queue,
               question,
+              fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
               status: 'pending',
             },
           })

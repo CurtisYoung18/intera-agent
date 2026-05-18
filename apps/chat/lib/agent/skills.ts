@@ -180,7 +180,9 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     name: 'create_human_task',
     description:
       'Create a human task for manual confirmation or processing. ' +
-      'This will pause the agent loop until a human responds.',
+      'This will pause the agent loop until a human responds. ' +
+      'Optionally provide structured fields to collect specific data from the operator — ' +
+      'their answers will be automatically ingested as confirmedFacts when they resolve the task.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -192,6 +194,22 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
           type: 'string',
           description: 'Structured question for human',
         },
+        fields: {
+          type: 'array',
+          description: 'Optional structured form fields for the operator to fill. Their answers flow back as confirmedFacts.',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'Fact key, e.g. "actualAmount", "verifyResult"' },
+              label: { type: 'string', description: 'Display label, e.g. "实际到账金额"' },
+              type: { type: 'string', enum: ['text', 'number', 'select', 'textarea'], description: 'Field type' },
+              required: { type: 'boolean', description: 'Whether this field must be filled' },
+              placeholder: { type: 'string', description: 'Placeholder text' },
+              options: { type: 'array', items: { type: 'string' }, description: 'Options for select type' },
+            },
+            required: ['key', 'label', 'type'],
+          },
+        },
         context: {
           type: 'object',
           description: 'Additional context for the human reviewer',
@@ -202,7 +220,19 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
-    zodSchema: z.object({ queue: z.string(), question: z.string(), context: z.object({}).optional() }),
+    zodSchema: z.object({
+      queue: z.string(),
+      question: z.string(),
+      fields: z.array(z.object({
+        key: z.string(),
+        label: z.string(),
+        type: z.enum(['text', 'number', 'select', 'textarea']),
+        required: z.boolean().optional(),
+        placeholder: z.string().optional(),
+        options: z.array(z.string()).optional(),
+      })).optional(),
+      context: z.object({}).optional(),
+    }),
     // [MOCK]
     mockFixture: { taskId: 'htask_mock_001', status: 'pending' },
   },
