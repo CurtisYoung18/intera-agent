@@ -63,7 +63,7 @@ async function seed() {
   // ── Admin: AgentConfig — full demo defaults every run ━━━━━━━━━━━
   const agentPayload = {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
-    model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
+    model: 'MiniMax-M2.7-highspeed',
     temperature: 0.5,
     thinkingBudget: 4096,
     maxIterations: 20,
@@ -73,13 +73,8 @@ async function seed() {
     toolParallelism: true,
     isConcurrencySafe: true,
     showThinking: true,
-    evaluationModel:
-      process.env.EVALUATION_MODEL || process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
-    intentModel:
-      process.env.INTENT_MODEL ||
-      process.env.EVALUATION_MODEL ||
-      process.env.ANTHROPIC_MODEL ||
-      'MiniMax-M2.70-highspeed',
+    evaluationModel: process.env.EVALUATION_MODEL || 'MiniMax-M2.7-highspeed',
+    intentModel: process.env.INTENT_MODEL || 'MiniMax-M2.7-highspeed',
     resumePrompt:
       `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
     formResponseTemplate: 'Please continue processing based on this information.',

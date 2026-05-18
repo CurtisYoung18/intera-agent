@@ -18,7 +18,7 @@ export async function GET() {
         data: {
           customerId: CUSTOMER_ID,
           systemPrompt: DEFAULT_SYSTEM_PROMPT,
-          model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+          model: 'MiniMax-M2.7-highspeed',
           temperature: 0.5,
           thinkingBudget: 4096,
           maxIterations: 20,
@@ -92,7 +92,7 @@ export async function PUT(req: NextRequest) {
       create: {
         customerId: CUSTOMER_ID,
         systemPrompt: systemPrompt || '',
-        model: model || 'claude-sonnet-4-20250514',
+        model: model || 'MiniMax-M2.7-highspeed',
         temperature: temperature ?? 0.5,
         thinkingBudget: thinkingBudget ?? 4096,
         maxIterations: maxIterations ?? 20,

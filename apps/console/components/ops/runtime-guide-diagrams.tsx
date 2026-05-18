@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import type { TranslateFn } from '@/lib/i18n/types'
 import {
   AlertTriangle,
@@ -12,15 +12,21 @@ import {
   CircleDot,
   Compass,
   Cpu,
+  Database,
   GitBranch,
+  Globe,
   Layers,
   MessageSquareText,
   Package,
   PlugZap,
   Radar,
+  RefreshCw,
+  Rocket,
+  Search,
   ShieldCheck,
   SplitSquareHorizontal,
   User,
+  UserCheck,
   Workflow,
   Zap,
   Wrench,
@@ -437,6 +443,134 @@ export function AgentTurnPipelineDiagram({ t }: { t: TranslateFn }) {
         <StepMini n={5} icon={PlugZap} title={t('guide.turnDiag.s5.title')} body={t('guide.turnDiag.s5.body')} tint="from-malachite/[0.06] to-transparent" />
       </div>
       <p className="mt-5 rounded-xl border border-indigo/[0.1] bg-indigo/[0.03] px-4 py-3 text-[12px] leading-relaxed text-[var(--mist)]/[0.78]">{t('guide.turnDiag.loopHint')}</p>
+    </div>
+  )
+}
+
+/** Case lifecycle stages: created → collecting → investigating → waiting_human → resolved. */
+export function CaseLifecycleDiagram({ t }: { t: TranslateFn }) {
+  const stages = [
+    { key: 'created', icon: CircleDot, color: 'from-indigo/[0.06] to-transparent', border: 'border-indigo/[0.15]', dot: 'bg-indigo' },
+    { key: 'collecting', icon: User, color: 'from-sky/[0.06] to-transparent', border: 'border-sky/[0.18]', dot: 'bg-sky' },
+    { key: 'investigating', icon: Search, color: 'from-amber/[0.06] to-transparent', border: 'border-amber/[0.2]', dot: 'bg-amber' },
+    { key: 'waiting_human', icon: UserCheck, color: 'from-lavender/[0.06] to-transparent', border: 'border-lavender/[0.2]', dot: 'bg-lavender' },
+    { key: 'resolved', icon: CheckCircle2, color: 'from-malachite/[0.06] to-transparent', border: 'border-malachite/[0.18]', dot: 'bg-malachite' },
+  ]
+
+  return (
+    <div className="relative mx-auto max-w-4xl">
+      {/* Stage row */}
+      <div className="flex flex-wrap items-start justify-center gap-2 md:flex-nowrap">
+        {stages.map((s, i) => (
+          <Fragment key={s.key}>
+            {i > 0 && (
+              <div className="flex items-center pt-6 md:pt-7" aria-hidden>
+                <ArrowRight className="h-4 w-4 text-[var(--smoke)]/35" strokeWidth={2} />
+              </div>
+            )}
+            <div
+              className={`relative min-w-[110px] flex-1 rounded-2xl border ${s.border} bg-gradient-to-br ${s.color} p-4 text-center shadow-[var(--shadow-card)] backdrop-blur-sm`}
+              style={{ ['--guide-pulse-delay' as string]: `${i * 0.15}s` }}
+            >
+              <div className={`mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl ${s.dot} bg-opacity-10`}>
+                <s.icon className="h-[18px] w-[18px] text-[var(--mist)]/[0.75]" strokeWidth={2} />
+              </div>
+              <p className="text-[12px] font-semibold text-[var(--mist)]">{t(`guide.lifecycle.stage.${s.key}`)}</p>
+              <p className="mt-1 text-[10px] leading-snug text-[var(--fog)]">{t(`guide.lifecycle.driver.${s.key}`)}</p>
+            </div>
+          </Fragment>
+        ))}
+      </div>
+
+      {/* Escalation path */}
+      <div className="mt-4 flex items-center justify-center gap-3">
+        <div className="flex items-center gap-2 rounded-xl border border-vermillion/[0.18] bg-vermillion/[0.05] px-3 py-2 text-[11px]">
+          <AlertTriangle className="h-3.5 w-3.5 text-vermillion/80" />
+          <span className="text-[var(--mist)]/[0.8]">{t('guide.lifecycle.escalated')}</span>
+        </div>
+        <span className="text-[10px] text-[var(--smoke)]">{t('guide.lifecycle.or')}</span>
+        <div className="flex items-center gap-2 rounded-xl border border-indigo/[0.12] bg-indigo/[0.04] px-3 py-2 text-[11px]">
+          <RefreshCw className="h-3.5 w-3.5 text-indigo/70" />
+          <span className="text-[var(--mist)]/[0.8]">{t('guide.lifecycle.reopen')}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Sub-agent dispatch: Core Agent → Orchestrator → parallel sub-agents → result merge. */
+export function SubAgentDispatchDiagram({ t }: { t: TranslateFn }) {
+  return (
+    <div className="relative mx-auto max-w-2xl">
+      <GlowNode step={1} icon={Bot} accentFrom="from-indigo/[0.07]" accentTo="to-transparent" title={t('guide.sub.s1.title')}>
+        <p>{t('guide.sub.s1.body')}</p>
+      </GlowNode>
+      <FlowSpine />
+      <GlowNode step={2} icon={Rocket} accentFrom="from-lavender/[0.09]" accentTo="to-transparent" title={t('guide.sub.s2.title')}>
+        <p>{t('guide.sub.s2.body')}</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <span className="rounded-md border border-black/[0.06] bg-white/50 px-2 py-0.5 text-[10px] text-[var(--fog)]">{t('guide.sub.s2.chip1')}</span>
+          <span className="rounded-md border border-black/[0.06] bg-white/50 px-2 py-0.5 text-[10px] text-[var(--fog)]">{t('guide.sub.s2.chip2')}</span>
+        </div>
+      </GlowNode>
+      <FlowSpine />
+
+      {/* Parallel sub-agent cards */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="relative overflow-hidden rounded-2xl border border-sky/[0.2] bg-gradient-to-br from-sky/[0.05] to-transparent p-4 shadow-[var(--shadow-card)]" style={{ ['--guide-pulse-delay' as string]: '0.3s' }}>
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-sky/[0.85]">
+            <Search className="h-3.5 w-3.5" aria-hidden />
+            {t('guide.sub.agent1.name')}
+          </div>
+          <p className="text-[11px] leading-relaxed text-[var(--mist)]/[0.75]">{t('guide.sub.agent1.body')}</p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            <code className="rounded-md bg-white/50 px-1.5 py-0.5 text-[10px] font-mono text-[var(--fog)]">MiniMax-M2.7</code>
+            <code className="rounded-md bg-white/50 px-1.5 py-0.5 text-[10px] font-mono text-[var(--fog)]">3 iters</code>
+          </div>
+        </div>
+        <div className="relative overflow-hidden rounded-2xl border border-amber/[0.2] bg-gradient-to-br from-amber/[0.05] to-transparent p-4 shadow-[var(--shadow-card)]" style={{ ['--guide-pulse-delay' as string]: '0.4s' }}>
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-amber/[0.85]">
+            <Database className="h-3.5 w-3.5" aria-hidden />
+            {t('guide.sub.agent2.name')}
+          </div>
+          <p className="text-[11px] leading-relaxed text-[var(--mist)]/[0.75]">{t('guide.sub.agent2.body')}</p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            <code className="rounded-md bg-white/50 px-1.5 py-0.5 text-[10px] font-mono text-[var(--fog)]">MiniMax-M2.7</code>
+            <code className="rounded-md bg-white/50 px-1.5 py-0.5 text-[10px] font-mono text-[var(--fog)]">2 iters</code>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-center py-3">
+        <ArrowDown className="h-6 w-6 text-[var(--smoke)]/45" strokeWidth={2} />
+      </div>
+
+      {/* SSE event timeline */}
+      <div className="rounded-2xl border border-black/[0.07] bg-gradient-to-br from-white/65 to-[var(--void)]/40 p-5 shadow-[var(--shadow-card)] backdrop-blur-md" style={{ ['--guide-pulse-delay' as string]: '0.55s' }}>
+        <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--fog)]">
+          <Globe className="h-4 w-4 text-indigo/70" aria-hidden />
+          {t('guide.sub.events.title')}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+          <span className="rounded-md bg-sky/[0.08] px-2 py-1 text-sky/90">sub_agent_start</span>
+          <span className="text-[var(--smoke)]/40">→</span>
+          <span className="rounded-md bg-indigo/[0.06] px-2 py-1 text-indigo/80">progress</span>
+          <span className="text-[var(--smoke)]/40">→</span>
+          <span className="rounded-md bg-malachite/[0.08] px-2 py-1 text-malachite/90">complete</span>
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-[var(--fog)]">{t('guide.sub.events.body')}</p>
+      </div>
+
+      <div className="flex justify-center py-3">
+        <ArrowDown className="h-6 w-6 text-[var(--smoke)]/45" strokeWidth={2} />
+      </div>
+
+      {/* Merge result */}
+      <div className="rounded-2xl border border-malachite/[0.18] bg-gradient-to-br from-malachite/[0.06] to-transparent p-4 text-center shadow-[var(--shadow-card)]">
+        <CheckCircle2 className="mx-auto mb-1 h-5 w-5 text-malachite/80" />
+        <p className="text-[12px] font-semibold text-[var(--mist)]">{t('guide.sub.merge.title')}</p>
+        <p className="mt-1 text-[11px] text-[var(--fog)]">{t('guide.sub.merge.body')}</p>
+      </div>
     </div>
   )
 }

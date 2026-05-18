@@ -18,6 +18,7 @@ export interface PolicyCheckResult {
   policyName: string
   result: PolicyResult
   reason?: string
+  modelUsed?: string
 }
 
 export class PolicyEngine {
@@ -31,7 +32,7 @@ export class PolicyEngine {
   private llmClient: Anthropic
 
   constructor(private customerId: string, policyHooks?: PolicyHooks) {
-    this.policyModel = process.env.POLICY_EVAL_MODEL || 'claude-haiku-4-5-20251001'
+    this.policyModel = process.env.POLICY_EVAL_MODEL || 'MiniMax-M2.7-highspeed'
     this.llmClient = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
       baseURL: process.env.ANTHROPIC_BASE_URL,
@@ -223,10 +224,11 @@ export class PolicyEngine {
     // ── LLM-based evaluation (replaces deny_keywords / allow_keywords) ──
     if (rule.evaluationPrompt && context.skillOutput) {
       try {
-        return await this.runLlmEvaluation(rule.evaluationPrompt, policyName, context)
+        const result = await this.runLlmEvaluation(rule.evaluationPrompt, policyName, context)
+        return { ...result, modelUsed: this.policyModel }
       } catch (err) {
-        console.warn(`[PolicyEngine] LLM evaluation failed for "${policyName}", defaulting to pass:`, err)
-        return { policyName: '', result: 'pass' }
+        console.warn(`[PolicyEngine] LLM evaluation failed for "${policyName}", flagging as hint:`, err)
+        return { policyName, result: 'hint', reason: 'Policy evaluation unavailable — flagged for human awareness', modelUsed: this.policyModel }
       }
     }
 

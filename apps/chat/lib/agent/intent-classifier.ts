@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '@intera/shared/prisma'
 import type { IntentClassification, MatchedCaseType } from '@intera/shared/types'
 import { getCachedCaseTypes, setCachedCaseTypes, type CachedCaseType } from './config-cache'
+import { isInvestigableCaseType } from './case-type-slugs'
 
 const DEFAULT_CLASSIFIER_TIMEOUT_MS = 14_000
 const CLASSIFIER_TIMEOUT_MS = (() => {
@@ -60,34 +61,36 @@ export function heuristicFallbackClassification(
     }
   }
 
-  const scored = caseTypes.map((ct) => {
-    let score = 0
-    const slug = ct.type.toLowerCase()
-    const slugParts = slug.split(/[^a-z0-9]+/).filter((s) => s.length > 2)
-    for (const part of slugParts) {
-      if (text.includes(part)) score += 3
-    }
-
-    const blob = `${ct.description || ''}\n${ct.defaultGoal || ''}`.toLowerCase()
-    const blobWords = blob.split(/\s+/).filter((w) => w.length > 4)
-    for (const w of blobWords) {
-      if (text.includes(w)) score += 2
-    }
-
-    for (const fact of ct.requiredFacts) {
-      const fl = fact.toLowerCase()
-      if (fl.length > 2 && text.includes(fl)) score += 2
-    }
-
-    for (const group of TYPE_HINT_GROUPS) {
-      if (!slug.includes(group.slugIncludes)) continue
-      for (const h of group.hints) {
-        if (hintMatches(text, h)) score += 4
+  const scored = caseTypes
+    .filter((ct) => isInvestigableCaseType(ct.type))
+    .map((ct) => {
+      let score = 0
+      const slug = ct.type.toLowerCase()
+      const slugParts = slug.split(/[^a-z0-9]+/).filter((s) => s.length > 2)
+      for (const part of slugParts) {
+        if (text.includes(part)) score += 3
       }
-    }
 
-    return { ct, score }
-  })
+      const blob = `${ct.description || ''}\n${ct.defaultGoal || ''}`.toLowerCase()
+      const blobWords = blob.split(/\s+/).filter((w) => w.length > 4)
+      for (const w of blobWords) {
+        if (text.includes(w)) score += 2
+      }
+
+      for (const fact of ct.requiredFacts) {
+        const fl = fact.toLowerCase()
+        if (fl.length > 2 && text.includes(fl)) score += 2
+      }
+
+      for (const group of TYPE_HINT_GROUPS) {
+        if (!slug.includes(group.slugIncludes)) continue
+        for (const h of group.hints) {
+          if (hintMatches(text, h)) score += 4
+        }
+      }
+
+      return { ct, score }
+    })
 
   scored.sort((a, b) => b.score - a.score)
   const top = scored[0]
@@ -205,11 +208,10 @@ export class IntentClassifier {
         if (!dedupByType.has(slug)) dedupByType.set(slug, m)
       }
       matchedCaseTypes = [...dedupByType.values()].sort((a, b) => b.confidence - a.confidence)
+      matchedCaseTypes = matchedCaseTypes.filter((m) => isInvestigableCaseType(m.type))
 
       const intent = parsed.intent === 'case' && matchedCaseTypes.length > 0 ? 'case' : 'qa'
 
-      // Exactly one inferred case type → open investigation immediately.
-      // Two or more distinct types → UI asks the customer which to prioritize.
       const needsClarification = intent === 'case' && matchedCaseTypes.length > 1
 
       return {
@@ -233,50 +235,30 @@ export class IntentClassifier {
     }
   }
 
-  static async classify(
-    message: string,
-    customerId: string,
-  ): Promise<IntentClassification> {
-    // Load enabled case types (with cache)
+  /** Load case types + model for classification. */
+  private static async loadClassifyContext(customerId: string): Promise<{
+    caseTypes: CachedCaseType[]
+    model: string
+  }> {
     let caseTypes = getCachedCaseTypes(customerId)
     if (!caseTypes) {
-      try {
-        const dbTypes = await prisma.caseType.findMany({
-          where: { customerId, enabled: true },
-          select: {
-            type: true,
-            displayName: true,
-            description: true,
-            icon: true,
-            requiredFacts: true,
-            defaultGoal: true,
-          },
-        })
-        caseTypes = dbTypes.map((ct) => ({
-          type: ct.type,
-          displayName: ct.displayName,
-          description: ct.description,
+      const dbTypes = await prisma.caseType.findMany({
+        where: { customerId, enabled: true },
+        select: { type: true, displayName: true, description: true, icon: true, requiredFacts: true, defaultGoal: true },
+      })
+      caseTypes = dbTypes
+        .map((ct) => ({
+          type: ct.type, displayName: ct.displayName, description: ct.description,
           icon: ct.icon,
-          requiredFacts: (() => {
-            try { return JSON.parse(ct.requiredFacts) as string[] } catch { return [] }
-          })(),
+          requiredFacts: (() => { try { return JSON.parse(ct.requiredFacts) as string[] } catch { return [] } })(),
           defaultGoal: ct.defaultGoal,
         }))
-        setCachedCaseTypes(customerId, caseTypes)
-      } catch (err) {
-        console.error('[IntentClassifier] Failed to load case types:', err)
-        return {
-          intent: 'qa',
-          matchedCaseTypes: [],
-          needsClarification: false,
-          reasoning: 'DB error loading case types',
-          extractedFacts: {},
-        }
-      }
+        .filter((ct) => isInvestigableCaseType(ct.type))
+      setCachedCaseTypes(customerId, caseTypes)
     }
+    caseTypes = (caseTypes ?? []).filter((ct) => isInvestigableCaseType(ct.type))
 
-    // Load agent config for the classification model
-    let model = process.env.INTENT_MODEL || 'claude-haiku-4-5-20251001'
+    let model = process.env.INTENT_MODEL || 'MiniMax-M2.7-highspeed'
     try {
       const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
       if (dbConfig) {
@@ -285,6 +267,15 @@ export class IntentClassifier {
         else if ((dbConfig as any).evaluationModel) model = (dbConfig as any).evaluationModel as string
       }
     } catch { /* use default model */ }
+
+    return { caseTypes, model }
+  }
+
+  static async classify(
+    message: string,
+    customerId: string,
+  ): Promise<IntentClassification & { modelUsed?: string }> {
+    const { caseTypes, model } = await IntentClassifier.loadClassifyContext(customerId)
 
     const systemPrompt = buildClassificationPrompt(caseTypes)
 
@@ -319,13 +310,13 @@ export class IntentClassifier {
         /\b(parse|failed)\b/i.test(parsed.reasoning || '')
 
       if (parsedBroken) {
-        return heuristicFallbackClassification(message, caseTypes)
+        return { ...heuristicFallbackClassification(message, caseTypes), modelUsed: `${model} (heuristic)` }
       }
 
-      return parsed
+      return { ...parsed, modelUsed: model }
     } catch (err) {
       console.error('[IntentClassifier] Classification failed:', err)
-      return heuristicFallbackClassification(message, caseTypes)
+      return { ...heuristicFallbackClassification(message, caseTypes), modelUsed: `${model} (heuristic fallback after error)` }
     }
   }
 }

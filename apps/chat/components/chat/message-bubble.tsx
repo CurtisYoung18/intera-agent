@@ -218,13 +218,15 @@ function MessageBubble({
       <div className={`${maxW} animate-message-in`}>
         <GlassCard variant={variant}>
           {role === 'assistant' && thinking && (
-            <details className="mb-3 group">
+            <details className="mb-3 group" open={isStreaming}>
               <summary className="text-[12px] font-sans text-fog/40 hover:text-fog/60 cursor-pointer transition-colors select-none">
-                {(() => {
-                  const start = thinkingStartedAt ? new Date(thinkingStartedAt).getTime() : Date.now()
-                  const duration = Math.max(1, Math.round((Date.now() - start) / 1000))
-                  return `Thought ${duration}s`
-                })()}
+                {isStreaming
+                  ? 'Thinking…'
+                  : (() => {
+                      const start = thinkingStartedAt ? new Date(thinkingStartedAt).getTime() : Date.now()
+                      const duration = Math.max(0.1, (Date.now() - start) / 1000)
+                      return `Thought ${duration.toFixed(1)}s`
+                    })()}
               </summary>
               <div className="mt-2 pl-3 border-l-2 border-indigo/20 text-[13px] text-fog/50 leading-relaxed whitespace-pre-wrap font-sans">
                 {thinking}

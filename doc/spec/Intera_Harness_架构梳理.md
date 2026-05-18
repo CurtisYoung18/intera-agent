@@ -161,8 +161,10 @@ B 端商户（B-side Customer）
     │
     ▼
 ┌─ 3) ingestUserMessageFacts() ─────────────────────────────┐
-│  从用户文本中启发式抽取事实（txnId / amount / notReceived）    │
-│  更新 CaseMemory.confirmedFacts / missingFacts           │
+│  用 LLM（MiniMax-M2.7-highspeed）从用户文本提取结构化事实    │
+│  提取 extractedFacts + flags（userReportedNotReceived 等）   │
+│  ★ 2026-05 重构：替换原有 txnIdPattern/amountPattern/       │
+│    notReceivedKeywords 正则匹配，改用 LLM 语义理解           │
 └────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -228,6 +230,19 @@ B 端商户（B-side Customer）
 │   · withheld 恢复失败 → 错误升级                         │
 │   · message_stop（reason）→ 消息生成结束                  │
 └─────────────────────────────────────────────────────────────┘
+
+**Abort 与错误恢复（2026-05 补强）：**
+
+| 机制 | 说明 |
+|------|------|
+| AbortController 接线 | `AbortController.signal` 传入 Anthropic stream、HTTP fetch；loop 迭代前检查 `signal.aborted` |
+| safeSendEvent | `run()` 入口包装 sendEvent：try/catch + 失败时设 `aborted=true`，后续调用静默跳过 |
+| Stream 错误恢复 | for-await 包 try/catch，异常时 drain 已入队 tools 后继续 |
+| 阶段评估保护 | `evaluateTransition` 包 try/catch，失败 fallback `shouldTransition: false` |
+| PostTool 评估保护 | `evaluatePostToolBatch` 包 try/catch，失败跳过 postTool 检查 |
+| 策略引擎降级 | LLM 评估失败返回 `{ result: 'hint' }` 而非静默 `pass`，避免 API 抖动时安全策略失效 |
+| Anthropic client 复用 | AgentLoop 构造时创建单一实例，迭代间复用（不再每轮 `new Anthropic()`） |
+| 输入校验 | API 路由 body 上限 100KB、customerId 格式限制 `[a-zA-Z0-9_-]+` ≤64字符、message 上限 50K 字符 |
 
 ### 2.1.1 前端 SSE 事件与 UI 动画（更新于 2026-04-30）
 
@@ -450,6 +465,8 @@ Skill 执行成功
 │   · Autocompact       → 生成摘要                           │
 │  阈值：AUTOCOMPACT_BUFFER_TOKENS = 13_000                    │
 │        WARNING_THRESHOLD_BUFFER_TOKENS = 20_000              │
+│  ★ 2026-05: blocking + shouldCompact 双路径均含 circuit      │
+│    breaker（连续 3 次失败后熔断，避免反复调用 API）          │
 └──────────────────────────────────────────────────────────────┘
                           ↓
 ┌──────────────────────────────────────────────────────────────┐
@@ -640,93 +657,32 @@ Agent Loop 中 LLM 决定调用 skill
 
 ### 5.0 解释说明
 
-> 可以这样理解 Policy（安全策略）：
+> Policy 是护栏而非流程——定义"不可以做什么"，由 LLM 做语义判断而非关键词匹配。
 >
-> **Policy 就是"规矩"——在 Agent 执行某些操作前，检查一下有没有违反规矩。**
+> **2026-05 重构**: 全部 `deny_keywords` / `allow_keywords` 已移除，改为 `evaluationPrompt`（自然语言描述策略意图），由 LLM（MiniMax-M2.7-highspeed）评估。API 失败时降级为 `hint` 而非静默 `pass`。
 >
-> 类比：就像公司财务有报销规则（超过1000元要总监审批），我们的 Agent 也有规则，比如：
-> - "不能说赔偿/退款" → `no_compensation_promise`
-> - "调高危 skill 前要检查" → `no_high_risk_account_change`
-> - "结论必须有证据依据" → `must_cite_basis`
+> | Policy Hook | 时机 | 评估方式 |
+> |---|---|---|
+> | `preTool` | tool 调用前 | `deny_skills` 精确名称匹配（无需 LLM） |
+> | `postTool` | tool 结果后 | **批量 LLM 评估**（单次 API 调用覆盖所有 tool results） |
+> | `preFinalize` | finalize_case 前 | `require_skills` 精确匹配 + **LLM 评估** |
 >
-> | Policy | 相当于... |
+> | 结果 | 含义 |
 > |---|---|
-> | `preTool` | 做事前要看有没有违规 |
-> | `postTool` | 做完事要看结果有没有异常 |
-> | `preFinalize` | 宣布"处理完了"前要最后检查一遍 |
+> | `pass` | 合规，继续执行 |
+> | `blocked` | 违规，操作被拦截 |
+> | `hint` | 有风险，标记但不阻止（LLM 不可用时也返回此结果） |
+> | `escalated` | 需要升级人工处理 |
 
-### 5.1 Policy 执行流程
+### 5.1 内置 Policy 规则
 
-```
-Agent 决定调用某个 Skill
-    │
-    │ "preTool" 安检点
-    ▼
-┌─ runPolicyHooks("preTool", policyNames, ctx) ─────────────┐
-│                                                            │
-│  从 AgentConfig.policyHooks 拿到要检查的 policy 列表：  │
-│  → 例如：["no_high_risk_account_change"]                  │
-│                                                            │
-│  for each policy 名称：                                    │
-│       │                                                    │
-│       ▼                                                    │
-│  ┌─ 从 PolicyConfig 找到这条 policy ──────────────┐   │
-│  │  rule = { deny_skills_in_demo: ["refund_money"] } │   │
-│  └─────────────────────────────────────────────────────┘   │
-│       │                                                    │
-│       ▼                                                    │
-│  ┌─ evaluatePolicy(name, rule, hook, ctx) ──────────┐   │
-│  │  · 读 rule JSON（deny_skills / require_skills 等）│   │
-│  │  · 按规则引擎判断是否命中                           │   │
-│  │  ctx 包含：skillName / skillInput / confirmedFacts  │   │
-│  └─────────────────────────────────────────────────────┘   │
-│       │                                                    │
-│       ▼                                                    │
-│  命中？                                                    │
-│   ├── YES → 写 PolicyHit（审计日志）                  │
-│   │         SSE 推送 policy_hit 事件给前端               │
-│   │         返回 PolicyHitRecord                           │
-│   │         如果 result=blocked → Skill 被跳过，不执行     │
-│   └── NO → 继续，不影响执行                               │
-└────────────────────────────────────────────────────────────┘
-    │
-    ▼
-Skill 开始执行（或被跳过）
-
-... Skill 执行完成 ...
-
-    │
-    │ "postTool" / "preFinalize" 安检点
-    ▼
-同上流程，按 hookPoint 决定检查哪些 policy
-```
-
-**Policy 结果的三种影响：**
-
-| 结果 | 含义 | 后续动作 |
-|---|---|---|
-| `blocked` | 违规，操作被拦截 | Skill 被跳过，返回 blocked 结果给 LLM |
-| `hint` | 有警告，但可继续 | 附加 `_policy_hints` 给 LLM 参考 |
-| `escalated` | 需要升级处理 | case 进入 escalated 状态 |
-
-### 5.2 Policy Hook 执行点
-
-| Hook 点 | 时机 | 用途 |
-|---|---|---|
-| `preTool` | tool 调用**前** | 检查是否允许调用该 skill（高危操作拦截） |
-| `postTool` | skill 结果返回**后** | 检查 skill 结果是否触发特殊规则（如冲突检测） |
-| `preFinalize` | `finalize_case` 调用**前** | 校验证据是否充分、结论是否含禁用词 |
-
-### 5.3 内置 Policy 规则
-
-| Policy Name | Hook | 规则逻辑 |
-|---|---|---|
-| `no_high_risk_account_change` | preTool | 拦截配置中的高危 skill |
-| `conflict_requires_human` | postTool | 平台 success 但用户仍申报未到账 → 必须调 create_human_task |
-| `evidence_required_before_resolution` | preFinalize | 未调用必要 skill（query_order_status 等）不得 finalize |
-| `no_compensation_promise` | preFinalize | finalize 内容含禁用词（赔偿/退款承诺）→ blocked |
-| `vip_care_softer_tone [PLANNED]` | preFinalize | 同上，针对 VIP 场景 |
-| `must_cite_basis` | preFinalize | finalize 必须提供 basis[]（依据引用） |
+| Policy Name | Hook | 评估方式 | 说明 |
+|---|---|---|---|
+| `no_high_risk_account_change` | preTool | 精确名称匹配 | 拦截配置中的高危 skill |
+| `conflict_requires_human` | postTool | **LLM 评估** | 系统数据（completed/normal）与用户申报（未到账/缺失）矛盾时 → escalated |
+| `evidence_required_before_resolution` | preFinalize | 精确名称匹配 | 未调用必要 skill 不得 finalize |
+| `no_compensation_promise` | preFinalize | **LLM 评估** | finalize 承诺赔偿/退款 → blocked |
+| `must_cite_basis` | preFinalize | **LLM 评估** | finalize 未引用证据来源 → blocked |
 
 ### 5.4 Admin 中 Policy 的可配置项
 
@@ -952,6 +908,10 @@ Agent 运行全过程中
 | `llm_request_start` | LLM API 请求开始 |
 | `llm_response` | LLM API 响应完成 |
 | `microcompact` | MicroCompact 本地工具结果清理 |
+| `stage_eval` | 阶段转换评估（含模型名） |
+| `intent_classify` | 意图分类完成（含模型名） |
+
+> **2026-05**: `stage_eval` / `intent_classify` / `policy_hit` / `llm_request_start` 均包含 `model` 字段，每个 Case trace 可追踪不同 agent（Core、意图分类、阶段评估、策略评估）使用的模型名。
 
 ### 7.3 Trace 存储
 
@@ -1615,7 +1575,7 @@ Agent Core (主脑)
 
 | 文件 | 职责 |
 |---|---|
-| `orchestrator.ts` | 派遣计划、并行/串行调度、非阻塞后台派发 (`dispatchInBackground`)、增量结果合并 (`mergeSingleResult`)、新结果轮询 (`hasNewResults`) |
+| `orchestrator.ts` | 派遣计划、并行/串行调度、非阻塞后台派发 (`dispatchInBackground`)、增量结果合并 (`mergeSingleResult`)、新结果轮询 (`hasNewResults`)**、统一通知格式 (`toNotification`)、上下文注入 (`toContextMessage`)** |
 | `sub-agent.ts` | 隔离执行：独立 Anthropic 客户端、独立模型+提示词+技能集。**已去 mock**：通过 `StreamingToolExecutor.executeAll()` 真实执行工具。支持多轮 ReAct (`maxIterations`) 和流式进度 (`investigateStreaming`) |
 
 ### 17.3 配置
@@ -1748,6 +1708,8 @@ interface IntentClassification {
 - **非阻塞派发**：`Orchestrator.dispatchInBackground()` 在后台运行，Core Agent ReAct 循环同时启动
 - **增量合并**：每个专职 Agent 完成后立即通过 `mergeSingleResult()` 写入 CaseMemory
 - **轮询检查**：Core Agent 每轮迭代开始时检查 `orchestrator.hasNewResults()` → 合并最新结果
+- **统一通知格式（2026-05）**：`OrchestratorAgent.toNotification()` 将结果映射为 `SubAgentNotification`（CC `<task-notification>` 模式），前端 DedicatedAgentsPanel 统一消费
+- **上下文注入（2026-05）**：子代理结果通过 `toContextMessage()` 注入 `this.messages`，主 agent 在下一轮 ReAct 迭代中可见子代理的 findings + recommendation + usage
 - **SubAgent 去 mock**：接入 `StreamingToolExecutor` 真实执行工具，不再返回硬编码数据
 - **多轮 ReAct**：SubAgent 支持 `maxIterations` 配置（默认 5），可以调用工具 → 获取结果 → 继续调用
 

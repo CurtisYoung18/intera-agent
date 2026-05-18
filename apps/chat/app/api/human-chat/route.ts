@@ -34,7 +34,7 @@ You are the CASE OWNER. Tell the operator:
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 
 const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
-  model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
+  model: 'MiniMax-M2.7-highspeed',
   temperature: 0.5,
   thinkingBudget: 4096,
   maxIterations: 15,

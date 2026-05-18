@@ -870,7 +870,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                     onClick={() => {
                       const next = [...(cfg.subAgents || []), {
                         name: '',
-                        model: availableModels[0] || 'claude-haiku-4-5-20251001',
+                        model: availableModels[0] || 'MiniMax-M2.7-highspeed',
                         systemPrompt: '',
                         skills: [],
                         taskTemplate: '',

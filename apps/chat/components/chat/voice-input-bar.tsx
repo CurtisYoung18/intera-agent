@@ -13,6 +13,11 @@ interface VoiceInputBarProps {
   queuedCount: number
   onClearQueue: () => void
   isResponding?: boolean
+  /**
+   * Off when case is split to the left — user can send in parallel with /api/messages
+   * and we do not show queue-style copy.
+   */
+  allowQueueWhileBusy?: boolean
   /** When true, server offers draft continuations for the composer only */
   composerAssistEnabled?: boolean
   customerId?: string
@@ -48,6 +53,7 @@ export default function VoiceInputBar({
   queuedCount,
   onClearQueue,
   isResponding = false,
+  allowQueueWhileBusy = true,
   composerAssistEnabled = false,
   customerId = 'default',
   assistMissingDeepseekKey = false,
@@ -174,7 +180,7 @@ export default function VoiceInputBar({
       )}
 
       {/* Queue indicator pill */}
-      {queuedCount > 0 && (
+      {allowQueueWhileBusy && queuedCount > 0 && (
         <div className="flex justify-center pb-2">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-sans tracking-[0.03em] text-fog/60 rounded-full bg-[var(--surface)] border border-[var(--border-subtle)]">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo animate-breathe" />
@@ -189,11 +195,16 @@ export default function VoiceInputBar({
             variant="composerInner"
             value={value}
             onChange={handleChange}
-            placeholder={
-              isResponding
-                ? 'Agent is responding — queue your next question...'
-                : 'Describe your issue... (Shift+Enter for new line)'
-            }
+            placeholder={(() => {
+              if (!isResponding) return 'Describe your issue... (Shift+Enter for new line)'
+              if (!allowQueueWhileBusy) {
+                const zh =
+                  typeof navigator !== 'undefined' &&
+                  navigator.language.toLowerCase().startsWith('zh')
+                return zh ? '可随时发言；左侧为工单调查进度' : 'Keep typing — investigation runs in the left rail'
+              }
+              return 'Agent is responding — queue your next question...'
+            })()}
             onSubmit={handleSubmit}
             onKeyDown={composerKeyDownChain}
           />
@@ -209,7 +220,7 @@ export default function VoiceInputBar({
           </button>
         </div>
 
-        {(value || queuedCount > 0) && (
+        {(value || (allowQueueWhileBusy && queuedCount > 0)) && (
           <button
             type="button"
             onClick={handleClear}

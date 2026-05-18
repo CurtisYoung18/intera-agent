@@ -18,6 +18,38 @@ import { z } from 'zod'
  */
 export const BUILT_IN_SKILLS: SkillDefinition[] = [
   {
+    name: 'propose_cases',
+    description:
+      'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. ' +
+      'The customer will see a multi-select card to choose which cases to open. ' +
+      'Use this INSTEAD of create_case when there are 2+ issues or you are unsure which type fits.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cases: {
+          type: 'array',
+          description: 'Proposed case types with a brief summary of the detected issue',
+          items: {
+            type: 'object',
+            properties: {
+              caseType: { type: 'string', description: 'Case type slug, e.g. deposit_issue' },
+              summary: { type: 'string', description: 'One-line description of what the customer reported for this issue' },
+            },
+            required: ['caseType', 'summary'],
+          },
+        },
+      },
+      required: ['cases'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    zodSchema: z.object({
+      cases: z.array(z.object({ caseType: z.string(), summary: z.string() })),
+    }),
+    mockFixture: { status: 'proposed' },
+  },
+  {
     name: 'read_case_history',
     description: "Read the customer's historical cases for context",
     inputSchema: {
@@ -66,13 +98,15 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        channel: { type: 'string', description: 'Payment channel name' },
+        txnId: { type: 'string', description: 'Transaction ID to look up' },
+        channel: { type: 'string', description: 'Payment channel name (optional, inferred from query_order_status if omitted)' },
       },
+      required: ['txnId'],
     },
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
-    zodSchema: z.object({ channel: z.string().optional() }),
+    zodSchema: z.object({ txnId: z.string(), channel: z.string().optional() }),
     // [MOCK]
     mockFixture: {
       delayed_batch: false,

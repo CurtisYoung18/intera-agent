@@ -12,6 +12,7 @@ import CaseCard from '@/components/chat/case-card'
 import SplitLayout from '@/components/chat/split-layout'
 import CaseInvestigationRail from '@/components/chat/case-investigation-rail'
 import CaseTabBar from '@/components/chat/case-tab-bar'
+import CaseHistoryPanel from '@/components/chat/case-history-panel'
 import { useInteraChat } from './use-intera-chat'
 import type { CaseStatus } from '@/components/chat/case-card'
 
@@ -34,7 +35,10 @@ export default function ChatPage() {
     onFormSubmit,
     onFormCancel,
     onIntentConfirm,
+    userId,
     customerId,
+    activeCaseId,
+    loadHistoricalCase,
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,
     composerMinDraftChars,
@@ -74,6 +78,7 @@ export default function ChatPage() {
               queuedCount={queuedCount}
               onClearQueue={clearQueue}
               isResponding={isLoading}
+              allowQueueWhileBusy={!splitMode}
               composerAssistEnabled={composerAssistEnabled}
               customerId={customerId}
               assistMissingDeepseekKey={composerAssistMissingDeepseekKey}
@@ -100,6 +105,7 @@ export default function ChatPage() {
             queuedCount={queuedCount}
             onClearQueue={clearQueue}
             isResponding={isLoading}
+            allowQueueWhileBusy={!splitMode}
             composerAssistEnabled={composerAssistEnabled}
             customerId={customerId}
             assistMissingDeepseekKey={composerAssistMissingDeepseekKey}
@@ -124,8 +130,17 @@ export default function ChatPage() {
 
   return (
     <ChatShell spacious={splitMode}>
-      <header className="flex shrink-0 justify-center px-2 pb-3 pt-4">
+      <header className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
+        <div className="w-20" />
         <StatusPill status={agentStatus} label="Intera AI" />
+        <div className="w-20 flex justify-end">
+          <CaseHistoryPanel
+            customerId={customerId}
+            userId={userId}
+            onSelectCase={loadHistoricalCase}
+            activeCaseId={activeCaseId}
+          />
+        </div>
       </header>
 
       <SplitLayout

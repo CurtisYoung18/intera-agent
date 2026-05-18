@@ -69,7 +69,6 @@ export class StreamingToolExecutor {
       (t) => t.name === toolUse.name,
     )
     if (!definition) {
-      // Tool not found — record error result immediately
       this.results.push({
         name: toolUse.name,
         output: {
@@ -82,22 +81,35 @@ export class StreamingToolExecutor {
       return
     }
 
+    // Two-pass Zod validation (CC pattern): parse input at enqueue time
+    // to determine dynamic concurrency safety from parsed data.
+    let parsedInput = toolUse.input
+    let dynamicConcurrencySafe = definition.isConcurrencySafe
+    try {
+      if (definition.zodSchema) {
+        const parseResult = definition.zodSchema.safeParse(toolUse.input)
+        if (parseResult.success) {
+          parsedInput = parseResult.data as Record<string, unknown>
+        }
+      }
+    } catch {
+      // Schema parse failed — keep original input, use static concurrency flag
+    }
+
     const tracked: TrackedTool = {
       id: toolUse.id,
       name: toolUse.name,
-      input: toolUse.input,
+      input: parsedInput,
       status: 'queued',
-      isConcurrencySafe: definition.isConcurrencySafe,
+      isConcurrencySafe: dynamicConcurrencySafe,
       definition,
     }
 
     this.tools.push(tracked)
 
     if (tracked.isConcurrencySafe) {
-      // Start immediately (parallel with other concurrent tools)
       this.pendingPromises.push(this.runTrackedTool(tracked))
     } else {
-      // Queue for serial execution
       this.nonConcurrentQueue.push(tracked)
       this.drainNonConcurrentQueue()
     }

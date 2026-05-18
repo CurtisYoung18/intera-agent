@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Settings, X } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
 import AgentPolicyHooksPicker from '@/components/admin/agent-policy-hooks-picker'
 import AgentSyntheticTemplatesPanel from '@/components/admin/agent-synthetic-templates-panel'
@@ -107,7 +108,7 @@ export default function AgentConfigPage() {
           policyHooks = '{}'
         }
         setConfig({
-          model: raw.model || 'MiniMax-M2.70-highspeed',
+          model: raw.model || 'MiniMax-M2.7-highspeed',
           temperature: raw.temperature ?? 0.5,
           thinkingBudget: raw.thinkingBudget ?? 4096,
           maxIterations: raw.maxIterations ?? 20,
@@ -360,12 +361,51 @@ export default function AgentConfigPage() {
                 }
               >
                 <div className="flex flex-col gap-3">
-                  <textarea
+                  <HighlightedTextarea
+                    id="system-prompt-textarea"
                     value={config.systemPrompt}
-                    onChange={(e) => update('systemPrompt', e.target.value)}
+                    onChange={(v) => update('systemPrompt', v)}
                     spellCheck={false}
-                    className={`min-h-[min(340px,40vh)] w-full resize-y px-3.5 py-3 text-[13px] leading-relaxed ${drawerFieldClass(true)}`}
+                    className={`w-full ${drawerFieldClass(true)}`}
+                    highlights={[
+                      { pattern: /\{\{case_types\}\}/g, color: '#7c5ce7' },
+                      { pattern: /\{\{active_policies\}\}/g, color: '#e75c8a' },
+                      { pattern: /\{\{case_schema\}\}/g, color: '#2ea04a' },
+                      { pattern: /\{\{case_state\}\}/g, color: '#d4912e' },
+                      { pattern: /\{\{session_binding\}\}/g, color: '#5b8af7' },
+                    ]}
                   />
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5 text-[10px] text-[var(--fog)]/60">
+                    <span className="mr-1 font-medium text-[var(--fog)]/80">{t('agent.promptPlaceholders')}</span>
+                    {[
+                      { key: '{{case_types}}', desc: t('agent.plhCaseTypes') },
+                      { key: '{{active_policies}}', desc: t('agent.plhPolicies') },
+                      { key: '{{case_schema}}', desc: t('agent.plhCaseSchema') },
+                      { key: '{{case_state}}', desc: t('agent.plhCaseState') },
+                      { key: '{{session_binding}}', desc: t('agent.plhSessionBinding') },
+                    ].map((ph) => (
+                      <button
+                        key={ph.key}
+                        type="button"
+                        title={ph.desc}
+                        onClick={() => {
+                          const ta = document.getElementById('system-prompt-textarea') as HTMLTextAreaElement | null
+                          if (!ta) { update('systemPrompt', (config.systemPrompt + '\n' + ph.key).trimStart()); return }
+                          const start = ta.selectionStart ?? ta.value.length
+                          const end = ta.selectionEnd ?? start
+                          const next = ta.value.slice(0, start) + ph.key + ta.value.slice(end)
+                          update('systemPrompt', next)
+                          requestAnimationFrame(() => {
+                            const el = document.getElementById('system-prompt-textarea') as HTMLTextAreaElement | null
+                            if (el) { el.selectionStart = el.selectionEnd = start + ph.key.length; el.focus() }
+                          })
+                        }}
+                        className="rounded-full border border-black/[0.06] bg-white/70 px-2 py-0.5 font-mono text-[10px] leading-relaxed hover:bg-lavender/15 hover:border-lavender/30 transition-colors"
+                      >
+                        {ph.key}
+                      </button>
+                    ))}
+                  </div>
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
                     <span>{t('agent.promptAutosaveHint')}</span>
                     <span className="font-mono tabular-nums opacity-95">

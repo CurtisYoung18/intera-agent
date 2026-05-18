@@ -7,15 +7,17 @@ import type { TranslateFn } from '@/lib/i18n/types'
 export const GUIDE_SECTION_IDS = [
   'guide-intro',
   'guide-routes',
+  'guide-concepts',
+  'guide-case-lifecycle',
   'guide-intent-routing',
-  'guide-case-human',
-  'guide-loop-engine',
-  'guide-react-cycle',
   'guide-stage-runtime',
   'guide-facts-memory',
+  'guide-loop-engine',
+  'guide-sub-agents',
   'guide-tools-policy',
+  'guide-config-lifecycle',
   'guide-observability',
-  'guide-code-map',
+  'guide-admin-map',
 ] as const
 
 export type GuideSectionId = (typeof GUIDE_SECTION_IDS)[number]
@@ -176,15 +178,17 @@ export function GuideTableOfContents({ t }: { t: TranslateFn }) {
   const links: { id: GuideSectionId; labelKey: string }[] = [
     { id: 'guide-intro', labelKey: 'guide.nav.intro' },
     { id: 'guide-routes', labelKey: 'guide.nav.routes' },
+    { id: 'guide-concepts', labelKey: 'guide.nav.concepts' },
+    { id: 'guide-case-lifecycle', labelKey: 'guide.nav.caseLifecycle' },
     { id: 'guide-intent-routing', labelKey: 'guide.nav.intentRouting' },
-    { id: 'guide-case-human', labelKey: 'guide.nav.caseHuman' },
-    { id: 'guide-loop-engine', labelKey: 'guide.nav.loop' },
-    { id: 'guide-react-cycle', labelKey: 'guide.nav.react' },
     { id: 'guide-stage-runtime', labelKey: 'guide.nav.stage' },
     { id: 'guide-facts-memory', labelKey: 'guide.nav.facts' },
+    { id: 'guide-loop-engine', labelKey: 'guide.nav.loop' },
+    { id: 'guide-sub-agents', labelKey: 'guide.nav.subAgents' },
     { id: 'guide-tools-policy', labelKey: 'guide.nav.toolsPolicy' },
+    { id: 'guide-config-lifecycle', labelKey: 'guide.nav.configLifecycle' },
     { id: 'guide-observability', labelKey: 'guide.nav.observe' },
-    { id: 'guide-code-map', labelKey: 'guide.nav.codes' },
+    { id: 'guide-admin-map', labelKey: 'guide.nav.adminMap' },
   ]
 
   return (

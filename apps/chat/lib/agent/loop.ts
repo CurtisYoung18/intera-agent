@@ -24,6 +24,7 @@ import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation } from './compact'
 import { Profiler } from './profiler'
+import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 
 // ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ export interface AgentLoopDeps {
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification'
   currentStage?: string
   reason?: string
   pendingSubAgents?: string[]
@@ -78,12 +79,18 @@ export class AgentLoop {
   private nudgeCount = 0
   private currentStage = 'created'
   private abortController: AbortController
+  private aborted = false
+  private anthropicClient: Anthropic
 
   constructor(private deps: AgentLoopDeps) {
     this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.skillRouter = new SkillRouter(deps.customerId)
     this.traceWriter = new TraceWriter(deps.caseId)
     this.abortController = new AbortController()
+    this.anthropicClient = new Anthropic({
+      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
+      baseURL: process.env.ANTHROPIC_BASE_URL,
+    })
 
     // Initialize stage executor if case schema with stage configs is available
     if (deps.caseSchema) {
@@ -91,7 +98,6 @@ export class AgentLoop {
         deps.caseSchema,
         deps.config,
         this.caseMemory,
-        deps.userId,
       )
       this.currentStage = this.stageExecutor.getCurrentStage()
 
@@ -186,8 +192,14 @@ export class AgentLoop {
 
   async run(
     userMessage: string,
-    sendEvent: (event: SSEEvent) => void,
+    rawSendEvent: (event: SSEEvent) => void,
   ): Promise<LoopResult> {
+    // Wrap sendEvent to catch stream-closed errors safely
+    const sendEvent = (event: SSEEvent) => {
+      if (this.aborted) return
+      try { rawSendEvent(event) } catch { this.aborted = true; this.abortController.abort() }
+    }
+
     // 1. Record user message
     this.profiler.startTurn()
     const userMsg = this.makeUserMessage(userMessage)
@@ -214,27 +226,22 @@ export class AgentLoop {
       this.iterationCount++
       this.profiler.incrementIteration()
 
-      // Emit core agent progress for UI visibility
-      const CS_STAGE_PROGRESS: Record<string, string> = {
-        created: 'Opening your ticket',
-        collecting: 'Gathering the details we need',
-        investigating: 'Checking records against what you shared',
-        waiting_human: 'Lining up a specialist for you',
-        resolved: 'Wrapping up your case',
+      // Emit core agent progress — only when a Case is active. Keep label short for UI.
+      if (this.stageExecutor) {
+        const stageCfg = this.stageExecutor.getStageConfig(this.currentStage)
+        const stageLabel = stageCfg?.name || this.currentStage
+        const taskDesc = `${stageLabel} · iter ${this.iterationCount}`
+        sendEvent({
+          type: 'core_agent_progress',
+          data: {
+            stage: this.currentStage,
+            iteration: this.iterationCount,
+            task: taskDesc,
+            pendingSubAgents: this.orchestrator?.getPendingAgentNames() ?? [],
+          },
+          timestamp: new Date().toISOString(),
+        })
       }
-      const stageLabel =
-        CS_STAGE_PROGRESS[this.currentStage] ?? 'Handling your request'
-      const taskDesc = `${stageLabel} · step ${this.iterationCount}`
-      sendEvent({
-        type: 'core_agent_progress',
-        data: {
-          stage: this.currentStage,
-          iteration: this.iterationCount,
-          task: taskDesc,
-          pendingSubAgents: this.orchestrator?.getPendingAgentNames() ?? [],
-        },
-        timestamp: new Date().toISOString(),
-      })
 
       // Check for new sub-agent results (from background dispatch)
       if (this.orchestrator?.hasNewResults()) {
@@ -246,6 +253,12 @@ export class AgentLoop {
           mem.skillResults as Record<string, unknown>,
           mem.keyEvents as Array<{ at: string; text: string; source: string }>,
         )
+        // Inject sub-agent output as user-visible context for the main agent
+        for (const r of newResults) {
+          this.messages.push(this.makeUserMessage(
+            OrchestratorAgent.toContextMessage(r),
+          ))
+        }
         sendEvent({
           type: 'memory_update',
           data: this.caseMemory.getSummary(),
@@ -285,7 +298,7 @@ export class AgentLoop {
       // ── Stream API call ──────────────────────────────────────────
       const stagePrompt = this.stageExecutor
         ? this.stageExecutor.buildStagePrompt(this.currentStage, this.deps.systemPrompt)
-        : `${this.deps.systemPrompt}${this.harnessUserBinding()}`
+        : this.deps.systemPrompt
       const allTools = this.skillRouter.getTools()
       const stageTools = this.stageExecutor
         ? this.stageExecutor.filterTools(this.currentStage, allTools)
@@ -298,24 +311,30 @@ export class AgentLoop {
       stopReason = null
       usage = null
 
-      const client = new Anthropic({
-        apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-        baseURL: process.env.ANTHROPIC_BASE_URL,
-      })
-
       const iterationStartTime = Date.now()
       let streamEndedAt = iterationStartTime
 
-      const stream = client.messages.stream({
+      if (this.abortController.signal.aborted) break
+
+      const stream = this.anthropicClient.messages.stream({
         model: this.deps.config.model,
         max_tokens: this.deps.config.maxOutputTokens ?? 4096,
         system: stagePrompt,
         messages: this.buildApiMessages(),
         tools: stageTools,
-      })
+        ...(this.deps.config.showThinking ? {
+          thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
+        } : {}),
+      }, { signal: this.abortController.signal })
 
-      await this.traceWriter.writeLlmRequestStart(this.deps.config.model, this.messages.length)
+      await this.traceWriter.writeLlmRequestStart(
+        this.deps.config.model,
+        this.messages.length,
+        stagePrompt,
+        this.buildApiMessages(),
+      )
 
+      try {
       for await (const event of stream) {
         switch (event.type) {
           // ── message start ──────────────────────────────────────
@@ -473,6 +492,12 @@ export class AgentLoop {
             break
         }
       }
+      } catch (streamErr) {
+        console.error('[AgentLoop] Stream error:', streamErr)
+        if (this.abortController.signal.aborted) {
+          // Graceful abort — drain pending tools and exit iteration
+        }
+      }
 
       streamEndedAt = Date.now()
 
@@ -484,7 +509,8 @@ export class AgentLoop {
           (usage.inputTokens as number | undefined) != null ||
           (usage.outputTokens as number | undefined) != null)
       ) {
-        await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount)
+        const calledToolNames = [...blocks.values()].filter(b => b.type === 'tool_use').map(b => b.name)
+        await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames)
         this.profiler.addTokens(
           Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
           Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
@@ -532,10 +558,19 @@ export class AgentLoop {
       if (toolResults.length === 0) {
         // No tools called — stage evaluator may still advance (e.g. created → collecting)
         if (this.stageExecutor && this.stageExecutor.hasStageConfigs()) {
-          let transitionEval = await this.stageExecutor.evaluateTransition(
-            this.currentStage,
-            this.iterationCount,
-          )
+          let transitionEval: TransitionEval
+          try {
+            transitionEval = await this.stageExecutor.evaluateTransition(
+              this.currentStage,
+              this.iterationCount,
+            )
+          } catch (err) {
+            console.error('[AgentLoop] Stage evaluation failed:', err)
+            transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
+          }
+          if (transitionEval.modelUsed) {
+            await this.traceWriter.write('stage_eval', `Stage eval: ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
+          }
 
           if (
             !(transitionEval.shouldTransition && transitionEval.nextStage) &&
@@ -568,7 +603,7 @@ export class AgentLoop {
           if (!skillCheck.met || !evidenceCheck.met) {
             // Stage incomplete — inject nudge and continue loop
             this.nudgeCount++
-            const nudgeMsg = this.stageExecutor.buildNudge(this.currentStage)
+            const nudgeMsg = this.stageExecutor.buildNudge(this.currentStage, this.nudgeCount)
             this.messages.push(assistantMessage)
             this.messages.push(this.makeUserMessage(nudgeMsg))
 
@@ -644,6 +679,7 @@ export class AgentLoop {
 
       // ── Batch postTool policy evaluation (LLM-based, single call) ──
       if (toolResults.length > 0) {
+        try {
         const postToolInputs = toolResults.map((r) => ({
           name: r.name,
           output: unwrapToolExecutionPayload(r.output),
@@ -654,17 +690,150 @@ export class AgentLoop {
         )
         for (const pr of batchResults) {
           if (pr.result === 'escalated') {
-            await this.traceWriter.write('policy_hit', `Escalated: ${pr.policyName}`, JSON.stringify(pr))
+            await this.traceWriter.write('policy_hit', `Escalated: ${pr.policyName}`, { result: pr.result, reason: pr.reason, model: pr.modelUsed })
           }
           if (pr.result === 'blocked') {
-            await this.traceWriter.write('policy_hit', `Blocked: ${pr.policyName}`, JSON.stringify(pr))
+            await this.traceWriter.write('policy_hit', `Blocked: ${pr.policyName}`, { result: pr.result, reason: pr.reason, model: pr.modelUsed })
           }
+        }
+        } catch (policyErr) {
+          console.error('[AgentLoop] PostTool batch evaluation failed:', policyErr)
         }
       }
 
       // ── Add to message history ───────────────────────────────
       this.messages.push(assistantMessage)
       this.addToolResultMessages(toolResults)
+
+      // ── Terminal tool: propose_cases (multi-intent clarification) ──
+      const proposeResult = toolResults.find(
+        (r) => r.name === 'propose_cases',
+      )
+      if (proposeResult && !this.stageExecutor) {
+        const toolInput = proposeResult.toolUse?.input || {}
+        const proposedCases = (toolInput.cases as Array<{ caseType: string; summary: string }>) || []
+
+        if (proposedCases.length > 0) {
+          sendEvent({
+            type: 'clarification',
+            data: {
+              cases: proposedCases.map((c) => ({
+                caseType: c.caseType,
+                summary: c.summary,
+              })),
+            },
+            timestamp: new Date().toISOString(),
+          })
+
+          await this.traceWriter.write('loop_decision', 'Clarification: multiple intents proposed', {
+            proposedCases: proposedCases.map((c) => c.caseType),
+          })
+
+          // Replace mock result with meaningful feedback for the model
+          for (let i = this.messages.length - 1; i >= 0; i--) {
+            const m = this.messages[i]
+            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool propose_cases result:')) {
+              m.content = `Tool propose_cases result: ${JSON.stringify({ status: 'presented', message: 'The customer will select which cases to open. Wait for their selection before proceeding.' })}`
+              break
+            }
+          }
+
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: 'created',
+            transition: 'awaiting_clarification',
+            currentStage: this.currentStage,
+            reason: 'multi_intent_clarification',
+          }
+        }
+      }
+
+      // ── Terminal tool: create_case ─────────────────────────
+      const createCaseResult = toolResults.find(
+        (r) => r.name === 'create_case',
+      )
+      if (createCaseResult && !this.stageExecutor) {
+        const toolInput = createCaseResult.toolUse?.input || {}
+        const caseType = String(toolInput.caseType || '')
+        if (caseType && isInvestigableCaseType(caseType)) {
+          try {
+            // Load case type from DB to build schema
+            const ctRow = await prisma.caseType.findUnique({
+              where: { customerId_type: { customerId: this.deps.customerId, type: caseType } },
+            })
+            if (ctRow) {
+              const stages = (() => { try { return JSON.parse(ctRow.stages) } catch { return [] } })() as string[]
+              const requiredFacts = (() => { try { return JSON.parse(ctRow.requiredFacts) } catch { return [] } })() as string[]
+              const stageConfigs = (() => { try { return JSON.parse(ctRow.stageConfigs || '{}') } catch { return {} } })() as Record<string, unknown>
+              const schema: CaseSchemaConfig = {
+                type: ctRow.type, displayName: ctRow.displayName, icon: ctRow.icon,
+                description: ctRow.description || undefined,
+                requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
+                stages: Array.isArray(stages) ? stages : [],
+                stageConfigs: stageConfigs as any,
+                defaultGoal: ctRow.defaultGoal,
+                escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
+              }
+              this.deps.caseSchema = schema
+              this.stageExecutor = new StageExecutor(schema, this.deps.config, this.caseMemory)
+              this.currentStage = this.stageExecutor.getCurrentStage()
+              this.orchestrator = new OrchestratorAgent(schema, this.skillRouter.getToolDefinitions(), this.deps.userId)
+
+              // Persist case in DB
+              await prisma.case.upsert({
+                where: { id: this.deps.caseId },
+                update: { type: caseType, status: 'created' },
+                create: {
+                  id: this.deps.caseId,
+                  customerId: this.deps.customerId,
+                  userId: this.deps.userId,
+                  type: caseType,
+                  status: 'created',
+                },
+              })
+
+              sendEvent({
+                type: 'case_created',
+                data: {
+                  caseId: this.deps.caseId,
+                  caseType: caseType,
+                  displayName: ctRow.displayName,
+                  icon: ctRow.icon,
+                },
+                timestamp: new Date().toISOString(),
+              })
+
+              await this.traceWriter.write('loop_decision', `Case created: ${caseType}`, { caseType, caseId: this.deps.caseId })
+
+              // Replace mock create_case result with real case ID so the LLM
+              // doesn't repeat the fake mock ID to the customer.
+              for (let i = this.messages.length - 1; i >= 0; i--) {
+                const m = this.messages[i]
+                if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
+                  m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'created' })}`
+                  break
+                }
+              }
+
+              // Continue loop — next iteration has stage executor
+              continue
+            }
+          } catch (err) {
+            console.error('[AgentLoop] Failed to create case from create_case tool:', err)
+          }
+        } else if (createCaseResult && this.stageExecutor) {
+          // create_case called but a case is already active — replace mock
+          // result so the LLM doesn't see a fake case_mock_001 ID.
+          for (let i = this.messages.length - 1; i >= 0; i--) {
+            const m = this.messages[i]
+            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
+              m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'already_active', note: 'Case already exists — continue with the active case' })}`
+              break
+            }
+          }
+        }
+      }
 
       // ── Terminal tool: request_user_input (form) ─────────
       const formResult = toolResults.find(
@@ -768,6 +937,15 @@ export class AgentLoop {
           // Write trace via TraceWriter (DB persistence handled internally)
           await this.traceWriter.writeHumanTaskCreated(task.id, queue)
 
+          // Replace mock create_human_task result with real task ID
+          for (let i = this.messages.length - 1; i >= 0; i--) {
+            const m = this.messages[i]
+            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_human_task result:')) {
+              m.content = `Tool create_human_task result: ${JSON.stringify({ taskId: task.id, queue, status: 'pending' })}`
+              break
+            }
+          }
+
           sendEvent({
             type: 'human_task_created',
             data: { taskId: task.id, queue, status: 'pending' },
@@ -777,11 +955,27 @@ export class AgentLoop {
           console.error('[AgentLoop] Failed to persist human task:', err)
         }
 
-        // Continue loop — agent can generate follow-up text for customer.
-        // But skip finalize_case in this same iteration: you can't resolve a case
-        // you just escalated. The next LLM call will see the updated case status
-        // and can decide whether to generate a closing message.
-        continue
+        // Exit immediately — case is now waiting for human. Send a clear
+        // customer-facing message so they know a specialist is reviewing.
+        const waitMsg = 'A specialist from our team is now reviewing your case. You can continue to send messages here — I will relay any updates as soon as the review is complete.'
+        sendEvent({
+          type: 'text_delta',
+          data: waitMsg,
+          timestamp: new Date().toISOString(),
+        })
+        sendEvent({
+          type: 'message_stop',
+          data: { reason: 'waiting_human', stage: this.currentStage },
+          timestamp: new Date().toISOString(),
+        })
+        await this.writeProfilerSnapshot()
+        return {
+          messages: this.messages,
+          caseStatus: 'waiting_human',
+          transition: 'waiting_human',
+          currentStage: this.currentStage,
+          reason: 'human_task_created',
+        }
       }
 
       // ── Terminal tool: finalize_case ─────────────────────────
@@ -886,10 +1080,19 @@ export class AgentLoop {
 
       // ── Tools executed, no terminal action — evaluate stage transition ──
       if (this.stageExecutor && this.stageExecutor.hasStageConfigs()) {
-        const transitionEval = await this.stageExecutor.evaluateTransition(
-          this.currentStage,
-          this.iterationCount,
-        )
+        let transitionEval: TransitionEval
+        try {
+          transitionEval = await this.stageExecutor.evaluateTransition(
+            this.currentStage,
+            this.iterationCount,
+          )
+        } catch (err) {
+          console.error('[AgentLoop] Stage evaluation (post-tools) failed:', err)
+          transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
+        }
+        if (transitionEval.modelUsed) {
+          await this.traceWriter.write('stage_eval', `Stage eval (post-tools): ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
+        }
         await this.applyStageTransitionFromEval(transitionEval, sendEvent)
       }
 
@@ -991,6 +1194,12 @@ export class AgentLoop {
               mem.skillResults as Record<string, unknown>,
               mem.keyEvents as Array<{ at: string; text: string; source: string }>,
             )
+            // Inject sub-agent output as user-visible context for the main agent
+            for (const r of results) {
+              this.messages.push(this.makeUserMessage(
+                OrchestratorAgent.toContextMessage(r),
+              ))
+            }
             await this.traceWriter.write('loop_decision', 'Sub-agents dispatched', {
               stage: this.currentStage,
               subAgents: results.map((r) => r.agentName),
@@ -1005,11 +1214,6 @@ export class AgentLoop {
     return true
   }
 
-  /** Session user id hint when Case schema / stage executor is absent */
-  private harnessUserBinding(): string {
-    const u = this.deps.userId.trim() || 'anonymous'
-    return `\n\n## Session binding\n- **platformUserId** for tools (\`read_case_history\`, etc.): \`${u}\`\nPass this string as the \`userId\` argument unless the customer explicitly states a different authoritative account identifier.\n`
-  }
 
   private buildApiMessages() {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
@@ -1111,12 +1315,23 @@ export class AgentLoop {
     }
 
     if (assessment.shouldCompact) {
-      await this.performCompaction()
-      const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
-      if (this.deps.config.memoryStrategy.enableSnip !== false) {
-        this.messages = this.messages.slice(-keepCount)
+      if (this.caseMemory.isCompactCircuitBroken()) {
+        return { shouldCompact: false, reason: 'circuit_breaker' }
       }
-      return { shouldCompact: true, reason: 'auto' }
+      try {
+        await this.performCompaction()
+        const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
+        if (this.deps.config.memoryStrategy.enableSnip !== false) {
+          this.messages = this.messages.slice(-keepCount)
+        }
+        await this.traceWriter.write('loop_decision', 'Compacted', {
+          reason: 'auto', kept: keepCount, percentLeft: assessment.percentLeft,
+        })
+        return { shouldCompact: true, reason: 'auto' }
+      } catch {
+        this.caseMemory.recordCompactionFailure()
+        return { shouldCompact: false, reason: 'failed' }
+      }
     }
 
     if (assessment.isWarning) {
@@ -1160,7 +1375,15 @@ export class AgentLoop {
   }
 
   abort() {
+    this.aborted = true
     this.abortController.abort()
+  }
+
+  /** Directly ingest form answers as facts, bypassing LLM extraction.
+   *  Follows CC's pattern: the model keyed the fields, the user filled them —
+   *  no second LLM call needed. */
+  ingestFormAnswers(answers: Record<string, string>): void {
+    this.caseMemory.ingestFormAnswers(answers)
   }
 
   getMemorySummary() {
@@ -1169,5 +1392,10 @@ export class AgentLoop {
 
   loadMemory(data: Parameters<CaseMemoryManager['loadFromDb']>[0]) {
     this.caseMemory.loadFromDb(data)
+    // Re-sync currentStage from restored memory so StageExecutor picks up
+    // the persisted stage instead of defaulting to the first schema stage.
+    if (this.stageExecutor) {
+      this.currentStage = this.stageExecutor.getCurrentStage()
+    }
   }
 }

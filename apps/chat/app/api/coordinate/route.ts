@@ -12,7 +12,7 @@ import {
 import { getCachedConfig, setCachedConfig } from '@/lib/agent/config-cache'
 
 const DEFAULT_AGENT_CONFIG: AgentConfigData = {
-  model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
+  model: 'MiniMax-M2.7-highspeed',
   temperature: 0.5,
   thinkingBudget: 4096,
   maxIterations: 20,

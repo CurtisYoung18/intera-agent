@@ -26,13 +26,7 @@ export default function SplitLayout({ splitMode, leftRail, mainPanel, tabBar }: 
           </aside>
         )}
 
-        <main
-          className={
-            splitMode && leftRail
-              ? 'flex min-h-0 min-w-0 flex-1 flex-col lg:rounded-2xl lg:bg-white/[0.03] lg:ring-1 lg:ring-[var(--border-subtle)] lg:backdrop-blur-[2px]'
-              : 'flex min-h-0 min-w-0 flex-1 flex-col'
-          }
-        >
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {mainPanel}
         </main>
       </div>

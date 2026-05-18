@@ -22,6 +22,8 @@ export type ActionType =
   | 'llm_request_start'
   | 'llm_response'
   | 'microcompact'
+  | 'stage_eval'
+  | 'intent_classify'
 
 export interface TraceEntry {
   id: string
@@ -128,22 +130,40 @@ export class TraceWriter {
   async writeLlmRequestStart(
     model: string,
     messageCount: number,
+    systemPrompt?: string,
+    messages?: unknown[],
   ): Promise<void> {
-    await this.write('llm_request_start', `LLM request: ${model}`, {
-      model,
-      messageCount,
-    })
+    const payload: Record<string, unknown> = { model, messageCount }
+    if (systemPrompt) {
+      payload.systemPrompt = systemPrompt.length > 8000
+        ? systemPrompt.slice(0, 8000) + `\n\n... [truncated ${systemPrompt.length - 8000} chars]`
+        : systemPrompt
+    }
+    if (messages) {
+      const lastMsgs = messages.slice(-6)
+      payload.lastMessages = lastMsgs.map((m: any) => ({
+        role: m.role,
+        content: typeof m.content === 'string'
+          ? (m.content.length > 2000 ? m.content.slice(0, 2000) + '...' : m.content)
+          : '[non-text]',
+      }))
+    }
+    await this.write('llm_request_start', `LLM request: ${model}`, payload)
   }
 
   async writeLlmResponse(
     stopReason: string | null,
     usage?: Record<string, unknown>,
     iteration?: number,
+    textContent?: string,
+    toolNames?: string[],
   ): Promise<void> {
     await this.write('llm_response', `LLM response: ${stopReason || 'complete'}`, {
       stopReason,
       iteration,
       usage,
+      textPreview: textContent ? textContent.slice(0, 3000) : undefined,
+      toolCalls: toolNames?.length ? toolNames : undefined,
     })
   }
 }

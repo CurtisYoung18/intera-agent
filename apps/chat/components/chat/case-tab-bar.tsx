@@ -23,7 +23,7 @@ export default function CaseTabBar({ cases: activeCases, activeIndex, onSwitch, 
   if (activeCases.length === 0) return null
 
   return (
-    <div className="flex shrink-0 items-center overflow-x-auto rounded-t-xl border border-b-0 border-[var(--border-subtle)] bg-white/[0.02]">
+    <div className="flex shrink-0 items-center overflow-x-auto border-b border-black/[0.05] bg-transparent">
       {activeCases.map((c, i) => {
         const isActive = i === activeIndex
         const dotColor = STATUS_DOT[c.status] || 'bg-smoke'
@@ -32,7 +32,7 @@ export default function CaseTabBar({ cases: activeCases, activeIndex, onSwitch, 
           <button
             key={c.caseId}
             onClick={() => onSwitch(i)}
-            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-r border-[var(--border-subtle)] px-3 py-2 text-[11px] transition-colors last:border-r-0 ${
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-r border-black/[0.04] px-3 py-2 text-[11px] transition-colors last:border-r-0 ${
               isActive
                 ? 'bg-white/[0.04] text-fog/90'
                 : 'text-fog/50 hover:text-fog/70 hover:bg-white/[0.02]'

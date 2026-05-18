@@ -4,10 +4,10 @@
 
 import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
-import { IntentClassifier } from '@/lib/agent/intent-classifier'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
-import type { SSEEvent, AgentConfigData, CaseSchemaConfig, IntentClassification } from '@intera/shared/types'
+import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
+import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
 
 // Verify env vars at module load (logged once per cold start)
 const AUTH_SET = !!process.env.ANTHROPIC_AUTH_TOKEN
@@ -22,13 +22,12 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
   DEFAULT_POLICY_HOOKS,
-  HARNESS_DEFAULT_FORM_RESPONSE_APPEND,
   HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
 } from '@intera/shared/defaults'
 
 // Default fallback config. Production loads from AgentConfig table via Customer.
 const DEFAULT_AGENT_CONFIG: AgentConfigData = {
-  model: process.env.ANTHROPIC_MODEL || 'MiniMax-M2.70-highspeed',
+  model: 'MiniMax-M2.7-highspeed',
   temperature: 0.5,
   thinkingBudget: 4096,
   maxIterations: 20,
@@ -151,21 +150,6 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
   try { return JSON.parse(raw) } catch { return {} }
 }
 
-function appendCaseSchemaToPrompt(
-  systemPrompt: string,
-  caseType: {
-    displayName: string
-    defaultGoal: string
-    escalateOn: string
-    stages: string
-    requiredFacts: string
-  },
-): string {
-  const stages = parseMemoryJson(caseType.stages) as string[]
-  const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
-  return `${systemPrompt}\n\n## Case Schema: ${caseType.displayName}\n- Goal: ${caseType.defaultGoal}\n- Stages: ${JSON.stringify(stages)}\n- Required facts: ${JSON.stringify(requiredFacts)}\n- Escalate when: ${caseType.escalateOn}`
-}
-
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -177,6 +161,14 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        // Body size validation
+        const contentLength = Number(request.headers.get('content-length') || 0)
+        if (contentLength > 100_000) {
+          sendEvent({ type: 'error', data: 'Request body too large (max 100KB)', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
         const body = await request.json()
         const {
           message,
@@ -185,32 +177,42 @@ export async function POST(request: NextRequest) {
           caseId,
           customerId,
           userId,
-          classification,
           caseType: bodyCaseType,
-          skipClassification,
           bootstrapNewCase: rawBootstrapNewCase,
         } = body
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
+        // Validate customerId format
+        if (customerId && (typeof customerId !== 'string' || customerId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(customerId))) {
+          sendEvent({ type: 'error', data: 'Invalid customerId format', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
+        // Validate message length
+        if (message && typeof message === 'string' && message.length > 50000) {
+          sendEvent({ type: 'error', data: 'Message too long (max 50000 characters)', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
         let userMessage = message
         let resolvedCaseId = caseId || `case_${Date.now()}`
         let resolvedCustomerId = customerId || 'default'
         let resolvedUserId = userId || 'anonymous'
-        let resolvedClassification = classification as IntentClassification | undefined
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
 
         // ── Form response: customer submitted form answers ──
+        let formAnswers: Record<string, string> | undefined
         if (formResult && !message) {
           resolvedCaseId = formResult.caseId || resolvedCaseId
-          const answers = formResult.answers || {}
-          const answerText = Object.entries(answers as Record<string, string>)
-            .map(([key, value]) => `${key}: ${value}`)
-            .join('\n')
-          const template =
-            (await loadAgentConfig(resolvedCustomerId)).formResponseTemplate || HARNESS_DEFAULT_FORM_RESPONSE_APPEND
-          userMessage = `[Form submitted]\n${answerText}\n\n${template}`
+          const answers = (formResult.answers || {}) as Record<string, string>
+          formAnswers = answers
+          // Format as tool_result so the model sees it exactly like any other
+          // tool execution result — matching CC's AskUserQuestion pattern.
+          userMessage = `Tool request_user_input result: ${JSON.stringify(answers)}`
           console.log(`[Intera] Form submitted for case ${resolvedCaseId}`)
         }
 
@@ -257,90 +259,13 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // ── System prompt (initialized early for classification additions) ──
+        // ── System prompt ──
         let systemPrompt = DEFAULT_SYSTEM_PROMPT
 
-        // ── Intent classification + auto case creation ──
-        // Skip for resume/form flows or when explicitly disabled
-        const shouldClassify = !skipClassification && !resumeTrigger && !formResult && !bodyCaseType
-
-        const classificationLooksWeak =
-          !resolvedClassification ||
-          !resolvedClassification.matchedCaseTypes?.length ||
-          /\b(timed out|Classification error|API error|Failed to parse|DB error loading)\b/i.test(
-            resolvedClassification.reasoning || '',
-          )
-
-        if (shouldClassify && userMessage && classificationLooksWeak) {
-          try {
-            resolvedClassification = await IntentClassifier.classify(userMessage, resolvedCustomerId)
-          } catch (e) {
-            console.error('[Intera] Server-side intent classify failed:', e)
-          }
-        }
-
-        if (shouldClassify && resolvedClassification) {
-          if (
-            resolvedClassification.intent === 'case' &&
-            !resolvedClassification.needsClarification &&
-            resolvedClassification.matchedCaseTypes.length > 0 &&
-            isInvestigableCaseType(resolvedClassification.matchedCaseTypes[0]?.type)
-          ) {
-            const matched = resolvedClassification.matchedCaseTypes[0]
-            try {
-              const newCase = await prisma.case.create({
-                data: {
-                  customerId: resolvedCustomerId,
-                  userId: resolvedUserId,
-                  type: matched.type,
-                  status: 'created',
-                },
-              })
-              resolvedCaseId = newCase.id
-              createdCaseForIntent = true
-
-              sendEvent({
-                type: 'case_created',
-                data: {
-                  caseId: newCase.id,
-                  caseType: matched.type,
-                  displayName: matched.displayName,
-                  icon: matched.icon,
-                  extractedFacts: resolvedClassification.extractedFacts,
-                },
-                timestamp: new Date().toISOString(),
-              })
-              emittedCaseCreated.add(newCase.id)
-              console.log(`[Intera] Auto-created case ${newCase.id} with type "${matched.type}" from intent classification`)
-            } catch (err) {
-              console.error('[Intera] Failed to create case from intent:', err)
-            }
-          }
-
-          if (
-            resolvedClassification.needsClarification &&
-            resolvedClassification.matchedCaseTypes.length > 1
-          ) {
-            // Multiple ambiguous matches — Core Agent should ask user to clarify
-            const options = resolvedClassification.matchedCaseTypes
-              .map((m) => `"${m.displayName}"`)
-              .join(', ')
-            const clarifyNote = `\n\n[Intent Classification]: The user's message could match multiple case types: ${options}. Ask the user which issue they want help with first, then create the appropriate case using create_case tool.`
-            systemPrompt += clarifyNote
-          }
-        }
-
-        // Emit intent_classified SSE event for frontend split-mode activation
-        if (resolvedClassification) {
-          sendEvent({
-            type: 'intent_classified',
-            data: resolvedClassification,
-            timestamp: new Date().toISOString(),
-          })
-        }
+        // Stream progress immediately so the user sees movement (CC pattern)
+        sendEvent({ type: 'stream_request_start', data: null, timestamp: new Date().toISOString() })
 
         // ── Bootstrap new case from Chat UI (multi-case parallel lanes) ──
-        // bootstrapNewCase: placeholder slugs (e.g. general) must not open a workflow case
         if (
           bootstrapNewCase &&
           bodyCaseType &&
@@ -371,7 +296,6 @@ export async function POST(request: NextRequest) {
                 caseType: bodyCaseType,
                 displayName: ctRow?.displayName ?? bodyCaseType,
                 icon: ctRow?.icon ?? '📋',
-                extractedFacts: resolvedClassification?.extractedFacts,
               },
               timestamp: new Date().toISOString(),
             })
@@ -390,19 +314,13 @@ export async function POST(request: NextRequest) {
         }
 
         if (bodyCaseType) {
-          // Manual case type override from UI (including bootstrap lanes)
           systemPrompt += `\n\n[Manual Case Type]: The user has selected case type "${bodyCaseType}".`
         }
 
-        // Chat UI binds SSE events to lane.caseId via case_created. Paths that skip prisma bootstrap
-        // (manual caseType + skipClassification) never emitted it — tabs/case card/form broke.
+        // Chat UI binds SSE events to lane.caseId via case_created.
         if (!resumeTrigger && !formResult && !createdCaseForIntent && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
           const inferredType =
-            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined) ||
-            (resolvedClassification?.intent === 'case' &&
-            isInvestigableCaseType(resolvedClassification.matchedCaseTypes?.[0]?.type)
-              ? resolvedClassification.matchedCaseTypes?.[0]?.type
-              : undefined)
+            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined)
           if (inferredType) {
             try {
               const ctRow = await prisma.caseType.findUnique({
@@ -420,7 +338,7 @@ export async function POST(request: NextRequest) {
                   caseType: inferredType,
                   displayName: ctRow?.displayName ?? inferredType,
                   icon: ctRow?.icon ?? '📋',
-                  extractedFacts: resolvedClassification?.extractedFacts,
+                  extractedFacts: {},
                 },
                 timestamp: new Date().toISOString(),
               })
@@ -447,23 +365,32 @@ export async function POST(request: NextRequest) {
               })
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
-                systemPrompt = appendCaseSchemaToPrompt(systemPrompt, caseType)
               }
             } catch { /* schema not found */ }
+
+            // Auto-resume: if case is waiting for human and task was resolved, inject verdict
+            if (existingCase.status === 'waiting_human' && !resumeTrigger && !formResult && message) {
+              try {
+                const resolvedTask = await prisma.humanTask.findFirst({
+                  where: { caseId: resolvedCaseId, status: 'resolved' },
+                  orderBy: { resolvedAt: 'desc' },
+                })
+                if (resolvedTask) {
+                  const resumeTmpl = (await loadAgentConfig(resolvedCustomerId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+                  const parts = ['[Human task resolved — operator reviewed your case]']
+                  if (resolvedTask.verdict) parts.push(`Operator verdict: ${resolvedTask.verdict.replace(/_/g, ' ')}`)
+                  if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
+                  parts.push(resumeTmpl)
+                  userMessage = parts.join('\n') + '\n\nCustomer also said: ' + message
+                }
+              } catch { /* best-effort */ }
+            }
 
             if (existingCase.memory) {
               existingMemory = existingCase.memory
 
               if (existingCase.memory.summary) {
                 systemPrompt += `\n\n## Case Session Memory\n${existingCase.memory.summary}`
-              }
-
-              const facts = parseMemoryJson(existingCase.memory.confirmedFacts)
-              const skills = parseMemoryJson(existingCase.memory.skillsCalled)
-              const missing = parseMemoryJson(existingCase.memory.missingFacts)
-              const skillsArr = Array.isArray(skills) ? skills : []
-              if (Object.keys(facts as object).length > 0 || skillsArr.length > 0) {
-                systemPrompt += `\n\n## Current Case State\n- Confirmed: ${JSON.stringify(facts)}\n- Skills used: ${JSON.stringify(skillsArr)}\n- Missing: ${JSON.stringify(missing)}`
               }
             }
           }
@@ -475,9 +402,6 @@ export async function POST(request: NextRequest) {
         const inferredCaseTypeForRecord =
           caseSchema?.type ??
           bodyCaseType ??
-          (resolvedClassification?.intent === 'case'
-            ? resolvedClassification.matchedCaseTypes?.[0]?.type
-            : undefined) ??
           'general'
 
         try {
@@ -514,12 +438,33 @@ export async function POST(request: NextRequest) {
             })
             if (ctRow) {
               caseSchema = schemaFromCaseTypeRow(ctRow)
-              systemPrompt = appendCaseSchemaToPrompt(systemPrompt, ctRow)
             }
           } catch {
             /* ignore */
           }
         }
+
+        // ── Resolve prompt placeholders with live Console config ──
+        const existingMemoryData = existingMemory as Record<string, unknown> | null
+        const resolvedCaseState = existingMemoryData ? {
+          confirmedFacts: (parseMemoryJson(existingMemoryData.confirmedFacts as string) as Record<string, unknown>) || {},
+          skillsCalled: (parseMemoryJson(existingMemoryData.skillsCalled as string) as string[]) || [],
+          missingFacts: (parseMemoryJson(existingMemoryData.missingFacts as string) as string[]) || [],
+        } : undefined
+
+        const promptCtx = await buildPromptContext({
+          customerId: resolvedCustomerId,
+          caseSchema: caseSchema ? {
+            displayName: caseSchema.displayName,
+            goal: caseSchema.defaultGoal,
+            stages: caseSchema.stages,
+            requiredFacts: caseSchema.requiredFacts,
+            escalateOn: caseSchema.escalateOn,
+          } : undefined,
+          caseState: resolvedCaseState,
+          sessionBinding: { userId: resolvedUserId },
+        })
+        systemPrompt = resolvePrompt(systemPrompt, promptCtx)
 
         const agentConfig = await loadAgentConfig(resolvedCustomerId)
 
@@ -543,6 +488,12 @@ export async function POST(request: NextRequest) {
           agentLoop.loadMemory(memData)
         }
 
+        // Directly ingest form answers as facts — follows CC's pattern:
+        // the model keyed the fields, the user filled them. No LLM extraction needed.
+        if (formAnswers) {
+          agentLoop.ingestFormAnswers(formAnswers)
+        }
+
         const result = await agentLoop.run(userMessage, sendEvent)
 
         // ── Persist case memory — only if real work was done (not casual chat) ──
@@ -552,7 +503,8 @@ export async function POST(request: NextRequest) {
           result.transition !== 'next_turn'
         if (hasRealWork) {
           try {
-            const caseTypeForUpsert = caseSchema?.type || 'general'
+            // Read type from AgentLoop's deps (may have been set by create_case tool mid-loop)
+            const caseTypeForUpsert = (agentLoop as any).deps?.caseSchema?.type || caseSchema?.type || 'general'
             await prisma.case.upsert({
               where: { id: resolvedCaseId },
               update: { status: result.caseStatus, type: caseTypeForUpsert },

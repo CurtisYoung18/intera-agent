@@ -33,6 +33,15 @@ function normalizeDispatchMarker(raw: unknown): SubAgentDispatchMarker {
   return { stages: {} }
 }
 
+/** Extract a JSON object from LLM output that may be wrapped in markdown code fences. */
+function extractJsonFromLlmOutput(text: string): Record<string, unknown> | null {
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const jsonStr = fenceMatch ? fenceMatch[1].trim() : text
+  const match = jsonStr.match(/\{[\s\S]*\}/)
+  if (!match) return null
+  try { return JSON.parse(match[0]) } catch { return null }
+}
+
 export interface CompactionResult {
   shouldCompact: boolean
   isWarning: boolean
@@ -91,6 +100,17 @@ export class CaseMemoryManager {
 
   // ─── Fact ingestion ───────────────────────────────────────
 
+  /** Directly ingest structured form answers as confirmed facts — no LLM needed.
+   *  Follows CC's AskUserQuestion pattern: answers are already keyed by the model. */
+  ingestFormAnswers(answers: Record<string, string>): void {
+    for (const [key, value] of Object.entries(answers)) {
+      if (value && value.trim()) {
+        this.confirmedFacts[key] = value.trim()
+        this.missingFacts = this.missingFacts.filter((f) => f !== key)
+      }
+    }
+  }
+
   private getExtractionClient(): Anthropic {
     return new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
@@ -118,6 +138,8 @@ export class CaseMemoryManager {
       '- Do NOT invent facts that are not stated in the message.',
       '- If the message contains transaction IDs, order numbers, or similar identifiers, extract them as txnId.',
       '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
+      '- If the message starts with "[Form submitted]", parse each "key: value" line as a fact directly. Map aliases: channel/deposit_method/payment_method → paymentMethod, deposit_time/time → date.',
+      '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
     ].join('\n')
 
     const userPrompt = [
@@ -129,7 +151,7 @@ export class CaseMemoryManager {
     try {
       const client = this.getExtractionClient()
       const msg = await client.messages.create({
-        model: process.env.FACT_EXTRACTION_MODEL || 'claude-haiku-4-5-20251001',
+        model: process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed',
         max_tokens: 256,
         temperature: 0,
         system: systemPrompt,
@@ -137,9 +159,8 @@ export class CaseMemoryManager {
       })
 
       const text = (msg.content[0] as any)?.text || ''
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
+      const parsed = extractJsonFromLlmOutput(text)
+      if (parsed) {
         const facts = parsed.extractedFacts
         if (facts && typeof facts === 'object') {
           for (const [key, value] of Object.entries(facts)) {
@@ -156,9 +177,11 @@ export class CaseMemoryManager {
         if (flags.includes('userReportedPartialMissing')) {
           this.confirmedFacts.userReportedPartialMissing = true
         }
+      } else {
+        console.warn('[CaseMemory] Could not parse JSON from extraction response:', text.slice(0, 200))
       }
     } catch (err) {
-      console.warn('[CaseMemory] LLM fact extraction failed, falling back to key event only:', err)
+      console.warn('[CaseMemory] LLM fact extraction failed:', err)
     }
 
     this.keyEvents.push({

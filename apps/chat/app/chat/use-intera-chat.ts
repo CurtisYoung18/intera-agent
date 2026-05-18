@@ -132,7 +132,9 @@ export interface UseInteraChatReturn {
   onFormSubmit: (msgId: string, answers: Record<string, string>) => Promise<void>
   onFormCancel: (msgId: string) => void
   onIntentConfirm: (msgId: string, selectedTypes: string[]) => Promise<void>
+  userId: string
   customerId: string
+  loadHistoricalCase: (caseId: string) => Promise<void>
   composerAssistEnabled: boolean
   composerAssistMissingDeepseekKey?: boolean
   composerMinDraftChars: number
@@ -267,6 +269,59 @@ export function useInteraChat(): UseInteraChatReturn {
     }
   }, [session.customerId])
 
+  // Poll for resolved human tasks — triggers auto-resume when operator completes review
+  useEffect(() => {
+    const waitingCases = casesRef.current.filter((c) => c.status === 'waiting_human')
+    if (waitingCases.length === 0) return
+
+    const poll = async () => {
+      for (const wc of waitingCases) {
+        try {
+          const res = await fetch(`/api/human-tasks?caseId=${encodeURIComponent(wc.caseId)}`)
+          if (!res.ok) continue
+          const data = await res.json()
+          const resolved = (data.tasks || []).find((t: any) => t.status === 'resolved')
+          if (resolved) {
+            // Auto-resume: send resume trigger to /api/messages
+            const firstTextMsgId = crypto.randomUUID()
+            const lane = createLaneBuffer(firstTextMsgId, wc.caseId)
+            setMessages((prev) => [
+              ...prev,
+              makeMsg({ id: firstTextMsgId, role: 'assistant', msgType: 'text', relatedCaseId: wc.caseId, content: '', isStreaming: true }),
+            ])
+            patchCaseById(wc.caseId, { status: 'investigating' })
+            setAgentStatus('thinking')
+            setIsLoading(true)
+            try {
+              const response = await fetch('/api/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  customerId: session.customerId,
+                  userId: session.userId,
+                  resumeTrigger: resolved.id,
+                }),
+              })
+              if (response.ok) {
+                const reader = response.body?.getReader()
+                if (reader) await consumeAgentReadableStream(reader, lane, false, { onStreamingTool: setStreamingToolName })
+              }
+            } catch { /* ignore */ }
+            finally {
+              setIsLoading(false)
+              setStreamingToolName(null)
+            }
+            return // one resume per poll cycle
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    poll() // immediate first check
+    const interval = setInterval(poll, 5000)
+    return () => clearInterval(interval)
+  }, [cases])
+
   const activeCaseId = cases.length > 0 ? cases[activeCaseIndex]?.caseId ?? null : null
   const actualCaseIdRef = useRef<string>(caseIdRef.current)
 
@@ -383,6 +438,42 @@ export function useInteraChat(): UseInteraChatReturn {
         case 'intent_classified': {
           const ic = event.data as IntentClassification
           if (ic.intent === 'case' && investigableMatches(ic).length > 0) setSplitMode(true)
+          break
+        }
+
+        case 'clarification': {
+          const cd = event.data as { cases: Array<{ caseType: string; summary: string }> }
+          if (cd.cases?.length > 0) {
+            // Build a synthetic IntentClassification for the card + onIntentConfirm
+            const syntheticClf: IntentClassification = {
+              intent: 'case',
+              needsClarification: true,
+              reasoning: 'Core Agent detected multiple intents via propose_cases',
+              extractedFacts: {},
+              matchedCaseTypes: cd.cases.map((c, i) => ({
+                type: c.caseType,
+                displayName: c.caseType,
+                icon: '📋',
+                confidence: 1 - i * 0.05,
+              })),
+              modelUsed: 'core_agent',
+            }
+            setMessages((prev) => [
+              ...prev,
+              makeMsg({
+                id: `clarify_${crypto.randomUUID()}`,
+                role: 'assistant',
+                msgType: 'intent_clarification',
+                relatedCaseId: undefined,
+                content: '',
+                intentOptions: {
+                  caseTypes: syntheticClf.matchedCaseTypes,
+                  classification: syntheticClf,
+                },
+              }),
+            ])
+            setSplitMode(true)
+          }
           break
         }
 
@@ -845,55 +936,21 @@ export function useInteraChat(): UseInteraChatReturn {
       }
 
       const preferZh = /[一-鿿]/.test(text)
-      let classification: IntentClassification | null = null
       let firstTextMsgId: string | undefined
 
       try {
-        try {
-          const classifyRes = await fetch('/api/intent/classify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, customerId: session.customerId }),
-          })
-          if (classifyRes.ok) classification = await classifyRes.json()
-        } catch {
-          /* ignore */
-        }
-
-        if (classification && classification.intent === 'case' && investigableMatches(classification).length > 0) {
-          setSplitMode(true)
-        }
-
-        const realMatches = classification ? investigableMatches(classification) : []
-        if (
-          classification &&
-          classification.intent === 'case' &&
-          classification.needsClarification &&
-          realMatches.length > 1
-        ) {
-          const clf = classification
-          const cardMsgId = crypto.randomUUID()
-          setMessages((prev) => [
-            ...prev,
-            makeMsg({
-              id: cardMsgId,
-              role: 'assistant',
-              msgType: 'intent_clarification',
-              content: '',
-              intentOptions: {
-                classification: { ...clf, matchedCaseTypes: realMatches },
-                caseTypes: realMatches.map((m) => ({
-                  type: m.type,
-                  displayName: m.displayName,
-                  icon: m.icon,
-                  confidence: m.confidence,
-                })),
-              },
-            }),
-          ])
-          setAgentStatus('waiting')
-          return
-        }
+        // Fire-and-forget classify for split-mode animation only — does NOT block /api/messages.
+        fetch('/api/intent/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, customerId: session.customerId }),
+        }).then(async (res) => {
+          if (!res.ok) return
+          const c = await res.json() as IntentClassification
+          if (c?.intent === 'case' && investigableMatches(c).length > 0) {
+            setSplitMode(true)
+          }
+        }).catch(() => {})
 
         const streamMsgId = crypto.randomUUID()
         firstTextMsgId = streamMsgId
@@ -918,7 +975,6 @@ export function useInteraChat(): UseInteraChatReturn {
             customerId: session.customerId,
             userId: session.userId,
             caseId: actualCaseIdRef.current,
-            ...(classification ? { classification } : {}),
             ...(selectedCaseTypeRef.current
               ? { caseType: selectedCaseTypeRef.current, skipClassification: true }
               : {}),
@@ -1132,6 +1188,45 @@ export function useInteraChat(): UseInteraChatReturn {
     [activeCaseIndex],
   )
 
+  const loadHistoricalCase = useCallback(async (caseId: string) => {
+    try {
+      const res = await fetch(`/api/cases/${caseId}/messages?limit=100`)
+      if (!res.ok) return
+      const data = await res.json()
+      const msgs: ChatMessage[] = (data.messages || []).map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        msgType: 'text' as MsgType,
+        content: m.content || '',
+        isStreaming: false,
+        relatedCaseId: caseId,
+        timestamp: m.createdAt,
+      }))
+      setMessages(msgs)
+      caseIdRef.current = caseId
+
+      // Create case tab if not exists
+      const existingCase: ActiveCase = {
+        caseId,
+        caseType: data.caseType || 'general',
+        displayName: data.caseType || 'general',
+        icon: '📋',
+        status: data.status || 'created',
+        stages: [],
+        createdAt: data.createdAt || new Date().toISOString(),
+      }
+      setCases((prev) => {
+        if (prev.some((c) => c.caseId === caseId)) return prev
+        const updated = [...prev, existingCase]
+        setActiveCaseIndex(updated.length - 1)
+        return updated
+      })
+      setSplitMode(true)
+    } catch (e) {
+      console.error('Failed to load historical case:', e)
+    }
+  }, [])
+
   const clearQueue = useCallback(() => {
     queuedRef.current = []
     setQueuedCount(0)
@@ -1185,7 +1280,9 @@ export function useInteraChat(): UseInteraChatReturn {
     onFormSubmit,
     onFormCancel,
     onIntentConfirm,
+    userId: session.userId,
     customerId: session.customerId,
+    loadHistoricalCase,
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,
     composerMinDraftChars,

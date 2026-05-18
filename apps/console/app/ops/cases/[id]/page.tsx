@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { translatedCaseStatus, translatedMsgRole } from '@/lib/i18n/dictionaries'
 import { ConsoleBackButton, ConsoleStatusPill, ConsoleToolbarButton } from '@/components/ui/console-chrome'
-import { Zap, Clock, Cpu, Brain, Tag, User, Calendar } from 'lucide-react'
+import { Zap, Clock, Cpu, Brain, Tag, User, Calendar, Download } from 'lucide-react'
 import { CaseTraceTimeline } from '@/components/ops/case-trace-view'
 import { caseIdBadge } from '@/lib/ops-case-display'
 
@@ -233,6 +233,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <ConsoleToolbarButton icon={Download} onClick={() => window.open(`/api/cases/${id}/export`, '_blank')}>
+              {t('caseDetail.export')}
+            </ConsoleToolbarButton>
             <ConsoleToolbarButton icon={Brain} onClick={() => router.push(`/ops/cases/${id}/memory`)}>
               {t('caseDetail.memory')}
             </ConsoleToolbarButton>

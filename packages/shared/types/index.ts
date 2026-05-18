@@ -292,6 +292,7 @@ export type SSEEventType =
   | 'sub_agent_complete'
   | 'sub_agent_error'
   | 'core_agent_progress'
+  | 'clarification'
   | 'error'
 
 export interface SSEEvent {
@@ -407,6 +408,22 @@ export interface SubAgentResult {
   durationMs: number
 }
 
+/** Unified notification format for sub-agent lifecycle (CC `<task-notification>` pattern). */
+export interface SubAgentNotification {
+  taskId: string
+  agentId: string
+  agentName: string
+  caseId: string
+  status: 'started' | 'running' | 'completed' | 'failed'
+  stage?: string
+  findings?: Record<string, unknown>
+  recommendation?: string
+  tokensUsed?: number
+  durationMs?: number
+  error?: string
+  timestamp: string
+}
+
 // ============================================
 // API Response Types
 // ============================================
@@ -457,4 +474,5 @@ export interface IntentClassification {
   needsClarification: boolean
   reasoning: string
   extractedFacts: Record<string, string>
+  modelUsed?: string
 }

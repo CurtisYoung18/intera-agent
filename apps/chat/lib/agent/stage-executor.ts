@@ -16,6 +16,16 @@ import type {
 import { DEFAULT_STAGE_CONFIGS } from '@intera/shared/defaults'
 import type { CaseMemoryManager } from './memory'
 
+/** Extract a JSON object from LLM output that may be wrapped in markdown code fences. */
+function extractJsonFromLlmOutput(text: string): Record<string, unknown> | null {
+  // Try ```json ... ``` block first
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const jsonStr = fenceMatch ? fenceMatch[1].trim() : text
+  const match = jsonStr.match(/\{[\s\S]*\}/)
+  if (!match) return null
+  try { return JSON.parse(match[0]) } catch { return null }
+}
+
 export interface StageCheckResult {
   met: boolean
   missing: string[]
@@ -26,6 +36,7 @@ export interface TransitionEval {
   shouldTransition: boolean
   nextStage?: string
   reason: string
+  modelUsed?: string
 }
 
 export class StageExecutor {
@@ -35,16 +46,9 @@ export class StageExecutor {
     private caseSchema: CaseSchemaConfig,
     private agentConfig: AgentConfigData,
     private caseMemory: CaseMemoryManager,
-    /** Session user id — tell the model to pass this as read_case_history.userId unless customer overrides */
-    private platformUserId: string,
   ) {
     // Parse stage configs from case schema, with fallback to defaults
     this.stageConfigs = this.loadStageConfigs()
-  }
-
-  private harnessBinding(): string {
-    const u = this.platformUserId.trim() || 'anonymous'
-    return `\n\n## Session binding\n- **platformUserId** for tools (\`read_case_history\`, etc.): \`${u}\`\nPass this string as the \`userId\` argument unless the customer explicitly states a different authoritative account identifier.\n`
   }
 
   // -----------------------------------------------------------------------
@@ -90,9 +94,8 @@ export class StageExecutor {
   buildStagePrompt(stage: string, basePrompt?: string): string {
     const cfg = this.getStageConfig(stage)
     const base = basePrompt || this.agentConfig.systemPrompt
-    const bind = this.harnessBinding()
 
-    if (!cfg) return `${base}${bind}`
+    if (!cfg) return base
 
     const parts: string[] = [base]
 
@@ -120,7 +123,7 @@ export class StageExecutor {
       parts.push(`**Stage transition:** ${cfg.transition.type} — you may proceed when conditions are met.`)
     }
 
-    return `${parts.join('\n')}${bind}`
+    return parts.join('\n')
   }
 
   // -----------------------------------------------------------------------
@@ -136,8 +139,8 @@ export class StageExecutor {
     // Always allow terminal tools regardless of stage
     allowed.add('create_human_task')
     allowed.add('finalize_case')
-    allowed.add('finalize_consultation')
     allowed.add('request_user_input')
+    // NOTE: finalize_consultation is human-chat context only — NOT auto-allowed
 
     return allTools.filter((t) => allowed.has(t.name))
   }
@@ -267,12 +270,13 @@ export class StageExecutor {
 
     // ── Evaluation: use LLM to decide ──
     if (rule.type === 'evaluation') {
+      const evalModel = rule.evaluationModel || this.agentConfig.evaluationModel || this.agentConfig.model
       try {
         const result = await this.runEvaluation(stage, rule.evaluationPrompt, rule.evaluationModel)
-        return result
+        return { ...result, modelUsed: evalModel }
       } catch (err) {
         console.warn('[StageExecutor] Evaluation failed, defaulting to stay:', err)
-        return { shouldTransition: false, reason: `evaluation failed: ${err}` }
+        return { shouldTransition: false, reason: `evaluation failed: ${err}`, modelUsed: evalModel }
       }
     }
 
@@ -322,20 +326,16 @@ export class StageExecutor {
     })
 
     const text = (msg.content[0] as any)?.text || ''
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
-        return {
-          shouldTransition: !!parsed.shouldTransition,
-          nextStage: parsed.nextStage || nextStage || undefined,
-          reason: parsed.reason || 'evaluation complete',
-        }
+    const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
+    if (parsed) {
+      return {
+        shouldTransition: !!parsed.shouldTransition,
+        nextStage: (parsed.nextStage as string) || nextStage || undefined,
+        reason: (parsed.reason as string) || 'evaluation complete',
       }
-    } catch {
-      // fall through
     }
 
+    console.warn('[StageExecutor] Could not parse JSON from evaluation response:', text.slice(0, 200))
     return { shouldTransition: false, reason: 'evaluation could not parse result' }
   }
 
@@ -353,36 +353,48 @@ export class StageExecutor {
   // Nudge generation
   // -----------------------------------------------------------------------
 
-  /** Generate a nudge message when the LLM fails to call required tools. */
-  buildNudge(stage: string): string {
+  /** Generate a nudge message when the LLM fails to call required tools. Escalates intensity per nudgeCount. */
+  buildNudge(stage: string, nudgeCount = 1): string {
     const cfg = this.getStageConfig(stage)
     const parts: string[] = ['[SYSTEM NUDGE]']
 
     const skillCheck = this.checkRequiredSkills(stage)
-    if (!skillCheck.met) {
-      parts.push(`Stage "${stage}" requires these tools to be called: ${skillCheck.missing.join(', ')}.`)
-      parts.push('You MUST call them using the tool calling mechanism. Do not just describe what you will do — actually call the tools now.')
-    }
-
     const evidenceCheck = this.checkEvidenceRequirements(stage)
-    if (!evidenceCheck.met) {
-      const userMissing = cfg?.evidenceRequirements
-        ?.filter((e) => evidenceCheck.missing.includes(e.factKey) && e.source === 'user_input')
-        .map((e) => e.description) || []
-      const skillMissing = cfg?.evidenceRequirements
-        ?.filter((e) => evidenceCheck.missing.includes(e.factKey) && e.source === 'skill_output')
-        .map((e) => e.description) || []
 
-      if (userMissing.length) {
-        parts.push(`Missing info from customer: ${userMissing.join(', ')}. Use request_user_input to collect it.`)
+    if (nudgeCount === 1) {
+      // Gentle reminder — include exact field keys so the LLM uses the right ones
+      if (!skillCheck.met) {
+        parts.push(`Stage "${stage}" expects: ${skillCheck.missing.join(', ')}. Please call these tools.`)
       }
-      if (skillMissing.length) {
-        parts.push(`Missing evidence from skills: ${skillMissing.join(', ')}. Call the required tools.`)
+      if (!evidenceCheck.met) {
+        const userMissing = cfg?.evidenceRequirements
+          ?.filter((e) => evidenceCheck.missing.includes(e.factKey) && e.source === 'user_input')
+        if (userMissing?.length) {
+          const withKeys = userMissing.map((e) => `${e.description} (field key: "${e.factKey}")`)
+          parts.push(`Still need from customer: ${withKeys.join(', ')}. Use request_user_input with these exact field keys.`)
+        }
       }
-    }
-
-    if (parts.length === 1) {
-      parts.push('Take action — call tools or request input. Do not end the turn without progress.')
+    } else if (nudgeCount === 2) {
+      // Direct instruction — no more text, just tools
+      parts.push('STOP generating text. You MUST call tools NOW.')
+      if (!skillCheck.met) {
+        parts.push(`Required tools you have NOT called: ${skillCheck.missing.join(', ')}. Call each one using the tool calling mechanism immediately.`)
+      }
+      if (!evidenceCheck.met) {
+        const skillMissing = cfg?.evidenceRequirements
+          ?.filter((e) => evidenceCheck.missing.includes(e.factKey) && e.source === 'skill_output')
+          .map((e) => e.description) || []
+        if (skillMissing.length) {
+          parts.push(`Missing evidence: ${skillMissing.join(', ')}. Only tool calls can provide this — not text.`)
+        }
+      }
+    } else {
+      // Final warning — minimal context, maximal urgency
+      parts.push(`FINAL WARNING (attempt ${nudgeCount}): You have repeatedly failed to call the tools required for stage "${stage}".`)
+      if (!skillCheck.met) {
+        parts.push(`Call NOW: ${skillCheck.missing.join(', ')}. No text. No explanation. Just call the tools.`)
+      }
+      parts.push('If you do not call the required tools now, this case will be escalated to a human operator.')
     }
 
     return parts.join('\n')

@@ -1,55 +1,49 @@
 // Shared default data for admin pre-fill — used by both seed.ts and API lazy init.
 // Must match the built-in definitions in skills.ts and policy.ts exactly.
 
-export const DEFAULT_SYSTEM_PROMPT = `You are **Intera** — an operations agent wired into a persisted **Case** (goal ledger, audited memory, safeguards, occasional human checkpoints). Your job is to **drive the Case to resolution**, not only answer isolated chat bubbles.
+export const DEFAULT_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
 
-## Language & tone
+## How you work
 
-- Respond in whatever language the customer writes — mirror it unless they explicitly ask otherwise.
-- Be concise first; add reasoning only where it aids trust or coordination with humans/tools.
+- Respond in the same language the customer uses. If they write in Chinese, respond in Chinese. Never mix languages.
+- Be concise. Prefer action over explanation.
+- If you say you will check or verify something, call the corresponding tool in that same turn. Text-only promises without tool calls will trigger a correction nudge (3 attempts, then the case escalates to a human).
 
-## The execution rule
+## Cases
 
-**If you imply you will investigate, verify, escalate, or close — you MUST call the matching Skill/Tool that turn.** Ending only with reassurance (\"I'll check…\") without invoking the capability is incorrect.
+When a customer reports a single clear issue, call create_case to open a tracked Case.
 
-## How work is routed
+**If the customer reports multiple distinct issues (e.g. "account login problem AND deposit not received"), or you are unsure which case type fits best — call propose_cases instead.** List each possible case type with a one-line summary of what the customer reported. The system will show a multi-select card so the customer can choose which cases to open.
 
-1. **Intent routing** assigns a **Case Type** with stages, permitted skills, and evidence gates (see Case schema when present).
-2. **Stages** may auto-advance, require skills to be exercised, or be evaluated via the configured evaluation model — follow the goals of the current stage.
-3. Some Case Types ship an **Orchestrator / parallel sub‑agents**. When activated, cooperate with delegated runs; converge on resolved facts instead of conflicting narratives.
+{{case_types}}
 
-## What to do each turn
+When no Case is open, just chat naturally. No need to look up records or call tools.
 
-- Read **Facts & confirmed context** carefully; reuse them instead of repeating the same questions.
-- Choose the smallest next action that progresses the Case: collect missing identifiers, retrieve records, escalate with clear operator questions, or finalize with explicit evidence linkage.
-- If system records **conflict with the customer's story**, do not gaslight — surface the divergence and **invoke human escalation** as configured.
+## When a Case is active
 
-## Mandatory guardrails — policies & hooks
+The case schema, current stage, required evidence, and available tools are shown above. Follow the stage requirements — the evaluator will advance you when conditions are met, or route to a human when system data conflicts with the customer's story.
 
-Administrators attach **Policies** around tool calls (\`preTool\` / \`postTool\`) and before user-facing finalize (\`preFinalize\`). If enforcement withholds progress, obey the verdict: revise the plan (gather facts, escalate, or avoid prohibited commitments). **Policies are intentionally strict** — negotiate only through tooling, never by verbally bypassing them.
+{{case_schema}}
+{{case_state}}
 
-## Humans in the loop
+## Sub-agents
 
-\`create_human_task\` hands work to specialists. Explain **specifically** why, and reassure customers they may keep chatting. When synthetic **resume traffic** arrives after resolution, reconcile operator verdict/internal notes before replying externally.
+Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings — do not re-run tools they already called.
 
-## Forms & friction
+## Policies
 
-Using \`request_user_input\`:
-- Prefer **exact field types**: \`number\` for quantities, **\`date\` for timestamps**, \`select\` for enumerated choices, \`textarea\` for narratives, **\`file\` for uploads**, \`text\` for concise strings.
-- If a form is dismissed, **adapt** (narrow fields, conversational capture, staged asks) — avoid pasting duplicate forms verbatim.
+{{active_policies}}
 
-Representative tooling (availability depends on tenant configuration): \`request_user_input\`, \`create_human_task\`, \`read_case_history\`, \`query_order_status\`, \`query_payment_channel_status\`, \`query_account_status\`, \`search_delay_notice\`, \`ocr_receipt\`, \`kb_hybrid_retrieve\`, \`finalize_case\`, plus any additional skills registered by operators.
+## Human handoff
 
-## Memory & compaction
+When system data contradicts the customer's report, call create_human_task. After the human resolves, translate their verdict into plain, friendly language for the customer.
 
-Long threads may prepend \`[Case context]\`-style compaction with curated facts/skills/trace notes. Treat it as authoritative state about the ledger — **don't ask customers to redo work already summarized there.**
+## Memory
 
-## Separation note
+Facts extracted from previous turns are in confirmedFacts — trust them. Summaries from earlier context appear as [Case context].
 
-Typing-box drafts for visitors are handled by optional **composer continuation** adapters; they never replace Intera's tool loop reasoning or policy checks.
-
-Operate with forensic calm: cite evidence implicitly through tool usage, escalate when ambiguity or risk outweighs autonomy, and keep every customer-visible step aligned with the Case goal.
-`
+{{session_binding}}
+`;
 
 export const DEFAULT_MEMORY_STRATEGY = {
   // Retention
@@ -149,6 +143,23 @@ export interface DefaultSkillSeed {
 }
 
 export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
+  {
+    name: 'propose_cases',
+    description:
+      'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. The customer sees a multi-select card.',
+    inputSchema:
+      '{"type":"object","properties":{"cases":{"type":"array","items":{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug"},"summary":{"type":"string","description":"One-line issue summary"}},"required":["caseType","summary"]}}},"required":["cases"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"status":"proposed"}',
+  },
+  {
+    name: 'create_case',
+    description: 'Create a new Case when the customer reports an issue that needs investigation. Call this before calling case-related tools like query_order_status or query_account_status.',
+    inputSchema:
+      '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"caseId":"case_mock_001","status":"created"}',
+  },
   {
     name: 'read_case_history', description: "Read the customer's historical cases for context",
     inputSchema: '{"type":"object","properties":{"userId":{"type":"string","description":"Customer user ID"},"limit":{"type":"number","description":"Max number of cases to return","default":5}},"required":["userId"]}',
@@ -309,11 +320,11 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
     created: {
       name: 'created',
       description:
-        '工单刚开立。**禁止**调用 query_* / read_case_history / kb_hybrid_retrieve 等核查类工具；可先简短安抚。是否进入收集或提前调查完全由阶段评估器根据 **Confirmed facts / Skills called / Skill results** 判定；结构化字段主要在 collecting 用 request_user_input。',
+        '工单刚开立，先简短安抚客户。如客户已提供完整信息（流水号、金额、渠道），评估器可直接进入 investigating；否则进入 collecting 用 request_user_input 收集。',
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt: `You are the stage transition evaluator for stage "created" only.
 
 Use the Case context block: Confirmed facts, Missing facts, Skills called, Skill results, Key events.
@@ -328,8 +339,9 @@ Respond with JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: '向用户收集流水号、金额、渠道、时间等；可用 request_user_input 表单一次收齐。',
+      description: '向用户收集流水号、金额、渠道、时间等；用 request_user_input 表单一次收齐。表单字段 key 必须使用: txnId, amount, paymentMethod, date（与证据系统对齐）。',
       requiredSkills: ['request_user_input'],
+      availableSkills: ['request_user_input'],
       evidenceRequirements: [
         { factKey: 'txnId', description: '交易流水号 / 充值单号', source: 'user_input', required: true },
         { factKey: 'amount', description: '充值金额', source: 'user_input', required: true },
@@ -359,13 +371,10 @@ Respond with JSON ONLY:
           required: true,
         },
       ],
-      guardrails: [
-        { name: 'conflict_requires_human', description: 'Detect conflict between system data and user report', hook: 'postTool', rule: {} },
-      ],
       subAgents: [
         {
           name: 'transaction_verifier',
-          model: 'claude-haiku-4-5-20251001',
+          model: 'MiniMax-M2.7-highspeed',
           systemPrompt: 'You are a transaction verification specialist. Verify the transaction status and payment channel status for the given case. Report findings as structured facts only — no speculation.',
           skills: ['query_order_status', 'query_payment_channel_status'],
           taskTemplate: 'Verify the transaction for case {{caseId}}. The stage goal is: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call query_order_status and query_payment_channel_status, then report findings.',
@@ -374,7 +383,7 @@ Respond with JSON ONLY:
         },
         {
           name: 'history_reviewer',
-          model: 'claude-haiku-4-5-20251001',
+          model: 'MiniMax-M2.7-highspeed',
           systemPrompt: 'You are a case history reviewer. Check if the customer has had similar issues before. Look for patterns in historical cases and knowledge base.',
           skills: ['read_case_history', 'kb_hybrid_retrieve'],
           taskTemplate: 'Review historical cases and knowledge base for patterns related to case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Look for similar past deposit issues.',
@@ -384,7 +393,7 @@ Respond with JSON ONLY:
       ],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
 
 - If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative → **waiting_human**.
@@ -405,10 +414,6 @@ Respond JSON ONLY:
       name: 'resolved',
       description: 'Case resolved, provide conclusion to customer',
       requiredSkills: ['finalize_case'],
-      guardrails: [
-        { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion promises or commits to monetary compensation, refund, reimbursement, or direct financial remedy. Block if it does — only human operators may authorize compensation.' } },
-        { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if it makes claims without factual grounding.' } },
-      ],
       transition: { type: 'manual' },
     },
   },
@@ -434,20 +439,17 @@ Respond JSON ONLY:
           required: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'Check if order details are verified. If order found and matches → investigating. If missing info → back to collecting.' },
+      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'Check if order details are verified. If order found and matches → investigating. If missing info → back to collecting.' },
     },
     investigating: {
       name: 'investigating',
       description: 'Investigate order issue',
       requiredSkills: ['query_payment_channel_status'],
       availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve'],
-      guardrails: [
-        { name: 'conflict_requires_human', description: 'Detect conflict between system and user', hook: 'postTool', rule: {} },
-      ],
       subAgents: [
         {
           name: 'order_verifier',
-          model: 'claude-haiku-4-5-20251001',
+          model: 'MiniMax-M2.7-highspeed',
           systemPrompt: 'You are an order verification specialist. Verify the order status and check for any platform notices or delays.',
           skills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice'],
           taskTemplate: 'Verify order for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Check order status, payment channel, and any delay notices.',
@@ -455,7 +457,7 @@ Respond JSON ONLY:
           parallel: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If conflict detected → waiting_human. If resolved → resolved.' },
+      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'If conflict detected → waiting_human. If resolved → resolved.' },
     },
     waiting_human: {
       name: 'waiting_human',
@@ -467,10 +469,6 @@ Respond JSON ONLY:
       name: 'resolved',
       description: 'Case resolved',
       requiredSkills: ['finalize_case'],
-      guardrails: [
-        { name: 'no_compensation_promise', description: 'Forbid compensation promises', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion promises or commits to monetary compensation, refund, reimbursement, or direct financial remedy. Block if it does.' } },
-        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if claims lack factual grounding.' } },
-      ],
       transition: { type: 'manual' },
     },
   },
@@ -478,11 +476,11 @@ Respond JSON ONLY:
     created: {
       name: 'created',
       description:
-        '工单刚开立。**禁止**调用 query_account_status / read_case_history / kb_hybrid_retrieve；可先简短安抚。下一站点由评估器依据 **Confirmed facts / Skill results** 决定 collecting 或 investigating。',
+        '工单刚开立，先简短安抚客户。如客户已提供 userId 和问题类型，评估器可直接进入 investigating；否则进入 collecting 用 request_user_input 收集。',
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt: `Stage transition evaluator for **created** only.
 
 Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
@@ -498,8 +496,9 @@ JSON ONLY:
     collecting: {
       name: 'collecting',
       description:
-        '收集用户标识、问题类型与现象描述；可用 request_user_input 一次性收集 UID、登录渠道、报错文案或截图。',
+        '收集用户标识、问题类型与现象描述；用 request_user_input 一次性收集。表单字段 key 必须使用: userId, issueType, symptoms（与证据系统对齐）。',
       requiredSkills: ['request_user_input'],
+      availableSkills: ['request_user_input'],
       evidenceRequirements: [
         { factKey: 'userId', description: '平台用户 ID / UID', source: 'user_input', required: true },
         {
@@ -544,18 +543,10 @@ JSON ONLY:
           required: true,
         },
       ],
-      guardrails: [
-        {
-          name: 'conflict_requires_human',
-          description: 'Detect conflict between account system state and user report',
-          hook: 'postTool',
-          rule: {},
-        },
-      ],
       subAgents: [
         {
           name: 'account_platform_checker',
-          model: 'claude-haiku-4-5-20251001',
+          model: 'MiniMax-M2.7-highspeed',
           systemPrompt:
             'You are an account security specialist. Query platform account status only — structured facts, no speculation.',
           skills: ['query_account_status'],
@@ -566,7 +557,7 @@ JSON ONLY:
         },
         {
           name: 'account_history_policy',
-          model: 'claude-haiku-4-5-20251001',
+          model: 'MiniMax-M2.7-highspeed',
           systemPrompt:
             'You review historical tickets and KB articles for ban patterns, appeal flows, and known outages.',
           skills: ['read_case_history', 'kb_hybrid_retrieve'],
@@ -578,7 +569,7 @@ JSON ONLY:
       ],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'claude-haiku-4-5-20251001',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt:
           'If account_status conflicts with customer narrative or risk_flag/ban → waiting_human (account_ops). If KB indicates mandatory human appeal → waiting_human. If status is clearly explained with evidence → resolved. If facts still missing → collecting.',
       },
@@ -593,20 +584,6 @@ JSON ONLY:
       name: 'resolved',
       description: '结案并向客户说明依据与下一步',
       requiredSkills: ['finalize_case'],
-      guardrails: [
-        {
-          name: 'no_compensation_promise',
-          description: 'Forbid compensation/refund promises',
-          hook: 'preFinalize',
-          rule: { evaluationPrompt: 'Check whether the finalize conclusion promises or commits to monetary compensation, refund, reimbursement, or direct financial remedy. Block if it does.' },
-        },
-        {
-          name: 'must_cite_basis',
-          description: 'Require evidence citations',
-          hook: 'preFinalize',
-          rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if claims lack factual grounding.' },
-        },
-      ],
       transition: { type: 'manual' },
     },
   },
@@ -633,7 +610,7 @@ JSON ONLY:
           required: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'claude-haiku-4-5-20251001', evaluationPrompt: 'If large_amount or policy_violation → waiting_human. If eligible → approved. If not eligible → resolved with rejection.' },
+      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'If large_amount or policy_violation → waiting_human. If eligible → approved. If not eligible → resolved with rejection.' },
     },
     approved: {
       name: 'approved',
@@ -645,9 +622,6 @@ JSON ONLY:
       name: 'resolved',
       description: 'Case resolved (approved or rejected)',
       requiredSkills: ['finalize_case'],
-      guardrails: [
-        { name: 'must_cite_basis', description: 'Require evidence citations', hook: 'preFinalize', rule: { evaluationPrompt: 'Check whether the finalize conclusion references specific evidence from the investigation (skill results, confirmed facts, KB articles). Block if claims lack factual grounding.' } },
-      ],
       transition: { type: 'manual' },
     },
   },

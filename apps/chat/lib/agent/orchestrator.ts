@@ -264,32 +264,69 @@ export class OrchestratorAgent {
     }
   }
 
-  /** Emit a sub_agent_complete SSE event. */
+  /** Build a SubAgentNotification from a result (CC <task-notification> pattern). */
+  static toNotification(result: SubAgentResult): import('@intera/shared/types').SubAgentNotification & { agentId: string } {
+    return {
+      taskId: result.taskId,
+      agentId: result.taskId,
+      agentName: result.agentName,
+      caseId: result.caseId,
+      status: 'completed',
+      findings: result.findings,
+      recommendation: result.recommendation,
+      tokensUsed: result.tokensUsed,
+      durationMs: result.durationMs,
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  /** Build a human-readable summary message for injection into the main agent's context. */
+  static toContextMessage(result: SubAgentResult): string {
+    const lines = [
+      `[Sub-agent: ${result.agentName} — completed]`,
+      '',
+    ]
+    const findingKeys = Object.keys(result.findings)
+    if (findingKeys.length > 0) {
+      lines.push('Findings:')
+      for (const [k, v] of Object.entries(result.findings)) {
+        lines.push(`  - ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+      }
+    }
+    if (result.recommendation) {
+      lines.push(`Recommendation: ${result.recommendation}`)
+    }
+    if (result.evidence.length > 0) {
+      lines.push(`Evidence items: ${result.evidence.length}`)
+    }
+    lines.push(`Tokens: ${result.tokensUsed} | Duration: ${(result.durationMs / 1000).toFixed(1)}s`)
+    return lines.join('\n')
+  }
+
+  /** Emit a sub_agent_complete SSE event (unified SubAgentNotification format). */
   private emitSubAgentComplete(
     sendEvent: (event: SSEEvent) => void,
     result: SubAgentResult,
   ): void {
     sendEvent({
       type: 'sub_agent_complete',
-      data: {
-        agentId: result.taskId,
-        agentName: result.agentName,
-        caseId: result.caseId,
-        findings: result.findings,
-        recommendation: result.recommendation,
-        evidence: result.evidence,
-        durationMs: result.durationMs,
-        tokensUsed: result.tokensUsed,
-      },
+      data: OrchestratorAgent.toNotification(result),
       timestamp: new Date().toISOString(),
     })
   }
 
-  /** Run a single sub-agent (with caching for repeat invocations). */
+  private static readonly MAX_CACHED_AGENTS = 20
+
+  /** Run a single sub-agent (with caching for repeat invocations, LRU-evicted). */
   private async runSubAgent(task: SubAgentTask): Promise<SubAgentResult> {
     let agent = this.subAgents.get(task.agentConfig.name)
     if (!agent) {
       agent = new SubAgent(task.agentConfig, this.skillDefinitions)
+      // Evict oldest entry when cache exceeds limit
+      if (this.subAgents.size >= OrchestratorAgent.MAX_CACHED_AGENTS) {
+        const firstKey = this.subAgents.keys().next().value
+        if (firstKey) this.subAgents.delete(firstKey)
+      }
       this.subAgents.set(task.agentConfig.name, agent)
     }
 

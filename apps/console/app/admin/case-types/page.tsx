@@ -447,7 +447,7 @@ export default function CaseTypesPage() {
                   stages={parsedStages()}
                   stageConfigs={parsedStageConfigs() as Record<string, any>}
                   allSkills={allSkills}
-                  availableModels={availableModels.length > 0 ? availableModels : ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'MiniMax-M2.70-highspeed', 'MiniMax-M2.5-highspeed']}
+                  availableModels={availableModels.length > 0 ? availableModels : ['MiniMax-M2.7-highspeed', 'MiniMax-M2.5-highspeed']}
                   onChange={(configs) => {
                     setEditing({ ...editing, stageConfigs: JSON.stringify(configs, null, 2) })
                   }}
