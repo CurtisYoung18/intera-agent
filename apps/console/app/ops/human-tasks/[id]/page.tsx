@@ -13,8 +13,11 @@ import {
   Target,
   Trash2,
   User,
+  Wrench,
   Zap,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 interface CaseMemory {
@@ -55,10 +58,18 @@ interface TaskDetail {
   }
 }
 
+interface ToolCallEntry {
+  name: string
+  status: 'executing' | 'completed' | 'error'
+  detail?: string
+}
+
 interface ChatMsg {
   id: string
   role: 'operator' | 'agent'
   content: string
+  thinking?: string
+  toolCalls?: ToolCallEntry[]
   timestamp: string
 }
 
@@ -164,6 +175,45 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
                     prev.map((m) => (m.id === agentId ? { ...m, content: fullContent } : m)),
                   )
                   break
+
+                case 'thinking_delta':
+                  setChatMessages((prev) =>
+                    prev.map((m) => (m.id === agentId ? { ...m, thinking: (m.thinking || '') + (event.data as string) } : m)),
+                  )
+                  break
+
+                case 'tool_executing': {
+                  const td = event.data as { name?: string; status?: string; detail?: string }
+                  const toolCall: ToolCallEntry = { name: td.name || 'tool', status: 'executing', detail: td.detail }
+                  setChatMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === agentId
+                        ? { ...m, toolCalls: [...(m.toolCalls || []), toolCall] }
+                        : m,
+                    ),
+                  )
+                  break
+                }
+
+                case 'skill_result': {
+                  const sd = event.data as { skillName?: string; output?: unknown }
+                  const toolName = sd.skillName || 'tool'
+                  setChatMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === agentId
+                        ? {
+                            ...m,
+                            toolCalls: (m.toolCalls || []).map((tc) =>
+                              tc.name === toolName && tc.status === 'executing'
+                                ? { ...tc, status: 'completed' as const }
+                                : tc,
+                            ),
+                          }
+                        : m,
+                    ),
+                  )
+                  break
+                }
 
                 case 'consultation_complete': {
                   const cd = event.data as { summary: string; resolution: string }
@@ -623,11 +673,49 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
                             <span>{t('humanTaskDetail.thinking')}</span>
                           </span>
                         ) : (
-                          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--mist)]/[0.92]">
-                            {msg.content || (
-                              <span className="text-[var(--fog)]/60">{t('humanTaskDetail.noResponse')}</span>
+                          <div className="space-y-2">
+                            {/* Thinking block */}
+                            {msg.thinking && (
+                              <details className="text-[11px] text-[var(--fog)]/60">
+                                <summary className="cursor-pointer hover:text-[var(--fog)]/80 select-none">
+                                  {t('humanTaskDetail.thinking')}
+                                </summary>
+                                <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed pl-2 border-l-2 border-indigo/15">
+                                  {msg.thinking}
+                                </p>
+                              </details>
                             )}
-                          </p>
+                            {/* Tool call bubbles */}
+                            {msg.toolCalls && msg.toolCalls.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {msg.toolCalls.map((tc, i) => (
+                                  <span
+                                    key={`${tc.name}-${i}`}
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                      tc.status === 'executing'
+                                        ? 'bg-amber/[0.12] text-amber animate-pulse'
+                                        : tc.status === 'completed'
+                                          ? 'bg-malachite/[0.1] text-malachite'
+                                          : 'bg-vermillion/[0.1] text-vermillion'
+                                    }`}
+                                  >
+                                    <Wrench className="h-3 w-3" />
+                                    {tc.name.replace(/_/g, ' ')}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {/* Markdown content */}
+                            {msg.content ? (
+                              <div className="prose prose-sm max-w-none text-[13px] leading-relaxed text-[var(--mist)]/[0.92] [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_code]:text-[11px] [&_code]:bg-black/[0.04] [&_code]:px-1 [&_code]:rounded [&_pre]:bg-black/[0.04] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-[11px] [&_table]:text-[12px] [&_th]:border-b [&_th]:border-black/[0.08] [&_th]:px-2 [&_th]:py-1 [&_td]:border-b [&_td]:border-black/[0.04] [&_td]:px-2 [&_td]:py-1 [&_strong]:text-[var(--mist)] [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px]">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {msg.content}
+                                </ReactMarkdown>
+                              </div>
+                            ) : !msg.thinking && !msg.toolCalls?.length ? (
+                              <span className="text-[var(--fog)]/60">{t('humanTaskDetail.noResponse')}</span>
+                            ) : null}
+                          </div>
                         )}
                       </div>
                       {msg.timestamp && msg.content && !typing && (

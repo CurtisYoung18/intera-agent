@@ -2,17 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Brain, Zap, Wand2 } from 'lucide-react'
-import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import { useConsoleLocale } from '@/components/locale-provider'
-
-const CONSULTATION_PLACEHOLDERS = [
-  { pattern: /\{\{caseId\}\}/g, color: '#7c5ce7', label: '{{caseId}}' },
-  { pattern: /\{\{caseType\}\}/g, color: '#5b8af7', label: '{{caseType}}' },
-  { pattern: /\{\{confirmedFacts\}\}/g, color: '#2ea04a', label: '{{confirmedFacts}}' },
-  { pattern: /\{\{skillsCalled\}\}/g, color: '#d4912e', label: '{{skillsCalled}}' },
-  { pattern: /\{\{question\}\}/g, color: '#e75c8a', label: '{{question}}' },
-  { pattern: /\{\{userId\}\}/g, color: '#5bb8f7', label: '{{userId}}' },
-]
 
 interface SkillRow {
   name: string
@@ -93,29 +83,18 @@ export default function AgentHumanInteractionPanel({
           </div>
         </div>
         <div className="p-4 space-y-3">
-          <HighlightedTextarea
-            id="consultation-prompt-textarea"
-            value={consultationPrompt}
-            onChange={(v) => onConsultationPromptChange(v)}
-            spellCheck={false}
-            className="w-full min-h-[180px] text-[12px] font-mono leading-relaxed"
-            highlights={CONSULTATION_PLACEHOLDERS}
-          />
-          <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.promptHint')}</span>
-          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5">
-            <span className="mr-1 font-medium text-[10px] text-[var(--fog)]/80">{t('agent.human.placeholdersTitle')}</span>
-            {CONSULTATION_PLACEHOLDERS.map((ph) => (
-              <button
-                key={ph.label}
-                type="button"
-                onClick={() => onConsultationPromptChange(consultationPrompt + ' ' + ph.label)}
-                className="text-[10px] px-2 py-1 rounded-md border font-medium transition-colors hover:brightness-105 active:scale-[0.98]"
-                style={{ borderColor: ph.color + '44', backgroundColor: ph.color + '14', color: ph.color }}
-              >
-                {ph.label}
-              </button>
-            ))}
-          </div>
+          <label className="space-y-1 block">
+            <span className="text-[11px] text-[var(--fog)]">{t('agent.human.promptLabel')}</span>
+            <textarea
+              value={consultationPrompt}
+              rows={14}
+              onChange={(e) => onConsultationPromptChange(e.target.value)}
+              spellCheck={false}
+              placeholder={t('agent.human.promptPlaceholder')}
+              className="glass-input-console text-[12px] font-mono resize-y w-full leading-relaxed"
+            />
+            <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.promptHint')}</span>
+          </label>
         </div>
       </div>
 
