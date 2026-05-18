@@ -160,11 +160,21 @@ export interface PolicyRule {
   evaluationPrompt?: string
 }
 
-export interface PolicyCheck {
-  name: string
-  hook: PolicyHook
+export interface PolicyCheckResult {
+  policyName: string
   result: PolicyResult
   reason?: string
+  modelUsed?: string
+}
+
+/** Aggregate result for all policies evaluated at a single checkpoint. */
+export interface PolicyEvaluationResult {
+  hook: PolicyHook
+  results: PolicyCheckResult[]
+  /** The most severe result across all policies in this batch. */
+  summary: PolicyResult
+  /** Human-readable feedback ready to inject into the agent's message stream. */
+  feedbackMessage?: string
 }
 
 // ============================================

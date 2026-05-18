@@ -16,7 +16,7 @@ import {
 import { chatApiUrl } from '@/lib/chat-api'
 import type { AgentConfigData, MemoryStrategy, ModelInfo } from './types'
 import { DEFAULT_MEMORY } from './types'
-import { DEFAULT_SYSTEM_PROMPT } from '@intera/shared/defaults'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -122,7 +122,7 @@ export default function AgentConfigPage() {
           resumePrompt: raw.resumePrompt || '',
           formResponseTemplate: raw.formResponseTemplate || '',
           humanSkills: raw.humanSkills || '',
-          consultationPrompt: raw.consultationPrompt || '',
+          consultationPrompt: raw.consultationPrompt || DEFAULT_CONSULTATION_PROMPT,
           evaluationModel: raw.evaluationModel || '',
           intentModel: raw.intentModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),

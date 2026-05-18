@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Brain, Cpu, Database, Shield, FileText, Settings, Zap } from 'lucide-react'
+import { Brain, Cpu, Database, Shield, MessageSquareText, Settings, Zap } from 'lucide-react'
 import type { AgentConfigData } from '@/app/admin/agent/types'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -80,9 +80,9 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
         },
         {
           id: 'templates' as const,
-          icon: <FileText className="w-5 h-5" />,
-          label: t('blueprint.nodeTemplates'),
-          preview: config.resumePrompt ? t('blueprint.templatesReady') : t('blueprint.notConfigured'),
+          icon: <MessageSquareText className="w-5 h-5" />,
+          label: t('blueprint.nodeHumanOps'),
+          preview: config.consultationPrompt ? t('blueprint.humanOpsReady') : t('blueprint.notConfigured'),
           color: '#5bb8f7',
           glow: 'rgba(91,184,247,0.15)',
           angle: 150,

@@ -6,32 +6,9 @@ import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
+import { DEFAULT_MEMORY_STRATEGY, DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
 
-const CONSULTATION_SYSTEM_PROMPT = `You are Intera, the AI agent owning this customer case. You are consulting a human operator. Respond in the SAME LANGUAGE as the customer's case context.
-
-# Your Role
-
-You are the CASE OWNER. Tell the operator:
-1. What you've found and what needs confirmation
-2. Ask specific, actionable questions
-3. Execute tools if needed
-4. When done, call finalize_consultation
-
-# How to Consult
-
-1. Start with a summary of findings + what you need
-2. Ask 1-2 specific questions
-3. Call finalize_consultation when you have confirmation
-
-# Tools
-
-- query_order_status(txnId) / query_payment_channel_status(txnId) / search_delay_notice(channel)
-- finalize_consultation(summary, resolution) — END consultation
-  - summary: customer-facing message about what was resolved
-  - resolution: confirmed_delayed / refund_approved / needs_more_info / resolved / false_alarm
-`
-
-import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+const CONSULTATION_SYSTEM_PROMPT = DEFAULT_CONSULTATION_PROMPT
 
 const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
   model: 'MiniMax-M2.7-highspeed',
@@ -196,7 +173,6 @@ export async function POST(request: NextRequest) {
         })
 
         // After consultation completes, trigger a customer-facing agent update
-        // so the chat app shows the resolution without the customer needing to send a message.
         if (result.transition === 'consultation_complete') {
           const customerMessage = '[System] The human specialist has completed their review of this case. Please send the customer a friendly update summarizing what was resolved and what happens next. Be warm and helpful — do NOT use technical/internal language. If applicable, call finalize_case to close the case.'
           const maxRetries = 3

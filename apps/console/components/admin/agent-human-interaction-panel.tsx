@@ -1,23 +1,30 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Brain, Zap, Wand2 } from 'lucide-react'
+import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-const PLACEHOLDER_HELP = [
-  '{{caseId}} — current case ID',
-  '{{caseType}} — case type slug (e.g. deposit_issue)',
-  '{{confirmedFacts}} — JSON of confirmed facts',
-  '{{skillsCalled}} — skills already called',
-  '{{question}} — agent\'s escalation question',
-  '{{userId}} — customer user ID',
-].join('\n')
+const CONSULTATION_PLACEHOLDERS = [
+  { pattern: /\{\{caseId\}\}/g, color: '#7c5ce7', label: '{{caseId}}' },
+  { pattern: /\{\{caseType\}\}/g, color: '#5b8af7', label: '{{caseType}}' },
+  { pattern: /\{\{confirmedFacts\}\}/g, color: '#2ea04a', label: '{{confirmedFacts}}' },
+  { pattern: /\{\{skillsCalled\}\}/g, color: '#d4912e', label: '{{skillsCalled}}' },
+  { pattern: /\{\{question\}\}/g, color: '#e75c8a', label: '{{question}}' },
+  { pattern: /\{\{userId\}\}/g, color: '#5bb8f7', label: '{{userId}}' },
+]
+
+interface SkillRow {
+  name: string
+  description: string
+  enabled: boolean
+}
 
 interface Props {
   consultationPrompt: string
   humanSkills: string
   onConsultationPromptChange: (v: string) => void
   onHumanSkillsChange: (v: string) => void
-  // Composer assist (DeepSeek beta prefix continuation)
   composerEnabled: boolean
   composerModel: string
   composerBaseUrl: string
@@ -51,6 +58,28 @@ export default function AgentHumanInteractionPanel({
   onComposerMinDraftCharsChange,
 }: Props) {
   const { t } = useConsoleLocale()
+  const [availableSkills, setAvailableSkills] = useState<SkillRow[]>([])
+  const selectedSkills = humanSkills
+    ? humanSkills.split('\n').map((s) => s.trim()).filter(Boolean)
+    : []
+
+  useEffect(() => {
+    fetch('/api/admin/skills')
+      .then((r) => r.json())
+      .then((data) => {
+        const skills = Array.isArray(data.skills) ? data.skills : []
+        setAvailableSkills(skills.filter((s: SkillRow) => s.enabled))
+      })
+      .catch(() => { /* catalog unavailable */ })
+  }, [])
+
+  const toggleSkill = (name: string) => {
+    if (selectedSkills.includes(name)) {
+      onHumanSkillsChange(selectedSkills.filter((s) => s !== name).join('\n'))
+    } else {
+      onHumanSkillsChange([...selectedSkills, name].join('\n'))
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -64,22 +93,29 @@ export default function AgentHumanInteractionPanel({
           </div>
         </div>
         <div className="p-4 space-y-3">
-          <label className="space-y-1 block">
-            <span className="text-[11px] text-[var(--fog)]">{t('agent.human.promptLabel')}</span>
-            <textarea
-              value={consultationPrompt}
-              rows={12}
-              onChange={(e) => onConsultationPromptChange(e.target.value)}
-              spellCheck={false}
-              placeholder={t('agent.human.promptPlaceholder')}
-              className="glass-input-console text-[12px] font-mono resize-y w-full leading-relaxed"
-            />
-            <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.promptHint')}</span>
-          </label>
-          <details className="text-[10px] text-[var(--fog)]/60 rounded-lg bg-black/[0.02] border border-black/[0.05] overflow-hidden">
-            <summary className="px-3 py-2 cursor-pointer hover:text-[var(--mist)] select-none">{t('agent.human.placeholdersTitle')}</summary>
-            <pre className="px-3 pb-2.5 font-mono text-[10px] whitespace-pre-wrap leading-relaxed">{PLACEHOLDER_HELP}</pre>
-          </details>
+          <HighlightedTextarea
+            id="consultation-prompt-textarea"
+            value={consultationPrompt}
+            onChange={(v) => onConsultationPromptChange(v)}
+            spellCheck={false}
+            className="w-full min-h-[180px] text-[12px] font-mono leading-relaxed"
+            highlights={CONSULTATION_PLACEHOLDERS}
+          />
+          <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.promptHint')}</span>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5">
+            <span className="mr-1 font-medium text-[10px] text-[var(--fog)]/80">{t('agent.human.placeholdersTitle')}</span>
+            {CONSULTATION_PLACEHOLDERS.map((ph) => (
+              <button
+                key={ph.label}
+                type="button"
+                onClick={() => onConsultationPromptChange(consultationPrompt + ' ' + ph.label)}
+                className="text-[10px] px-2 py-1 rounded-md border font-medium transition-colors hover:brightness-105 active:scale-[0.98]"
+                style={{ borderColor: ph.color + '44', backgroundColor: ph.color + '14', color: ph.color }}
+              >
+                {ph.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -93,22 +129,33 @@ export default function AgentHumanInteractionPanel({
           </div>
         </div>
         <div className="p-4 space-y-3">
-          <label className="space-y-1 block">
-            <span className="text-[11px] text-[var(--fog)]">{t('agent.human.skillsLabel')}</span>
-            <textarea
-              value={humanSkills}
-              rows={4}
-              onChange={(e) => onHumanSkillsChange(e.target.value)}
-              spellCheck={false}
-              placeholder={t('agent.human.skillsPlaceholder') || 'query_order_status\nquery_payment_channel_status\nquery_account_status\nsearch_delay_notice'}
-              className="glass-input-console text-[12px] font-mono resize-y w-full leading-relaxed"
-            />
-            <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.skillsHint')}</span>
-          </label>
-          <details className="text-[10px] text-[var(--fog)]/60 rounded-lg bg-black/[0.02] border border-black/[0.05] overflow-hidden">
-            <summary className="px-3 py-2 cursor-pointer hover:text-[var(--mist)] select-none">{t('agent.human.skillsPlaceholdersTitle')}</summary>
-            <pre className="px-3 pb-2.5 font-mono text-[10px] whitespace-pre-wrap leading-relaxed">{t('agent.human.skillsPlaceholdersHelp')}</pre>
-          </details>
+          {availableSkills.length === 0 ? (
+            <p className="text-[11px] text-[var(--fog)]/60 italic">{t('agent.human.skillsLoading')}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {availableSkills.map((sk) => {
+                const isSelected = selectedSkills.includes(sk.name)
+                return (
+                  <button
+                    key={sk.name}
+                    type="button"
+                    onClick={() => toggleSkill(sk.name)}
+                    title={sk.description}
+                    className={`text-[11px] px-2.5 py-1.5 rounded-lg border font-medium transition-all duration-150 ${
+                      isSelected
+                        ? 'border-amber/40 bg-amber/[0.12] text-amber shadow-[0_0_0_1px_var(--amber)]'
+                        : 'border-black/[0.06] bg-white/60 text-[var(--fog)] hover:border-amber/20 hover:bg-amber/[0.04]'
+                    }`}
+                  >
+                    {sk.name.replace(/_/g, ' ')}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {selectedSkills.length > 0 && (
+            <p className="text-[10px] text-[var(--fog)]/60">{t('agent.human.skillsSelected', { n: selectedSkills.length })}</p>
+          )}
         </div>
       </div>
 
@@ -122,12 +169,7 @@ export default function AgentHumanInteractionPanel({
               <p className="text-[10px] text-[var(--fog)]">{t('agent.human.composerLead')}</p>
             </div>
             <label className="flex items-center gap-2 cursor-pointer shrink-0">
-              <input
-                type="checkbox"
-                checked={composerEnabled}
-                onChange={(e) => onComposerEnabledChange(e.target.checked)}
-                className="accent-purple-600 rounded"
-              />
+              <input type="checkbox" checked={composerEnabled} onChange={(e) => onComposerEnabledChange(e.target.checked)} className="accent-purple-600 rounded" />
               <span className="text-[11px] font-medium text-[var(--mist)]">{t('agent.human.composerToggle')}</span>
             </label>
           </div>
@@ -152,7 +194,7 @@ export default function AgentHumanInteractionPanel({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1 block">
                 <span className="text-[10px] text-[var(--fog)]">{t('agent.human.composerStopText')}</span>
-                <textarea value={composerStopText} rows={2} onChange={(e) => onComposerStopTextChange(e.target.value)} className="glass-input-console text-[12px] font-mono resize-y w-full" placeholder={'"\\n\\n"' + '\n' + '"\\n"'} />
+                <textarea value={composerStopText} rows={2} onChange={(e) => onComposerStopTextChange(e.target.value)} className="glass-input-console text-[12px] font-mono resize-y w-full" />
                 <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.human.composerStopHint')}</span>
               </label>
               <label className="space-y-1 block">

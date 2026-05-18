@@ -120,6 +120,31 @@ export const DEFAULT_POLICY_HOOKS = {
   ],
 }
 
+/** Default consultation system prompt used when AgentConfig.consultationPrompt is empty. */
+export const DEFAULT_CONSULTATION_PROMPT = `You are Intera, the AI agent owning this customer case. You are consulting a human operator. Respond in the SAME LANGUAGE as the customer's case context.
+
+# Your Role
+
+You are the CASE OWNER. Tell the operator:
+1. What you've found and what needs confirmation
+2. Ask specific, actionable questions
+3. Execute tools if needed
+4. When done, call finalize_consultation
+
+# How to Consult
+
+1. Start with a summary of findings + what you need
+2. Ask 1-2 specific questions
+3. Call finalize_consultation when you have confirmation
+
+# Tools
+
+- query_order_status(txnId) / query_payment_channel_status(txnId) / search_delay_notice(channel)
+- finalize_consultation(summary, resolution) — END consultation
+  - summary: customer-facing message about what was resolved
+  - resolution: confirmed_delayed / refund_approved / needs_more_info / resolved / false_alarm
+`
+
 /** Appended after harness-injected header + verdict lines when `resumePrompt` in AgentConfig is empty. */
 export const HARNESS_DEFAULT_RESUME_PROMPT_APPEND = `[Human task resolved — operator closed the case]
 IMPORTANT — Customer communication task:
@@ -254,15 +279,72 @@ export interface DefaultPolicySeed {
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
   { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":["refund_money","change_ban_status","delete_account"]}' },
   { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"require_skills_any":["query_order_status","query_payment_channel_status","query_account_status"]}' },
-  { name: 'conflict_requires_human', description: 'Detect conflict between system result and user report', hook: 'postTool', rule: '{"evaluationPrompt":"Check whether the skill outputs (query_order_status, query_payment_channel_status, query_account_status) contradict what the customer reported. Escalate to human (result=escalated) when: (1) the system shows a completed/successful transaction but the customer says funds are missing or not received, (2) the system shows account status is normal but the customer reports access issues, (3) the payment channel shows normal operation but the customer says the payment failed. If outputs are consistent with the customer issue, pass. If data is ambiguous or incomplete, hint."}' },
+  {
+    name: 'conflict_requires_human',
+    description: 'Detect conflict between system result and user report',
+    hook: 'postTool',
+    rule: JSON.stringify({
+      evaluationPrompt: [
+        'Check whether the skill outputs contradict what the customer reported.',
+        '',
+        'Skill output: {{skill_output}}',
+        'Confirmed facts: {{confirmed_facts}}',
+        '',
+        'Escalate to human (result=escalated) when:',
+        '(1) the system shows a completed/successful transaction but the customer says funds are missing or not received,',
+        '(2) the system shows account status is normal but the customer reports access issues,',
+        '(3) the payment channel shows normal operation but the customer says the payment failed.',
+        '',
+        'If outputs are consistent with the customer issue, pass.',
+        'If data is ambiguous or incomplete, hint.',
+      ].join('\n'),
+    }),
+  },
   {
     name: 'evidence_required_before_resolution',
     description: 'Require order or account verification skill before resolution',
     hook: 'preFinalize',
     rule: '{"require_skills_any":["query_order_status","query_account_status"]}',
   },
-  { name: 'no_compensation_promise', description: 'Forbid compensation/refund promises in finalize output', hook: 'preFinalize', rule: '{"evaluationPrompt":"Check whether the finalize conclusion promises or commits to any monetary compensation, refund, cash reimbursement, voucher with cash value, or direct financial remedy to the customer. Block (result=blocked) if the agent makes such a promise — only human operators may authorize compensation. Pass if the conclusion explains findings, policy, or next steps without committing to pay the customer. Also pass if the agent only relays what a human operator already approved."}' },
-  { name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize', rule: '{"evaluationPrompt":"Check whether the finalize conclusion references specific evidence gathered during the case investigation. The conclusion must cite at least one of: (1) a specific skill result (e.g. query_order_status showed status=completed), (2) confirmed facts collected from the user, (3) a knowledge base article or policy reference. Block (result=blocked) if the conclusion makes claims without any factual grounding. Pass if evidence is properly cited and the reasoning is traceable to collected facts."}' },
+  {
+    name: 'no_compensation_promise',
+    description: 'Forbid compensation/refund promises in finalize output',
+    hook: 'preFinalize',
+    rule: JSON.stringify({
+      evaluationPrompt: [
+        'Check whether the finalize conclusion promises or commits to any monetary compensation.',
+        '',
+        'Finalize output: {{skill_output}}',
+        'Confirmed facts: {{confirmed_facts}}',
+        '',
+        'Block (result=blocked) if the agent promises refund, cash reimbursement, voucher with cash value, or direct financial remedy — only human operators may authorize compensation.',
+        'Pass if the conclusion explains findings, policy, or next steps without committing to pay the customer.',
+        'Also pass if the agent only relays what a human operator already approved.',
+      ].join('\n'),
+    }),
+  },
+  {
+    name: 'must_cite_basis',
+    description: 'Require evidence citations in conclusions',
+    hook: 'preFinalize',
+    rule: JSON.stringify({
+      evaluationPrompt: [
+        'Check whether the finalize conclusion references specific evidence gathered during case investigation.',
+        '',
+        'Finalize output: {{skill_output}}',
+        'Confirmed facts: {{confirmed_facts}}',
+        'Skills called: {{skills_called}}',
+        '',
+        'The conclusion must cite at least one of:',
+        '(1) a specific skill result (e.g. query_order_status showed status=completed),',
+        '(2) confirmed facts collected from the user,',
+        '(3) a knowledge base article or policy reference.',
+        '',
+        'Block (result=blocked) if the conclusion makes claims without any factual grounding.',
+        'Pass if evidence is properly cited and the reasoning is traceable to collected facts.',
+      ].join('\n'),
+    }),
+  },
 ]
 
 export interface DefaultCaseTypeSeed {
