@@ -18,6 +18,9 @@ interface MessageListProps {
   onFormCancel?: (msgId: string) => void
   onIntentConfirm?: (msgId: string, selectedCaseTypes: string[]) => void | Promise<void>
   onInteractionSelect?: (msgId: string, optionId: string, input?: string) => void | Promise<void>
+  /** Error state: shown as a banner with optional retry */
+  error?: string | null
+  onRetry?: () => void
 }
 
 const SCROLL_THRESHOLD = 80 // px from bottom to consider "at bottom"
@@ -45,6 +48,8 @@ export default function MessageList({
   onFormCancel,
   onIntentConfirm,
   onInteractionSelect,
+  error,
+  onRetry,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -69,16 +74,17 @@ export default function MessageList({
     if (el) wasNearBottom.current = isNearBottom(el)
   }, [])
 
-  if (messages.length === 0) return null
-
-  const visible =
-    activeCaseId != null && activeCaseId !== ''
-      ? messages.filter((m) => {
-          if (m.role === 'user') return true
-          if (!m.relatedCaseId) return true
-          return m.relatedCaseId === activeCaseId
-        })
-      : messages
+  if (messages.length === 0 && !isResponding && !error) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-xs text-fog/25 select-none">
+          {typeof window !== 'undefined' && navigator.language.toLowerCase().startsWith('zh')
+            ? '发送消息开始对话'
+            : 'Send a message to start'}
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -88,11 +94,31 @@ export default function MessageList({
       role="log"
       aria-live="polite"
     >
-      {visible.map((msg, idx) => (
+      {/* Error banner with retry */}
+      {error && (
+        <div className="mx-4 flex items-center gap-2 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(248,113,113,0.7)" strokeWidth="2" className="shrink-0">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span className="text-[11px] text-red-300/80 flex-1 truncate">{error}</span>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="text-[10px] font-medium text-red-300 hover:text-red-200 underline underline-offset-2 shrink-0"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
+      {messages.map((msg, idx) => (
         <MessageBubble
           key={msg.id}
           msg={msg}
-          priorUserContent={priorUserContent(visible, idx)}
+          priorUserContent={priorUserContent(messages, idx)}
           elevateInteractiveForms={elevateInteractiveForms}
           onFormSubmit={onFormSubmit}
           onFormCancel={onFormCancel}

@@ -10,8 +10,10 @@ import VoiceInputBar from '@/components/chat/voice-input-bar'
 import WelcomeMessage from '@/components/chat/welcome-message'
 import CasePanel from '@/components/chat/case-panel'
 import SplitLayout from '@/components/chat/split-layout'
-import CaseTabBar from '@/components/chat/case-tab-bar'
 import CaseHistoryPanel from '@/components/chat/case-history-panel'
+import UserLoginScreen from '@/components/chat/user-login-screen'
+import type { TestUser } from '@/components/chat/user-login-screen'
+import UserPill from '@/components/chat/user-pill'
 import { useInteraChat } from './use-intera-chat'
 
 export default function ChatPage() {
@@ -21,13 +23,11 @@ export default function ChatPage() {
     isLoading,
     queuedCount,
     cases,
-    activeCaseIndex,
     dedicatedAgents,
     coreAgentProgress,
     splitMode,
     streamingToolName,
     submitMessage,
-    switchCase,
     dismissCase,
     clearQueue,
     onFormSubmit,
@@ -41,15 +41,22 @@ export default function ChatPage() {
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,
     composerMinDraftChars,
+    selectedUser,
+    setSelectedUser,
   } = useInteraChat()
 
-  const activeCase = cases[activeCaseIndex] ?? null
+  const activeCase = cases.find((c) => c.caseId === activeCaseId) ?? null
   const coreAgentTask = coreAgentProgress?.task
 
-  const filteredDedicatedAgents =
-    activeCase?.caseId != null
-      ? dedicatedAgents.filter((a) => !a.caseId || a.caseId === activeCase.caseId)
-      : dedicatedAgents
+  const handleSelectUser = (user: TestUser) => setSelectedUser(user)
+  const handleAnonymous = () => setSelectedUser('anonymous')
+  const handleSwitchUser = () => setSelectedUser(null)
+
+  if (selectedUser === null) {
+    return <UserLoginScreen onSelect={handleSelectUser} onAnonymous={handleAnonymous} />
+  }
+
+  const currentUserLabel = selectedUser === 'anonymous' ? 'Anonymous' : selectedUser?.label ?? 'Anonymous'
 
   const chatPanel = (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -107,7 +114,6 @@ export default function ChatPage() {
       <CasePanel
         cases={cases}
         activeCaseId={activeCaseId}
-        onSwitch={switchCase}
         onDismiss={dismissCase}
         dedicatedAgents={dedicatedAgents}
         coreAgentProgress={coreAgentProgress}
@@ -118,7 +124,9 @@ export default function ChatPage() {
   return (
     <ChatShell spacious={splitMode}>
       <header className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
-        <div className="w-20" />
+        <div className="w-20 flex items-center">
+          <UserPill label={currentUserLabel} onClick={handleSwitchUser} />
+        </div>
         <StatusPill status={agentStatus} label="Intera AI" />
         <div className="w-20 flex justify-end">
           <CaseHistoryPanel
@@ -134,16 +142,6 @@ export default function ChatPage() {
         splitMode={splitMode}
         casePanel={casePanelEl}
         mainPanel={chatPanel}
-        tabBar={
-          cases.length > 0 ? (
-            <CaseTabBar
-              cases={cases}
-              activeIndex={activeCaseIndex}
-              onSwitch={switchCase}
-              onDismiss={dismissCase}
-            />
-          ) : undefined
-        }
       />
 
       {/* No floating overlay — case info lives in the left panel */}

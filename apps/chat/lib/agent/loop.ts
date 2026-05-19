@@ -5,10 +5,6 @@
 // input_json is complete (content_block_stop), while text/thinking
 // continues streaming to the frontend. This is the key difference
 // from naive "wait for full response then execute" approaches.
-//
-// [MOCK] In-memory state. Production path:
-//   - Load persisted Case state from DB via Prisma
-//   - Persist messages, traces, memory on every mutation
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
@@ -52,12 +48,15 @@ export interface AgentLoopDeps {
   userId: string
   systemPrompt: string
   caseSchema?: CaseSchemaConfig | null
+  /** When true, the case was created from an intent selection card.
+   *  propose_cases is removed from available tools to prevent re-triggering. */
+  bootstrapNewCase?: boolean
 }
 
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification' | 'awaiting_interaction'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification' | 'awaiting_interaction' | 'connection_lost'
   currentStage?: string
   reason?: string
   pendingSubAgents?: string[]
@@ -99,6 +98,7 @@ export class AgentLoop {
         deps.caseSchema,
         deps.config,
         this.caseMemory,
+        deps.bootstrapNewCase,
       )
       this.currentStage = this.stageExecutor.getCurrentStage()
 
@@ -159,7 +159,7 @@ export class AgentLoop {
         }
 
         // Non-blocking — results merge as they arrive, ReAct loop checks each iteration
-        this.orchestrator.dispatchInBackground(tasks, sendEvent, mem as any)
+        this.orchestrator.dispatchInBackground(tasks, sendEvent)
 
         this.caseMemory.recordSubAgentsDispatched(
           this.currentStage,
@@ -201,10 +201,16 @@ export class AgentLoop {
       console.log(`[DebugMode] ENABLED for case ${this.deps.caseId} — writing full API payloads to debug-logs/`)
     }
 
-    // Wrap sendEvent to catch stream-closed errors safely
+    // Wrap sendEvent to catch stream-closed errors safely.
+    // Only abort on actual connection loss (AbortError), not on serialization errors.
     const sendEvent = (event: SSEEvent) => {
       if (this.aborted) return
-      try { rawSendEvent(event) } catch { this.aborted = true; this.abortController.abort() }
+      try { rawSendEvent(event) } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          this.aborted = true
+          this.abortController.abort()
+        }
+      }
     }
 
     // 1. Record user message
@@ -342,7 +348,7 @@ export class AgentLoop {
         (toolUse, status) => {
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'skill_result',
-            data: { name: toolUse.name, status },
+            data: { name: toolUse.name, status, result: status !== 'executing' ? toolUse.result : undefined },
             timestamp: new Date().toISOString(),
           })
         },
@@ -354,11 +360,12 @@ export class AgentLoop {
         : this.deps.systemPrompt
       const allTools = this.skillRouter.getTools()
       const stageTools = this.stageExecutor
-        ? this.stageExecutor.filterTools(this.currentStage, allTools)
+        ? this.stageExecutor.filterTools(this.currentStage, allTools, this.nudgeCount)
         : allTools
 
       const blocks = new Map<number, StreamContentBlock>()
       let assistantMessage: AssistantMessage | null = null
+      let assistantPushed = false
       let fullText = ''
       // Reset per-iteration
       stopReason = null
@@ -512,8 +519,12 @@ export class AgentLoop {
 
               if (preToolEval.summary === 'blocked') {
                 // Record policy hit for graduated response
+                const blockingPolicies: string[] = []
                 for (const r of preToolEval.results) {
-                  if (r.result !== 'pass') this.caseMemory.recordPolicyHit(r.policyName)
+                  if (r.result !== 'pass') {
+                    this.caseMemory.recordPolicyHit(r.policyName)
+                    if (r.result === 'blocked') blockingPolicies.push(r.policyName)
+                  }
                 }
                 await this.traceWriter.write(
                   'policy_hit',
@@ -521,13 +532,16 @@ export class AgentLoop {
                   preToolEval as unknown as Record<string, unknown>,
                 )
                 sendEvent({
-                  type: 'error',
-                  data: `Tool blocked by policy: ${toolUse.name}`,
+                  type: 'policy_blocked',
+                  data: { toolName: toolUse.name, policyNames: blockingPolicies },
                   timestamp: new Date().toISOString(),
                 })
                 // Inject feedback so the agent knows why and what to do instead
                 if (preToolEval.feedbackMessage && assistantMessage) {
-                  this.messages.push(assistantMessage)
+                  if (!assistantPushed) {
+                    this.messages.push(assistantMessage)
+                    assistantPushed = true
+                  }
                   this.messages.push(this.makeUserMessage(preToolEval.feedbackMessage))
                 }
                 continue
@@ -572,8 +586,27 @@ export class AgentLoop {
       } catch (streamErr) {
         console.error('[AgentLoop] Stream error:', streamErr)
         if (this.abortController.signal.aborted) {
-          // Graceful abort — drain pending tools and exit iteration
+          // Connection lost — drain pending tools and exit without escalating.
+          // The case stays at its current stage so the user can retry.
+          await toolExecutor.waitForAll().catch(() => {})
+          await this.traceWriter.write('loop_decision', 'Stream aborted (connection lost)', {
+            iteration: this.iterationCount,
+          })
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: this.currentStage as CaseStatus,
+            transition: 'connection_lost',
+            currentStage: this.currentStage,
+            reason: 'connection_lost',
+          }
         }
+        // Non-connection error: record and exit the loop gracefully
+        await this.traceWriter.write('loop_decision', 'Stream error', {
+          error: String(streamErr),
+          iteration: this.iterationCount,
+        })
+        break
       }
 
       streamEndedAt = Date.now()
@@ -673,7 +706,7 @@ export class AgentLoop {
 
           const advanced = await this.applyStageTransitionFromEval(transitionEval, sendEvent)
           if (advanced) {
-            this.messages.push(assistantMessage)
+            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
             sendEvent({
               type: 'message_stop',
               data: { reason: 'stage_transition', stage: this.currentStage },
@@ -689,7 +722,7 @@ export class AgentLoop {
             // Stage incomplete — inject nudge and continue loop
             this.nudgeCount++
             const nudgeMsg = this.stageExecutor.buildNudge(this.currentStage, this.nudgeCount)
-            this.messages.push(assistantMessage)
+            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
             this.messages.push(this.makeUserMessage(nudgeMsg))
 
             await this.traceWriter.write('loop_decision', 'Nudge: stage incomplete', {
@@ -705,9 +738,37 @@ export class AgentLoop {
               await this.traceWriter.write('loop_decision', 'Exit: max nudges', {
                 stage: this.currentStage, nudgeCount: this.nudgeCount,
               })
+
+              // Try to auto-create a human task for the escalation
+              try {
+                const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+                await prisma.case.upsert({
+                  where: { id: this.deps.caseId },
+                  update: { status: 'escalated', blocker: `Agent stuck in stage "${this.currentStage}"` },
+                  create: {
+                    id: this.deps.caseId,
+                    customerId: this.deps.customerId,
+                    userId: this.deps.userId,
+                    type: resolvedCaseType,
+                    status: 'escalated',
+                    blocker: `Agent stuck in stage "${this.currentStage}"`,
+                  },
+                })
+                await prisma.humanTask.create({
+                  data: {
+                    caseId: this.deps.caseId,
+                    queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+                    question: `Agent stuck in stage "${this.currentStage}" after 3 nudges. Case type: ${resolvedCaseType}. Skills called: ${this.caseMemory.getSkillsCalled().join(', ')}.`,
+                    status: 'pending',
+                  },
+                })
+              } catch (err) {
+                console.error('[AgentLoop] Failed to auto-create human task:', err)
+              }
+
               sendEvent({
-                type: 'error',
-                data: `Agent stuck in stage "${this.currentStage}" — needs human intervention`,
+                type: 'escalated',
+                data: { stage: this.currentStage, reason: 'max_nudges' },
                 timestamp: new Date().toISOString(),
               })
               await this.writeProfilerSnapshot()
@@ -734,7 +795,7 @@ export class AgentLoop {
           stopReason, iteration: this.iterationCount, textLength: fullText.length,
           stage: this.currentStage,
         })
-        this.messages.push(assistantMessage)
+        if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
         sendEvent({
           type: 'message_stop',
           data: { reason: 'no_tools', stopReason, usage } as any,
@@ -764,6 +825,8 @@ export class AgentLoop {
 
       // ── PostTool policy evaluation (batched LLM, single call) ──
       if (toolResults.length > 0) {
+        // Tools were called — reset nudge count (LLM is complying)
+        if (this.nudgeCount > 0) this.nudgeCount = 0
         try {
         const ctxSummary = toolResults
           .map((r) => `[${r.name}]: ${JSON.stringify(unwrapToolExecutionPayload(r.output))}`)
@@ -821,7 +884,7 @@ export class AgentLoop {
       }
 
       // ── Add to message history ───────────────────────────────
-      this.messages.push(assistantMessage)
+      if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
       this.addToolResultMessages(toolResults)
 
       // ── Terminal tool: propose_cases (multi-intent clarification) ──
@@ -868,6 +931,17 @@ export class AgentLoop {
             reason: 'multi_intent_clarification',
           }
         }
+
+        // Empty cases array: replace mock result with feedback so the model doesn't retry
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          const m = this.messages[i]
+          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool propose_cases result:')) {
+            m.content = `Tool propose_cases result: ${JSON.stringify({ status: 'rejected', message: 'No matching case types found. Respond to the customer with plain text — do NOT call propose_cases again.' })}`
+            break
+          }
+        }
+        // Continue loop so the model can respond with plain text
+        continue
       }
 
       // ── Terminal tool: create_case ─────────────────────────
@@ -896,6 +970,7 @@ export class AgentLoop {
                 stageConfigs: stageConfigs as any,
                 defaultGoal: ctRow.defaultGoal,
                 escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
+                requireHumanReview: (ctRow as any).requireHumanReview === true,
               }
               this.deps.caseSchema = schema
               this.stageExecutor = new StageExecutor(schema, this.deps.config, this.caseMemory)
@@ -948,13 +1023,24 @@ export class AgentLoop {
         // create_case called when a case is already active — replace mock
         // result so the LLM doesn't see a fake case_mock_001 ID.
         if (this.stageExecutor) {
+          const key = 'dupCreateCaseCount'
+          const dupCount = (this.caseMemory.getConfirmedFacts()[key] as number) || 0
+          const nextCount = dupCount + 1
+
           for (let i = this.messages.length - 1; i >= 0; i--) {
             const m = this.messages[i]
             if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
-              m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'already_active', note: 'Case already exists — continue with the active case' })}`
+              if (nextCount >= 2) {
+                // Force stop: the model keeps calling create_case despite already_active feedback
+                m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'already_active', note: 'STOP calling create_case. The case is already active. Respond with text only — do NOT call create_case again.' })}`
+                await this.traceWriter.write('loop_decision', 'Create_case called repeatedly despite active case', { count: nextCount })
+              } else {
+                m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'already_active', note: 'Case already exists — continue with the active case' })}`
+              }
               break
             }
           }
+          this.caseMemory.getConfirmedFacts()[key] = nextCount
         }
       }
 
@@ -1167,6 +1253,20 @@ export class AgentLoop {
         (r) => r.name === 'finalize_case',
       )
       if (finalizeResult) {
+        // Mandatory human review check — if case type requires human sign-off,
+        // block finalize unless a human task was resolved.
+        if (this.deps.caseSchema?.requireHumanReview && !this.caseMemory.getSkillsCalled().includes('create_human_task')) {
+          const blockedMsg = '[POLICY] This case type requires human review before finalizing. Call create_human_task to escalate to a human specialist.'
+          await this.traceWriter.write('policy_hit', 'Finalize blocked: mandatory human review required', {})
+          sendEvent({
+            type: 'policy_blocked',
+            data: { toolName: 'finalize_case', policyNames: ['mandatory_human_review'] },
+            timestamp: new Date().toISOString(),
+          })
+          this.messages.push(this.makeUserMessage(blockedMsg))
+          continue
+        }
+
         const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
         const preFinalizeEval = await this.policyEngine.evaluate('preFinalize', {
           skillName: 'finalize_case',
@@ -1560,6 +1660,10 @@ export class AgentLoop {
 
     // Fallback: programmatic XML summary
     this.caseMemory.recordCompaction()
+  }
+
+  getCaseType(): string {
+    return this.deps.caseSchema?.type || 'general'
   }
 
   abort() {

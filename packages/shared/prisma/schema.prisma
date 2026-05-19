@@ -101,6 +101,8 @@ model CaseType {
 
   enabled   Boolean @default(true) // false = excluded from routing / intent classification UI
 
+  requireHumanReview Boolean @default(false) // true = finalize requires a resolved human task
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -290,6 +292,7 @@ model HumanTask {
 
   createdAt  DateTime @default(now())
   resolvedAt DateTime?
+  notifiedAt DateTime?
 
   @@index([caseId])
   @@map("human_tasks")

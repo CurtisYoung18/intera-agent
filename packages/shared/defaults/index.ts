@@ -84,7 +84,6 @@ export const DEFAULT_MEMORY_STRATEGY = {
     'read_case_history',
     'kb_hybrid_retrieve',
     'ocr_receipt',
-    'query_account_status',
   ],
 
   // Fact extraction (LLM-based, replaces regex/keyword patterns)
@@ -168,6 +167,12 @@ export interface DefaultSkillSeed {
   guardPhase: string
   /** JSON string — mock executor returns this payload when mode is mock */
   mockFixture?: string
+  /** HTTP endpoint path (appended to base URL for http-mode skills) */
+  endpoint?: string
+  httpMethod?: string
+  /** JSON string — extra HTTP headers */
+  headers?: string
+  timeoutMs?: number
 }
 
 export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
@@ -182,7 +187,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'create_case',
-    description: 'Create a new Case when the customer reports an issue that needs investigation. Call this before calling case-related tools like query_order_status or query_account_status.',
+    description: 'Create a new Case when the customer reports an issue that needs investigation. Call this before calling case-related tools like query_order_status or get_account_status.',
     inputSchema:
       '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -208,19 +213,6 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"delayed_batch":false,"channel":"wechat_pay","channelStatus":"normal","lastSettlementAt":"2026-05-14T07:55:00.000Z","currentLoad":"low","reason":null}',
-  },
-  {
-    name: 'query_account_status',
-    description: 'Query platform account/security status (restrictions, bans, risk flags, last login)',
-    inputSchema:
-      '{"type":"object","properties":{"userId":{"type":"string","description":"Customer platform user ID"}},"required":["userId"]}',
-    mode: 'mock',
-    isConcurrencySafe: true,
-    enabled: true,
-    guardPhase: 'post',
-    outputSchema: '{}',
-    mockFixture:
-      '{"accountStatus":"active","riskFlag":false,"banReason":null,"restrictionTier":"none","lastLoginAt":"2026-05-14T07:50:00.000Z","kycLevel":"L2_verified","registeredSince":"2023-06-15T00:00:00.000Z","totalDeposits":12500.00,"lastDepositAt":"2026-05-14T08:05:00.000Z","lastDepositAmount":1000.00}',
   },
   {
     name: 'search_delay_notice', description: 'Search for any delay notices or announcements',
@@ -256,16 +248,140 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
       '{"results":[{"title":"Why is my deposit not showing in my balance?","snippet":"Deposits via third-party payment channels (WeChat Pay, Alipay) may take up to 2 hours to reflect due to batch settlement cycles. If your deposit still does not appear after 2 hours, please contact support with your transaction ID.","source":"help_center","relevance":0.92},{"title":"Common causes of balance discrepancies","snippet":"Balance discrepancies can occur due to: (1) pending batch settlements from payment providers, (2) cached balance display (try refreshing), (3) recent refunds or adjustments not yet reflected, (4) unauthorized transactions — check your transaction history.","source":"faq","relevance":0.85},{"title":"How to verify your deposit status","snippet":"You can verify your deposit by: (1) checking the payment provider app for the transaction receipt, (2) comparing the transaction ID with our system records, (3) waiting up to 24 hours for settlement delays during peak periods or maintenance windows.","source":"help_center","relevance":0.78}],"sources":["help_center/deposit-faq","faq/balance-issues","help_center/verify-deposit"]}',
   },
   {
+    name: 'propose_interaction', description: 'Present a choice card with options the customer can select (non-blocking, replaced by agent continuation)',
+    inputSchema: '{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"description":{"type":"string"},"inputType":{"type":"string","enum":["none","text","number"]},"inputPlaceholder":{"type":"string"}},"required":["id","label"]}},"multiSelect":{"type":"boolean"}},"required":["title","options"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"status":"presented"}',
+  },
+  {
     name: 'request_user_input', description: 'Display a structured form to collect required information from the customer',
     inputSchema: '{"type":"object","properties":{"title":{"type":"string","description":"Form title"},"fields":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"label":{"type":"string"},"type":{"type":"string","enum":["text","number","select","textarea","file"]},"required":{"type":"boolean"},"placeholder":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["key","label","type"]}}},"required":["title","fields"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"form_displayed"}',
   },
   {
+    name: 'refund_money', description: 'Process a refund to the customer (high-risk — blocked by no_high_risk_account_change policy until admin review)',
+    inputSchema: '{"type":"object","properties":{"txnId":{"type":"string"},"amount":{"type":"number"},"reason":{"type":"string"}},"required":["txnId","amount","reason"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
+    mockFixture: '{"status":"refunded"}',
+  },
+  {
+    name: 'change_ban_status', description: 'Modify a user account restriction status (high-risk — blocked by no_high_risk_account_change policy until admin review)',
+    inputSchema: '{"type":"object","properties":{"userId":{"type":"string"},"action":{"type":"string","enum":["ban","unban","restrict"]},"reason":{"type":"string"}},"required":["userId","action","reason"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
+    mockFixture: '{"status":"updated"}',
+  },
+  {
+    name: 'delete_account', description: 'Permanently delete a user account (high-risk — blocked by no_high_risk_account_change policy until admin review)',
+    inputSchema: '{"type":"object","properties":{"userId":{"type":"string"},"reason":{"type":"string"}},"required":["userId","reason"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
+    mockFixture: '{"status":"deleted"}',
+  },
+  {
     name: 'finalize_consultation', description: 'End the human consultation with a summary and resolution',
     inputSchema: '{"type":"object","properties":{"summary":{"type":"string","description":"Customer-facing message about what was resolved"},"resolution":{"type":"string","enum":["confirmed_delayed","refund_approved","needs_more_info","resolved","false_alarm"]}},"required":["summary","resolution"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"consultation_closed"}',
+  },
+  {
+    name: 'get_account_status',
+    description: '查询账户状态（登录失败、账户锁定等）。当用户无法登录、账户被锁、登录失败时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/account-status',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_kyc_status',
+    description: '查询KYC身份验证状态及当前卡住的阶段。当用户询问KYC进度、身份验证状态时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/user-kyc-status',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_active_promotions',
+    description: '查询当前生效的流水优惠活动。当用户询问有哪些优惠活动、当前流水优惠时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/promotion-active-status',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_withdraw_conditions',
+    description: '查询打码量提现条件。当用户询问打码量是否足够、提现需要多少流水时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -4:00","default":"-4:00"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/withdraw-condition',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_eligible_promotions',
+    description: '查询用户可参与的优惠活动。当用户询问如何参与活动、领取优惠时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"language":{"type":"string","description":"语言，默认 en-bd","default":"en-bd"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/promotion-eligible-status',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_latest_withdrawal',
+    description: '查询最新取款状态及已过时间。当用户询问取款进度、是否到账时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -04:00","default":"-04:00"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/get-latest-withdraw-status',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_latest_deposit',
+    description: '查询最新存款到账状态。当用户询问存款是否到账、充值进度时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -4:00","default":"-4:00"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/get-latest-deposit-status',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_transaction_history',
+    description: '查询最近5条存取款交易记录。当用户询问交易记录、充值/提现记录时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"method":{"type":"string","description":"deposit 或 withdraw","enum":["deposit","withdraw"]}},"required":["member_id","method"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/deposit-withdrawal-history',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_recommended_games',
+    description: '获取推荐/热门游戏列表。当用户询问有什么推荐游戏、热门游戏时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/top-hot-game-list',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
+  },
+  {
+    name: 'get_bet_history',
+    description: '查询游戏下注历史。当用户询问投注记录、下注历史、游戏记录时调用。',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"from_date":{"type":"string","description":"开始日期，格式 YYYY-MM-DD HH:mm:ss"},"to_date":{"type":"string","description":"结束日期，格式 YYYY-MM-DD HH:mm:ss"}},"required":["member_id","from_date","to_date"]}',
+    mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/user-bet-history-summary',
+    httpMethod: 'POST',
+    headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
+    timeoutMs: 8000,
   },
 ]
 
@@ -278,13 +394,13 @@ export interface DefaultPolicySeed {
 
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
   { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":["refund_money","change_ban_status","delete_account"]}' },
-  { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"require_skills_any":["query_order_status","query_payment_channel_status","query_account_status"]}' },
+  { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"hook_skills":["create_human_task"],"require_skills_any":["query_order_status","query_payment_channel_status","get_account_status","get_kyc_status"]}' },
   {
     name: 'conflict_requires_human',
     description: 'Detect conflict between system result and user report',
     hook: 'postTool',
     rule: JSON.stringify({
-      hook_skills: ['query_order_status', 'query_payment_channel_status', 'query_account_status'],
+      hook_skills: ['query_order_status', 'query_payment_channel_status', 'get_account_status', 'get_kyc_status'],
       evaluationPrompt: [
         'Check whether the skill outputs contradict what the customer reported.',
         '',
@@ -305,7 +421,7 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
     name: 'evidence_required_before_resolution',
     description: 'Require order or account verification skill before resolution',
     hook: 'preFinalize',
-    rule: '{"require_skills_any":["query_order_status","query_account_status"]}',
+    rule: '{"require_skills_any":["query_order_status","get_account_status","get_kyc_status"]}',
   },
   {
     name: 'no_compensation_promise',
@@ -357,6 +473,8 @@ export interface DefaultCaseTypeSeed {
   stages: string
   defaultGoal: string
   escalateOn: string
+  enabled?: boolean
+  requireHumanReview?: boolean
 }
 
 export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
@@ -367,15 +485,16 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
       '用户反映已向平台充值或划转资金（银行卡、支付宝、微信、USDT 等），但账户余额未增加或未看到到账确认；包含「扣款成功但余额没变」「流水有、游戏/钱包里没点数」「长时间未到账」等说法。',
     icon: '💰',
     requiredFacts: '["txnId","amount","paymentMethod","date"]',
-    stages: '["created","collecting","investigating","waiting_human","resolved"]',
+    stages: '["created","collecting","investigating","resolved"]',
     defaultGoal: '核实订单与支付渠道状态，判断是否延迟、失败或需补单；系统与客户说法冲突时升级人工核查。',
     escalateOn: '["conflict"]',
+    requireHumanReview: true,
   },
   {
     type: 'order_issue', displayName: '订单问题', description: 'Customer reports an order status issue',
     icon: '📦',
     requiredFacts: '["orderId","issueType"]',
-    stages: '["created","verifying","investigating","waiting_human","resolved"]',
+    stages: '["created","collecting","investigating","resolved"]',
     defaultGoal: '确认订单状态并解决客户问题',
     escalateOn: '["conflict","refund_request"]',
   },
@@ -386,7 +505,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
       '用户反馈无法正常登录、账号被封禁或冻结、风控/实名提示异常、疑似被盗号、验证码或二次验证异常、设备与环境绑定争议等——核心是「账户主体与安全策略下的状态」，不含单笔充值未到账（属存款未到账）。',
     icon: '🔒',
     requiredFacts: '["userId","issueType"]',
-    stages: '["created","collecting","investigating","waiting_human","resolved"]',
+    stages: '["created","collecting","investigating","resolved"]',
     defaultGoal:
       '拉取账号侧记录与知识库依据，判断是否限制/封禁/误拦；与客户自述冲突或高风险场景升级账号运营人工复核，并给出可执行的下一步。',
     escalateOn: '["high_risk","conflict"]',
@@ -395,9 +514,31 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
     type: 'refund_request', displayName: '退款申请', description: 'Customer requests a refund',
     icon: '↩️',
     requiredFacts: '["orderId","amount","reason"]',
-    stages: '["created","reviewing","approved","resolved"]',
+    stages: '["created","collecting","reviewing","resolved"]',
     defaultGoal: '审核退款申请并给出结论',
     escalateOn: '["large_amount","policy_violation"]',
+    requireHumanReview: true,
+  },
+  {
+    type: 'withdrawal_issue',
+    displayName: '提现问题',
+    description: '用户反映提现未到账、提现进度不明、打码量不足无法提现等问题',
+    icon: '💸',
+    requiredFacts: '["member_id","issueType"]',
+    stages: '["created","collecting","investigating","resolved"]',
+    defaultGoal: '查询取款状态与打码量条件，判断是否延迟、不足或被拒；与客户说法冲突时升级人工',
+    escalateOn: '["conflict"]',
+    requireHumanReview: true,
+  },
+  {
+    type: 'promotion_inquiry',
+    displayName: '优惠咨询',
+    description: '用户询问优惠活动、参与条件、打码量要求、流水进度等',
+    icon: '🎁',
+    requiredFacts: '["member_id"]',
+    stages: '["created","investigating","resolved"]',
+    defaultGoal: '查询用户优惠状态与参与条件，告知可参与的活动与提现流水要求',
+    escalateOn: '["conflict"]',
   },
 ]
 
@@ -439,9 +580,9 @@ Respond with JSON ONLY:
     },
     investigating: {
       name: 'investigating',
-      description: '调用订单与渠道技能核对平台记录；可申请公告检索与历史工单。',
+      description: '调用订单与渠道技能核对平台记录。若发现数据矛盾需要客户补充信息（截图、时间、来源等），必须使用 request_user_input 表单收集，禁止纯文本提问。',
       requiredSkills: ['query_order_status', 'query_payment_channel_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'status',
@@ -483,19 +624,13 @@ Respond with JSON ONLY:
         evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
 
-- If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative → **waiting_human**.
+- If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative → call create_human_task to escalate to a human specialist.
 - If **txnId**, **amount**, or **paymentMethod** are missing from confirmedFacts → **collecting** (do not finalize investigation).
 - If evidence supports closure → **resolved**.
 
 Respond JSON ONLY:
-{"shouldTransition": true/false, "nextStage": "collecting"|"investigating"|"waiting_human"|"resolved", "reason": "..."}`,
+{"shouldTransition": true/false, "nextStage": "collecting"|"investigating"|"resolved", "reason": "..."}`,
       },
-    },
-    waiting_human: {
-      name: 'waiting_human',
-      description: 'Waiting for human specialist to review and respond',
-      requiredSkills: ['create_human_task'],
-      transition: { type: 'manual' },
     },
     resolved: {
       name: 'resolved',
@@ -544,13 +679,7 @@ Respond JSON ONLY:
           parallel: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'If conflict detected → waiting_human. If resolved → resolved.' },
-    },
-    waiting_human: {
-      name: 'waiting_human',
-      description: 'Waiting for human specialist',
-      requiredSkills: ['create_human_task'],
-      transition: { type: 'manual' },
+      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'If conflict detected → call create_human_task. If resolved → resolved.' },
     },
     resolved: {
       name: 'resolved',
@@ -607,9 +736,10 @@ JSON ONLY:
       name: 'investigating',
       description:
         '并行核对账号侧快照与历史工单/政策条目；若 records 与用户说法冲突，准备人工复核话术。',
-      requiredSkills: ['query_account_status', 'read_case_history'],
+      requiredSkills: ['get_account_status', 'get_kyc_status', 'read_case_history'],
       availableSkills: [
-        'query_account_status',
+        'get_account_status',
+        'get_kyc_status',
         'read_case_history',
         'kb_hybrid_retrieve',
         'request_user_input',
@@ -617,9 +747,16 @@ JSON ONLY:
       evidenceRequirements: [
         {
           factKey: 'accountStatus',
-          description: 'query_account_status 返回的账户状态（mock 字段 `accountStatus`）',
+          description: 'get_account_status 返回的账户状态（字段 `data.status`）',
           source: 'skill_output',
-          skillName: 'query_account_status',
+          skillName: 'get_account_status',
+          required: true,
+        },
+        {
+          factKey: 'kycStatus',
+          description: 'get_kyc_status 返回的KYC状态（字段 `data.kyc_status`）',
+          source: 'skill_output',
+          skillName: 'get_kyc_status',
           required: true,
         },
         {
@@ -635,10 +772,10 @@ JSON ONLY:
           name: 'account_platform_checker',
           model: 'MiniMax-M2.7-highspeed',
           systemPrompt:
-            'You are an account security specialist. Query platform account status only — structured facts, no speculation.',
-          skills: ['query_account_status'],
+            'You are an account security specialist. Query platform account status and KYC status — structured facts, no speculation.',
+          skills: ['get_account_status', 'get_kyc_status'],
           taskTemplate:
-            'Check account/security status for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call query_account_status with userId from facts.',
+            'Check account and KYC status for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call get_account_status and get_kyc_status with member_id from facts.',
           maxIterations: 3,
           parallel: true,
         },
@@ -658,14 +795,8 @@ JSON ONLY:
         type: 'evaluation',
         evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt:
-          'If account_status conflicts with customer narrative or risk_flag/ban → waiting_human (account_ops). If KB indicates mandatory human appeal → waiting_human. If status is clearly explained with evidence → resolved. If facts still missing → collecting.',
+          'If account/KYC status conflicts with customer narrative → call create_human_task (account_ops). If KB indicates mandatory human appeal → call create_human_task. If status is clearly explained with evidence → resolved. If facts still missing → collecting.',
       },
-    },
-    waiting_human: {
-      name: 'waiting_human',
-      description: '等待账号运营或风控人工复核',
-      requiredSkills: ['create_human_task'],
-      transition: { type: 'manual' },
     },
     resolved: {
       name: 'resolved',
@@ -712,6 +843,131 @@ JSON ONLY:
       transition: { type: 'manual' },
     },
   },
+  withdrawal_issue: {
+    created: {
+      name: 'created',
+      description: '工单刚开立，先简短安抚客户。如客户已提供 member_id 和问题类型，评估器可直接进入 investigating；否则进入 collecting 用 request_user_input 收集。',
+      availableSkills: ['request_user_input'],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
+        evaluationPrompt: `Stage transition evaluator for **created** only.
+
+Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
+
+Rules:
+- If **member_id** and **issueType** are present (non-empty in confirmedFacts) → nextStage **investigating**.
+- Else → nextStage **collecting**.
+
+JSON ONLY:
+{"shouldTransition": true, "nextStage": "collecting"|"investigating", "reason": "..."}`,
+      },
+    },
+    collecting: {
+      name: 'collecting',
+      description: '收集用户 member_id 与提现问题详情；用 request_user_input 一次性收集。表单字段 key 必须使用: member_id, issueType, amount（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response.',
+      requiredSkills: ['request_user_input'],
+      availableSkills: ['request_user_input'],
+      evidenceRequirements: [
+        { factKey: 'member_id', description: '用户 member ID', source: 'user_input', required: true },
+        { factKey: 'issueType', description: '问题类型（未到账 / 打码量不足 / 被拒等）', source: 'user_input', required: true },
+        { factKey: 'amount', description: '提现金额（如有）', source: 'user_input', required: false },
+      ],
+      transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
+    },
+    investigating: {
+      name: 'investigating',
+      description: '调用取款状态与打码量条件接口核对平台记录。若发现数据矛盾需要客户补充信息，使用 request_user_input 表单收集。',
+      requiredSkills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
+      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', 'kb_hybrid_retrieve', 'request_user_input'],
+      evidenceRequirements: [
+        {
+          factKey: 'withdrawalStatus',
+          description: 'get_latest_withdrawal 返回的取款状态（字段 `status`）',
+          source: 'skill_output',
+          skillName: 'get_latest_withdrawal',
+          required: true,
+        },
+        {
+          factKey: 'withdrawConditions',
+          description: 'get_withdraw_conditions 返回的打码量条件（字段 `data`）',
+          source: 'skill_output',
+          skillName: 'get_withdraw_conditions',
+          required: true,
+        },
+      ],
+      subAgents: [
+        {
+          name: 'withdrawal_verifier',
+          model: 'MiniMax-M2.7-highspeed',
+          systemPrompt: 'You are a withdrawal verification specialist. Check the latest withdrawal status and turnover conditions. Report structured facts only.',
+          skills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
+          taskTemplate: 'Verify withdrawal status for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Call get_latest_withdrawal and get_withdraw_conditions with member_id from facts.',
+          maxIterations: 3,
+          parallel: true,
+        },
+        {
+          name: 'history_reviewer',
+          model: 'MiniMax-M2.7-highspeed',
+          systemPrompt: 'You review historical cases and transaction history for patterns.',
+          skills: ['get_transaction_history', 'read_case_history'],
+          taskTemplate: 'Review transaction history and past cases for case {{caseId}}. Stage goal: {{stageGoal}}. Facts: {{confirmedFacts}}. Check withdrawal history and case patterns.',
+          maxIterations: 2,
+          parallel: true,
+        },
+      ],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
+        evaluationPrompt: 'If withdrawal status conflicts with customer narrative → call create_human_task (withdrawal_ops). If conditions clearly explained with evidence → resolved. If facts still missing → collecting.',
+      },
+    },
+    resolved: {
+      name: 'resolved',
+      description: '结案并向客户说明提现状态与依据',
+      requiredSkills: ['finalize_case'],
+      transition: { type: 'manual' },
+    },
+  },
+  promotion_inquiry: {
+    created: {
+      name: 'created',
+      description: '优惠咨询工单开立，直接进入查询阶段。',
+      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
+    },
+    investigating: {
+      name: 'investigating',
+      description: '查询用户优惠活动状态、可参与活动和打码量条件。一次性提供完整信息给客户。',
+      availableSkills: ['get_active_promotions', 'get_eligible_promotions', 'get_withdraw_conditions', 'request_user_input'],
+      evidenceRequirements: [
+        {
+          factKey: 'activePromotions',
+          description: 'get_active_promotions 返回的当前优惠（字段 `data`）',
+          source: 'skill_output',
+          skillName: 'get_active_promotions',
+          required: false,
+        },
+        {
+          factKey: 'eligiblePromotions',
+          description: 'get_eligible_promotions 返回的可参与优惠（字段 `data`）',
+          source: 'skill_output',
+          skillName: 'get_eligible_promotions',
+          required: false,
+        },
+      ],
+      transition: {
+        type: 'evaluation',
+        evaluationModel: 'MiniMax-M2.7-highspeed',
+        evaluationPrompt: 'If promotion info is returned and customer question is answered → resolved. If customer needs more details → stay in investigating. If conflict → waiting_human.',
+      },
+    },
+    resolved: {
+      name: 'resolved',
+      description: '结案并向客户说明优惠信息',
+      requiredSkills: ['finalize_case'],
+      transition: { type: 'manual' },
+    },
+  },
 }
 
 // Default orchestrator config
@@ -736,8 +992,14 @@ export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
   },
   {
     queue: 'account_ops',
-    description: 'Account & security — login failures, bans, risk flags, appeals',
-    skillsAllowed: '["query_account_status","read_case_history","kb_hybrid_retrieve"]',
+    description: 'Account & security — login failures, bans, risk flags, appeals, KYC verification',
+    skillsAllowed: '["get_account_status","get_kyc_status","read_case_history","kb_hybrid_retrieve"]',
+    priority: 0,
+  },
+  {
+    queue: 'withdrawal_ops',
+    description: 'Withdrawal operations — withdrawal status, turnover conditions, transaction history',
+    skillsAllowed: '["get_latest_withdrawal","get_latest_deposit","get_withdraw_conditions","get_transaction_history"]',
     priority: 0,
   },
   {

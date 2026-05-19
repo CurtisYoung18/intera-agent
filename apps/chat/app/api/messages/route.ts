@@ -7,6 +7,7 @@ import { AgentLoop } from '@/lib/agent/loop'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
 import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
+import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
 
 // Verify env vars at module load (logged once per cold start)
@@ -140,7 +141,7 @@ function schemaFromCaseTypeRow(caseType: {
     stages: Array.isArray(stages) ? stages : [],
     stageConfigs: stageConfigs as unknown as CaseSchemaConfig['stageConfigs'],
     defaultGoal: caseType.defaultGoal,
-    escalateOn: parseMemoryJson(caseType.escalateOn) as string[] || [],
+    escalateOn: (parseMemoryJson(caseType.escalateOn) as string[]) || [],
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
     orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
   }
@@ -150,6 +151,55 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
   if (!raw) return {}
   if (typeof raw !== 'string') return raw
   try { return JSON.parse(raw) } catch { return {} }
+}
+
+/** Lightweight LLM-based intent routing: classify a user message to the best
+ *  matching active case. Falls back to the most recent case on error. */
+async function resolveCaseByIntent(
+  userMessage: string,
+  activeCases: Array<{ id: string; type: string }>,
+  fallbackCaseId: string,
+): Promise<string> {
+  const model = process.env.HUB_ROUTING_MODEL || process.env.INTENT_MODEL || 'MiniMax-M2.7-highspeed'
+
+  const caseList = activeCases
+    .map((c) => `- id: "${c.id}", type: ${c.type}`)
+    .join('\n')
+
+  const prompt = [
+    'You are a message router. Given a customer message and a list of active cases,',
+    'return the case ID that best matches what the customer is talking about.',
+    'If the message is about a NEW topic not covered by any case, return "new".',
+    '',
+    'Active cases:',
+    caseList,
+    '',
+    'Reply with ONLY the case ID or "new". No other text.',
+  ].join('\n')
+
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
+      baseURL: process.env.ANTHROPIC_BASE_URL,
+    })
+    const resp = await client.messages.create({
+      model,
+      max_tokens: 32,
+      temperature: 0,
+      system: prompt,
+      messages: [{ role: 'user', content: userMessage }],
+    })
+    const text = (resp.content[0] as any)?.text?.trim() || ''
+    // Extract caseId from response (handle quotes, whitespace)
+    const clean = text.replace(/^["']|["']$/g, '').trim()
+    if (clean === 'new' || !clean) return fallbackCaseId
+    // Verify the returned ID is in the active cases list
+    if (activeCases.some((c) => c.id === clean)) return clean
+    return fallbackCaseId
+  } catch {
+    return fallbackCaseId
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -180,6 +230,7 @@ export async function POST(request: NextRequest) {
           caseId,
           customerId,
           userId,
+          userLabel,
           caseType: bodyCaseType,
           bootstrapNewCase: rawBootstrapNewCase,
         } = body
@@ -193,6 +244,27 @@ export async function POST(request: NextRequest) {
           return
         }
 
+        // Validate userId format
+        if (userId && (typeof userId !== 'string' || userId.length > 64 || !/^[a-zA-Z0-9_@.-]+$/.test(userId))) {
+          sendEvent({ type: 'error', data: 'Invalid userId format', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
+        // Validate caseId format
+        if (caseId && (typeof caseId !== 'string' || caseId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(caseId))) {
+          sendEvent({ type: 'error', data: 'Invalid caseId format', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
+        // Validate resumeTrigger format
+        if (resumeTrigger && (typeof resumeTrigger !== 'string' || resumeTrigger.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(resumeTrigger))) {
+          sendEvent({ type: 'error', data: 'Invalid resumeTrigger format', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
         // Validate message length
         if (message && typeof message === 'string' && message.length > 50000) {
           sendEvent({ type: 'error', data: 'Message too long (max 50000 characters)', timestamp: new Date().toISOString() })
@@ -201,7 +273,7 @@ export async function POST(request: NextRequest) {
         }
 
         let userMessage = message
-        let resolvedCaseId = caseId || `case_${Date.now()}`
+        let resolvedCaseId = caseId || generateCaseId()
         let resolvedCustomerId = customerId || 'default'
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
@@ -212,6 +284,13 @@ export async function POST(request: NextRequest) {
         if (formResult && !message) {
           resolvedCaseId = formResult.caseId || resolvedCaseId
           const answers = (formResult.answers || {}) as Record<string, string>
+          // Validate form payload size
+          const answersJson = JSON.stringify(answers)
+          if (answersJson.length > 50_000) {
+            sendEvent({ type: 'error', data: 'Form answers too large (max 50KB)', timestamp: new Date().toISOString() })
+            controller.close()
+            return
+          }
           formAnswers = answers
           // Format as tool_result so the model sees it exactly like any other
           // tool execution result — matching CC's AskUserQuestion pattern.
@@ -223,6 +302,17 @@ export async function POST(request: NextRequest) {
         if (interactionResult && !message && !formResult) {
           resolvedCaseId = interactionResult.caseId || resolvedCaseId
           const { optionId, input } = interactionResult as { caseId?: string; optionId: string; input?: string }
+          // Validate optionId and input size
+          if (!optionId || typeof optionId !== 'string' || optionId.length > 256) {
+            sendEvent({ type: 'error', data: 'Invalid interaction option', timestamp: new Date().toISOString() })
+            controller.close()
+            return
+          }
+          if (input && typeof input === 'string' && input.length > 10_000) {
+            sendEvent({ type: 'error', data: 'Interaction input too large (max 10KB)', timestamp: new Date().toISOString() })
+            controller.close()
+            return
+          }
           const payload: Record<string, unknown> = { optionId }
           if (input) payload.input = input
           userMessage = `Tool propose_interaction result: ${JSON.stringify(payload)}`
@@ -278,6 +368,51 @@ export async function POST(request: NextRequest) {
         // Stream progress immediately so the user sees movement (CC pattern)
         sendEvent({ type: 'stream_request_start', data: null, timestamp: new Date().toISOString() })
 
+        // ── Hub: route message to the correct active case ──
+        // When multiple cases are active in a single chat window (no tabs),
+        // the Hub decides which case receives this message.
+        if (
+          userMessage &&
+          !resumeTrigger &&
+          !formResult &&
+          !bootstrapNewCase &&
+          !interactionResult
+        ) {
+          try {
+            const activeCases = await prisma.case.findMany({
+              where: {
+                customerId: resolvedCustomerId,
+                userId: resolvedUserId,
+                status: { notIn: ['resolved'] },
+              },
+              orderBy: { updatedAt: 'desc' },
+            })
+
+            if (activeCases.length === 1) {
+              resolvedCaseId = activeCases[0].id
+            } else if (activeCases.length > 1) {
+              // Check for pending interactions first
+              const pendingTask = await prisma.humanTask.findFirst({
+                where: {
+                  caseId: { in: activeCases.map((c) => c.id) },
+                  status: 'pending',
+                },
+                orderBy: { createdAt: 'desc' },
+              })
+              if (pendingTask) {
+                resolvedCaseId = pendingTask.caseId
+              } else {
+                // LLM-based intent routing: classify the message to the right case
+                resolvedCaseId = await resolveCaseByIntent(
+                  userMessage,
+                  activeCases,
+                  resolvedCaseId,
+                )
+              }
+            }
+          } catch (err) { console.error('[Intera] Hub routing failed:', err) }
+        }
+
         // ── Bootstrap new case from Chat UI (multi-case parallel lanes) ──
         if (
           bootstrapNewCase &&
@@ -301,6 +436,15 @@ export async function POST(request: NextRequest) {
             })
             resolvedCaseId = newCase.id
             createdCaseForIntent = true
+
+            // Rewrite userMessage so the agent doesn't re-trigger propose_cases
+            // on the original multi-intent text. The agent sees the selected case
+            // type and the original details, but is scoped to a single case.
+            userMessage =
+              `[Intent selected: ${bodyCaseType}] ` +
+              `The customer already chose "${bodyCaseType}" from the intent card. ` +
+              `Handle ONLY this case type. Do NOT call propose_cases. ` +
+              `Original message: "${userMessage}"`
 
             sendEvent({
               type: 'case_created',
@@ -327,7 +471,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (bodyCaseType) {
-          systemPrompt += `\n\n[Manual Case Type]: The user has selected case type "${bodyCaseType}".`
+          systemPrompt += `\n\n[Manual Case Type]: The user has already selected case type "${bodyCaseType}" from the intent clarification card. Do NOT call propose_cases — the user already made their choice. Proceed directly with this case type. If the original message mentions other issues, ignore them unless the customer brings them up again.`
         }
 
         // Chat UI binds SSE events to lane.caseId via case_created.
@@ -356,8 +500,8 @@ export async function POST(request: NextRequest) {
                 timestamp: new Date().toISOString(),
               })
               emittedCaseCreated.add(resolvedCaseId)
-            } catch {
-              /* ignore */
+            } catch (err) {
+              console.error('[Intera] Failed to lookup case type for emit:', err)
             }
           }
         }
@@ -379,13 +523,13 @@ export async function POST(request: NextRequest) {
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
               }
-            } catch { /* schema not found */ }
+            } catch (err) { console.error('[Intera] Failed to load caseType schema:', err) }
 
             // Auto-resume: if case is waiting for human and task was resolved, inject verdict
             if (existingCase.status === 'waiting_human' && !resumeTrigger && !formResult && message) {
               try {
                 const resolvedTask = await prisma.humanTask.findFirst({
-                  where: { caseId: resolvedCaseId, status: 'resolved' },
+                  where: { caseId: resolvedCaseId, status: 'resolved', notifiedAt: null },
                   orderBy: { resolvedAt: 'desc' },
                 })
                 if (resolvedTask) {
@@ -399,10 +543,10 @@ export async function POST(request: NextRequest) {
                   // Mark task as notified so it doesn't replay on every message
                   await prisma.humanTask.update({
                     where: { id: resolvedTask.id },
-                    data: { status: 'notified' as any },
-                  }).catch(() => {})
+                    data: { notifiedAt: new Date() },
+                  }).catch((err) => { console.error('[Intera] Failed to mark humanTask notifiedAt:', err) })
                 }
-              } catch { /* best-effort */ }
+              } catch (err) { console.error('[Intera] Auto-resume humanTask lookup failed:', err) }
             }
 
             if (existingCase.memory) {
@@ -413,8 +557,8 @@ export async function POST(request: NextRequest) {
               }
             }
           }
-        } catch {
-          // Case doesn't exist yet
+        } catch (err) {
+          console.error('[Intera] Failed to load case/memory from DB:', err)
         }
 
         // FK: traces/messages reference Case.caseId — rows must exist before AgentLoop writes ActionTrace/Message.
@@ -458,8 +602,8 @@ export async function POST(request: NextRequest) {
             if (ctRow) {
               caseSchema = schemaFromCaseTypeRow(ctRow)
             }
-          } catch {
-            /* ignore */
+          } catch (err) {
+            console.error('[Intera] Failed to load caseType for first-touch lane:', err)
           }
         }
 
@@ -492,7 +636,7 @@ export async function POST(request: NextRequest) {
             escalateOn: caseSchema.escalateOn,
           } : undefined,
           caseState: resolvedCaseState,
-          sessionBinding: { userId: resolvedUserId },
+          sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
         })
         systemPrompt = resolvePrompt(systemPrompt, promptCtx)
 
@@ -505,6 +649,7 @@ export async function POST(request: NextRequest) {
           userId: resolvedUserId,
           systemPrompt,
           caseSchema,
+          bootstrapNewCase,
         })
 
         // Restore memory from DB into the in-memory manager
@@ -514,7 +659,7 @@ export async function POST(request: NextRequest) {
           try {
             const c = await prisma.case.findUnique({ where: { id: resolvedCaseId } })
             if (c?.status) memData.caseStatus = c.status
-          } catch { /* ignore */ }
+          } catch (err) { console.error('[Intera] Failed to read case status:', err) }
           agentLoop.loadMemory(memData)
         }
 
@@ -535,7 +680,7 @@ export async function POST(request: NextRequest) {
               })),
             )
           }
-        } catch { /* best-effort */ }
+        } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
 
         const result = await agentLoop.run(userMessage, sendEvent, formAnswers)
 
@@ -548,11 +693,11 @@ export async function POST(request: NextRequest) {
           (mem.caseStatus && mem.caseStatus !== 'created')
         if (hasRealWork) {
           try {
-            // Read type from AgentLoop's deps (may have been set by create_case tool mid-loop)
-            const caseTypeForUpsert = (agentLoop as any).deps?.caseSchema?.type || caseSchema?.type || 'general'
+            // Read type from AgentLoop (may have been set by create_case tool mid-loop)
+            const caseTypeForUpsert = agentLoop.getCaseType()
             await prisma.case.upsert({
               where: { id: resolvedCaseId },
-              update: { status: result.caseStatus, type: caseTypeForUpsert },
+              update: { status: result.caseStatus },
               create: {
                 id: resolvedCaseId,
                 customerId: resolvedCustomerId,
@@ -621,11 +766,13 @@ export async function POST(request: NextRequest) {
         })
       } catch (error) {
         console.error('Agent loop error:', error)
-        sendEvent({
-          type: 'error',
-          data: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString(),
-        })
+        try {
+          sendEvent({
+            type: 'error',
+            data: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString(),
+          })
+        } catch { /* stream already closed */ }
       } finally {
         controller.close()
       }

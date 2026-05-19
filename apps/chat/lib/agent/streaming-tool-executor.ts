@@ -267,13 +267,6 @@ export class StreamingToolExecutor {
         delayed_batch: false,
         channel: 'unknown',
       },
-      query_account_status: {
-        accountStatus: 'active',
-        riskFlag: false,
-        banReason: null,
-        restrictionTier: 'none',
-        lastLoginAt: new Date().toISOString(),
-      },
       search_delay_notice: { notices: [] },
       ocr_receipt: { success: true, extracted: {} },
       create_human_task: {

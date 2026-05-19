@@ -92,11 +92,6 @@ const TOOL_VERB_VARIANTS: Record<string, SpinnerVerb[]> = {
     { text: 'Checking how the payment cleared', icon: 'scan' },
     { text: 'Tracing the payment route', icon: 'pulse' },
   ],
-  query_account_status: [
-    { text: 'Checking account security status', icon: 'scan' },
-    { text: 'Reviewing your account state', icon: 'scan' },
-    { text: 'Looking up account flags', icon: 'scan' },
-  ],
   search_delay_notice: [
     { text: 'Searching for platform notices', icon: 'scan' },
     { text: 'Checking official delay announcements', icon: 'dots' },

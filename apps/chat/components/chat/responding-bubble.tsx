@@ -76,8 +76,6 @@ export default function RespondingBubble({
     }
   }, [isVisible, executingToolName, coreAgentTask, skillsCalled])
 
-  const isTaskLine = !executingToolName && Boolean(coreAgentTask) && line === coreAgentTask
-
   return (
     <AnimatePresence mode="wait">
       {isVisible && (
@@ -107,9 +105,7 @@ export default function RespondingBubble({
               initial={{ opacity: 0.6 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.25 }}
-              className={`shrink-0 font-sans leading-none text-fog/55 ${
-                isTaskLine ? 'text-[12px]' : 'text-[12px]'
-              }`}
+              className="shrink-0 font-sans leading-none text-fog/55 text-[12px]"
             >
               {line}
             </motion.span>

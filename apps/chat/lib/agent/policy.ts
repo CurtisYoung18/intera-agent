@@ -55,9 +55,9 @@ export class PolicyEngine {
     })
     this.loadBuiltInPolicies()
     if (policyHooks) {
-      this.hooks.preTool = policyHooks.preTool || []
-      this.hooks.postTool = policyHooks.postTool || []
-      this.hooks.preFinalize = policyHooks.preFinalize || []
+      if (policyHooks.preTool !== undefined) this.hooks.preTool = policyHooks.preTool
+      if (policyHooks.postTool !== undefined) this.hooks.postTool = policyHooks.postTool
+      if (policyHooks.preFinalize !== undefined) this.hooks.preFinalize = policyHooks.preFinalize
     }
   }
 
@@ -95,7 +95,7 @@ export class PolicyEngine {
     })
 
     this.policies.set('conflict_requires_human', {
-      hook_skills: ['query_order_status', 'query_payment_channel_status', 'query_account_status'],
+      hook_skills: ['query_order_status', 'query_payment_channel_status', 'get_account_status', 'get_kyc_status'],
       evaluationPrompt: [
         'Check whether the skill outputs contradict what the customer reported.',
         '',
@@ -113,7 +113,7 @@ export class PolicyEngine {
     })
 
     this.policies.set('evidence_required_before_resolution', {
-      require_skills_any: ['query_order_status', 'query_account_status'],
+      require_skills_any: ['query_order_status', 'get_account_status', 'get_kyc_status'],
     })
 
     this.policies.set('no_compensation_promise', {
@@ -144,7 +144,8 @@ export class PolicyEngine {
     })
 
     this.policies.set('investigate_before_escalation', {
-      require_skills_any: ['query_order_status', 'query_payment_channel_status', 'query_account_status'],
+      hook_skills: ['create_human_task'],
+      require_skills_any: ['query_order_status', 'query_payment_channel_status', 'get_account_status', 'get_kyc_status'],
     })
 
     this.hooks.preTool = ['no_high_risk_account_change', 'investigate_before_escalation']
@@ -260,21 +261,30 @@ export class PolicyEngine {
       }
     }
 
-    // require_skills — all listed skills must have been called
-    if (rule.require_skills && (context.skillName === 'finalize_case' || context.skillName === 'create_human_task')) {
-      const called = context.skillsCalled || []
-      const missing = rule.require_skills.filter((s) => !called.includes(s))
-      if (missing.length > 0) {
-        return {
-          policyName,
-          result: 'blocked',
-          reason: `Required skills not called: ${missing.join(', ')}`,
+    // require_skills — all listed skills must have been called.
+    // Gated by hook_skills (if set) or applies to terminal tools by default.
+    if (rule.require_skills) {
+      const isGated = !rule.hook_skills || rule.hook_skills.length === 0 ||
+        (context.skillName && rule.hook_skills.includes(context.skillName))
+      if (isGated) {
+        const called = context.skillsCalled || []
+        const missing = rule.require_skills.filter((s) => !called.includes(s))
+        if (missing.length > 0) {
+          return {
+            policyName,
+            result: 'blocked',
+            reason: `Required skills not called: ${missing.join(', ')}`,
+          }
         }
       }
     }
 
-    // require_skills_any — at least one must have been called (by main agent OR sub-agent)
-    if (rule.require_skills_any && rule.require_skills_any.length > 0 && (context.skillName === 'finalize_case' || context.skillName === 'create_human_task')) {
+    // require_skills_any — at least one must have been called (by main agent OR sub-agent).
+    // Gated by hook_skills (if set) or applies to terminal tools by default.
+    if (rule.require_skills_any && rule.require_skills_any.length > 0) {
+      const isGated = !rule.hook_skills || rule.hook_skills.length === 0 ||
+        (context.skillName && rule.hook_skills.includes(context.skillName))
+      if (isGated) {
       const called = context.skillsCalled || []
       let ok = rule.require_skills_any.some((s) => called.includes(s))
 
@@ -301,6 +311,7 @@ export class PolicyEngine {
           reason: `Must call at least one of: ${rule.require_skills_any.join(', ')} before ${context.skillName}`,
         }
       }
+      } // close isGated
     }
 
     return null

@@ -1,7 +1,7 @@
 // MessageBubble — single chat message
 // Supports 3 types: text, tool_call (CC-style dot), form_submitted (read-only record)
 
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'motion/react'
 import ReactMarkdown from 'react-markdown'
@@ -20,6 +20,7 @@ export interface MessageShape {
   msgType:
     | 'text'
     | 'tool_call'
+    | 'policy_block'
     | 'form_active'
     | 'form_submitted'
     | 'intent_clarification'
@@ -33,6 +34,7 @@ export interface MessageShape {
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
+  toolResult?: unknown
   relatedCaseId?: string
   formData?: {
     title: string
@@ -117,10 +119,14 @@ function MessageBubble({
   onIntentConfirm,
   onInteractionSelect,
 }: MessageBubbleProps) {
-  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, formData, intentOptions, intentResolution, interactionOptions } = msg
+  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, toolResult, formData, intentOptions, intentResolution, interactionOptions, relatedCaseId } = msg
 
   if (msgType === 'tool_call') {
-    return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} timestamp={msg.timestamp} />
+    return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} toolResult={toolResult} timestamp={msg.timestamp} />
+  }
+
+  if (msgType === 'policy_block') {
+    return <PolicyBlockBubble toolName={toolName} policyNames={content} timestamp={msg.timestamp} />
   }
 
   if (msgType === 'form_submitted' && formData) {
@@ -149,8 +155,8 @@ function MessageBubble({
 
     if (elevateInteractiveForms && typeof document !== 'undefined') {
       const hintZh =
-        !!(priorUserContent && /[\u3400-\u9fff]/.test(priorUserContent)) ||
-        /[\u3400-\u9fff]/.test(formData.title)
+        !!(priorUserContent && /[\u4e00-\u9fff]/.test(priorUserContent)) ||
+        /[\u4e00-\u9fff]/.test(formData.title)
       return (
         <>
           {createPortal(
@@ -250,6 +256,12 @@ function MessageBubble({
 
   return (
     <div className={`flex flex-col ${align}`}>
+      {/* Case tag — shows which case this assistant message belongs to */}
+      {role === 'assistant' && relatedCaseId && (
+        <span className="text-[9px] font-mono text-fog/30 mb-1 ml-1 tracking-wider">
+          {relatedCaseId.length > 12 ? `…${relatedCaseId.slice(-10)}` : relatedCaseId}
+        </span>
+      )}
       <div className={`${maxW} animate-message-in`}>
         <GlassCard variant={variant}>
           {role === 'assistant' && thinking && (
@@ -330,20 +342,28 @@ function IntentResolvedBubble({
 
 // ─── Tool call bubble (CC-style green/red dot) ────────────────────
 
-function ToolCallBubble({ toolName, toolVerb, status, timestamp }: {
+function ToolCallBubble({ toolName, toolVerb, status, toolResult, timestamp }: {
   toolName?: string
   toolVerb?: string
   status?: 'executing' | 'completed' | 'error'
+  toolResult?: unknown
   timestamp: string
 }) {
   const displayName = toolName ? toolName.replace(/_/g, ' ') : 'tool'
   const label = toolVerb || displayName
+  const [expanded, setExpanded] = useState(false)
+  const hasResult = status === 'completed' && toolResult !== undefined
 
   return (
     <div className="flex flex-col items-start">
       <div className="animate-message-in">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border-subtle)]">
-          {/* CC-style status dot */}
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border-subtle)] ${hasResult ? 'cursor-pointer' : ''}`}
+          onClick={hasResult ? () => setExpanded(!expanded) : undefined}
+          role={hasResult ? 'button' : undefined}
+          tabIndex={hasResult ? 0 : undefined}
+          onKeyDown={hasResult ? (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) }} : undefined}
+        >
           {status === 'executing' && (
             <span className="inline-block w-2 h-2 rounded-full border border-indigo/60 border-l-transparent animate-tool-spin flex-shrink-0" />
           )}
@@ -355,6 +375,50 @@ function ToolCallBubble({ toolName, toolVerb, status, timestamp }: {
           )}
 
           <span className="text-[12px] font-mono text-fog/70">{label}</span>
+          {hasResult && (
+            <span className="text-[10px] text-fog/40">{expanded ? '▾' : '▸'}</span>
+          )}
+        </div>
+      </div>
+      {expanded && hasResult && (
+        <div className="animate-message-in mt-1 ml-4 px-3 py-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border-subtle)] max-w-[420px]">
+          <pre className="text-[11px] font-mono text-fog/60 whitespace-pre-wrap break-all leading-relaxed">
+            {typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)}
+          </pre>
+        </div>
+      )}
+      {timestamp && (
+        <span className="mt-1.5 text-[11px] font-sans text-fog/30 px-2 select-none">
+          {formatTime(timestamp)}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ─── Policy blocked bubble (red dot) ──────────────────────────────
+
+function PolicyBlockBubble({ toolName, policyNames, timestamp }: {
+  toolName?: string
+  policyNames?: string
+  timestamp: string
+}) {
+  const isEscalation = toolName === 'escalated'
+  const displayTool = toolName && toolName !== 'escalated' ? toolName.replace(/_/g, ' ') : ''
+  const displayPolicy = policyNames ? policyNames.replace(/_/g, ' ') : 'policy'
+
+  return (
+    <div className="flex flex-col items-start">
+      <div className="animate-message-in">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border-subtle)]">
+          <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${isEscalation ? 'bg-amber-400' : 'bg-vermillion'}`} />
+          <span className="text-[12px] font-mono text-fog/70">
+            {isEscalation ? (
+              displayPolicy
+            ) : (
+              <>Blocked <span className="text-fog/50">{displayTool}</span><span className="text-fog/40"> — {displayPolicy}</span></>
+            )}
+          </span>
         </div>
       </div>
       {timestamp && (

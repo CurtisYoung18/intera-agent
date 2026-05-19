@@ -316,6 +316,8 @@ export type SSEEventType =
   | 'sub_agent_error'
   | 'core_agent_progress'
   | 'clarification'
+  | 'policy_blocked'
+  | 'escalated'
   | 'error'
 
 /** Option presented in a propose_interaction card. */
@@ -349,6 +351,7 @@ export interface CaseSchemaConfig {
   escalateOn: string[]
   autoCloseConditions?: Record<string, unknown>
   orchestrator?: OrchestratorConfig
+  requireHumanReview?: boolean
 }
 
 // ============================================

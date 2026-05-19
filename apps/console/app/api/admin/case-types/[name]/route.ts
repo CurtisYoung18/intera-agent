@@ -25,6 +25,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ name
     for (const f of strFields) if (body[f] !== undefined) data[f] = body[f]
     if (body.enabled !== undefined)
       data.enabled = body.enabled !== false && body.enabled !== 0 && body.enabled !== 'false'
+    if (body.requireHumanReview !== undefined)
+      data.requireHumanReview = body.requireHumanReview === true || body.requireHumanReview === 'true'
     for (const f of ['requiredFacts', 'stages', 'escalateOn', 'autoCloseConditions', 'stageConfigs', 'orchestratorConfig']) {
       if (body[f] !== undefined) data[f] = typeof body[f] === 'string' ? body[f] : JSON.stringify(body[f])
     }

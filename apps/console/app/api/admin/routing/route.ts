@@ -13,9 +13,12 @@ export async function GET() {
       orderBy: { priority: 'asc' },
     })
 
-    // Lazy init: create from defaults if DB is empty
-    if (routes.length === 0) {
-      for (const r of DEFAULT_ROUTING) {
+    // Ensure all default routes exist (insert missing, skip existing)
+    const existingQueues = new Set(routes.map((r) => r.queue))
+    const missing = DEFAULT_ROUTING.filter((r) => !existingQueues.has(r.queue))
+
+    if (missing.length > 0) {
+      for (const r of missing) {
         await prisma.routing.create({
           data: {
             customerId: CUSTOMER_ID,

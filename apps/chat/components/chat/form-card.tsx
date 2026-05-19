@@ -54,10 +54,17 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
     }
   }, [handleChange])
 
+  const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (submitTimerRef.current) clearTimeout(submitTimerRef.current)
+    }
+  }, [])
+
   const handleSubmit = useCallback(() => {
     setSubmitted(true)
-    // Show completed style for 1s so user perceives the filled form, then notify parent
-    setTimeout(() => onSubmit(answers), 1000)
+    submitTimerRef.current = setTimeout(() => onSubmit(answers), 1000)
   }, [answers, onSubmit])
 
   const handleDismiss = useCallback(() => {

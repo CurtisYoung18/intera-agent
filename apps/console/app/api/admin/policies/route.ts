@@ -13,9 +13,12 @@ export async function GET() {
       orderBy: { name: 'asc' },
     })
 
-    // Lazy init: create from defaults if DB is empty
-    if (policies.length === 0) {
-      for (const p of DEFAULT_POLICIES) {
+    // Ensure all default policies exist (insert missing, skip existing)
+    const existingNames = new Set(policies.map((p) => p.name))
+    const missing = DEFAULT_POLICIES.filter((p) => !existingNames.has(p.name))
+
+    if (missing.length > 0) {
+      for (const p of missing) {
         await prisma.policy.create({
           data: {
             customerId: CUSTOMER_ID,

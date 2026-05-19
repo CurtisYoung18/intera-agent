@@ -245,12 +245,6 @@ export class CaseMemoryManager {
       this.confirmedFacts.channelDelayedBatch = result.delayed_batch
       if (result.delayed_batch) this.confirmedFacts.delayReason = result.reason
     }
-    if (skillName === 'query_account_status') {
-      if (result.accountStatus !== undefined) this.confirmedFacts.accountStatus = result.accountStatus
-      if (result.riskFlag !== undefined) this.confirmedFacts.accountRiskFlag = result.riskFlag
-      if (result.banReason !== undefined) this.confirmedFacts.banReason = result.banReason
-      if (result.restrictionTier !== undefined) this.confirmedFacts.restrictionTier = result.restrictionTier
-    }
     if (skillName === 'read_case_history' && typeof result.total === 'number') {
       this.confirmedFacts.priorCaseCount = result.total
     }
@@ -272,9 +266,9 @@ export class CaseMemoryManager {
   /**
    * Estimates the token count of the conversation and determines compaction need.
    * Uses CC's multi-tiered threshold approach:
-   *   - Blocking: < BLOCKING_BUFFER (3K) — MUST compact
-   *   - AutoCompact: < AUTOCOMPACT_BUFFER (13K) — should compact
-   *   - Warning: < WARNING_THRESHOLD (20K) — notify user
+   *   - Blocking: < blockingThresholdTokens (default 15K) — MUST compact
+   *   - AutoCompact: < autocompactThresholdTokens (default 40K) — should compact
+   *   - Warning: < warningThresholdTokens (default 50K) — notify user
    */
   assessCompaction(estimatedMessageTokens: number, messageCount: number): CompactionResult {
     const ctxWindow = this.strategy.contextWindow ?? 200000

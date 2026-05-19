@@ -13,9 +13,9 @@ import type {
 } from '@intera/shared/types'
 import { SubAgent } from './sub-agent'
 import { DEFAULT_ORCHESTRATOR_CONFIG } from '@intera/shared/defaults'
+import { prisma } from '@intera/shared/prisma'
 
 export class OrchestratorAgent {
-  private subAgents: Map<string, SubAgent> = new Map()
   private newResults: SubAgentResult[] = []
   private pendingNames: Set<string> = new Set()
 
@@ -154,7 +154,6 @@ export class OrchestratorAgent {
   dispatchInBackground(
     tasks: SubAgentTask[],
     sendEvent: (event: SSEEvent) => void,
-    caseMemory: CaseMemoryData,
   ): void {
     const parallelTasks: SubAgentTask[] = []
     const serialTasks: SubAgentTask[] = []
@@ -174,38 +173,107 @@ export class OrchestratorAgent {
 
     // Fire background execution
     const runAll = async () => {
-      try {
-        // Parallel first
-        if (parallelTasks.length > 0) {
-          const maxParallel = this.getMaxParallelAgents()
-          const parallelResults: SubAgentResult[] = []
-          for (let i = 0; i < parallelTasks.length; i += maxParallel) {
-            const batch = parallelTasks.slice(i, i + maxParallel)
-            const batchResults = await Promise.all(
-              batch.map((task) => this.runSubAgent(task)),
-            )
-            for (const result of batchResults) {
-              parallelResults.push(result)
+      // Parallel first
+      if (parallelTasks.length > 0) {
+        const maxParallel = this.getMaxParallelAgents()
+        for (let i = 0; i < parallelTasks.length; i += maxParallel) {
+          const batch = parallelTasks.slice(i, i + maxParallel)
+          const batchResults = await Promise.allSettled(
+            batch.map((task) => this.runSubAgent(task)),
+          )
+          for (const settled of batchResults) {
+            if (settled.status === 'fulfilled') {
+              const result = settled.value
               this.newResults.push(result)
               this.pendingNames.delete(result.agentName)
+              persistResult(result)
               this.emitSubAgentComplete(sendEvent, result)
+            } else {
+              // Emit error for failed sub-agent so UI can reflect it
+              const failedName = batch[batchResults.indexOf(settled)]?.agentConfig?.name || 'unknown'
+              this.pendingNames.delete(failedName)
+              sendEvent({
+                type: 'sub_agent_error',
+                data: {
+                  taskId: `subagent_${failedName}_error`,
+                  agentName: failedName,
+                  error: settled.reason instanceof Error ? settled.reason.message : String(settled.reason),
+                },
+                timestamp: new Date().toISOString(),
+              })
             }
           }
         }
+      }
 
-        // Then serial
-        for (const task of serialTasks) {
+      // Then serial
+      for (const task of serialTasks) {
+        try {
           const result = await this.runSubAgent(task)
           this.newResults.push(result)
           this.pendingNames.delete(result.agentName)
+          persistResult(result)
           this.emitSubAgentComplete(sendEvent, result)
+        } catch (err) {
+          const name = task.agentConfig.name
+          this.pendingNames.delete(name)
+          sendEvent({
+            type: 'sub_agent_error',
+            data: {
+              taskId: task.id,
+              agentName: name,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            timestamp: new Date().toISOString(),
+          })
         }
-      } catch (err) {
-        console.error('[Orchestrator] Background dispatch error:', err)
       }
     }
 
     // Fire and forget — results are collected via hasNewResults()
+    // Persist sub-agent results to DB so they survive across HTTP requests.
+    const persistResult = async (result: SubAgentResult) => {
+      try {
+        const record = await prisma.caseMemory.findUnique({ where: { caseId: result.caseId } })
+        const prevResults: Record<string, unknown> = record?.skillResults
+          ? (() => { try { return JSON.parse(record.skillResults) } catch { return {} } })()
+          : {}
+        prevResults[`subagent:${result.agentName}`] = {
+          findings: result.findings,
+          evidence: result.evidence,
+          recommendation: result.recommendation,
+          tokensUsed: result.tokensUsed,
+          durationMs: result.durationMs,
+        }
+        const prevEvents: unknown[] = record?.keyEvents
+          ? (() => { try { return JSON.parse(record.keyEvents) } catch { return [] } })()
+          : []
+        prevEvents.push({
+          at: new Date().toISOString(),
+          text: `Sub-agent ${result.agentName} completed: ${result.recommendation || 'no recommendation'}`,
+          source: 'llm',
+        })
+        await prisma.caseMemory.upsert({
+          where: { caseId: result.caseId },
+          update: {
+            skillResults: JSON.stringify(prevResults),
+            keyEvents: JSON.stringify(prevEvents),
+          },
+          create: {
+            caseId: result.caseId,
+            skillResults: JSON.stringify(prevResults),
+            keyEvents: JSON.stringify(prevEvents),
+            confirmedFacts: '{}',
+            missingFacts: '[]',
+            skillsCalled: '[]',
+            humanTaskStatus: 'none',
+          },
+        })
+      } catch (err) {
+        console.error('[Orchestrator] Failed to persist sub-agent result:', err)
+      }
+    }
+
     runAll().catch((err) => console.error('[Orchestrator] Background dispatch failed:', err))
   }
 
@@ -345,21 +413,10 @@ export class OrchestratorAgent {
     })
   }
 
-  private static readonly MAX_CACHED_AGENTS = 20
-
-  /** Run a single sub-agent (with caching for repeat invocations, LRU-evicted). */
+  /** Run a single sub-agent. Creates a fresh instance each call so task-specific
+   *  configuration (taskPrompt, context) is never stale from a previous dispatch. */
   private async runSubAgent(task: SubAgentTask): Promise<SubAgentResult> {
-    let agent = this.subAgents.get(task.agentConfig.name)
-    if (!agent) {
-      agent = new SubAgent(task.agentConfig, this.skillDefinitions)
-      // Evict oldest entry when cache exceeds limit
-      if (this.subAgents.size >= OrchestratorAgent.MAX_CACHED_AGENTS) {
-        const firstKey = this.subAgents.keys().next().value
-        if (firstKey) this.subAgents.delete(firstKey)
-      }
-      this.subAgents.set(task.agentConfig.name, agent)
-    }
-
+    const agent = new SubAgent(task.agentConfig, this.skillDefinitions)
     return agent.investigate(task)
   }
 }

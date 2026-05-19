@@ -13,9 +13,12 @@ export async function GET() {
       orderBy: { name: 'asc' },
     })
 
-    // Lazy init: create from defaults if DB is empty
-    if (skills.length === 0) {
-      for (const s of DEFAULT_SKILLS) {
+    // Ensure all default skills exist (insert missing, skip existing)
+    const existingNames = new Set(skills.map((s) => s.name))
+    const missing = DEFAULT_SKILLS.filter((s) => !existingNames.has(s.name))
+
+    if (missing.length > 0) {
+      for (const s of missing) {
         await prisma.skill.create({
           data: {
             customerId: CUSTOMER_ID,
@@ -27,6 +30,10 @@ export async function GET() {
             isConcurrencySafe: s.isConcurrencySafe,
             enabled: s.enabled,
             guardPhase: s.guardPhase,
+            endpoint: s.endpoint ?? null,
+            httpMethod: s.httpMethod ?? 'POST',
+            headers: s.headers ?? null,
+            timeoutMs: s.timeoutMs ?? 8000,
             mockFixture: s.mockFixture ?? null,
           },
         })

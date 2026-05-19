@@ -24,6 +24,7 @@ interface CaseTypeItem {
   stageConfigs: string
   orchestratorConfig: string
   enabled: boolean
+  requireHumanReview?: boolean
 }
 
 type ModalTab = 'basic' | 'stages'
@@ -93,6 +94,7 @@ export default function CaseTypesPage() {
     stageConfigs: '{}',
     orchestratorConfig: '{"enabled":false,"maxParallelAgents":3}',
     enabled: true,
+    requireHumanReview: false,
   })
 
   const openEdit = (ct: CaseTypeItem) => {
@@ -415,6 +417,15 @@ export default function CaseTypesPage() {
                     className="accent-indigo rounded"
                   />
                   <span className="text-[12px] text-[var(--fog)]">{t('caseTypes.enabledForRouting')}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer py-1">
+                  <input
+                    type="checkbox"
+                    checked={!!editing.requireHumanReview}
+                    onChange={(e) => setEditing({ ...editing, requireHumanReview: e.target.checked })}
+                    className="accent-vermillion rounded"
+                  />
+                  <span className="text-[12px] text-[var(--fog)]">Require human review before finalize</span>
                 </label>
                 {CT_JSON_FIELDS.map((f) => (
                   <label key={f} className="space-y-1.5 block">

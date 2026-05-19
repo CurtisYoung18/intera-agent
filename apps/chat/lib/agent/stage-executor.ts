@@ -69,12 +69,15 @@ export interface TransitionEval {
 export class StageExecutor {
   private stageConfigs: Record<string, StageConfig>
   private consecutiveEvalParseFailures = 0
+  private bootstrapNewCase: boolean
 
   constructor(
     private caseSchema: CaseSchemaConfig,
     private agentConfig: AgentConfigData,
     private caseMemory: CaseMemoryManager,
+    bootstrapNewCase?: boolean,
   ) {
+    this.bootstrapNewCase = bootstrapNewCase ?? false
     // Parse stage configs from case schema, with fallback to defaults
     this.stageConfigs = this.loadStageConfigs()
   }
@@ -164,9 +167,23 @@ export class StageExecutor {
   // -----------------------------------------------------------------------
 
   /** Filter tools to only those allowed in the current stage. */
-  filterTools(stage: string, allTools: Tool[]): Tool[] {
+  filterTools(stage: string, allTools: Tool[], nudgeCount = 0): Tool[] {
     const cfg = this.getStageConfig(stage)
     if (!cfg?.availableSkills?.length) return allTools
+
+    // Hard constraint on nudge 2+: restrict to ONLY missing required skills
+    // so the LLM cannot generate text to avoid calling required tools.
+    if (nudgeCount >= 2 && cfg?.requiredSkills?.length) {
+      const requiredCheck = this.checkRequiredSkills(stage)
+      if (!requiredCheck.met) {
+        const forced = new Set(requiredCheck.missing)
+        forced.add('create_human_task')
+        forced.add('finalize_case')
+        forced.add('request_user_input')
+        forced.add('propose_cases')
+        return allTools.filter((t) => forced.has(t.name))
+      }
+    }
 
     const allowed = new Set(cfg.availableSkills)
     // Always allow terminal tools regardless of stage
@@ -181,6 +198,13 @@ export class StageExecutor {
     // stays available for multi-intent situations at any stage.
     if (stage !== 'created') {
       allowed.delete('create_case')
+    }
+
+    // When the case was created from an intent selection card, remove propose_cases
+    // entirely — the user already made their choice. Prompt-based guards are not
+    // reliable enough for this critical path.
+    if (this.bootstrapNewCase) {
+      allowed.delete('propose_cases')
     }
 
     return allTools.filter((t) => allowed.has(t.name))

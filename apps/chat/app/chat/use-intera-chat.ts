@@ -5,6 +5,7 @@ import type { IntentClassification } from '@intera/shared/types'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { pickToolVerb } from '@/lib/spinner-verbs'
+import type { TestUser } from '@/components/chat/user-login-screen'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,6 +14,7 @@ import { pickToolVerb } from '@/lib/spinner-verbs'
 export type MsgType =
   | 'text'
   | 'tool_call'
+  | 'policy_block'
   | 'form_active'
   | 'form_submitted'
   | 'intent_clarification'
@@ -31,6 +33,7 @@ export interface ChatMessage {
   toolStatus?: 'executing' | 'completed' | 'error'
   toolName?: string
   toolVerb?: string
+  toolResult?: unknown
   /** Associate assistant/tool/form bubbles with a case tab (omit for shared / user lines). */
   relatedCaseId?: string
   formData?: {
@@ -138,6 +141,8 @@ export interface UseInteraChatReturn {
   onInteractionSelect: (msgId: string, optionId: string, input?: string) => Promise<void>
   userId: string
   customerId: string
+  selectedUser: TestUser | 'anonymous' | null
+  setSelectedUser: (user: TestUser | 'anonymous' | null) => void
   loadHistoricalCase: (caseId: string) => Promise<void>
   composerAssistEnabled: boolean
   composerAssistMissingDeepseekKey?: boolean
@@ -232,6 +237,40 @@ export function useInteraChat(): UseInteraChatReturn {
   const queuedRef = useRef<string[]>([])
   const caseIdRef = useRef<string>(`case_${Date.now()}`)
   const [session, setSession] = useState(readSessionFromUrl)
+
+  const SEL_STORAGE_KEY = 'intera_test_user'
+  const [selectedUser, setSelectedUserState] = useState<TestUser | 'anonymous' | null>(null)
+
+  const setSelectedUser = useCallback((user: TestUser | 'anonymous' | null) => {
+    setSelectedUserState(user)
+    try {
+      if (user === null) {
+        sessionStorage.removeItem(SEL_STORAGE_KEY)
+      } else if (user === 'anonymous') {
+        sessionStorage.setItem(SEL_STORAGE_KEY, 'anonymous')
+      } else {
+        sessionStorage.setItem(SEL_STORAGE_KEY, JSON.stringify(user))
+      }
+    } catch { /* noop */ }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(SEL_STORAGE_KEY)
+      if (stored === 'anonymous') {
+        setSelectedUserState('anonymous')
+      } else if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed && typeof parsed.label === 'string' && typeof parsed.memberId === 'string') {
+          setSelectedUserState(parsed as TestUser)
+        }
+      }
+    } catch { /* noop */ }
+  }, [SEL_STORAGE_KEY])
+
+  const effectiveUserId = selectedUser && selectedUser !== 'anonymous' ? selectedUser.memberId : session.userId
+  const selectedUserLabel = selectedUser && selectedUser !== 'anonymous' ? selectedUser.label : undefined
+
   const lastUserMsgRef = useRef<string>('')
   const selectedCaseTypeRef = useRef<string | null>(null)
   const submitMessageRef = useRef<(text: string) => Promise<void>>(async () => {})
@@ -302,7 +341,8 @@ export function useInteraChat(): UseInteraChatReturn {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   customerId: session.customerId,
-                  userId: session.userId,
+                  userId: effectiveUserId,
+            userLabel: selectedUserLabel,
                   resumeTrigger: resolved.id,
                 }),
               })
@@ -700,14 +740,32 @@ export function useInteraChat(): UseInteraChatReturn {
           break
         }
 
+        case 'policy_blocked': {
+          const pd = event.data as { toolName: string; policyNames: string[] }
+          const rid = relate()
+          const blockedMsgId = crypto.randomUUID()
+          setMessages((prev) => [
+            ...prev,
+            makeMsg({
+              id: blockedMsgId,
+              role: 'assistant',
+              msgType: 'policy_block',
+              relatedCaseId: rid,
+              toolName: pd.toolName,
+              content: pd.policyNames.join(', '),
+            }),
+          ])
+          break
+        }
+
         case 'skill_result': {
-          const sd = event.data as { name: string; status: string }
+          const sd = event.data as { name: string; status: string; result?: unknown }
           const isError = sd.status === 'error'
           lane.activeToolCount = Math.max(0, lane.activeToolCount - 1)
           const tId = lane.toolMsgIds.get(sd.name)
           if (tId) {
             setMessages((prev) =>
-              prev.map((m) => (m.id === tId ? { ...m, toolStatus: isError ? 'error' : 'completed' } : m)),
+              prev.map((m) => (m.id === tId ? { ...m, toolStatus: isError ? 'error' : 'completed', toolResult: sd.result } : m)),
             )
           }
           if (lane.activeToolCount === 0 && lane.textHasArrived) setAgentStatus('online')
@@ -785,6 +843,23 @@ export function useInteraChat(): UseInteraChatReturn {
           break
         }
 
+        case 'escalated': {
+          const esd = event.data as { stage: string; reason: string }
+          setMessages((prev) => [
+            ...prev,
+            makeMsg({
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              msgType: 'policy_block',
+              relatedCaseId: relate(),
+              toolName: 'escalated',
+              content: `Investigation could not be completed in stage "${esd.stage}". Escalated to human review.`,
+            }),
+          ])
+          setAgentStatus('online')
+          break
+        }
+
         case 'withheld':
           // Context compaction notification — agent is still working
           break
@@ -839,7 +914,8 @@ export function useInteraChat(): UseInteraChatReturn {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: session.customerId,
-          userId: session.userId,
+          userId: effectiveUserId,
+            userLabel: selectedUserLabel,
           caseIds,
           userUtterance,
           preferZh,
@@ -908,7 +984,8 @@ export function useInteraChat(): UseInteraChatReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             customerId: session.customerId,
-            userId: session.userId,
+            userId: effectiveUserId,
+            userLabel: selectedUserLabel,
             formResult: { caseId, answers },
           }),
         })
@@ -988,7 +1065,8 @@ export function useInteraChat(): UseInteraChatReturn {
           body: JSON.stringify({
             message: text,
             customerId: session.customerId,
-            userId: session.userId,
+            userId: effectiveUserId,
+            userLabel: selectedUserLabel,
             caseId: actualCaseIdRef.current,
             ...(selectedCaseTypeRef.current
               ? { caseType: selectedCaseTypeRef.current, skipClassification: true }
@@ -1046,7 +1124,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [session.customerId, session.userId],
+    [session.customerId, effectiveUserId],
   )
 
   const runParallelBootstrap = useCallback(
@@ -1090,7 +1168,8 @@ export function useInteraChat(): UseInteraChatReturn {
                 body: JSON.stringify({
                   message: userText,
                   customerId: session.customerId,
-                  userId: session.userId,
+                  userId: effectiveUserId,
+            userLabel: selectedUserLabel,
                   classification,
                   caseType,
                   skipClassification: true,
@@ -1136,7 +1215,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [session.customerId, session.userId],
+    [session.customerId, effectiveUserId],
   )
 
   const onIntentConfirm = useCallback(
@@ -1317,7 +1396,8 @@ export function useInteraChat(): UseInteraChatReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             customerId: session.customerId,
-            userId: session.userId,
+            userId: effectiveUserId,
+            userLabel: selectedUserLabel,
             interactionResult: { caseId: caseIdForInteraction, optionId, input },
           }),
         })
@@ -1336,7 +1416,7 @@ export function useInteraChat(): UseInteraChatReturn {
         if (activeStreamsRef.current <= 0) setStreamingToolName(null)
       }
     },
-    [session.customerId, session.userId],
+    [session.customerId, effectiveUserId],
   )
 
   return {
@@ -1360,8 +1440,10 @@ export function useInteraChat(): UseInteraChatReturn {
     onFormCancel,
     onIntentConfirm,
     onInteractionSelect,
-    userId: session.userId,
+    userId: effectiveUserId,
     customerId: session.customerId,
+    selectedUser,
+    setSelectedUser,
     loadHistoricalCase,
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,

@@ -136,7 +136,7 @@ export async function compactConversation(
       role: m.role === 'user' ? 'user' as const : 'assistant' as const,
       content: m.content as string,
     }))
-    .slice(-strategy.compactMaxMessages)
+    .slice(-(strategy.compactMaxMessages || 20))
 
   try {
     const client = new Anthropic({ apiKey, baseURL })

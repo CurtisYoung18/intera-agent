@@ -4,21 +4,17 @@ import { type ReactNode } from 'react'
 
 interface SplitLayoutProps {
   splitMode: boolean
-  /** Stacked case cards panel (replaces old leftRail) */
   casePanel?: ReactNode
   mainPanel: ReactNode
-  tabBar?: ReactNode
 }
 
-export default function SplitLayout({ splitMode, casePanel, mainPanel, tabBar }: SplitLayoutProps) {
+export default function SplitLayout({ splitMode, casePanel, mainPanel }: SplitLayoutProps) {
   const rowClass = splitMode
     ? 'flex min-h-0 flex-1 flex-col gap-3 pt-2 lg:flex-row lg:gap-4 lg:items-stretch xl:gap-5'
     : 'relative flex min-h-0 flex-1'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
-
       <div className={rowClass}>
         {splitMode && casePanel && (
           <div className="flex shrink-0 flex-col lg:w-[280px] overflow-y-auto">

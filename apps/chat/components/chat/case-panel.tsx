@@ -4,7 +4,7 @@
 // Active case is expanded showing facts/skills/investigation; others are collapsed.
 // Replaces the old floating CaseCard + CaseTabBar pattern.
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { ChevronDown, ChevronRight, X, Layers } from 'lucide-react'
 import type { CaseCardData } from '@/components/chat/case-card'
 import type { DedicatedAgentState, ActiveCase } from '@/app/chat/use-intera-chat'
@@ -17,15 +17,8 @@ const STATUS_META: Record<CaseStatus, { label: string; dot: string }> = {
   investigating:  { label: 'Processing',  dot: 'bg-indigo-500 animate-pulse' },
   collecting:     { label: 'Need Info',   dot: 'bg-amber-500 animate-pulse' },
   escalated:      { label: 'Escalated',   dot: 'bg-red-500 animate-pulse' },
-  waiting_human:  { label: 'Escalated',   dot: 'bg-red-500 animate-pulse' },
+  waiting_human:  { label: 'Pending Review', dot: 'bg-amber-500 animate-pulse' },
   resolved:       { label: 'Resolved',    dot: 'bg-emerald-500' },
-}
-
-const ZH_LABELS: Record<string, string> = {
-  deposit_issue: '存款未到账',
-  account_issue: '账号问题',
-  order_issue: '订单问题',
-  refund_request: '退款申请',
 }
 
 interface CasePanelCase {
@@ -44,7 +37,6 @@ interface CasePanelCase {
 interface CasePanelProps {
   cases: ActiveCase[]
   activeCaseId: string | null
-  onSwitch: (index: number) => void
   onDismiss: (caseId: string) => void
   dedicatedAgents: DedicatedAgentState[]
   coreAgentProgress: {
@@ -59,7 +51,6 @@ interface CasePanelProps {
 export default function CasePanel({
   cases,
   activeCaseId,
-  onSwitch,
   onDismiss,
   dedicatedAgents,
   coreAgentProgress,
@@ -68,7 +59,19 @@ export default function CasePanel({
   const preferZh =
     typeof window !== 'undefined' && navigator.language.toLowerCase().startsWith('zh')
 
-  if (cases.length === 0) return null
+  if (cases.length === 0) {
+    return (
+      <aside className="flex shrink-0 flex-col lg:w-[280px] gap-2">
+        <div className="flex items-center gap-1.5 px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.06em] text-fog/35">
+          <Layers className="h-3 w-3 shrink-0 opacity-50" />
+          {preferZh ? '活跃工单' : 'Active Cases'}
+        </div>
+        <p className="text-[10px] text-fog/20 italic px-1">
+          {preferZh ? '暂无活跃工单' : 'No active cases'}
+        </p>
+      </aside>
+    )
+  }
 
   return (
     <aside className="flex shrink-0 flex-col lg:w-[280px] gap-2">
@@ -86,14 +89,14 @@ export default function CasePanel({
         {cases.map((c, index) => {
           const isActive = c.caseId === activeCaseId
           const meta = STATUS_META[c.status as CaseStatus] || STATUS_META.created
-          const typeLabel = ZH_LABELS[c.caseType] || c.caseType || 'Case'
+          const typeLabel = c.displayName || c.caseType || 'Case'
           const facts = Object.entries(c.confirmedFacts || {})
           const skills = c.skillsCalled || []
           const missing = c.missingFacts || []
 
           // Dedicated agents for this case
           const caseAgents = dedicatedAgents.filter(
-            (a) => !a.caseId || a.caseId === c.caseId,
+            (a) => a.caseId === c.caseId,
           )
 
           return (
@@ -114,7 +117,6 @@ export default function CasePanel({
               coreAgentProgress={isActive ? coreAgentProgress : null}
               executingToolName={isActive ? executingToolName : null}
               preferZh={preferZh}
-              onSwitch={() => onSwitch(index)}
               onDismiss={c.status === 'resolved' ? () => onDismiss(c.caseId) : undefined}
             />
           )
@@ -141,7 +143,6 @@ function CasePanelCard({
   coreAgentProgress,
   executingToolName,
   preferZh,
-  onSwitch,
   onDismiss,
 }: {
   caseId: string
@@ -164,30 +165,24 @@ function CasePanelCard({
   } | null
   executingToolName: string | null
   preferZh: boolean
-  onSwitch: () => void
   onDismiss?: () => void
 }) {
-  const [expanded, setExpanded] = useState(isActive)
-  const [collapsed, setCollapsed] = useState(!isActive)
+  const [open, setOpen] = useState(isActive)
+  const [userToggled, setUserToggled] = useState(false)
 
-  const handleToggle = () => {
-    if (collapsed) {
-      setCollapsed(false)
-      setExpanded(true)
-    } else {
-      setExpanded(!expanded)
+  // Auto-open when a case becomes newly active (streaming or tab switch),
+  // but respect manual user toggle — don't force-close or re-open once the user interacts.
+  useEffect(() => {
+    if (isActive) {
+      setOpen(true)
+      setUserToggled(false)
+    } else if (!userToggled) {
+      setOpen(false)
     }
-  }
+  }, [isActive, userToggled])
 
-  const handleCardClick = () => {
-    if (!isActive) {
-      onSwitch()
-      setCollapsed(false)
-      setExpanded(true)
-    } else {
-      handleToggle()
-    }
-  }
+  const handleToggle = () => { setOpen((prev) => !prev); setUserToggled(true) }
+  const handleCardClick = () => handleToggle()
 
   return (
     <div
@@ -238,9 +233,9 @@ function CasePanelCard({
           <button
             onClick={(e) => { e.stopPropagation(); handleToggle() }}
             className="p-1 rounded text-fog/25 hover:text-fog/60 transition-colors"
-            aria-label={expanded ? 'Collapse' : 'Expand'}
+            aria-label={open ? 'Collapse' : 'Expand'}
           >
-            {expanded ? (
+            {open ? (
               <ChevronDown className="w-3 h-3" />
             ) : (
               <ChevronRight className="w-3 h-3" />
@@ -250,7 +245,7 @@ function CasePanelCard({
       </div>
 
       {/* ── Expanded body ── */}
-      {expanded && !collapsed && (
+      {open && (
         <div className="px-3 pb-3 border-t border-[var(--border-subtle)] pt-2.5 space-y-2.5">
           {/* Facts */}
           {facts.length > 0 && (
@@ -367,12 +362,6 @@ function CasePanelCard({
             </p>
           )}
 
-          {/* Click hint when not active */}
-          {!isActive && (
-            <p className="text-[9px] text-indigo/40 text-center pt-1">
-              {preferZh ? '点击切换到此工单' : 'Click to switch to this case'}
-            </p>
-          )}
         </div>
       )}
     </div>

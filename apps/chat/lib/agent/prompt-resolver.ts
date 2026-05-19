@@ -17,7 +17,7 @@ export interface PromptContext {
     skillsCalled: string[]
     missingFacts: string[]
   } | null
-  session_binding?: { userId: string } | null
+  session_binding?: { userId: string; userLabel?: string } | null
 }
 
 function renderCaseTypes(types: PromptContext['case_types']): string {
@@ -62,11 +62,15 @@ function renderCaseState(state: PromptContext['case_state']): string {
 function renderSessionBinding(binding: PromptContext['session_binding']): string {
   if (!binding) return ''
   const u = binding.userId.trim() || 'anonymous'
-  return [
-    '## Session binding',
-    `- **platformUserId** for tools (\`read_case_history\`, etc.): \`${u}\``,
-    'Pass this string as the `userId` argument unless the customer explicitly states a different authoritative account identifier.',
-  ].join('\n')
+  const label = binding.userLabel?.trim()
+  const lines = ['## Current User']
+  if (label) lines.push(`- Label: ${label}`)
+  lines.push(`- Member ID: \`${u}\``)
+  lines.push('')
+  lines.push('When calling tools that require a `member_id` argument, always use this Member ID.')
+  lines.push('When calling tools that require a `userId` argument, also use this Member ID.')
+  lines.push('Do not ask the user for their ID — it is already known.')
+  return lines.join('\n')
 }
 
 /** Resolve all {{placeholder}} tokens in a prompt string against live context. */

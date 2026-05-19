@@ -1143,10 +1143,10 @@ policyHooks: {
 **压缩阈值：**
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `autocompactThresholdTokens` | number | `13000` | Autocompact 触发阈值 |
-| `warningThresholdTokens` | number | `20000` | 警告阈值（纯提示，不触发压缩） |
+| `autocompactThresholdTokens` | number | `40000` | Autocompact 触发阈值 |
+| `warningThresholdTokens` | number | `50000` | 警告阈值（纯提示，不触发压缩） |
 | `errorThresholdTokens` | number | `20000` | 错误阈值 |
-| `blockingThresholdTokens` | number | `3000` | 强制压缩硬截止（防上下文溢出） |
+| `blockingThresholdTokens` | number | `15000` | 强制压缩硬截止（防上下文溢出） |
 
 **压缩功能开关：**
 | 配置项 | 类型 | 说明 |

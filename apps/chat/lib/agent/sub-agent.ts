@@ -48,6 +48,7 @@ export class SubAgent {
     const allEvidence: Record<string, unknown>[] = []
     let recommendation: string | undefined
     let totalTokens = 0
+    const abortController = new AbortController()
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       { role: 'user', content: task.taskPrompt },
@@ -55,21 +56,31 @@ export class SubAgent {
 
     try {
       for (let iter = 0; iter < maxIterations; iter++) {
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Sub-agent ${this.config.name} timed out`)), DEFAULT_TIMEOUT_MS - (Date.now() - startTime)),
-        )
+        const remainingMs = Math.max(0, DEFAULT_TIMEOUT_MS - (Date.now() - startTime))
+        const timeoutId = setTimeout(() => {
+          abortController.abort()
+        }, remainingMs)
 
-        const msg = await Promise.race([
-          this.client.messages.create({
+        let msg: Anthropic.Messages.Message
+        try {
+          msg = await this.client.messages.create({
             model: this.config.model,
             max_tokens: 2048,
             temperature: 0.3,
             system: this.config.systemPrompt,
             tools: tools.length > 0 ? tools : undefined,
             messages: messages as any,
-          }),
-          timeoutPromise,
-        ])
+          }, {
+            signal: abortController.signal,
+          })
+        } catch (err) {
+          clearTimeout(timeoutId)
+          if (abortController.signal.aborted) {
+            throw new Error(`Sub-agent ${this.config.name} timed out`)
+          }
+          throw err
+        }
+        clearTimeout(timeoutId)
 
         const usage = (msg as any).usage || {}
         totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0)

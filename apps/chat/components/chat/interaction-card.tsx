@@ -42,8 +42,9 @@ export default function InteractionCard({ locale, title, description, options, m
   const handleConfirm = () => {
     if (locked || selected.size === 0) return
     setLocked(true)
-    const chosen = [...selected][0]
-    onSelect(chosen, inputValues[chosen] || undefined)
+    for (const chosen of selected) {
+      onSelect(chosen, inputValues[chosen] || undefined)
+    }
   }
 
   return (

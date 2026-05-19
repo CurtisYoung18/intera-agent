@@ -14,10 +14,13 @@ export async function GET() {
       orderBy: { type: 'asc' },
     })
 
-    // Lazy init: create from defaults if DB is empty
-    if (types.length === 0) {
+    // Ensure all default case types exist (insert missing, skip existing)
+    const existingTypes = new Set(types.map((t) => t.type))
+    const missing = DEFAULT_CASE_TYPES.filter((ct) => !existingTypes.has(ct.type))
+
+    if (missing.length > 0) {
       const { DEFAULT_STAGE_CONFIGS, DEFAULT_ORCHESTRATOR_CONFIG } = await import('@intera/shared/defaults')
-      for (const ct of DEFAULT_CASE_TYPES) {
+      for (const ct of missing) {
         const stageConfigs = (DEFAULT_STAGE_CONFIGS as Record<string, unknown>)[ct.type] || null
         await prisma.caseType.create({
           data: {
@@ -32,7 +35,8 @@ export async function GET() {
             orchestratorConfig: JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG),
             defaultGoal: ct.defaultGoal,
             escalateOn: ct.escalateOn,
-            enabled: true,
+            enabled: ct.enabled ?? true,
+            requireHumanReview: ct.requireHumanReview ?? false,
           },
         })
       }
@@ -67,6 +71,7 @@ export async function POST(req: NextRequest) {
         escalateOn: typeof body.escalateOn === 'string' ? body.escalateOn : JSON.stringify(body.escalateOn || []),
         autoCloseConditions: body.autoCloseConditions ? (typeof body.autoCloseConditions === 'string' ? body.autoCloseConditions : JSON.stringify(body.autoCloseConditions)) : null,
         enabled: body.enabled !== false && body.enabled !== 0 && body.enabled !== 'false',
+        requireHumanReview: body.requireHumanReview === true || body.requireHumanReview === 'true',
       },
     })
     return NextResponse.json({ caseType: ct }, { status: 201 })
