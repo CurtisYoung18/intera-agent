@@ -194,7 +194,13 @@ export class AgentLoop {
   async run(
     userMessage: string,
     rawSendEvent: (event: SSEEvent) => void,
+    preIngestedFacts?: Record<string, string>,
   ): Promise<LoopResult> {
+    // One-time log on first run
+    if (this.deps.config.debugMode) {
+      console.log(`[DebugMode] ENABLED for case ${this.deps.caseId} — writing full API payloads to debug-logs/`)
+    }
+
     // Wrap sendEvent to catch stream-closed errors safely
     const sendEvent = (event: SSEEvent) => {
       if (this.aborted) return
@@ -210,6 +216,14 @@ export class AgentLoop {
     // 2. Ingest facts into Case Memory (LLM-based extraction)
     const requiredFacts = this.deps.caseSchema?.requiredFacts
     await this.caseMemory.ingestUserMessageFacts(userMessage, requiredFacts)
+
+    // Re-apply structured form answers so they always beat LLM-extracted facts.
+    // LLM extraction may miss fields or overwrite structured data with guesses
+    // (e.g. date: "yesterday" instead of date: "昨天上午10点").
+    if (preIngestedFacts) {
+      this.caseMemory.ingestFormAnswers(preIngestedFacts)
+    }
+
     sendEvent({
       type: 'memory_update',
       data: this.caseMemory.getSummary(),
@@ -362,6 +376,7 @@ export class AgentLoop {
 
       // Debug: full API request
       if (this.deps.config.debugMode) {
+        console.log(`[DebugMode] Writing request log for case ${this.deps.caseId} iteration ${this.iterationCount}`)
         writeDebugRequest(this.deps.caseId, this.iterationCount, this.deps.config.model, {
           system: stagePrompt,
           messages: apiMessages as any,
@@ -485,6 +500,7 @@ export class AgentLoop {
                 skillInput: toolUse.input,
                 confirmedFacts: this.caseMemory.getConfirmedFacts(),
                 skillsCalled: this.caseMemory.getSkillsCalled(),
+                skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
               })
 
               if (preToolEval.summary === 'blocked') {
@@ -750,6 +766,7 @@ export class AgentLoop {
           skillOutput: ctxSummary,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
           executedSkills,
+          skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
         })
 
         for (const r of postToolEval.results) {
@@ -957,7 +974,7 @@ export class AgentLoop {
         await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
-          caseStatus: 'collecting',
+          caseStatus: this.currentStage as CaseStatus,
           transition: 'waiting_form',
           currentStage: this.currentStage,
         }
