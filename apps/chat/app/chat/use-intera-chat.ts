@@ -439,12 +439,6 @@ export function useInteraChat(): UseInteraChatReturn {
           break
         }
 
-        case 'intent_classified': {
-          const ic = event.data as IntentClassification
-          if (ic.intent === 'case' && investigableMatches(ic).length > 0) setSplitMode(true)
-          break
-        }
-
         case 'interaction_proposed': {
           const idata = event.data as {
             caseId: string
@@ -973,19 +967,6 @@ export function useInteraChat(): UseInteraChatReturn {
       let firstTextMsgId: string | undefined
 
       try {
-        // Fire-and-forget classify for split-mode animation only — does NOT block /api/messages.
-        fetch('/api/intent/classify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, customerId: session.customerId }),
-        }).then(async (res) => {
-          if (!res.ok) return
-          const c = await res.json() as IntentClassification
-          if (c?.intent === 'case' && investigableMatches(c).length > 0) {
-            setSplitMode(true)
-          }
-        }).catch(() => {})
-
         const streamMsgId = crypto.randomUUID()
         firstTextMsgId = streamMsgId
         const lane = createLaneBuffer(streamMsgId, actualCaseIdRef.current)

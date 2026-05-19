@@ -136,9 +136,10 @@ export class CaseMemoryManager {
       '- flags: array of detected sentiment/circumstance labels. Supported: "userReportedNotReceived", "userReportedPartialMissing", "urgent", "angry", "confused"',
       '- Values should be primitives (string, number, boolean), not nested objects.',
       '- Do NOT invent facts that are not stated in the message.',
+      '- NEVER fabricate system-side data (e.g. "systemReceivedAmount", "systemShows", "platformStatus"). Only extract what the customer explicitly says THEY observed or did.',
       '- If the message contains transaction IDs, order numbers, or similar identifiers, extract them as txnId.',
       '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
-      '- If the message starts with "[Form submitted]", parse each "key: value" line as a fact directly. Map aliases: channel/deposit_method/payment_method → paymentMethod, deposit_time/time → date.',
+      '- If the message is a form submission starting with "Tool request_user_input result:", parse the JSON object directly — each key is a fact name, each value is the fact value. Do NOT re-interpret or summarize the values.',
     ].join('\n')
 
     // Native tool_use: model MUST call extract_facts with structured input.
@@ -410,6 +411,24 @@ export class CaseMemoryManager {
 
   getStrategy(): MemoryStrategy {
     return { ...this.strategy }
+  }
+
+  // ─── Policy hit tracking (per-session, not persisted) ─────
+
+  private policyHitCount: Map<string, number> = new Map()
+
+  recordPolicyHit(policyName: string): number {
+    const next = (this.policyHitCount.get(policyName) || 0) + 1
+    this.policyHitCount.set(policyName, next)
+    return next
+  }
+
+  getPolicyHitCount(policyName: string): number {
+    return this.policyHitCount.get(policyName) || 0
+  }
+
+  resetPolicyHits(): void {
+    this.policyHitCount.clear()
   }
 
   // ─── Accessors ────────────────────────────────────────────

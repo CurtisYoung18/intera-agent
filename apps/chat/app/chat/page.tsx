@@ -1,20 +1,18 @@
 'use client'
 
 // Intera Harness — Chat Page
-// Single-column chat; with an active case, a slim investigation rail on the left.
+// Left case panel (stacked cards) + chat panel. No floating overlays.
 
 import ChatShell from '@/components/chat/chat-shell'
 import StatusPill from '@intera/shared/ui/status-pill'
 import MessageList from '@/components/chat/message-list'
 import VoiceInputBar from '@/components/chat/voice-input-bar'
 import WelcomeMessage from '@/components/chat/welcome-message'
-import CaseCard from '@/components/chat/case-card'
+import CasePanel from '@/components/chat/case-panel'
 import SplitLayout from '@/components/chat/split-layout'
-import CaseInvestigationRail from '@/components/chat/case-investigation-rail'
 import CaseTabBar from '@/components/chat/case-tab-bar'
 import CaseHistoryPanel from '@/components/chat/case-history-panel'
 import { useInteraChat } from './use-intera-chat'
-import type { CaseStatus } from '@/components/chat/case-card'
 
 export default function ChatPage() {
   const {
@@ -52,21 +50,6 @@ export default function ChatPage() {
     activeCase?.caseId != null
       ? dedicatedAgents.filter((a) => !a.caseId || a.caseId === activeCase.caseId)
       : dedicatedAgents
-
-  const caseCard = activeCase
-    ? {
-        caseId: activeCase.caseId,
-        title: activeCase.displayName,
-        type: activeCase.caseType,
-        status: activeCase.status as CaseStatus,
-        confirmedFacts: activeCase.confirmedFacts,
-        skillsCalled: activeCase.skillsCalled,
-        missingFacts: activeCase.missingFacts,
-        stage: coreAgentProgress?.stage,
-        subAgentCount: filteredDedicatedAgents.length,
-        subAgentsRunning: filteredDedicatedAgents.some((a) => a.status === 'executing'),
-      }
-    : null
 
   const chatPanel = (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -118,13 +101,15 @@ export default function ChatPage() {
     </div>
   )
 
-  const caseRail =
-    splitMode && caseCard ? (
-      <CaseInvestigationRail
-        casePayload={caseCard}
-        onDismissCase={activeCase ? () => dismissCase(activeCase.caseId) : undefined}
-        dedicatedAgents={filteredDedicatedAgents}
+  // Case panel — shows all active cases as stacked cards
+  const casePanelEl =
+    cases.length > 0 ? (
+      <CasePanel
         cases={cases}
+        activeCaseId={activeCaseId}
+        onSwitch={switchCase}
+        onDismiss={dismissCase}
+        dedicatedAgents={dedicatedAgents}
         coreAgentProgress={coreAgentProgress}
         executingToolName={streamingToolName}
       />
@@ -147,7 +132,7 @@ export default function ChatPage() {
 
       <SplitLayout
         splitMode={splitMode}
-        leftRail={caseRail}
+        casePanel={casePanelEl}
         mainPanel={chatPanel}
         tabBar={
           cases.length > 0 ? (
@@ -161,9 +146,7 @@ export default function ChatPage() {
         }
       />
 
-      {!splitMode && (
-        <CaseCard data={caseCard} onDismiss={() => dismissCase(activeCase?.caseId || '')} />
-      )}
+      {/* No floating overlay — case info lives in the left panel */}
     </ChatShell>
   )
 }

@@ -464,6 +464,17 @@ export async function POST(request: NextRequest) {
           missingFacts: (parseMemoryJson(existingMemoryData.missingFacts as string) as string[]) || [],
         } : undefined
 
+        // Merge form answers into confirmed facts so the system prompt reflects
+        // structured form data — prevents stale DB-only facts from misleading the agent.
+        if (resolvedCaseState && formAnswers) {
+          for (const [key, value] of Object.entries(formAnswers)) {
+            if (value && value.trim()) {
+              resolvedCaseState.confirmedFacts[key] = value.trim()
+              resolvedCaseState.missingFacts = resolvedCaseState.missingFacts.filter((f) => f !== key)
+            }
+          }
+        }
+
         const promptCtx = await buildPromptContext({
           customerId: resolvedCustomerId,
           caseSchema: caseSchema ? {

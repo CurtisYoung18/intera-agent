@@ -11,3 +11,6 @@ test-assets/
 /*.jpeg
 /*.webp
 debug-logs
+.env
+.DS_Store
+*.tsbuildinfo

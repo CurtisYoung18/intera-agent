@@ -57,8 +57,20 @@ export class OrchestratorAgent {
         .replace(/\{\{confirmedFacts\}\}/g, JSON.stringify(caseMemory.confirmedFacts))
         .replace(/\{\{missingFacts\}\}/g, JSON.stringify(caseMemory.missingFacts))
 
+      // Surface key facts explicitly so sub-agents don't miss them (e.g. txnId
+      // is critical for query_order_status to return correct results).
+      const facts = caseMemory.confirmedFacts as Record<string, unknown>
+      const txnId = facts?.txnId
+      const paymentMethod = facts?.paymentMethod
+      if (txnId) {
+        taskPrompt += `\n\n[Harness] Use txnId="${txnId}" when calling query_order_status.`
+      }
+      if (paymentMethod) {
+        taskPrompt += `\n[Harness] Use paymentMethod="${paymentMethod}" when calling query_payment_channel_status.`
+      }
+
       const uid = this.platformUserId.trim() || 'anonymous'
-      taskPrompt += `\n\n[Harness] platformUserId for tools (e.g. read_case_history): "${uid}". Use this as userId unless the customer explicitly gives another authoritative ID.`
+      taskPrompt += `\n[Harness] platformUserId for tools (e.g. read_case_history): "${uid}". Use this as userId unless the customer explicitly gives another authoritative ID.`
 
       tasks.push({
         id: `subagent_${config.name}_${Date.now()}`,

@@ -284,6 +284,7 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
     description: 'Detect conflict between system result and user report',
     hook: 'postTool',
     rule: JSON.stringify({
+      hook_skills: ['query_order_status', 'query_payment_channel_status', 'query_account_status'],
       evaluationPrompt: [
         'Check whether the skill outputs contradict what the customer reported.',
         '',

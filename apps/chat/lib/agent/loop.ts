@@ -817,10 +817,12 @@ export class AgentLoop {
       this.addToolResultMessages(toolResults)
 
       // ── Terminal tool: propose_cases (multi-intent clarification) ──
+      // Works both with and without an active case — when a case already exists,
+      // propose_cases lets the user add additional case types alongside it.
       const proposeResult = toolResults.find(
         (r) => r.name === 'propose_cases',
       )
-      if (proposeResult && !this.stageExecutor) {
+      if (proposeResult) {
         const toolInput = proposeResult.toolUse?.input || {}
         const proposedCases = (toolInput.cases as Array<{ caseType: string; summary: string }>) || []
 
@@ -852,7 +854,7 @@ export class AgentLoop {
           await this.writeProfilerSnapshot()
           return {
             messages: this.messages,
-            caseStatus: 'created',
+            caseStatus: this.currentStage as CaseStatus,
             transition: 'awaiting_clarification',
             currentStage: this.currentStage,
             reason: 'multi_intent_clarification',

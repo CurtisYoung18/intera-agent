@@ -263,7 +263,7 @@ Skills 异步执行期间，前端通过 SSE 实时接收事件，驱动 UI 动�
 | `case_status` | Case 状态变化高亮动画 |
 | `human_task_created` | Case 卡片进入 waiting_human 状态 |
 | `consultation_complete` | 人工处理完成通知（事件驱动，含 summary/resolution）。Chat page 显示过渡消息（zh/en 双语自动检测） |
-| `intent_classified` | 意图分类完成，前端决定是否展示 Split 动画 |
+| `intent_classified` | ~~意图分类完成~~（已废弃 — 路由由 Core Agent 通过 `propose_cases`/`create_case` 工具自主决策） |
 | `case_created` | 自动建案成功，前端创建 Case Tab + 右面板滑入 |
 | `sub_agent_start` | 专职 Agent 开始执行，前端显示进度卡片 |
 | `sub_agent_progress` | 专职 Agent 工具调用/思考中，更新卡片状态 |
@@ -914,9 +914,9 @@ Agent 运行全过程中
 | `llm_response` | LLM API 响应完成 |
 | `microcompact` | MicroCompact 本地工具结果清理 |
 | `stage_eval` | 阶段转换评估（含模型名） |
-| `intent_classify` | 意图分类完成（含模型名） |
+| `intent_classify` | ~~意图分类完成~~（已废弃 — 独立的 IntentClassifier 已移除，路由由 Core Agent 工具处理） |
 
-> **2026-05**: `stage_eval` / `intent_classify` / `policy_hit` / `llm_request_start` 均包含 `model` 字段，每个 Case trace 可追踪不同 agent（Core、意图分类、阶段评估、策略评估）使用的模型名。
+> **2026-05**: `stage_eval` / `policy_hit` / `llm_request_start` 均包含 `model` 字段，每个 Case trace 可追踪不同 agent（Core、阶段评估、策略评估）使用的模型名。`intent_classify` 已随独立分类器废弃。
 
 ### 7.3 Trace 存储
 
@@ -993,9 +993,10 @@ DemoCustomer（B 端客户/厂商）
 
 | 路由 | 方法 | 职责 |
 |---|---|---|
-| `/api/messages` | POST | **消息入口**，触发 Agent Loop，SSE 流。加载 AgentConfig/Skills/Policies from DB。接受 `classification` 字段跳过二次分类 |
+| `/api/messages` | POST | **消息入口**，触发 Agent Loop，SSE 流。加载 AgentConfig/Skills/Policies from DB。Core Agent 通过 `propose_cases`/`create_case` 工具自主路由，无需独立分类端点 |
 | `/api/human-chat` | POST | Operator-Agent 咨询对话，SSE 流。finalize_consultation 后 await+retry 通知顾客 |
-| `/api/intent/classify` | POST | **意图分类**，轻量端点。前端先调用获取分类结果，再调 `/api/messages` |
+
+> **2026-05 变更**: `/api/intent/classify` 端点已移除。意图路由改为 Core Agent 内置工具（`propose_cases` 多意图澄清、`create_case` 建案+派遣子Agent），Agent 在 ReAct Loop 中根据用户输入自主决策。
 
 ### Console App (port 3001)
 
@@ -1621,121 +1622,136 @@ SubAgent 通过 `StreamingToolExecutor.executeAll()` 执行工具，与 Core Age
 
 ---
 
-## 十八、智能意图路由与并行 Agent 系统（2026-05-13 新增）
+## 十八、Core Agent 路由与建案（2026-05-18 重构）
 
-### 18.1 问题背景
+### 18.1 架构演变
 
-原始系统中，Case Type 由 URL 参数 (`?caseType=deposit_issue`) 或硬编码 `'general'` 决定。这意味着：
+**旧方案**（已移除）：独立的 `POST /api/intent/classify` 端点 + `IntentClassifier` 类，在 Agent Loop 之前用轻量模型预分类用户意图（`qa` vs `case`），分类结果再传入 `/api/messages`。
 
-1. 顾客无法"随便开口" — 必须通过特定 URL 进入才能触发对应的 Case Type 流程
-2. 没有自动意图识别 — 用户说"充值没到账"与"账号被封"在系统中无区别
-3. Case 类型路由是手动的 — 无法从聊天内容自动分类并建案
+**新方案**（当前）：路由决策完全移入 Core Agent。Agent Loop 内置两个终端工具——`propose_cases` 和 `create_case`——LLM 根据用户输入在 ReAct Loop 中**自行决定**是纯 QA 对话还是需要建案。
 
-### 18.2 架构概览
+### 18.2 两种路由路径
 
 ```
-用户输入 "我的充值500元还没到账，交易号TX123456"
+用户输入任意内容
     │
     ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  1) Intent Classification（意图分类）                          │
-│  ─────────────────────────────────────────────────────────────  │
-│  POST /api/intent/classify（轻量端点，前端先调用）               │
+│  POST /api/messages（无预分类步骤）                             │
 │    │                                                            │
-│    ├── 加载该客户所有 enabled:true 的 CaseType 列表             │
-│    ├── 调用轻量分类 LLM（默认 haiku）                           │
-│    └── 返回意图分类结果：                                       │
-│         · intent: "qa" | "case"                                │
-│         · matchedCaseTypes[] (按置信度降序)                     │
-│         · confidence / reasoning / extractedFacts              │
-│         · needsClarification: 多匹配模糊时标记                   │
+│    ▼                                                            │
+│  AgentLoop.run() 启动                                          │
+│    │                                                            │
+│    ├── LLM 判断：纯 FAQ / 闲聊                                  │
+│    │     └── 返回纯文本（无 tool_use）→ 对话结束，不建案        │
+│    │                                                            │
+│    ├── LLM 判断：单一明确问题                                    │
+│    │     └── 调用 create_case(caseType, summary)                │
+│    │           ├── Prisma: INSERT Case                          │
+│    │           ├── SSE: case_created → 前端建 Tab               │
+│    │           ├── Orchestrator.dispatchInBackground()          │
+│    │           │     根据 stage config 并行派遣子Agent          │
+│    │           └── 继续 ReAct Loop 推进 Case 状态机             │
+│    │                                                            │
+│    └── LLM 判断：多意图模糊                                      │
+│          └── 调用 propose_cases(cases[])                        │
+│                ├── SSE: clarification → 前端渲染多选卡片        │
+│                ├── 用户选择具体 Case Type(s)                    │
+│                └── 前端 bootstrap → create_case 被调用          │
 └─────────────────────────────────────────────────────────────────┘
-    │
-    ├─── intent=qa ───→ 纯聊天模式，无 Split，不建案
-    │
-    └─── intent=case ───→
-            │
-            ├── 高分明确匹配 → 自动建案 + Split 动画
-            │     │
-            │     ├── prisma.case.create({ type: matchedType })
-            │     ├── SSE: case_created → 前端展示 Split 面板
-            │     │
-            │     └── AgentLoop 启动
-            │           │
-            │           ├── Orchestrator.dispatchInBackground()
-            │           │     并行派发专职 Sub-Agent
-            │           │
-            │           └── Core Agent ReAct 循环
-            │                 每轮检查 hasNewResults()
-            │                 合并专职 Agent 结果到 CaseMemory
-            │
-            └── 多匹配模糊 → needsClarification=true
-                  Core Agent 先追问用户，确认后再建案
 ```
 
-### 18.3 核心文件
+### 18.3 核心工具
+
+**`propose_cases`**（多意图澄清）：
+
+| 参数 | 说明 |
+|------|------|
+| `cases[]` | 候选 CaseType 列表，每个含 `caseType`（slug）和 `summary`（检测到的问题简述） |
+
+- 当 LLM 识别到用户消息中包含**多个独立问题**或**意图不明确**时调用
+- 前端渲染多选卡片，用户可选择一个或多个 Case Type
+- 用户确认后，前端通过 `create_case` 逐一建案
+
+**`create_case`**（直接建案）：
+
+| 参数 | 说明 |
+|------|------|
+| `caseType` | Case Type slug，如 `deposit_issue`、`account_issue` |
+| `summary` | 问题简述 |
+
+- LLM 在确认用户意图后直接调用
+- 创建 Case 行、加载 CaseSchema、进入状态机
+- 根据当前阶段 `stageConfig.subAgents[]` 自动派遣子Agent
+
+### 18.4 核心文件
 
 | 文件 | 职责 |
 |------|------|
-| `apps/chat/lib/agent/intent-classifier.ts` | 意图分类引擎：LLM 调用 → 匹配 CaseType → 智能追问逻辑 |
-| `apps/chat/app/api/intent/classify/route.ts` | `POST /api/intent/classify` 轻量分类端点（非流式） |
+| `apps/chat/lib/agent/loop.ts` | AgentLoop 内置 `propose_cases` 和 `create_case` 终端工具处理器 |
+| `apps/chat/lib/agent/orchestrator.ts` | `create_case` 后根据 stage config 规划并派遣子Agent |
 | `apps/chat/lib/agent/config-cache.ts` | CaseType 列表缓存（30s TTL），通过 `config-changed` 失效 |
 
-### 18.4 IntentClassification 数据结构
+> **已删除文件**: `apps/chat/lib/agent/intent-classifier.ts` 和 `apps/chat/app/api/intent/classify/route.ts` 已在 2026-05-18 移除。
 
-```typescript
-interface IntentClassification {
-  intent: 'qa' | 'case'
-  matchedCaseTypes: Array<{
-    type: string        // e.g. "deposit_issue"
-    displayName: string // e.g. "充值未到账"
-    icon: string        // e.g. "💰"
-    confidence: number  // 0.0-1.0
-  }>
-  needsClarification: boolean
-  reasoning: string
-  extractedFacts: Record<string, string>  // { txnId: "TX123456", amount: "500" }
-}
+### 18.5 与旧方案的关键区别
+
+| 维度 | 旧方案（已移除） | 新方案 |
+|------|-----------------|--------|
+| 路由方式 | 独立分类模型预先判定 `qa` / `case` | Core Agent 在 ReAct Loop 中通过 tool_use 自主决策 |
+| 端点 | `POST /api/intent/classify` + `POST /api/messages` | 仅 `POST /api/messages` |
+| 建案时机 | 分类完成后自动建案 | Agent 判定后调用 `create_case` 工具 |
+| 多意图 | `needsClarification` 标记 | Agent 调用 `propose_cases` 推送多选卡片 |
+| 容错 | 分类超时→降级 `qa` | 无独立分类步骤，降级自然由 LLM 对话能力兜底 |
+| 延迟 | 分类 API 额外耗时 | 无额外延迟 |
+
+### 18.6 propose_cases 交互流程
+
+```
+用户: "充值没到账，而且我的优惠券也过期了"
+    │
+    ▼
+LLM（在 ReAct Loop 中）识别为两个独立问题
+    │
+    ▼
+调用 propose_cases({
+  cases: [
+    { caseType: "deposit_issue", summary: "充值500元未到账" },
+    { caseType: "coupon_expired", summary: "优惠券已过期无法使用" }
+  ]
+})
+    │
+    ▼
+SSE: clarification → 前端渲染多选卡片
+    │
+    ▼
+用户勾选 [deposit_issue] [coupon_expired] → 确认
+    │
+    ▼
+前端分别调用 create_case("deposit_issue") + create_case("coupon_expired")
+    │
+    ▼
+两个 Case 并行进入各自的 Agent Loop → Split 模式
 ```
 
-### 18.5 智能追问策略
-
-| 条件 | 行为 |
-|------|------|
-| `topConfidence > 0.8` 且 `gap(1st, 2nd) > 0.3` | 高分明确 → 自动建案，不追问 |
-| `topConfidence < 0.8` 或 `gap ≤ 0.3` | 模糊匹配 → `needsClarification=true`，Core Agent 先问用户 |
-| 无匹配 CaseType | `intent: "qa"`，纯聊天，不建案 |
-| 分类 LLM 超时（2s）或失败 | 降级为 `intent: "qa"` |
-
-### 18.6 并行专职 Agent
-
-**改进点：**
-- **非阻塞派发**：`Orchestrator.dispatchInBackground()` 在后台运行，Core Agent ReAct 循环同时启动
-- **增量合并**：每个专职 Agent 完成后立即通过 `mergeSingleResult()` 写入 CaseMemory
-- **轮询检查**：Core Agent 每轮迭代开始时检查 `orchestrator.hasNewResults()` → 合并最新结果
-- **统一通知格式（2026-05）**：`OrchestratorAgent.toNotification()` 将结果映射为 `SubAgentNotification`（CC `<task-notification>` 模式），前端 DedicatedAgentsPanel 统一消费
-- **上下文注入（2026-05）**：子代理结果通过 `toContextMessage()` 注入 `this.messages`，主 agent 在下一轮 ReAct 迭代中可见子代理的 findings + recommendation + usage
-- **SubAgent 去 mock**：接入 `StreamingToolExecutor` 真实执行工具，不再返回硬编码数据
-- **多轮 ReAct**：SubAgent 支持 `maxIterations` 配置（默认 5），可以调用工具 → 获取结果 → 继续调用
-
-### 18.7 新增 SSE 事件
+### 18.7 SSE 事件
 
 | SSE 事件 | 触发时机 | 前端行为 |
 |----------|----------|----------|
-| `intent_classified` | 分类完成 | 决定是否展示 Split 动画 |
-| `case_created` | 自动建案成功 | 创建 Case Tab，右面板滑入 |
-| `sub_agent_start` | 专职 Agent 开始执行 | 显示 Agent 进度卡片（旋转状态） |
-| `sub_agent_progress` | 专职 Agent 工具调用/思考中 | 更新卡片状态文本 |
-| `sub_agent_complete` | 专职 Agent 完成 | 卡片变绿，展示发现详情 |
-| `sub_agent_error` | 专职 Agent 超时/失败 | 卡片变红，展示错误信息 |
+| `case_created` | `create_case` 工具执行后 | 创建 Case Tab，右面板滑入 |
+| `clarification` | `propose_cases` 工具执行后 | 渲染多选 Case Type 卡片 |
+| `sub_agent_start` | 子Agent 开始执行 | 显示 Agent 进度卡片（旋转状态） |
+| `sub_agent_progress` | 子Agent 工具调用/思考中 | 更新卡片状态文本 |
+| `sub_agent_complete` | 子Agent 完成 | 卡片变绿，展示发现详情 |
+| `sub_agent_error` | 子Agent 超时/失败 | 卡片变红，展示错误信息 |
 
 ### 18.8 Chat UI 交互
 
 | 功能 | 描述 |
 |------|------|
+| **多选卡片** | `propose_cases` 触发后渲染多选 Case Type 卡片，含 icon + displayName + summary |
 | **Split 动画** | 单列聊天 → 水平双面板（左 Core 对话，右 Agent 进度）的 spring 动画过渡 |
 | **Agent 进度卡片** | 右面板展示每个专职 Agent：状态图标（旋转/完成/错误）+ 耗时 + 可展开发现详情 |
-| **折叠/展开** | 右面板可折叠为 48px 窄条（仅图标+状态点），点击展开查看详情 |
 | **多 Case Tab** | 底部 Tab 栏切换多个活跃 Case，每个 Case 有独立的 Split 面板和 Agent 状态 |
 | **不可打断** | 专职 Agent 运行中不接受用户中断，但用户可继续与 Core Agent 对话 |
 
@@ -1743,20 +1759,19 @@ interface IntentClassification {
 
 | 配置项 | 位置 | 说明 |
 |--------|------|------|
-| `intentModel` | `AgentConfig` (Console → Agent 编排 → Model 段) | 分类用的模型，默认 haiku |
-| CaseType `enabled` | `CaseType` (Console → Case 类型) | false = 不参与意图路由 |
-| `orchestratorConfig.enabled` | CaseType 的 `orchestratorConfig` | 是否启用专职 Agent 派遣 |
-| `subAgents[].maxIterations` | CaseType StageConfig 的 subAgents | 专职 Agent 最大轮次 |
-| `subAgents[].model` | StageConfig 的 subAgents | 专职 Agent 模型 |
+| CaseType `enabled` | `CaseType` (Console → Case 类型) | false = 不参与路由，LLM 在 system prompt 中不可见该类型 |
+| `orchestratorConfig.enabled` | CaseType 的 `orchestratorConfig` | 是否在建案后启用子Agent 派遣 |
+| `subAgents[].maxIterations` | CaseType StageConfig 的 subAgents | 子Agent 最大 ReAct 轮次 |
+| `subAgents[].model` | StageConfig 的 subAgents | 子Agent 使用的模型 |
 
 ### 18.10 降级与容错
 
 | 场景 | 行为 |
 |------|------|
-| 分类 LLM 超时（2s） | 降级为 `qa`，不阻塞对话 |
+| LLM 未调用任何路由工具 | 纯文本对话（QA 模式），不建案 |
 | 建案 DB 写入失败 | 继续 Agent Loop，用默认 caseId |
-| 专职 Agent 30s 超时 | 发 `sub_agent_error`，Core Agent 告知用户部分结果 |
-| 快速连发两条消息触发建案 | 使用第一条消息已建的 caseId，不重复创建 |
+| 子Agent 30s 超时 | 发 `sub_agent_error`，Core Agent 告知用户部分结果 |
+| `propose_cases` 后用户未选择 | Case 停留在 `awaiting_clarification` 状态 |
 | CaseType 缓存过期（30s） | 自动从 DB 重新加载 |
 
 ---

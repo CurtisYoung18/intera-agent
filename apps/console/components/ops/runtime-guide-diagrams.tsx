@@ -326,7 +326,7 @@ export function FactsEvidenceDiagram({ t }: { t: TranslateFn }) {
   )
 }
 
-/** Customer message → classify → QA vs decisively open Case — narrative only (numeric & file refs live in guide code-map). */
+/** User message → Core Agent ReAct Loop → QA (no tool_use) vs create Case (create_case/propose_cases) → sub-agent dispatch. */
 export function IntentRoutingFlowDiagram({ t }: { t: TranslateFn }) {
   return (
     <div className="relative mx-auto max-w-xl">
@@ -335,7 +335,7 @@ export function IntentRoutingFlowDiagram({ t }: { t: TranslateFn }) {
         <p>{t('guide.intentDiag.s1.body')}</p>
       </GlowNode>
       <FlowSpine />
-      <GlowNode step={2} icon={Compass} accentFrom="from-sky/[0.09]" accentTo="to-transparent" title={t('guide.intentDiag.s2.title')}>
+      <GlowNode step={2} icon={Bot} accentFrom="from-sky/[0.09]" accentTo="to-transparent" title={t('guide.intentDiag.s2.title')}>
         <p>{t('guide.intentDiag.s2.body')}</p>
       </GlowNode>
       <FlowSpine />

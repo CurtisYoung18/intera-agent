@@ -4,15 +4,15 @@ import { type ReactNode } from 'react'
 
 interface SplitLayoutProps {
   splitMode: boolean
-  /** Case rail + investigation timeline */
-  leftRail?: ReactNode
+  /** Stacked case cards panel (replaces old leftRail) */
+  casePanel?: ReactNode
   mainPanel: ReactNode
   tabBar?: ReactNode
 }
 
-export default function SplitLayout({ splitMode, leftRail, mainPanel, tabBar }: SplitLayoutProps) {
+export default function SplitLayout({ splitMode, casePanel, mainPanel, tabBar }: SplitLayoutProps) {
   const rowClass = splitMode
-    ? 'flex min-h-0 flex-1 flex-col gap-3 pt-2 lg:flex-row lg:gap-5 lg:items-stretch xl:gap-6'
+    ? 'flex min-h-0 flex-1 flex-col gap-3 pt-2 lg:flex-row lg:gap-4 lg:items-stretch xl:gap-5'
     : 'relative flex min-h-0 flex-1'
 
   return (
@@ -20,10 +20,10 @@ export default function SplitLayout({ splitMode, leftRail, mainPanel, tabBar }: 
       {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
 
       <div className={rowClass}>
-        {splitMode && leftRail && (
-          <aside className="flex shrink-0 flex-col lg:w-[clamp(154px,16vw,200px)]">
-            <div className="lg:sticky lg:top-20">{leftRail}</div>
-          </aside>
+        {splitMode && casePanel && (
+          <div className="flex shrink-0 flex-col lg:w-[280px] overflow-y-auto">
+            <div className="lg:sticky lg:top-20">{casePanel}</div>
+          </div>
         )}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">

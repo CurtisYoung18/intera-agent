@@ -1,27 +1,50 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
 import TiltCard from '@/components/ui/tilt-card'
+import ChipInput from '@/components/ui/chip-input'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; enabled: boolean }
-interface RuleFields { deny_skills: string; require_skills: string; require_skills_any: string; evaluationPrompt: string; min_evidence_count: number }
+interface RuleFields {
+  deny_skills: string[]
+  require_skills: string[]
+  require_skills_any: string[]
+  hook_skills: string[]
+  enableLlm: boolean
+  evaluationPrompt: string
+}
+
+const PLACEHOLDERS = ['{{skill_name}}', '{{skill_output}}', '{{confirmed_facts}}', '{{skills_called}}']
 
 function parseRule(rule: string): RuleFields {
-  try { const r = JSON.parse(rule || '{}'); return { deny_skills: (r.deny_skills || []).join(', '), require_skills: (r.require_skills || []).join(', '), require_skills_any: (r.require_skills_any || []).join(', '), evaluationPrompt: r.evaluationPrompt || '', min_evidence_count: r.min_evidence_count ?? 0 } }
-  catch { return { deny_skills: '', require_skills: '', require_skills_any: '', evaluationPrompt: '', min_evidence_count: 0 } }
+  try {
+    const r = JSON.parse(rule || '{}')
+    return {
+      deny_skills: Array.isArray(r.deny_skills) ? r.deny_skills : [],
+      require_skills: Array.isArray(r.require_skills) ? r.require_skills : [],
+      require_skills_any: Array.isArray(r.require_skills_any) ? r.require_skills_any : [],
+      hook_skills: Array.isArray(r.hook_skills) ? r.hook_skills : [],
+      enableLlm: r.enableLlm !== false,
+      evaluationPrompt: r.evaluationPrompt || '',
+    }
+  } catch {
+    return { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
+  }
 }
+
 function buildRule(f: RuleFields): string {
   const rule: Record<string, unknown> = {}
-  if (f.deny_skills) rule.deny_skills = f.deny_skills.split(',').map(s => s.trim()).filter(Boolean)
-  if (f.require_skills) rule.require_skills = f.require_skills.split(',').map(s => s.trim()).filter(Boolean)
-  if (f.require_skills_any) rule.require_skills_any = f.require_skills_any.split(',').map(s => s.trim()).filter(Boolean)
+  if (f.deny_skills.length) rule.deny_skills = f.deny_skills
+  if (f.require_skills.length) rule.require_skills = f.require_skills
+  if (f.require_skills_any.length) rule.require_skills_any = f.require_skills_any
+  if (f.hook_skills.length) rule.hook_skills = f.hook_skills
+  if (!f.enableLlm) rule.enableLlm = false
   if (f.evaluationPrompt) rule.evaluationPrompt = f.evaluationPrompt
-  if (f.min_evidence_count) rule.min_evidence_count = f.min_evidence_count
   return JSON.stringify(rule)
 }
 
@@ -42,10 +65,42 @@ export default function PoliciesPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PolicyItem | null>(null)
   const [isNew, setIsNew] = useState(false)
-  const [ruleFields, setRuleFields] = useState<RuleFields>({ deny_skills: '', require_skills: '', require_skills_any: '', evaluationPrompt: '', min_evidence_count: 0 })
+  const defaultFields: RuleFields = { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
+  const [ruleFields, setRuleFields] = useState<RuleFields>(defaultFields)
+  const [allSkills, setAllSkills] = useState<string[]>([])
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const load = useCallback(async () => { const res = await fetch('/api/admin/policies'); const data = await res.json(); setItems(data.policies || []); setLoading(false) }, [])
+  const load = useCallback(async () => {
+    const res = await fetch('/api/admin/policies')
+    const data = await res.json()
+    setItems(data.policies || [])
+    setLoading(false)
+  }, [])
+
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    fetch('/api/admin/skills')
+      .then((r) => r.json())
+      .then((d) => setAllSkills((d.skills || []).map((s: { name: string }) => s.name)))
+      .catch(() => {})
+  }, [])
+
+  const insertPlaceholder = (ph: string) => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const before = ruleFields.evaluationPrompt.slice(0, start)
+    const after = ruleFields.evaluationPrompt.slice(end)
+    const next = before + ph + after
+    setRuleFields({ ...ruleFields, evaluationPrompt: next })
+    // Restore cursor after React re-render
+    requestAnimationFrame(() => {
+      ta.focus()
+      ta.selectionStart = ta.selectionEnd = start + ph.length
+    })
+  }
 
   const toggleEnabled = useCallback(async (p: PolicyItem) => {
     const updated = { ...p, enabled: !p.enabled, rule: buildRule(parseRule(p.rule)) }
@@ -54,7 +109,7 @@ export default function PoliciesPage() {
   }, [load])
 
   const openEdit = (p: PolicyItem) => { setEditing({ ...p }); setIsNew(false); setRuleFields(parseRule(p.rule)) }
-  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields({ deny_skills: '', require_skills: '', require_skills_any: '', evaluationPrompt: '', min_evidence_count: 0 }) }
+  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields(defaultFields) }
 
   const handleSave = useCallback(async () => {
     if (!editing) return
@@ -116,11 +171,73 @@ export default function PoliciesPage() {
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.hook')}</span><select value={editing.hook} onChange={e => setEditing({ ...editing, hook: e.target.value })} className="glass-input-console text-[13px]">{HOOK_SLUGS.map(h => <option key={h} value={h}>{h}</option>)}</select></label>
             <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('policies.ruleFields')}</span></div>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span><input value={ruleFields.deny_skills} onChange={e => setRuleFields({ ...ruleFields, deny_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span><input value={ruleFields.require_skills} onChange={e => setRuleFields({ ...ruleFields, require_skills: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkillsAny')}</span><input value={ruleFields.require_skills_any} onChange={e => setRuleFields({ ...ruleFields, require_skills_any: e.target.value })} className="glass-input-console text-[13px] font-mono" placeholder={t('policies.phSkills')} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.evaluationPrompt')}</span><textarea value={ruleFields.evaluationPrompt} onChange={e => setRuleFields({ ...ruleFields, evaluationPrompt: e.target.value })} rows={5} className="glass-input-console text-[13px] resize-y" placeholder={t('policies.phEvalPrompt')} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.minEvidence')}</span><input type="number" value={ruleFields.min_evidence_count} onChange={e => setRuleFields({ ...ruleFields, min_evidence_count: parseInt(e.target.value) || 0 })} className="glass-input-console text-[13px] font-mono w-28" /></label>
+
+            {/* ── Exact-match rules ──────────────────────── */}
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span>
+              <ChipInput values={ruleFields.deny_skills} onChange={v => setRuleFields({ ...ruleFields, deny_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+            </label>
+
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span>
+              <ChipInput values={ruleFields.require_skills} onChange={v => setRuleFields({ ...ruleFields, require_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+            </label>
+
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkillsAny')}</span>
+              <ChipInput values={ruleFields.require_skills_any} onChange={v => setRuleFields({ ...ruleFields, require_skills_any: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+            </label>
+
+            {/* ── postTool hook_skills ──────────────────── */}
+            {editing.hook === 'postTool' && (
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">{t('policies.hookSkills')}</span>
+                <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">{t('policies.hookSkillsDesc')}</p>
+                <ChipInput values={ruleFields.hook_skills} onChange={v => setRuleFields({ ...ruleFields, hook_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+              </label>
+            )}
+
+            {/* ── LLM evaluation toggle ─────────────────── */}
+            <div className="border-t border-[var(--border-subtle)] pt-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={ruleFields.enableLlm} onChange={e => setRuleFields({ ...ruleFields, enableLlm: e.target.checked })} className="accent-indigo rounded" />
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-lavender" />
+                  <span className="text-[12px] font-medium text-[var(--mist)]">{t('policies.enableLlm')}</span>
+                </span>
+              </label>
+              <p className="text-[10px] text-[var(--smoke)] mt-0.5 ml-6">{ruleFields.enableLlm ? t('policies.enableLlmDesc') : t('policies.llmDisabledHint')}</p>
+            </div>
+
+            {/* ── evaluationPrompt (LLM) ────────────────── */}
+            {ruleFields.enableLlm && (
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">{t('policies.evaluationPrompt')}</span>
+                <textarea
+                  ref={textareaRef}
+                  value={ruleFields.evaluationPrompt}
+                  onChange={e => setRuleFields({ ...ruleFields, evaluationPrompt: e.target.value })}
+                  rows={5}
+                  className="glass-input-console text-[13px] resize-y"
+                  placeholder={t('policies.phEvalPrompt')}
+                />
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
+                  {PLACEHOLDERS.map(ph => (
+                    <button
+                      key={ph}
+                      type="button"
+                      onClick={() => insertPlaceholder(ph)}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
+                      title={`Insert ${ph}`}
+                    >
+                      {ph}
+                    </button>
+                  ))}
+                </div>
+              </label>
+            )}
+
             <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
             <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">{t('common.save')}</button><button type="button" onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button></div>
           </div>

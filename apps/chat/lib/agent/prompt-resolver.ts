@@ -33,7 +33,7 @@ function renderPolicies(policies: PromptContext['active_policies']): string {
   const lines = policies.map(
     (p) => `- **${p.name}** (${p.hook}): ${p.description || 'No description'}`
   )
-  return `## Active Policies\n\n${lines.join('\n')}\n\nPolicy evaluation is automatic — you do not need to check rules yourself. If a policy blocks or escalates, the system will tell you.`
+  return `## Active Policies\n\n${lines.join('\n')}\n\nPolicy violations are reported as [POLICY] messages in the conversation. When you receive a [POLICY] message, read it and adjust your behavior — do not repeat the blocked action.`
 }
 
 function renderCaseSchema(schema: PromptContext['case_schema']): string {

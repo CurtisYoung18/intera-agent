@@ -173,7 +173,15 @@ export class StageExecutor {
     allowed.add('create_human_task')
     allowed.add('finalize_case')
     allowed.add('request_user_input')
+    allowed.add('propose_cases')
     // NOTE: finalize_consultation is human-chat context only — NOT auto-allowed
+
+    // Prevent duplicate case creation — when a case is already active (past "created"
+    // stage), remove create_case so the agent doesn't call it again. propose_cases
+    // stays available for multi-intent situations at any stage.
+    if (stage !== 'created') {
+      allowed.delete('create_case')
+    }
 
     return allTools.filter((t) => allowed.has(t.name))
   }
@@ -379,7 +387,20 @@ export class StageExecutor {
       ],
     })
 
-    // Read tool_use block — the input is guaranteed valid JSON by the API protocol
+    // Try text-based JSON extraction FIRST — MiniMax may return text content
+    // alongside or instead of tool_use blocks.
+    const text = (msg.content[0] as any)?.text || ''
+    const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
+    if (parsed?.shouldTransition !== undefined) {
+      this.consecutiveEvalParseFailures = 0
+      return {
+        shouldTransition: !!parsed.shouldTransition,
+        nextStage: (parsed.nextStage as string) || nextStage || undefined,
+        reason: (parsed.reason as string) || 'evaluation complete',
+      }
+    }
+
+    // Then try tool_use blocks (models that support native tool calling)
     for (const block of msg.content) {
       if (block.type === 'tool_use') {
         const input = (block as any).input as Record<string, unknown> | undefined
@@ -394,23 +415,11 @@ export class StageExecutor {
       }
     }
 
-    // Fallback: model returned text instead of tool_use (provider limitation)
-    const text = (msg.content[0] as any)?.text || ''
-    const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
-    if (parsed) {
-      this.consecutiveEvalParseFailures = 0
-      return {
-        shouldTransition: !!parsed.shouldTransition,
-        nextStage: (parsed.nextStage as string) || nextStage || undefined,
-        reason: (parsed.reason as string) || 'evaluation complete',
-      }
-    }
-
     this.consecutiveEvalParseFailures++
-    console.warn('[StageExecutor] Tool_use not found and could not parse JSON from evaluation response:', text.slice(0, 200))
+    console.warn('[StageExecutor] Could not parse evaluation response:', text.slice(0, 200))
 
-    // Circuit breaker: after 3 consecutive failures, fall back to rule-based auto transition
-    if (this.consecutiveEvalParseFailures >= 3) {
+    // Circuit breaker: after 2 consecutive failures, fall back to rule-based auto transition
+    if (this.consecutiveEvalParseFailures >= 2) {
       const failCount = this.consecutiveEvalParseFailures
       const check = this.checkEvidenceRequirements(stage)
       const skillCheck = this.checkRequiredSkills(stage)
@@ -490,6 +499,12 @@ export class StageExecutor {
         parts.push(`Call NOW: ${skillCheck.missing.join(', ')}. No text. No explanation. Just call the tools.`)
       }
       parts.push('If you do not call the required tools now, this case will be escalated to a human operator.')
+    }
+
+    // When investigating stage requirements are all met but no terminal action
+    // has been taken, nudge the agent to finalize or escalate.
+    if (stage === 'investigating' && skillCheck.met && evidenceCheck.met) {
+      parts.push('All investigation requirements are met. Call finalize_case to resolve this case, or create_human_task to escalate to a human specialist.')
     }
 
     return parts.join('\n')

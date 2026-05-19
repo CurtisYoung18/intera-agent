@@ -178,29 +178,28 @@ export const en: Record<string, string> = {
   'guide.doc.observe.li5':
     'Incidents juxtapose dossier deltas against authored templates to pinpoint misconfigured prerequisites.',
 
-  'guide.doc.intent.eyebrow': 'Before heavy reasoning',
-  'guide.doc.intent.title': 'Intent routing — match problem to dossier archetype',
-  'guide.doc.intent.lead':
-    'Immediately after shoppers press send on the storefront chat, automation asks a speedy side-brain whether this is casual banter versus a monetarily sensitive scenario. Outputs inform whether a dossier spins up automatically, whether the storefront splits into shopper + deputies panes, and what facts were spotted from raw wording. **No simplistic keyword scraping** against stored blurbs—a compact scenario menu plus the shopper utterance go to one compact model.',
+	'guide.doc.intent.eyebrow': 'How cases begin',
+	'guide.doc.intent.title': 'Core Agent routing — the LLM decides',
+	'guide.doc.intent.lead':
+		'No separate classifier sits in front of the agent. Instead, every user message enters the Core Agent ReAct Loop directly. The LLM — armed with a system prompt listing all enabled CaseTypes — **decides for itself** whether to stay in light dialogue or spin up a dossier. It expresses that decision through two built-in tools, just like any other tool call.',
 
-  'guide.doc.intent.li1':
-    '**Catalog composition** — only scenario templates toggled ON participate; each line blends internal codename, customer-facing headline, explanatory blurb fallbacking to outcome goal text, checklist of prized facts—not description-only matching.',
+	'guide.doc.intent.li1':
+		'**Pure QA / FAQ** — the LLM returns plain text with no tool_use. No Case is created. The conversation stays lightweight and stateless. Perfect for greetings, policy questions, and exploratory chatter.',
 
-  'guide.doc.intent.li2':
-    '**Confidence dance** — if two archetypes vie neck-and-neck the Core brain must confirm with shoppers before spawning a dossier; big leads auto-open dossiers.',
+	'guide.doc.intent.li2':
+		'**Single clear issue → create_case** — when the LLM detects one unambiguous problem (e.g. "充值500元没到账，单号TX123"), it calls `create_case(caseType, summary)`. A Case row is created, the state machine begins, and sub-agents are dispatched per the stage config.',
 
-  'guide.doc.intent.li3':
-    '**Split storefront** — when deputies exist for a scenario, storefront widens dual panes tracking specialist progress shoppers can skim while chatting Core.',
+	'guide.doc.intent.li3':
+		'**Multiple issues → propose_cases** — when the user mentions several distinct problems, the LLM calls `propose_cases(cases[])` with candidate CaseTypes. The frontend renders a multi-select card. After the user picks, each selected type spawns its own Case in parallel Split mode.',
 
-  'guide.doc.intent.li4':
-    '**Hand-off hygiene** — shoppers keep talking Primary while deputies churn; deputies cannot be cancelled mid-flight but chatter continues uninterrupted.',
+	'guide.doc.intent.li4':
+		'**Hand-off hygiene** — shoppers keep talking to Core while deputies churn; deputies cannot be cancelled mid-flight but chatter continues uninterrupted. Sub-agent results flow back into CaseMemory for the Core to synthesize.',
 
-  'guide.doc.intent.li5':
-    '**Failure posture** — hard stops (slow networks, malformed classifier outputs) degrade to conversational mode so storefront never bricks; gritty recovery rules live exclusively in Code reference.',
+	'guide.doc.intent.li5':
+		'**Failure posture** — there is no separate classifier to fail. If the LLM produces unusable tool calls, the ReAct Loop retries naturally. If the LLM returns plain text, the conversation simply continues in QA mode. No bricked storefront.',
 
-  'guide.doc.intent.callout':
-    'Tune storefront routing under Admin ▸ Agent (**intent classifier model**) plus Case Types (**on/off**, descriptions, prized facts). Sub-deputy choreography remains per-stage under Stage authoring.',
-
+	'guide.doc.intent.callout':
+		'Tune routing under Admin ▸ Case Types (**enabled**, displayName, description, requiredFacts) — these populate the system prompt via `{{case_types}}`. Sub-agent choreography lives under each CaseType ▸ Stage Config ▸ subAgents.',
   'guide.doc.codes.eyebrow': 'For engineers',
   'guide.doc.codes.title': 'Code & parameter reference',
 
@@ -208,9 +207,9 @@ export const en: Record<string, string> = {
     'Use this appendix when onboarding engineers or auditors: concrete paths, verbs, durations, parsers. Narrative explanations above purposely avoided file names.',
 
   'guide.doc.codes.httpTitle': 'Primary HTTP boundaries',
-  'guide.doc.codes.h1': '`POST …/intent/classify` — lightweight shopper utterance classifier (tenant-scoped catalogue). Returns JSON `{ intent, matchedCaseTypes, needsClarification, extractedFacts }`.',
+  'guide.doc.codes.h1': '`POST …/messages — Core Agent routes conversation via built-in `propose_cases` (multi-intent clarification card) and `create_case` (case creation + sub-agent dispatch) tools. No separate intent classifier endpoint.',
 
-  'guide.doc.codes.h2': '`POST …/messages` — core streaming orchestration; honours optional `classification` payload, emits `case_created`, tool stream, dossier churn.',
+  'guide.doc.codes.h2': '`POST …/messages` — core streaming orchestration; emits `case_created`, tool stream, dossier churn.',
 
   'guide.doc.codes.h3': '`POST …/human-tasks/[id]/resolve` — structured human payloads → resume envelopes → same orchestration restarted.',
 
@@ -231,49 +230,43 @@ export const en: Record<string, string> = {
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* — investigator UX & timeline readers',
   'guide.doc.codes.p10': 'packages/shared/types & defaults — schemas shared chat ↔ console',
 
-  'guide.doc.codes.p11': 'apps/chat/app/api/intent/classify/route.ts & apps/chat/lib/agent/intent-classifier.ts — prompt assembly (`buildClassificationPrompt`), `Promise.race` timeout, `parseResponse`',
+	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 propose_cases（多意图澄清卡片）和 create_case（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
 
-  'guide.doc.codes.intentParamsTitle': 'Intent classifier safeguards (explicit implementation)',
+	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
-  'guide.doc.codes.ir1':
-    '`enabled: true` filter on CaseType catalogue; TTL cache ~30000 ms per tenant; invalidated via `clearConfigCache` + `clearCaseTypeCache`.',
+	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per tenant; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
 
-  'guide.doc.codes.ir2':
-    'Model cascade: `$INTENT_MODEL` env → persisted `intentModel` → fall back `evaluationModel` → literal default `claude-haiku-4-5-20251001`; `Promise.race` with 2000 ms timer → degraded `{ intent:\"qa\" }`.',
+	'guide.doc.codes.ir2': 'propose_cases tool: presents multi-select card when multiple intents detected. create_case tool: creates case row, dispatches sub-agents per stage config, transitions state machine.',
 
-  'guide.doc.codes.ir3':
-    'Parse ladder: greedy `/\\{[\\s\\S]*\\}/` slice → single `JSON.parse`; failures yield `{ intent:\"qa\", matchedCaseTypes: [], needsClarification:false }`; **zero** heuristic slug guessing, **zero** corrective second LLM call.',
+	'guide.doc.codes.ir3': 'QA/FAQ mode: Agent returns plain text without calling any case tool — no case created, light dialogue continues.',
 
-  'guide.doc.codes.ir4':
-    'Clarification false only when `(topConfidence > 0.8) && ((topConfidence - runnerUpConfidence) > 0.3)`; auto dossier spawn requires `intent===\"case\" && !needsClarification`.',
+	'guide.doc.codes.ir4': 'Sub-agent dispatch: when create_case is called, OrchestratorAgent reads stage config subAgents[] and dispatches parallel investigators in background.',
 
-  'guide.doc.codes.ir5':
-    'Prompt row template: `- "<typeSlug>": <displayName> — <description ?? defaultGoal>. Required facts: <JSON array flattened>` sourced from prisma selections.',
+	'guide.doc.codes.ir5': 'CaseType rows sourced from prisma selections; displayName, description, requiredFacts exposed in system prompt via case_types placeholder.',
 
   'guide.doc.codes.footer':
     '`doc/spec/Intera_Harness_架构梳理.md` expands architectural narrative; authoritative runtime behavior mirrors code + Console configuration—not marketing prose.',
 
-  'guide.intentDiag.figureTitle': 'Diagram · Intent cascade',
-  'guide.intentDiag.caption': 'Every shopper send starts here before the heavyweight harness loop grabs the dossier blueprint.',
-  'guide.intentDiag.s1.title': 'Shopper language arrives',
-  'guide.intentDiag.s1.body': 'Captured verbatim from storefront chat—including IDs, receipts, slang.',
-  'guide.intentDiag.s2.title': 'Fast matcher skims archetypes',
-  'guide.intentDiag.s2.body':
-    'A tiny model consumes the utterance plus the active scenario catalogue lines (human headlines, explanatory blurbs, prized facts checklist). Casual tone vs operational crisis is decided here—not via warehouse keyword scanners.',
-  'guide.intentDiag.qa.title': 'Stay conversational',
-  'guide.intentDiag.qa.body': 'Hellos, FAQs, exploratory chatter bypass dossier spawning; Core stays in light dialogue.',
-  'guide.intentDiag.caseBranch.title': 'Operational signal',
-  'guide.intentDiag.caseBranch.body': 'Monetarily sensitive phrasing flows through guards before minting dossiers.',
-  'guide.intentDiag.caseBranch.grey': 'Confidence neck-and-neck → Primary brain clarifies scenario before spawning.',
-  'guide.intentDiag.caseBranch.green': 'Clear leader → dossier opens immediately; split panes animate if deputies exist.',
-  'guide.intentDiag.s3.title': 'Hand-off to dossier reasoning',
-  'guide.intentDiag.s3.body':
-    'Successful auto-open notifies streams about id + archetype; otherwise stealth hints keep coaching sans premature filing.',
-  'guide.intentDiag.strip.label': 'Operational constants',
-  'guide.intentDiag.strip.detail':
-    'Typical gates: strongest belief **>** **80 %** *and* **>** **30 points** versus runner-up. Classifier **2 s** SLA; timeouts or malformed payloads fall back to chat—recovery detail in Code reference.',
-  'guide.intentDiag.uiHint': 'Deputy choreography presents split storefront UX: chatter rail + specialist progress carousel—purely optional per scenario template.',
-
+	'guide.intentDiag.figureTitle': 'Diagram · Core Agent routing flow',
+	'guide.intentDiag.caption': 'Every user message enters the Core Agent ReAct Loop. The LLM decides via tool calls whether to stay conversational or create Cases.',
+	'guide.intentDiag.s1.title': 'User message arrives',
+	'guide.intentDiag.s1.body': 'Captured verbatim from storefront chat — including IDs, amounts, slang. No pre-classification step.',
+	'guide.intentDiag.s2.title': 'Core Agent analyses intent',
+	'guide.intentDiag.s2.body':
+		'The LLM reads the system prompt listing all enabled CaseTypes (displayName, description, requiredFacts). It weighs the user utterance against this catalogue and decides — through tool_use — whether to stay in QA mode or create Cases.',
+	'guide.intentDiag.qa.title': 'Stay conversational (QA)',
+	'guide.intentDiag.qa.body': 'LLM returns plain text — no tool_use. No Case created. Perfect for hellos, FAQs, and exploratory chatter.',
+	'guide.intentDiag.caseBranch.title': 'Create Case (operational)',
+	'guide.intentDiag.caseBranch.body': 'LLM calls built-in routing tools based on intent clarity.',
+	'guide.intentDiag.caseBranch.grey': 'Multiple intents → `propose_cases(cases[])` — multi-select card shown to user for confirmation.',
+	'guide.intentDiag.caseBranch.green': 'Single clear issue → `create_case(caseType, summary)` — Case row created, state machine starts, sub-agents dispatched.',
+	'guide.intentDiag.s3.title': 'Sub-agents pick up the work',
+	'guide.intentDiag.s3.body':
+		'Once a Case is created, the Orchestrator reads the stage config and dispatches parallel sub-agents. Each investigates independently while Core continues the conversation. Results merge back into CaseMemory.',
+	'guide.intentDiag.strip.label': 'Key difference from old classifier',
+	'guide.intentDiag.strip.detail':
+		'No separate model, no extra API call, no confidence thresholds, no 2s SLA timeout. The Core Agent makes routing decisions the same way it makes all other decisions — through tool_use in the ReAct Loop.',
+	'guide.intentDiag.uiHint': 'Sub-agent choreography presents split storefront UX: chatter rail + specialist progress carousel — purely optional per CaseType stage config.',
   'guide.turnDiag.figureTitle': 'Diagram · Harness lap assembly line',
   'guide.turnDiag.caption': 'After routing, **each** heavyweight lap follows this conveyor until exit criteria satisfy.',
   'guide.turnDiag.s1.title': 'Load dossier slate',
@@ -548,8 +541,8 @@ export const en: Record<string, string> = {
     'Main LLM for the agent loop—planning, tool calls, narration, before finalize—your usual “principal brain”. Intent / stage checks use their own selectors below.',
   'agent.modelCaseTypeNote':
     'To run a different model for a flow or phase, configure it under Case Types → Stages → Model for that stage; it overrides this default while that stage applies.',
-  'agent.intentModel': 'Intent Classification Model',
-  'agent.intentModelHint': 'Lightweight model for intent classification. Defaults to MiniMax-M2.7-highspeed if unset.',
+  'agent.intentModel': 'Intent Model (deprecated)',
+  'agent.intentModelHint': 'Deprecated — routing is now handled by Core Agent tools (propose_cases/create_case). Kept for backward compatibility.',
   'agent.evaluationModel': 'Stage Evaluation Model',
   'agent.evaluationModelHint': 'Model for stage transition evaluation. Defaults to MiniMax-M2.7-highspeed if unset.',
   'agent.temperature': 'Temperature ({n})',
@@ -785,6 +778,12 @@ export const en: Record<string, string> = {
   'policies.evaluationPrompt': 'LLM Evaluation Prompt',
   'policies.phEvalPrompt': 'Describe what the LLM should check in natural language...',
   'policies.addSkill': 'Add skill...',
+  'policies.insertPlaceholder': 'Insert:',
+  'policies.hookSkills': 'Trigger Skills (postTool only)',
+  'policies.hookSkillsDesc': 'Only evaluate when these skills were called this iteration. Empty = all tools.',
+  'policies.enableLlm': 'Enable LLM Evaluation',
+  'policies.enableLlmDesc': 'Use LLM to evaluate the prompt below. Turn off to rely only on exact-match rules.',
+  'policies.llmDisabledHint': 'LLM evaluation is off. Only exact-match rules (deny/require skills) apply.',
   'policies.placeholderHint': 'Available placeholders: {{skill_name}} {{skill_output}} {{confirmed_facts}} {{skills_called}}',
   'policy.hook.preTool': 'Pre-Tool',
   'policy.hook.postTool': 'Post-Tool',
@@ -1126,32 +1125,35 @@ export const zh: Record<string, string> = {
   'guide.doc.observe.li4': '性能快照帮助判断瓶颈在压缩、模型还是工具。',
   'guide.doc.observe.li5': '事故排查时对比记忆与当前案例类型配置，可快速发现门槛配错。',
 
-  'guide.doc.intent.eyebrow': '重推理之前',
-  'guide.doc.intent.title': '意图路由：把口语映射到案例模板',
-  'guide.doc.intent.lead':
-    '顾客点发送后，系统先用 **极轻量的侧路模型** 判断：这是闲聊，还是某种你在后台打开过的业务场景？该步骤 **不是** 简单关键词扫库，而是把「场景菜单 + 顾客原话」一起交给小模型。随后才进入重量级的案例循环。',
+	'guide.doc.intent.eyebrow': 'Case 如何开始',
+	'guide.doc.intent.title': 'Core Agent 自主路由 —— LLM 说了算',
+	'guide.doc.intent.lead':
+		'没有独立的分类器挡在 Agent 前面。每条用户消息直接进入 Core Agent 的 ReAct Loop。LLM —— 手握列出所有启用 CaseType 的 system prompt —— **自行判断**是轻量对话还是需要建案。它通过两个内置工具表达决策，跟调用其他工具完全一样。',
 
-  'guide.doc.intent.li1':
-    '**目录怎么来** —— 仅 **启用** 的案例类型会进入菜单；每行包含内部代号、对客标题、描述（缺省则用默认目标）、以及「关键事实清单」帮助模型判断像不像这一类。',
-  'guide.doc.intent.li2':
-    '**置信度舞蹈** —— 若多个模板咬得很紧，主脑会先澄清；只有第一名显著领先才自动开案。',
-  'guide.doc.intent.li3':
-    '**分屏体验** —— 若模板挂了子代理，聊天窗可展开双栏：左聊主脑，右看调查进度。',
-  'guide.doc.intent.li4':
-    '**并存对话** —— 子代理不可被顾客强行打断，但顾客仍能继续和主脑说话；结果在回合末汇总。',
-  'guide.doc.intent.li5':
-    '**失败兜底** —— 网络慢、解析失败等都退回「纯聊天」，避免 storefront 崩死；工程细节仅在代码导读展开。',
+	'guide.doc.intent.li1':
+		'**纯 QA / FAQ** —— LLM 返回纯文本，不调用任何 tool_use。不建 Case。对话保持轻量无状态。适合问候、政策咨询、闲聊探索。',
 
-  'guide.doc.intent.callout':
-    '请在 **Console ▸ Agent** 选好意图模型，并在 **案例类型** 中维护文案、开关与事实字段；子代理仍在阶段编辑器里配置。',
+	'guide.doc.intent.li2':
+		'**单一明确问题 → create_case** —— 当 LLM 识别到一个明确的问题（如"充值500元没到账，单号TX123"），调用 `create_case(caseType, summary)`。Case 行创建，状态机启动，子Agent 按阶段配置派遣。',
 
+	'guide.doc.intent.li3':
+		'**多个独立问题 → propose_cases** —— 用户提到多个独立问题，LLM 调用 `propose_cases(cases[])` 列出候选 CaseType。前端渲染多选卡片。用户选择后，每个选中类型独立建 Case，进入并行 Split 模式。',
+
+	'guide.doc.intent.li4':
+		'**并行不中断** —— 顾客与 Core 对话的同时子Agent 在后台执行；子Agent 不可中途取消但对话不受影响。子Agent 结果回流到 CaseMemory 供 Core 综合决策。',
+
+	'guide.doc.intent.li5':
+		'**容错姿态** —— 没有独立的分类器可崩溃。LLM 产出无效 tool call 时 ReAct Loop 自然重试。LLM 返回纯文本则对话自然停留在 QA 模式。前端永不卡死。',
+
+	'guide.doc.intent.callout':
+		'在 Admin ▸ Case 类型中配置路由（**enabled**、displayName、description、requiredFacts）—— 这些通过 `{{case_types}}` 注入 system prompt。子Agent 编排在 CaseType ▸ 阶段配置 ▸ subAgents 中设置。',
   'guide.doc.codes.eyebrow': '工程师附录',
   'guide.doc.codes.title': '代码与参数台账',
   'guide.doc.codes.lead':
     '需要对接或审计时查阅：精确的模块路径、HTTP 动词、阈值、降级策略都在这里，正文刻意避免堆栈。',
   'guide.doc.codes.httpTitle': 'HTTP 边界',
-  'guide.doc.codes.h1': '`POST …/intent/classify` —— 租户级意图分类，返回 `{ intent, matchedCaseTypes, needsClarification, extractedFacts }`。',
-  'guide.doc.codes.h2': '`POST …/messages` —— 主 SSE 管道，消费可选 `classification`，可发 `case_created` 与工具流水。',
+  'guide.doc.codes.h1': '`POST …/messages —— Core Agent 通过内置 propose_cases（多意图澄清卡片）和 create_case（建案+派遣子Agent）工具自主路由，无需独立意图分类端点。',
+  'guide.doc.codes.h2': '`POST …/messages` —— 主 SSE 管道，可发 `case_created` 与工具流水。',
   'guide.doc.codes.h3': '`POST …/human-tasks/[id]/resolve` —— 人工结构化回执 → resume。',
   'guide.doc.codes.h4': '`POST …/human-chat` —— 坐席 harness，可与顾客端共用核心循环。',
   'guide.doc.codes.h5': '`POST …/admin/config-changed` —— 清空内存中的 Agent / 目录缓存（约 30 s TTL）。',
@@ -1164,54 +1166,46 @@ export const zh: Record<string, string> = {
   'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — 阶段门槛 / 证据 / 纠偏文案 / assistant pre-fill JSON 稳定 / 断路器降级',
   'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — 并发 vs 串行工具执行',
   'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingest / persist',
-  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — 护栏引擎（含 investigate_before_escalation）、技能注册、链路追踪、性能剖析',
   'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts',
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* —— 案件运营 UI',
   'guide.doc.codes.p10': 'packages/shared/types & defaults',
 
-  'guide.doc.codes.p11':
-    'apps/chat/app/api/intent/classify/route.ts · apps/chat/lib/agent/intent-classifier.ts — `buildClassificationPrompt` / `Promise.race` / `parseResponse`',
+	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 propose_cases（多意图澄清卡片）和 create_case（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
 
-  'guide.doc.codes.intentParamsTitle': '意图分类实现细节',
+	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
-  'guide.doc.codes.ir1':
-    'CaseType `enabled:true` + `customerId` 过滤；`config-cache.ts` TTL ≈ 30000 ms；`config-changed` 同步 `clearCaseTypeCache` + `clearConfigCache`。',
+	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per tenant; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
 
-  'guide.doc.codes.ir2':
-    '模型链路：`process.env.INTENT_MODEL` → `intentModel` → `evaluationModel` → `claude-haiku-4-5-20251001`；`CLASSIFIER_TIMEOUT_MS = 2000`，超时 → `{ intent:\"qa\" }`。',
+	'guide.doc.codes.ir2': 'propose_cases tool: presents multi-select card when multiple intents detected. create_case tool: creates case row, dispatches sub-agents per stage config, transitions state machine.',
 
-  'guide.doc.codes.ir3':
-    '`parseResponse`: `/\\{[\\s\\S]*\\}/` 截取 + 单次 `JSON.parse`；失败 → `qa`，**无** second pass LLM / slug 兜底。',
+	'guide.doc.codes.ir3': 'QA/FAQ mode: Agent returns plain text without calling any case tool — no case created, light dialogue continues.',
 
-  'guide.doc.codes.ir4':
-    '`needsClarification` unless `(topConfidence>0.8) && (top-runnerUp>0.3)`；auto `case.create` 需 `intent===\"case\" && !needsClarification`。',
-  'guide.doc.codes.ir5':
-    'Prompt bullet: `- "${type}": ${displayName} — ${description||defaultGoal}. Required facts: ...` （`requiredFacts` JSON 解析）。',
+	'guide.doc.codes.ir4': 'Sub-agent dispatch: when create_case is called, OrchestratorAgent reads stage config subAgents[] and dispatches parallel investigators in background.',
+	'guide.doc.codes.ir5': 'CaseType rows sourced from prisma selections; displayName, description, requiredFacts exposed in system prompt via case_types placeholder.',
 
   'guide.doc.codes.footer':
     '架构长篇见 `doc/spec/Intera_Harness_架构梳理.md`；真实行为 **=** 仓库代码 + Console 配置。',
 
-  'guide.intentDiag.figureTitle': '示意图 · 意图链路',
-  'guide.intentDiag.caption': '顾客的每一次发送都从这里开始，随后才交给重量级的案例主循环去拿「场景蓝图」。',
-  'guide.intentDiag.s1.title': '自然语言就绪',
-  'guide.intentDiag.s1.body': '原话取自聊天窗——可含流水号、小票话术、口头简称等。',
-  'guide.intentDiag.s2.title': '轻量模型对照场景菜单',
-  'guide.intentDiag.s2.body':
-    '小模型同时看到顾客这句话 + 后台「已启用」场景列表（标题、描述、要点事实）。在此区分闲聊 vs 要像业务工单一样开案——**不是**对照描述做简陋关键词。',
-  'guide.intentDiag.qa.title': '继续闲聊模式',
-  'guide.intentDiag.qa.body': '寒暄、泛泛 FAQ、打探式闲聊不自动开案，主脑保持轻对话。',
-  'guide.intentDiag.caseBranch.title': '业务意图成立',
-  'guide.intentDiag.caseBranch.body': '牵涉资金/履约等敏感话术时，会先过一层护栏再决定是否立新案。',
-  'guide.intentDiag.caseBranch.grey': '两三个模板难分高下 → 主脑先向顾客澄清要选哪条路，再开案。',
-  'guide.intentDiag.caseBranch.green': '第一名甩开第二名 → 可立刻开案；若配置了子调查员，可分屏动画展示进度。',
-  'guide.intentDiag.s3.title': '交给案例推理主干',
-  'guide.intentDiag.s3.body':
-    '若自动建案成功，会向推流写明案号与模板；否则会悄悄带着提示继续会话，而不会错误地抢先立卷。',
-  'guide.intentDiag.strip.label': '常见阈值（细则见文末代码导读）',
-  'guide.intentDiag.strip.detail':
-    '典型规则：最高分 **高于 80%** *且* **领先第二名超过 30 个百分点**；分类器有约 **2 秒** SLA，超时或坏 JSON 会降级为闲聊——精确行为以代码导读为准。',
-  'guide.intentDiag.uiHint': '专职子代理可走分屏 UX：一侧主对话，一侧调查进度卡片——是否出现完全取决于模板是否配置了子代理。',
-
+	'guide.intentDiag.figureTitle': '图示 · Core Agent 路由流程',
+	'guide.intentDiag.caption': '每条用户消息直接进入 Core Agent ReAct Loop。LLM 通过 tool_use 自行决定是纯对话还是建案。',
+	'guide.intentDiag.s1.title': '用户消息到达',
+	'guide.intentDiag.s1.body': '从聊天窗口逐字捕获 —— 含订单号、金额、俚语。无预分类步骤。',
+	'guide.intentDiag.s2.title': 'Core Agent 分析意图',
+	'guide.intentDiag.s2.body':
+		'LLM 读取 system prompt 中列出的所有启用 CaseType（displayName、description、requiredFacts）。对照此目录权衡用户表述，通过 tool_use 决定停留 QA 还是建案。',
+	'guide.intentDiag.qa.title': '保持对话 (QA)',
+	'guide.intentDiag.qa.body': 'LLM 返回纯文本 —— 无 tool_use。不建 Case。适合问候、FAQ、闲聊。',
+	'guide.intentDiag.caseBranch.title': '创建 Case（运营型）',
+	'guide.intentDiag.caseBranch.body': 'LLM 根据意图清晰度调用不同内置路由工具。',
+	'guide.intentDiag.caseBranch.grey': '多意图模糊 → `propose_cases(cases[])` —— 推送多选卡片请用户确认。',
+	'guide.intentDiag.caseBranch.green': '单一明确问题 → `create_case(caseType, summary)` —— 建 Case、启动状态机、派遣子Agent。',
+	'guide.intentDiag.s3.title': '子Agent 接棒执行',
+	'guide.intentDiag.s3.body':
+		'Case 创建后，Orchestrator 读取阶段配置并派遣并行子Agent。各自独立调查，Core 同时继续对话。结果回流合并到 CaseMemory。',
+	'guide.intentDiag.strip.label': '与旧分类器的关键区别',
+	'guide.intentDiag.strip.detail':
+		'无独立模型、无额外 API 调用、无置信度阈值、无 2s SLA 超时。Core Agent 做出路由决策的方式与做出所有其他决策的方式完全相同 —— 通过 ReAct Loop 中的 tool_use。',
+	'guide.intentDiag.uiHint': '子Agent 编排呈现 Split 双面板 UX：对话栏 + 专员进度轮播 —— 按 CaseType 阶段配置可选。',
   'guide.turnDiag.figureTitle': '示意图 · 主力循环的一圈',
   'guide.turnDiag.caption': '意图敲定之后，**每一圈**重量级推理大致按这条流水线走，直到满足退出条件。',
   'guide.turnDiag.s1.title': '装载案例画布',
@@ -1485,8 +1479,8 @@ export const zh: Record<string, string> = {
     '主 Agent 一轮里「规划—调工具—生成回复—收口」所用的大模型，也就是常说的主引擎。意图分类、阶段评估另由下方两项（或默认 MiniMax-M2.7-highspeed）承担。',
   'agent.modelCaseTypeNote':
     '若某案例类型或阶段需要换模型，请到「案例类型」→ 编辑 → 阶段配置里的「模型」覆盖；该阶段生效期间优先生效于此处默认值。',
-  'agent.intentModel': '意图分类模型',
-  'agent.intentModelHint': '用于意图分类的轻量模型。不设置则默认使用 MiniMax-M2.7-highspeed。',
+  'agent.intentModel': '意图模型（已废弃）',
+  'agent.intentModelHint': '已废弃 —— 路由由 Core Agent 工具 (propose_cases/create_case) 处理。保留以兼容旧配置。',
   'agent.evaluationModel': '阶段评估模型',
   'agent.evaluationModelHint': '用于阶段转换评估的模型。不设置则默认使用 MiniMax-M2.7-highspeed。',
   'agent.temperature': '温度（{n}）',
@@ -1711,6 +1705,12 @@ export const zh: Record<string, string> = {
   'policies.evaluationPrompt': 'LLM 评估提示词',
   'policies.phEvalPrompt': '用自然语言描述 LLM 应检查的内容...',
   'policies.addSkill': '添加技能...',
+  'policies.insertPlaceholder': '插入：',
+  'policies.hookSkills': '触发技能（仅 postTool）',
+  'policies.hookSkillsDesc': '仅当本轮调用了这些技能时才评估此策略。留空 = 所有工具。',
+  'policies.enableLlm': '启用 LLM 评估',
+  'policies.enableLlmDesc': '使用 LLM 评估下方提示词。关闭则仅依赖精确匹配规则。',
+  'policies.llmDisabledHint': 'LLM 评估已关闭。仅使用精确匹配规则（禁止/要求技能）。',
   'policies.placeholderHint': '可用占位符：{{skill_name}} {{skill_output}} {{confirmed_facts}} {{skills_called}}',
   'policy.hook.preTool': '工具前',
   'policy.hook.postTool': '工具后',
