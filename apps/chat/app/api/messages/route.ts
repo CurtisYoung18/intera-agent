@@ -279,6 +279,18 @@ export async function POST(request: NextRequest) {
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
 
+        // If the client sent an explicit caseId that doesn't exist yet in DB,
+        // it's a fresh conversation — skip hub routing so it doesn't hijack
+        // old active cases for the same userId.
+        const clientProvidedCaseId = !!caseId
+        let clientCaseIsNew = false
+        if (clientProvidedCaseId) {
+          try {
+            const existing = await prisma.case.findUnique({ where: { id: resolvedCaseId } })
+            clientCaseIsNew = !existing
+          } catch { /* noop */ }
+        }
+
         // ── Form response: customer submitted form answers ──
         let formAnswers: Record<string, string> | undefined
         if (formResult && !message) {
@@ -376,7 +388,8 @@ export async function POST(request: NextRequest) {
           !resumeTrigger &&
           !formResult &&
           !bootstrapNewCase &&
-          !interactionResult
+          !interactionResult &&
+          !clientCaseIsNew
         ) {
           try {
             const activeCases = await prisma.case.findMany({

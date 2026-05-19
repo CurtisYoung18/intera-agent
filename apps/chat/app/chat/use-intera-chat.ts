@@ -5,6 +5,7 @@ import type { IntentClassification } from '@intera/shared/types'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { pickToolVerb } from '@/lib/spinner-verbs'
+import { generateCaseId } from '@/lib/utils'
 import type { TestUser } from '@/components/chat/user-login-screen'
 
 // ---------------------------------------------------------------------------
@@ -235,7 +236,7 @@ export function useInteraChat(): UseInteraChatReturn {
   }, [splitMode])
 
   const queuedRef = useRef<string[]>([])
-  const caseIdRef = useRef<string>(`case_${Date.now()}`)
+  const caseIdRef = useRef<string>(generateCaseId())
   const [session, setSession] = useState(readSessionFromUrl)
 
   const SEL_STORAGE_KEY = 'intera_test_user'
