@@ -88,6 +88,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
           ((dbConfig as Record<string, unknown>).prefixContinuationAssistantPrefix as string | null | undefined) ??
           '',
         prefixContinuationStop: ((dbConfig as Record<string, unknown>).prefixContinuationStop as string | undefined) ?? undefined,
+        debugMode: Boolean((dbConfig as Record<string, unknown>).debugMode),
       }
       setCachedConfig(customerId, config)
       return config
@@ -499,13 +500,7 @@ export async function POST(request: NextRequest) {
           agentLoop.loadMemory(memData)
         }
 
-        // Directly ingest form answers as facts — follows CC's pattern:
-        // the model keyed the fields, the user filled them. No LLM extraction needed.
-        if (formAnswers) {
-          agentLoop.ingestFormAnswers(formAnswers)
-        }
-
-        const result = await agentLoop.run(userMessage, sendEvent)
+        const result = await agentLoop.run(userMessage, sendEvent, formAnswers)
 
         // ── Persist case memory — only if real work was done (not casual chat) ──
         const mem = agentLoop.getMemorySummary()
