@@ -1,7 +1,7 @@
 // GET + POST /api/admin/skills — List and create skills
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
@@ -18,6 +18,7 @@ export async function GET() {
     const missing = DEFAULT_SKILLS.filter((s) => !existingNames.has(s.name))
 
     if (missing.length > 0) {
+      await ensureDefaultCustomer(CUSTOMER_ID)
       for (const s of missing) {
         await prisma.skill.create({
           data: {
@@ -53,6 +54,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureDefaultCustomer(CUSTOMER_ID)
     const body = await req.json()
     const skill = await prisma.skill.create({
       data: {

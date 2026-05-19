@@ -2,22 +2,32 @@ import { config as loadDotEnv } from 'dotenv'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-// Force-load .env.local with override so Intera's MiniMax config takes priority
-// over any CC DeepSeek env vars that may be set in the shell.
-function loadEnvWithOverride(): void {
+// Env layering (matches README):
+//   1. monorepo-root  .env       — shared API keys (MiniMax / DeepSeek / Anthropic)
+//   2. app-local      .env.local — per-app DATABASE_URL override
+// Both are loaded explicitly because Next.js only auto-loads files from the
+// app directory and stops there. App-local wins (override:true) so Intera's
+// MiniMax config also beats stray DeepSeek vars from the shell (e.g. CC).
+function loadEnvLayered(): void {
+  const rootEnv: string[] = []
+  const appLocal: string[] = []
   let dir = resolve(process.cwd())
   for (let i = 0; i < 10; i++) {
     const local = resolve(dir, '.env.local')
-    if (existsSync(local)) {
-      loadDotEnv({ path: local, override: true })
-      return
-    }
+    const plain = resolve(dir, '.env')
+    if (existsSync(local)) appLocal.push(local)
+    if (existsSync(plain)) rootEnv.push(plain)
     const parent = resolve(dir, '..')
     if (parent === dir) break
     dir = parent
   }
+  // Load lowest precedence first (root .env), highest last (nearest .env.local
+  // with override). Walking up means furthest = deepest in array — load in
+  // reverse so the monorepo root .env is applied first.
+  for (const path of rootEnv.reverse()) loadDotEnv({ path })
+  for (const path of appLocal.reverse()) loadDotEnv({ path, override: true })
 }
-loadEnvWithOverride()
+loadEnvLayered()
 
 import { PrismaClient } from '@prisma/client'
 
@@ -34,3 +44,15 @@ export const prisma =
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 export { ensureSqliteSchemaCompat } from './sqlite-schema-compat'
+
+// Lazy-init safety net for dev: ensures the parent Customer row exists before
+// any admin route inserts a Customer-FK child (AgentConfig, CaseType, Skill,
+// Policy, Routing). `npm run db:seed` covers this normally; this guards the
+// "db:push but skipped seed" path so admin routes don't 500 with P2003.
+export async function ensureDefaultCustomer(customerId = 'default'): Promise<void> {
+  await prisma.customer.upsert({
+    where: { id: customerId },
+    update: {},
+    create: { id: customerId, name: 'Demo Vendor' },
+  })
+}

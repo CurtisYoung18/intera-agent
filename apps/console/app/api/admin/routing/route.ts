@@ -1,7 +1,7 @@
 // GET + POST /api/admin/routing
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_ROUTING } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
@@ -18,6 +18,7 @@ export async function GET() {
     const missing = DEFAULT_ROUTING.filter((r) => !existingQueues.has(r.queue))
 
     if (missing.length > 0) {
+      await ensureDefaultCustomer(CUSTOMER_ID)
       for (const r of missing) {
         await prisma.routing.create({
           data: {
@@ -43,6 +44,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureDefaultCustomer(CUSTOMER_ID)
     const body = await req.json()
     const route = await prisma.routing.create({
       data: {

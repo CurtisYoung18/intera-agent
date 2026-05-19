@@ -1,6 +1,7 @@
 // GET /api/admin/models — Returns available models from configured providers
 // Reads from env vars to determine which models are available per provider.
 
+import '@intera/shared/prisma' // side-effect: layered env loader (root .env + app .env.local)
 import { NextResponse } from 'next/server'
 
 interface ModelInfo {

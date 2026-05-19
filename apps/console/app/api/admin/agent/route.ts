@@ -1,7 +1,7 @@
 // GET + PUT /api/admin/agent — Agent config CRUD (upsert)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
@@ -14,6 +14,7 @@ export async function GET() {
 
     // Lazy init: create from defaults if DB is empty
     if (!config) {
+      await ensureDefaultCustomer(CUSTOMER_ID)
       config = await prisma.agentConfig.create({
         data: {
           customerId: CUSTOMER_ID,
@@ -88,6 +89,7 @@ export async function PUT(req: NextRequest) {
       data.prefixContinuationMinDraftChars = clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4)
     }
 
+    await ensureDefaultCustomer(CUSTOMER_ID)
     const config = await prisma.agentConfig.upsert({
       where: { customerId: CUSTOMER_ID },
       update: data,

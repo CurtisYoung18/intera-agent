@@ -37,8 +37,13 @@ copy apps\console\.env.example apps\console\.env.local
 ### 3. 初始化数据库
 
 ```bash
-npm run db:push
+npm run db:push    # 建表（基于 prisma/schema.prisma）
+npm run db:seed    # 写入默认 Customer / AgentConfig / Skills / Policies / CaseTypes / Routing
 ```
+
+> `db:seed` 不是可选步骤。Customer 表里需要有 `id='default'` 这条记录，否则 Console 的 admin 路由在首次写入 AgentConfig / CaseType / Skill / Policy / Routing 时会撞外键（P2003）。
+>
+> 各 admin 路由内置了 `ensureDefaultCustomer` 兜底（即使没 seed 也不会 500），但 seed 才能拿到完整的演示数据（默认 Skills / Policies / Case 类型等），是预期的开发体验。
 
 ### 4. 启动开发服务
 

@@ -1,7 +1,7 @@
 // GET + POST /api/admin/policies
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
@@ -18,6 +18,7 @@ export async function GET() {
     const missing = DEFAULT_POLICIES.filter((p) => !existingNames.has(p.name))
 
     if (missing.length > 0) {
+      await ensureDefaultCustomer(CUSTOMER_ID)
       for (const p of missing) {
         await prisma.policy.create({
           data: {
@@ -44,6 +45,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureDefaultCustomer(CUSTOMER_ID)
     const body = await req.json()
     const policy = await prisma.policy.create({
       data: {

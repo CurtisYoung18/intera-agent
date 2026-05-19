@@ -1,7 +1,7 @@
 // GET + POST /api/admin/case-types
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_CASE_TYPES } from '@intera/shared/defaults'
 
 const CUSTOMER_ID = 'default'
@@ -19,6 +19,7 @@ export async function GET() {
     const missing = DEFAULT_CASE_TYPES.filter((ct) => !existingTypes.has(ct.type))
 
     if (missing.length > 0) {
+      await ensureDefaultCustomer(CUSTOMER_ID)
       const { DEFAULT_STAGE_CONFIGS, DEFAULT_ORCHESTRATOR_CONFIG } = await import('@intera/shared/defaults')
       for (const ct of missing) {
         const stageConfigs = (DEFAULT_STAGE_CONFIGS as Record<string, unknown>)[ct.type] || null
@@ -55,6 +56,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     await ensureSqliteSchemaCompat(prisma)
+    await ensureDefaultCustomer(CUSTOMER_ID)
     const body = await req.json()
     const ct = await prisma.caseType.create({
       data: {
