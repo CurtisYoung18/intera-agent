@@ -313,7 +313,7 @@ export class StageExecutor {
     if (rule.type === 'evaluation') {
       const evalModel = rule.evaluationModel || this.agentConfig.evaluationModel || this.agentConfig.model
       try {
-        const result = await this.runEvaluation(stage, rule.evaluationPrompt, rule.evaluationModel)
+        const result = await this.runEvaluation(stage, rule.evaluationPrompt, evalModel)
         if (result.evaluationFallbackTriggered) {
           return { ...result, modelUsed: evalModel }
         }
@@ -387,20 +387,7 @@ export class StageExecutor {
       ],
     })
 
-    // Try text-based JSON extraction FIRST — MiniMax may return text content
-    // alongside or instead of tool_use blocks.
-    const text = (msg.content[0] as any)?.text || ''
-    const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
-    if (parsed?.shouldTransition !== undefined) {
-      this.consecutiveEvalParseFailures = 0
-      return {
-        shouldTransition: !!parsed.shouldTransition,
-        nextStage: (parsed.nextStage as string) || nextStage || undefined,
-        reason: (parsed.reason as string) || 'evaluation complete',
-      }
-    }
-
-    // Then try tool_use blocks (models that support native tool calling)
+    // Try tool_use blocks FIRST — structured output is preferred.
     for (const block of msg.content) {
       if (block.type === 'tool_use') {
         const input = (block as any).input as Record<string, unknown> | undefined
@@ -412,6 +399,18 @@ export class StageExecutor {
             reason: (input.reason as string) || 'evaluation complete',
           }
         }
+      }
+    }
+
+    // Fallback: model returned text instead of tool_use (e.g. MiniMax)
+    const text = (msg.content[0] as any)?.text || ''
+    const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
+    if (parsed?.shouldTransition !== undefined) {
+      this.consecutiveEvalParseFailures = 0
+      return {
+        shouldTransition: !!parsed.shouldTransition,
+        nextStage: (parsed.nextStage as string) || nextStage || undefined,
+        reason: (parsed.reason as string) || 'evaluation complete',
       }
     }
 
@@ -433,6 +432,7 @@ export class StageExecutor {
           evaluationFallbackTriggered: true,
         }
       }
+      this.consecutiveEvalParseFailures = 0
       return {
         shouldTransition: false,
         reason: `evaluation failed (${failCount} consecutive failures, fallback not met — missing: ${[...check.missing, ...skillCheck.missing].join(', ')})`,
@@ -501,10 +501,10 @@ export class StageExecutor {
       parts.push('If you do not call the required tools now, this case will be escalated to a human operator.')
     }
 
-    // When investigating stage requirements are all met but no terminal action
-    // has been taken, nudge the agent to finalize or escalate.
-    if (stage === 'investigating' && skillCheck.met && evidenceCheck.met) {
-      parts.push('All investigation requirements are met. Call finalize_case to resolve this case, or create_human_task to escalate to a human specialist.')
+    // When all stage requirements are met but no terminal action taken,
+    // nudge the agent to finalize or escalate (works for any stage).
+    if (skillCheck.met && evidenceCheck.met && !stage.toLowerCase().includes('resolved') && !stage.toLowerCase().includes('waiting')) {
+      parts.push('All stage requirements are met. Call finalize_case to resolve this case, or create_human_task to escalate to a human specialist.')
     }
 
     return parts.join('\n')

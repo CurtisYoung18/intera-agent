@@ -380,13 +380,22 @@ export class PolicyEngine {
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0])
           const pr = validResults.has(parsed.result) ? parsed.result : 'pass'
-          // In fallback mode we can only attribute to the first policy
+          // Attribute to the first policy; any other policies in the batch
+          // get 'hint' since we can't distinguish their results from text.
           results.push({
             policyName: policies[0]?.name || 'unknown',
             result: pr as PolicyResult,
             reason: parsed.reason || undefined,
             modelUsed: this.policyModel,
           })
+          for (let i = 1; i < policies.length; i++) {
+            results.push({
+              policyName: policies[i].name,
+              result: 'hint',
+              reason: 'Policy evaluation unavailable — text fallback could not distinguish batch results',
+              modelUsed: this.policyModel,
+            })
+          }
         }
       } catch { /* fall through */ }
     }

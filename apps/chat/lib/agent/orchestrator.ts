@@ -188,7 +188,6 @@ export class OrchestratorAgent {
               parallelResults.push(result)
               this.newResults.push(result)
               this.pendingNames.delete(result.agentName)
-              this.mergeSingleResult(result, caseMemory)
               this.emitSubAgentComplete(sendEvent, result)
             }
           }
@@ -199,7 +198,6 @@ export class OrchestratorAgent {
           const result = await this.runSubAgent(task)
           this.newResults.push(result)
           this.pendingNames.delete(result.agentName)
-          this.mergeSingleResult(result, caseMemory)
           this.emitSubAgentComplete(sendEvent, result)
         }
       } catch (err) {
@@ -252,7 +250,7 @@ export class OrchestratorAgent {
         continue
       }
       const existing = caseMemory.confirmedFacts[key]
-      if (existing !== undefined && existing !== null && existing !== '' && existing !== 0) {
+      if (existing !== undefined && existing !== null && existing !== '') {
         // Existing fact looks intentional — don't let sub-agent overwrite it
         if (JSON.stringify(existing) !== JSON.stringify(value)) {
           console.warn(`[Orchestrator] Sub-agent "${result.agentName}" finding "${key}"=${JSON.stringify(value)} conflicts with existing confirmedFacts.${key}=${JSON.stringify(existing)} — keeping user value`)

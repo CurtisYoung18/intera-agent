@@ -148,6 +148,7 @@ function schemaFromCaseTypeRow(caseType: {
 
 function parseMemoryJson(raw: string | null | undefined): unknown {
   if (!raw) return {}
+  if (typeof raw !== 'string') return raw
   try { return JSON.parse(raw) } catch { return {} }
 }
 
@@ -394,6 +395,12 @@ export async function POST(request: NextRequest) {
                   if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
                   parts.push(resumeTmpl)
                   userMessage = parts.join('\n') + '\n\nCustomer also said: ' + message
+
+                  // Mark task as notified so it doesn't replay on every message
+                  await prisma.humanTask.update({
+                    where: { id: resolvedTask.id },
+                    data: { status: 'notified' as any },
+                  }).catch(() => {})
                 }
               } catch { /* best-effort */ }
             }
@@ -511,13 +518,34 @@ export async function POST(request: NextRequest) {
           agentLoop.loadMemory(memData)
         }
 
+        // Restore prior-turn messages so the agent has conversation context
+        try {
+          const priorMessages = await prisma.message.findMany({
+            where: { caseId: resolvedCaseId },
+            orderBy: { createdAt: 'asc' },
+            take: 40,
+          })
+          if (priorMessages.length > 0) {
+            agentLoop.loadMessages(
+              priorMessages.map((m) => ({
+                id: m.id,
+                role: m.role as 'user' | 'assistant',
+                content: m.content,
+                createdAt: m.createdAt,
+              })),
+            )
+          }
+        } catch { /* best-effort */ }
+
         const result = await agentLoop.run(userMessage, sendEvent, formAnswers)
 
         // ── Persist case memory — only if real work was done (not casual chat) ──
         const mem = agentLoop.getMemorySummary()
         const hasRealWork = mem.skillsCalled.length > 0 ||
           Object.keys(mem.confirmedFacts).length > 0 ||
-          result.transition !== 'next_turn'
+          result.transition !== 'next_turn' ||
+          (mem.summary && mem.summary.length > 0) ||
+          (mem.caseStatus && mem.caseStatus !== 'created')
         if (hasRealWork) {
           try {
             // Read type from AgentLoop's deps (may have been set by create_case tool mid-loop)

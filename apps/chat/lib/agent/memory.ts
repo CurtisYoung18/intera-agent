@@ -76,21 +76,26 @@ export class CaseMemoryManager {
     skillResults?: unknown; keyEvents?: unknown; summary?: string | null
     caseStatus?: string | null
   }): void {
-    try {
-      const facts = typeof data.confirmedFacts === 'string' ? JSON.parse(data.confirmedFacts) : (data.confirmedFacts || {})
-      const missing = typeof data.missingFacts === 'string' ? JSON.parse(data.missingFacts) : (data.missingFacts || [])
-      const skills = typeof data.skillsCalled === 'string' ? JSON.parse(data.skillsCalled) : (data.skillsCalled || [])
-      const results = typeof data.skillResults === 'string' ? JSON.parse(data.skillResults) : (data.skillResults || {})
-      const events = typeof data.keyEvents === 'string' ? JSON.parse(data.keyEvents) : (data.keyEvents || [])
+    const safeParse = (raw: unknown, fallback: unknown): unknown => {
+      if (typeof raw === 'string') {
+        try { return JSON.parse(raw) } catch { /* fall through */ }
+      }
+      return raw ?? fallback
+    }
 
-      if (facts && typeof facts === 'object') this.confirmedFacts = facts as Record<string, unknown>
-      if (Array.isArray(missing)) this.missingFacts = missing
-      if (Array.isArray(skills)) this.skillsCalled = skills
-      if (results && typeof results === 'object') this.skillResults = results as Record<string, unknown>
-      if (Array.isArray(events)) this.keyEvents = events
-      if (data.summary) this.summary = data.summary
-      if (data.caseStatus) this.caseStatus = data.caseStatus
-    } catch { /* ignore parse errors */ }
+    const facts = safeParse(data.confirmedFacts, {})
+    const missing = safeParse(data.missingFacts, [])
+    const skills = safeParse(data.skillsCalled, [])
+    const results = safeParse(data.skillResults, {})
+    const events = safeParse(data.keyEvents, [])
+
+    if (facts && typeof facts === 'object') this.confirmedFacts = facts as Record<string, unknown>
+    if (Array.isArray(missing)) this.missingFacts = missing
+    if (Array.isArray(skills)) this.skillsCalled = skills
+    if (results && typeof results === 'object') this.skillResults = results as Record<string, unknown>
+    if (Array.isArray(events)) this.keyEvents = events
+    if (data.summary) this.summary = data.summary
+    if (data.caseStatus) this.caseStatus = data.caseStatus
   }
 
   /** Align in-memory status with AgentLoop mid-request stage transitions (persisted on HTTP return). */
@@ -104,8 +109,8 @@ export class CaseMemoryManager {
    *  Follows CC's AskUserQuestion pattern: answers are already keyed by the model. */
   ingestFormAnswers(answers: Record<string, string>): void {
     for (const [key, value] of Object.entries(answers)) {
-      if (value && value.trim()) {
-        this.confirmedFacts[key] = value.trim()
+      if (value != null && String(value).trim() !== '') {
+        this.confirmedFacts[key] = String(value).trim()
         this.missingFacts = this.missingFacts.filter((f) => f !== key)
       }
     }

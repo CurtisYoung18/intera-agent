@@ -243,11 +243,18 @@ export class AgentLoop {
 
       // ── Graduated policy escalation check ─────────────────────
       // If any policy has been violated 3+ times in this session, escalate.
+      const buildHitCounts = (): Map<string, number> => {
+        const m = new Map<string, number>()
+        for (const name of this.policyEngine.getPolicyNames()) {
+          const c = this.caseMemory.getPolicyHitCount(name)
+          if (c > 0) m.set(name, c)
+        }
+        return m
+      }
       {
-        const policyNames = this.policyEngine.getPolicyNames()
+        const hitCounts = buildHitCounts()
         let maxPolicyHits = 0
-        for (const name of policyNames) {
-          const count = this.caseMemory.getPolicyHitCount(name)
+        for (const count of hitCounts.values()) {
           if (count > maxPolicyHits) maxPolicyHits = count
         }
         if (maxPolicyHits >= 3) {
@@ -501,7 +508,7 @@ export class AgentLoop {
                 confirmedFacts: this.caseMemory.getConfirmedFacts(),
                 skillsCalled: this.caseMemory.getSkillsCalled(),
                 skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
-              })
+              }, buildHitCounts())
 
               if (preToolEval.summary === 'blocked') {
                 // Record policy hit for graduated response
@@ -766,8 +773,9 @@ export class AgentLoop {
           skillOutput: ctxSummary,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
           executedSkills,
+          skillsCalled: this.caseMemory.getSkillsCalled(),
           skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
-        })
+        }, buildHitCounts())
 
         for (const r of postToolEval.results) {
           if (r.result !== 'pass') {
@@ -866,10 +874,11 @@ export class AgentLoop {
       const createCaseResult = toolResults.find(
         (r) => r.name === 'create_case',
       )
-      if (createCaseResult && !this.stageExecutor) {
+      if (createCaseResult) {
         const toolInput = createCaseResult.toolUse?.input || {}
         const caseType = String(toolInput.caseType || '')
-        if (caseType && isInvestigableCaseType(caseType)) {
+
+        if (!this.stageExecutor && caseType && isInvestigableCaseType(caseType)) {
           try {
             // Load case type from DB to build schema
             const ctRow = await prisma.caseType.findUnique({
@@ -919,8 +928,7 @@ export class AgentLoop {
 
               await this.traceWriter.write('loop_decision', `Case created: ${caseType}`, { caseType, caseId: this.deps.caseId })
 
-              // Replace mock create_case result with real case ID so the LLM
-              // doesn't repeat the fake mock ID to the customer.
+              // Replace mock create_case result with real case ID
               for (let i = this.messages.length - 1; i >= 0; i--) {
                 const m = this.messages[i]
                 if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
@@ -935,9 +943,11 @@ export class AgentLoop {
           } catch (err) {
             console.error('[AgentLoop] Failed to create case from create_case tool:', err)
           }
-        } else if (createCaseResult && this.stageExecutor) {
-          // create_case called but a case is already active — replace mock
-          // result so the LLM doesn't see a fake case_mock_001 ID.
+        }
+
+        // create_case called when a case is already active — replace mock
+        // result so the LLM doesn't see a fake case_mock_001 ID.
+        if (this.stageExecutor) {
           for (let i = this.messages.length - 1; i >= 0; i--) {
             const m = this.messages[i]
             if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
@@ -1039,6 +1049,7 @@ export class AgentLoop {
         const question = String(toolInput.question || 'Human task requested')
         const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
+        let taskId: string | null = null
         try {
           // Ensure customer exists
           await prisma.customer.upsert({
@@ -1095,6 +1106,7 @@ export class AgentLoop {
               status: 'pending',
             },
           })
+          taskId = task.id
 
           // Write trace via TraceWriter (DB persistence handled internally)
           await this.traceWriter.writeHumanTaskCreated(task.id, queue)
@@ -1117,8 +1129,18 @@ export class AgentLoop {
           console.error('[AgentLoop] Failed to persist human task:', err)
         }
 
-        // Exit immediately — case is now waiting for human. Send a clear
-        // customer-facing message so they know a specialist is reviewing.
+        // Only exit if DB operations succeeded (taskId is set).
+        // Otherwise continue the loop so the agent can retry or take another action.
+        if (!taskId) {
+          sendEvent({
+            type: 'error',
+            data: 'Failed to create human task — retrying',
+            timestamp: new Date().toISOString(),
+          })
+          continue
+        }
+
+        // Exit immediately — case is now waiting for human.
         const waitMsg = 'A specialist from our team is now reviewing your case. You can continue to send messages here — I will relay any updates as soon as the review is complete.'
         sendEvent({
           type: 'text_delta',
@@ -1141,14 +1163,6 @@ export class AgentLoop {
       }
 
       // ── Terminal tool: finalize_case ─────────────────────────
-      // Guard: if a human task was just created, don't finalize in the same turn.
-      const humanTaskCreatedThisTurn = toolResults.some(
-        (r) => r.name === 'create_human_task',
-      )
-      if (humanTaskCreatedThisTurn) {
-        continue
-      }
-
       const finalizeResult = toolResults.find(
         (r) => r.name === 'finalize_case',
       )
@@ -1159,9 +1173,10 @@ export class AgentLoop {
           skillOutput: finalizedPayload,
           confirmedFacts: this.caseMemory.getConfirmedFacts(),
           skillsCalled: this.caseMemory.getSkillsCalled(),
-        })
+          skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
+        }, buildHitCounts())
 
-        if (preFinalizeEval.summary === 'blocked') {
+        if (preFinalizeEval.summary === 'blocked' || preFinalizeEval.summary === 'escalated') {
           // Record policy hit for graduated response
           for (const r of preFinalizeEval.results) {
             if (r.result !== 'pass') this.caseMemory.recordPolicyHit(r.policyName)
@@ -1550,6 +1565,11 @@ export class AgentLoop {
   abort() {
     this.aborted = true
     this.abortController.abort()
+  }
+
+  /** Restore prior-turn messages from DB so the agent has conversation context. */
+  loadMessages(msgs: Message[]): void {
+    this.messages = msgs
   }
 
   /** Directly ingest form answers as facts, bypassing LLM extraction.

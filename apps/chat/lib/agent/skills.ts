@@ -18,6 +18,25 @@ import { z } from 'zod'
  */
 export const BUILT_IN_SKILLS: SkillDefinition[] = [
   {
+    name: 'create_case',
+    description:
+      'Create a tracked Case for a single clear customer issue. ' +
+      'Use when the customer reports one distinct problem. ' +
+      'For multiple issues or ambiguous intent, use propose_cases instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        caseType: { type: 'string', description: 'Case type slug, e.g. deposit_issue, account_issue' },
+      },
+      required: ['caseType'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    zodSchema: z.object({ caseType: z.string() }),
+    mockFixture: { caseId: 'case_mock_001', status: 'created' },
+  },
+  {
     name: 'propose_cases',
     description:
       'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. ' +
