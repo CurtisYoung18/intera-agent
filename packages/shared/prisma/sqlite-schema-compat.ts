@@ -31,7 +31,6 @@ export async function ensureSqliteSchemaCompat(prisma: PrismaClient): Promise<vo
     await add('agent_configs', 'resumePrompt', 'TEXT')
     await add('agent_configs', 'formResponseTemplate', 'TEXT')
     await add('agent_configs', 'evaluationModel', 'TEXT')
-    await add('agent_configs', 'intentModel', 'TEXT')
     await add('agent_configs', 'prefixContinuationEnabled', 'INTEGER NOT NULL DEFAULT 0')
     await add('agent_configs', 'prefixContinuationChatModel', 'TEXT')
     await add('agent_configs', 'prefixContinuationBaseUrl', 'TEXT')

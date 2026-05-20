@@ -75,9 +75,6 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         evaluationModel: (dbConfig as Record<string, unknown>).evaluationModel
           ? String((dbConfig as Record<string, unknown>).evaluationModel)
           : undefined,
-        intentModel: (dbConfig as Record<string, unknown>).intentModel
-          ? String((dbConfig as Record<string, unknown>).intentModel)
-          : undefined,
         prefixContinuationEnabled: Boolean((dbConfig as Record<string, unknown>).prefixContinuationEnabled),
         prefixContinuationChatModel: (dbConfig as Record<string, unknown>).prefixContinuationChatModel as
           | string
@@ -160,7 +157,7 @@ async function resolveCaseByIntent(
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
 ): Promise<string> {
-  const model = process.env.HUB_ROUTING_MODEL || process.env.INTENT_MODEL || 'MiniMax-M2.7-highspeed'
+  const model = process.env.HUB_ROUTING_MODEL || 'MiniMax-M2.7-highspeed'
 
   const caseList = activeCases
     .map((c) => `- id: "${c.id}", type: ${c.type}`)

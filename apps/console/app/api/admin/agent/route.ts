@@ -29,7 +29,6 @@ export async function GET() {
           resumePrompt: null,
           formResponseTemplate: null,
           evaluationModel: null,
-          intentModel: null,
           memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
           policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
         },
@@ -52,7 +51,7 @@ export async function PUT(req: NextRequest) {
       systemPrompt, toolParallelism, isConcurrencySafe,
       showThinking, memoryStrategy, policyHooks,
       resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
-      debugMode, evaluationModel, intentModel,
+      debugMode, evaluationModel,
       prefixContinuationEnabled,
       prefixContinuationChatModel,
       prefixContinuationBaseUrl,
@@ -79,7 +78,6 @@ export async function PUT(req: NextRequest) {
     if (consultationPrompt !== undefined) data.consultationPrompt = consultationPrompt
     if (debugMode !== undefined) data.debugMode = debugMode
     if (evaluationModel !== undefined) data.evaluationModel = evaluationModel
-    if (intentModel !== undefined) data.intentModel = intentModel
     if (prefixContinuationEnabled !== undefined)
       data.prefixContinuationEnabled = prefixContinuationEnabled !== false && prefixContinuationEnabled !== 0 && prefixContinuationEnabled !== 'false'
     if (prefixContinuationChatModel !== undefined) data.prefixContinuationChatModel = prefixContinuationChatModel
@@ -110,7 +108,6 @@ export async function PUT(req: NextRequest) {
         consultationPrompt: consultationPrompt ?? null,
         debugMode: debugMode ?? false,
         evaluationModel: evaluationModel ?? null,
-        intentModel: intentModel ?? null,
         prefixContinuationEnabled:
           prefixContinuationEnabled !== undefined
             ? prefixContinuationEnabled !== false &&

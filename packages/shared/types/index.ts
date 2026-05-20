@@ -204,7 +204,6 @@ export interface AgentConfigData {
   /** Custom consultation system prompt override (human-chat route). */
   consultationPrompt?: string
   evaluationModel?: string
-  intentModel?: string
   /** Pre-fill assistant response with `{"` to force JSON output from stage/intent evaluators. */
   evaluationPrefillEnabled?: boolean
   /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */

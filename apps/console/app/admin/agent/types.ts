@@ -58,7 +58,6 @@ export interface AgentConfigData {
   consultationPrompt: string
   debugMode: boolean
   evaluationModel: string
-  intentModel: string
   prefixContinuationEnabled: boolean
   prefixContinuationChatModel: string
   prefixContinuationBaseUrl: string

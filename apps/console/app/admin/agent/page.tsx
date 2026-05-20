@@ -125,7 +125,6 @@ export default function AgentConfigPage() {
           consultationPrompt: raw.consultationPrompt || DEFAULT_CONSULTATION_PROMPT,
           debugMode: Boolean(raw.debugMode),
           evaluationModel: raw.evaluationModel || '',
-          intentModel: raw.intentModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
           prefixContinuationChatModel:
             String((raw as Record<string, unknown>).prefixContinuationChatModel || '') || 'deepseek-chat',
@@ -440,22 +439,6 @@ export default function AgentConfigPage() {
                       ))}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.modelMainHint')}</span>
-                  </label>
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.intentModel')}</span>
-                    <select
-                      value={config.intentModel}
-                      onChange={(e) => update('intentModel', e.target.value)}
-                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                    >
-                      <option value="">— Default (haiku) —</option>
-                      {mainModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-[10px] text-[var(--fog)]/55 leading-snug block">{t('agent.intentModelHint')}</span>
                   </label>
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.evaluationModel')}</span>

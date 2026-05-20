@@ -433,7 +433,7 @@ export const en: Record<string, string> = {
   'guide.doc.admin.routingTitle': 'Routing',
   'guide.doc.admin.routingBody': 'Define human operator queues (e.g. payment_ops, account_ops). Set which skills each queue is authorized to call, priority levels, and max waiting times for human tasks.',
   'guide.doc.admin.modelsTitle': 'Models',
-  'guide.doc.admin.modelsBody': 'View available AI models. The agent uses your configured model for reasoning, a separate evaluation model for stage transitions, and the same fast model for intent classification, policy checks, and fact extraction — all default to MiniMax-M2.7-highspeed when not explicitly set.',
+  'guide.doc.admin.modelsBody': 'View available AI models. The agent uses your configured model for reasoning, a separate evaluation model for stage transitions, and the same fast model for policy checks and fact extraction — all default to MiniMax-M2.7-highspeed when not explicitly set.',
   'sidebar.switchProject': 'Switch Project',
   'sidebar.language': 'Language',
   'sidebar.signOut': 'Sign Out',
@@ -538,11 +538,9 @@ export const en: Record<string, string> = {
   'agent.drawer.memoryCompactLead': 'One-off summarisation lap: model choice, caps, and how much raw history survives.',
   'agent.modelMain': 'Primary model',
   'agent.modelMainHint':
-    'Main LLM for the agent loop—planning, tool calls, narration, before finalize—your usual “principal brain”. Intent / stage checks use their own selectors below.',
+    'Main LLM for the agent loop—planning, tool calls, narration, before finalize—your usual “principal brain”. Stage evaluation uses the separate selector below.',
   'agent.modelCaseTypeNote':
     'To run a different model for a flow or phase, configure it under Case Types → Stages → Model for that stage; it overrides this default while that stage applies.',
-  'agent.intentModel': 'Intent Model (deprecated)',
-  'agent.intentModelHint': 'Deprecated — routing is now handled by Core Agent tools (propose_cases/create_case). Kept for backward compatibility.',
   'agent.evaluationModel': 'Stage Evaluation Model',
   'agent.evaluationModelHint': 'Model for stage transition evaluation. Defaults to MiniMax-M2.7-highspeed if unset.',
   'agent.temperature': 'Temperature ({n})',
@@ -1374,7 +1372,7 @@ export const zh: Record<string, string> = {
   'guide.doc.admin.routingTitle': 'Routing（路由）',
   'guide.doc.admin.routingBody': '定义人工运营队列（如 payment_ops 支付运营、account_ops 账号运营）。设置每个队列可调用的技能、优先级和人工任务的最大等待时间。',
   'guide.doc.admin.modelsTitle': 'Models（模型）',
-  'guide.doc.admin.modelsBody': '查看可用的 AI 模型。代理使用你配置的模型进行推理，使用独立的评估模型判断阶段流转，意图分类、策略检查和事实提取默认使用 MiniMax-M2.7-highspeed。',
+  'guide.doc.admin.modelsBody': '查看可用的 AI 模型。代理使用你配置的模型进行推理，使用独立的评估模型判断阶段流转，策略检查和事实提取默认使用 MiniMax-M2.7-highspeed。',
   'sidebar.switchProject': '切换项目',
   'sidebar.language': '语言',
   'sidebar.signOut': '退出登录',
@@ -1476,11 +1474,9 @@ export const zh: Record<string, string> = {
   'agent.drawer.memoryCompactLead': '单次压缩摘要所用模型与各上限，以及压缩后最少保留多少原文。',
   'agent.modelMain': '主会话模型（主循环）',
   'agent.modelMainHint':
-    '主 Agent 一轮里「规划—调工具—生成回复—收口」所用的大模型，也就是常说的主引擎。意图分类、阶段评估另由下方两项（或默认 MiniMax-M2.7-highspeed）承担。',
+    '主 Agent 一轮里「规划—调工具—生成回复—收口」所用的大模型，也就是常说的主引擎。阶段评估另由下方阶段评估模型（或默认 MiniMax-M2.7-highspeed）承担。',
   'agent.modelCaseTypeNote':
     '若某案例类型或阶段需要换模型，请到「案例类型」→ 编辑 → 阶段配置里的「模型」覆盖；该阶段生效期间优先生效于此处默认值。',
-  'agent.intentModel': '意图模型（已废弃）',
-  'agent.intentModelHint': '已废弃 —— 路由由 Core Agent 工具 (propose_cases/create_case) 处理。保留以兼容旧配置。',
   'agent.evaluationModel': '阶段评估模型',
   'agent.evaluationModelHint': '用于阶段转换评估的模型。不设置则默认使用 MiniMax-M2.7-highspeed。',
   'agent.temperature': '温度（{n}）',
