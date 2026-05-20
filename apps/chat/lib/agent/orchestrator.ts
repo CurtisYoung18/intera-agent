@@ -147,6 +147,18 @@ export class OrchestratorAgent {
       this.emitSubAgentComplete(sendEvent, result)
     }
 
+    // Mark the orchestrator tool itself as done — without this the UI
+    // spinner never resolves because no skill_result was ever sent.
+    sendEvent({
+      type: 'skill_result',
+      data: {
+        name: 'orchestrator',
+        status: 'completed',
+        result: { agentsRun: results.length },
+      },
+      timestamp: new Date().toISOString(),
+    })
+
     return results
   }
 
@@ -274,7 +286,16 @@ export class OrchestratorAgent {
       }
     }
 
-    runAll().catch((err) => console.error('[Orchestrator] Background dispatch failed:', err))
+    runAll()
+      .then(() => {
+        // Mark orchestrator tool as complete so the UI spinner resolves
+        sendEvent({
+          type: 'skill_result',
+          data: { name: 'orchestrator', status: 'completed', result: null },
+          timestamp: new Date().toISOString(),
+        })
+      })
+      .catch((err) => console.error('[Orchestrator] Background dispatch failed:', err))
   }
 
   /** Check if any new sub-agent results have arrived since last check. */

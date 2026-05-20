@@ -251,8 +251,9 @@ function MessageBubble({
   const align = role === 'user' ? 'items-end' : 'items-start'
   const maxW = role === 'user' ? 'max-w-[85%]' : 'max-w-[90%]'
 
-  // Don't render placeholder bubble while waiting for first text — RespondingBubble handles loading indication
-  if (!content && isStreaming) return null
+  // Don't render empty text bubbles — RespondingBubble handles the loading indicator.
+  // This also prevents orphaned streaming placeholder messages from showing as "...".
+  if (!content) return null
 
   return (
     <div className={`flex flex-col ${align}`}>
@@ -285,7 +286,7 @@ function MessageBubble({
               <StreamingText text={content} isStreaming />
             ) : (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {content || (isStreaming ? '' : '...')}
+                {content}
               </ReactMarkdown>
             )}
           </div>

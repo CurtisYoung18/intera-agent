@@ -1145,91 +1145,110 @@ export class AgentLoop {
         const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
         let taskId: string | null = null
-        try {
-          // Ensure customer exists
-          await prisma.customer.upsert({
-            where: { id: this.deps.customerId },
-            update: {},
-            create: { id: this.deps.customerId, name: this.deps.customerId },
-          })
 
-          // Ensure case exists
-          const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-          await prisma.case.upsert({
-            where: { id: this.deps.caseId },
-            update: { status: 'waiting_human', blocker: `Waiting for ${queue}` },
-            create: {
-              id: this.deps.caseId,
-              customerId: this.deps.customerId,
-              userId: this.deps.userId,
-              type: resolvedCaseType,
-              status: 'waiting_human',
-              blocker: `Waiting for ${queue}`,
-            },
-          })
+        // Retry loop — SQLite can throw SQLITE_BUSY when background sub-agent
+        // writes collide with the main loop's DB operations.
+        const MAX_HT_RETRIES = 3
+        for (let attempt = 1; attempt <= MAX_HT_RETRIES; attempt++) {
+          try {
+            // Ensure customer exists
+            await prisma.customer.upsert({
+              where: { id: this.deps.customerId },
+              update: {},
+              create: { id: this.deps.customerId, name: this.deps.customerId },
+            })
 
-          // Persist case memory
-          const mem = this.caseMemory.getSummary()
-          await prisma.caseMemory.upsert({
-            where: { caseId: this.deps.caseId },
-            update: {
-              confirmedFacts: JSON.stringify(mem.confirmedFacts),
-              missingFacts: JSON.stringify(mem.missingFacts),
-              skillsCalled: JSON.stringify(mem.skillsCalled),
-              skillResults: JSON.stringify(mem.skillResults),
-              keyEvents: JSON.stringify(mem.keyEvents),
-              humanTaskStatus: 'pending',
-            },
-            create: {
-              caseId: this.deps.caseId,
-              confirmedFacts: JSON.stringify(mem.confirmedFacts),
-              missingFacts: JSON.stringify(mem.missingFacts),
-              skillsCalled: JSON.stringify(mem.skillsCalled),
-              skillResults: JSON.stringify(mem.skillResults),
-              keyEvents: JSON.stringify(mem.keyEvents),
-              humanTaskStatus: 'pending',
-            },
-          })
+            // Ensure case exists (include chatId so it's never lost)
+            const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+            await prisma.case.upsert({
+              where: { id: this.deps.caseId },
+              update: { status: 'waiting_human', blocker: `Waiting for ${queue}` },
+              create: {
+                id: this.deps.caseId,
+                customerId: this.deps.customerId,
+                userId: this.deps.userId,
+                type: resolvedCaseType,
+                status: 'waiting_human',
+                blocker: `Waiting for ${queue}`,
+                chatId: this.deps.chatId ?? null,
+              },
+            })
 
-          // Create human task
-          const task = await prisma.humanTask.create({
-            data: {
-              caseId: this.deps.caseId,
-              queue,
-              question,
-              fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
-              status: 'pending',
-            },
-          })
-          taskId = task.id
+            // Persist case memory
+            const mem = this.caseMemory.getSummary()
+            await prisma.caseMemory.upsert({
+              where: { caseId: this.deps.caseId },
+              update: {
+                confirmedFacts: JSON.stringify(mem.confirmedFacts),
+                missingFacts: JSON.stringify(mem.missingFacts),
+                skillsCalled: JSON.stringify(mem.skillsCalled),
+                skillResults: JSON.stringify(mem.skillResults),
+                keyEvents: JSON.stringify(mem.keyEvents),
+                humanTaskStatus: 'pending',
+              },
+              create: {
+                caseId: this.deps.caseId,
+                confirmedFacts: JSON.stringify(mem.confirmedFacts),
+                missingFacts: JSON.stringify(mem.missingFacts),
+                skillsCalled: JSON.stringify(mem.skillsCalled),
+                skillResults: JSON.stringify(mem.skillResults),
+                keyEvents: JSON.stringify(mem.keyEvents),
+                humanTaskStatus: 'pending',
+              },
+            })
 
-          // Write trace via TraceWriter (DB persistence handled internally)
-          await this.traceWriter.writeHumanTaskCreated(task.id, queue)
+            // Create human task
+            const task = await prisma.humanTask.create({
+              data: {
+                caseId: this.deps.caseId,
+                queue,
+                question,
+                fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
+                status: 'pending',
+              },
+            })
+            taskId = task.id
 
-          // Replace mock create_human_task result with real task ID
-          for (let i = this.messages.length - 1; i >= 0; i--) {
-            const m = this.messages[i]
-            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_human_task result:')) {
-              m.content = `Tool create_human_task result: ${JSON.stringify({ taskId: task.id, queue, status: 'pending' })}`
-              break
+            // Write trace via TraceWriter (DB persistence handled internally)
+            await this.traceWriter.writeHumanTaskCreated(task.id, queue)
+
+            // Replace mock create_human_task result with real task ID
+            for (let i = this.messages.length - 1; i >= 0; i--) {
+              const m = this.messages[i]
+              if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_human_task result:')) {
+                m.content = `Tool create_human_task result: ${JSON.stringify({ taskId: task.id, queue, status: 'pending' })}`
+                break
+              }
+            }
+
+            sendEvent({
+              type: 'human_task_created',
+              data: { taskId: task.id, queue, status: 'pending' },
+              timestamp: new Date().toISOString(),
+            })
+
+            break // success — exit retry loop
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            console.error(`[AgentLoop] Failed to persist human task (attempt ${attempt}/${MAX_HT_RETRIES}):`, msg)
+            if (attempt < MAX_HT_RETRIES) {
+              // Exponential backoff — gives SQLite time to release locks from sub-agents
+              await new Promise((r) => setTimeout(r, attempt * 200))
             }
           }
-
-          sendEvent({
-            type: 'human_task_created',
-            data: { taskId: task.id, queue, status: 'pending' },
-            timestamp: new Date().toISOString(),
-          })
-        } catch (err) {
-          console.error('[AgentLoop] Failed to persist human task:', err)
         }
 
-        // Only exit if DB operations succeeded (taskId is set).
-        // Otherwise continue the loop so the agent can retry or take another action.
+        // If all retries failed, surface the error without setting agentStatus='offline'
+        // (the agent isn't offline — the DB write failed, but the conversation can continue).
         if (!taskId) {
           sendEvent({
-            type: 'error',
-            data: 'Failed to create human task — retrying',
+            type: 'core_agent_progress',
+            data: {
+              stage: this.currentStage,
+              iteration: this.iterationCount,
+              task: 'Human task creation failed — please try again or contact support',
+              pendingSubAgents: [],
+            },
             timestamp: new Date().toISOString(),
           })
           continue
