@@ -140,7 +140,15 @@ export async function POST(request: NextRequest) {
           agentLoop.loadMemory(memory)
         }
 
-        const result = await agentLoop.run(message, sendEvent)
+        // Capture agent response text for chatLog
+        let agentResponseText = ''
+        const originalSendEvent = sendEvent
+        const capturingSendEvent = (event: SSEEvent) => {
+          if (event.type === 'text_delta') agentResponseText += event.data as string
+          originalSendEvent(event)
+        }
+
+        const result = await agentLoop.run(message, capturingSendEvent)
 
         // Persist updated memory
         const mem = agentLoop.getMemorySummary()
@@ -165,6 +173,26 @@ export async function POST(request: NextRequest) {
             summary: mem.summary || undefined,
           },
         })
+
+        // Append this exchange to the task's chatLog for persistence
+        if (agentResponseText) {
+          try {
+            const freshTask = await prisma.humanTask.findUnique({
+              where: { id: taskId },
+              select: { chatLog: true },
+            })
+            const existing: unknown[] = freshTask?.chatLog ? JSON.parse(freshTask.chatLog) : []
+            const now = new Date().toISOString()
+            existing.push({ role: 'operator', content: message, timestamp: now })
+            existing.push({ role: 'agent', content: agentResponseText, timestamp: now })
+            await prisma.humanTask.update({
+              where: { id: taskId },
+              data: { chatLog: JSON.stringify(existing) },
+            })
+          } catch (e) {
+            console.warn('[HumanChat] Failed to persist chatLog:', e)
+          }
+        }
 
         sendEvent({
           type: 'message_stop',

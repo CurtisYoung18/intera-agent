@@ -42,7 +42,7 @@ export async function POST(
 ) {
   const { id } = await params
   const body = await req.json()
-  const { verdict, expectedEta, notes, manualClose, answers } = body
+  const { verdict, expectedEta, notes, customerMessage, manualClose, answers } = body
 
   // Update the human task
   await prisma.humanTask.update({
@@ -52,6 +52,7 @@ export async function POST(
       verdict: verdict || 'manually_closed',
       expectedEta: expectedEta || null,
       notes: notes || null,
+      customerMessage: customerMessage || null,
       answers: answers ? JSON.stringify(answers) : null,
       resolvedAt: new Date(),
     },
@@ -81,11 +82,18 @@ export async function POST(
       },
     })
 
+    const customerMsgForClose = customerMessage
+      ? `\nResolution message for customer (relay faithfully, in their language):\n"${customerMessage}"`
+      : ''
+
     const message = [
       '[Case manually closed by operator]',
-      `Reason: ${notes || 'Not specified'}`,
-      'Please inform the customer and update the case card.',
-    ].join('\n')
+      customerMsgForClose,
+      notes ? `\nInternal reason: ${notes}` : '',
+      customerMessage
+        ? '\nIMPORTANT: Send the resolution message above to the customer NOW, then call finalize_case.'
+        : '\nIMPORTANT: Inform the customer that their case has been resolved by our team. Be warm and concise. Then call finalize_case.',
+    ].filter(Boolean).join('\n')
 
     await notifyAgentResume({
       message,
@@ -136,13 +144,22 @@ export async function POST(
       ? `\nTool create_human_task result: ${JSON.stringify({ taskId: id, status: 'resolved', answers })}`
       : ''
 
+    // customerMessage is the operator's explicit resolution text for the customer.
+    // notes is for internal context only — never repeat verbatim.
+    const customerMsgBlock = customerMessage
+      ? `\nResolution message for customer (relay this faithfully, translated to the customer's language and wrapped in a warm, friendly tone):\n"${customerMessage}"`
+      : ''
+
     const message = [
-      '[Human task resolved — operator closed the case]',
+      '[Human task resolved — specialist has reviewed the case]',
       answerBlock,
-      verdict ? `\nOperator verdict: ${verdict.replace(/_/g, ' ')}` : '',
-      expectedEta ? `Expected resolution time: ${expectedEta}` : '',
-      notes ? `Internal notes (do NOT share verbatim with customer): ${notes}` : '',
-      '\nIMPORTANT — Customer communication task:\n1. Translate the operator\'s verdict and notes into plain, friendly language the customer can understand.\n2. Send this message to the customer NOW in your response — do not ask further questions.\n3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here\'s what this means for you: [explanation]."\n4. After sending the update, if the case is resolved, call finalize_case. Otherwise continue assisting.',
+      customerMsgBlock,
+      verdict ? `\nVerdict: ${verdict.replace(/_/g, ' ')}` : '',
+      expectedEta ? `\nExpected resolution time: ${expectedEta}` : '',
+      notes ? `\nInternal context (do NOT repeat to customer): ${notes}` : '',
+      customerMessage
+        ? '\nIMPORTANT: Send the resolution message above to the customer NOW — translate it into their language and keep the tone warm. Then call finalize_case if the issue is resolved.'
+        : '\nIMPORTANT: The specialist has closed this task. Summarise the outcome for the customer in plain, friendly language and send it now. Then call finalize_case if the issue is resolved.',
     ].filter(Boolean).join('\n')
 
     await notifyAgentResume({

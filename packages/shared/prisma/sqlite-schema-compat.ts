@@ -43,7 +43,10 @@ export async function ensureSqliteSchemaCompat(prisma: PrismaClient): Promise<vo
     await add('case_types', 'autoCloseConditions', 'TEXT')
     await add('case_types', 'enabled', 'INTEGER NOT NULL DEFAULT 1')
 
+    await add('skills', 'displayVerb', 'TEXT')
     await add('cases', 'chatId', 'TEXT')
+    await add('human_tasks', 'chatLog', 'TEXT')
+    await add('human_tasks', 'customerMessage', 'TEXT')
   } catch (e) {
     console.warn('[prisma] SQLite schema compat skipped or partial:', e)
   }

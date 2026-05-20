@@ -31,6 +31,11 @@ const nextConfig = {
         source: '/api/admin/config-changed',
         destination: `${CHAT_API_BASE}/api/admin/config-changed`,
       },
+      // Proxy composer-assist (DeepSeek prefix completion) to the chat app
+      {
+        source: '/api/composer-assist/:path*',
+        destination: `${CHAT_API_BASE}/api/composer-assist/:path*`,
+      },
     ]
   },
 }

@@ -130,6 +130,7 @@ model Skill {
   timeoutMs  Int     @default(8000)
 
   mockFixture String? // JSON — [MOCK] mock 默认样本
+  displayVerb String? // JSON {"text":"...","icon":"..."} — customer-visible spinner label
 
   guardPhase        String  @default("post") // "pre" | "post"
   isConcurrencySafe Boolean @default(true)
@@ -292,6 +293,8 @@ model HumanTask {
   verdict     String?
   expectedEta String?
   notes       String?
+  chatLog     String? // JSON: ConsultMsg[] — full consultation chat history (persisted for re-open)
+  customerMessage String? // Plain-language resolution message for the customer (set on resolve)
 
   createdAt  DateTime @default(now())
   resolvedAt DateTime?
