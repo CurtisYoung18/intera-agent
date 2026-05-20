@@ -202,7 +202,27 @@ export async function POST(request: NextRequest) {
 
         // After consultation completes, trigger a customer-facing agent update
         if (result.transition === 'consultation_complete') {
-          const customerMessage = '[System] The human specialist has completed their review of this case. Please send the customer a friendly update summarizing what was resolved and what happens next. Be warm and helpful — do NOT use technical/internal language. If applicable, call finalize_case to close the case.'
+          // Read the actual consultation findings from the resolved task
+          let consultationNotes = ''
+          let consultationVerdict = ''
+          try {
+            const resolvedTask = await prisma.humanTask.findUnique({
+              where: { id: taskId },
+              select: { notes: true, verdict: true },
+            })
+            consultationNotes = resolvedTask?.notes || ''
+            consultationVerdict = resolvedTask?.verdict || ''
+          } catch (e) {
+            console.warn('[HumanChat] Failed to read resolved task notes:', e)
+          }
+
+          const customerMessage = [
+            '[System] The human specialist has completed their review of this case.',
+            consultationVerdict ? `Specialist decision: ${consultationVerdict.replace(/_/g, ' ')}.` : '',
+            consultationNotes ? `Specialist findings (relay to customer): ${consultationNotes}` : '',
+            'Please relay these findings to the customer NOW in a friendly, non-technical tone. Do NOT ask further questions. If the case is resolved, call finalize_case.',
+          ].filter(Boolean).join('\n')
+
           const maxRetries = 3
           let delay = 500
           for (let attempt = 1; attempt <= maxRetries; attempt++) {

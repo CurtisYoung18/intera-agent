@@ -154,7 +154,10 @@ export class OrchestratorAgent {
       data: {
         name: 'orchestrator',
         status: 'completed',
-        result: { agentsRun: results.length },
+        result: {
+          agentsRun: results.length,
+          agents: results.map((r) => r.agentName),
+        },
       },
       timestamp: new Date().toISOString(),
     })
@@ -183,6 +186,9 @@ export class OrchestratorAgent {
       this.pendingNames.add(task.agentConfig.name)
     }
 
+    // Track completed agent names for the final skill_result event
+    const completedAgentNames: string[] = []
+
     // Fire background execution
     const runAll = async () => {
       // Parallel first
@@ -198,6 +204,7 @@ export class OrchestratorAgent {
               const result = settled.value
               this.newResults.push(result)
               this.pendingNames.delete(result.agentName)
+              completedAgentNames.push(result.agentName)
               persistResult(result)
               this.emitSubAgentComplete(sendEvent, result)
             } else {
@@ -224,6 +231,7 @@ export class OrchestratorAgent {
           const result = await this.runSubAgent(task)
           this.newResults.push(result)
           this.pendingNames.delete(result.agentName)
+          completedAgentNames.push(result.agentName)
           persistResult(result)
           this.emitSubAgentComplete(sendEvent, result)
         } catch (err) {
@@ -286,14 +294,36 @@ export class OrchestratorAgent {
       }
     }
 
+    const caseId = tasks[0]?.context.caseId
+
     runAll()
-      .then(() => {
-        // Mark orchestrator tool as complete so the UI spinner resolves
+      .then(async () => {
+        // Mark orchestrator tool as complete so the UI spinner resolves.
         sendEvent({
           type: 'skill_result',
-          data: { name: 'orchestrator', status: 'completed', result: null },
+          data: {
+            name: 'orchestrator',
+            status: 'completed',
+            result: {
+              agentsRun: completedAgentNames.length,
+              agents: completedAgentNames,
+            },
+          },
           timestamp: new Date().toISOString(),
         })
+
+        // Phase 3: Flag case for continuation — the worker will pick it up.
+        if (caseId) {
+          try {
+            await prisma.caseMemory.update({
+              where: { caseId },
+              data: { needsContinuation: true },
+            })
+            console.log(`[Orchestrator] Case ${caseId} flagged for continuation (${completedAgentNames.length} sub-agents completed)`)
+          } catch (err) {
+            console.error('[Orchestrator] Failed to flag case for continuation:', err)
+          }
+        }
       })
       .catch((err) => console.error('[Orchestrator] Background dispatch failed:', err))
   }

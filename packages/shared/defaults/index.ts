@@ -47,6 +47,87 @@ Facts extracted from previous turns are in confirmedFacts — trust them. Summar
 {{session_binding}}
 `;
 
+/** Lightweight prompt for Core (discovery) mode — no case active.
+ *  Focused on conversation routing, direct tool calls, and case creation.
+ *  Does NOT include stage requirements, sub-agents, policies, or human handoff. */
+export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
+
+## How you work
+
+- Respond in the same language the customer uses. If they write in Chinese, respond in Chinese. Never mix languages.
+- Be concise. Prefer action over explanation.
+- If you say you will check or verify something, call the corresponding tool in that same turn.
+
+## Tools you can use directly (no case needed)
+
+You have access to lookup tools. Use them when the customer asks a question these tools can answer:
+- **kb_hybrid_retrieve** — search knowledge base articles for FAQ / policy answers
+- **get_account_status** — check account state, balance, or verification status
+- **get_kyc_status** — check identity verification progress
+- **get_latest_deposit** / **get_latest_withdrawal** — check recent transaction status
+- **get_transaction_history** — query past transaction records
+- **get_bet_history** — query betting/game records
+- **get_active_promotions** / **get_eligible_promotions** — check available promotions
+- **get_recommended_games** — get game recommendations
+- **get_withdraw_conditions** — check withdrawal rules and limits
+- **read_case_history** — review the customer's past cases for context
+
+Call tools directly — no case needed for simple lookups.
+
+## When to create a Case
+
+When a customer reports a concrete ISSUE that needs investigation (deposit not arrived, account locked, withdrawal stuck, refund request, order problem):
+- Call **create_case** with the matching case type
+
+{{case_types}}
+
+**Call propose_cases ONLY when the customer explicitly mentions two or more separate problems in a single message** (e.g. "I can't log in AND my deposit didn't arrive"). Do NOT call propose_cases because you are "unsure" — pick the best-matching case type and call create_case directly.
+
+## When NOT to create a Case
+
+For greetings ("hi", "hello"), FAQ questions, general information requests, or simple lookups — just answer naturally. Use tools if they help, but don't open a case.
+
+{{session_binding}}
+`;
+
+/** Case-execution prompt — used when a case is active and past the "created" stage.
+ *  Stage-driven, policy-enforced, with sub-agent and human-handoff awareness. */
+export const CASE_SYSTEM_PROMPT = `You are Intera, handling an active customer case. Follow the stage requirements.
+
+## How you work
+
+- Respond in the same language the customer uses.
+- Be concise. Prefer action over explanation.
+- If you say you will check or verify something, call the corresponding tool in that same turn. Text-only promises without tool calls will trigger a correction nudge (3 attempts, then the case escalates to a human).
+
+## Case context
+
+The case schema, current stage, required evidence, and available tools are shown below. Follow the stage requirements — the evaluator will advance you when conditions are met, or route to a human when system data conflicts with the customer's story.
+
+{{case_schema}}
+{{case_state}}
+
+## Sub-agents
+
+Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings — do not re-run tools they already called.
+
+## Policies
+
+{{active_policies}}
+
+## Human handoff
+
+Call create_human_task **only after** investigation tools (query_order_status, query_payment_channel_status, get_account_status, get_kyc_status, etc.) have returned data that conflicts with the customer's report. Do not escalate based on preliminary lookups (e.g. get_latest_deposit) or your own inference alone — always complete the required investigation for the current stage first.
+
+After the human resolves the task, translate their verdict into plain, friendly language for the customer.
+
+## Memory
+
+Facts extracted from previous turns are in confirmedFacts — trust them. Summaries from earlier context appear as [Case context].
+
+{{session_binding}}
+`;
+
 export const DEFAULT_MEMORY_STRATEGY = {
   // Retention
   l1MaxMessages: 12,
@@ -160,6 +241,7 @@ export const HARNESS_DEFAULT_FORM_RESPONSE_APPEND =
 
 export interface DefaultSkillSeed {
   name: string
+  displayVerb?: { text: string; icon: string }
   description: string
   inputSchema: string
   outputSchema: string
@@ -180,6 +262,7 @@ export interface DefaultSkillSeed {
 export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'propose_cases',
+    displayVerb: { text: 'Analyzing your issue', icon: 'dots' },
     description:
       'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. The customer sees a multi-select card.',
     inputSchema:
@@ -189,6 +272,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'create_case',
+    displayVerb: { text: 'Creating your case', icon: 'dots' },
     description: 'Create a new Case when the customer reports an issue that needs investigation. Call this before calling case-related tools like query_order_status or get_account_status.',
     inputSchema:
       '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
@@ -196,97 +280,126 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     mockFixture: '{"caseId":"case_mock_001","status":"created"}',
   },
   {
-    name: 'read_case_history', description: "Read the customer's historical cases for context",
+    name: 'read_case_history',
+    displayVerb: { text: 'Looking up past cases', icon: 'scan' },
+    description: "Read the customer's historical cases for context",
     inputSchema: '{"type":"object","properties":{"userId":{"type":"string","description":"Customer user ID"},"limit":{"type":"number","description":"Max number of cases to return","default":5}},"required":["userId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"cases":[{"id":"C2024-0892","type":"deposit_issue","status":"resolved","summary":"User deposited 500 CNY via WeChat Pay, funds credited after 2-hour delay","resolvedAt":"2024-11-15T10:30:00Z"},{"id":"C2024-1034","type":"account_issue","status":"resolved","summary":"Account temporarily restricted due to suspicious login from new device; verified identity and lifted restriction","resolvedAt":"2024-12-03T16:45:00Z"},{"id":"C2025-0017","type":"deposit_issue","status":"resolved","summary":"User reported 200 CNY missing from balance after Alipay top-up; traced to pending batch settlement, resolved within 24h","resolvedAt":"2025-01-22T09:15:00Z"}],"total":3}',
   },
   {
-    name: 'query_order_status', description: 'Query the platform order system for transaction status',
+    name: 'query_order_status',
+    displayVerb: { text: 'Checking order status', icon: 'scan' },
+    description: 'Query the platform order system for transaction status',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"txnId":"TX2026051412345678","status":"completed","amount":1000.00,"currency":"CNY","time":"2026-05-14T08:05:00.000Z","channel":"wechat_pay","paymentMethod":"WeChat Pay","merchantRef":"MCH20260514001"}',
   },
   {
-    name: 'query_payment_channel_status', description: 'Query the payment channel for current status and delays',
+    name: 'query_payment_channel_status',
+    displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
+    description: 'Query the payment channel for current status and delays',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"delayed_batch":false,"channel":"wechat_pay","channelStatus":"normal","lastSettlementAt":"2026-05-14T07:55:00.000Z","currentLoad":"low","reason":null}',
   },
   {
-    name: 'search_delay_notice', description: 'Search for any delay notices or announcements',
+    name: 'search_delay_notice',
+    displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
+    description: 'Search for any delay notices or announcements',
     inputSchema: '{"type":"object","properties":{"channel":{"type":"string","description":"Payment channel to search"}},"required":["channel"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"notices":[{"id":"NOT20260514-001","title":"WeChat Pay Scheduled Maintenance","channel":"wechat_pay","severity":"info","content":"WeChat Pay will undergo scheduled maintenance on 2026-05-20 02:00-04:00 UTC. Deposits may be delayed during this window.","publishedAt":"2026-05-10T00:00:00Z","affectsDeposit":false}]}',
   },
   {
-    name: 'ocr_receipt', description: 'Extract information from uploaded receipt screenshots',
+    name: 'ocr_receipt',
+    displayVerb: { text: 'Reading your receipt', icon: 'spin' },
+    description: 'Extract information from uploaded receipt screenshots',
     inputSchema: '{"type":"object","properties":{"attachmentId":{"type":"string","description":"Attachment ID from file upload"}},"required":["attachmentId"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"success":true,"extracted":{"amount":1000.00,"currency":"CNY","time":"2026-05-14T08:05:00.000Z","channel":"wechat_pay","merchantRef":"MCH20260514001","txnId":"TX2026051412345678"}}',
   },
   {
-    name: 'create_human_task', description: 'Create a human task for manual confirmation or processing',
+    name: 'create_human_task',
+    displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
+    description: 'Create a human task for manual confirmation or processing',
     inputSchema: '{"type":"object","properties":{"queue":{"type":"string","description":"Queue to route to"},"question":{"type":"string","description":"Question for the human operator"}},"required":["queue","question"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"taskId":"htask_mock_001","status":"pending"}',
   },
   {
-    name: 'finalize_case', description: 'Mark the case as resolved with a conclusion',
+    name: 'finalize_case',
+    displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
+    description: 'Mark the case as resolved with a conclusion',
     inputSchema: '{"type":"object","properties":{"conclusion":{"type":"string","description":"Case conclusion"},"basis":{"type":"array","items":{"type":"string"},"description":"Evidence basis"}},"required":["conclusion","basis"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"resolved","resolvedAt":"2026-05-01T12:00:00.000Z"}',
   },
   {
-    name: 'kb_hybrid_retrieve', description: 'Hybrid knowledge base search (BM25 + vector)',
+    name: 'kb_hybrid_retrieve',
+    displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
+    description: 'Hybrid knowledge base search (BM25 + vector)',
     inputSchema: '{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}',
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"results":[{"title":"Why is my deposit not showing in my balance?","snippet":"Deposits via third-party payment channels (WeChat Pay, Alipay) may take up to 2 hours to reflect due to batch settlement cycles. If your deposit still does not appear after 2 hours, please contact support with your transaction ID.","source":"help_center","relevance":0.92},{"title":"Common causes of balance discrepancies","snippet":"Balance discrepancies can occur due to: (1) pending batch settlements from payment providers, (2) cached balance display (try refreshing), (3) recent refunds or adjustments not yet reflected, (4) unauthorized transactions — check your transaction history.","source":"faq","relevance":0.85},{"title":"How to verify your deposit status","snippet":"You can verify your deposit by: (1) checking the payment provider app for the transaction receipt, (2) comparing the transaction ID with our system records, (3) waiting up to 24 hours for settlement delays during peak periods or maintenance windows.","source":"help_center","relevance":0.78}],"sources":["help_center/deposit-faq","faq/balance-issues","help_center/verify-deposit"]}',
   },
   {
-    name: 'propose_interaction', description: 'Present a choice card with options the customer can select (non-blocking, replaced by agent continuation)',
+    name: 'propose_interaction',
+    displayVerb: { text: 'Asking you a question', icon: 'pulse' },
+    description: 'Present a choice card with options the customer can select (non-blocking, replaced by agent continuation)',
     inputSchema: '{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"description":{"type":"string"},"inputType":{"type":"string","enum":["none","text","number"]},"inputPlaceholder":{"type":"string"}},"required":["id","label"]}},"multiSelect":{"type":"boolean"}},"required":["title","options"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"presented"}',
   },
   {
-    name: 'request_user_input', description: 'Display a structured form to collect required information from the customer',
+    name: 'request_user_input',
+    displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
+    description: 'Display a structured form to collect required information from the customer',
     inputSchema: '{"type":"object","properties":{"title":{"type":"string","description":"Form title"},"fields":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"label":{"type":"string"},"type":{"type":"string","enum":["text","number","select","textarea","file"]},"required":{"type":"boolean"},"placeholder":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["key","label","type"]}}},"required":["title","fields"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"form_displayed"}',
   },
   {
-    name: 'refund_money', description: 'Process a refund to the customer (high-risk — blocked by no_high_risk_account_change policy until admin review)',
+    name: 'refund_money',
+    displayVerb: { text: 'Processing refund', icon: 'spin' },
+    description: 'Process a refund to the customer (high-risk — blocked by no_high_risk_account_change policy until admin review)',
     inputSchema: '{"type":"object","properties":{"txnId":{"type":"string"},"amount":{"type":"number"},"reason":{"type":"string"}},"required":["txnId","amount","reason"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
     mockFixture: '{"status":"refunded"}',
   },
   {
-    name: 'change_ban_status', description: 'Modify a user account restriction status (high-risk — blocked by no_high_risk_account_change policy until admin review)',
+    name: 'change_ban_status',
+    displayVerb: { text: 'Updating account status', icon: 'pulse' },
+    description: 'Modify a user account restriction status (high-risk — blocked by no_high_risk_account_change policy until admin review)',
     inputSchema: '{"type":"object","properties":{"userId":{"type":"string"},"action":{"type":"string","enum":["ban","unban","restrict"]},"reason":{"type":"string"}},"required":["userId","action","reason"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
     mockFixture: '{"status":"updated"}',
   },
   {
-    name: 'delete_account', description: 'Permanently delete a user account (high-risk — blocked by no_high_risk_account_change policy until admin review)',
+    name: 'delete_account',
+    displayVerb: { text: 'Processing account deletion', icon: 'spin' },
+    description: 'Permanently delete a user account (high-risk — blocked by no_high_risk_account_change policy until admin review)',
     inputSchema: '{"type":"object","properties":{"userId":{"type":"string"},"reason":{"type":"string"}},"required":["userId","reason"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
     mockFixture: '{"status":"deleted"}',
   },
   {
-    name: 'finalize_consultation', description: 'End the human consultation with a summary and resolution',
+    name: 'finalize_consultation',
+    displayVerb: { text: 'Closing consultation', icon: 'spin' },
+    description: 'End the human consultation with a summary and resolution',
     inputSchema: '{"type":"object","properties":{"summary":{"type":"string","description":"Customer-facing message about what was resolved"},"resolution":{"type":"string","enum":["confirmed_delayed","refund_approved","needs_more_info","resolved","false_alarm"]}},"required":["summary","resolution"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"consultation_closed"}',
   },
   {
     name: 'get_account_status',
+    displayVerb: { text: 'Checking account status', icon: 'scan' },
     description: '查询账户状态（登录失败、账户锁定等）。当用户无法登录、账户被锁、登录失败时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -297,6 +410,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_kyc_status',
+    displayVerb: { text: 'Verifying identity status', icon: 'scan' },
     description: '查询KYC身份验证状态及当前卡住的阶段。当用户询问KYC进度、身份验证状态时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -307,6 +421,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_active_promotions',
+    displayVerb: { text: 'Checking active promotions', icon: 'dots' },
     description: '查询当前生效的流水优惠活动。当用户询问有哪些优惠活动、当前流水优惠时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -317,6 +432,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_withdraw_conditions',
+    displayVerb: { text: 'Checking withdrawal conditions', icon: 'scan' },
     description: '查询打码量提现条件。当用户询问打码量是否足够、提现需要多少流水时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -4:00","default":"-4:00"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -327,6 +443,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_eligible_promotions',
+    displayVerb: { text: 'Checking eligible promotions', icon: 'dots' },
     description: '查询用户可参与的优惠活动。当用户询问如何参与活动、领取优惠时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"language":{"type":"string","description":"语言，默认 en-bd","default":"en-bd"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -337,6 +454,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_latest_withdrawal',
+    displayVerb: { text: 'Checking withdrawal status', icon: 'scan' },
     description: '查询最新取款状态及已过时间。当用户询问取款进度、是否到账时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -04:00","default":"-04:00"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -347,6 +465,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_latest_deposit',
+    displayVerb: { text: 'Checking deposit status', icon: 'scan' },
     description: '查询最新存款到账状态。当用户询问存款是否到账、充值进度时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -4:00","default":"-4:00"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -357,6 +476,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_transaction_history',
+    displayVerb: { text: 'Loading transaction history', icon: 'scan' },
     description: '查询最近5条存取款交易记录。当用户询问交易记录、充值/提现记录时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"method":{"type":"string","description":"deposit 或 withdraw","enum":["deposit","withdraw"]}},"required":["member_id","method"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -367,6 +487,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_recommended_games',
+    displayVerb: { text: 'Loading game recommendations', icon: 'dots' },
     description: '获取推荐/热门游戏列表。当用户询问有什么推荐游戏、热门游戏时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -377,6 +498,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   },
   {
     name: 'get_bet_history',
+    displayVerb: { text: 'Loading bet history', icon: 'scan' },
     description: '查询游戏下注历史。当用户询问投注记录、下注历史、游戏记录时调用。',
     inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"from_date":{"type":"string","description":"开始日期，格式 YYYY-MM-DD HH:mm:ss"},"to_date":{"type":"string","description":"结束日期，格式 YYYY-MM-DD HH:mm:ss"}},"required":["member_id","from_date","to_date"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',

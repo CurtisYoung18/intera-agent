@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "worker:continuation": "npx tsx worker/case-continuation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

@@ -229,8 +229,10 @@ model CaseMemory {
   skillsCalled    String @default("[]") // JSON
   skillResults    String @default("{}") // JSON
   keyEvents       String @default("[]") // JSON
-  humanTaskStatus String @default("none")
-  summary         String?
+  humanTaskStatus    String @default("none")
+  needsContinuation  Boolean  @default(false)
+  continuationLock   DateTime?
+  summary            String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

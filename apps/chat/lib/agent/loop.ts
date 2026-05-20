@@ -7,15 +7,16 @@
 // from naive "wait for full response then execute" approaches.
 
 import Anthropic from '@anthropic-ai/sdk'
+import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { CaseMemoryManager } from './memory'
 import { PolicyEngine } from './policy'
 import { SkillRouter } from './skills'
-import { StageExecutor, type TransitionEval } from './stage-executor'
-import { OrchestratorAgent } from './orchestrator'
 import { TraceWriter } from './trace'
+import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
+import { ConversationLoop } from './conversation-loop'
 import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation } from './compact'
@@ -46,7 +47,10 @@ export interface AgentLoopDeps {
   caseId: string
   customerId: string
   userId: string
+  /** Case-execution prompt (used when case is active). Resolved from CASE_SYSTEM_PROMPT or DB custom prompt. */
   systemPrompt: string
+  /** Core/discovery prompt (used when no case is active). Resolved from CORE_SYSTEM_PROMPT. Falls back to systemPrompt if unset. */
+  coreSystemPrompt?: string
   caseSchema?: CaseSchemaConfig | null
   /** Groups all cases in the same chat session — stored on Case.chatId. */
   chatId?: string | null
@@ -73,16 +77,22 @@ export class AgentLoop {
   private caseMemory: CaseMemoryManager
   private policyEngine!: PolicyEngine
   private skillRouter: SkillRouter
-  private stageExecutor: StageExecutor | null = null
-  private orchestrator: OrchestratorAgent | null = null
+  /** Case-specific execution engine — null in Core (discovery) mode. */
+  private caseLoop: CaseAgentLoop | null = null
+  /** Core (discovery) mode handler — prompt + tool filtering. */
+  private conversationLoop: ConversationLoop
   private traceWriter: TraceWriter
   private profiler: Profiler = new Profiler()
   private iterationCount = 0
   private nudgeCount = 0
-  private currentStage = 'created'
   private abortController: AbortController
   private aborted = false
   private anthropicClient: Anthropic
+
+  /** Current workflow stage — delegates to caseLoop when active. */
+  private get currentStage(): string {
+    return this.caseLoop?.currentStage ?? 'created'
+  }
 
   constructor(private deps: AgentLoopDeps) {
     this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
@@ -94,18 +104,39 @@ export class AgentLoop {
       baseURL: process.env.ANTHROPIC_BASE_URL,
     })
 
-    // Initialize stage executor if case schema with stage configs is available
+    // Always initialize ConversationLoop — used in Core (discovery) mode
+    this.conversationLoop = new ConversationLoop({
+      coreSystemPrompt: deps.coreSystemPrompt || deps.systemPrompt,
+    })
+
+    // Initialize CaseAgentLoop if case schema is available (case active or known type)
     if (deps.caseSchema) {
-      this.stageExecutor = new StageExecutor(
+      this.caseLoop = new CaseAgentLoop(
         deps.caseSchema,
-        deps.config,
-        this.caseMemory,
+        this.makeCaseLoopServices(),
         deps.bootstrapNewCase,
       )
-      this.currentStage = this.stageExecutor.getCurrentStage()
+    }
+  }
 
-      // Initialize orchestrator for sub-agent dispatch (pass skill defs for real tool execution)
-      this.orchestrator = new OrchestratorAgent(deps.caseSchema, this.skillRouter.getToolDefinitions(), deps.userId)
+  /** Build the service accessor bag for CaseAgentLoop. Called once at init
+   *  or when a new case is created mid-loop. The callbacks close over `this`
+   *  so they always reflect the latest AgentLoop state (e.g. after loadMessages). */
+  private makeCaseLoopServices(): CaseLoopServices {
+    return {
+      caseId: this.deps.caseId,
+      customerId: this.deps.customerId,
+      userId: this.deps.userId,
+      chatId: this.deps.chatId,
+      config: this.deps.config,
+      caseMemory: this.caseMemory,
+      getPolicyEngine: () => this.policyEngine,
+      traceWriter: this.traceWriter,
+      skillRouter: this.skillRouter,
+      getMessages: () => this.messages,
+      addMessage: (msg) => this.messages.push(msg),
+      makeUserMessage: (content) => this.makeUserMessage(content),
+      writeProfilerSnapshot: () => this.writeProfilerSnapshot(),
     }
   }
 
@@ -122,71 +153,9 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
 
   /** Dispatch sub-agents for the current stage (non-blocking, runs alongside ReAct loop). */
-  private async startDedicatedAgents(
-    sendEvent: (event: SSEEvent) => void,
-  ): Promise<void> {
-    if (!this.orchestrator?.isEnabled()) return
-
-    const stageCfg = this.stageExecutor?.getStageConfig(this.currentStage)
-    if (!stageCfg?.subAgents?.length) return
-
-    const agentNames = stageCfg.subAgents.map((c) => c.name)
-    if (this.caseMemory.hasDispatchedSubAgentsFor(this.currentStage, agentNames)) {
-      return
-    }
-
-    const mem = this.caseMemory.getSummary()
-    try {
-      const tasks = await this.orchestrator.planInvestigation(
-        this.currentStage,
-        stageCfg.subAgents,
-        mem as any,
-        stageCfg.description || this.currentStage,
-      )
-
-      if (tasks.length > 0) {
-        // Emit sub_agent_start for each task
-        for (const task of tasks) {
-          sendEvent({
-            type: 'sub_agent_start',
-            data: {
-              agentId: task.id,
-              agentName: task.agentConfig.name,
-              taskDescription: task.taskPrompt.slice(0, 200),
-              stage: this.currentStage,
-              caseId: this.deps.caseId,
-            },
-            timestamp: new Date().toISOString(),
-          })
-        }
-
-        // Non-blocking — results merge as they arrive, ReAct loop checks each iteration
-        this.orchestrator.dispatchInBackground(tasks, sendEvent)
-
-        this.caseMemory.recordSubAgentsDispatched(
-          this.currentStage,
-          tasks.map((t) => t.agentConfig.name),
-        )
-
-        sendEvent({
-          type: 'core_agent_progress',
-          data: {
-            stage: this.currentStage,
-            iteration: 0,
-            task: `Coordinating ${tasks.length} sub-agent(s) for parallel investigation`,
-            pendingSubAgents: tasks.map((t) => t.agentConfig.name),
-          },
-          timestamp: new Date().toISOString(),
-        })
-
-        await this.traceWriter.write('loop_decision', 'Sub-agents dispatched (background)', {
-          stage: this.currentStage,
-          subAgents: tasks.map((t) => t.agentConfig.name),
-        })
-      }
-    } catch (err) {
-      console.error('[AgentLoop] Start-dispatch failed:', err)
-    }
+  /** Delegate dedicated-agent startup to CaseAgentLoop (case mode only). */
+  private async startDedicatedAgents(sendEvent: (event: SSEEvent) => void): Promise<void> {
+    await this.caseLoop?.startDedicatedAgents(sendEvent)
   }
 
   // -----------------------------------------------------------------------
@@ -287,44 +256,16 @@ export class AgentLoop {
         }
       }
 
-      // Emit core agent progress — only when a Case is active. Keep label short for UI.
-      if (this.stageExecutor) {
-        const stageCfg = this.stageExecutor.getStageConfig(this.currentStage)
-        const stageLabel = stageCfg?.name || this.currentStage
-        const taskDesc = `${stageLabel} · iter ${this.iterationCount}`
-        sendEvent({
-          type: 'core_agent_progress',
-          data: {
-            stage: this.currentStage,
-            iteration: this.iterationCount,
-            task: taskDesc,
-            pendingSubAgents: this.orchestrator?.getPendingAgentNames() ?? [],
-          },
-          timestamp: new Date().toISOString(),
-        })
-      }
-
-      // Check for new sub-agent results (from background dispatch)
-      if (this.orchestrator?.hasNewResults()) {
-        const newResults = this.orchestrator.drainNewResults()
-        const mem = this.caseMemory.getSummary()
-        this.orchestrator.mergeResults(
-          newResults,
-          mem.confirmedFacts as Record<string, unknown>,
-          mem.skillResults as Record<string, unknown>,
-          mem.keyEvents as Array<{ at: string; text: string; source: string }>,
-        )
-        // Inject sub-agent output as user-visible context for the main agent
-        for (const r of newResults) {
-          this.messages.push(this.makeUserMessage(
-            OrchestratorAgent.toContextMessage(r),
-          ))
+      // Emit core_agent_progress and merge background sub-agent results (case mode only).
+      if (this.caseLoop?.isStageActive()) {
+        this.caseLoop.emitProgressEvent(this.iterationCount, sendEvent)
+        if (this.caseLoop.mergeNewSubAgentResults()) {
+          sendEvent({
+            type: 'memory_update',
+            data: this.caseMemory.getSummary(),
+            timestamp: new Date().toISOString(),
+          })
         }
-        sendEvent({
-          type: 'memory_update',
-          data: this.caseMemory.getSummary(),
-          timestamp: new Date().toISOString(),
-        })
       }
 
       // Context compaction (simplified)
@@ -362,14 +303,19 @@ export class AgentLoop {
         },
       )
 
-      // ── Stream API call ──────────────────────────────────────────
-      const stagePrompt = this.stageExecutor
-        ? this.stageExecutor.buildStagePrompt(this.currentStage, this.deps.systemPrompt)
-        : this.deps.systemPrompt
+      // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
+      // Core mode  → no active case: conversational discovery, all tools available.
+      // Case mode  → case past "created": stage-driven execution, tools filtered.
+      const isCaseActive = this.caseLoop?.isStageActive() ?? false
+
+      const stagePrompt = isCaseActive
+        ? this.caseLoop!.buildPrompt(this.deps.systemPrompt)
+        : this.conversationLoop.buildPrompt()
+
       const allTools = this.skillRouter.getTools()
-      const stageTools = this.stageExecutor
-        ? this.stageExecutor.filterTools(this.currentStage, allTools, this.nudgeCount)
-        : allTools
+      const stageTools = isCaseActive
+        ? this.caseLoop!.filterTools(allTools, this.nudgeCount)
+        : this.conversationLoop.filterTools(allTools)
 
       const blocks = new Map<number, StreamContentBlock>()
       let assistantMessage: AssistantMessage | null = null
@@ -682,37 +628,16 @@ export class AgentLoop {
       }
 
       if (toolResults.length === 0) {
-        // No tools called — stage evaluator may still advance (e.g. created → collecting)
-        if (this.stageExecutor && this.stageExecutor.hasStageConfigs()) {
-          let transitionEval: TransitionEval
-          try {
-            transitionEval = await this.stageExecutor.evaluateTransition(
-              this.currentStage,
-              this.iterationCount,
-            )
-          } catch (err) {
-            console.error('[AgentLoop] Stage evaluation failed:', err)
-            transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
-          }
+        // No tools called — delegate stage evaluation to CaseAgentLoop
+        if (this.caseLoop?.hasStageConfigs()) {
+          const transitionEval = await this.caseLoop.evaluateStageTransitionAfterNoTools(this.iterationCount)
           if (transitionEval.modelUsed) {
             await this.traceWriter.write('stage_eval', `Stage eval: ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
           }
 
-          if (
-            !(transitionEval.shouldTransition && transitionEval.nextStage) &&
-            this.currentStage === 'created'
-          ) {
-            const fbNext = this.stageExecutor.getNextStageName('created')
-            if (fbNext) {
-              transitionEval = {
-                shouldTransition: true,
-                nextStage: fbNext,
-                reason: 'Fallback advance from created after first assistant turn (evaluator returned no transition).',
-              }
-            }
-          }
-
-          const advanced = await this.applyStageTransitionFromEval(transitionEval, sendEvent)
+          const nudgeBox = { value: this.nudgeCount }
+          const advanced = await this.caseLoop.applyStageTransitionFromEval(transitionEval, nudgeBox, sendEvent)
+          this.nudgeCount = nudgeBox.value
           if (advanced) {
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
             sendEvent({
@@ -723,31 +648,25 @@ export class AgentLoop {
             continue
           }
 
-          const skillCheck = this.stageExecutor.checkRequiredSkills(this.currentStage)
-          const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(this.currentStage)
-
-          if (!skillCheck.met || !evidenceCheck.met) {
-            // Stage incomplete — inject nudge and continue loop
+          const stageResult = this.caseLoop.evaluateStageAfterNoTools(this.iterationCount)
+          if (stageResult.needsNudge) {
             this.nudgeCount++
-            const nudgeMsg = this.stageExecutor.buildNudge(this.currentStage, this.nudgeCount)
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(this.makeUserMessage(nudgeMsg))
+            this.messages.push(this.makeUserMessage(stageResult.nudgeMessage))
 
             await this.traceWriter.write('loop_decision', 'Nudge: stage incomplete', {
               stage: this.currentStage,
               nudgeCount: this.nudgeCount,
-              missingSkills: skillCheck.missing,
-              missingEvidence: evidenceCheck.missing,
+              missingSkills: stageResult.missingSkills,
+              missingEvidence: stageResult.missingEvidence,
               iteration: this.iterationCount,
             })
 
-            // After 3 consecutive nudges, escalate to human
             if (this.nudgeCount >= 3) {
               await this.traceWriter.write('loop_decision', 'Exit: max nudges', {
                 stage: this.currentStage, nudgeCount: this.nudgeCount,
               })
 
-              // Try to auto-create a human task for the escalation
               try {
                 const resolvedCaseType = this.deps.caseSchema?.type || 'general'
                 await prisma.case.upsert({
@@ -792,6 +711,37 @@ export class AgentLoop {
             sendEvent({
               type: 'message_stop',
               data: { reason: 'nudge', stage: this.currentStage },
+              timestamp: new Date().toISOString(),
+            })
+            continue
+          }
+        }
+
+        // ── ReAct compliance guard ──────────────────────────────────────
+        // When the model produces text without calling tools, use an LLM eval
+        // to check whether the response is a legitimate end-of-turn or the
+        // model is "describing instead of doing."
+        if (fullText && fullText.length > 30) {
+          const reactResult = await this.evaluateReactCompliance(fullText)
+
+          if (reactResult === 'nudge') {
+            this.nudgeCount++
+            const nudge = '[SYSTEM] Your last response describes a problem or implies action is needed, ' +
+                'but you did not call any tool to act on it. If investigation, verification, or ' +
+                'escalation is required, call the appropriate tool now. Describing the need in ' +
+                'text is not sufficient — you must use tools to take action.'
+            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
+            this.messages.push(this.makeUserMessage(nudge))
+
+            await this.traceWriter.write('loop_decision', 'ReAct nudge: describing without acting', {
+              stage: this.currentStage,
+              nudgeCount: this.nudgeCount,
+              iteration: this.iterationCount,
+            })
+
+            sendEvent({
+              type: 'message_stop',
+              data: { reason: 'react_nudge', stage: this.currentStage },
               timestamp: new Date().toISOString(),
             })
             continue
@@ -960,7 +910,7 @@ export class AgentLoop {
         const toolInput = createCaseResult.toolUse?.input || {}
         const caseType = String(toolInput.caseType || '')
 
-        if (!this.stageExecutor && caseType && isInvestigableCaseType(caseType)) {
+        if (!this.caseLoop && caseType && isInvestigableCaseType(caseType)) {
           try {
             // Load case type from DB to build schema
             const ctRow = await prisma.caseType.findUnique({
@@ -981,9 +931,9 @@ export class AgentLoop {
                 requireHumanReview: (ctRow as any).requireHumanReview === true,
               }
               this.deps.caseSchema = schema
-              this.stageExecutor = new StageExecutor(schema, this.deps.config, this.caseMemory)
-              this.currentStage = this.stageExecutor.getCurrentStage()
-              this.orchestrator = new OrchestratorAgent(schema, this.skillRouter.getToolDefinitions(), this.deps.userId)
+
+              // Phase 2: Create CaseAgentLoop instead of raw StageExecutor + Orchestrator
+              this.caseLoop = new CaseAgentLoop(schema, this.makeCaseLoopServices())
 
               // Persist case in DB
               await prisma.case.upsert({
@@ -1021,7 +971,7 @@ export class AgentLoop {
                 }
               }
 
-              // Continue loop — next iteration has stage executor
+              // Continue loop — next iteration has caseLoop active
               continue
             }
           } catch (err) {
@@ -1031,7 +981,7 @@ export class AgentLoop {
 
         // create_case called when a case is already active — replace mock
         // result so the LLM doesn't see a fake case_mock_001 ID.
-        if (this.stageExecutor) {
+        if (this.caseLoop) {
           const key = 'dupCreateCaseCount'
           const dupCount = (this.caseMemory.getConfirmedFacts()[key] as number) || 0
           const nextCount = dupCount + 1
@@ -1132,281 +1082,20 @@ export class AgentLoop {
         }
       }
 
-      // ── Terminal tool: create_human_task ─────────────────────
-      // Pre-escalation guard is enforced via PolicyEngine preTool hook
-      // (policy: investigate_before_escalation) — see policy.ts.
-      const humanTaskResult = toolResults.find(
-        (r) => r.name === 'create_human_task',
-      )
-      if (humanTaskResult) {
-        const toolInput = humanTaskResult.toolUse?.input || {}
-        const queue = String(toolInput.queue || 'general')
-        const question = String(toolInput.question || 'Human task requested')
-        const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
-
-        let taskId: string | null = null
-
-        // Retry loop — SQLite can throw SQLITE_BUSY when background sub-agent
-        // writes collide with the main loop's DB operations.
-        const MAX_HT_RETRIES = 3
-        for (let attempt = 1; attempt <= MAX_HT_RETRIES; attempt++) {
-          try {
-            // Ensure customer exists
-            await prisma.customer.upsert({
-              where: { id: this.deps.customerId },
-              update: {},
-              create: { id: this.deps.customerId, name: this.deps.customerId },
-            })
-
-            // Ensure case exists (include chatId so it's never lost)
-            const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-            await prisma.case.upsert({
-              where: { id: this.deps.caseId },
-              update: { status: 'waiting_human', blocker: `Waiting for ${queue}` },
-              create: {
-                id: this.deps.caseId,
-                customerId: this.deps.customerId,
-                userId: this.deps.userId,
-                type: resolvedCaseType,
-                status: 'waiting_human',
-                blocker: `Waiting for ${queue}`,
-                chatId: this.deps.chatId ?? null,
-              },
-            })
-
-            // Persist case memory
-            const mem = this.caseMemory.getSummary()
-            await prisma.caseMemory.upsert({
-              where: { caseId: this.deps.caseId },
-              update: {
-                confirmedFacts: JSON.stringify(mem.confirmedFacts),
-                missingFacts: JSON.stringify(mem.missingFacts),
-                skillsCalled: JSON.stringify(mem.skillsCalled),
-                skillResults: JSON.stringify(mem.skillResults),
-                keyEvents: JSON.stringify(mem.keyEvents),
-                humanTaskStatus: 'pending',
-              },
-              create: {
-                caseId: this.deps.caseId,
-                confirmedFacts: JSON.stringify(mem.confirmedFacts),
-                missingFacts: JSON.stringify(mem.missingFacts),
-                skillsCalled: JSON.stringify(mem.skillsCalled),
-                skillResults: JSON.stringify(mem.skillResults),
-                keyEvents: JSON.stringify(mem.keyEvents),
-                humanTaskStatus: 'pending',
-              },
-            })
-
-            // Create human task
-            const task = await prisma.humanTask.create({
-              data: {
-                caseId: this.deps.caseId,
-                queue,
-                question,
-                fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
-                status: 'pending',
-              },
-            })
-            taskId = task.id
-
-            // Write trace via TraceWriter (DB persistence handled internally)
-            await this.traceWriter.writeHumanTaskCreated(task.id, queue)
-
-            // Replace mock create_human_task result with real task ID
-            for (let i = this.messages.length - 1; i >= 0; i--) {
-              const m = this.messages[i]
-              if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_human_task result:')) {
-                m.content = `Tool create_human_task result: ${JSON.stringify({ taskId: task.id, queue, status: 'pending' })}`
-                break
-              }
-            }
-
-            sendEvent({
-              type: 'human_task_created',
-              data: { taskId: task.id, queue, status: 'pending' },
-              timestamp: new Date().toISOString(),
-            })
-
-            break // success — exit retry loop
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err)
-            console.error(`[AgentLoop] Failed to persist human task (attempt ${attempt}/${MAX_HT_RETRIES}):`, msg)
-            if (attempt < MAX_HT_RETRIES) {
-              // Exponential backoff — gives SQLite time to release locks from sub-agents
-              await new Promise((r) => setTimeout(r, attempt * 200))
-            }
-          }
-        }
-
-        // If all retries failed, surface the error without setting agentStatus='offline'
-        // (the agent isn't offline — the DB write failed, but the conversation can continue).
-        if (!taskId) {
-          sendEvent({
-            type: 'core_agent_progress',
-            data: {
-              stage: this.currentStage,
-              iteration: this.iterationCount,
-              task: 'Human task creation failed — please try again or contact support',
-              pendingSubAgents: [],
-            },
-            timestamp: new Date().toISOString(),
-          })
-          continue
-        }
-
-        // Exit immediately — case is now waiting for human.
-        const waitMsg = 'A specialist from our team is now reviewing your case. You can continue to send messages here — I will relay any updates as soon as the review is complete.'
-        sendEvent({
-          type: 'text_delta',
-          data: waitMsg,
-          timestamp: new Date().toISOString(),
-        })
-        sendEvent({
-          type: 'message_stop',
-          data: { reason: 'waiting_human', stage: this.currentStage },
-          timestamp: new Date().toISOString(),
-        })
-        await this.writeProfilerSnapshot()
-        return {
-          messages: this.messages,
-          caseStatus: 'waiting_human',
-          transition: 'waiting_human',
-          currentStage: this.currentStage,
-          reason: 'human_task_created',
-        }
-      }
-
-      // ── Terminal tool: finalize_case ─────────────────────────
-      const finalizeResult = toolResults.find(
-        (r) => r.name === 'finalize_case',
-      )
-      if (finalizeResult) {
-        // Mandatory human review check — if case type requires human sign-off,
-        // block finalize unless a human task was resolved.
-        if (this.deps.caseSchema?.requireHumanReview && !this.caseMemory.getSkillsCalled().includes('create_human_task')) {
-          const blockedMsg = '[POLICY] This case type requires human review before finalizing. Call create_human_task to escalate to a human specialist.'
-          await this.traceWriter.write('policy_hit', 'Finalize blocked: mandatory human review required', {})
-          sendEvent({
-            type: 'policy_blocked',
-            data: { toolName: 'finalize_case', policyNames: ['mandatory_human_review'] },
-            timestamp: new Date().toISOString(),
-          })
-          this.messages.push(this.makeUserMessage(blockedMsg))
-          continue
-        }
-
-        const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
-        const preFinalizeEval = await this.policyEngine.evaluate('preFinalize', {
-          skillName: 'finalize_case',
-          skillOutput: finalizedPayload,
-          confirmedFacts: this.caseMemory.getConfirmedFacts(),
-          skillsCalled: this.caseMemory.getSkillsCalled(),
-          skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
-        }, buildHitCounts())
-
-        if (preFinalizeEval.summary === 'blocked' || preFinalizeEval.summary === 'escalated') {
-          // Record policy hit for graduated response
-          for (const r of preFinalizeEval.results) {
-            if (r.result !== 'pass') this.caseMemory.recordPolicyHit(r.policyName)
-          }
-          await this.traceWriter.write(
-            'policy_hit',
-            'Finalize blocked',
-            preFinalizeEval as unknown as Record<string, unknown>,
-          )
-          sendEvent({
-            type: 'error',
-            data: `Finalize blocked by policy: ${preFinalizeEval.results.filter((r) => r.result === 'blocked').map((r) => r.policyName).join(', ')}`,
-            timestamp: new Date().toISOString(),
-          })
-          // Inject feedback so the agent knows what to fix
-          if (preFinalizeEval.feedbackMessage) {
-            this.messages.push(this.makeUserMessage(preFinalizeEval.feedbackMessage))
-          }
-          continue // Keep looping
-        }
-
-        // Trace already written via traceWriter.write above (DB persistence handled internally)
-        await this.traceWriter.writeFinalResolution('resolved', JSON.stringify(finalizedPayload))
-
-        // Persist case status to DB
-        try {
-          await prisma.case.update({
-            where: { id: this.deps.caseId },
-            data: { status: 'resolved', resolvedAt: new Date(), blocker: null },
-          })
-        } catch (err) {
-          console.error('[AgentLoop] Failed to persist case resolution:', err)
-        }
-
-        sendEvent({
-          type: 'finalized',
-          data: finalizedPayload,
-          timestamp: new Date().toISOString(),
-        })
-        await this.writeProfilerSnapshot()
-        return {
-          messages: this.messages,
-          caseStatus: 'resolved',
-          transition: 'resolved',
-          currentStage: this.currentStage,
-        }
-      }
-
-      // ── Terminal tool: finalize_consultation (human chat) ────
-      const consultResult = toolResults.find(
-        (r) => r.name === 'finalize_consultation',
-      )
-      if (consultResult) {
-        const output = unwrapToolExecutionPayload(consultResult.output) as Record<string, unknown> | undefined
-        const summary = String(output?.summary || 'Your case has been reviewed by our specialist.')
-        const resolution = String(output?.resolution || 'resolved')
-
-        await this.traceWriter.write('final_resolution', `Consultation complete: ${resolution}`, output ?? {})
-
-        try {
-          await prisma.case.update({
-            where: { id: this.deps.caseId },
-            data: { status: 'investigating', blocker: null },
-          })
-          await prisma.humanTask.updateMany({
-            where: { caseId: this.deps.caseId, status: 'in_progress' },
-            data: { status: 'resolved', verdict: resolution, notes: summary },
-          })
-        } catch (err) {
-          console.error('[AgentLoop] Failed to finalize consultation:', err)
-        }
-
-        sendEvent({
-          type: 'consultation_complete',
-          data: { summary, resolution },
-          timestamp: new Date().toISOString(),
-        })
-        await this.writeProfilerSnapshot()
-        return {
-          messages: this.messages,
-          caseStatus: 'investigating',
-          transition: 'consultation_complete',
-          currentStage: this.currentStage,
-        }
-      }
-
-      // ── Tools executed, no terminal action — evaluate stage transition ──
-      if (this.stageExecutor && this.stageExecutor.hasStageConfigs()) {
-        let transitionEval: TransitionEval
-        try {
-          transitionEval = await this.stageExecutor.evaluateTransition(
-            this.currentStage,
-            this.iterationCount,
-          )
-        } catch (err) {
-          console.error('[AgentLoop] Stage evaluation (post-tools) failed:', err)
-          transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
-        }
-        if (transitionEval.modelUsed) {
-          await this.traceWriter.write('stage_eval', `Stage eval (post-tools): ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
-        }
-        await this.applyStageTransitionFromEval(transitionEval, sendEvent)
+      // ── Phase 2: Delegate case terminal tools to CaseAgentLoop ─────────────
+      // Handles: create_human_task, finalize_case, finalize_consultation, stage transition.
+      // The nudgeCount is boxed so CaseAgentLoop can reset it on stage transition.
+      if (this.caseLoop) {
+        const nudgeBox = { value: this.nudgeCount }
+        const caseToolResult = await this.caseLoop.handleCaseTerminalTools(
+          toolResults,
+          this.iterationCount,
+          nudgeBox,
+          sendEvent,
+        )
+        this.nudgeCount = nudgeBox.value
+        if (caseToolResult.type === 'terminal') return caseToolResult.result
+        if (caseToolResult.type === 'continue') continue
       }
 
       sendEvent({
@@ -1438,97 +1127,6 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
-
-  /** Apply evaluator-approved stage transition; returns true if stage changed. */
-  private async applyStageTransitionFromEval(
-    transitionEval: TransitionEval,
-    sendEvent: (event: SSEEvent) => void,
-  ): Promise<boolean> {
-    if (
-      !this.stageExecutor ||
-      !this.deps.caseSchema ||
-      !transitionEval.shouldTransition ||
-      !transitionEval.nextStage
-    ) {
-      return false
-    }
-
-    const next = transitionEval.nextStage
-    if (!this.deps.caseSchema.stages.includes(next)) {
-      console.warn('[AgentLoop] Ignoring evaluator nextStage not in schema:', next)
-      return false
-    }
-
-    const prevStage = this.currentStage
-    if (next === prevStage) return false
-
-    this.currentStage = next
-    this.caseMemory.setCaseStatus(next)
-    this.nudgeCount = 0
-    this.caseMemory.resetPolicyHits()
-    this.stageExecutor.resetEvalParseFailures()
-
-    await this.traceWriter.write('loop_decision', 'Stage transition', {
-      from: prevStage,
-      to: this.currentStage,
-      reason: transitionEval.reason,
-    })
-
-    sendEvent({
-      type: 'case_status',
-      data: {
-        stage: this.currentStage,
-        previousStage: prevStage,
-        reason: transitionEval.reason,
-      },
-      timestamp: new Date().toISOString(),
-    })
-
-    this.policyEngine.clearStageGuardrails()
-    const stageGuardrails = this.stageExecutor.getStageGuardrails(this.currentStage)
-    if (stageGuardrails.length > 0) {
-      this.policyEngine.loadStageGuardrails(stageGuardrails)
-    }
-
-    if (this.orchestrator?.isEnabled()) {
-      const stageCfg = this.stageExecutor.getStageConfig(this.currentStage)
-      if (stageCfg?.subAgents?.length) {
-        try {
-          const mem = this.caseMemory.getSummary()
-          const tasks = await this.orchestrator.planInvestigation(
-            this.currentStage,
-            stageCfg.subAgents,
-            mem as any,
-            stageCfg.description || this.currentStage,
-          )
-          if (tasks.length > 0) {
-            const results = await this.orchestrator.dispatch(tasks, sendEvent)
-            this.orchestrator.mergeResults(
-              results,
-              mem.confirmedFacts as Record<string, unknown>,
-              mem.skillResults as Record<string, unknown>,
-              mem.keyEvents as Array<{ at: string; text: string; source: string }>,
-            )
-            // Inject sub-agent output as user-visible context for the main agent
-            for (const r of results) {
-              this.messages.push(this.makeUserMessage(
-                OrchestratorAgent.toContextMessage(r),
-              ))
-            }
-            await this.traceWriter.write('loop_decision', 'Sub-agents dispatched', {
-              stage: this.currentStage,
-              subAgents: results.map((r) => r.agentName),
-            })
-          }
-        } catch (err) {
-          console.error('[AgentLoop] Sub-agent dispatch failed:', err)
-        }
-      }
-    }
-
-    return true
-  }
-
 
   private buildApiMessages() {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
@@ -1665,6 +1263,114 @@ export class AgentLoop {
     }
   }
 
+  /**
+   * ReAct compliance check — runs when the model produces a text-only turn
+   * (no tool calls). Uses a cheap LLM to decide whether the response is a
+   * legitimate end-of-turn or the model is "describing instead of doing."
+   *
+   * Returns "nudge" when the assistant text implies action is needed
+   * (investigation, escalation, verification, external help) but no tool
+   * was called to perform it. Returns "pass" for genuine clarifications,
+   * resolutions, or conversational turns.
+   */
+  private async evaluateReactCompliance(assistantText: string): Promise<'pass' | 'nudge'> {
+    const mem = this.caseMemory.getSummary()
+    const skillsAvailable = this.skillRouter
+      .getToolDefinitions()
+      .map((s) => `${s.name}: ${s.description}`)
+      .join('\n')
+
+    const decideTool: Tool = {
+      name: 'decide_action',
+      description: 'Record whether the assistant response is a valid end-of-turn or needs a nudge.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          decision: {
+            type: 'string' as const,
+            enum: ['pass', 'nudge'],
+            description:
+              '"pass" — the response asks a clarifying question, delivers a final resolution, ' +
+              'provides requested information, or is a natural conversational turn. ' +
+              '"nudge" — the response describes a problem, expresses uncertainty, ' +
+              'indicates something needs to happen (check, verify, review, escalate, wait for external help), ' +
+              'or implies action is required, but no tool was called to perform that action.',
+          },
+          reason: { type: 'string' as const, description: 'Brief explanation of the decision.' },
+        },
+        required: ['decision', 'reason'],
+      },
+    }
+
+    const evalModel =
+      this.deps.config.evaluationModel || this.deps.config.model
+
+    // Surface sub-agent findings — these often trigger verbal escalations
+    // (the model sees the conflict, then describes escalation instead of acting).
+    const subAgentFindings = Object.entries(mem.skillResults as Record<string, unknown>)
+      .filter(([k]) => k.startsWith('subagent:'))
+      .map(([k, v]) => `${k}: ${JSON.stringify(v).slice(0, 300)}`)
+      .join('\n') || '(none)'
+
+    try {
+      const msg = await this.anthropicClient.messages.create({
+        model: evalModel,
+        max_tokens: 128,
+        temperature: 0,
+        system:
+          'You are a ReAct compliance checker for a customer-service agent. ' +
+          'Decide whether an assistant text-only response is a legitimate end-of-turn ' +
+          'or whether the assistant is "describing instead of doing."',
+        tools: [decideTool],
+        messages: [
+          {
+            role: 'user',
+            content: [
+              'Decide: pass or nudge.',
+              '',
+              'NUDGE when ANY of these hold:',
+              '  • The assistant says it WILL do something concrete (核查/核实/查询/确认/' +
+              '提交/转交/升级/escalate/check/verify/look up) but did not call the matching tool.',
+              '  • The assistant mentions handing the case to a human/specialist (人工/客服/' +
+              'specialist/human) but did not call create_human_task.',
+              '  • The assistant describes a problem (conflict / mismatch / missing data) that ' +
+              'a tool can resolve, but did not call that tool.',
+              '  • The assistant promises future work ("我会..." / "let me...") without doing it now.',
+              '',
+              'PASS when:',
+              '  • The response is a complete final answer for the user.',
+              '  • The response asks the user a clarifying question.',
+              '  • The response confirms a resolution that has already been performed.',
+              '  • The response is conversational (greeting/thanks/acknowledgement) with no implied action.',
+              '',
+              'Available tools (consider which tool the assistant SHOULD have called):',
+              skillsAvailable,
+              '',
+              'Skills already called this turn: ' + JSON.stringify(mem.skillsCalled),
+              'Sub-agent findings (often the trigger for verbal escalation):',
+              subAgentFindings,
+              '',
+              'Assistant response:',
+              assistantText.slice(0, 1500),
+            ].join('\n'),
+          },
+        ],
+      })
+
+      for (const block of msg.content) {
+        if (block.type === 'tool_use') {
+          const input = (block as any).input as Record<string, unknown> | undefined
+          if (input?.decision === 'nudge') return 'nudge'
+          return 'pass'
+        }
+      }
+      return 'pass'
+    } catch (err) {
+      console.warn('[AgentLoop] ReAct compliance check failed, defaulting to pass:', err)
+      return 'pass'
+    }
+  }
+
   /** Run LLM-driven compaction with fallback to programmatic summary. */
   private async performCompaction(): Promise<void> {
     this.profiler.incrementCompaction()
@@ -1717,10 +1423,6 @@ export class AgentLoop {
 
   loadMemory(data: Parameters<CaseMemoryManager['loadFromDb']>[0]) {
     this.caseMemory.loadFromDb(data)
-    // Re-sync currentStage from restored memory so StageExecutor picks up
-    // the persisted stage instead of defaulting to the first schema stage.
-    if (this.stageExecutor) {
-      this.currentStage = this.stageExecutor.getCurrentStage()
-    }
+    this.caseLoop?.syncStage()
   }
 }

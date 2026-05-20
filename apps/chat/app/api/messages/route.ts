@@ -21,6 +21,8 @@ if (AUTH_SET && URL_SET) {
 
 import {
   DEFAULT_SYSTEM_PROMPT,
+  CORE_SYSTEM_PROMPT,
+  CASE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
   DEFAULT_POLICY_HOOKS,
   HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
@@ -372,8 +374,11 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        // ── System prompt ──
-        let systemPrompt = DEFAULT_SYSTEM_PROMPT
+        // ── System prompts (Core + Case) ──
+        // Core prompt — used when no case is active (discovery mode).
+        // Case prompt — used when a case exists (stage-driven execution).
+        let coreSystemPrompt: string = CORE_SYSTEM_PROMPT
+        let systemPrompt: string = CASE_SYSTEM_PROMPT
 
         // Stream progress immediately so the user sees movement (CC pattern)
         sendEvent({ type: 'stream_request_start', data: null, timestamp: new Date().toISOString() })
@@ -638,6 +643,14 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        const agentConfig = await loadAgentConfig(resolvedCustomerId)
+
+        // Use DB-custom systemPrompt as Case prompt base if configured
+        if (agentConfig.systemPrompt && agentConfig.systemPrompt !== DEFAULT_SYSTEM_PROMPT) {
+          systemPrompt = agentConfig.systemPrompt
+        }
+
+        // Build shared prompt context
         const promptCtx = await buildPromptContext({
           customerId: resolvedCustomerId,
           caseSchema: caseSchema ? {
@@ -650,9 +663,10 @@ export async function POST(request: NextRequest) {
           caseState: resolvedCaseState,
           sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
         })
-        systemPrompt = resolvePrompt(systemPrompt, promptCtx)
 
-        const agentConfig = await loadAgentConfig(resolvedCustomerId)
+        // Resolve both prompts — Core (discovery) and Case (execution)
+        coreSystemPrompt = resolvePrompt(coreSystemPrompt, promptCtx)
+        systemPrompt = resolvePrompt(systemPrompt, promptCtx)
 
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
@@ -660,6 +674,7 @@ export async function POST(request: NextRequest) {
           customerId: resolvedCustomerId,
           userId: resolvedUserId,
           systemPrompt,
+          coreSystemPrompt,
           caseSchema,
           chatId: chatId ?? null,
           bootstrapNewCase,
