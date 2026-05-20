@@ -3,13 +3,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
-  pickRandomEyebrow,
   pickRandomGeneralLine,
   pickRandomToolVerb,
   pickCaptionFromSkillsCalled,
 } from '@/lib/spinner-verbs'
-import OrganicLoader from '@intera/shared/ui/organic-loader'
-import type { SpinnerIcon } from '@intera/shared/types'
+import OrganicLoader, { ORGANIC_LOADER_COUNT } from '@intera/shared/ui/organic-loader'
 
 function pickStatusLine(opts: {
   executingToolName?: string | null
@@ -31,6 +29,10 @@ function pickStatusLine(opts: {
   return pickRandomGeneralLine(previous)
 }
 
+function randomVariant(): number {
+  return Math.floor(Math.random() * ORGANIC_LOADER_COUNT) + 1
+}
+
 export default function RespondingBubble({
   isVisible,
   coreAgentTask,
@@ -46,6 +48,10 @@ export default function RespondingBubble({
   const lineRef = useRef(line)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Pick a fresh random loader variant each time the bubble becomes visible.
+  // Stored in state so it stays stable for the duration of a single response.
+  const [loaderVariant, setLoaderVariant] = useState<number>(randomVariant)
+
   useEffect(() => {
     lineRef.current = line
   }, [line])
@@ -58,6 +64,9 @@ export default function RespondingBubble({
       }
       return
     }
+
+    // New response starting — roll a new loader so it feels fresh every time.
+    setLoaderVariant(randomVariant())
 
     const tick = () => {
       setLine((prev) => {
@@ -92,9 +101,9 @@ export default function RespondingBubble({
           transition={{ duration: 0.2 }}
         >
           <div className="glass-chat-assistant flex items-center gap-3 w-full max-w-[min(100%,34rem)] px-4 py-3 rounded-xl">
-            {/* Organic loader — icon type derived from current state */}
+            {/* Random organic loader — re-rolled on each new response */}
             <OrganicLoader
-              icon={executingToolName ? 'scan' : 'dots'}
+              variant={loaderVariant}
               size={20}
               className="text-indigo/60 shrink-0"
             />
