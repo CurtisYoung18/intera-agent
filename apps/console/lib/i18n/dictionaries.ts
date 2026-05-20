@@ -5,6 +5,7 @@ export const en: Record<string, string> = {
   // ── Sidebar & shell ─────────────────────────────────────────
   'sidebar.ops': 'Operations',
   'sidebar.admin': 'Administration',
+  'sidebar.chats': 'Chats',
   'sidebar.humanTasks': 'Human Tasks',
   'sidebar.cases': 'Cases',
   'sidebar.agentConfig': 'Agent Config',
@@ -963,6 +964,7 @@ export const en: Record<string, string> = {
 export const zh: Record<string, string> = {
   'sidebar.ops': '运营',
   'sidebar.admin': '管理',
+  'sidebar.chats': '对话',
   'sidebar.humanTasks': '人工任务',
   'sidebar.cases': '案例',
   'sidebar.agentConfig': 'Agent 配置',

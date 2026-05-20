@@ -193,6 +193,9 @@ model Case {
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   userId     String
+  /// Groups all cases that belong to the same chat session.
+  /// Generated once per page-load by the frontend and forwarded with every message.
+  chatId     String?
 
   type    String
   status  String @default("created")
@@ -208,6 +211,7 @@ model Case {
   traces     ActionTrace[]
   humanTasks HumanTask[]
 
+  @@index([chatId])
   @@map("cases")
 }
 

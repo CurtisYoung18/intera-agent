@@ -48,6 +48,8 @@ export interface AgentLoopDeps {
   userId: string
   systemPrompt: string
   caseSchema?: CaseSchemaConfig | null
+  /** Groups all cases in the same chat session — stored on Case.chatId. */
+  chatId?: string | null
   /** When true, the case was created from an intent selection card.
    *  propose_cases is removed from available tools to prevent re-triggering. */
   bootstrapNewCase?: boolean
@@ -346,9 +348,15 @@ export class AgentLoop {
       const toolExecutor = new StreamingToolExecutor(
         this.skillRouter.getToolDefinitions(),
         (toolUse, status) => {
+          const skillDef = this.skillRouter.getSkill(toolUse.name)
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'skill_result',
-            data: { name: toolUse.name, status, result: status !== 'executing' ? toolUse.result : undefined },
+            data: {
+              name: toolUse.name,
+              status,
+              result: status !== 'executing' ? toolUse.result : undefined,
+              displayVerb: status === 'executing' ? skillDef?.displayVerb : undefined,
+            },
             timestamp: new Date().toISOString(),
           })
         },
@@ -987,6 +995,7 @@ export class AgentLoop {
                   userId: this.deps.userId,
                   type: caseType,
                   status: 'created',
+                  chatId: this.deps.chatId ?? null,
                 },
               })
 

@@ -75,6 +75,9 @@ export interface ToolResult {
   latencyMs: number
 }
 
+/** Spinner icon type used in the chat UI loading indicator. */
+export type SpinnerIcon = 'dots' | 'pulse' | 'spin' | 'scan'
+
 export interface SkillDefinition {
   name: string
   description: string
@@ -89,6 +92,9 @@ export interface SkillDefinition {
   mockFixture?: unknown
   isConcurrencySafe: boolean
   enabled: boolean
+  /** Customer-visible label shown in the chat spinner while this skill is executing.
+   *  When absent, the skill name is formatted and used as a fallback. */
+  displayVerb?: { text: string; icon: SpinnerIcon }
   // Zod validation — catches type errors at runtime, feeds back to LLM for correction
   // Pattern from Claude Code: tool.inputSchema.safeParse(input)
   zodSchema?: import('zod').ZodType

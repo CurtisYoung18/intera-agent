@@ -86,6 +86,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Looking up past cases', icon: 'scan' },
     zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
     mockFixture: { cases: [], total: 0 },
   },
@@ -102,6 +103,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Checking order status', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string() }),
     // [MOCK] mockFixture is used when mode=mock
     mockFixture: {
@@ -125,6 +127,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string(), channel: z.string().optional() }),
     // [MOCK]
     mockFixture: {
@@ -145,6 +148,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
     zodSchema: z.object({ query: z.string().optional() }),
     // [MOCK]
     mockFixture: { notices: [] },
@@ -165,6 +169,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Reading your receipt', icon: 'spin' },
     zodSchema: z.object({ attachmentId: z.string() }),
     // [MOCK]
     mockFixture: {
@@ -229,6 +234,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       })).optional(),
       context: z.object({}).optional(),
     }),
+    displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
     // [MOCK]
     mockFixture: { taskId: 'htask_mock_001', status: 'pending' },
   },
@@ -255,6 +261,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
     zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
     // [MOCK]
     mockFixture: {
@@ -280,6 +287,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
     zodSchema: z.object({ query: z.string(), topK: z.number().optional() }),
     // [MOCK]
     mockFixture: { results: [], sources: [] },
@@ -335,6 +343,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
     zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file","date"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
     // [MOCK] — form is rendered by the Chat UI, not executed here
     mockFixture: { status: 'form_displayed' },

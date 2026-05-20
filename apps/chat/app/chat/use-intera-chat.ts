@@ -283,6 +283,9 @@ export function useInteraChat(): UseInteraChatReturn {
   const [composerAssistMissingDeepseekKey, setComposerAssistMissingDeepseekKey] = useState(false)
   const [composerMinDraftChars, setComposerMinDraftChars] = useState(4)
 
+  // Stable chat session ID — generated once per page-load, shared by all cases in this conversation.
+  const chatIdRef = useRef<string>(crypto.randomUUID())
+
   useEffect(() => {
     setSession(readSessionFromUrl())
   }, [])
@@ -705,9 +708,10 @@ export function useInteraChat(): UseInteraChatReturn {
           setAgentStatus('executing')
           lane.activeToolCount++
           lane.textMsgId = null
-          const td = event.data as { name: string }
+          const td = event.data as { name: string; displayVerb?: { text: string; icon: string } }
           hooks?.onStreamingTool?.(td.name)
-          const toolVerb = pickToolVerb(td.name)
+          // Prefer displayVerb sent by the server (defined on the skill); fall back to local lookup
+          const toolVerb = td.displayVerb ?? pickToolVerb(td.name)
           const cid = lane.caseId
           if (cid) {
             setCases((prev) =>
@@ -1068,6 +1072,7 @@ export function useInteraChat(): UseInteraChatReturn {
             customerId: session.customerId,
             userId: effectiveUserId,
             userLabel: selectedUserLabel,
+            chatId: chatIdRef.current,
             caseId: actualCaseIdRef.current,
             ...(selectedCaseTypeRef.current
               ? { caseType: selectedCaseTypeRef.current, skipClassification: true }
@@ -1170,7 +1175,8 @@ export function useInteraChat(): UseInteraChatReturn {
                   message: userText,
                   customerId: session.customerId,
                   userId: effectiveUserId,
-            userLabel: selectedUserLabel,
+                  userLabel: selectedUserLabel,
+                  chatId: chatIdRef.current,
                   classification,
                   caseType,
                   skipClassification: true,

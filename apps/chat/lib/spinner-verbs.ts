@@ -75,48 +75,10 @@ export function pickRandomGeneralLine(exclude?: string): string {
   return pick
 }
 
-// Tool-specific verb variants — random pick shows what the agent is doing
-const TOOL_VERB_VARIANTS: Record<string, SpinnerVerb[]> = {
-  request_user_input: [
-    { text: 'Setting up what we need from you', icon: 'pulse' },
-    { text: 'Preparing your information form', icon: 'pulse' },
-    { text: 'Collecting details in a quick form', icon: 'dots' },
-  ],
-  query_order_status: [
-    { text: 'Checking order status', icon: 'scan' },
-    { text: 'Looking up your order in the system', icon: 'scan' },
-    { text: 'Pulling order records', icon: 'scan' },
-  ],
-  query_payment_channel_status: [
-    { text: 'Verifying payment channel', icon: 'scan' },
-    { text: 'Checking how the payment cleared', icon: 'scan' },
-    { text: 'Tracing the payment route', icon: 'pulse' },
-  ],
-  search_delay_notice: [
-    { text: 'Searching for platform notices', icon: 'scan' },
-    { text: 'Checking official delay announcements', icon: 'dots' },
-  ],
-  ocr_receipt: [
-    { text: 'Reading your screenshot', icon: 'spin' },
-    { text: 'Extracting text from your image', icon: 'spin' },
-  ],
-  read_case_history: [
-    { text: 'Looking up past cases', icon: 'scan' },
-    { text: 'Checking prior tickets for you', icon: 'scan' },
-  ],
-  kb_hybrid_retrieve: [
-    { text: 'Searching knowledge base', icon: 'dots' },
-    { text: 'Finding policy answers for you', icon: 'dots' },
-  ],
-  create_human_task: [
-    { text: 'Escalating to a specialist', icon: 'pulse' },
-    { text: 'Routing this to human support', icon: 'pulse' },
-  ],
-  finalize_case: [
-    { text: 'Wrapping up your case', icon: 'spin' },
-    { text: 'Closing out your ticket', icon: 'spin' },
-  ],
-}
+// TOOL_VERB_VARIANTS removed — display text is now defined on each SkillDefinition
+// as `displayVerb` and forwarded by the server in the `tool_executing` SSE event.
+// The pickRandomToolVerb function below is kept only as a fallback for cases where
+// the server does not send displayVerb (e.g. very old clients, unregistered tools).
 
 const DEFAULT_EXECUTING_VARIANTS: SpinnerVerb[] = [
   { text: 'Working on your request', icon: 'spin' },
@@ -142,14 +104,11 @@ export function pickThinkingVerb(previousIndex?: number): { verb: SpinnerVerb; i
   return { verb: THINKING_VERBS[index]!, index }
 }
 
-/** Random phrase for a skill/tool name (falls back to formatted tool name). */
+/**
+ * Fallback verb for a tool name when no server-provided displayVerb is available.
+ * Prefers a human-readable formatted tool name over the generic placeholder.
+ */
 export function pickRandomToolVerb(toolName?: string): SpinnerVerb {
-  if (toolName && TOOL_VERB_VARIANTS[toolName]?.length) {
-    const arr = TOOL_VERB_VARIANTS[toolName]!
-    return arr[Math.floor(Math.random() * arr.length)]!
-  }
-  // For unknown (e.g. HTTP/DB) skills, format the tool name so it's readable
-  // instead of showing the generic "Working on your request" placeholder.
   if (toolName) {
     const readable = toolName
       .replace(/_/g, ' ')

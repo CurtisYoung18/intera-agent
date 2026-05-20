@@ -228,6 +228,7 @@ export async function POST(request: NextRequest) {
           customerId,
           userId,
           userLabel,
+          chatId,
           caseType: bodyCaseType,
           bootstrapNewCase: rawBootstrapNewCase,
         } = body
@@ -442,6 +443,7 @@ export async function POST(request: NextRequest) {
                 userId: resolvedUserId,
                 type: bodyCaseType,
                 status: 'created',
+                chatId: chatId ?? null,
               },
             })
             resolvedCaseId = newCase.id
@@ -659,6 +661,7 @@ export async function POST(request: NextRequest) {
           userId: resolvedUserId,
           systemPrompt,
           caseSchema,
+          chatId: chatId ?? null,
           bootstrapNewCase,
         })
 
