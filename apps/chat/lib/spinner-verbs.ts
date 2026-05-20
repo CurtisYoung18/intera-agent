@@ -142,11 +142,19 @@ export function pickThinkingVerb(previousIndex?: number): { verb: SpinnerVerb; i
   return { verb: THINKING_VERBS[index]!, index }
 }
 
-/** Random phrase for a skill/tool name (falls back to generic executing lines). */
+/** Random phrase for a skill/tool name (falls back to formatted tool name). */
 export function pickRandomToolVerb(toolName?: string): SpinnerVerb {
   if (toolName && TOOL_VERB_VARIANTS[toolName]?.length) {
     const arr = TOOL_VERB_VARIANTS[toolName]!
     return arr[Math.floor(Math.random() * arr.length)]!
+  }
+  // For unknown (e.g. HTTP/DB) skills, format the tool name so it's readable
+  // instead of showing the generic "Working on your request" placeholder.
+  if (toolName) {
+    const readable = toolName
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+    return { text: `Checking: ${readable}`, icon: 'scan' }
   }
   return DEFAULT_EXECUTING_VARIANTS[Math.floor(Math.random() * DEFAULT_EXECUTING_VARIANTS.length)]!
 }
