@@ -8,9 +8,9 @@ import {
   MessageSquare,
   Activity,
   Trash2,
-  Loader2,
   Sparkles,
 } from 'lucide-react'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -113,7 +113,7 @@ function CaseCard({
           title={t('cases.deleteTitle')}
           aria-label={t('cases.deleteTitle')}
         >
-          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+          {deleting ? <OrganicLoader icon="spin" size={14} className="text-vermillion" /> : <Trash2 className="h-3.5 w-3.5" />}
         </button>
       </div>
     </div>

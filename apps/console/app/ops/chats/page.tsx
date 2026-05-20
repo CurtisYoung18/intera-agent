@@ -9,7 +9,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
-  Loader2,
 } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
@@ -190,7 +189,7 @@ export default function ChatsPage() {
       </header>
 
       {loading ? (
-        <ListSkeleton rows={6} />
+        <ListSkeleton count={6} />
       ) : filtered.length === 0 ? (
         <div className="mx-auto max-w-md py-16">
           <EmptyState

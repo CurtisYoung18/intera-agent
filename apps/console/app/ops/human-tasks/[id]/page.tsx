@@ -7,7 +7,6 @@ import {
   Bot,
   CheckCircle2,
   ClipboardList,
-  Loader2,
   MessageSquare,
   Sparkles,
   Target,
@@ -16,6 +15,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -330,7 +330,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center px-6">
         <div className="flex flex-col items-center gap-4 rounded-2xl border border-black/[0.06] bg-[var(--surface)] px-10 py-12 shadow-[var(--shadow-card)]">
-          <Loader2 className="h-7 w-7 animate-spin text-indigo/50" aria-hidden />
+          <OrganicLoader icon="spin" size={32} className="text-indigo/50" />
           <p className="text-[13px] text-[var(--fog)]">{t('common.loading')}</p>
         </div>
       </div>
@@ -763,7 +763,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
                   disabled={!input.trim() || sending}
                   className="flex h-[48px] min-w-[104px] items-center justify-center rounded-xl bg-gradient-to-b from-indigo/[0.25] to-indigo/[0.14] px-5 text-[13px] font-semibold text-indigo shadow-sm ring-1 ring-indigo/20 transition-[transform,filter,opacity] hover:brightness-105 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 disabled:brightness-95"
                 >
-                  {sending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : t('common.send')}
+                  {sending ? <OrganicLoader icon="dots" size={20} className="text-indigo" /> : t('common.send')}
                 </button>
               </div>
             )}

@@ -8,6 +8,8 @@ import {
   pickRandomToolVerb,
   pickCaptionFromSkillsCalled,
 } from '@/lib/spinner-verbs'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
+import type { SpinnerIcon } from '@intera/shared/types'
 
 function pickStatusLine(opts: {
   executingToolName?: string | null
@@ -90,14 +92,12 @@ export default function RespondingBubble({
           transition={{ duration: 0.2 }}
         >
           <div className="glass-chat-assistant flex items-center gap-3 w-full max-w-[min(100%,34rem)] px-4 py-3 rounded-xl">
-            {/* Slim progress bar */}
-            <div className="relative h-0.5 flex-1 rounded-full bg-fog/[0.1] overflow-hidden">
-              <motion.div
-                className="absolute top-0 bottom-0 left-0 w-[30%] rounded-full bg-gradient-to-r from-indigo/30 via-indigo/55 to-indigo/30"
-                animate={{ x: ['-100%', '330%'] }}
-                transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
-              />
-            </div>
+            {/* Organic loader — icon type derived from current state */}
+            <OrganicLoader
+              icon={executingToolName ? 'scan' : 'dots'}
+              size={20}
+              className="text-indigo/60 shrink-0"
+            />
 
             {/* Status line */}
             <motion.span
@@ -105,7 +105,7 @@ export default function RespondingBubble({
               initial={{ opacity: 0.6 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.25 }}
-              className="shrink-0 font-sans leading-none text-fog/55 text-[12px]"
+              className="font-sans leading-none text-fog/55 text-[12px]"
             >
               {line}
             </motion.span>

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { Clock, MessageSquare, ChevronRight, History, Loader2, X } from 'lucide-react'
+import { Clock, MessageSquare, ChevronRight, History, X } from 'lucide-react'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
 
 interface CaseSummary {
   id: string
@@ -107,7 +108,7 @@ export default function CaseHistoryPanel({
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {loading && (
                 <div className="flex items-center justify-center py-8 text-fog/40">
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <OrganicLoader icon="spin" size={20} className="text-fog/40" />
                 </div>
               )}
               {error && <p className="text-[12px] text-vermillion/80 text-center py-4">{error}</p>}

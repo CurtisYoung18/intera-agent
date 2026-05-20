@@ -13,6 +13,7 @@ import {
   Clock,
   Tag,
 } from 'lucide-react'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -235,7 +236,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
       <main className="flex-1 overflow-y-auto rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/60 to-white/30 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
         {loading ? (
           <div className="flex h-48 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo/20 border-t-indigo" />
+            <OrganicLoader icon="spin" size={28} className="text-indigo/60" />
           </div>
         ) : rows.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center text-[var(--fog)]">

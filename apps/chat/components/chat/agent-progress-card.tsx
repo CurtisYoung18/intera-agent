@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { ChevronDown, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { ChevronDown, CheckCircle, AlertCircle } from 'lucide-react'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentFindingsView from './agent-findings-view'
 import type { DedicatedAgentState } from '@/app/chat/use-intera-chat'
 
@@ -40,7 +41,7 @@ export default function AgentProgressCard({ agent, caseLabel }: AgentProgressCar
         ) : isError ? (
           <AlertCircle className="w-3.5 h-3.5 text-red flex-shrink-0" />
         ) : (
-          <Loader2 className="w-3.5 h-3.5 text-indigo animate-spin flex-shrink-0" />
+          <OrganicLoader icon="spin" size={14} className="text-indigo" />
         )}
 
         {/* Name + detail */}
@@ -73,9 +74,9 @@ export default function AgentProgressCard({ agent, caseLabel }: AgentProgressCar
           </motion.div>
         )}
 
-        {/* Pulse animation for executing */}
+        {/* Organic pulse for executing */}
         {isExecuting && (
-          <div className="w-2 h-2 rounded-full bg-indigo animate-pulse flex-shrink-0" />
+          <OrganicLoader icon="pulse" size={10} className="text-indigo/70" />
         )}
       </button>
 
