@@ -7,12 +7,13 @@ import {
   Search,
   User,
   AlertCircle,
-  CheckCircle2,
   Clock,
+  Trash2,
 } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ExportButton from '@/components/ui/export-button'
+import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 interface CaseSummary {
@@ -64,62 +65,89 @@ function StatusDot({ status }: { status: string }) {
   )
 }
 
-function ChatCard({ session, search }: { session: ChatSession; search: string }) {
-  const activeCases = session.cases.filter(
-    (c) => c.status !== 'resolved' && c.status !== 'escalated',
-  )
-  const hasActive = activeCases.length > 0
+function ChatCard({
+  session,
+  search,
+  onDelete,
+  deleting,
+}: {
+  session: ChatSession
+  search: string
+  onDelete: (chatId: string) => void
+  deleting: boolean
+}) {
   const latestStatus = session.cases[0]?.status ?? 'created'
 
   return (
-    <Link
-      href={`/ops/chats/${encodeURIComponent(session.chatId)}`}
-      className="group/card block rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/70 via-white/45 to-white/25 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-[1px] hover:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.16)]"
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo/[0.08]">
-            <User className="h-3.5 w-3.5 text-indigo/70" />
+    <div className="group/card relative">
+      <Link
+        href={`/ops/chats/${encodeURIComponent(session.chatId)}`}
+        className="block rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/70 via-white/45 to-white/25 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-[1px] hover:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.16)]"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo/[0.08]">
+              <User className="h-3.5 w-3.5 text-indigo/70" />
+            </div>
+            <span className="truncate font-mono text-[11px] text-[var(--mist)] opacity-80">
+              {session.userId}
+            </span>
           </div>
-          <span className="truncate font-mono text-[11px] text-[var(--mist)] opacity-80">
-            {session.userId}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {session.hasHumanTask && (
+              <AlertCircle className="h-3.5 w-3.5 text-amber" />
+            )}
+            <StatusDot status={latestStatus} />
+          </div>
+        </div>
+
+        {/* Cases chips */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {session.cases.map((c) => (
+            <span
+              key={c.id}
+              className="inline-flex items-center gap-1 rounded-full border border-black/[0.05] bg-white/80 px-2 py-0.5 text-[10px] font-medium"
+              style={{ color: STATUS_COLOR[c.status] ?? '#a09888' }}
+            >
+              <StatusDot status={c.status} />
+              {c.type.replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="mt-3 flex items-center justify-between text-[10px] text-[var(--fog)]">
+          <span className="flex items-center gap-1">
+            <MessageSquare className="h-3 w-3" />
+            {session.messageCount} msgs · {session.cases.length} case{session.cases.length !== 1 ? 's' : ''}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {fmtRelative(session.lastActivity)}
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {session.hasHumanTask && (
-            <AlertCircle className="h-3.5 w-3.5 text-amber" />
-          )}
-          <StatusDot status={latestStatus} />
-        </div>
-      </div>
+      </Link>
 
-      {/* Cases chips */}
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {session.cases.map((c) => (
-          <span
-            key={c.id}
-            className="inline-flex items-center gap-1 rounded-full border border-black/[0.05] bg-white/80 px-2 py-0.5 text-[10px] font-medium"
-            style={{ color: STATUS_COLOR[c.status] ?? '#a09888' }}
-          >
-            <StatusDot status={c.status} />
-            {c.type.replace(/_/g, ' ')}
-          </span>
-        ))}
-      </div>
-
-      {/* Footer */}
-      <div className="mt-3 flex items-center justify-between text-[10px] text-[var(--fog)]">
-        <span className="flex items-center gap-1">
-          <MessageSquare className="h-3 w-3" />
-          {session.messageCount} msgs · {session.cases.length} case{session.cases.length !== 1 ? 's' : ''}
-        </span>
-        <span className="flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          {fmtRelative(session.lastActivity)}
-        </span>
-      </div>
-    </Link>
+      {/* Delete button — appears on card hover */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onDelete(session.chatId)
+        }}
+        disabled={deleting}
+        className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[var(--vermillion)]/40 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,color,background,border-color,transform] duration-200 hover:scale-[1.03] hover:border-[var(--vermillion)]/20 hover:bg-[var(--vermillion)]/[0.08] hover:text-[var(--vermillion)] group-hover/card:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vermillion)]/25 disabled:pointer-events-none disabled:opacity-40"
+        aria-label="Delete chat session"
+        title="Delete chat session"
+      >
+        {deleting
+          ? <OrganicLoader icon="spin" size={14} className="text-[var(--vermillion)]" />
+          : <Trash2 className="h-3.5 w-3.5" />
+        }
+      </button>
+    </div>
   )
 }
 
@@ -129,6 +157,7 @@ export default function ChatsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -150,6 +179,22 @@ export default function ChatsPage() {
     const id = setInterval(load, 15_000)
     return () => clearInterval(id)
   }, [load])
+
+  const handleDelete = useCallback(async (chatId: string) => {
+    const label = chatId.slice(0, 16) + '…'
+    if (!confirm(`Delete chat session ${label} and all its cases?\nThis cannot be undone.`)) return
+    setDeletingId(chatId)
+    try {
+      const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
+      if (!res.ok) { alert('Failed to delete — see console'); return }
+      setSessions((prev) => prev.filter((s) => s.chatId !== chatId))
+      setTotal((prev) => prev - 1)
+    } catch {
+      alert('Failed to delete — network error')
+    } finally {
+      setDeletingId(null)
+    }
+  }, [])
 
   const filtered = sessions.filter((s) => {
     if (!search) return true
@@ -218,7 +263,13 @@ export default function ChatsPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((s) => (
-            <ChatCard key={s.chatId} session={s} search={search} />
+            <ChatCard
+              key={s.chatId}
+              session={s}
+              search={search}
+              onDelete={handleDelete}
+              deleting={deletingId === s.chatId}
+            />
           ))}
         </div>
       )}

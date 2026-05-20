@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   Tag,
+  Trash2,
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
@@ -139,6 +140,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   const [session, setSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<MsgItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -193,6 +195,21 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
     rows.push({ type: 'msg', msg })
   }
 
+  async function handleDelete() {
+    if (!session) return
+    const label = decodedChatId.slice(0, 16) + '…'
+    if (!confirm(`Delete chat session ${label} and all ${session.cases.length} case(s)?\nThis cannot be undone.`)) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
+      if (!res.ok) { alert('Failed to delete — see console'); setDeleting(false); return }
+      router.push('/ops/chats')
+    } catch {
+      alert('Failed to delete — network error')
+      setDeleting(false)
+    }
+  }
+
   const headerTitle = session
     ? `Chat · ${session.userId}`
     : `Chat · ${decodedChatId.slice(0, 16)}…`
@@ -223,7 +240,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           </div>
         </div>
 
-        {/* Case pills + export */}
+        {/* Case pills + actions */}
         <div className="flex shrink-0 items-center gap-2">
           {session && (
             <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
@@ -233,24 +250,39 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
             </div>
           )}
           {!loading && session && (
-            <ExportButton
-              filename={`chat-${decodedChatId.slice(0, 8)}`}
-              label="Export chat as JSON"
-              getData={() => ({
-                _version: 'intera_console_chat_export_v1',
-                exportedAt: new Date().toISOString(),
-                session: {
-                  chatId: session.chatId,
-                  userId: session.userId,
-                  messageCount: session.messageCount,
-                  caseCount: session.cases.length,
-                  lastActivity: session.lastActivity,
-                  hasHumanTask: session.hasHumanTask,
-                },
-                cases: session.cases,
-                messages,
-              })}
-            />
+            <>
+              <ExportButton
+                filename={`chat-${decodedChatId.slice(0, 8)}`}
+                label="Export chat as JSON"
+                getData={() => ({
+                  _version: 'intera_console_chat_export_v1',
+                  exportedAt: new Date().toISOString(),
+                  session: {
+                    chatId: session.chatId,
+                    userId: session.userId,
+                    messageCount: session.messageCount,
+                    caseCount: session.cases.length,
+                    lastActivity: session.lastActivity,
+                    hasHumanTask: session.hasHumanTask,
+                  },
+                  cases: session.cases,
+                  messages,
+                })}
+              />
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Delete chat session"
+                aria-label="Delete chat session and all its cases"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-transparent text-[var(--fog)]/50 transition-all duration-200 hover:border-[var(--vermillion)]/25 hover:bg-[var(--vermillion)]/[0.07] hover:text-[var(--vermillion)] disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vermillion)]/25"
+              >
+                {deleting
+                  ? <OrganicLoader icon="spin" size={14} className="text-[var(--vermillion)]" />
+                  : <Trash2 className="h-3.5 w-3.5" />
+                }
+              </button>
+            </>
           )}
         </div>
       </header>
