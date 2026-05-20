@@ -480,8 +480,16 @@ export class PolicyEngine {
     const blocked = nonPass.some((r) => r.result === 'blocked')
 
     if (hook === 'preTool' && blocked) {
-      lines.push('→ This tool was NOT executed. Do not attempt to call it again.')
-      lines.push('→ Instead: explain the limitation to the customer, or call create_human_task to escalate.')
+      const isEscalationBlocked = nonPass.some(
+        (r) => r.policyName === 'investigate_before_escalation' && r.result === 'blocked',
+      )
+      if (isEscalationBlocked) {
+        lines.push('→ This tool was NOT executed.')
+        lines.push('→ Complete the required investigation first (call the listed skills above), then retry create_human_task once you have the results.')
+      } else {
+        lines.push('→ This tool was NOT executed. Address the policy requirement above before retrying.')
+        lines.push('→ If the issue cannot be resolved by tool calls, explain the limitation to the customer or call create_human_task to escalate.')
+      }
     } else if (hook === 'postTool' && escalated) {
       lines.push('→ Data contradiction detected. This case will be escalated to a human operator.')
     } else if (hook === 'postTool' && blocked) {

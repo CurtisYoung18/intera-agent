@@ -36,7 +36,9 @@ Some investigation stages dispatch parallel sub-agents. Their findings appear as
 
 ## Human handoff
 
-When system data contradicts the customer's report, call create_human_task. After the human resolves, translate their verdict into plain, friendly language for the customer.
+Call create_human_task **only after** investigation tools (query_order_status, query_payment_channel_status, get_account_status, get_kyc_status, etc.) have returned data that conflicts with the customer's report. Do not escalate based on preliminary lookups (e.g. get_latest_deposit) or your own inference alone — always complete the required investigation for the current stage first.
+
+After the human resolves the task, translate their verdict into plain, friendly language for the customer.
 
 ## Memory
 
@@ -567,7 +569,7 @@ Respond with JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: '向用户收集流水号、金额、渠道、时间等；用 request_user_input 表单一次收齐。表单字段 key 必须使用: txnId, amount, paymentMethod, date（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
+      description: '向用户收集流水号、金额、渠道、时间等；用 request_user_input 表单一次收齐。表单字段 key 必须使用: txnId, amount, paymentMethod, date（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.\n\nIMPORTANT: After the form is submitted and all facts are confirmed, do NOT call create_human_task or any investigation tool yet. The system will automatically advance to the investigating stage — wait for that transition before querying order or channel status.',
       requiredSkills: ['request_user_input'],
       availableSkills: ['request_user_input'],
       evidenceRequirements: [
@@ -580,7 +582,19 @@ Respond with JSON ONLY:
     },
     investigating: {
       name: 'investigating',
-      description: '调用订单与渠道技能核对平台记录。若发现数据矛盾需要客户补充信息（截图、时间、来源等），必须使用 request_user_input 表单收集，禁止纯文本提问。',
+      description: `使用 confirmedFacts 中的 txnId 调用订单与渠道技能核对平台记录。
+
+**调查顺序：**
+1. 调用 query_order_status（传入 confirmedFacts.txnId）和 query_payment_channel_status — 必须同一轮完成，不要分两轮调用。
+2. 如有必要可调用 read_case_history 查历史工单、search_delay_notice 查公告、kb_hybrid_retrieve 查知识库。
+
+**结果判断：**
+- query_order_status 返回的 txnId 与 confirmedFacts.txnId 不符（订单未找到或记录属于别的交易）→ 视为"订单查无此号"，直接调用 create_human_task，不要再问用户确认 txnId。
+- 订单状态、金额或渠道与用户报告冲突 → 直接调用 create_human_task。
+- 渠道有延迟批处理（delayed_batch: true）→ 告知预计到账时间，走 resolved。
+- 数据一致且订单已处理 → 走 resolved。
+
+若发现需要客户补充信息（截图等），必须用 request_user_input 表单收集，禁止纯文本提问。`,
       requiredSkills: ['query_order_status', 'query_payment_channel_status'],
       availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve', 'request_user_input'],
       evidenceRequirements: [
@@ -599,34 +613,15 @@ Respond with JSON ONLY:
           required: true,
         },
       ],
-      subAgents: [
-        {
-          name: 'transaction_verifier',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt: 'You are a transaction verification specialist. Verify the transaction status and payment channel status for the given case. Report findings as structured facts only — no speculation.',
-          skills: ['query_order_status', 'query_payment_channel_status'],
-          taskTemplate: 'Verify the transaction for case {{caseId}}. The stage goal is: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call query_order_status and query_payment_channel_status, then report findings.',
-          maxIterations: 3,
-          parallel: true,
-        },
-        {
-          name: 'history_reviewer',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt: 'You are a case history reviewer. Check if the customer has had similar issues before. Look for patterns in historical cases and knowledge base.',
-          skills: ['read_case_history', 'kb_hybrid_retrieve'],
-          taskTemplate: 'Review historical cases and knowledge base for patterns related to case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Look for similar past deposit issues.',
-          maxIterations: 2,
-          parallel: true,
-        },
-      ],
       transition: {
         type: 'evaluation',
         evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
 
-- If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative → call create_human_task to escalate to a human specialist.
-- If **txnId**, **amount**, or **paymentMethod** are missing from confirmedFacts → **collecting** (do not finalize investigation).
-- If evidence supports closure → **resolved**.
+- If query_order_status returned a record whose txnId differs from confirmedFacts.txnId, OR returned "not found" → treat as unresolvable conflict, nextStage stays investigating (agent should call create_human_task).
+- If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative (amount, channel, status mismatch) → agent should call create_human_task; stay in investigating.
+- If **txnId**, **amount**, or **paymentMethod** are missing from confirmedFacts → **collecting**.
+- If evidence supports closure (order confirmed, no conflict) → **resolved**.
 
 Respond JSON ONLY:
 {"shouldTransition": true/false, "nextStage": "collecting"|"investigating"|"resolved", "reason": "..."}`,

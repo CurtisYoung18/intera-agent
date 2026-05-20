@@ -429,8 +429,11 @@ export class SkillRouter {
     // Load DB skills (overlay on top of built-ins already loaded in constructor)
     try {
       const { prisma } = await import('@intera/shared/prisma')
+      // Load ALL DB skills (including disabled) so that enabled:false records
+      // properly shadow their built-in counterparts. Filtering only enabled:true
+      // would leave built-ins (always enabled:true) unaffected by console toggles.
       const dbSkills = await prisma.skill.findMany({
-        where: { customerId, enabled: true },
+        where: { customerId },
       })
 
       for (const s of dbSkills) {
