@@ -14,6 +14,7 @@ import CaseHistoryPanel from '@/components/chat/case-history-panel'
 import UserLoginScreen from '@/components/chat/user-login-screen'
 import type { TestUser } from '@/components/chat/user-login-screen'
 import UserPill from '@/components/chat/user-pill'
+import DebugExportButton from '@/components/chat/debug-export-button'
 import { useInteraChat } from './use-intera-chat'
 
 export default function ChatPage() {
@@ -36,6 +37,7 @@ export default function ChatPage() {
     onInteractionSelect,
     userId,
     customerId,
+    chatId,
     activeCaseId,
     loadHistoricalCase,
     composerAssistEnabled,
@@ -128,7 +130,17 @@ export default function ChatPage() {
           <UserPill label={currentUserLabel} onClick={handleSwitchUser} />
         </div>
         <StatusPill status={agentStatus} label="Intera AI" />
-        <div className="w-20 flex justify-end">
+        <div className="flex items-center justify-end gap-1.5 w-20 sm:w-auto">
+          <DebugExportButton
+            chatId={chatId}
+            userId={userId}
+            customerId={customerId}
+            messages={messages}
+            cases={cases}
+            dedicatedAgents={dedicatedAgents}
+            coreAgentProgress={coreAgentProgress}
+            agentStatus={agentStatus}
+          />
           <CaseHistoryPanel
             customerId={customerId}
             userId={userId}

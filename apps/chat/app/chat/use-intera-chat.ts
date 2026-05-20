@@ -131,6 +131,8 @@ export interface UseInteraChatReturn {
   coreAgentProgress: { stage: string; iteration: number; task: string; pendingSubAgents: string[] } | null
   splitMode: boolean
   streamingToolName: string | null
+  /** Stable UUID for this page-load session — matches chatId stored on Case rows. */
+  chatId: string
   submitMessage: (text: string) => Promise<void>
   switchCase: (index: number) => void
   dismissCase: (caseId: string) => void
@@ -1455,5 +1457,6 @@ export function useInteraChat(): UseInteraChatReturn {
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,
     composerMinDraftChars,
+    chatId: chatIdRef.current,
   }
 }
