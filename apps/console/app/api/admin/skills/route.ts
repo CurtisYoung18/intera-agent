@@ -36,6 +36,7 @@ export async function GET() {
             headers: s.headers ?? null,
             timeoutMs: s.timeoutMs ?? 8000,
             mockFixture: s.mockFixture ?? null,
+            displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
           },
         })
       }
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
         timeoutMs: body.timeoutMs ?? 8000,
         mockFixture: body.mockFixture ? (typeof body.mockFixture === 'string' ? body.mockFixture : JSON.stringify(body.mockFixture)) : null,
         guardPhase: body.guardPhase || 'post',
+        displayVerb: body.displayVerb ? (typeof body.displayVerb === 'string' ? body.displayVerb : JSON.stringify(body.displayVerb)) : null,
         isConcurrencySafe: body.isConcurrencySafe ?? true,
         enabled: body.enabled ?? true,
       },

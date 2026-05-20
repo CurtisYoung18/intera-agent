@@ -33,6 +33,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Creating your case', icon: 'dots' },
     zodSchema: z.object({ caseType: z.string() }),
     mockFixture: { caseId: 'case_mock_001', status: 'created' },
   },
@@ -63,6 +64,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Analyzing your issue', icon: 'dots' },
     zodSchema: z.object({
       cases: z.array(z.object({ caseType: z.string(), summary: z.string() })),
     }),
@@ -88,7 +90,32 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     enabled: true,
     displayVerb: { text: 'Looking up past cases', icon: 'scan' },
     zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
-    mockFixture: { cases: [], total: 0 },
+    mockFixture: {
+      cases: [
+        {
+          id: 'C2026-0482',
+          type: 'deposit_issue',
+          status: 'resolved',
+          summary: 'User deposited 2000 CNY via WeChat Pay, funds credited after 1.5 hour batch settlement delay',
+          resolvedAt: '2026-05-15T14:30:00Z',
+        },
+        {
+          id: 'C2026-0501',
+          type: 'deposit_issue',
+          status: 'resolved',
+          summary: 'User deposited 500 CNY via Alipay, transaction confirmed but balance not updated; traced to cached balance display issue, resolved by manual refresh',
+          resolvedAt: '2026-05-10T09:15:00Z',
+        },
+        {
+          id: 'C2026-0550',
+          type: 'withdrawal_issue',
+          status: 'resolved',
+          summary: 'User withdrawal of 3000 CNY delayed due to bank maintenance window, credited within 4 hours',
+          resolvedAt: '2026-05-20T16:45:00Z',
+        },
+      ],
+      total: 3,
+    },
   },
   {
     name: 'query_order_status',
@@ -105,12 +132,16 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     enabled: true,
     displayVerb: { text: 'Checking order status', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string() }),
-    // [MOCK] mockFixture is used when mode=mock
+    // [MOCK] realistic deposit scenario — Alipay 1000 CNY pending batch settlement
     mockFixture: {
+      txnId: 'TX2026051912345678',
       status: 'pending',
-      amount: 0,
-      time: new Date().toISOString(),
-      channel: 'unknown',
+      amount: 1000.0,
+      currency: 'CNY',
+      time: '2026-05-19T15:30:00.000Z',
+      channel: 'alipay',
+      paymentMethod: 'Alipay',
+      merchantRef: 'MCH20260519001',
     },
   },
   {
@@ -129,10 +160,13 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     enabled: true,
     displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string(), channel: z.string().optional() }),
-    // [MOCK]
+    // [MOCK] realistic Alipay channel — normal operation, no delays
     mockFixture: {
       delayed_batch: false,
-      channel: 'unknown',
+      channel: 'alipay',
+      channelStatus: 'normal',
+      lastSettlementAt: '2026-05-19T15:25:00.000Z',
+      currentLoad: 'low',
       reason: null,
     },
   },
@@ -150,8 +184,20 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     enabled: true,
     displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
     zodSchema: z.object({ query: z.string().optional() }),
-    // [MOCK]
-    mockFixture: { notices: [] },
+    // [MOCK] realistic delay notices — Alipay batch settlement schedule
+    mockFixture: {
+      notices: [
+        {
+          id: 'NOT20260510-001',
+          title: 'Alipay Batch Settlement Schedule',
+          channel: 'alipay',
+          severity: 'info',
+          content: 'Alipay deposits are processed in batches every 15-30 minutes during normal hours (00:00-02:00 UTC). During the 02:00-04:00 UTC maintenance window, settlement may be delayed up to 2 hours.',
+          publishedAt: '2026-05-10T00:00:00Z',
+          affectsDeposit: true,
+        },
+      ],
+    },
   },
   {
     name: 'ocr_receipt',
@@ -171,10 +217,17 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     enabled: true,
     displayVerb: { text: 'Reading your receipt', icon: 'spin' },
     zodSchema: z.object({ attachmentId: z.string() }),
-    // [MOCK]
+    // [MOCK] realistic receipt extraction — Alipay payment of 1000 CNY
     mockFixture: {
       success: true,
-      extracted: { amount: null, time: null, channel: null },
+      extracted: {
+        amount: 1000.0,
+        currency: 'CNY',
+        time: '2026-05-19T15:30:00.000Z',
+        channel: 'alipay',
+        merchantRef: 'MCH20260519001',
+        txnId: 'TX2026051912345678',
+      },
     },
   },
   {
@@ -289,8 +342,30 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     enabled: true,
     displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
     zodSchema: z.object({ query: z.string(), topK: z.number().optional() }),
-    // [MOCK]
-    mockFixture: { results: [], sources: [] },
+    // [MOCK] realistic KB articles about deposit delays and troubleshooting
+    mockFixture: {
+      results: [
+        {
+          title: 'Why is my deposit not showing in my balance?',
+          snippet: 'Deposits via third-party payment channels (Alipay, WeChat Pay) may take up to 2 hours to reflect due to batch settlement cycles. Check your payment provider app for the transaction receipt first. If your deposit still does not appear after 2 hours, please contact support with your transaction ID.',
+          source: 'help_center',
+          relevance: 0.92,
+        },
+        {
+          title: 'Common causes of balance discrepancies',
+          snippet: 'Balance discrepancies can occur due to: (1) pending batch settlements from payment providers — most common, resolves within 30 min to 2 hours; (2) cached balance display — try logging out and back in; (3) recent refunds or adjustments not yet reflected; (4) payment provider-side delays outside our control.',
+          source: 'faq',
+          relevance: 0.85,
+        },
+        {
+          title: 'How to verify your deposit status',
+          snippet: 'You can verify your deposit by: (1) checking the payment provider app (Alipay/WeChat) for the transaction receipt and exact transaction ID; (2) comparing the transaction ID with our system records via the transaction history page; (3) waiting up to 24 hours during peak periods or maintenance windows before escalating.',
+          source: 'help_center',
+          relevance: 0.78,
+        },
+      ],
+      sources: ['help_center/deposit-faq', 'faq/balance-issues', 'help_center/verify-deposit'],
+    },
   },
   {
     name: 'request_user_input',
@@ -362,6 +437,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Closing consultation', icon: 'spin' },
     zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
     mockFixture: { status: 'consultation_closed' },
   },
@@ -400,6 +476,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'mock',
     enabled: true,
+    displayVerb: { text: 'Asking you a question', icon: 'pulse' },
     zodSchema: z.object({
       title: z.string(),
       description: z.string().optional(),
@@ -457,6 +534,7 @@ export class SkillRouter {
           headers: s.headers ? JSON.parse(s.headers) : undefined,
           timeoutMs: s.timeoutMs,
           mockFixture: s.mockFixture ? JSON.parse(s.mockFixture) : undefined,
+          displayVerb: s.displayVerb ? JSON.parse(s.displayVerb) : undefined,
           isConcurrencySafe: s.isConcurrencySafe,
           enabled: s.enabled,
         })

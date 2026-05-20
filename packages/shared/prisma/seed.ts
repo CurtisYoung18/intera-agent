@@ -110,6 +110,11 @@ async function seed() {
         enabled: s.enabled,
         guardPhase: s.guardPhase,
         mockFixture: s.mockFixture ?? null,
+        endpoint: s.endpoint ?? null,
+        httpMethod: s.httpMethod ?? 'POST',
+        headers: s.headers ?? null,
+        timeoutMs: s.timeoutMs ?? 8000,
+        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
       },
       create: {
         customerId: CUSTOMER_ID,
@@ -122,6 +127,11 @@ async function seed() {
         enabled: s.enabled,
         guardPhase: s.guardPhase,
         mockFixture: s.mockFixture ?? null,
+        endpoint: s.endpoint ?? null,
+        httpMethod: s.httpMethod ?? 'POST',
+        headers: s.headers ?? null,
+        timeoutMs: s.timeoutMs ?? 8000,
+        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
       },
     })
   }

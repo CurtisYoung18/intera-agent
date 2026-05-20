@@ -707,10 +707,15 @@ export function useInteraChat(): UseInteraChatReturn {
         }
 
         case 'tool_executing': {
+          const td = event.data as { name: string; displayVerb?: { text: string; icon: string } }
+          // The orchestrator is internal coordination — sub_agent_start/complete
+          // events render the meaningful progress in the dedicated agents panel.
+          // Skip emitting a "tool_call" message for it so the chat doesn't show
+          // a confusing "Checking: Orchestrator { agentsRun: 2 }" chip.
+          if (td.name === 'orchestrator') break
           setAgentStatus('executing')
           lane.activeToolCount++
           lane.textMsgId = null
-          const td = event.data as { name: string; displayVerb?: { text: string; icon: string } }
           hooks?.onStreamingTool?.(td.name)
           // Prefer displayVerb sent by the server (defined on the skill); fall back to local lookup
           const toolVerb = td.displayVerb ?? pickToolVerb(td.name)
@@ -767,6 +772,9 @@ export function useInteraChat(): UseInteraChatReturn {
 
         case 'skill_result': {
           const sd = event.data as { name: string; status: string; result?: unknown }
+          // Mirror the tool_executing skip — orchestrator results are shown
+          // through sub-agent panels, not as chat tool chips.
+          if (sd.name === 'orchestrator') break
           const isError = sd.status === 'error'
           lane.activeToolCount = Math.max(0, lane.activeToolCount - 1)
           const tId = lane.toolMsgIds.get(sd.name)
