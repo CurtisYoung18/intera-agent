@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
+import ExportButton from '@/components/ui/export-button'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 interface CaseSummary {
@@ -177,14 +178,30 @@ export default function ChatsPage() {
             {total} session{total !== 1 ? 's' : ''} · {filtered.length} shown
           </p>
         </div>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--smoke)]" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by user, case type…"
-            className="glass-input-console w-full rounded-xl border-black/[0.06] bg-white/65 pl-11 text-[13px] shadow-[var(--shadow-input)] placeholder:text-[var(--fog)]/50"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--smoke)]" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by user, case type…"
+              className="glass-input-console w-full rounded-xl border-black/[0.06] bg-white/65 pl-11 text-[13px] shadow-[var(--shadow-input)] placeholder:text-[var(--fog)]/50"
+            />
+          </div>
+          {sessions.length > 0 && (
+            <ExportButton
+              filename="chats-list"
+              label="Export visible sessions as JSON"
+              getData={() => ({
+                _version: 'intera_console_chats_export_v1',
+                exportedAt: new Date().toISOString(),
+                filter: search || null,
+                total,
+                shown: filtered.length,
+                sessions: filtered,
+              })}
+            />
+          )}
         </div>
       </header>
 

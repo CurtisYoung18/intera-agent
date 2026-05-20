@@ -14,6 +14,7 @@ import {
   Tag,
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
+import ExportButton from '@/components/ui/export-button'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -222,14 +223,36 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           </div>
         </div>
 
-        {/* Case pills */}
-        {session && (
-          <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
-            {session.cases.map((c) => (
-              <CasePill key={c.id} caseItem={c} />
-            ))}
-          </div>
-        )}
+        {/* Case pills + export */}
+        <div className="flex shrink-0 items-center gap-2">
+          {session && (
+            <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
+              {session.cases.map((c) => (
+                <CasePill key={c.id} caseItem={c} />
+              ))}
+            </div>
+          )}
+          {!loading && session && (
+            <ExportButton
+              filename={`chat-${decodedChatId.slice(0, 8)}`}
+              label="Export chat as JSON"
+              getData={() => ({
+                _version: 'intera_console_chat_export_v1',
+                exportedAt: new Date().toISOString(),
+                session: {
+                  chatId: session.chatId,
+                  userId: session.userId,
+                  messageCount: session.messageCount,
+                  caseCount: session.cases.length,
+                  lastActivity: session.lastActivity,
+                  hasHumanTask: session.hasHumanTask,
+                },
+                cases: session.cases,
+                messages,
+              })}
+            />
+          )}
+        </div>
       </header>
 
       {/* Transcript */}
