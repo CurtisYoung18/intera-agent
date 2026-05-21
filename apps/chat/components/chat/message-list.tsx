@@ -116,7 +116,7 @@ export default function MessageList({
 
       {messages.map((msg, idx) => (
         <MessageBubble
-          key={msg.id}
+          key={msg.id ?? `msg-${idx}`}
           msg={msg}
           priorUserContent={priorUserContent(messages, idx)}
           elevateInteractiveForms={elevateInteractiveForms}

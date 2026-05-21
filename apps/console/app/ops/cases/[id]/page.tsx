@@ -339,8 +339,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           </h2>
           {messages.length > 0 ? (
             <div className="space-y-3">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {messages.map((msg, idx) => (
+                <div key={msg.id ?? `msg-${idx}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div
                     className={`max-w-[min(100%,420px)] rounded-2xl px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] ${
                       msg.role === 'user'

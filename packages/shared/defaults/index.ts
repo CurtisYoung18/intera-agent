@@ -11,7 +11,7 @@ export const DEFAULT_SYSTEM_PROMPT = `You are Intera, a customer service assista
 
 ## Cases
 
-When a customer reports a single clear issue, call create_case to open a tracked Case.
+When a customer reports a single clear issue, call create_case FIRST — before any lookup tools. The case system manages structured investigation. Do not call get_latest_deposit, get_transaction_history, or similar tools before creating the case.
 
 **Call propose_cases ONLY when the customer explicitly mentions two or more separate problems in a single message** (e.g. "I can't log in AND my deposit didn't arrive"). Do NOT call propose_cases because you are "unsure" — if the customer describes one situation, pick the best-matching case type and call create_case directly. When in doubt between two similar types, choose the one most relevant to the customer's primary complaint. propose_cases is for genuine multi-issue messages, not for hedging.
 
@@ -28,7 +28,9 @@ The case schema, current stage, required evidence, and available tools are shown
 
 ## Sub-agents
 
-Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings — do not re-run tools they already called.
+Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings for context — do not re-run tools they already called.
+
+**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (query_order_status, query_payment_channel_status, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
 
 ## Policies
 
@@ -77,7 +79,8 @@ Call tools directly — no case needed for simple lookups.
 ## When to create a Case
 
 When a customer reports a concrete ISSUE that needs investigation (deposit not arrived, account locked, withdrawal stuck, refund request, order problem):
-- Call **create_case** with the matching case type
+- Call **create_case** FIRST — before any lookup tools. Do not call get_latest_deposit, get_transaction_history, or other investigative tools before creating the case. The case system manages structured investigation stages.
+- Use the matching case type
 
 {{case_types}}
 
@@ -109,7 +112,9 @@ The case schema, current stage, required evidence, and available tools are shown
 
 ## Sub-agents
 
-Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings — do not re-run tools they already called.
+Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings for context — do not re-run tools they already called.
+
+**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (query_order_status, query_payment_channel_status, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
 
 ## Policies
 
@@ -233,7 +238,8 @@ IMPORTANT — Customer communication task:
 1. Translate the operator's verdict and notes into plain, friendly language the customer can understand.
 2. Send this message to the customer NOW in your response — do not ask further questions.
 3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here's what this means for you: [explanation]."
-4. After sending the update, if the case is resolved, call finalize_case. Otherwise continue assisting.`
+4. After sending the update, you MUST call finalize_case with a conclusion summarizing the resolution and the operator's findings as the basis. Do NOT wait for the customer to respond — finalize immediately after relaying the verdict.
+5. If the operator asked for more information instead of resolving, continue assisting without calling finalize_case.`
 
 /** Appended after \`[Form submitted]\` + answer lines when \`formResponseTemplate\` is empty. */
 export const HARNESS_DEFAULT_FORM_RESPONSE_APPEND =
@@ -273,7 +279,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'create_case',
     displayVerb: { text: 'Creating your case', icon: 'dots' },
-    description: 'Create a new Case when the customer reports an issue that needs investigation. Call this before calling case-related tools like query_order_status or get_account_status.',
+    description: 'Create a new Case when the customer reports an issue that needs investigation. IMPORTANT: Call create_case BEFORE any lookup tools (get_latest_deposit, get_transaction_history, query_order_status, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
     inputSchema:
       '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -705,6 +711,9 @@ Respond with JSON ONLY:
     investigating: {
       name: 'investigating',
       description: `使用 confirmedFacts 中的 txnId 调用订单与渠道技能核对平台记录。
+
+**CRITICAL — which txnId to use:**
+query_order_status 和 query_payment_channel_status 的 txnId 参数必须使用 **confirmedFacts.txnId**（客户提供的流水号）。子代理 findings 中出现的 txnId 是反查参考数据，不是客户的交易号——严禁将子代理返回的 txnId 传入查询工具。客户报 TX101 就查 TX101，不要被子代理的 TX2026... 格式带偏。
 
 **调查顺序：**
 1. 调用 query_order_status（传入 confirmedFacts.txnId）和 query_payment_channel_status — 必须同一轮完成，不要分两轮调用。

@@ -792,9 +792,9 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
               </div>
             )}
             <div className="flex flex-col gap-4">
-              {chatMessages.map((msg) => (
+              {chatMessages.map((msg, idx) => (
                 <MsgBubble
-                  key={msg.id}
+                  key={msg.id ?? `msg-${idx}`}
                   msg={msg}
                   isTyping={sending && msg.id === lastMsgId && msg.role === 'agent'}
                 />

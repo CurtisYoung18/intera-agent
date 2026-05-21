@@ -8,12 +8,17 @@ description: 查询用户存款状态、取款状态、和交易历史。当用�
 - Base URL: `https://jayabaji.ai-chat.life`
 - Method: POST
 - Content-Type: `application/json`
+- **Auth Header**: `apiKey: G71fGn7G8vb1T2824rr7`
 
 ## Tools
 
 ### Tool 1: check_latest_withdrawal_status
 
 查询用户最新取款状态。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/get-latest-withdraw-status`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问取款进度、取款是否到账、取款状态时调用此工具。
 
@@ -46,6 +51,10 @@ description: 查询用户存款状态、取款状态、和交易历史。当用�
 
 查询用户最新存款状态。
 
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/get-latest-deposit-status`
+- **Timeout**: 8000ms
+- **Mode**: http
+
 **When to call**: 用户询问存款是否到账、存款进度时调用此工具。
 
 **Input Parameters**:
@@ -76,6 +85,10 @@ description: 查询用户存款状态、取款状态、和交易历史。当用�
 ### Tool 3: get_transaction_history
 
 查询用户的存款或取款历史记录（最近5条）。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/deposit-withdrawal-history`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问交易记录、充值记录、提现记录时调用此工具。
 
@@ -114,6 +127,6 @@ description: 查询用户存款状态、取款状态、和交易历史。当用�
 
 ## Important Notes
 
-- 所有接口都需要 `member_id`，优先从对话上下文中获取
+- 所有接口都需要 `member_id`
 - 如果无法获取 `member_id`，先询问用户
 - `gmt` 参数可不传，使用默认值

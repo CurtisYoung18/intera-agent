@@ -20,6 +20,27 @@ function safeStringify(obj: unknown): string {
   }
 }
 
+/**
+ * Returns the next available sequence number for a case directory.
+ * Scans existing *-req.json files to avoid collisions across sessions
+ * that reset the iteration counter.
+ */
+function nextSeq(caseDir: string): number {
+  try {
+    const files = fs.readdirSync(caseDir)
+    let max = 0
+    for (const f of files) {
+      const m = f.match(/^(\d+)-/)
+      if (m) {
+        max = Math.max(max, parseInt(m[1], 10))
+      }
+    }
+    return max + 1
+  } catch {
+    return 1
+  }
+}
+
 export interface DebugLogEntry {
   timestamp: string
   model: string
@@ -37,19 +58,23 @@ export function writeDebugRequest(
     max_tokens?: number
     temperature?: number
   },
-): void {
+): number {
   try {
     const dir = path.join(DEBUG_DIR, caseId)
     ensureDir(dir)
-    const file = path.join(dir, `${String(iteration).padStart(3, '0')}-req.json`)
+    const seq = nextSeq(dir)
+    const file = path.join(dir, `${String(seq).padStart(3, '0')}-req.json`)
     fs.writeFileSync(file, safeStringify({
       timestamp: new Date().toISOString(),
       model,
       iteration,
+      seq,
       ...payload,
     }), 'utf-8')
+    return seq
   } catch (err) {
     console.warn('[DebugLogger] Failed to write request log:', err)
+    return -1
   }
 }
 
@@ -57,16 +82,19 @@ export function writeDebugResponse(
   caseId: string,
   iteration: number,
   model: string,
+  seq: number,
   payload: Record<string, unknown>,
 ): void {
+  if (seq < 0) return
   try {
     const dir = path.join(DEBUG_DIR, caseId)
     ensureDir(dir)
-    const file = path.join(dir, `${String(iteration).padStart(3, '0')}-resp.json`)
+    const file = path.join(dir, `${String(seq).padStart(3, '0')}-resp.json`)
     fs.writeFileSync(file, safeStringify({
       timestamp: new Date().toISOString(),
       model,
       iteration,
+      seq,
       ...payload,
     }), 'utf-8')
   } catch (err) {
@@ -90,11 +118,14 @@ export function writeDebugStandaloneCall(
   try {
     const dir = path.join(DEBUG_DIR, caseId)
     ensureDir(dir)
-    const file = path.join(dir, `${label.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`)
+    const seq = nextSeq(dir)
+    const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, '_')
+    const file = path.join(dir, `${String(seq).padStart(3, '0')}-${safeLabel}.json`)
     fs.writeFileSync(file, safeStringify({
       timestamp: new Date().toISOString(),
       model,
       label,
+      seq,
       ...payload,
     }), 'utf-8')
   } catch (err) {

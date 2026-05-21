@@ -494,8 +494,9 @@ export class StageExecutor {
     const skillCheck = this.checkRequiredSkills(stage)
     const evidenceCheck = this.checkEvidenceRequirements(stage)
 
-    if (nudgeCount === 1) {
-      // Gentle reminder — include exact field keys so the LLM uses the right ones
+    if (nudgeCount <= 1) {
+      // Gentle reminder (belt-and-suspenders: treat 0 as 1 so callers
+      // that pass the pre-increment count still get the gentle message)
       if (!skillCheck.met) {
         parts.push(`Stage "${stage}" expects: ${skillCheck.missing.join(', ')}. Please call these tools.`)
       }

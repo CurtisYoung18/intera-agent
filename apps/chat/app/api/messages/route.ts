@@ -353,6 +353,18 @@ export async function POST(request: NextRequest) {
             userMessage = parts.join('\n')
 
             console.log(`[Intera] Resuming case ${resolvedCaseId} after human resolution`)
+
+            // Auto-resolve the case when the human operator closes it.
+            // This prevents the agent from staying in investigating stage and
+            // ensures subsequent user messages start a fresh conversation.
+            // (caseStatus is injected from Case.status at line 718 — no
+            // separate CaseMemory column needed.)
+            if (task.verdict === 'resolved') {
+              await prisma.case.update({
+                where: { id: resolvedCaseId },
+                data: { status: 'resolved' },
+              }).catch((err) => { console.error('[Intera] Failed to auto-resolve case:', err) })
+            }
           } else {
             sendEvent({
               type: 'error',
@@ -562,6 +574,16 @@ export async function POST(request: NextRequest) {
                     where: { id: resolvedTask.id },
                     data: { notifiedAt: new Date() },
                   }).catch((err) => { console.error('[Intera] Failed to mark humanTask notifiedAt:', err) })
+
+                  // When the human resolves the case, auto-transition to resolved stage
+                  // so the agent can relay the verdict and call finalize_case without
+                  // getting stuck in the investigating stage.
+                  if (resolvedTask.verdict === 'resolved') {
+                    await prisma.case.update({
+                      where: { id: resolvedCaseId },
+                      data: { status: 'resolved' },
+                    }).catch((err) => { console.error('[Intera] Failed to auto-resolve case:', err) })
+                  }
                 }
               } catch (err) { console.error('[Intera] Auto-resume humanTask lookup failed:', err) }
             }

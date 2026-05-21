@@ -8,12 +8,17 @@ description: 查询活动优惠、打码量要求和提现条件。当用户询�
 - Base URL: `https://jayabaji.ai-chat.life`
 - Method: POST
 - Content-Type: `application/json`
+- **Auth Header**: `apiKey: G71fGn7G8vb1T2824rr7`
 
 ## Tools
 
 ### Tool 1: get_promotion_active_status
 
 查询当前生效的流水优惠活动。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/promotion-active-status`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问有哪些优惠活动、当前有哪些流水优惠时调用此工具。
 
@@ -42,6 +47,10 @@ description: 查询活动优惠、打码量要求和提现条件。当用户询�
 ### Tool 2: get_withdraw_condition
 
 查询打码量提现条件。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/withdraw-condition`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问打码量是否足够、提现需要多少流水、打码量要求时调用此工具。
 
@@ -72,6 +81,10 @@ description: 查询活动优惠、打码量要求和提现条件。当用户询�
 ### Tool 3: get_promotion_eligible_status
 
 查询用户可参与哪些优惠活动。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/promotion-eligible-status`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问如何参与活动、如何领取优惠、有什么优惠可以领时调用此工具。
 
@@ -111,6 +124,6 @@ description: 查询活动优惠、打码量要求和提现条件。当用户询�
 
 ## Important Notes
 
-- 所有接口都需要 `member_id`，优先从对话上下文中获取
+- 所有接口都需要 `member_id`
 - 如果无法获取 `member_id`，先询问用户
 - `language` 参数可不传，使用默认值 "en-bd"

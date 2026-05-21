@@ -85,6 +85,7 @@ export class AgentLoop {
   private profiler: Profiler = new Profiler()
   private iterationCount = 0
   private nudgeCount = 0
+  private pendingEscalation = false
   private abortController: AbortController
   private aborted = false
   private anthropicClient: Anthropic
@@ -210,6 +211,22 @@ export class AgentLoop {
     // 2.5 Dispatch dedicated agents on case creation (first stage)
     await this.startDedicatedAgents(sendEvent)
 
+    // 2.6 Per-message mode classification
+    // When a case is active, classify this user message as case-related or
+    // casual/off-topic. Casual messages bypass the Case ReAct loop and are
+    // handled by ConversationLoop (lightweight, no stage enforcement).
+    let forceCoreMode = false
+    if (this.caseLoop?.isStageActive()) {
+      const msgMode = await this.classifyMessage(userMessage)
+      forceCoreMode = msgMode === 'core'
+      if (forceCoreMode) {
+        await this.traceWriter.write('loop_decision', 'Per-message route: Core (off-topic)', {
+          messageLength: userMessage.length,
+          stage: this.currentStage,
+        })
+      }
+    }
+
     // 3. ReAct loop
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
@@ -256,10 +273,16 @@ export class AgentLoop {
         }
       }
 
+      // ── isCaseActive for this iteration ─────────────────────────────────
+      // forceCoreMode is set at the start of run() when the user message was
+      // classified as off-topic — it overrides the stage check so casual messages
+      // don't enter the Case ReAct loop.
+      const isCaseActive = forceCoreMode ? false : (this.caseLoop?.isStageActive() ?? false)
+
       // Emit core_agent_progress and merge background sub-agent results (case mode only).
-      if (this.caseLoop?.isStageActive()) {
-        this.caseLoop.emitProgressEvent(this.iterationCount, sendEvent)
-        if (this.caseLoop.mergeNewSubAgentResults()) {
+      if (isCaseActive) {
+        this.caseLoop!.emitProgressEvent(this.iterationCount, sendEvent)
+        if (this.caseLoop!.mergeNewSubAgentResults()) {
           sendEvent({
             type: 'memory_update',
             data: this.caseMemory.getSummary(),
@@ -304,10 +327,8 @@ export class AgentLoop {
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
-      // Core mode  → no active case: conversational discovery, all tools available.
+      // Core mode  → no active case (or forceCoreMode): conversational discovery.
       // Case mode  → case past "created": stage-driven execution, tools filtered.
-      const isCaseActive = this.caseLoop?.isStageActive() ?? false
-
       const stagePrompt = isCaseActive
         ? this.caseLoop!.buildPrompt(this.deps.systemPrompt)
         : this.conversationLoop.buildPrompt()
@@ -343,9 +364,10 @@ export class AgentLoop {
       }, { signal: this.abortController.signal })
 
       // Debug: full API request
+      let debugSeq = -1
       if (this.deps.config.debugMode) {
         console.log(`[DebugMode] Writing request log for case ${this.deps.caseId} iteration ${this.iterationCount}`)
-        writeDebugRequest(this.deps.caseId, this.iterationCount, this.deps.config.model, {
+        debugSeq = writeDebugRequest(this.deps.caseId, this.iterationCount, this.deps.config.model, {
           system: stagePrompt,
           messages: apiMessages as any,
           tools: stageTools as any,
@@ -576,7 +598,7 @@ export class AgentLoop {
         const calledToolNames = [...blocks.values()].filter(b => b.type === 'tool_use').map(b => b.name)
         // Debug: full API response
         if (this.deps.config.debugMode) {
-          writeDebugResponse(this.deps.caseId, this.iterationCount, this.deps.config.model, {
+          writeDebugResponse(this.deps.caseId, this.iterationCount, this.deps.config.model, debugSeq, {
             stop_reason: stopReason,
             usage,
             text: fullText.slice(0, 100000),
@@ -628,8 +650,11 @@ export class AgentLoop {
       }
 
       if (toolResults.length === 0) {
-        // No tools called — delegate stage evaluation to CaseAgentLoop
-        if (this.caseLoop?.hasStageConfigs()) {
+        // No tools called — delegate stage evaluation to CaseAgentLoop.
+        // Skip only when forceCoreMode is true (casual off-topic message).
+        // Must NOT gate on isCaseActive: the 'created' → stage-1 bootstrap
+        // transition fires here while isCaseActive is still false.
+        if (!forceCoreMode && this.caseLoop?.hasStageConfigs()) {
           const transitionEval = await this.caseLoop.evaluateStageTransitionAfterNoTools(this.iterationCount)
           if (transitionEval.modelUsed) {
             await this.traceWriter.write('stage_eval', `Stage eval: ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
@@ -648,7 +673,7 @@ export class AgentLoop {
             continue
           }
 
-          const stageResult = this.caseLoop.evaluateStageAfterNoTools(this.iterationCount)
+          const stageResult = this.caseLoop.evaluateStageAfterNoTools(this.iterationCount, this.nudgeCount)
           if (stageResult.needsNudge) {
             this.nudgeCount++
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
@@ -814,27 +839,53 @@ export class AgentLoop {
           this.messages.push(this.makeUserMessage(postToolEval.feedbackMessage))
         }
 
-        // Auto-escalate on escalated: create human task without waiting for agent decision
+        // Auto-escalate on escalated: create human task immediately.
+        // The loop continues so the LLM can respond naturally to the user,
+        // then the pendingEscalation flag triggers the waiting_human return.
         if (postToolEval.summary === 'escalated') {
           const escalatedReasons = postToolEval.results
             .filter((r) => r.result === 'escalated')
             .map((r) => `${r.policyName}: ${r.reason || 'conflict detected'}`)
             .join('; ')
-          // Directly create human task — the escalated policy has detected a
-          // system-data vs customer-report contradiction that needs human review.
+
           await this.traceWriter.write('loop_decision', 'Auto-escalate from postTool policy', {
             policyNames: postToolEval.results.filter((r) => r.result === 'escalated').map((r) => r.policyName),
             reasons: escalatedReasons,
           })
+
+          try {
+            const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+            await prisma.case.upsert({
+              where: { id: this.deps.caseId },
+              update: { status: 'escalated', blocker: `Policy escalation: ${escalatedReasons}` },
+              create: {
+                id: this.deps.caseId,
+                customerId: this.deps.customerId,
+                userId: this.deps.userId,
+                type: resolvedCaseType,
+                status: 'escalated',
+                blocker: `Policy escalation: ${escalatedReasons}`,
+              },
+            })
+            await prisma.humanTask.create({
+              data: {
+                caseId: this.deps.caseId,
+                queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+                question: `Auto-escalated by policy conflict_requires_human. ${escalatedReasons}. Skills called: ${this.caseMemory.getSkillsCalled().join(', ')}.`,
+                status: 'pending',
+              },
+            })
+          } catch (err) {
+            console.error('[AgentLoop] Failed to auto-create human task from postTool:', err)
+          }
+
           sendEvent({
-            type: 'error',
-            data: `Case escalated by policy: ${escalatedReasons}`,
+            type: 'escalated',
+            data: { stage: this.currentStage, reason: escalatedReasons },
             timestamp: new Date().toISOString(),
           })
-          // Inject create_human_task-like nudge so the agent knows what happened
-          this.messages.push(this.makeUserMessage(
-            `[POLICY] Post-tool evaluation detected a conflict requiring human review: ${escalatedReasons}. Call create_human_task to escalate this case.`,
-          ))
+
+          this.pendingEscalation = true
         }
         } catch (policyErr) {
           console.error('[AgentLoop] PostTool evaluation failed:', policyErr)
@@ -1103,6 +1154,19 @@ export class AgentLoop {
         data: { reason: 'next_turn', stage: this.currentStage },
         timestamp: new Date().toISOString(),
       })
+
+      // Post-tool auto-escalation: human task was created during this iteration.
+      // The LLM has had a chance to respond naturally — now exit to waiting_human.
+      if (this.pendingEscalation) {
+        await this.writeProfilerSnapshot()
+        return {
+          messages: this.messages,
+          caseStatus: 'escalated',
+          transition: 'waiting_human',
+          currentStage: this.currentStage,
+          reason: 'auto_escalated_by_policy',
+        }
+      }
     }
 
     // Max iterations reached
@@ -1260,6 +1324,77 @@ export class AgentLoop {
     const snapshot = this.profiler.snapshot()
     if (snapshot.totalDurationMs > 0) {
       await this.traceWriter.write('loop_decision', 'Profiler Snapshot', snapshot as unknown as Record<string, unknown>)
+    }
+  }
+
+  /**
+   * Per-message classifier — called once at the start of each run() turn
+   * when a case is currently active.
+   *
+   * Returns "core" when the user message is clearly casual / off-topic
+   * (greetings, date questions, unrelated queries), so the turn is handled
+   * by ConversationLoop without stage enforcement or ReAct pressure.
+   *
+   * Returns "case" when the message relates to the active case or investigation.
+   * Defaults to "case" on any error so we never accidentally drop case context.
+   *
+   * System/worker continuation messages bypass the LLM and return "case"
+   * immediately. Everything else goes to a cheap structured LLM eval.
+   */
+  private async classifyMessage(userMessage: string): Promise<'case' | 'core'> {
+    // System/worker messages are always case-related
+    if (
+      userMessage.startsWith('[System]') ||
+      userMessage.startsWith('[SYSTEM]') ||
+      userMessage.startsWith('[Human task') ||
+      userMessage.startsWith('[Intent selected') ||
+      userMessage.startsWith('Tool ')  // tool result injections
+    ) {
+      return 'case'
+    }
+
+    // All other messages → cheap LLM structured call
+    try {
+      const caseDisplayName = this.deps.caseSchema?.displayName || this.deps.caseSchema?.type || 'case'
+
+      const classifyTool: Tool = {
+        name: 'classify_mode',
+        description: 'Classify whether this customer message is about the active case or off-topic.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            mode: {
+              type: 'string' as const,
+              enum: ['case', 'core'],
+              description:
+                '"case" — message is about the active case, its status, or related financial/account issues. ' +
+                '"core" — message is a general question, greeting, acknowledgement, or completely unrelated topic.',
+            },
+          },
+          required: ['mode'],
+        },
+      }
+
+      const evalModel = this.deps.config.evaluationModel || this.deps.config.model
+      const resp = await this.anthropicClient.messages.create({
+        model: evalModel,
+        max_tokens: 64,
+        temperature: 0,
+        system: `A customer has an active "${caseDisplayName}" support case in progress. Classify their latest message.`,
+        tools: [classifyTool],
+        messages: [{ role: 'user', content: userMessage.slice(0, 300) }],
+      })
+
+      for (const block of resp.content) {
+        if (block.type === 'tool_use') {
+          const input = (block as any).input as Record<string, unknown>
+          return input.mode === 'core' ? 'core' : 'case'
+        }
+      }
+      return 'case' // safe default — never drop case context accidentally
+    } catch (err) {
+      console.warn('[AgentLoop] classifyMessage failed, defaulting to case:', err)
+      return 'case'
     }
   }
 

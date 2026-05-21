@@ -8,12 +8,17 @@ description: 查询推荐游戏和下注历史记录。当用户询问推荐游�
 - Base URL: `https://jayabaji.ai-chat.life`
 - Method: POST
 - Content-Type: `application/json`
+- **Auth Header**: `apiKey: G71fGn7G8vb1T2824rr7`
 
 ## Tools
 
 ### Tool 1: get_recommend_games
 
 获取推荐/热门游戏列表。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/top-hot-game-list`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问推荐游戏、热门游戏、想找游戏玩时调用此工具。
 
@@ -42,6 +47,10 @@ description: 查询推荐游戏和下注历史记录。当用户询问推荐游�
 ### Tool 2: get_bet_history
 
 查询游戏下注历史。
+
+- **Endpoint**: `https://jayabaji.ai-chat.life/v2/chatbot/user-bet-history-summary`
+- **Timeout**: 8000ms
+- **Mode**: http
 
 **When to call**: 用户询问投注记录、下注历史、游戏记录时调用此工具。
 
@@ -83,7 +92,7 @@ description: 查询推荐游戏和下注历史记录。当用户询问推荐游�
 
 ## Important Notes
 
-- 所有接口都需要 `member_id`，优先从对话上下文中获取
+- 所有接口都需要 `member_id`
 - 如果无法获取 `member_id`，先询问用户
 - `get_bet_history` 需要日期范围参数
 - 日期格式必须是 "YYYY-MM-DD 00:00:00" 和 "YYYY-MM-DD 23:59:59"

@@ -62,6 +62,15 @@ async function poll(): Promise<void> {
           continue
         }
 
+        // Drain the SSE response body — this waits for the agent loop to
+        // complete before we clear the flag. Without draining, fetch() resolves
+        // on headers alone and we'd mark the case done before the agent finishes.
+        try {
+          await res.text()
+        } catch {
+          // Ignore read errors (stream closed early is acceptable)
+        }
+
         // Success — clear flag and lock
         await prisma.caseMemory.update({
           where: { caseId: mem.caseId },

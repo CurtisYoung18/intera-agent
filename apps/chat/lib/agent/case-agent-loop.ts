@@ -137,7 +137,7 @@ export class CaseAgentLoop {
    * Result of evaluating stage state after a turn with no tool calls.
    * Tells the outer loop whether to continue (stage advanced), nudge, or escalate.
    */
-  evaluateStageAfterNoTools(iterationCount: number): {
+  evaluateStageAfterNoTools(iterationCount: number, nudgeCount = 0): {
     advanced: boolean
     needsNudge: boolean
     nudgeMessage: string
@@ -153,7 +153,10 @@ export class CaseAgentLoop {
     const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(this._currentStage)
 
     if (!skillCheck.met || !evidenceCheck.met) {
-      const nudgeMsg = this.stageExecutor.buildNudge(this._currentStage, 0 /* caller tracks nudgeCount */)
+      // nudgeCount is the CURRENT count (before increment). buildNudge expects the
+      // upcoming nudge number (1-indexed), so add 1. This way the first nudge shows
+      // the gentle reminder, the second shows STOP, and ≥3 shows FINAL WARNING.
+      const nudgeMsg = this.stageExecutor.buildNudge(this._currentStage, nudgeCount + 1)
       return {
         advanced: false,
         needsNudge: true,
@@ -618,9 +621,12 @@ export class CaseAgentLoop {
     consultResult: ToolExecutionResult,
     sendEvent: (event: SSEEvent) => void,
   ): Promise<CaseToolResult> {
+    // Read from tool input first — mock executor returns static fixture
+    // {"status":"consultation_closed"}, dropping the model's summary/resolution.
+    const toolInput = (consultResult.toolUse?.input || {}) as Record<string, unknown>
     const output = unwrapToolExecutionPayload(consultResult.output) as Record<string, unknown> | undefined
-    const summary = String(output?.summary || 'Your case has been reviewed by our specialist.')
-    const resolution = String(output?.resolution || 'resolved')
+    const summary = String(toolInput.summary || output?.summary || 'Your case has been reviewed by our specialist.')
+    const resolution = String(toolInput.resolution || output?.resolution || 'resolved')
 
     await this.services.traceWriter.write('final_resolution', `Consultation complete: ${resolution}`, output ?? {})
 
