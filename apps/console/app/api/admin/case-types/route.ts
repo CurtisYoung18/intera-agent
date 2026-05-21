@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
         autoCloseConditions: body.autoCloseConditions ? (typeof body.autoCloseConditions === 'string' ? body.autoCloseConditions : JSON.stringify(body.autoCloseConditions)) : null,
         enabled: body.enabled !== false && body.enabled !== 0 && body.enabled !== 'false',
         requireHumanReview: body.requireHumanReview === true || body.requireHumanReview === 'true',
+        executionMode: body.executionMode === 'sop' ? 'sop' : 'stage',
+        sop: body.sop || null,
       },
     })
     return NextResponse.json({ caseType: ct }, { status: 201 })

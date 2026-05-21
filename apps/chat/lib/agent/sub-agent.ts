@@ -5,7 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse } from '@intera/shared/types'
+import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, DashboardReader } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 
 const DEFAULT_MAX_ITERATIONS = 5
@@ -24,6 +24,8 @@ export class SubAgent {
   constructor(
     private config: SubAgentConfig,
     private skillDefinitions: SkillDefinition[] = [],
+    /** Live dashboard reader for change detection. Undefined = dashboard disabled (backward compat). */
+    private dashboardReader?: DashboardReader,
   ) {
     this.client = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
@@ -50,12 +52,63 @@ export class SubAgent {
     let totalTokens = 0
     const abortController = new AbortController()
 
-    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    // Anthropic requires typed content blocks — use `any` to allow both
+    // string (first user turn) and structured block arrays (tool turns).
+    const messages: Array<{ role: 'user' | 'assistant'; content: any }> = [
       { role: 'user', content: task.taskPrompt },
     ]
 
     try {
       for (let iter = 0; iter < maxIterations; iter++) {
+        // ── Dashboard polling ──────────────────────────────────────
+        if (this.dashboardReader) {
+          const currentVersion = this.dashboardReader.getDashboardVersion()
+          const lastKnownVersion = task.context.caseMemory.dashboardVersion ?? 0
+
+          if (currentVersion > lastKnownVersion) {
+            const diff = this.dashboardReader.getDashboardDiff(lastKnownVersion)
+
+            const updateLines: string[] = [
+              `[DASHBOARD UPDATE — version ${currentVersion}]`,
+              'The core agent has updated the shared dashboard. Review the changes below and adapt your investigation accordingly.',
+            ]
+
+            const factEntries = Object.entries(diff.changedFacts)
+            if (factEntries.length > 0) {
+              updateLines.push('')
+              updateLines.push('## Updated Confirmed Facts')
+              for (const [k, v] of factEntries) {
+                updateLines.push(`- ${k}: ${JSON.stringify(v)}`)
+              }
+            }
+
+            const myTodos = diff.agentTodoChanges[this.config.name]
+            if (myTodos && myTodos.length > 0) {
+              updateLines.push('')
+              updateLines.push('## Your Updated Todos')
+              for (const t of myTodos) {
+                const icon = t.status === 'completed' ? '[x]' : t.status === 'cancelled' ? '[-]' : t.status === 'in_progress' ? '[>]' : '[ ]'
+                updateLines.push(`${icon} ${t.text}${t.notes ? ` (${t.notes})` : ''}`)
+              }
+            }
+
+            if (diff.newKeyEvents.length > 0) {
+              updateLines.push('')
+              updateLines.push('## Recent Events')
+              for (const e of diff.newKeyEvents.slice(-5)) {
+                updateLines.push(`- ${e.at}: ${e.text}`)
+              }
+            }
+
+            messages.push({
+              role: 'user',
+              content: updateLines.join('\n'),
+            })
+
+            task.context.caseMemory.dashboardVersion = currentVersion
+          }
+        }
+
         const remainingMs = Math.max(0, DEFAULT_TIMEOUT_MS - (Date.now() - startTime))
         const timeoutId = setTimeout(() => {
           abortController.abort()
@@ -119,8 +172,19 @@ export class SubAgent {
 
           const toolResults = await StreamingToolExecutor.executeAll(this.skillDefinitions, toolUses)
 
-          for (const result of toolResults) {
+          // ── Correct Anthropic tool-use multi-turn format ──────────────────
+          // 1. Assistant message: the full content blocks from the API response
+          //    (includes both text blocks and tool_use blocks)
+          messages.push({
+            role: 'assistant',
+            content: msg.content,
+          })
+
+          // 2. User message: one tool_result block per tool call
+          //    Must use the exact tool_use_id from the assistant's tool_use block.
+          const toolResultBlocks = toolResults.map((result) => {
             const payload = unwrapToolExecutionPayload(result.output)
+
             onProgress({
               type: 'tool_result',
               agentName: this.config.name,
@@ -137,17 +201,24 @@ export class SubAgent {
               latencyMs: result.latencyMs,
             })
 
-            // Add tool result as assistant message for next iteration
-            messages.push({
-              role: 'assistant',
-              content: JSON.stringify({ tool_call: result.name, result: payload }),
-            })
-          }
+            // tool_use_id must match the id from the assistant's tool_use block.
+            // Fall back to matching by name in toolUses if toolUse isn't set
+            // (happens when Zod validation fails — toolUse isn't attached to the result).
+            const toolUseId =
+              result.toolUse?.id ??
+              toolUses.find((tu) => tu.name === result.name)?.id ??
+              ''
 
-          // Add a continuation prompt
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUseId,
+              content: JSON.stringify(payload),
+            }
+          })
+
           messages.push({
             role: 'user',
-            content: 'Continue based on tool results. If done, provide your findings and recommendation.',
+            content: toolResultBlocks,
           })
         } else {
           // No tools called — agent is done

@@ -161,6 +161,9 @@ export async function POST(request: NextRequest) {
             skillResults: JSON.stringify(mem.skillResults),
             keyEvents: JSON.stringify(mem.keyEvents),
             summary: mem.summary || undefined,
+            todos: mem.todos ? JSON.stringify(mem.todos) : null,
+            agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
+            dashboardVersion: mem.dashboardVersion ?? 0,
           },
           create: {
             caseId: caseData.id,
@@ -171,6 +174,9 @@ export async function POST(request: NextRequest) {
             keyEvents: JSON.stringify(mem.keyEvents),
             humanTaskStatus: 'in_progress',
             summary: mem.summary || undefined,
+            todos: mem.todos ? JSON.stringify(mem.todos) : null,
+            agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
+            dashboardVersion: mem.dashboardVersion ?? 0,
           },
         })
 

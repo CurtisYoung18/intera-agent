@@ -102,6 +102,11 @@ model CaseType {
 
   requireHumanReview Boolean @default(false) // true = finalize requires a resolved human task
 
+  /// "stage" = predefined stage machine (default); "sop" = SOP-driven autonomous todo
+  executionMode String  @default("stage")
+  /// Natural-language Standard Operating Procedure — only used when executionMode = "sop"
+  sop           String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -233,6 +238,12 @@ model CaseMemory {
   needsContinuation  Boolean  @default(false)
   continuationLock   DateTime?
   summary            String?
+  /// JSON: TodoItem[] — SOP mode todo list, shared between Core Agent and sub-agents
+  todos              String?
+  /// JSON: Record<string, TodoItem[]> — per-agent todo lists for shared dashboard isolation
+  agentTodos         String?
+  /// Increments on every dashboard write; sub-agents use this to detect changes
+  dashboardVersion   Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

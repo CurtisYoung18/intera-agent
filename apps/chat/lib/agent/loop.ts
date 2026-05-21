@@ -13,7 +13,7 @@ import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { CaseMemoryManager } from './memory'
 import { PolicyEngine } from './policy'
-import { SkillRouter } from './skills'
+import { SkillRouter, SOP_INTERNAL_SKILLS } from './skills'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
@@ -215,8 +215,11 @@ export class AgentLoop {
     // When a case is active, classify this user message as case-related or
     // casual/off-topic. Casual messages bypass the Case ReAct loop and are
     // handled by ConversationLoop (lightweight, no stage enforcement).
+    //
+    // SOP mode: fully trust the model (CC pattern) — skip the secondary LLM
+    // classification call and always route to the case loop.
     let forceCoreMode = false
-    if (this.caseLoop?.isStageActive()) {
+    if (this.caseLoop?.isStageActive() && !this.caseLoop.isSopMode()) {
       const msgMode = await this.classifyMessage(userMessage)
       forceCoreMode = msgMode === 'core'
       if (forceCoreMode) {
@@ -328,15 +331,26 @@ export class AgentLoop {
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
       // Core mode  → no active case (or forceCoreMode): conversational discovery.
-      // Case mode  → case past "created": stage-driven execution, tools filtered.
-      const stagePrompt = isCaseActive
-        ? this.caseLoop!.buildPrompt(this.deps.systemPrompt)
-        : this.conversationLoop.buildPrompt()
-
+      // Case/Stage → case past "created": stage-driven execution, tools filtered.
+      // Case/SOP   → SOP-driven: todo tools + full skill set, prompt includes SOP doc + todos.
       const allTools = this.skillRouter.getTools()
-      const stageTools = isCaseActive
-        ? this.caseLoop!.filterTools(allTools, this.nudgeCount)
-        : this.conversationLoop.filterTools(allTools)
+      let stagePrompt: string
+      let stageTools: Tool[]
+
+      if (!isCaseActive) {
+        stagePrompt = this.conversationLoop.buildPrompt()
+        stageTools = this.conversationLoop.filterTools(allTools)
+      } else if (this.caseLoop!.isSopMode()) {
+        stagePrompt = this.caseLoop!.buildSopPrompt(
+          this.deps.systemPrompt,
+          this.caseMemory.getTodos(),
+          this.caseMemory.getConfirmedFacts(),
+        )
+        stageTools = this.caseLoop!.filterSopTools(allTools)
+      } else {
+        stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
+        stageTools = this.caseLoop!.filterTools(allTools, this.nudgeCount)
+      }
 
       const blocks = new Map<number, StreamContentBlock>()
       let assistantMessage: AssistantMessage | null = null
@@ -619,9 +633,16 @@ export class AgentLoop {
       assistantMessage.isStreaming = false
 
       // ── Wait for all tools to finish ─────────────────────────
-      const toolResults = await toolExecutor.waitForAll()
+      let toolResults = await toolExecutor.waitForAll()
       for (const tr of toolResults) {
         this.profiler.addToolExecution(tr.latencyMs || 0)
+      }
+
+      // ── SOP todo interception (pure in-memory, no side effects) ──────────
+      // todo_write and todo_read bypass the skill executor — their mock outputs
+      // are replaced here with real in-memory operations on CaseMemory.
+      if (this.caseLoop?.isSopMode()) {
+        toolResults = this.processTodoTools(toolResults)
       }
 
       if (
@@ -742,11 +763,56 @@ export class AgentLoop {
           }
         }
 
+        // ── SOP mode: guard against silent end_turn after tool results ──────
+        // When the agent just received tool results (there ARE previous tool
+        // messages) but produced empty text and no new tool calls, it silently
+        // swallowed the findings. Nudge it to either tell the user or finalize.
+        if (this.caseLoop?.isSopMode() && !fullText) {
+          const lastFewMessages = this.messages.slice(-6)
+          const hasPendingToolResults = lastFewMessages.some(
+            (m) => m.role === 'assistant' && typeof m.content === 'string' &&
+                   m.content.startsWith('Tool ') && !m.content.includes('todo_read'),
+          )
+          // Also trigger if the model just received failed todo_write results
+          // (defensive inference errors) and produced no response.
+          const hasFailedTodoWrite = lastFewMessages.some(
+            (m) => m.role === 'assistant' && typeof m.content === 'string' &&
+                   m.content.includes('Tool todo_write') && m.content.includes('"ok":false'),
+          )
+          if ((hasPendingToolResults || hasFailedTodoWrite) && this.nudgeCount < 3) {
+            this.nudgeCount++
+            const sopNudge = hasFailedTodoWrite
+              ? '[SYSTEM] Your todo_write calls failed because they were missing required parameters. ' +
+                'Call todo_write with action="add" and text="<step description>" for each SOP step. ' +
+                'Example: todo_write({ "action": "add", "text": "Check account status" })'
+              : '[SYSTEM] You just received investigation results but produced no response. ' +
+                'You MUST now either: (1) call finalize_case with a conclusion, (2) call create_human_task if escalation is needed, ' +
+                'or (3) respond to the customer with findings and next steps. ' +
+                'Do not produce empty turns — act on the data you just received.'
+            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
+            this.messages.push(this.makeUserMessage(sopNudge))
+            await this.traceWriter.write('loop_decision', 'SOP nudge: empty turn after tool results', {
+              stage: this.currentStage, nudgeCount: this.nudgeCount, iteration: this.iterationCount,
+            })
+            sendEvent({
+              type: 'message_stop',
+              data: { reason: 'sop_empty_turn_nudge', stage: this.currentStage },
+              timestamp: new Date().toISOString(),
+            })
+            // Don't count the nudge against maxIterations — the model needs
+            // one extra turn to correct its mistake (bounded by nudgeCount < 3).
+            this.iterationCount--
+            continue
+          }
+        }
+
         // ── ReAct compliance guard ──────────────────────────────────────
         // When the model produces text without calling tools, use an LLM eval
         // to check whether the response is a legitimate end-of-turn or the
         // model is "describing instead of doing."
-        if (fullText && fullText.length > 30) {
+        // SOP mode: skip — we fully trust the model (CC pattern). The SOP
+        // empty-turn nudge above already handles genuine stuck turns.
+        if (fullText && fullText.length > 30 && !this.caseLoop?.isSopMode()) {
           const reactResult = await this.evaluateReactCompliance(fullText)
 
           if (reactResult === 'nudge') {
@@ -896,6 +962,33 @@ export class AgentLoop {
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
       this.addToolResultMessages(toolResults)
 
+      // ── SOP: detect todo_write failure + investigation in same batch ─────
+      // If the model tried to plan (called todo_write) but the call failed
+      // because of wrong format, AND also ran investigation tools in the same
+      // turn, we must tell it to fix the plan BEFORE acting on the results.
+      // This fires even on non-empty turns (so it's not gated on !fullText).
+      if (this.caseLoop?.isSopMode() && this.nudgeCount < 3) {
+        const todoFailed = toolResults.some(
+          (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
+        )
+        const nonSopTools = new Set(['todo_write', 'todo_read', 'create_case', 'request_user_input',
+          'propose_cases', 'finalize_case', 'create_human_task', 'propose_interaction', 'finalize_consultation'])
+        const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
+        if (todoFailed && investigationRan) {
+          this.nudgeCount++
+          this.messages.push(this.makeUserMessage(
+            `[System] Your todo_write call failed — the "action" field is required. ` +
+            `The investigation data above is already collected. You MUST now: ` +
+            `(1) Call todo_write({ "action": "add", "text": "..." }) for each SOP step. ` +
+            `(2) For steps already covered by the results above, immediately call todo_write({ "action": "complete", "id": "<id>", "notes": "<findings>" }). ` +
+            `(3) Then continue with any remaining steps.`,
+          ))
+          await this.traceWriter.write('loop_decision', 'SOP: failed todo_write + investigation, correction injected', {
+            nudgeCount: this.nudgeCount, iteration: this.iterationCount,
+          })
+        }
+      }
+
       // ── Terminal tool: propose_cases (multi-intent clarification) ──
       // Works both with and without an active case — when a case already exists,
       // propose_cases lets the user add additional case types alongside it.
@@ -980,6 +1073,8 @@ export class AgentLoop {
                 defaultGoal: ctRow.defaultGoal,
                 escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
                 requireHumanReview: (ctRow as any).requireHumanReview === true,
+                executionMode: ((ctRow as any).executionMode as 'stage' | 'sop' | undefined) || 'stage',
+                sop: (ctRow as any).sop || undefined,
               }
               this.deps.caseSchema = schema
 
@@ -1020,6 +1115,31 @@ export class AgentLoop {
                   m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'created' })}`
                   break
                 }
+              }
+
+              // ── SOP mode: MANDATORY planning mandate on every create_case ────
+              // The very first action in SOP mode must be todo_write to build
+              // the investigation plan. We ALWAYS inject this instruction,
+              // whether or not investigation tools were pre-called in the same
+              // batch. addToolResultMessages() was already called above so any
+              // pre-fetched results are already in this.messages.
+              if (this.caseLoop.isSopMode()) {
+                const alreadyCalledTools = toolResults
+                  .filter((r) => r.name !== 'create_case')
+                  .map((r) => r.name)
+
+                const planMsg = alreadyCalledTools.length > 0
+                  ? `[System] Case opened in SOP mode. You called ${alreadyCalledTools.join(', ')} before creating your plan. ` +
+                    `YOUR NEXT ACTION (mandatory): call todo_write({ "action": "add", "text": "..." }) once per SOP step. ` +
+                    `For steps already covered by the data above, add them then immediately complete them with notes. ` +
+                    `The "action" field is required — never omit it.`
+                  : `[System] Case opened in SOP mode. YOUR NEXT ACTION (mandatory): call todo_write({ "action": "add", "text": "..." }) ` +
+                    `once for every step in the SOP. Do NOT call any investigation tool until todos exist.`
+
+                this.messages.push(this.makeUserMessage(planMsg))
+                await this.traceWriter.write('loop_decision', 'SOP: planning mandate injected', {
+                  alreadyCalledTools, caseType, iteration: this.iterationCount,
+                })
               }
 
               // Continue loop — next iteration has caseLoop active
@@ -1173,16 +1293,24 @@ export class AgentLoop {
     await this.traceWriter.write('loop_decision', 'Exit: max iterations', {
       stopReason, iteration: this.iterationCount, messageCount: this.messages.length,
     })
+
+    // Only escalate when the agent was repeatedly nudged and still failed.
+    // If it just ran out of iterations (e.g. in SOP mode where each turn
+    // requires multiple tool calls), preserve the current stage so the
+    // next HTTP request can continue from where it left off.
+    const shouldEscalate = this.nudgeCount >= 3
     sendEvent({
-      type: 'error',
-      data: 'Max iterations reached',
+      type: shouldEscalate ? 'escalated' : 'message_stop',
+      data: shouldEscalate
+        ? { reason: 'max_iterations', stage: this.currentStage }
+        : { reason: 'max_iterations', stopReason, stage: this.currentStage },
       timestamp: new Date().toISOString(),
     })
     await this.writeProfilerSnapshot()
     return {
       messages: this.messages,
-      caseStatus: 'escalated',
-      transition: 'error',
+      caseStatus: shouldEscalate ? 'escalated' : (this.currentStage as CaseStatus),
+      transition: shouldEscalate ? 'error' : 'next_turn',
       currentStage: this.currentStage,
       reason: 'max_iterations',
     }
@@ -1191,6 +1319,101 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
+
+  /**
+   * Intercept SOP internal tools (todo_write / todo_read) — replace their
+   * mock executor outputs with real in-memory CaseMemory operations.
+   * Must be called after toolExecutor.waitForAll() when isSopMode() is true.
+   */
+  private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
+    const sopToolNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+    return results.map((result) => {
+      if (!sopToolNames.has(result.name)) return result
+
+      if (result.name === 'todo_read') {
+        return {
+          ...result,
+          output: {
+            ok: true,
+            todos: this.caseMemory.getTodos(),
+            dashboardVersion: this.caseMemory.getDashboardVersion(),
+          },
+        }
+      }
+
+      if (result.name === 'todo_write') {
+        const raw = result.toolUse?.input as Record<string, unknown> | undefined
+        // ── Defensive action inference (handles weak models that omit `action`) ──
+        // If the model sends { text } without action → treat as "add".
+        // If the model sends { id } without action → treat as "complete".
+        // If the model sends a top-level `todos` array → batch-add each item.
+        // If the model sends no input at all → return current state with guidance.
+        let input: { action?: string; id?: string; text?: string; notes?: string; status?: string } | undefined = raw as any
+
+        if (!input) {
+          // Model called todo_write() with no arguments — return current state so it can recover
+          return {
+            ...result,
+            output: {
+              ok: false,
+              error: 'todo_write requires action ("add"|"update"|"complete"|"cancel") and relevant fields. Current todos returned so you can proceed.',
+              todos: this.caseMemory.getTodos(),
+              dashboardVersion: this.caseMemory.getDashboardVersion(),
+            },
+          }
+        }
+
+        if (!input.action) {
+          if (Array.isArray((raw as any)?.todos)) {
+            // Model tried to send a batch: add each as a separate todo
+            const batchItems = (raw as any).todos as Array<{ text?: string; notes?: string }>
+            let lastTodos: ReturnType<typeof this.caseMemory.getTodos> = this.caseMemory.getTodos()
+            for (const item of batchItems) {
+              if (item?.text) {
+                const out = this.caseMemory.applyTodoAction({ action: 'add', text: item.text, notes: item.notes })
+                lastTodos = out.todos
+              }
+            }
+            return {
+              ...result,
+              output: { ok: true, todos: lastTodos, dashboardVersion: this.caseMemory.getDashboardVersion() },
+            }
+          } else if (input.id) {
+            input = { ...input, action: 'complete' }
+          } else if (input.text) {
+            input = { ...input, action: 'add' }
+          } else {
+            // No recoverable fields — return current todo list so agent can see state
+            return {
+              ...result,
+              output: {
+                ok: false,
+                error: 'todo_write requires action ("add"|"update"|"complete"|"cancel"). Current todos returned so you can proceed.',
+                todos: this.caseMemory.getTodos(),
+                dashboardVersion: this.caseMemory.getDashboardVersion(),
+              },
+            }
+          }
+        }
+
+        if (!input?.action) {
+          return { ...result, output: { ok: false, error: 'Missing required field: action', todos: this.caseMemory.getTodos() } }
+        }
+
+        const outcome = this.caseMemory.applyTodoAction(input as any)
+        return {
+          ...result,
+          output: {
+            ok: true,
+            todos: outcome.todos,
+            dashboardVersion: this.caseMemory.getDashboardVersion(),
+          },
+        }
+      }
+
+      return result
+    })
+  }
 
   private buildApiMessages() {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2

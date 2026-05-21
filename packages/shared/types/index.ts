@@ -113,12 +113,73 @@ export interface CaseMemoryData {
   keyEvents: KeyEvent[]
   summary?: string
   caseStatus?: string
+  todos?: TodoItem[]
+  /** Per-agent todo lists. Key is agent name (e.g. "order_verifier"). */
+  agentTodos?: Record<string, TodoItem[]>
+  dashboardVersion?: number
+}
+
+// ============================================
+// Shared Dashboard — versioned state for sub-agent polling
+// ============================================
+
+export interface DashboardChange {
+  /** Version that triggered this change notification. */
+  dashboardVersion: number
+  /** Facts added or modified since the last known version. */
+  changedFacts: Record<string, unknown>
+  /** Keys of facts that were removed. */
+  removedFactKeys: string[]
+  /** Per-agent todo changes keyed by agent name. */
+  agentTodoChanges: Record<string, TodoItem[]>
+  /** Key events added since the last known version. */
+  newKeyEvents: KeyEvent[]
+}
+
+/**
+ * Minimal interface for dashboard-aware sub-agents to poll.
+ * CaseMemoryManager satisfies this — avoids circular imports between types and agent code.
+ */
+export interface DashboardReader {
+  getDashboardVersion(): number
+  getConfirmedFacts(): Record<string, unknown>
+  getTodos(): TodoItem[]
+  getAgentTodos(agentName: string): TodoItem[]
+  getKeyEvents(): KeyEvent[]
+  getDashboardDiff(sinceVersion: number): DashboardChange
+}
+
+// ============================================
+// SOP Mode — Todo List
+// ============================================
+
+export interface TodoItem {
+  id: string
+  text: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  /** Who created this todo: 'agent' = Core/SOP agent, 'sop_init' = initial SOP decomposition */
+  addedBy: 'agent' | 'sop_init'
+  addedAt: string    // ISO timestamp
+  completedAt?: string
+  notes?: string
+}
+
+export interface TodoWriteInput {
+  action: 'add' | 'update' | 'complete' | 'cancel'
+  /** Required for update / complete / cancel */
+  id?: string
+  /** Required for add; optional for update */
+  text?: string
+  /** Optional notes / findings for this item */
+  notes?: string
+  /** Optional: set status explicitly on update (defaults applied for complete/cancel) */
+  status?: TodoItem['status']
 }
 
 export interface KeyEvent {
   at: string // ISO timestamp
   text: string
-  source: 'llm' | 'heuristic'
+  source: 'llm' | 'heuristic' | 'dashboard'
 }
 
 // ============================================
@@ -357,6 +418,10 @@ export interface CaseSchemaConfig {
   autoCloseConditions?: Record<string, unknown>
   orchestrator?: OrchestratorConfig
   requireHumanReview?: boolean
+  /** "stage" = predefined stage machine (default); "sop" = SOP-driven autonomous todo */
+  executionMode?: 'stage' | 'sop'
+  /** Natural-language Standard Operating Procedure (only used when executionMode = "sop") */
+  sop?: string
 }
 
 // ============================================
@@ -433,6 +498,8 @@ export interface SubAgentTask {
     caseId: string
     caseMemory: CaseMemoryData
     stageGoal: string
+    /** Live dashboard reader for change polling. Undefined = dashboard disabled (backward compat). */
+    dashboardReader?: DashboardReader
   }
 }
 

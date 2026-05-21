@@ -112,6 +112,16 @@ function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
   return null
 }
 
+/** Human verdicts that mean the case is definitively closed. */
+const TERMINAL_VERDICTS = new Set(['resolved', 'false_alarm', 'confirmed_delayed', 'refund_approved'])
+
+function isTerminalVerdict(verdict: string | null | undefined): boolean {
+  if (!verdict) return false
+  // Normalize: "false alarm" → "false_alarm" etc.
+  const normalized = verdict.replace(/ /g, '_')
+  return TERMINAL_VERDICTS.has(verdict) || TERMINAL_VERDICTS.has(normalized)
+}
+
 /** Build harness CaseSchemaConfig from a CaseType DB row (shared load / hydrate paths). */
 function schemaFromCaseTypeRow(caseType: {
   type: string
@@ -125,6 +135,9 @@ function schemaFromCaseTypeRow(caseType: {
   defaultGoal: string
   escalateOn: string
   autoCloseConditions: string | null
+  executionMode?: string | null
+  sop?: string | null
+  requireHumanReview?: boolean
 }): CaseSchemaConfig {
   const stages = parseMemoryJson(caseType.stages) as string[]
   const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
@@ -143,6 +156,9 @@ function schemaFromCaseTypeRow(caseType: {
     escalateOn: (parseMemoryJson(caseType.escalateOn) as string[]) || [],
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
     orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
+    requireHumanReview: caseType.requireHumanReview === true,
+    executionMode: (caseType.executionMode as 'stage' | 'sop' | undefined) || 'stage',
+    sop: caseType.sop || undefined,
   }
 }
 
@@ -359,7 +375,7 @@ export async function POST(request: NextRequest) {
             // ensures subsequent user messages start a fresh conversation.
             // (caseStatus is injected from Case.status at line 718 — no
             // separate CaseMemory column needed.)
-            if (task.verdict === 'resolved') {
+            if (isTerminalVerdict(task.verdict)) {
               await prisma.case.update({
                 where: { id: resolvedCaseId },
                 data: { status: 'resolved' },
@@ -578,7 +594,7 @@ export async function POST(request: NextRequest) {
                   // When the human resolves the case, auto-transition to resolved stage
                   // so the agent can relay the verdict and call finalize_case without
                   // getting stuck in the investigating stage.
-                  if (resolvedTask.verdict === 'resolved') {
+                  if (isTerminalVerdict(resolvedTask.verdict)) {
                     await prisma.case.update({
                       where: { id: resolvedCaseId },
                       data: { status: 'resolved' },
@@ -765,6 +781,9 @@ export async function POST(request: NextRequest) {
                 skillResults: JSON.stringify(mem.skillResults),
                 keyEvents: JSON.stringify(mem.keyEvents),
                 summary: mem.summary || undefined,
+                todos: mem.todos ? JSON.stringify(mem.todos) : null,
+                agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
+                dashboardVersion: mem.dashboardVersion ?? 0,
               },
               create: {
                 caseId: resolvedCaseId,
@@ -775,6 +794,9 @@ export async function POST(request: NextRequest) {
                 keyEvents: JSON.stringify(mem.keyEvents),
                 humanTaskStatus: 'none',
                 summary: mem.summary || undefined,
+                todos: mem.todos ? JSON.stringify(mem.todos) : null,
+                agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
+                dashboardVersion: mem.dashboardVersion ?? 0,
               },
             })
           } catch (err) {

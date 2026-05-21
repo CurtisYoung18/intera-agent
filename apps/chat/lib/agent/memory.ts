@@ -4,7 +4,7 @@
 //   - Session memory: running summary maintained across turns
 //   - Structured compaction with <analysis>/<summary> format
 
-import type { KeyEvent, CaseMemoryData, MemoryStrategy } from '@intera/shared/types'
+import type { KeyEvent, CaseMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -58,6 +58,12 @@ export class CaseMemoryManager {
   private keyEvents: KeyEvent[] = []
   private caseStatus: string | undefined = undefined
   private summary: string = ''
+  private todos: TodoItem[] = []
+  private agentTodos: Record<string, TodoItem[]> = {}
+  private dashboardVersion: number = 0
+  /** Changelog of fact keys that changed at each dashboard version — used by getDashboardDiff. */
+  private factChangelog: Array<{ atVersion: number; keys: string[] }> = []
+  private static readonly MAX_CHANGELOG_SIZE = 200
   private lastCompactedAt: Date | null = null
   private consecutiveCompactFailures = 0
   private strategy: MemoryStrategy
@@ -74,7 +80,7 @@ export class CaseMemoryManager {
   loadFromDb(data: {
     confirmedFacts?: unknown; missingFacts?: unknown; skillsCalled?: unknown
     skillResults?: unknown; keyEvents?: unknown; summary?: string | null
-    caseStatus?: string | null
+    caseStatus?: string | null; todos?: unknown; agentTodos?: unknown; dashboardVersion?: unknown
   }): void {
     const safeParse = (raw: unknown, fallback: unknown): unknown => {
       if (typeof raw === 'string') {
@@ -96,6 +102,15 @@ export class CaseMemoryManager {
     if (Array.isArray(events)) this.keyEvents = events
     if (data.summary) this.summary = data.summary
     if (data.caseStatus) this.caseStatus = data.caseStatus
+
+    // SOP mode: todos and dashboard version
+    const todosRaw = safeParse(data.todos, [])
+    if (Array.isArray(todosRaw)) this.todos = todosRaw as TodoItem[]
+    const agentTodosRaw = safeParse(data.agentTodos, {})
+    if (agentTodosRaw && typeof agentTodosRaw === 'object' && !Array.isArray(agentTodosRaw)) {
+      this.agentTodos = agentTodosRaw as Record<string, TodoItem[]>
+    }
+    if (typeof data.dashboardVersion === 'number') this.dashboardVersion = data.dashboardVersion
   }
 
   /** Align in-memory status with AgentLoop mid-request stage transitions (persisted on HTTP return). */
@@ -110,8 +125,7 @@ export class CaseMemoryManager {
   ingestFormAnswers(answers: Record<string, string>): void {
     for (const [key, value] of Object.entries(answers)) {
       if (value != null && String(value).trim() !== '') {
-        this.confirmedFacts[key] = String(value).trim()
-        this.missingFacts = this.missingFacts.filter((f) => f !== key)
+        this.setConfirmedFact(key, String(value).trim())
       }
     }
   }
@@ -199,17 +213,16 @@ export class CaseMemoryManager {
         if (facts && typeof facts === 'object') {
           for (const [key, value] of Object.entries(facts)) {
             if (value !== null && value !== undefined && value !== '') {
-              this.confirmedFacts[key] = value
-              this.missingFacts = this.missingFacts.filter((f) => f !== key)
+              this.setConfirmedFact(key, value)
             }
           }
         }
         const flags: string[] = Array.isArray(parsed.flags) ? parsed.flags : []
         if (flags.includes('userReportedNotReceived')) {
-          this.confirmedFacts.userReportedNotReceived = true
+          this.setConfirmedFact('userReportedNotReceived', true)
         }
         if (flags.includes('userReportedPartialMissing')) {
-          this.confirmedFacts.userReportedPartialMissing = true
+          this.setConfirmedFact('userReportedPartialMissing', true)
         }
       } else {
         console.warn('[CaseMemory] Could not extract facts from response')
@@ -237,16 +250,16 @@ export class CaseMemoryManager {
       ? output as Record<string, unknown>
       : {}
     if (skillName === 'query_order_status' && result.status) {
-      this.confirmedFacts.orderStatus = result.status
-      if (result.amount) this.confirmedFacts.orderAmount = result.amount
-      if (result.time) this.confirmedFacts.orderTime = result.time
+      this.setConfirmedFact('orderStatus', result.status)
+      if (result.amount) this.setConfirmedFact('orderAmount', result.amount)
+      if (result.time) this.setConfirmedFact('orderTime', result.time)
     }
     if (skillName === 'query_payment_channel_status') {
-      this.confirmedFacts.channelDelayedBatch = result.delayed_batch
-      if (result.delayed_batch) this.confirmedFacts.delayReason = result.reason
+      if (result.delayed_batch !== undefined) this.setConfirmedFact('channelDelayedBatch', result.delayed_batch)
+      if (result.reason) this.setConfirmedFact('delayReason', result.reason)
     }
     if (skillName === 'read_case_history' && typeof result.total === 'number') {
-      this.confirmedFacts.priorCaseCount = result.total
+      this.setConfirmedFact('priorCaseCount', result.total)
     }
 
     this.keyEvents.push({
@@ -332,6 +345,28 @@ export class CaseMemoryManager {
       parts.push('\n## Key Events')
       const maxEvents = Math.min(this.strategy.maxRecentTraces, 20)
       this.keyEvents.slice(-maxEvents).forEach((e) => parts.push(`- ${e.at}: ${e.text}`))
+    }
+
+    // SOP todos
+    if (this.todos.length > 0) {
+      parts.push('\n## Investigation Todos')
+      for (const todo of this.todos) {
+        const icon = todo.status === 'completed' ? '✓' : todo.status === 'cancelled' ? '✗' : todo.status === 'in_progress' ? '→' : '○'
+        const notes = todo.notes ? ` (${todo.notes})` : ''
+        parts.push(`- [${icon}] ${todo.text}${notes}`)
+      }
+    }
+
+    // Per-agent todos
+    for (const [agentName, agentTodoList] of Object.entries(this.agentTodos)) {
+      if (agentTodoList.length > 0) {
+        parts.push(`\n## Agent "${agentName}" Todos`)
+        for (const todo of agentTodoList) {
+          const icon = todo.status === 'completed' ? '✓' : todo.status === 'cancelled' ? '✗' : todo.status === 'in_progress' ? '→' : '○'
+          const notes = todo.notes ? ` (${todo.notes})` : ''
+          parts.push(`- [${icon}] ${todo.text}${notes}`)
+        }
+      }
     }
 
     // Previous summary (if compacted before)
@@ -437,6 +472,248 @@ export class CaseMemoryManager {
   getSkillsCalled(): string[] { return [...this.skillsCalled] }
   getSkillResult(skillName: string): unknown { return this.skillResults[skillName] }
   getKeyEvents(): KeyEvent[] { return [...this.keyEvents] }
+
+  // ─── Centralized fact writes (bumps dashboardVersion) ─────
+
+  /**
+   * Set a confirmed fact and bump dashboard version.
+   * All fact writes MUST go through this method so sub-agents detect changes.
+   */
+  setConfirmedFact(key: string, value: unknown): void {
+    const oldValue = this.confirmedFacts[key]
+    this.confirmedFacts[key] = value
+    this.missingFacts = this.missingFacts.filter((f) => f !== key)
+    if (JSON.stringify(oldValue) !== JSON.stringify(value)) {
+      this.bumpDashboardVersion()
+      this.factChangelog.push({ atVersion: this.dashboardVersion, keys: [key] })
+      if (this.factChangelog.length > CaseMemoryManager.MAX_CHANGELOG_SIZE) {
+        this.factChangelog.splice(0, 50)
+      }
+      this.keyEvents.push({
+        at: new Date().toISOString(),
+        text: `Fact updated: ${key}=${JSON.stringify(value).slice(0, 80)}`,
+        source: 'dashboard',
+      })
+    }
+  }
+
+  /**
+   * Bulk-set confirmed facts, bumping version once.
+   */
+  setConfirmedFactsBulk(facts: Record<string, unknown>): boolean {
+    const changedKeys: string[] = []
+    for (const [key, value] of Object.entries(facts)) {
+      if (value !== null && value !== undefined && value !== '') {
+        if (JSON.stringify(this.confirmedFacts[key]) !== JSON.stringify(value)) {
+          this.confirmedFacts[key] = value
+          this.missingFacts = this.missingFacts.filter((f) => f !== key)
+          changedKeys.push(key)
+        }
+      }
+    }
+    if (changedKeys.length > 0) {
+      this.bumpDashboardVersion()
+      this.factChangelog.push({ atVersion: this.dashboardVersion, keys: changedKeys })
+      if (this.factChangelog.length > CaseMemoryManager.MAX_CHANGELOG_SIZE) {
+        this.factChangelog.splice(0, 50)
+      }
+      this.keyEvents.push({
+        at: new Date().toISOString(),
+        // Log only actually-changed keys, not all input keys
+        text: `Facts bulk-updated: ${changedKeys.join(', ')}`,
+        source: 'dashboard',
+      })
+    }
+    return changedKeys.length > 0
+  }
+
+  // ─── SOP Mode: todo management ────────────────────────────
+
+  getTodos(): TodoItem[] { return [...this.todos] }
+
+  // ─── Per-agent todo isolation ──────────────────────────────
+
+  getAgentTodos(agentName: string): TodoItem[] {
+    return [...(this.agentTodos[agentName] || [])]
+  }
+
+  /**
+   * Apply a todo action scoped to a specific agent.
+   * Bumps dashboardVersion so the agent detects the change on next poll.
+   */
+  applyAgentTodoAction(agentName: string, input: TodoWriteInput): { todos: TodoItem[]; changed: boolean } {
+    let list = [...(this.agentTodos[agentName] || [])]
+    let changed = false
+    const { action, id, text, notes, status } = input
+
+    switch (action) {
+      case 'add': {
+        const newTodo: TodoItem = {
+          id: crypto.randomUUID(),
+          text: text || '',
+          status: 'pending',
+          addedBy: 'agent',
+          addedAt: new Date().toISOString(),
+          notes: notes || undefined,
+        }
+        list.push(newTodo)
+        changed = true
+        break
+      }
+      case 'update': {
+        const todo = id ? list.find((t) => t.id === id) : undefined
+        if (todo) {
+          if (text !== undefined) todo.text = text
+          if (notes !== undefined) todo.notes = notes
+          if (status !== undefined) todo.status = status
+          changed = true
+        }
+        break
+      }
+      case 'complete': {
+        const todo = id ? list.find((t) => t.id === id) : undefined
+        if (todo && todo.status !== 'completed') {
+          todo.status = 'completed'
+          todo.completedAt = new Date().toISOString()
+          if (notes !== undefined) todo.notes = notes
+          changed = true
+        }
+        break
+      }
+      case 'cancel': {
+        const todo = id ? list.find((t) => t.id === id) : undefined
+        if (todo && todo.status !== 'cancelled') {
+          todo.status = 'cancelled'
+          if (notes !== undefined) todo.notes = notes
+          changed = true
+        }
+        break
+      }
+    }
+
+    if (changed) {
+      this.agentTodos[agentName] = list
+      this.bumpDashboardVersion()
+      this.keyEvents.push({
+        at: new Date().toISOString(),
+        text: `Agent "${agentName}" todo ${action}: ${text?.slice(0, 80) || id || ''}`,
+        source: 'dashboard',
+      })
+    }
+
+    return { todos: [...list], changed }
+  }
+
+  getDashboardVersion(): number { return this.dashboardVersion }
+
+  bumpDashboardVersion(): void { this.dashboardVersion++ }
+
+  /**
+   * Compute what changed on the dashboard since a given version.
+   * Used by sub-agents to generate "[DASHBOARD UPDATE]" context injection.
+   */
+  getDashboardDiff(sinceVersion: number): DashboardChange {
+    // Compute only the facts that changed since sinceVersion using the changelog.
+    const changedKeys = new Set<string>()
+    for (const entry of this.factChangelog) {
+      if (entry.atVersion > sinceVersion) {
+        entry.keys.forEach(k => changedKeys.add(k))
+      }
+    }
+
+    const changedFacts: Record<string, unknown> = {}
+    if (changedKeys.size > 0) {
+      for (const key of changedKeys) {
+        if (key in this.confirmedFacts) changedFacts[key] = this.confirmedFacts[key]
+      }
+    } else if (this.dashboardVersion > sinceVersion) {
+      // Version bumped but no fact changelog entries (e.g. only todo changes) —
+      // include all current facts so the sub-agent has full context.
+      Object.assign(changedFacts, this.confirmedFacts)
+    }
+
+    const agentTodoChanges: Record<string, TodoItem[]> = {}
+    for (const [name, todos] of Object.entries(this.agentTodos)) {
+      agentTodoChanges[name] = [...todos]
+    }
+
+    // Return only the dashboard-source events that postdate sinceVersion.
+    // applyTodoAction can bump dashboardVersion without adding a 'dashboard' event,
+    // so we use (dashboardVersion - sinceVersion) as a ceiling, not an exact count.
+    const dashboardEvents = this.keyEvents.filter(e => e.source === 'dashboard')
+    const newEventCap = Math.max(0, this.dashboardVersion - sinceVersion)
+    const newKeyEvents = newEventCap > 0 ? dashboardEvents.slice(-newEventCap) : []
+
+    return {
+      dashboardVersion: this.dashboardVersion,
+      changedFacts,
+      removedFactKeys: [],
+      agentTodoChanges,
+      newKeyEvents,
+    }
+  }
+
+  /**
+   * Apply a single todo action (add / update / complete / cancel).
+   * Pure in-memory — no DB writes; callers persist via getSummary() on HTTP exit.
+   * Bumps dashboardVersion so sub-agents can detect changes at each ReAct iteration.
+   */
+  applyTodoAction(input: TodoWriteInput): { todos: TodoItem[]; changed: boolean } {
+    const { action, id, text, notes, status } = input
+    let changed = false
+
+    switch (action) {
+      case 'add': {
+        const newTodo: TodoItem = {
+          id: crypto.randomUUID(),
+          text: text || '',
+          status: 'pending',
+          addedBy: 'agent',
+          addedAt: new Date().toISOString(),
+          notes: notes || undefined,
+        }
+        this.todos.push(newTodo)
+        changed = true
+        this.keyEvents.push({ at: newTodo.addedAt, text: `Todo added: ${newTodo.text.slice(0, 80)}`, source: 'heuristic' })
+        break
+      }
+      case 'update': {
+        const todo = id ? this.todos.find((t) => t.id === id) : undefined
+        if (todo) {
+          if (text !== undefined) todo.text = text
+          if (notes !== undefined) todo.notes = notes
+          if (status !== undefined) todo.status = status
+          changed = true
+        }
+        break
+      }
+      case 'complete': {
+        const todo = id ? this.todos.find((t) => t.id === id) : undefined
+        if (todo && todo.status !== 'completed') {
+          todo.status = 'completed'
+          todo.completedAt = new Date().toISOString()
+          if (notes !== undefined) todo.notes = notes
+          changed = true
+          this.keyEvents.push({ at: todo.completedAt, text: `Todo completed: ${todo.text.slice(0, 80)}`, source: 'heuristic' })
+        }
+        break
+      }
+      case 'cancel': {
+        const todo = id ? this.todos.find((t) => t.id === id) : undefined
+        if (todo && todo.status !== 'cancelled') {
+          todo.status = 'cancelled'
+          if (notes !== undefined) todo.notes = notes
+          changed = true
+        }
+        break
+      }
+    }
+
+    if (changed) this.bumpDashboardVersion()
+
+    return { todos: [...this.todos], changed }
+  }
+
   getSummary(): CaseMemoryData {
     return {
       caseId: this.caseId,
@@ -447,6 +724,9 @@ export class CaseMemoryManager {
       keyEvents: this.keyEvents,
       summary: this.summary,
       caseStatus: this.caseStatus,
+      todos: this.todos.length > 0 ? [...this.todos] : undefined,
+      agentTodos: Object.keys(this.agentTodos).length > 0 ? { ...this.agentTodos } : undefined,
+      dashboardVersion: this.dashboardVersion,
     }
   }
 
@@ -467,5 +747,31 @@ export class CaseMemoryManager {
       stages: { ...prev.stages, [stage]: signatureForAgentNames(agentNames) },
     }
     this.skillResults = { ...this.skillResults, [SUB_AGENT_DISPATCH_MARKER_KEY]: marker }
+  }
+
+  /**
+   * Return all fields needed for prisma.caseMemory.upsert().
+   * Keeps DB write paths consistent across the codebase.
+   */
+  getDbFields(): {
+    confirmedFacts: string
+    missingFacts: string
+    skillsCalled: string
+    skillResults: string
+    keyEvents: string
+    todos: string | null
+    agentTodos: string | null
+    dashboardVersion: number
+  } {
+    return {
+      confirmedFacts: JSON.stringify(this.confirmedFacts),
+      missingFacts: JSON.stringify(this.missingFacts),
+      skillsCalled: JSON.stringify(this.skillsCalled),
+      skillResults: JSON.stringify(this.skillResults),
+      keyEvents: JSON.stringify(this.keyEvents),
+      todos: this.todos.length > 0 ? JSON.stringify(this.todos) : null,
+      agentTodos: Object.keys(this.agentTodos).length > 0 ? JSON.stringify(this.agentTodos) : null,
+      dashboardVersion: this.dashboardVersion,
+    }
   }
 }

@@ -25,9 +25,11 @@ interface CaseTypeItem {
   orchestratorConfig: string
   enabled: boolean
   requireHumanReview?: boolean
+  executionMode?: string
+  sop?: string | null
 }
 
-type ModalTab = 'basic' | 'stages'
+type ModalTab = 'basic' | 'stages' | 'sop'
 
 const CT_JSON_FIELDS = ['stages', 'requiredFacts', 'escalateOn', 'autoCloseConditions'] as const
 
@@ -87,7 +89,7 @@ export default function CaseTypesPage() {
     description: '',
     icon: '📋',
     defaultGoal: '',
-    stages: '[]',
+    stages: '["created","investigating","resolved"]',
     requiredFacts: '[]',
     escalateOn: '[]',
     autoCloseConditions: '[]',
@@ -95,6 +97,8 @@ export default function CaseTypesPage() {
     orchestratorConfig: '{"enabled":false,"maxParallelAgents":3}',
     enabled: true,
     requireHumanReview: false,
+    executionMode: 'stage',
+    sop: null,
   })
 
   const openEdit = (ct: CaseTypeItem) => {
@@ -229,7 +233,8 @@ export default function CaseTypesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((ct) => {
-            const hasStageConfig = (() => {
+            const isSop = ct.executionMode === 'sop'
+            const hasStageConfig = !isSop && (() => {
               try {
                 const cfg = JSON.parse(ct.stageConfigs || '{}')
                 return Object.keys(cfg).length > 0
@@ -247,6 +252,12 @@ export default function CaseTypesPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <div className="text-[13px] font-semibold text-[var(--mist)]">{ct.displayName || ct.type}</div>
+                        {isSop && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-malachite/[0.08] text-malachite font-medium flex items-center gap-1">
+                            <Wand2 className="w-2.5 h-2.5" />
+                            SOP
+                          </span>
+                        )}
                         {hasStageConfig && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-lavender/[0.08] text-lavender font-medium flex items-center gap-1">
                             <Settings2 className="w-2.5 h-2.5" />
@@ -347,18 +358,34 @@ export default function CaseTypesPage() {
               >
                 {t('caseTypes.tab.basic')}
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('stages')}
-                className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
-                  activeTab === 'stages'
-                    ? 'bg-white/80 text-[var(--mist)] shadow-sm'
-                    : 'text-[var(--fog)] hover:text-[var(--mist)]'
-                }`}
-              >
-                <Settings2 className="w-3.5 h-3.5" />
-                {t('caseTypes.tab.stages')}
-              </button>
+              {editing.executionMode !== 'sop' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('stages')}
+                  className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                    activeTab === 'stages'
+                      ? 'bg-white/80 text-[var(--mist)] shadow-sm'
+                      : 'text-[var(--fog)] hover:text-[var(--mist)]'
+                  }`}
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  {t('caseTypes.tab.stages')}
+                </button>
+              )}
+              {editing.executionMode === 'sop' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('sop')}
+                  className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                    activeTab === 'sop'
+                      ? 'bg-white/80 text-[var(--mist)] shadow-sm'
+                      : 'text-[var(--fog)] hover:text-[var(--mist)]'
+                  }`}
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  SOP
+                </button>
+              )}
             </div>
 
             {/* ── Basic Tab ─────────────────────────────────── */}
@@ -427,6 +454,46 @@ export default function CaseTypesPage() {
                   />
                   <span className="text-[12px] text-[var(--fog)]">Require human review before finalize</span>
                 </label>
+
+                {/* Execution Mode selector */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] text-[var(--fog)]">Execution Mode</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditing({ ...editing, executionMode: 'stage' })}
+                      className={`flex-1 py-2 px-3 rounded-lg text-[12px] font-medium border transition-all flex items-center justify-center gap-1.5 ${
+                        editing.executionMode !== 'sop'
+                          ? 'bg-lavender/[0.12] border-lavender/30 text-lavender'
+                          : 'bg-transparent border-[var(--border-subtle)] text-[var(--fog)] hover:border-[var(--border-hover)]'
+                      }`}
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                      Stage Mode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditing({ ...editing, executionMode: 'sop' })
+                        setActiveTab('sop')
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-lg text-[12px] font-medium border transition-all flex items-center justify-center gap-1.5 ${
+                        editing.executionMode === 'sop'
+                          ? 'bg-malachite/[0.12] border-malachite/30 text-malachite'
+                          : 'bg-transparent border-[var(--border-subtle)] text-[var(--fog)] hover:border-[var(--border-hover)]'
+                      }`}
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      SOP Mode
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-[var(--smoke)]">
+                    {editing.executionMode === 'sop'
+                      ? 'Agent reads your SOP document and builds a dynamic todo list — no predefined stage pipeline.'
+                      : 'Agent follows a predefined stage pipeline with configurable guardrails per stage.'}
+                  </p>
+                </div>
+
                 {CT_JSON_FIELDS.map((f) => (
                   <label key={f} className="space-y-1.5 block">
                     <div className="flex items-center justify-between">
@@ -463,6 +530,40 @@ export default function CaseTypesPage() {
                     setEditing({ ...editing, stageConfigs: JSON.stringify(configs, null, 2) })
                   }}
                 />
+              </div>
+            )}
+
+            {/* ── SOP Config Tab ────────────────────────────── */}
+            {activeTab === 'sop' && (
+              <div className="space-y-4 animate-fade-up">
+                <div className="p-3 rounded-xl bg-malachite/[0.06] border border-malachite/20 text-[12px] text-malachite/80 space-y-1">
+                  <p className="font-medium">SOP Mode — Autonomous Todo Execution</p>
+                  <p className="text-[11px] opacity-80">
+                    Write your Standard Operating Procedure below. The agent reads this document,
+                    builds its own investigation todo list, and progressively executes each step.
+                    Customer facts shared during investigation update the shared dashboard — the agent
+                    sees them at each iteration.
+                  </p>
+                </div>
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">Standard Operating Procedure (SOP)</span>
+                  <textarea
+                    value={editing.sop || ''}
+                    onChange={(e) => setEditing({ ...editing, sop: e.target.value })}
+                    rows={18}
+                    placeholder={`Write the SOP in plain language. Example:\n\n1. Collect the customer's transaction ID and amount.\n2. Query order status — if pending, check the payment channel.\n3. If the channel is normal and order is pending >30min, check for delay notices.\n4. Based on findings, either:\n   a. Confirm batch settlement delay — inform customer of expected ETA.\n   b. Escalate to human if anomaly detected.\n5. Finalize case with conclusion and evidence.`}
+                    className="glass-input-console text-[12px] font-mono resize-y leading-relaxed"
+                  />
+                </label>
+                <div className="p-3 rounded-xl bg-[var(--abyss)]/40 border border-[var(--border-subtle)] text-[11px] text-[var(--fog)] space-y-1">
+                  <p className="font-medium text-[var(--smoke)]">Tips for writing effective SOPs</p>
+                  <ul className="list-disc list-inside space-y-0.5 opacity-80">
+                    <li>Number steps clearly — the agent uses these to build its todo list</li>
+                    <li>Specify which skills to call for each investigation step</li>
+                    <li>Include decision branches (if/else) for different findings</li>
+                    <li>End with a finalize instruction so the agent knows when to close</li>
+                  </ul>
+                </div>
               </div>
             )}
 

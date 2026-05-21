@@ -4,10 +4,11 @@
 // Active case is expanded showing facts/skills/investigation; others are collapsed.
 // Replaces the old floating CaseCard + CaseTabBar pattern.
 
-import { useState, useMemo, useEffect } from 'react'
-import { ChevronDown, ChevronRight, X, Layers } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
+import { ChevronDown, ChevronRight, X, Layers, CheckCircle2, Circle, XCircle, Loader2, ClipboardList } from 'lucide-react'
 import type { CaseCardData } from '@/components/chat/case-card'
-import type { DedicatedAgentState, ActiveCase } from '@/app/chat/use-intera-chat'
+import type { DedicatedAgentState, ActiveCase, TodoItem } from '@/app/chat/use-intera-chat'
 import AgentProgressCard from '@/components/chat/agent-progress-card'
 
 type CaseStatus = 'created' | 'investigating' | 'collecting' | 'waiting_human' | 'resolved' | 'escalated'
@@ -113,6 +114,8 @@ export default function CasePanel({
               facts={facts}
               skills={skills}
               missing={missing}
+              todos={c.todos}
+              agentTodos={c.agentTodos}
               caseAgents={caseAgents}
               coreAgentProgress={isActive ? coreAgentProgress : null}
               executingToolName={isActive ? executingToolName : null}
@@ -139,6 +142,8 @@ function CasePanelCard({
   facts,
   skills,
   missing,
+  todos,
+  agentTodos,
   caseAgents,
   coreAgentProgress,
   executingToolName,
@@ -156,6 +161,8 @@ function CasePanelCard({
   facts: [string, unknown][]
   skills: string[]
   missing: string[]
+  todos?: TodoItem[]
+  agentTodos?: Record<string, TodoItem[]>
   caseAgents: DedicatedAgentState[]
   coreAgentProgress: {
     stage: string
@@ -290,8 +297,13 @@ function CasePanelCard({
             </div>
           )}
 
+          {/* SOP Todo List */}
+          {todos && todos.length > 0 && (
+            <TodoList todos={todos} preferZh={preferZh} />
+          )}
+
           {/* Missing */}
-          {missing.length > 0 && (
+          {missing.length > 0 && !todos?.length && (
             <div>
               <p className="text-[8px] font-medium uppercase tracking-[0.06em] text-fog/25 mb-1.5">
                 {preferZh ? '待收集' : 'Needs'}
@@ -316,7 +328,7 @@ function CasePanelCard({
               <div className="border-l-2 border-indigo/25 pl-2">
                 <p className="text-[10px] text-indigo/70">
                   {(coreAgentProgress.stage || '').replace(/_/g, ' ')}
-                  {coreAgentProgress.iteration > 0 && ` · iter ${coreAgentProgress.iteration}`}
+                  {coreAgentProgress.iteration > 1 && ` · iter ${coreAgentProgress.iteration}`}
                 </p>
                 {coreAgentProgress.task && (
                   <p className="text-[9px] text-fog/45 mt-0.5 line-clamp-2">
@@ -334,6 +346,47 @@ function CasePanelCard({
               <span className="text-[9px] font-mono text-indigo/70">
                 {executingToolName.replace(/_/g, ' ')}
               </span>
+            </div>
+          )}
+
+          {/* Per-agent dashboard todos */}
+          {agentTodos && Object.keys(agentTodos).length > 0 && (
+            <div>
+              <p className="text-[8px] font-medium uppercase tracking-[0.06em] text-fog/25 mb-1.5">
+                {preferZh ? '代理任务看板' : 'Agent Tasks'}
+              </p>
+              {Object.entries(agentTodos).map(([agentName, agentTodoList]) => (
+                <div key={agentName} className="mb-2 last:mb-0">
+                  <span className="text-[9px] font-mono text-fog/35">{agentName}</span>
+                  {agentTodoList.length === 0 ? (
+                    <p className="text-[9px] text-fog/20 italic pl-1">No tasks</p>
+                  ) : (
+                    <div className="mt-0.5 space-y-0.5">
+                      {agentTodoList.slice(0, 5).map((todo) => {
+                        const icon =
+                          todo.status === 'completed' ? '✓' :
+                          todo.status === 'cancelled' ? '✗' :
+                          todo.status === 'in_progress' ? '→' : '○'
+                        const colorClass =
+                          todo.status === 'completed' ? 'text-emerald-400' :
+                          todo.status === 'cancelled' ? 'text-fog/30 line-through' :
+                          todo.status === 'in_progress' ? 'text-amber-400' : 'text-fog/30'
+                        return (
+                          <div key={todo.id} className={`flex items-center gap-1 pl-2 text-[9px] ${colorClass}`}>
+                            <span className="shrink-0 text-[8px]">{icon}</span>
+                            <span className="truncate">{todo.text}</span>
+                          </div>
+                        )
+                      })}
+                      {agentTodoList.length > 5 && (
+                        <p className="text-[8px] text-fog/20 pl-2">
+                          +{agentTodoList.length - 5} more
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
@@ -356,13 +409,133 @@ function CasePanelCard({
           )}
 
           {/* Empty state */}
-          {facts.length === 0 && skills.length === 0 && missing.length === 0 && (
+          {facts.length === 0 && skills.length === 0 && missing.length === 0 && !todos?.length && (
             <p className="text-[10px] text-fog/25 italic">
               {preferZh ? '正在收集信息…' : 'Gathering information…'}
             </p>
           )}
 
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── SOP Todo List ─────────────────────────────────────────────────────────────
+
+
+function TodoList({ todos, preferZh }: { todos: TodoItem[]; preferZh: boolean }) {
+  const [showAll, setShowAll] = useState(false)
+
+  // CC style: preserve insertion order (addedAt). Items stay in place when
+  // status changes — completed ones get strikethrough in-situ, not moved to bottom.
+  const ordered = [...todos].sort((a, b) =>
+    new Date(a.addedAt ?? 0).getTime() - new Date(b.addedAt ?? 0).getTime(),
+  )
+
+  const doneCount = todos.filter((t) => t.status === 'completed').length
+  const totalCount = todos.filter((t) => t.status !== 'cancelled').length
+  const visible = showAll ? ordered : ordered.slice(0, 6)
+
+  return (
+    <div>
+      {/* Section header */}
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1">
+          <ClipboardList className="w-[9px] h-[9px] text-fog/25" />
+          <p className="text-[8px] font-medium uppercase tracking-[0.06em] text-fog/25">
+            {preferZh ? '调查待办' : 'Investigation Plan'}
+          </p>
+        </div>
+        {totalCount > 0 && (
+          <span className="text-[8px] text-fog/25">
+            {doneCount}/{totalCount}
+          </span>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      {totalCount > 0 && (
+        <div className="h-[2px] bg-fog/10 rounded-full mb-2 overflow-hidden">
+          <motion.div
+            className="h-full bg-malachite/50 rounded-full"
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.round((doneCount / totalCount) * 100)}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
+      )}
+
+      {/* Todo items — CC style: items stay in insertion order, state changes animate in place */}
+      <div className="space-y-[5px]">
+        <AnimatePresence initial={false}>
+          {visible.map((todo) => {
+            const isDone = todo.status === 'completed'
+            const isCancelled = todo.status === 'cancelled'
+            const isActive = todo.status === 'in_progress'
+            const isPending = todo.status === 'pending'
+
+            return (
+              <motion.div
+                key={todo.id}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-start gap-1.5 py-[1px]">
+                  {/* Status icon */}
+                  <span className="mt-[2px] shrink-0">
+                    {isDone   && <CheckCircle2 className="w-3 h-3 text-malachite/60" />}
+                    {isCancelled && <XCircle className="w-3 h-3 text-fog/20" />}
+                    {isActive && <Loader2 className="w-3 h-3 text-indigo/70 animate-spin" />}
+                    {isPending && <Circle className="w-3 h-3 text-fog/25" />}
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    {/* Text with animated strikethrough */}
+                    <motion.p
+                      animate={{
+                        opacity: isDone || isCancelled ? 0.35 : isActive ? 1 : 0.65,
+                        textDecorationLine: isDone || isCancelled ? 'line-through' : 'none',
+                      }}
+                      transition={{ duration: 0.25 }}
+                      className={`text-[10px] leading-snug text-fog ${isActive ? 'font-medium' : ''}`}
+                      style={{ textDecorationColor: 'rgb(var(--color-fog) / 0.3)' }}
+                    >
+                      {todo.text}
+                    </motion.p>
+
+                    {/* Findings shown inline under completed item */}
+                    {isDone && todo.notes && (
+                      <motion.p
+                        initial={{ opacity: 0, y: -2 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: 0.1 }}
+                        className="text-[9px] text-malachite/50 mt-0.5 line-clamp-2 leading-snug"
+                      >
+                        {todo.notes}
+                      </motion.p>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* Show more / less */}
+      {ordered.length > 6 && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-1.5 text-[9px] text-fog/30 hover:text-fog/60 transition-colors"
+        >
+          {showAll
+            ? (preferZh ? '收起' : 'Show less')
+            : (preferZh ? `查看全部 ${ordered.length} 项` : `Show all ${ordered.length} items`)}
+        </button>
       )}
     </div>
   )

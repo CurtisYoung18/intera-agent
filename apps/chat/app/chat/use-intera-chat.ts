@@ -65,6 +65,16 @@ export type AgentStatus = 'online' | 'thinking' | 'executing' | 'waiting' | 'off
 
 export type CaseStatus = 'created' | 'collecting' | 'investigating' | 'waiting_human' | 'resolved' | 'escalated'
 
+export interface TodoItem {
+  id: string
+  text: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  addedBy: 'agent' | 'sop_init'
+  addedAt: string
+  completedAt?: string
+  notes?: string
+}
+
 export interface ActiveCase {
   caseId: string
   caseType: string
@@ -78,6 +88,10 @@ export interface ActiveCase {
   missingFacts?: string[]
   currentStage?: string
   createdAt: string
+  /** SOP mode: current investigation todo list */
+  todos?: TodoItem[]
+  /** Per-agent todo lists. Key = agent name. */
+  agentTodos?: Record<string, TodoItem[]>
 }
 
 export interface DedicatedAgentState {
@@ -92,6 +106,8 @@ export interface DedicatedAgentState {
   recommendation?: string
   durationMs?: number
   startedAt: string
+  /** Agent-scoped todos for this dedicated agent. */
+  todos?: TodoItem[]
 }
 
 export interface PendingFormOffer {
@@ -191,6 +207,13 @@ interface LaneBuffer {
   textHasArrived: boolean
   thinkingBuf: string
   thinkingStartedAt: string
+  /**
+   * Persistent-stream turn tracking.
+   * Set to true on message_stop; cleared on the next stream_request_start.
+   * When stream_request_start fires with turnEnded=true we know a NEW turn
+   * is starting (not just a mid-turn ReAct iteration) and reset per-turn state.
+   */
+  turnEnded: boolean
 }
 
 function createLaneBuffer(firstTextMsgId: string, presetCaseId: string | null): LaneBuffer {
@@ -204,6 +227,7 @@ function createLaneBuffer(firstTextMsgId: string, presetCaseId: string | null): 
     textHasArrived: false,
     thinkingBuf: '',
     thinkingStartedAt: '',
+    turnEnded: false,
   }
 }
 
@@ -287,6 +311,15 @@ export function useInteraChat(): UseInteraChatReturn {
 
   // Stable chat session ID — generated once per page-load, shared by all cases in this conversation.
   const chatIdRef = useRef<string>(crypto.randomUUID())
+
+  /**
+   * CC-aligned persistent SSE streams — one per active case.
+   * Opened on case_created; receives events for all subsequent turns of that case.
+   * Key = caseId, value = AbortController so we can close on dismiss.
+   */
+  const persistentStreamAbortsRef = useRef<Map<string, AbortController>>(new Map())
+  /** Per-case LaneBuffer for the persistent stream consumer. */
+  const persistentLanesRef = useRef<Map<string, LaneBuffer>>(new Map())
 
   useEffect(() => {
     setSession(readSessionFromUrl())
@@ -446,6 +479,35 @@ export function useInteraChat(): UseInteraChatReturn {
     const dispatch = (event: { type: string; data?: unknown }) => {
       switch (event.type) {
         case 'stream_request_start':
+          // Persistent-stream new-turn detection:
+          // stream_request_start fires for every ReAct iteration, so we use
+          // the turnEnded flag (set by message_stop) to distinguish a genuine
+          // new user-turn from a mid-turn tool→LLM iteration.
+          if (lane.turnEnded) {
+            lane.turnEnded = false
+            // Start a fresh placeholder bubble for this new turn.
+            const newTurnMsgId = crypto.randomUUID()
+            lane.firstTextMsgId = newTurnMsgId
+            lane.textBubbles.push(newTurnMsgId)
+            lane.textMsgId = newTurnMsgId
+            lane.textHasArrived = false
+            lane.thinkingBuf = ''
+            lane.thinkingStartedAt = ''
+            lane.toolMsgIds = new Map()
+            lane.activeToolCount = 0
+            setIsLoading(true)
+            setMessages((prev) => [
+              ...prev,
+              makeMsg({
+                id: newTurnMsgId,
+                role: 'assistant',
+                msgType: 'text',
+                relatedCaseId: lane.caseId ?? undefined,
+                content: '',
+                isStreaming: true,
+              }),
+            ])
+          }
           setAgentStatus('thinking')
           hooks?.onStreamingTool?.(null)
           break
@@ -482,6 +544,9 @@ export function useInteraChat(): UseInteraChatReturn {
             setActiveCaseIndex(updated.length - 1)
             return updated
           })
+          // CC-aligned: open a persistent SSE for this case so subsequent
+          // turns don't need to re-initialise AgentLoop from DB each time.
+          openPersistentStream(cc.caseId)
           break
         }
 
@@ -634,6 +699,8 @@ export function useInteraChat(): UseInteraChatReturn {
             confirmedFacts?: Record<string, unknown>
             missingFacts?: string[]
             skillsCalled?: string[]
+            todos?: TodoItem[]
+            agentTodos?: Record<string, TodoItem[]>
           }
           const cid = lane.caseId
           if (!cid) break
@@ -646,6 +713,8 @@ export function useInteraChat(): UseInteraChatReturn {
                     confirmedFacts: { ...c.confirmedFacts, ...mem.confirmedFacts },
                     skillsCalled: [...new Set([...(c.skillsCalled || []), ...(mem.skillsCalled || [])])],
                     missingFacts: mem.missingFacts,
+                    todos: mem.todos ?? c.todos,
+                    agentTodos: mem.agentTodos ?? c.agentTodos,
                   }
                 : c,
             ),
@@ -855,6 +924,10 @@ export function useInteraChat(): UseInteraChatReturn {
             const fid = lane.firstTextMsgId
             setMessages((prev) => prev.filter((m) => m.id !== fid))
           }
+          // Mark turn as ended — the next stream_request_start will be for a new turn.
+          // Also clear loading state for persistent-stream turns (no finally block to do it).
+          lane.turnEnded = true
+          setIsLoading(false)
           break
         }
 
@@ -962,10 +1035,127 @@ export function useInteraChat(): UseInteraChatReturn {
     }
   }
 
+  /**
+   * Open a persistent SSE stream for an established case (CC-aligned pattern).
+   * The stream stays alive for the entire case lifetime; subsequent messages are
+   * POSTed to /api/cases/[caseId]/message and events arrive here.
+   *
+   * Safe to call multiple times — no-ops if the stream is already open.
+   */
+  const openPersistentStream = useCallback(
+    (caseId: string) => {
+      if (persistentStreamAbortsRef.current.has(caseId)) return // already open
+
+      const ac = new AbortController()
+      persistentStreamAbortsRef.current.set(caseId, ac)
+
+      // Create a lane with a dummy placeholder (the real first-turn bubble was
+      // already created by the /api/messages response that opened the case).
+      // The placeholder has turnEnded=true so the FIRST stream_request_start
+      // from the persistent stream triggers the new-bubble creation logic.
+      const dummyId = crypto.randomUUID()
+      const lane = createLaneBuffer(dummyId, caseId)
+      lane.turnEnded = true // treat as "previous turn already ended"
+      persistentLanesRef.current.set(caseId, lane)
+
+      const preferZh = /[一-鿿]/.test(lastUserMsgRef.current || '')
+
+      const url =
+        `/api/cases/${encodeURIComponent(caseId)}/stream` +
+        `?customerId=${encodeURIComponent(session.customerId)}` +
+        `&userId=${encodeURIComponent(effectiveUserId)}` +
+        (selectedUserLabel ? `&userLabel=${encodeURIComponent(selectedUserLabel)}` : '') +
+        `&chatId=${encodeURIComponent(chatIdRef.current)}`
+
+      // Run async in background — results arrive through the lane's dispatch.
+      ;(async () => {
+        try {
+          const response = await fetch(url, { signal: ac.signal })
+          if (!response.ok) throw new Error(`Persistent stream HTTP ${response.status}`)
+          const reader = response.body?.getReader()
+          if (!reader) throw new Error('No response body')
+
+          // consumeAgentReadableStream reads until the reader is exhausted (stream closed).
+          // For a persistent stream this runs for the case lifetime, processing multiple turns
+          // via the turnEnded flag in stream_request_start / message_stop.
+          await consumeAgentReadableStream(reader, lane, preferZh, {
+            onStreamingTool: setStreamingToolName,
+          })
+        } catch (err: unknown) {
+          const isAbort =
+            (err instanceof DOMException && err.name === 'AbortError') ||
+            (err as { name?: string })?.name === 'AbortError'
+          if (!isAbort) {
+            console.error(`[PersistentStream] ${caseId} error:`, err)
+          }
+        } finally {
+          persistentStreamAbortsRef.current.delete(caseId)
+          persistentLanesRef.current.delete(caseId)
+        }
+      })()
+    },
+    [session.customerId, effectiveUserId, selectedUserLabel],
+  )
+
+  /**
+   * Send a message to an established case via POST /api/cases/[caseId]/message.
+   * Events arrive through the already-open persistent SSE stream.
+   * Returns true if the message was successfully enqueued.
+   */
+  const postMessageToCase = useCallback(
+    async (
+      caseId: string,
+      content: string,
+      formAnswers?: Record<string, string>,
+    ): Promise<boolean> => {
+      const body: Record<string, unknown> = { customerId: session.customerId, userId: effectiveUserId }
+      if (selectedUserLabel) body.userLabel = selectedUserLabel
+
+      if (formAnswers) {
+        body.formResult = { caseId, answers: formAnswers }
+      } else {
+        body.message = content
+      }
+
+      try {
+        const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        return res.ok
+      } catch {
+        return false
+      }
+    },
+    [session.customerId, effectiveUserId, selectedUserLabel],
+  )
+
   const submitCaseForm = useCallback(
     async (caseId: string, answers: Record<string, string>) => {
       const preferZh = /[一-鿿]/.test(lastUserMsgRef.current || '')
       const splitNow = splitModeRef.current
+
+      // ── CC-aligned path: persistent stream is open for this case ──────────
+      // Just POST the form answers — events arrive through the SSE stream.
+      if (persistentStreamAbortsRef.current.has(caseId)) {
+        setIsLoading(true)
+        setAgentStatus('thinking')
+        setCoreAgentProgress(null)
+        setStreamingToolName(null)
+        try {
+          await postMessageToCase(caseId, '', answers)
+        } catch (e) {
+          console.error('Form continuation error (persistent):', e)
+          setAgentStatus('offline')
+          setIsLoading(false)
+        } finally {
+          promoteNextFormInteraction()
+        }
+        return
+      }
+
+      // ── Legacy path: no persistent stream, use /api/messages ──────────────
       if (!splitNow && activeStreamsRef.current > 0) return
 
       activeStreamsRef.current++
@@ -1029,13 +1219,49 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [promoteNextFormInteraction, session.customerId, session.userId],
+    [promoteNextFormInteraction, postMessageToCase, session.customerId, session.userId],
   )
 
   const submitMessage = useCallback(
     async (text: string) => {
       const splitNow = splitModeRef.current
+      const activeCaseIdNow = actualCaseIdRef.current
+      const hasPersistentStream = persistentStreamAbortsRef.current.has(activeCaseIdNow)
 
+      // CC-aligned path: persistent stream is open for the active case.
+      // Just POST the message — events arrive through the already-open SSE.
+      if (hasPersistentStream && activeCaseIdNow) {
+        lastUserMsgRef.current = text
+        setMessages((prev) => [
+          ...prev,
+          makeMsg({ id: crypto.randomUUID(), role: 'user', msgType: 'text', content: text }),
+        ])
+        setIsLoading(true)
+        setAgentStatus('thinking')
+        setCoreAgentProgress(null)
+        setStreamingToolName(null)
+
+        const ok = await postMessageToCase(activeCaseIdNow, text)
+        if (!ok) {
+          setAgentStatus('offline')
+          setIsLoading(false)
+          setMessages((prev) => [
+            ...prev,
+            makeMsg({
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              msgType: 'text',
+              relatedCaseId: activeCaseIdNow,
+              content: /[一-鿿]/.test(text) ? '抱歉，消息发送失败，请重试。' : 'Failed to send message. Please try again.',
+              isStreaming: false,
+            }),
+          ])
+        }
+        // isLoading=false and agentStatus are set by message_stop in the persistent SSE handler.
+        return
+      }
+
+      // Legacy path: no persistent stream — use /api/messages with SSE response.
       if (!splitNow && activeStreamsRef.current > 0) {
         queuedRef.current = [...queuedRef.current, text]
         setQueuedCount(queuedRef.current.length)
@@ -1061,7 +1287,7 @@ export function useInteraChat(): UseInteraChatReturn {
       try {
         const streamMsgId = crypto.randomUUID()
         firstTextMsgId = streamMsgId
-        const lane = createLaneBuffer(streamMsgId, actualCaseIdRef.current)
+        const lane = createLaneBuffer(streamMsgId, activeCaseIdNow)
 
         setMessages((prev) => [
           ...prev,
@@ -1083,7 +1309,7 @@ export function useInteraChat(): UseInteraChatReturn {
             userId: effectiveUserId,
             userLabel: selectedUserLabel,
             chatId: chatIdRef.current,
-            caseId: actualCaseIdRef.current,
+            caseId: activeCaseIdNow,
             ...(selectedCaseTypeRef.current
               ? { caseType: selectedCaseTypeRef.current, skipClassification: true }
               : {}),
@@ -1119,7 +1345,7 @@ export function useInteraChat(): UseInteraChatReturn {
               id: crypto.randomUUID(),
               role: 'assistant',
               msgType: 'text',
-              content: preferZh ? '抱歉，请求失败，请稍后重试。' : 'Sorry, something went wrong. Please try again.',
+              content: /[一-鿿]/.test(text) ? '抱歉，请求失败，请稍后重试。' : 'Sorry, something went wrong. Please try again.',
               isStreaming: false,
             }),
           ])
@@ -1140,7 +1366,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [session.customerId, effectiveUserId],
+    [session.customerId, effectiveUserId, postMessageToCase],
   )
 
   const runParallelBootstrap = useCallback(
@@ -1284,6 +1510,14 @@ export function useInteraChat(): UseInteraChatReturn {
 
   const dismissCase = useCallback(
     (caseId: string) => {
+      // Close the persistent SSE stream if open for this case
+      const ac = persistentStreamAbortsRef.current.get(caseId)
+      if (ac) {
+        ac.abort()
+        persistentStreamAbortsRef.current.delete(caseId)
+        persistentLanesRef.current.delete(caseId)
+      }
+
       setCases((prev) => {
         const updated = prev.filter((c) => c.caseId !== caseId)
         if (updated.length === 0) {
@@ -1385,6 +1619,26 @@ export function useInteraChat(): UseInteraChatReturn {
       })
       if (!caseIdForInteraction) return
 
+      const cid = caseIdForInteraction
+
+      // CC-aligned path: use persistent stream if open
+      if (persistentStreamAbortsRef.current.has(cid)) {
+        setIsLoading(true)
+        setAgentStatus('thinking')
+        setCoreAgentProgress(null)
+        setStreamingToolName(null)
+        const payload: Record<string, unknown> = { optionId }
+        if (input) payload.input = input
+        const content = `Tool propose_interaction result: ${JSON.stringify(payload)}`
+        const ok = await postMessageToCase(cid, content)
+        if (!ok) {
+          setAgentStatus('offline')
+          setIsLoading(false)
+        }
+        return
+      }
+
+      // Legacy path: no persistent stream
       const preferZh = /[一-鿿]/.test(lastUserMsgRef.current || '')
       activeStreamsRef.current++
       setIsLoading(true)
@@ -1393,7 +1647,7 @@ export function useInteraChat(): UseInteraChatReturn {
       setStreamingToolName(null)
 
       const firstTextMsgId = crypto.randomUUID()
-      const lane = createLaneBuffer(firstTextMsgId, caseIdForInteraction)
+      const lane = createLaneBuffer(firstTextMsgId, cid)
 
       setMessages((prev) => [
         ...prev,
@@ -1401,7 +1655,7 @@ export function useInteraChat(): UseInteraChatReturn {
           id: firstTextMsgId,
           role: 'assistant',
           msgType: 'text',
-          relatedCaseId: caseIdForInteraction,
+          relatedCaseId: cid,
           content: '',
           isStreaming: true,
         }),
@@ -1415,7 +1669,7 @@ export function useInteraChat(): UseInteraChatReturn {
             customerId: session.customerId,
             userId: effectiveUserId,
             userLabel: selectedUserLabel,
-            interactionResult: { caseId: caseIdForInteraction, optionId, input },
+            interactionResult: { caseId: cid, optionId, input },
           }),
         })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -1433,7 +1687,7 @@ export function useInteraChat(): UseInteraChatReturn {
         if (activeStreamsRef.current <= 0) setStreamingToolName(null)
       }
     },
-    [session.customerId, effectiveUserId],
+    [session.customerId, effectiveUserId, postMessageToCase],
   )
 
   return {

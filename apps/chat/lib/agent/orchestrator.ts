@@ -11,6 +11,7 @@ import type {
   SSEEvent,
   SkillDefinition,
 } from '@intera/shared/types'
+import type { CaseMemoryManager } from './memory'
 import { SubAgent } from './sub-agent'
 import { DEFAULT_ORCHESTRATOR_CONFIG } from '@intera/shared/defaults'
 import { prisma } from '@intera/shared/prisma'
@@ -23,6 +24,8 @@ export class OrchestratorAgent {
     private caseSchema: CaseSchemaConfig,
     private skillDefinitions: SkillDefinition[] = [],
     private platformUserId: string = 'anonymous',
+    /** Live memory manager for shared dashboard polling by sub-agents. */
+    private memoryManager?: CaseMemoryManager,
   ) {}
 
   /** Whether sub-agent dispatch is enabled for this case type. */
@@ -273,11 +276,20 @@ export class OrchestratorAgent {
           text: `Sub-agent ${result.agentName} completed: ${result.recommendation || 'no recommendation'}`,
           source: 'llm',
         })
+        const memSnap = this.memoryManager ? this.memoryManager.getSummary() : null
+        const versionFields = memSnap
+          ? {
+              dashboardVersion: memSnap.dashboardVersion ?? 0,
+              // Persist agentTodos so they survive across requests/restarts
+              agentTodos: memSnap.agentTodos ? JSON.stringify(memSnap.agentTodos) : null,
+            }
+          : {}
         await prisma.caseMemory.upsert({
           where: { caseId: result.caseId },
           update: {
             skillResults: JSON.stringify(prevResults),
             keyEvents: JSON.stringify(prevEvents),
+            ...versionFields,
           },
           create: {
             caseId: result.caseId,
@@ -287,6 +299,7 @@ export class OrchestratorAgent {
             missingFacts: '[]',
             skillsCalled: '[]',
             humanTaskStatus: 'none',
+            ...versionFields,
           },
         })
       } catch (err) {
@@ -383,7 +396,16 @@ export class OrchestratorAgent {
     }
 
     if (Object.keys(safeFindings).length > 0) {
-      Object.assign(caseMemory.confirmedFacts, safeFindings)
+      if (this.memoryManager) {
+        // Write through the live memory manager — this bumps dashboardVersion so
+        // sub-agents detect the change on their next poll. The manager's internal
+        // confirmedFacts IS the same object getSummary() returns, so no separate
+        // snapshot write is needed.
+        this.memoryManager.setConfirmedFactsBulk(safeFindings)
+      } else {
+        // No live manager (legacy / test path) — update the snapshot directly.
+        Object.assign(caseMemory.confirmedFacts, safeFindings)
+      }
     }
 
     caseMemory.skillResults[`subagent:${result.agentName}`] = {
@@ -467,7 +489,11 @@ export class OrchestratorAgent {
   /** Run a single sub-agent. Creates a fresh instance each call so task-specific
    *  configuration (taskPrompt, context) is never stale from a previous dispatch. */
   private async runSubAgent(task: SubAgentTask): Promise<SubAgentResult> {
-    const agent = new SubAgent(task.agentConfig, this.skillDefinitions)
+    // Wire the live dashboard reader into the task context so SubAgent can poll
+    if (this.memoryManager) {
+      task.context.dashboardReader = this.memoryManager
+    }
+    const agent = new SubAgent(task.agentConfig, this.skillDefinitions, this.memoryManager)
     return agent.investigate(task)
   }
 }

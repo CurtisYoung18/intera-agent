@@ -11,7 +11,7 @@
 //   • Applies stage transitions evaluated by StageExecutor
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { Message, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
+import type { Message, SSEEvent, CaseSchemaConfig, TodoItem } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StageExecutor, type TransitionEval } from './stage-executor'
 import { OrchestratorAgent } from './orchestrator'
@@ -19,6 +19,7 @@ import type { CaseMemoryManager } from './memory'
 import type { PolicyEngine } from './policy'
 import type { TraceWriter } from './trace'
 import type { SkillRouter } from './skills'
+import { SOP_INTERNAL_SKILLS } from './skills'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
@@ -83,6 +84,7 @@ export class CaseAgentLoop {
       caseSchema,
       services.skillRouter.getToolDefinitions(),
       services.userId,
+      services.caseMemory,
     )
   }
 
@@ -90,9 +92,15 @@ export class CaseAgentLoop {
 
   get currentStage(): string { return this._currentStage }
 
-  /** True when the case is past the "created" discovery stage. */
+  /**
+   * True when the case is past the "created" discovery stage.
+   * SOP mode: also returns true for "created" so the SOP prompt with todo
+   * tools is shown immediately after create_case, without waiting for a
+   * no-tools iteration to trigger stage transition.
+   */
   isStageActive(): boolean {
-    return this._currentStage !== 'created'
+    if (this._currentStage !== 'created') return true
+    return this.isSopMode()
   }
 
   /** Re-sync stage from CaseMemory — call this after loadMemory. */
@@ -131,6 +139,122 @@ export class CaseAgentLoop {
     return this.stageExecutor.hasStageConfigs()
   }
 
+  /** True when this case type uses SOP-driven autonomous todo execution. */
+  isSopMode(): boolean {
+    return this.caseSchema.executionMode === 'sop'
+  }
+
+  // ── SOP mode: prompt + tool selection ────────────────────────────────────
+
+  /**
+   * Build the SOP-mode system prompt.
+   * Embeds the natural-language SOP document and current todo list so the
+   * agent can plan and track its own investigation steps.
+   */
+  buildSopPrompt(basePrompt: string, todos: TodoItem[], facts: Record<string, unknown>): string {
+    const sopDoc = this.caseSchema.sop?.trim() || '(No SOP document provided — use your best judgment.)'
+
+    const todoLines = todos.length === 0
+      ? '  ⚠️ EMPTY — You MUST create todos via todo_write BEFORE calling any investigation tools. Read the SOP above and break each step into a todo item.'
+      : todos.map((t) => {
+          const icon = t.status === 'completed' ? '✓' : t.status === 'cancelled' ? '✗' : t.status === 'in_progress' ? '→' : '○'
+          const notes = t.notes ? ` — ${t.notes}` : ''
+          return `  [${icon}] ${t.id.slice(0, 8)} ${t.text}${notes}`
+        }).join('\n')
+
+    const factLines = Object.entries(facts).length === 0
+      ? '  (none yet)'
+      : Object.entries(facts)
+          .filter(([k]) => !k.startsWith('__'))
+          .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
+          .join('\n')
+
+    const header = [
+      `[INTERA MODE: SOP EXECUTION | type: ${this.caseSchema.type} | stage: ${this._currentStage}]`,
+      '',
+      '## Standard Operating Procedure',
+      sopDoc,
+      '',
+      '## Current Investigation Todos',
+      todoLines,
+      '',
+      '## Confirmed Facts',
+      factLines,
+      '',
+      '## ⚠️ NON-NEGOTIABLE EXECUTION RULES',
+      '',
+      '**Rule 1 — Decision conditions are HARD TRIGGERS, not suggestions:**',
+      'The SOP\'s decision / 判断结果 section maps conditions to required tool calls.',
+      'When you determine that a condition is satisfied, you MUST call the prescribed tool',
+      'IN THAT SAME TURN — not the next turn, not after collecting more data.',
+      '',
+      '  ✅ CORRECT: Condition met → immediately call create_human_task / finalize_case / etc.',
+      '  ❌ WRONG:   Condition met → describe the situation in text → ask user for more info',
+      '',
+      'Example: SOP says "账号状态与客户描述冲突 → create_human_task(queue=\'account_ops\')".',
+      'If you see account status=Active but customer cannot log in, call create_human_task NOW.',
+      'Do NOT say "需要人工核查" and then ask the customer questions. That is hallucination.',
+      '',
+      '**Rule 2 — Never narrate without acting:**',
+      'If you write "this needs human review" or "I will escalate this" — you MUST call the',
+      'corresponding tool in the SAME response. Text without the tool call is a failed turn.',
+      '',
+      '**Rule 3 — Never ask follow-up questions when SOP prescribes an action:**',
+      'Once a decision condition is met, additional customer input cannot change the outcome.',
+      'The SOP has already decided. Execute it. Do NOT ask "Can you tell me more about..."',
+      'or "What error message did you see?" — that information cannot override the SOP.',
+      '',
+      '**Rule 4 — One turn = one decisive action:**',
+      'After each set of tool results, either:',
+      '  (a) Call the next tool in your plan, OR',
+      '  (b) If a decision condition is met → call the required terminal tool, OR',
+      '  (c) If all todos complete → call finalize_case.',
+      'A text-only response is only valid when you are asking the user for input via request_user_input,',
+      'or when you are delivering the final resolution message after finalize_case / create_human_task.',
+      '',
+      '## Instructions',
+      '',
+      '**CRITICAL — Plan before acting:**',
+      '- If the todo list is empty, you MUST use todo_write to create your initial investigation plan from the SOP steps above BEFORE calling any investigation tools.',
+      '- Use todo_read at the start of every turn to review the current plan.',
+      '- Use todo_write to add, complete, or cancel items. Record findings in the notes field when completing.',
+      '- Complete each todo item before moving on — do not leave stale pending todos.',
+      '- When all todos are done and the case is resolved, call finalize_case.',
+      '- Add new todos if investigation reveals additional steps.',
+      '- After receiving any tool result, you MUST call the next tool OR the terminal tool. Never produce a text-only turn unless using request_user_input or delivering a final message after a terminal tool.',
+      '',
+      '## todo_write usage (exact format required)',
+      '```',
+      '# Add a new item:',
+      '  todo_write({ "action": "add", "text": "Query order status" })',
+      '',
+      '# Mark complete with findings:',
+      '  todo_write({ "action": "complete", "id": "<id-from-add-result>", "notes": "Order completed, amount matched" })',
+      '',
+      '# Cancel an irrelevant item:',
+      '  todo_write({ "action": "cancel", "id": "<id>" })',
+      '```',
+      'The "action" field is REQUIRED. Call todo_write once per item — do NOT batch.',
+      '',
+    ].join('\n')
+
+    return header + basePrompt
+  }
+
+  /**
+   * Filter tools for SOP mode — all customer skills plus the internal
+   * todo_write/todo_read tools (injected only in SOP execution).
+   */
+  filterSopTools(allTools: Tool[]): Tool[] {
+    const sopTools: Tool[] = SOP_INTERNAL_SKILLS.map((s) => ({
+      name: s.name,
+      description: s.description,
+      input_schema: s.inputSchema as Tool['input_schema'],
+    }))
+    // Prepend todo tools so the LLM sees them first
+    return [...sopTools, ...allTools]
+  }
+
   // ── No-tools stage evaluation ─────────────────────────────────────────────
 
   /**
@@ -144,6 +268,11 @@ export class CaseAgentLoop {
     missingSkills: string[]
     missingEvidence: string[]
   } {
+    // SOP mode: no stage nudges — the agent drives itself via todos
+    if (this.isSopMode()) {
+      return { advanced: false, needsNudge: false, nudgeMessage: '', missingSkills: [], missingEvidence: [] }
+    }
+
     if (!this.stageExecutor.hasStageConfigs()) {
       return { advanced: false, needsNudge: false, nudgeMessage: '', missingSkills: [], missingEvidence: [] }
     }
@@ -176,6 +305,22 @@ export class CaseAgentLoop {
   async evaluateStageTransitionAfterNoTools(
     iterationCount: number,
   ): Promise<TransitionEval> {
+    // SOP mode: skip LLM stage evaluator — advance 'created' → first stage automatically,
+    // then let the agent drive via todos (no further stage machine transitions).
+    if (this.isSopMode()) {
+      if (this._currentStage === 'created') {
+        const next = this.stageExecutor.getNextStageName('created')
+        if (next) {
+          return {
+            shouldTransition: true,
+            nextStage: next,
+            reason: 'SOP mode: auto-advance from created to investigation stage.',
+          }
+        }
+      }
+      return { shouldTransition: false, reason: 'SOP mode: stage progression driven by todos.' }
+    }
+
     let transitionEval: TransitionEval
     try {
       transitionEval = await this.stageExecutor.evaluateTransition(this._currentStage, iterationCount)
@@ -432,24 +577,16 @@ export class CaseAgentLoop {
           },
         })
 
-        const mem = caseMemory.getSummary()
+        const dbFields = caseMemory.getDbFields()
         await prisma.caseMemory.upsert({
           where: { caseId },
           update: {
-            confirmedFacts: JSON.stringify(mem.confirmedFacts),
-            missingFacts: JSON.stringify(mem.missingFacts),
-            skillsCalled: JSON.stringify(mem.skillsCalled),
-            skillResults: JSON.stringify(mem.skillResults),
-            keyEvents: JSON.stringify(mem.keyEvents),
+            ...dbFields,
             humanTaskStatus: 'pending',
           },
           create: {
             caseId,
-            confirmedFacts: JSON.stringify(mem.confirmedFacts),
-            missingFacts: JSON.stringify(mem.missingFacts),
-            skillsCalled: JSON.stringify(mem.skillsCalled),
-            skillResults: JSON.stringify(mem.skillResults),
-            keyEvents: JSON.stringify(mem.keyEvents),
+            ...dbFields,
             humanTaskStatus: 'pending',
           },
         })

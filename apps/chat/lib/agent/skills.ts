@@ -494,6 +494,60 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
 ]
 
 /**
+ * SOP Internal Skills — only injected into the tool list when a case type
+ * uses `executionMode: 'sop'`. Intercepted in AgentLoop (never sent to the
+ * streaming-tool-executor for real execution).
+ */
+export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
+  {
+    name: 'todo_write',
+    description:
+      'Create, update, complete, or cancel a todo item in the case investigation plan. ' +
+      'Use "add" to create a new todo, "complete" to mark one done (with findings as notes), ' +
+      '"cancel" to drop an item that is no longer relevant, and "update" to revise text or notes. ' +
+      'Always complete or cancel items as you progress — do not leave stale pending todos.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['add', 'update', 'complete', 'cancel'],
+          description: '"add" creates a new todo; "complete"/"cancel"/"update" require id.',
+        },
+        id: { type: 'string', description: 'Todo ID — required for update / complete / cancel.' },
+        text: { type: 'string', description: 'Todo description (required for add; optional for update).' },
+        notes: { type: 'string', description: 'Findings or reason for this state change (e.g., what was discovered on completion).' },
+      },
+      required: ['action'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Updating investigation plan', icon: 'dots' },
+    zodSchema: z.object({
+      action: z.enum(['add', 'update', 'complete', 'cancel']),
+      id: z.string().optional(),
+      text: z.string().optional(),
+      notes: z.string().optional(),
+    }),
+    mockFixture: { ok: true, todos: [] },
+  },
+  {
+    name: 'todo_read',
+    description: 'Read the current investigation todo list. Call this at the start of each turn to see pending, in-progress, and completed items before deciding what to do next.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Reviewing investigation plan', icon: 'scan' },
+    mockFixture: { todos: [] },
+  },
+]
+
+/**
  * Skill Router — manages the skill registry and provides tool definitions
  * in Anthropic API format.
  */
