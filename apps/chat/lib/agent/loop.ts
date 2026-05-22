@@ -403,12 +403,12 @@ export class AgentLoop {
 
       // ── StreamingToolExecutor is created BEFORE the stream so tools
       //    can be enqueued incrementally as each tool_use block completes.
-      // NOTE: SOP-internal tools (todo_write / todo_read) are excluded from
-      // the live skill_result emission here — their executor output is just
-      // the empty mock fixture. The real result, populated by
-      // processTodoTools() against CaseMemory, is emitted manually further
-      // down so the UI receives the actual todo list (not [] from the mock).
+      // NOTE: SOP-internal tools (todo_write / todo_read) and create_case are
+      // excluded from live skill_result emission — their executor output is just
+      // the empty mock fixture. The real results are emitted manually further
+      // down (todo list via processTodoTools, caseId via case_created event).
       const sopInternalNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+      sopInternalNames.add('create_case')
       const toolExecutor = new StreamingToolExecutor(
         this.skillRouter.getToolDefinitions(),
         (toolUse, status) => {

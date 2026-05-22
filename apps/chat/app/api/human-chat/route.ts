@@ -214,8 +214,9 @@ export async function POST(request: NextRequest) {
           let delay = 500
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+              const selfUrl = `http://localhost:${process.env.PORT || 3000}`
               const res = await fetch(
-                `${process.env.NEXT_PUBLIC_CHAT_API_URL || 'http://localhost:3000'}/api/messages`,
+                `${selfUrl}/api/messages`,
                 {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
