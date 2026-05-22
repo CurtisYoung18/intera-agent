@@ -44,6 +44,7 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   resumePrompt: '',
   formResponseTemplate: '',
   prefixContinuationEnabled: false,
+  enableLlmSanitization: false,
 }
 
 // Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.
@@ -89,6 +90,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
           '',
         prefixContinuationStop: ((dbConfig as Record<string, unknown>).prefixContinuationStop as string | undefined) ?? undefined,
         debugMode: Boolean((dbConfig as Record<string, unknown>).debugMode),
+        enableLlmSanitization: Boolean((dbConfig as Record<string, unknown>).enableLlmSanitization),
       }
       setCachedConfig(customerId, config)
       return config

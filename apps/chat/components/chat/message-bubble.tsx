@@ -3,9 +3,10 @@
 
 import { memo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'motion/react'
+import { motion, AnimatePresence } from 'motion/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { CheckCircle2, XCircle, Loader2, Circle, ClipboardList } from 'lucide-react'
 import GlassCard from '@intera/shared/ui/glass-card'
 import FormCard from './form-card'
 import IntentClarificationCard from './intent-clarification-card'
@@ -27,6 +28,7 @@ export interface MessageShape {
     | 'intent_resolved'
     | 'interaction_proposed'
     | 'interaction_resolved'
+    | 'todo_plan'
   content: string
   isStreaming?: boolean
   thinking?: string
@@ -56,6 +58,7 @@ export interface MessageShape {
     locale: 'zh' | 'en'
   }
   interactionOptions?: any
+  todos?: import('@/app/chat/use-intera-chat').TodoItem[]
   timestamp: string
 }
 
@@ -123,6 +126,10 @@ function MessageBubble({
 
   if (msgType === 'tool_call') {
     return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} toolResult={toolResult} timestamp={msg.timestamp} />
+  }
+
+  if (msgType === 'todo_plan') {
+    return <TodoPlanBubble todos={msg.todos ?? []} timestamp={msg.timestamp} />
   }
 
   if (msgType === 'policy_block') {
@@ -251,9 +258,14 @@ function MessageBubble({
   const align = role === 'user' ? 'items-end' : 'items-start'
   const maxW = role === 'user' ? 'max-w-[85%]' : 'max-w-[90%]'
 
+  // Sanitize assistant content only — strip leaked <think>...</think> blocks
+  // and the orphan `</think>` pattern that exposes verbatim tool-result JSON.
+  // User-typed content is rendered as-is.
+  const renderContent = role === 'assistant' ? stripThinkLeakage(content) : content
+
   // Don't render empty text bubbles — RespondingBubble handles the loading indicator.
   // This also prevents orphaned streaming placeholder messages from showing as "...".
-  if (!content) return null
+  if (!renderContent) return null
 
   return (
     <div className={`flex flex-col ${align}`}>
@@ -283,10 +295,10 @@ function MessageBubble({
           )}
           <div className="font-serif text-[16px] sm:text-[18px] leading-relaxed text-mist">
             {role === 'assistant' && isStreaming ? (
-              <StreamingText text={content} isStreaming />
+              <StreamingText text={renderContent} isStreaming />
             ) : (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {content}
+                {renderContent}
               </ReactMarkdown>
             )}
           </div>
@@ -463,7 +475,152 @@ function FormSubmittedBubble({ formData }: {
   )
 }
 
+// ─── Todo plan bubble (CC-style inline dashboard) ─────────────────
+
+function TodoPlanBubble({ todos, timestamp }: {
+  todos: NonNullable<MessageShape['todos']>
+  timestamp: string
+}) {
+  const doneCount = todos.filter((t) => t.status === 'completed').length
+  const totalCount = todos.filter((t) => t.status !== 'cancelled').length
+  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+
+  return (
+    <div className="flex flex-col items-start">
+      <div className="animate-message-in max-w-[480px]">
+        <div className="rounded-2xl bg-abyss/80 backdrop-blur-xl px-4 py-3 border border-[var(--border-subtle)]">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <ClipboardList className="w-3.5 h-3.5 text-indigo/60" />
+              <span className="text-[11px] font-sans font-medium text-fog/70 tracking-wide">
+                调查待办
+              </span>
+            </div>
+            {totalCount > 0 && (
+              <span className="text-[10px] font-mono text-fog/40">
+                {doneCount}/{totalCount}
+              </span>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {totalCount > 0 && (
+            <div className="h-[2px] bg-fog/10 rounded-full mb-3 overflow-hidden">
+              <motion.div
+                className="h-full bg-malachite/50 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+              />
+            </div>
+          )}
+
+          {/* Todo items */}
+          <div className="space-y-[5px]">
+            <AnimatePresence initial={false}>
+              {todos.map((todo) => {
+                const isDone = todo.status === 'completed'
+                const isCancelled = todo.status === 'cancelled'
+                const isActive = todo.status === 'in_progress'
+                const isPending = todo.status === 'pending'
+
+                return (
+                  <motion.div
+                    key={todo.id}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex items-start gap-1.5 py-[1px]">
+                      {/* Status icon */}
+                      <span className="mt-[2px] shrink-0">
+                        {isDone   && <CheckCircle2 className="w-3 h-3 text-malachite/60" />}
+                        {isCancelled && <XCircle className="w-3 h-3 text-fog/20" />}
+                        {isActive  && <Loader2 className="w-3 h-3 text-indigo/70 animate-spin" />}
+                        {isPending && <Circle className="w-3 h-3 text-fog/25" />}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        {/* Text with animated strikethrough */}
+                        <motion.p
+                          animate={{
+                            opacity: isDone || isCancelled ? 0.35 : isActive ? 1 : 0.65,
+                            textDecorationLine: isDone || isCancelled ? 'line-through' : 'none',
+                          }}
+                          transition={{ duration: 0.25 }}
+                          className={`text-[11px] leading-snug text-fog ${isActive ? 'font-medium' : ''}`}
+                          style={{ textDecorationColor: 'rgb(var(--color-fog) / 0.3)' }}
+                        >
+                          {todo.text}
+                        </motion.p>
+
+                        {/* Findings shown inline under completed item */}
+                        {isDone && todo.notes && (
+                          <motion.p
+                            initial={{ opacity: 0, y: -2 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.2, delay: 0.1 }}
+                            className="text-[9px] text-malachite/50 mt-0.5 line-clamp-2 leading-snug"
+                          >
+                            {todo.notes}
+                          </motion.p>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+      {timestamp && (
+        <span className="mt-1.5 text-[11px] font-sans text-fog/30 px-2 select-none">
+          {formatTime(timestamp)}
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Strip all model-context leakage patterns from assistant text before display.
+ *
+ * MiniMax-class models occasionally leak internal context into their text output:
+ *
+ *   1. `<think>...</think>` blocks — paired CoT wrappers. Remove fully.
+ *   2. Orphan `</think>` — API layer dropped the opening tag; everything before
+ *      the closing tag is CoT content. Drop from start through first `</think>`.
+ *   3. `Tool <name> result: {...}` lines — the loop stores tool results in the
+ *      message history as `role:"assistant"` strings formatted this way (see
+ *      addToolResultMessages in loop.ts). The model sometimes echoes these back
+ *      verbatim in its own text output. Remove any line matching this pattern.
+ *   4. `[System] ...` / `[POLICY] ...` injected lines — internal system prompts
+ *      that should never surface to the customer.
+ */
+function stripThinkLeakage(text: string): string {
+  if (!text) return text
+  // 1. Remove paired think blocks
+  let out = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '')
+  // 2. Orphan closing tag — drop everything up through it
+  if (out.includes('</think>')) {
+    out = out.replace(/^[\s\S]*?<\/think>\s*/i, '')
+  }
+  // 3. Strip "Tool <name> result: ..." blocks — JSON may span multiple lines.
+  //    Match from the keyword through the end of the JSON object/array
+  //    (stops at the first blank line after the result content).
+  out = out.replace(/Tool \w+ result: [\s\S]*?(?=\n\n|\n(?=[A-Z一-鿿<\[])|$)/g, '')
+  // 4. Strip [System] / [POLICY] injected lines
+  out = out.replace(/^\[(System|POLICY)\][^\n]*$/gm, '')
+  // Collapse runs of blank lines left behind by stripping
+  out = out.replace(/\n{3,}/g, '\n\n')
+  return out.trim()
+}
 
 function formatTime(iso: string): string {
   try {

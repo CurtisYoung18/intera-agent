@@ -21,7 +21,7 @@ import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation } from './compact'
 import { Profiler } from './profiler'
-import { writeDebugRequest, writeDebugResponse } from './debug-logger'
+import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 
@@ -36,6 +36,90 @@ interface StreamContentBlock {
   name: string
   content: string
   completed: boolean
+}
+
+// ---------------------------------------------------------------------------
+// StreamingTextSanitizer
+// Strips <think>…</think>, orphan </think>, and "Tool X result: …" leakage
+// from the streaming text before it reaches the client.  The 60-char hold-back
+// ensures patterns that straddle chunk boundaries are caught correctly.
+// ---------------------------------------------------------------------------
+
+class StreamingTextSanitizer {
+  private static readonly HOLD_BACK = 60
+  private buf = ''
+  private inThink = false
+  private inToolResult = false
+
+  feed(chunk: string): string {
+    this.buf += chunk
+    return this.drain()
+  }
+
+  flush(): string {
+    if (this.inThink || this.inToolResult) {
+      this.buf = ''
+      return ''
+    }
+    const out = this.buf
+    this.buf = ''
+    return out
+  }
+
+  private drain(): string {
+    let out = ''
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      if (this.inThink) {
+        const end = this.buf.indexOf('</think>')
+        if (end === -1) break
+        this.buf = this.buf.slice(end + 8).replace(/^\s+/, '')
+        this.inThink = false
+        continue
+      }
+      if (this.inToolResult) {
+        const blank = this.buf.indexOf('\n\n')
+        if (blank === -1) break
+        this.buf = this.buf.slice(blank + 2)
+        this.inToolResult = false
+        continue
+      }
+
+      let earliest = -1
+      let kind: 'think' | 'orphan' | 'tool' | null = null
+      const tryIdx = (idx: number, k: typeof kind) => {
+        if (idx !== -1 && (earliest === -1 || idx < earliest)) {
+          earliest = idx
+          kind = k
+        }
+      }
+      tryIdx(this.buf.indexOf('<think>'), 'think')
+      tryIdx(this.buf.indexOf('</think>'), 'orphan')
+      const toolM = this.buf.match(/Tool \w+ result: /)
+      tryIdx(toolM ? this.buf.indexOf(toolM[0]) : -1, 'tool')
+
+      if (earliest === -1) {
+        const safe = Math.max(0, this.buf.length - StreamingTextSanitizer.HOLD_BACK)
+        out += this.buf.slice(0, safe)
+        this.buf = this.buf.slice(safe)
+        break
+      }
+
+      if (kind === 'think') {
+        out += this.buf.slice(0, earliest)
+        this.buf = this.buf.slice(earliest + '<think>'.length)
+        this.inThink = true
+      } else if (kind === 'orphan') {
+        out += this.buf.slice(0, earliest)
+        this.buf = this.buf.slice(earliest + '</think>'.length).replace(/^\s+/, '')
+      } else if (kind === 'tool') {
+        out += this.buf.slice(0, earliest)
+        this.buf = this.buf.slice(earliest + toolM![0].length)
+        this.inToolResult = true
+      }
+    }
+    return out
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -310,11 +394,22 @@ export class AgentLoop {
         timestamp: new Date().toISOString(),
       })
 
+      // Per-iteration streaming sanitizer — strips <think>/Tool-result leakage
+      // from text_delta events before they reach the client.
+      const textSanitizer = new StreamingTextSanitizer()
+
       // ── StreamingToolExecutor is created BEFORE the stream so tools
       //    can be enqueued incrementally as each tool_use block completes.
+      // NOTE: SOP-internal tools (todo_write / todo_read) are excluded from
+      // the live skill_result emission here — their executor output is just
+      // the empty mock fixture. The real result, populated by
+      // processTodoTools() against CaseMemory, is emitted manually further
+      // down so the UI receives the actual todo list (not [] from the mock).
+      const sopInternalNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
       const toolExecutor = new StreamingToolExecutor(
         this.skillRouter.getToolDefinitions(),
         (toolUse, status) => {
+          if (sopInternalNames.has(toolUse.name)) return
           const skillDef = this.skillRouter.getSkill(toolUse.name)
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'skill_result',
@@ -415,12 +510,20 @@ export class AgentLoop {
           case 'content_block_start': {
             const b = event.content_block
             if (b.type === 'tool_use') {
+              // Some Anthropic-compatible providers (MiniMax, DeepSeek) send the
+              // complete tool input in content_block_start.input instead of
+              // streaming it via input_json_delta events. Seed content from
+              // b.input so those providers don't silently drop the input.
+              const seedContent =
+                b.input && typeof b.input === 'object' && Object.keys(b.input as Record<string, unknown>).length > 0
+                  ? JSON.stringify(b.input)
+                  : ''
               blocks.set(event.index, {
                 index: event.index,
                 type: 'tool_use',
                 id: b.id,
                 name: b.name,
-                content: '',
+                content: seedContent,
                 completed: false,
               })
             } else if (b.type === 'text') {
@@ -455,11 +558,14 @@ export class AgentLoop {
               if (!fullText) this.profiler.recordFirstToken()
               cb.content += d.text
               fullText += d.text
-              sendEvent({
-                type: 'text_delta',
-                data: d.text,
-                timestamp: new Date().toISOString(),
-              })
+              const cleanChunk = textSanitizer.feed(d.text)
+              if (cleanChunk) {
+                sendEvent({
+                  type: 'text_delta',
+                  data: cleanChunk,
+                  timestamp: new Date().toISOString(),
+                })
+              }
             } else if (d.type === 'input_json_delta') {
               cb.content += d.partial_json
             } else if (d.type === 'thinking_delta') {
@@ -569,8 +675,14 @@ export class AgentLoop {
           }
 
           // ── message stop ──────────────────────────────────────
-          case 'message_stop':
+          case 'message_stop': {
+            // Flush any text still held back in the sanitizer's lookahead buffer.
+            const tail = textSanitizer.flush()
+            if (tail) {
+              sendEvent({ type: 'text_delta', data: tail, timestamp: new Date().toISOString() })
+            }
             break
+          }
         }
       }
       } catch (streamErr) {
@@ -632,6 +744,20 @@ export class AgentLoop {
       assistantMessage.content = fullText
       assistantMessage.isStreaming = false
 
+      // ── LLM-based leaked context sanitization ──────────────────
+      // MiniMax-class models occasionally leak internal context into
+      // text output: <think> blocks, orphan </think>, "Tool X result:"
+      // echoes. An LLM eval detects and strips these patterns — more
+      // robust than regex against new/evolving leakage formats.
+      // Gated behind enableLlmSanitization (off by default).
+      if (fullText && this.deps.config.enableLlmSanitization) {
+        const sanitized = await this.sanitizeLeakedContext(fullText)
+        if (sanitized !== fullText) {
+          fullText = sanitized
+          assistantMessage.content = sanitized
+        }
+      }
+
       // ── Wait for all tools to finish ─────────────────────────
       let toolResults = await toolExecutor.waitForAll()
       for (const tr of toolResults) {
@@ -643,6 +769,28 @@ export class AgentLoop {
       // are replaced here with real in-memory operations on CaseMemory.
       if (this.caseLoop?.isSopMode()) {
         toolResults = this.processTodoTools(toolResults)
+
+        // Manually fan out skill_result events for SOP-internal tools using
+        // the REAL post-intercept output. The live executor callback
+        // suppressed them above because at that point the result was just
+        // the empty mock fixture. Emitting here ensures the inline todo
+        // dashboard in the UI sees the actual todo list.
+        for (const tr of toolResults) {
+          if (!sopInternalNames.has(tr.name)) continue
+          const skillDef = this.skillRouter.getSkill(tr.name)
+          // Emit a synthetic "executing" first so the UI's tool-call tracking
+          // stays in sync (matches the pair pattern from non-SOP tools).
+          sendEvent({
+            type: 'tool_executing',
+            data: { name: tr.name, status: 'executing', displayVerb: skillDef?.displayVerb },
+            timestamp: new Date().toISOString(),
+          })
+          sendEvent({
+            type: 'skill_result',
+            data: { name: tr.name, status: 'completed', result: tr.output },
+            timestamp: new Date().toISOString(),
+          })
+        }
       }
 
       if (
@@ -810,9 +958,13 @@ export class AgentLoop {
         // When the model produces text without calling tools, use an LLM eval
         // to check whether the response is a legitimate end-of-turn or the
         // model is "describing instead of doing."
-        // SOP mode: skip — we fully trust the model (CC pattern). The SOP
-        // empty-turn nudge above already handles genuine stuck turns.
-        if (fullText && fullText.length > 30 && !this.caseLoop?.isSopMode()) {
+        //
+        // Threshold is 1 for all modes — even short Chinese narrations like
+        // "现在查询历史工单和知识库。" (13 chars) or "让我再查询一下当前有效的活动详情："
+        // (15 chars) slip past a 30-char cutoff yet are exactly the verbal
+        // hallucination pattern we need to catch. The LLM eval correctly
+        // classifies legitimate short responses ("好的", "明白了").
+        if (fullText && fullText.length >= 1) {
           const reactResult = await this.evaluateReactCompliance(fullText)
 
           if (reactResult === 'nudge') {
@@ -1351,7 +1503,22 @@ export class AgentLoop {
         let input: { action?: string; id?: string; text?: string; notes?: string; status?: string } | undefined = raw as any
 
         if (!input) {
-          // Model called todo_write() with no arguments — return current state so it can recover
+          // Model called todo_write() with no arguments.
+          // If Zod already rejected this (result.toolUse is missing), preserve its
+          // specific error ("Input validation failed: action: Required") instead of
+          // replacing it with a less helpful generic message.
+          const existingError = (result.output as Record<string, unknown> | null)?.error as string | undefined
+          if (!result.toolUse && existingError) {
+            return {
+              ...result,
+              output: {
+                ok: false,
+                error: `todo_write input invalid: ${existingError}`,
+                todos: this.caseMemory.getTodos(),
+                dashboardVersion: this.caseMemory.getDashboardVersion(),
+              },
+            }
+          }
           return {
             ...result,
             output: {
@@ -1548,6 +1715,9 @@ export class AgentLoop {
     if (snapshot.totalDurationMs > 0) {
       await this.traceWriter.write('loop_decision', 'Profiler Snapshot', snapshot as unknown as Record<string, unknown>)
     }
+    if (this.deps.config.debugMode) {
+      writeDebugTranscript(this.deps.caseId, this.messages)
+    }
   }
 
   /**
@@ -1619,6 +1789,86 @@ export class AgentLoop {
       console.warn('[AgentLoop] classifyMessage failed, defaulting to case:', err)
       return 'case'
     }
+  }
+
+  /**
+   * LLM-based leaked-context sanitizer.
+   *
+   * MiniMax-class models occasionally leak internal context strings into text
+   * output: <think> blocks, orphan </think> tags, "Tool X result:" echoes of
+   * addToolResultMessages() payloads. An LLM eval detects and removes these
+   * patterns — more robust than regex against new/evolving leakage formats.
+   *
+   * Returns cleaned text, or the original if no leakage is detected.
+   */
+  private async sanitizeLeakedContext(assistantText: string): Promise<string> {
+    const cleanTool: Tool = {
+      name: 'clean_response',
+      description:
+        'Return the user-facing portion of the assistant response with any leaked model-context removed.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          has_leaked_context: {
+            type: 'boolean' as const,
+            description:
+              'True if the response contains leaked model internal context ' +
+              '(thinking blocks, tool result echoes, system-level content).',
+          },
+          cleaned_text: {
+            type: 'string' as const,
+            description:
+              'The response with all leaked internal context removed. ' +
+              'If has_leaked_context is false, this should match the original text.',
+          },
+        },
+        required: ['has_leaked_context', 'cleaned_text'],
+      },
+    }
+
+    const evalModel =
+      this.deps.config.evaluationModel || this.deps.config.model
+
+    try {
+      const msg = await this.anthropicClient.messages.create({
+        model: evalModel,
+        max_tokens: 1024,
+        temperature: 0,
+        system:
+          'You are a response sanitizer. Some assistant responses accidentally leak ' +
+          'internal model context that should NOT be shown to users:\n' +
+          '\n' +
+          '  1. <think>...</think> blocks — chain-of-thought reasoning\n' +
+          '  2. Orphan </think> tags — leaked CoT without opening tag\n' +
+          '  3. "Tool <name> result: {...}" — verbatim echoes of tool outputs\n' +
+          '     that were injected as assistant messages (addToolResultMessages)\n' +
+          '\n' +
+          'Your job: detect whether ANY of these patterns appear in the response. ' +
+          'If they do, return the cleaned version with the leaked context removed. ' +
+          'Preserve all genuine user-facing content exactly as-is.',
+        tools: [cleanTool],
+        messages: [
+          {
+            role: 'user',
+            content: assistantText,
+          },
+        ],
+      })
+
+      for (const block of msg.content) {
+        if (block.type === 'tool_use' && block.name === 'clean_response') {
+          const input = block.input as { has_leaked_context?: boolean; cleaned_text?: string }
+          if (input.has_leaked_context && input.cleaned_text !== undefined) {
+            return input.cleaned_text
+          }
+        }
+      }
+    } catch {
+      // If the sanitizer eval fails, return the original text — better to show
+      // potentially noisy output than to drop the response entirely.
+    }
+
+    return assistantText
   }
 
   /**

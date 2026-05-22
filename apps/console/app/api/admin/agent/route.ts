@@ -52,7 +52,7 @@ export async function PUT(req: NextRequest) {
       systemPrompt, toolParallelism, isConcurrencySafe,
       showThinking, memoryStrategy, policyHooks,
       resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
-      debugMode, evaluationModel,
+      debugMode, evaluationModel, enableLlmSanitization,
       prefixContinuationEnabled,
       prefixContinuationChatModel,
       prefixContinuationBaseUrl,
@@ -79,6 +79,7 @@ export async function PUT(req: NextRequest) {
     if (consultationPrompt !== undefined) data.consultationPrompt = consultationPrompt
     if (debugMode !== undefined) data.debugMode = debugMode
     if (evaluationModel !== undefined) data.evaluationModel = evaluationModel
+    if (enableLlmSanitization !== undefined) data.enableLlmSanitization = enableLlmSanitization
     if (prefixContinuationEnabled !== undefined)
       data.prefixContinuationEnabled = prefixContinuationEnabled !== false && prefixContinuationEnabled !== 0 && prefixContinuationEnabled !== 'false'
     if (prefixContinuationChatModel !== undefined) data.prefixContinuationChatModel = prefixContinuationChatModel
@@ -109,6 +110,7 @@ export async function PUT(req: NextRequest) {
         humanSkills: humanSkills ?? null,
         consultationPrompt: consultationPrompt ?? null,
         debugMode: debugMode ?? false,
+        enableLlmSanitization: enableLlmSanitization ?? false,
         evaluationModel: evaluationModel ?? null,
         prefixContinuationEnabled:
           prefixContinuationEnabled !== undefined

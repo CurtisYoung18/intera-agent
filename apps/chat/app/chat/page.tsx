@@ -45,6 +45,7 @@ export default function ChatPage() {
     composerMinDraftChars,
     selectedUser,
     setSelectedUser,
+    isHydrated,
   } = useInteraChat()
 
   const activeCase = cases.find((c) => c.caseId === activeCaseId) ?? null
@@ -53,6 +54,14 @@ export default function ChatPage() {
   const handleSelectUser = (user: TestUser) => setSelectedUser(user)
   const handleAnonymous = () => setSelectedUser('anonymous')
   const handleSwitchUser = () => setSelectedUser(null)
+
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+  // Wait for localStorage hydration before deciding which screen to show.
+  // Without this, every refresh flashes the login screen for one frame even
+  // when the user is already logged in.
+  if (!isHydrated) {
+    return null // blank — avoids layout shift; hydration is near-instant
+  }
 
   if (selectedUser === null) {
     return <UserLoginScreen onSelect={handleSelectUser} onAnonymous={handleAnonymous} />

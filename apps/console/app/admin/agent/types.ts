@@ -57,6 +57,7 @@ export interface AgentConfigData {
   humanSkills: string
   consultationPrompt: string
   debugMode: boolean
+  enableLlmSanitization: boolean
   evaluationModel: string
   prefixContinuationEnabled: boolean
   prefixContinuationChatModel: string

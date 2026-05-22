@@ -560,6 +560,12 @@ export class SkillRouter {
     for (const skill of BUILT_IN_SKILLS) {
       this.skills.set(skill.name, skill)
     }
+    // SOP internal tools (todo_write, todo_read) must be in the registry so
+    // getSkill() resolves their displayVerb and getToolDefinitions() includes
+    // them for the StreamingToolExecutor.
+    for (const skill of SOP_INTERNAL_SKILLS) {
+      this.skills.set(skill.name, skill)
+    }
   }
 
   /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills. */

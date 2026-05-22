@@ -22,6 +22,7 @@ export type MsgType =
   | 'intent_resolved'
   | 'interaction_proposed'
   | 'interaction_resolved'
+  | 'todo_plan'
 
 export interface ChatMessage {
   id: string
@@ -58,6 +59,8 @@ export interface ChatMessage {
     locale: 'zh' | 'en'
   }
   interactionOptions?: any
+  /** Full todo list snapshot — carried by todo_plan messages. */
+  todos?: TodoItem[]
   timestamp: string
 }
 
@@ -162,6 +165,8 @@ export interface UseInteraChatReturn {
   customerId: string
   selectedUser: TestUser | 'anonymous' | null
   setSelectedUser: (user: TestUser | 'anonymous' | null) => void
+  /** True once localStorage has been read — gates the login/chat render to avoid flash. */
+  isHydrated: boolean
   loadHistoricalCase: (caseId: string) => Promise<void>
   composerAssistEnabled: boolean
   composerAssistMissingDeepseekKey?: boolean
@@ -207,6 +212,8 @@ interface LaneBuffer {
   textHasArrived: boolean
   thinkingBuf: string
   thinkingStartedAt: string
+  /** ID of the most recent todo_plan message — updated in-place on each todo_write result. */
+  todoPlanMsgId: string | null
   /**
    * Persistent-stream turn tracking.
    * Set to true on message_stop; cleared on the next stream_request_start.
@@ -228,6 +235,7 @@ function createLaneBuffer(firstTextMsgId: string, presetCaseId: string | null): 
     thinkingBuf: '',
     thinkingStartedAt: '',
     turnEnded: false,
+    todoPlanMsgId: null,
   }
 }
 
@@ -265,35 +273,112 @@ export function useInteraChat(): UseInteraChatReturn {
   const caseIdRef = useRef<string>(generateCaseId())
   const [session, setSession] = useState(readSessionFromUrl)
 
-  const SEL_STORAGE_KEY = 'intera_test_user'
+  // ── Auth persistence keys ────────────────────────────────────────────────
+  // Use localStorage (not sessionStorage) so login survives refreshes AND
+  // new tabs. Keys are versioned so a schema change doesn't deserialise stale data.
+  const SEL_STORAGE_KEY = 'intera_user_v2'
+  const CHAT_ID_KEY = 'intera_chat_id_v1'
+
+  const [isHydrated, setIsHydrated] = useState(false)
   const [selectedUser, setSelectedUserState] = useState<TestUser | 'anonymous' | null>(null)
+  // Ref tracks the prev memberId so we can detect a user-switch and reset state.
+  const prevMemberIdRef = useRef<string | null>(null)
 
   const setSelectedUser = useCallback((user: TestUser | 'anonymous' | null) => {
+    const newMemberId = user && user !== 'anonymous' ? user.memberId
+      : user === 'anonymous' ? 'anonymous' : null
+
+    // If the identity changed, wipe the whole chat state and start a fresh session.
+    if (newMemberId !== prevMemberIdRef.current) {
+      setMessages([])
+      setCases([])
+      setActiveCaseIndex(0)
+      setDedicatedAgents([])
+      setSplitMode(false)
+      caseIdRef.current = generateCaseId()
+      const freshChatId = crypto.randomUUID()
+      chatIdRef.current = freshChatId
+      try {
+        if (newMemberId) localStorage.setItem(CHAT_ID_KEY, freshChatId)
+        else localStorage.removeItem(CHAT_ID_KEY)
+      } catch { /* noop */ }
+    }
+
+    prevMemberIdRef.current = newMemberId
     setSelectedUserState(user)
+
     try {
       if (user === null) {
-        sessionStorage.removeItem(SEL_STORAGE_KEY)
+        localStorage.removeItem(SEL_STORAGE_KEY)
+        localStorage.removeItem(CHAT_ID_KEY)
       } else if (user === 'anonymous') {
-        sessionStorage.setItem(SEL_STORAGE_KEY, 'anonymous')
+        localStorage.setItem(SEL_STORAGE_KEY, 'anonymous')
       } else {
-        sessionStorage.setItem(SEL_STORAGE_KEY, JSON.stringify(user))
+        localStorage.setItem(SEL_STORAGE_KEY, JSON.stringify(user))
       }
     } catch { /* noop */ }
-  }, [])
+  }, []) // deps intentionally empty — uses refs for prev state
 
+  // ── Single hydration effect — read localStorage once after mount ──────────
+  // Sets isHydrated=true at the end so the page only renders when we know
+  // whether a session should be restored (avoids flash of login screen).
   useEffect(() => {
+    let restoredUser: TestUser | 'anonymous' | null = null
     try {
-      const stored = sessionStorage.getItem(SEL_STORAGE_KEY)
+      const stored = localStorage.getItem(SEL_STORAGE_KEY)
       if (stored === 'anonymous') {
-        setSelectedUserState('anonymous')
+        restoredUser = 'anonymous'
       } else if (stored) {
         const parsed = JSON.parse(stored)
         if (parsed && typeof parsed.label === 'string' && typeof parsed.memberId === 'string') {
-          setSelectedUserState(parsed as TestUser)
+          restoredUser = parsed as TestUser
         }
       }
     } catch { /* noop */ }
-  }, [SEL_STORAGE_KEY])
+
+    if (restoredUser !== null) {
+      // Restore chatId from the same session, or keep the newly-generated UUID.
+      try {
+        const storedChatId = localStorage.getItem(CHAT_ID_KEY)
+        if (storedChatId) chatIdRef.current = storedChatId
+        else localStorage.setItem(CHAT_ID_KEY, chatIdRef.current)
+      } catch { /* noop */ }
+
+      prevMemberIdRef.current =
+        restoredUser === 'anonymous' ? 'anonymous'
+          : restoredUser.memberId
+      setSelectedUserState(restoredUser)
+    } else {
+      // First visit — persist the generated chatId so it can be reused.
+      try { localStorage.setItem(CHAT_ID_KEY, chatIdRef.current) } catch { /* noop */ }
+    }
+
+    setIsHydrated(true)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-restore most recent case after hydration ─────────────────────────
+  // When a logged-in user is restored from localStorage, silently reload their
+  // most recent non-resolved case so the chat panel shows the last conversation
+  // without requiring the user to open CaseHistoryPanel manually.
+  useEffect(() => {
+    if (!isHydrated) return
+    if (!selectedUser || selectedUser === 'anonymous') return
+
+    const uid = (selectedUser as TestUser).memberId
+    const cid = session.customerId
+
+    fetch(`/api/cases?userId=${encodeURIComponent(uid)}&customerId=${encodeURIComponent(cid)}&limit=1`)
+      .then((r) => r.json())
+      .catch(() => null)
+      .then(async (data) => {
+        if (!data?.cases?.length) return
+        const recent = data.cases[0] as { id: string; status: string }
+        // Only auto-restore active/waiting cases — skip fully resolved ones
+        // so a past resolved chat doesn't hijack a fresh session start.
+        if (recent.status === 'resolved' || recent.status === 'cancelled') return
+        await loadHistoricalCase(recent.id)
+      })
+  }, [isHydrated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const effectiveUserId = selectedUser && selectedUser !== 'anonymous' ? selectedUser.memberId : session.userId
   const selectedUserLabel = selectedUser && selectedUser !== 'anonymous' ? selectedUser.label : undefined
@@ -495,6 +580,7 @@ export function useInteraChat(): UseInteraChatReturn {
             lane.thinkingStartedAt = ''
             lane.toolMsgIds = new Map()
             lane.activeToolCount = 0
+            lane.todoPlanMsgId = null
             setIsLoading(true)
             setMessages((prev) => [
               ...prev,
@@ -802,6 +888,9 @@ export function useInteraChat(): UseInteraChatReturn {
               ),
             )
           }
+          // todo_write results are surfaced as todo_plan messages (inline dashboard),
+          // not as tool_call chips — skip creating a tool_call message for them.
+          if (td.name === 'todo_write') break
           const toolMsgId = crypto.randomUUID()
           lane.toolMsgIds.set(td.name, toolMsgId)
           const rid = relate()
@@ -846,6 +935,34 @@ export function useInteraChat(): UseInteraChatReturn {
           if (sd.name === 'orchestrator') break
           const isError = sd.status === 'error'
           lane.activeToolCount = Math.max(0, lane.activeToolCount - 1)
+
+          // ── todo_write → inline todo_plan message (CC-style dashboard) ──
+          if (sd.name === 'todo_write' && !isError && sd.result) {
+            const result = sd.result as Record<string, unknown>
+            const todos = (Array.isArray(result.todos) ? result.todos : []) as TodoItem[]
+            const rid = relate()
+            if (lane.todoPlanMsgId) {
+              // Update existing todo plan in-place
+              setMessages((prev) =>
+                prev.map((m) => (m.id === lane.todoPlanMsgId ? { ...m, todos } : m)),
+              )
+            } else {
+              const planMsgId = crypto.randomUUID()
+              lane.todoPlanMsgId = planMsgId
+              setMessages((prev) => [
+                ...prev,
+                makeMsg({
+                  id: planMsgId,
+                  role: 'assistant',
+                  msgType: 'todo_plan',
+                  relatedCaseId: rid,
+                  content: '',
+                  todos,
+                }),
+              ])
+            }
+          }
+
           const tId = lane.toolMsgIds.get(sd.name)
           if (tId) {
             setMessages((prev) =>
@@ -914,7 +1031,42 @@ export function useInteraChat(): UseInteraChatReturn {
 
         case 'message_stop': {
           hooks?.onStreamingTool?.(null)
-          const trans = (event.data as { transition?: string })?.transition
+          const data = event.data as { transition?: string; reason?: string }
+          const trans = data?.transition
+          const reason = data?.reason
+
+          // The agent loop emits `message_stop` after EVERY ReAct iteration
+          // (including mid-turn nudges, stage transitions, and the post-tool
+          // `next_turn` marker on loop.ts:1282). Treating each one as end-of-turn
+          // resets `todoPlanMsgId` on the next `stream_request_start`, causing a
+          // brand-new 调查待办 bubble per iteration. Only real terminal reasons
+          // should end the turn from the UI's perspective.
+          const midTurnReasons = new Set([
+            'next_turn',
+            'stage_transition',
+            'nudge',
+            'react_nudge',
+            'sop_empty_turn_nudge',
+          ])
+          const isMidTurn = reason ? midTurnReasons.has(reason) : false
+
+          if (isMidTurn) {
+            // Stop streaming animation on bubbles produced by this iteration,
+            // but don't tear down placeholders or flip turn state — the loop
+            // is still running and will emit `stream_request_start` again.
+            for (const id of lane.textBubbles) {
+              setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, isStreaming: false } : m)))
+            }
+            // Reset per-iteration thinking buffer so the NEXT iteration's
+            // thinking_delta starts fresh and doesn't bleed into the new bubble.
+            lane.thinkingBuf = ''
+            lane.thinkingStartedAt = ''
+            // Force the next text_delta to spawn a fresh bubble rather than
+            // appending to whatever was streaming when tools started.
+            lane.textMsgId = null
+            break
+          }
+
           if (trans === 'waiting_form') setAgentStatus('waiting')
           else setAgentStatus('online')
           for (const id of lane.textBubbles) {
@@ -1715,6 +1867,7 @@ export function useInteraChat(): UseInteraChatReturn {
     customerId: session.customerId,
     selectedUser,
     setSelectedUser,
+    isHydrated,
     loadHistoricalCase,
     composerAssistEnabled,
     composerAssistMissingDeepseekKey,

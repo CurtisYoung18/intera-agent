@@ -124,6 +124,7 @@ export default function AgentConfigPage() {
           humanSkills: raw.humanSkills || '',
           consultationPrompt: raw.consultationPrompt || DEFAULT_CONSULTATION_PROMPT,
           debugMode: Boolean(raw.debugMode),
+          enableLlmSanitization: Boolean((raw as Record<string, unknown>).enableLlmSanitization),
           evaluationModel: raw.evaluationModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
           prefixContinuationChatModel:
@@ -242,6 +243,7 @@ export default function AgentConfigPage() {
     ['toolParallelism', 'agent.toolParallelism'],
     ['isConcurrencySafe', 'agent.concurrencySafe'],
     ['showThinking', 'agent.showThinking'],
+    ['enableLlmSanitization', 'agent.enableLlmSanitization'],
   ]
 
   const memToggles: Array<[keyof MemoryStrategy, string, string]> = [

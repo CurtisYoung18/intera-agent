@@ -246,13 +246,14 @@ export class CaseAgentLoop {
    * todo_write/todo_read tools (injected only in SOP execution).
    */
   filterSopTools(allTools: Tool[]): Tool[] {
+    const sopNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+    // Prepend todo tools so the LLM sees them first, then deduplicate
     const sopTools: Tool[] = SOP_INTERNAL_SKILLS.map((s) => ({
       name: s.name,
       description: s.description,
       input_schema: s.inputSchema as Tool['input_schema'],
     }))
-    // Prepend todo tools so the LLM sees them first
-    return [...sopTools, ...allTools]
+    return [...sopTools, ...allTools.filter((t) => !sopNames.has(t.name))]
   }
 
   // ── No-tools stage evaluation ─────────────────────────────────────────────

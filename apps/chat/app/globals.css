@@ -330,13 +330,22 @@ body {
   padding: 8px 4px 10px 0;
   outline: none;
   color: var(--mist);
-  font-family: var(--font-sans);
-  font-size: 15px;
+  /* Match the rendered message bubble: same serif face and size as
+     MessageBubble's MARKDOWN_COMPONENTS.p (font-serif text-[16px] sm:text-[18px]).
+     Preview-while-typing should not differ from the sent bubble. */
+  font-family: var(--font-serif);
+  font-size: 16px;
   line-height: 1.6;
   border-radius: 0;
   box-shadow: none;
   max-height: min(160px, 40vh);
   min-height: 44px;
+}
+
+@media (min-width: 640px) {
+  .glass-input-composer-field {
+    font-size: 18px;
+  }
 }
 
 .glass-input-composer-field:focus {

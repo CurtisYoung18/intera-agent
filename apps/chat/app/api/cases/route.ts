@@ -5,11 +5,16 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const userId = url.searchParams.get('userId') || 'anonymous'
   const customerId = url.searchParams.get('customerId') || 'default'
+  const chatId = url.searchParams.get('chatId') || null
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 50)
 
   try {
     const cases = await prisma.case.findMany({
-      where: { customerId, userId },
+      where: {
+        customerId,
+        userId,
+        ...(chatId ? { chatId } : {}),
+      },
       orderBy: { updatedAt: 'desc' },
       take: limit,
       select: {

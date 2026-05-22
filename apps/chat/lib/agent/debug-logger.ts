@@ -102,6 +102,34 @@ export function writeDebugResponse(
   }
 }
 
+/**
+ * Write a human-readable markdown transcript of the full conversation.
+ * Overwrites transcript.md in the case debug directory each turn.
+ */
+export function writeDebugTranscript(
+  caseId: string,
+  messages: Array<{ role: string; content: string }>,
+): void {
+  try {
+    const dir = path.join(DEBUG_DIR, caseId)
+    ensureDir(dir)
+    const file = path.join(dir, 'transcript.md')
+
+    const lines: string[] = []
+    lines.push(`Total messages: ${messages.length}`)
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]
+      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      lines.push(`[${i}] ${msg.role}: ${content}`)
+    }
+
+    fs.writeFileSync(file, lines.join('\n'), 'utf-8')
+  } catch (err) {
+    console.warn('[DebugLogger] Failed to write transcript:', err)
+  }
+}
+
 /** Write a standalone LLM call (stage eval, fact extraction, policy eval, intent classify). */
 export function writeDebugStandaloneCall(
   caseId: string,
