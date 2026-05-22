@@ -234,6 +234,27 @@ export async function POST(request: NextRequest) {
               console.error(`[HumanChat] Notify customer agent attempt ${attempt}/${maxRetries} failed:`, err)
               if (attempt < maxRetries) await new Promise((r) => setTimeout(r, delay))
               delay *= 2
+
+              // Fallback: if all retries fail, persist the resolution directly to DB
+              // so the customer sees it when they refresh or the stream reconnects.
+              if (attempt === maxRetries) {
+                try {
+                  await prisma.message.create({
+                    data: {
+                      id: `notify_${taskId}_${Date.now()}`,
+                      caseId: caseData.id,
+                      role: 'assistant',
+                      content: consultationVerdict
+                        ? `[Resolution] ${consultationVerdict.replace(/_/g, ' ')}. ${consultationNotes || ''}`
+                        : (consultationNotes || 'Your case has been reviewed by our specialist. We will update you shortly.'),
+                      isStreaming: false,
+                    },
+                  })
+                  console.log(`[HumanChat] Persisted resolution fallback to messages for case ${caseData.id}`)
+                } catch (dbErr) {
+                  console.error('[HumanChat] Failed to persist fallback resolution:', dbErr)
+                }
+              }
             }
           }
         }

@@ -249,13 +249,15 @@ export class CaseAgentLoop {
    */
   filterSopTools(allTools: Tool[]): Tool[] {
     const sopNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+    // create_case is not needed in SOP mode — the case already exists
+    const excludedInSop = new Set(['create_case'])
     // Prepend todo tools so the LLM sees them first, then deduplicate
     const sopTools: Tool[] = SOP_INTERNAL_SKILLS.map((s) => ({
       name: s.name,
       description: s.description,
       input_schema: s.inputSchema as Tool['input_schema'],
     }))
-    return [...sopTools, ...allTools.filter((t) => !sopNames.has(t.name))]
+    return [...sopTools, ...allTools.filter((t) => !sopNames.has(t.name) && !excludedInSop.has(t.name))]
   }
 
   // ── No-tools stage evaluation ─────────────────────────────────────────────

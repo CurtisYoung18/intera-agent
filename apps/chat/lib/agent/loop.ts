@@ -787,6 +787,29 @@ export class AgentLoop {
       if (this.caseLoop?.isSopMode()) {
         toolResults = this.processTodoTools(toolResults)
 
+        // Auto-complete todo items whose corresponding investigation tools succeeded.
+        // This handles models that forget to call todo_write(complete) after tool results.
+        const succeededTools = new Set(
+          toolResults
+            .filter((r) => !sopInternalNames.has(r.name) && (r.output as any)?.ok !== false)
+            .map((r) => r.name),
+        )
+        if (succeededTools.size > 0) {
+          const pendingTodos = this.caseMemory.getTodos().filter((t) => t.status === 'pending')
+          for (const todo of pendingTodos) {
+            for (const toolName of succeededTools) {
+              if (todo.text.includes(toolName)) {
+                this.caseMemory.applyTodoAction({
+                  action: 'complete',
+                  id: todo.id,
+                  notes: `${toolName} completed successfully`,
+                })
+                break
+              }
+            }
+          }
+        }
+
         // Manually fan out skill_result events for SOP-internal tools using
         // the REAL post-intercept output. The live executor callback
         // suppressed them above because at that point the result was just

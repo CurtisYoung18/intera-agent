@@ -582,7 +582,7 @@ export function useInteraChat(): UseInteraChatReturn {
             lane.thinkingStartedAt = ''
             lane.toolMsgIds = new Map()
             lane.activeToolCount = 0
-            lane.todoPlanMsgId = null
+            // todoPlanMsgId persists across turns so the todo dashboard updates in-place
             setIsLoading(true)
             setMessages((prev) => [
               ...prev,
