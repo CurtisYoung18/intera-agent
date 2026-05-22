@@ -32,6 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ name
     }
     if (body.executionMode !== undefined) data.executionMode = body.executionMode === 'sop' ? 'sop' : 'stage'
     if (body.sop !== undefined) data.sop = body.sop || null
+    if (body.sopMaxAutoTurns !== undefined) data.sopMaxAutoTurns = Math.max(1, Math.min(50, Number(body.sopMaxAutoTurns) || 10))
     const ct = await prisma.caseType.update({ where: { customerId_type: { customerId: CUSTOMER_ID, type: name } }, data })
     return NextResponse.json({ caseType: ct })
   } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }

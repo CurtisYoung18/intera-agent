@@ -105,6 +105,8 @@ model CaseType {
   executionMode String  @default("stage")
   /// Natural-language Standard Operating Procedure — only used when executionMode = "sop"
   sop           String?
+  /// Max auto-continuation turns in SOP mode (prevents infinite loops)
+  sopMaxAutoTurns Int @default(10)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

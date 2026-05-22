@@ -159,7 +159,7 @@ export class CaseAgentLoop {
       : todos.map((t) => {
           const icon = t.status === 'completed' ? '✓' : t.status === 'cancelled' ? '✗' : t.status === 'in_progress' ? '→' : '○'
           const notes = t.notes ? ` — ${t.notes}` : ''
-          return `  [${icon}] ${t.id.slice(0, 8)} ${t.text}${notes}`
+          return `  [${icon}] ${t.id} ${t.text}${notes}`
         }).join('\n')
 
     const factLines = Object.entries(facts).length === 0

@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
         requireHumanReview: body.requireHumanReview === true || body.requireHumanReview === 'true',
         executionMode: body.executionMode === 'sop' ? 'sop' : 'stage',
         sop: body.sop || null,
+        sopMaxAutoTurns: Math.max(1, Math.min(50, Number(body.sopMaxAutoTurns) || 10)),
       },
     })
     return NextResponse.json({ caseType: ct }, { status: 201 })

@@ -425,7 +425,7 @@ export async function GET(
       // In SOP mode, auto-continues until terminal state or max turns reached.
 
       let sopAutoTurnCount = 0
-      const MAX_SOP_AUTO_TURNS = 20
+      let sopMaxAutoTurns = 10 // default, will be read from case type config
 
       try {
         while (!session.aborted && !streamClosed) {
@@ -476,15 +476,15 @@ export async function GET(
             if (
               result.transition !== 'waiting_human' &&
               result.transition !== 'waiting_form' &&
-              result.transition !== 'escalated' &&
-              sopAutoTurnCount < MAX_SOP_AUTO_TURNS
+              sopAutoTurnCount < sopMaxAutoTurns
             ) {
               try {
                 const ct = await prisma.caseType.findUnique({
                   where: { customerId_type: { customerId, type: session.loop!.getCaseType() } },
-                  select: { executionMode: true },
+                  select: { executionMode: true, sopMaxAutoTurns: true },
                 })
                 if (ct?.executionMode === 'sop') {
+                  if (ct.sopMaxAutoTurns) sopMaxAutoTurns = ct.sopMaxAutoTurns
                   sopAutoTurnCount++
                   session.queue.enqueue({ content: '[SOP CONTINUE]' })
                 }

@@ -1,57 +1,55 @@
 // Intera Harness — Human-Agent Chat API
-// POST /api/human-chat — Human operator converses with agent about a case
-// The agent runs in "consultation mode" with a specialist system prompt.
+// POST /api/human-chat — Human operator converses with the dedicated ConsultationAgent.
+// ConsultationAgent is a separate, lightweight agent:
+//   • Uses consultationPrompt from AgentConfig (Console → Agent → Human Ops).
+//   • Only exposes finalize_consultation + humanSkills whitelist — no investigation tools.
+//   • No ReAct nudge, no stage enforcement, no policy engine.
 
 import { NextRequest } from 'next/server'
-import { AgentLoop } from '@/lib/agent/loop'
+import { ConsultationAgent } from '@/lib/agent/consultation-agent'
 import { prisma } from '@intera/shared/prisma'
-import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
-import { DEFAULT_MEMORY_STRATEGY, DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
+import type { SSEEvent } from '@intera/shared/types'
+import { DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
 
-const CONSULTATION_SYSTEM_PROMPT = DEFAULT_CONSULTATION_PROMPT
-
-const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
-  model: 'MiniMax-M2.7-highspeed',
-  temperature: 0.5,
-  thinkingBudget: 4096,
-  maxIterations: 15,
-  systemPrompt: CONSULTATION_SYSTEM_PROMPT,
-  showThinking: false,
-  memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, keyEventExtractionPrompt: '', enableAutocompact: false },
-  policyHooks: { preTool: [], postTool: [], preFinalize: [] },
+function parseJsonArray(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : []
+  } catch { return [] }
 }
 
-function parseJson(raw: string): unknown {
-  try { return JSON.parse(raw) } catch { return null }
+interface HumanChatConfig {
+  model: string
+  systemPrompt: string
+  humanSkillNames: string[]
+  maxIterations: number
 }
 
-// Load AgentConfig from DB, fallback to default. Override systemPrompt for consultation.
-async function loadHumanChatConfig(customerId: string): Promise<AgentConfigData> {
+const DEFAULT_CONFIG: HumanChatConfig = {
+  model: 'claude-sonnet-4-5',
+  systemPrompt: DEFAULT_CONSULTATION_PROMPT,
+  humanSkillNames: [],
+  maxIterations: 8,
+}
+
+async function loadHumanChatConfig(customerId: string): Promise<HumanChatConfig> {
   try {
     const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
     if (dbConfig) {
-      const humanSkills = (dbConfig as any).humanSkills as string | null
-      const consultationPrompt = (dbConfig as any).consultationPrompt as string | null
-
+      const consultationPrompt = (dbConfig as Record<string, unknown>).consultationPrompt as string | null
+      const humanSkillsRaw = (dbConfig as Record<string, unknown>).humanSkills as string | null
       return {
-        model: dbConfig.model,
-        temperature: dbConfig.temperature,
-        thinkingBudget: dbConfig.thinkingBudget,
-        maxIterations: DEFAULT_HUMAN_CHAT_CONFIG.maxIterations,
-        systemPrompt: consultationPrompt?.trim() || CONSULTATION_SYSTEM_PROMPT,
-        showThinking: (dbConfig as any).showThinking ?? false,
-        humanSkills: humanSkills || undefined,
-        memoryStrategy: {
-          ...((parseJson(dbConfig.memoryStrategy) as AgentConfigData['memoryStrategy']) || DEFAULT_HUMAN_CHAT_CONFIG.memoryStrategy),
-          microcompactMinAgeMs: 300000,
-        },
-        policyHooks: DEFAULT_HUMAN_CHAT_CONFIG.policyHooks,
+        model: dbConfig.model || DEFAULT_CONFIG.model,
+        systemPrompt: consultationPrompt?.trim() || DEFAULT_CONFIG.systemPrompt,
+        humanSkillNames: parseJsonArray(humanSkillsRaw),
+        maxIterations: DEFAULT_CONFIG.maxIterations,
       }
     }
   } catch (err) {
-    console.warn('[HumanChat] Failed to load agent config from DB, using default:', err)
+    console.warn('[HumanChat] Failed to load agent config from DB, using defaults:', err)
   }
-  return { ...DEFAULT_HUMAN_CHAT_CONFIG }
+  return { ...DEFAULT_CONFIG }
 }
 
 export async function POST(request: NextRequest) {
@@ -90,53 +88,48 @@ export async function POST(request: NextRequest) {
         const caseData = task.case
         const memory = caseData.memory
 
-        // Build system prompt with case context
-        let systemPrompt = CONSULTATION_SYSTEM_PROMPT
+        // Build system prompt: base consultation prompt + injected case context
+        const agentCfg = await loadHumanChatConfig(caseData.customerId)
+        let systemPrompt = agentCfg.systemPrompt
         if (memory) {
-          systemPrompt += `\n\n## Current Case Context\n- Case ID: ${caseData.id}\n- Type: ${caseData.type}\n- Status: ${caseData.status}\n- Goal: ${caseData.goal || 'N/A'}\n- Blocker: ${caseData.blocker || 'N/A'}\n- Confirmed facts: ${memory.confirmedFacts}\n- Skills called: ${memory.skillsCalled}\n- Skill results: ${memory.skillResults}\n- Key events: ${memory.keyEvents}\n- Original escalation question: ${task.question}`
+          systemPrompt +=
+            `\n\n## Current Case Context` +
+            `\n- Case ID: ${caseData.id}` +
+            `\n- Type: ${caseData.type}` +
+            `\n- Status: ${caseData.status}` +
+            `\n- Goal: ${caseData.goal || 'N/A'}` +
+            `\n- Blocker: ${caseData.blocker || 'N/A'}` +
+            `\n- Confirmed facts: ${memory.confirmedFacts}` +
+            `\n- Skills called: ${memory.skillsCalled}` +
+            `\n- Skill results: ${memory.skillResults}` +
+            `\n- Key events: ${memory.keyEvents}` +
+            `\n- Original escalation question: ${task.question}`
         }
 
-        // Load case schema for stage-aware execution
-        let caseSchema = null
+        // Reconstruct prior chat turns from the task's chatLog (operator↔agent history)
+        type ChatEntry = { role: 'operator' | 'agent'; content: string; timestamp: string }
+        const priorMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
         try {
-          const caseType = await prisma.caseType.findUnique({
-            where: { customerId_type: { customerId: caseData.customerId, type: caseData.type } },
-          })
-          if (caseType) {
-            const parseJson = (raw: string | null | undefined) => { try { return raw ? JSON.parse(raw) : null } catch { return null } }
-            caseSchema = {
-              type: caseType.type,
-              displayName: caseType.displayName,
-              description: caseType.description || undefined,
-              icon: caseType.icon,
-              requiredFacts: (parseJson(caseType.requiredFacts) as string[]) || [],
-              stages: (parseJson(caseType.stages) as string[]) || [],
-              stageConfigs: (parseJson(caseType.stageConfigs) as any) || undefined,
-              defaultGoal: caseType.defaultGoal,
-              escalateOn: (parseJson(caseType.escalateOn) as string[]) || [],
-              autoCloseConditions: (parseJson(caseType.autoCloseConditions) as any) || undefined,
-              orchestrator: (parseJson(caseType.orchestratorConfig) as any) || undefined,
-            }
+          const entries: ChatEntry[] = task.chatLog ? JSON.parse(task.chatLog) : []
+          for (const entry of entries) {
+            priorMessages.push({
+              role: entry.role === 'operator' ? 'user' : 'assistant',
+              content: entry.content,
+            })
           }
-        } catch { /* schema not found */ }
+        } catch { /* malformed chatLog — start fresh */ }
 
-        const baseConfig = await loadHumanChatConfig(caseData.customerId)
-
-        const agentLoop = await AgentLoop.create({
-          config: { ...baseConfig, systemPrompt },
+        // Create the ConsultationAgent — separate from the main investigation AgentLoop
+        const consultAgent = await ConsultationAgent.create({
+          systemPrompt,
+          humanSkillNames: agentCfg.humanSkillNames,
+          model: agentCfg.model,
+          maxIterations: agentCfg.maxIterations,
           caseId: caseData.id,
           customerId: caseData.customerId,
-          userId: caseData.userId,
-          systemPrompt,
-          caseSchema,
         })
 
-        // Restore memory
-        if (memory) {
-          agentLoop.loadMemory(memory)
-        }
-
-        // Capture agent response text for chatLog
+        // Capture agent response text for chatLog persistence
         let agentResponseText = ''
         const originalSendEvent = sendEvent
         const capturingSendEvent = (event: SSEEvent) => {
@@ -144,37 +137,29 @@ export async function POST(request: NextRequest) {
           originalSendEvent(event)
         }
 
-        const result = await agentLoop.run(message, capturingSendEvent)
+        const result = await consultAgent.run(priorMessages, message, capturingSendEvent)
 
-        // Persist updated memory
-        const mem = agentLoop.getMemorySummary()
-        await prisma.caseMemory.upsert({
-          where: { caseId: caseData.id },
-          update: {
-            confirmedFacts: JSON.stringify(mem.confirmedFacts),
-            missingFacts: JSON.stringify(mem.missingFacts),
-            skillsCalled: JSON.stringify(mem.skillsCalled),
-            skillResults: JSON.stringify(mem.skillResults),
-            keyEvents: JSON.stringify(mem.keyEvents),
-            summary: mem.summary || undefined,
-            todos: mem.todos ? JSON.stringify(mem.todos) : null,
-            agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
-            dashboardVersion: mem.dashboardVersion ?? 0,
-          },
-          create: {
-            caseId: caseData.id,
-            confirmedFacts: JSON.stringify(mem.confirmedFacts),
-            missingFacts: JSON.stringify(mem.missingFacts),
-            skillsCalled: JSON.stringify(mem.skillsCalled),
-            skillResults: JSON.stringify(mem.skillResults),
-            keyEvents: JSON.stringify(mem.keyEvents),
-            humanTaskStatus: 'in_progress',
-            summary: mem.summary || undefined,
-            todos: mem.todos ? JSON.stringify(mem.todos) : null,
-            agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
-            dashboardVersion: mem.dashboardVersion ?? 0,
-          },
-        })
+        // ConsultationAgent handles its own DB writes (finalize_consultation → case/humanTask update).
+        // No separate memory persist needed — consultation doesn't modify investigation memory.
+        // We only update the chatLog below.
+        {
+          // Placeholder upsert to satisfy callers that still read caseMemory after consultation.
+          // Uses the existing memory snapshot if present — no overwrite.
+          const existingMem = await prisma.caseMemory.findUnique({ where: { caseId: caseData.id } })
+          if (!existingMem && memory) {
+            await prisma.caseMemory.create({
+              data: {
+                caseId: caseData.id,
+                confirmedFacts: memory.confirmedFacts || '{}',
+                missingFacts: memory.missingFacts || '[]',
+                skillsCalled: memory.skillsCalled || '[]',
+                skillResults: memory.skillResults || '{}',
+                keyEvents: memory.keyEvents || '[]',
+                humanTaskStatus: 'in_progress',
+              },
+            }).catch(() => { /* race condition — ignore */ })
+          }
+        }
 
         // Append this exchange to the task's chatLog for persistence
         if (agentResponseText) {

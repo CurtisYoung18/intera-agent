@@ -548,8 +548,10 @@ export class CaseMemoryManager {
 
     switch (action) {
       case 'add': {
+        // Sequential short IDs scoped to this agent's list
+        const newId = `t${list.length + 1}`
         const newTodo: TodoItem = {
-          id: crypto.randomUUID(),
+          id: newId,
           text: text || '',
           status: 'pending',
           addedBy: 'agent',
@@ -561,9 +563,9 @@ export class CaseMemoryManager {
         break
       }
       case 'update': {
-        const todo = id ? list.find((t) => t.id === id) : undefined
+        const todo = this.resolveTodoInList(list, id, text)
         if (todo) {
-          if (text !== undefined) todo.text = text
+          if (text !== undefined && text !== todo.text) todo.text = text
           if (notes !== undefined) todo.notes = notes
           if (status !== undefined) todo.status = status
           changed = true
@@ -571,7 +573,7 @@ export class CaseMemoryManager {
         break
       }
       case 'complete': {
-        const todo = id ? list.find((t) => t.id === id) : undefined
+        const todo = this.resolveTodoInList(list, id, text)
         if (todo && todo.status !== 'completed') {
           todo.status = 'completed'
           todo.completedAt = new Date().toISOString()
@@ -581,7 +583,7 @@ export class CaseMemoryManager {
         break
       }
       case 'cancel': {
-        const todo = id ? list.find((t) => t.id === id) : undefined
+        const todo = this.resolveTodoInList(list, id, text)
         if (todo && todo.status !== 'cancelled') {
           todo.status = 'cancelled'
           if (notes !== undefined) todo.notes = notes
@@ -654,6 +656,35 @@ export class CaseMemoryManager {
   }
 
   /**
+   * Resolve a todo item from a list by id (exact → prefix → text fallback).
+   *
+   * Rationale: the model sees short sequential IDs (t1, t2, …) in the prompt, but
+   * older cases persisted with full UUIDs.  Also, models occasionally pass the
+   * todo text instead of the id.  This helper handles all three patterns so a
+   * mismatched id never silently drops the action.
+   */
+  private resolveTodoInList(list: TodoItem[], id?: string, text?: string): TodoItem | undefined {
+    if (id) {
+      // 1. Exact match (normal path for sequential short IDs)
+      const exact = list.find((t) => t.id === id)
+      if (exact) return exact
+      // 2. Prefix match — backward compat with UUID-based IDs already in prod
+      const prefix = list.find((t) => t.id.startsWith(id) || id.startsWith(t.id))
+      if (prefix) return prefix
+    }
+    // 3. Text-based fallback — model passed description instead of id
+    if (text) {
+      const lower = text.toLowerCase().trim()
+      const active = list.filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
+      return (
+        active.find((t) => t.text.toLowerCase() === lower) ||
+        active.find((t) => t.text.toLowerCase().includes(lower) || lower.includes(t.text.toLowerCase()))
+      )
+    }
+    return undefined
+  }
+
+  /**
    * Apply a single todo action (add / update / complete / cancel).
    * Pure in-memory — no DB writes; callers persist via getSummary() on HTTP exit.
    * Bumps dashboardVersion so sub-agents can detect changes at each ReAct iteration.
@@ -664,8 +695,10 @@ export class CaseMemoryManager {
 
     switch (action) {
       case 'add': {
+        // Sequential short IDs (t1, t2, t3 …) — easy for the model to reference
+        const newId = `t${this.todos.length + 1}`
         const newTodo: TodoItem = {
-          id: crypto.randomUUID(),
+          id: newId,
           text: text || '',
           status: 'pending',
           addedBy: 'agent',
@@ -678,9 +711,9 @@ export class CaseMemoryManager {
         break
       }
       case 'update': {
-        const todo = id ? this.todos.find((t) => t.id === id) : undefined
+        const todo = this.resolveTodoInList(this.todos, id, text)
         if (todo) {
-          if (text !== undefined) todo.text = text
+          if (text !== undefined && text !== todo.text) todo.text = text
           if (notes !== undefined) todo.notes = notes
           if (status !== undefined) todo.status = status
           changed = true
@@ -688,7 +721,7 @@ export class CaseMemoryManager {
         break
       }
       case 'complete': {
-        const todo = id ? this.todos.find((t) => t.id === id) : undefined
+        const todo = this.resolveTodoInList(this.todos, id, text)
         if (todo && todo.status !== 'completed') {
           todo.status = 'completed'
           todo.completedAt = new Date().toISOString()
@@ -699,7 +732,7 @@ export class CaseMemoryManager {
         break
       }
       case 'cancel': {
-        const todo = id ? this.todos.find((t) => t.id === id) : undefined
+        const todo = this.resolveTodoInList(this.todos, id, text)
         if (todo && todo.status !== 'cancelled') {
           todo.status = 'cancelled'
           if (notes !== undefined) todo.notes = notes

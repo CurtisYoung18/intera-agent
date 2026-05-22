@@ -199,6 +199,202 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       ],
     },
   },
+  // ── Account / KYC skills (used by account_issue SOP) ────────────────────────
+  {
+    name: 'get_account_status',
+    description: 'Retrieve the current account status, restrictions, and ban reason for a member',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID (UID)' },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Checking account status', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string() }),
+    mockFixture: {
+      member_id: 'U10023',
+      status: 'active',           // active | suspended | banned | locked
+      restrictions: [],
+      banReason: null,
+      lastLoginAt: '2026-05-21T08:00:00Z',
+      registeredAt: '2025-01-15T00:00:00Z',
+      riskLevel: 'low',
+    },
+  },
+  {
+    name: 'get_kyc_status',
+    description: 'Retrieve KYC (identity verification) status for a member',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID (UID)' },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Verifying identity status', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string() }),
+    mockFixture: {
+      member_id: 'U10023',
+      kycStatus: 'approved',      // not_started | pending | approved | rejected
+      kycLevel: 'basic',          // basic | enhanced
+      submittedAt: '2025-01-16T09:00:00Z',
+      approvedAt: '2025-01-17T10:30:00Z',
+      rejectionReason: null,
+    },
+  },
+
+  // ── Withdrawal skills (used by withdrawal_issue SOP) ──────────────────────
+  {
+    name: 'get_latest_withdrawal',
+    description: 'Retrieve the most recent withdrawal request and its status for a member',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID' },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Checking withdrawal status', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string() }),
+    mockFixture: {
+      withdrawalId: 'WD2026052100987',
+      member_id: 'U10023',
+      amount: 3000.0,
+      currency: 'CNY',
+      status: 'pending',          // pending | processing | completed | rejected | cancelled
+      bankName: '招商银行',
+      bankAccount: '****1234',
+      requestedAt: '2026-05-21T10:00:00Z',
+      estimatedArrival: '2026-05-22T18:00:00Z',
+      rejectionReason: null,
+    },
+  },
+  {
+    name: 'get_withdraw_conditions',
+    description: 'Check withdrawal eligibility conditions for a member, including wagering requirements',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID' },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Checking withdrawal eligibility', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string() }),
+    mockFixture: {
+      eligible: true,
+      wageringRequired: 5000.0,
+      wageringCompleted: 5200.0,
+      wageringShortfall: 0,
+      bonusLockAmount: 0,
+      minWithdrawalAmount: 100.0,
+      maxWithdrawalAmount: 50000.0,
+      dailyLimitRemaining: 10000.0,
+      pendingWithdrawals: 1,
+    },
+  },
+  {
+    name: 'get_transaction_history',
+    description: 'Retrieve recent deposit/withdrawal transaction history for a member',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID' },
+        limit: { type: 'number', description: 'Max records to return (default 10)' },
+        type: { type: 'string', description: 'Filter by type: deposit | withdrawal | all', enum: ['deposit', 'withdrawal', 'all'] },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Loading transaction history', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string(), limit: z.number().optional(), type: z.enum(['deposit', 'withdrawal', 'all']).optional() }),
+    mockFixture: {
+      transactions: [
+        { id: 'TX001', type: 'withdrawal', amount: 3000.0, status: 'pending',   at: '2026-05-21T10:00:00Z' },
+        { id: 'TX002', type: 'deposit',    amount: 5000.0, status: 'completed', at: '2026-05-20T14:00:00Z' },
+        { id: 'TX003', type: 'deposit',    amount: 1000.0, status: 'completed', at: '2026-05-19T15:30:00Z' },
+      ],
+      total: 3,
+    },
+  },
+
+  // ── Promotion skills (used by promotion_inquiry SOP) ─────────────────────
+  {
+    name: 'get_active_promotions',
+    description: 'Retrieve promotions the member is currently participating in',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID' },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Loading active promotions', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string() }),
+    mockFixture: {
+      activePromotions: [
+        {
+          id: 'PROMO-2026-05-WELCOME',
+          name: '首存优惠 100%',
+          type: 'deposit_bonus',
+          bonusAmount: 1000.0,
+          wageringRequired: 5000.0,
+          wageringCompleted: 5200.0,
+          expiresAt: '2026-06-01T00:00:00Z',
+          status: 'wagering_complete',
+        },
+      ],
+    },
+  },
+  {
+    name: 'get_eligible_promotions',
+    description: 'Retrieve promotions the member is eligible for but has not yet claimed',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Platform user ID' },
+      },
+      required: ['member_id'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Finding available promotions', icon: 'scan' },
+    zodSchema: z.object({ member_id: z.string() }),
+    mockFixture: {
+      eligiblePromotions: [
+        {
+          id: 'PROMO-2026-05-RELOAD',
+          name: '每周续存优惠 50%',
+          type: 'reload_bonus',
+          maxBonus: 500.0,
+          minDeposit: 200.0,
+          wageringMultiplier: 3,
+          validUntil: '2026-05-25T23:59:59Z',
+          claimUrl: '/promotions/reload',
+        },
+      ],
+    },
+  },
+
   {
     name: 'ocr_receipt',
     description: 'Extract information from uploaded receipt screenshots',

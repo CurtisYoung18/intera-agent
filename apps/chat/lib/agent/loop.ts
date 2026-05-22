@@ -45,7 +45,7 @@ interface StreamContentBlock {
 // ensures patterns that straddle chunk boundaries are caught correctly.
 // ---------------------------------------------------------------------------
 
-class StreamingTextSanitizer {
+export class StreamingTextSanitizer {
   private static readonly HOLD_BACK = 60
   private buf = ''
   private inThink = false
@@ -365,6 +365,9 @@ export class AgentLoop {
       // classified as off-topic — it overrides the stage check so casual messages
       // don't enter the Case ReAct loop.
       const isCaseActive = forceCoreMode ? false : (this.caseLoop?.isStageActive() ?? false)
+      // Consultation mode: human operator is reviewing the case via the same chat UI.
+      // Restrict the agent to pure conversation + finalize_consultation only.
+      const isConsultation = this.caseMemory.getSummary().caseStatus === 'waiting_human'
 
       // Emit core_agent_progress and merge background sub-agent results (case mode only).
       if (isCaseActive) {
@@ -435,6 +438,20 @@ export class AgentLoop {
       if (!isCaseActive) {
         stagePrompt = this.conversationLoop.buildPrompt()
         stageTools = this.conversationLoop.filterTools(allTools)
+      } else if (isConsultation) {
+        // Customer sent a message while the case is under human specialist review.
+        // Acknowledge briefly — no investigation tools allowed.
+        stagePrompt = [
+          `[INTERA MODE: WAITING_HUMAN | type: ${this.deps.caseSchema?.type || 'unknown'} | stage: ${this.currentStage}]`,
+          'This case is currently under review by a human specialist. A human task has been created.',
+          '',
+          'Your ONLY job: acknowledge the customer\'s message warmly, confirm their case is being reviewed,',
+          'and ask them to wait. Do NOT call any tools. Do NOT run any investigation.',
+          'Do NOT make promises about outcomes. Keep the response brief (1-2 sentences).',
+          '',
+          this.deps.systemPrompt,
+        ].join('\n')
+        stageTools = []  // No tools — pure text acknowledgement only
       } else if (this.caseLoop!.isSopMode()) {
         stagePrompt = this.caseLoop!.buildSopPrompt(
           this.deps.systemPrompt,
@@ -823,7 +840,7 @@ export class AgentLoop {
         // Skip only when forceCoreMode is true (casual off-topic message).
         // Must NOT gate on isCaseActive: the 'created' → stage-1 bootstrap
         // transition fires here while isCaseActive is still false.
-        if (!forceCoreMode && this.caseLoop?.hasStageConfigs()) {
+        if (!forceCoreMode && !isConsultation && this.caseLoop?.hasStageConfigs()) {
           const transitionEval = await this.caseLoop.evaluateStageTransitionAfterNoTools(this.iterationCount)
           if (transitionEval.modelUsed) {
             await this.traceWriter.write('stage_eval', `Stage eval: ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
@@ -887,6 +904,17 @@ export class AgentLoop {
                 console.error('[AgentLoop] Failed to auto-create human task:', err)
               }
 
+              // Notify the customer before exiting — a silent escalation is confusing.
+              sendEvent({
+                type: 'text_delta',
+                data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
+                timestamp: new Date().toISOString(),
+              })
+              sendEvent({
+                type: 'message_stop',
+                data: { reason: 'escalating', stage: this.currentStage },
+                timestamp: new Date().toISOString(),
+              })
               sendEvent({
                 type: 'escalated',
                 data: { stage: this.currentStage, reason: 'max_nudges' },
@@ -964,7 +992,10 @@ export class AgentLoop {
         // (15 chars) slip past a 30-char cutoff yet are exactly the verbal
         // hallucination pattern we need to catch. The LLM eval correctly
         // classifies legitimate short responses ("好的", "明白了").
-        if (fullText && fullText.length >= 1) {
+        //
+        // Consultation mode: pure conversation with a human operator is always
+        // legitimate — skip the ReAct guard entirely.
+        if (!isConsultation && fullText && fullText.length >= 1) {
           const reactResult = await this.evaluateReactCompliance(fullText)
 
           if (reactResult === 'nudge') {
@@ -1005,9 +1036,10 @@ export class AgentLoop {
         await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
-          // Persist actual workflow stage — never hard-code investigating or the next HTTP turn
-          // mis-reads StageExecutor.getCurrentStage() and skips collecting / request_user_input.
-          caseStatus: this.currentStage as CaseStatus,
+          // In consultation mode keep the case as waiting_human so the next request
+          // re-enters consultation mode rather than reverting to an investigation stage.
+          // Otherwise persist the actual workflow stage.
+          caseStatus: (isConsultation ? 'waiting_human' : this.currentStage) as CaseStatus,
           transition: 'next_turn',
           currentStage: this.currentStage,
         }

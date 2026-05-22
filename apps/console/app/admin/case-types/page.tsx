@@ -27,6 +27,7 @@ interface CaseTypeItem {
   requireHumanReview?: boolean
   executionMode?: string
   sop?: string | null
+  sopMaxAutoTurns?: number
 }
 
 type ModalTab = 'basic' | 'stages' | 'sop'
@@ -99,6 +100,7 @@ export default function CaseTypesPage() {
     requireHumanReview: false,
     executionMode: 'stage',
     sop: null,
+    sopMaxAutoTurns: 10,
   })
 
   const openEdit = (ct: CaseTypeItem) => {
@@ -545,6 +547,21 @@ export default function CaseTypesPage() {
                     sees them at each iteration.
                   </p>
                 </div>
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">Max Auto Turns (1–50)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={editing.sopMaxAutoTurns ?? 10}
+                    onChange={(e) => setEditing({ ...editing, sopMaxAutoTurns: Math.max(1, Math.min(50, Number(e.target.value) || 10)) })}
+                    className="glass-input-console text-[12px] w-24"
+                  />
+                  <p className="text-[10px] text-[var(--smoke)]">
+                    Max consecutive turns the agent runs autonomously before stopping. Higher values let the agent
+                    complete longer SOPs without pauses, but prevent infinite loops.
+                  </p>
+                </label>
                 <label className="space-y-1.5 block">
                   <span className="text-[11px] text-[var(--fog)]">Standard Operating Procedure (SOP)</span>
                   <textarea
