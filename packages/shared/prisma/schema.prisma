@@ -46,8 +46,6 @@ model AgentConfig {
   thinkingBudget    Int     @default(4096)
   maxIterations     Int     @default(20)
   systemPrompt      String
-  toolParallelism   Boolean @default(true)
-  isConcurrencySafe Boolean @default(true)
   showThinking      Boolean @default(false)
 
   maxOutputTokens     Int?    // default 4096

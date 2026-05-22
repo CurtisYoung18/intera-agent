@@ -70,8 +70,6 @@ async function seed() {
     maxOutputTokens: 4096,
     memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
     policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
-    toolParallelism: true,
-    isConcurrencySafe: true,
     showThinking: true,
     evaluationModel: process.env.EVALUATION_MODEL || 'MiniMax-M2.7-highspeed',
     resumePrompt:

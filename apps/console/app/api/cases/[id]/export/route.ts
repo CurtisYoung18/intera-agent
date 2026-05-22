@@ -72,7 +72,6 @@ export async function GET(
     sections.push(`- **Thinking Budget**: ${agentConfig.thinkingBudget}`)
     sections.push(`- **Max Iterations**: ${agentConfig.maxIterations}`)
     sections.push(`- **Show Thinking**: ${agentConfig.showThinking}`)
-    sections.push(`- **Tool Parallelism**: ${agentConfig.toolParallelism}`)
     sections.push('')
   }
 

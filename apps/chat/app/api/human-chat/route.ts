@@ -16,8 +16,6 @@ const DEFAULT_HUMAN_CHAT_CONFIG: AgentConfigData = {
   thinkingBudget: 4096,
   maxIterations: 15,
   systemPrompt: CONSULTATION_SYSTEM_PROMPT,
-  toolParallelism: true,
-  isConcurrencySafe: true,
   showThinking: false,
   memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, keyEventExtractionPrompt: '', enableAutocompact: false },
   policyHooks: { preTool: [], postTool: [], preFinalize: [] },
@@ -41,8 +39,6 @@ async function loadHumanChatConfig(customerId: string): Promise<AgentConfigData>
         thinkingBudget: dbConfig.thinkingBudget,
         maxIterations: DEFAULT_HUMAN_CHAT_CONFIG.maxIterations,
         systemPrompt: consultationPrompt?.trim() || CONSULTATION_SYSTEM_PROMPT,
-        toolParallelism: dbConfig.toolParallelism,
-        isConcurrencySafe: dbConfig.isConcurrencySafe,
         showThinking: (dbConfig as any).showThinking ?? false,
         humanSkills: humanSkills || undefined,
         memoryStrategy: {

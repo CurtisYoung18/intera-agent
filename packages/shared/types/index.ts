@@ -259,8 +259,6 @@ export interface AgentConfigData {
   maxIterations: number
   maxOutputTokens?: number
   systemPrompt: string
-  toolParallelism: boolean
-  isConcurrencySafe: boolean
   showThinking: boolean
   memoryStrategy: MemoryStrategy
   policyHooks: PolicyHooks
@@ -271,8 +269,6 @@ export interface AgentConfigData {
   /** Custom consultation system prompt override (human-chat route). */
   consultationPrompt?: string
   evaluationModel?: string
-  /** Pre-fill assistant response with `{"` to force JSON output from stage/intent evaluators. */
-  evaluationPrefillEnabled?: boolean
   /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */
   debugMode?: boolean
   /** When enabled, runs an LLM eval after each stream turn to detect and strip leaked model-context (think blocks, tool-result echoes). */

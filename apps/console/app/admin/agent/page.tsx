@@ -114,8 +114,6 @@ export default function AgentConfigPage() {
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
           systemPrompt: raw.systemPrompt || '',
-          toolParallelism: raw.toolParallelism ?? true,
-          isConcurrencySafe: raw.isConcurrencySafe ?? true,
           showThinking: raw.showThinking ?? false,
           memoryStrategy,
           policyHooks,
@@ -240,8 +238,6 @@ export default function AgentConfigPage() {
   const ms = config.memoryStrategy
 
   const modelCheckboxes: Array<[keyof AgentConfigData, string]> = [
-    ['toolParallelism', 'agent.toolParallelism'],
-    ['isConcurrencySafe', 'agent.concurrencySafe'],
     ['showThinking', 'agent.showThinking'],
     ['enableLlmSanitization', 'agent.enableLlmSanitization'],
   ]

@@ -18,8 +18,6 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   maxIterations: 20,
   maxOutputTokens: 4096,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  toolParallelism: true,
-  isConcurrencySafe: true,
   showThinking: false,
   memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY },
   policyHooks: { ...DEFAULT_POLICY_HOOKS },
@@ -42,8 +40,6 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         maxIterations: dbConfig.maxIterations,
         maxOutputTokens: (dbConfig as unknown as { maxOutputTokens?: number }).maxOutputTokens ?? 4096,
         systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-        toolParallelism: dbConfig.toolParallelism,
-        isConcurrencySafe: dbConfig.isConcurrencySafe,
         showThinking: dbConfig.showThinking,
         memoryStrategy:
           (typeof dbConfig.memoryStrategy === 'string' && dbConfig.memoryStrategy

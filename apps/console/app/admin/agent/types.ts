@@ -47,8 +47,6 @@ export interface AgentConfigData {
   maxIterations: number
   maxOutputTokens: number
   systemPrompt: string
-  toolParallelism: boolean
-  isConcurrencySafe: boolean
   showThinking: boolean
   memoryStrategy: MemoryStrategy
   policyHooks: string

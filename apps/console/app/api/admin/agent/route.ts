@@ -24,8 +24,6 @@ export async function GET() {
           thinkingBudget: 4096,
           maxIterations: 20,
           maxOutputTokens: 4096,
-          toolParallelism: true,
-          isConcurrencySafe: true,
           showThinking: false,
           resumePrompt: null,
           formResponseTemplate: null,
@@ -49,8 +47,7 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const {
       model, temperature, thinkingBudget, maxIterations, maxOutputTokens,
-      systemPrompt, toolParallelism, isConcurrencySafe,
-      showThinking, memoryStrategy, policyHooks,
+      systemPrompt, showThinking, memoryStrategy, policyHooks,
       resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
       debugMode, evaluationModel, enableLlmSanitization,
       prefixContinuationEnabled,
@@ -68,8 +65,6 @@ export async function PUT(req: NextRequest) {
     if (maxIterations !== undefined) data.maxIterations = maxIterations
     if (maxOutputTokens !== undefined) data.maxOutputTokens = maxOutputTokens
     if (systemPrompt !== undefined) data.systemPrompt = systemPrompt
-    if (toolParallelism !== undefined) data.toolParallelism = toolParallelism
-    if (isConcurrencySafe !== undefined) data.isConcurrencySafe = isConcurrencySafe
     if (showThinking !== undefined) data.showThinking = showThinking
     if (memoryStrategy !== undefined) data.memoryStrategy = typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy)
     if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
@@ -102,8 +97,6 @@ export async function PUT(req: NextRequest) {
         thinkingBudget: thinkingBudget ?? 4096,
         maxIterations: maxIterations ?? 20,
         maxOutputTokens: maxOutputTokens ?? 4096,
-        toolParallelism: toolParallelism ?? true,
-        isConcurrencySafe: isConcurrencySafe ?? true,
         showThinking: showThinking ?? false,
         resumePrompt: resumePrompt ?? null,
         formResponseTemplate: formResponseTemplate ?? null,

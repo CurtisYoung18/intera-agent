@@ -77,10 +77,10 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
               <NumField label="Max Output Tokens" tooltip="" value={config.maxOutputTokens} onChange={v => update('maxOutputTokens', v)} unit="tokens" />
             </div>
             <div className="flex gap-4 flex-wrap">
-              {(['toolParallelism', 'isConcurrencySafe', 'showThinking'] as const).map(key => (
+              {(['showThinking'] as const).map(key => (
                 <label key={key} className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={!!config[key]} onChange={e => update(key, e.target.checked)} className="accent-indigo rounded" />
-                  <span className="text-[12px] text-[var(--fog)]">{key === 'toolParallelism' ? 'Tool Parallelism' : key === 'isConcurrencySafe' ? 'Concurrency Safe' : 'Show Thinking'}</span>
+                  <span className="text-[12px] text-[var(--fog)]">{key === 'showThinking' ? 'Show Thinking' : ''}</span>
                 </label>
               ))}
             </div>
