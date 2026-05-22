@@ -1129,6 +1129,12 @@ export class AgentLoop {
             console.error('[AgentLoop] Failed to auto-create human task from postTool:', err)
           }
 
+          // Customer-facing fallback before silent policy escalation
+          sendEvent({
+            type: 'text_delta',
+            data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
+            timestamp: new Date().toISOString(),
+          })
           sendEvent({
             type: 'escalated',
             data: { stage: this.currentStage, reason: escalatedReasons },

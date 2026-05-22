@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
           let delay = 500
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-              const selfUrl = `http://localhost:${process.env.PORT || 3000}`
+              const selfUrl = `http://127.0.0.1:${process.env.PORT || '8080'}`
               const res = await fetch(
                 `${selfUrl}/api/messages`,
                 {
