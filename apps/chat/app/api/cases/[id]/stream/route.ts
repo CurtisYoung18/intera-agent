@@ -422,10 +422,14 @@ export async function GET(
 
       // ── Session loop ─────────────────────────────────────────────────────
       // Await one message at a time, run a full agent turn, persist, repeat.
+      // In SOP mode, auto-continues until terminal state or max turns reached.
+
+      let sopAutoTurnCount = 0
+      const MAX_SOP_AUTO_TURNS = 20
 
       try {
         while (!session.aborted && !streamClosed) {
-          // Block until a message arrives from POST /message
+          // Block until a message arrives from POST /message (or auto-continue)
           const queued = await session.queue.dequeue()
 
           if (session.aborted || queued.content === '__SESSION_CLOSED__') break
@@ -463,6 +467,28 @@ export async function GET(
               result.transition === 'connection_lost'
             ) {
               break
+            }
+
+            // SOP auto-continuation: in SOP mode, the agent must run autonomously
+            // through all todo steps without waiting for further user messages.
+            // After each non-terminal, non-waiting turn, inject a continuation
+            // trigger so the loop processes the next turn immediately.
+            if (
+              result.transition !== 'waiting_human' &&
+              result.transition !== 'waiting_form' &&
+              result.transition !== 'escalated' &&
+              sopAutoTurnCount < MAX_SOP_AUTO_TURNS
+            ) {
+              try {
+                const ct = await prisma.caseType.findUnique({
+                  where: { customerId_type: { customerId, type: session.loop!.getCaseType() } },
+                  select: { executionMode: true },
+                })
+                if (ct?.executionMode === 'sop') {
+                  sopAutoTurnCount++
+                  session.queue.enqueue({ content: '[SOP CONTINUE]' })
+                }
+              } catch { /* continue without auto-trigger */ }
             }
 
             // Waiting for form/interaction — stay alive, next message is the response
