@@ -392,6 +392,9 @@ export async function GET(
 
   const stream = new ReadableStream({
     async start(controller) {
+      let sopAutoTurnCount = 0
+      let sopMaxAutoTurns = 10 // default, loaded once from case type config at session init
+
       const sendEvent = (event: SSEEvent) => {
         if (streamClosed) return
         try {
@@ -410,7 +413,17 @@ export async function GET(
         try {
           const loop = await initAgentLoop(caseId, customerId, userId, userLabel, chatId)
           session.loop = loop
-          console.log(`[Stream] Session initialised: ${caseId}`)
+          // Pre-load SOP max turns from case type config (avoids DB query per turn)
+          try {
+            const ct = await prisma.caseType.findUnique({
+              where: { customerId_type: { customerId, type: loop.getCaseType() } },
+              select: { executionMode: true, sopMaxAutoTurns: true },
+            })
+            if (ct?.executionMode === 'sop' && ct.sopMaxAutoTurns) {
+              sopMaxAutoTurns = ct.sopMaxAutoTurns
+            }
+          } catch { /* keep default */ }
+          console.log(`[Stream] Session initialised: ${caseId} (SOP max turns: ${sopMaxAutoTurns})`)
         } catch (err) {
           console.error('[Stream] AgentLoop init failed:', err)
           sendEvent({ type: 'error', data: 'Failed to initialise session', timestamp: new Date().toISOString() })
@@ -424,8 +437,6 @@ export async function GET(
       // Await one message at a time, run a full agent turn, persist, repeat.
       // In SOP mode, auto-continues until terminal state or max turns reached.
 
-      let sopAutoTurnCount = 0
-      let sopMaxAutoTurns = 10 // default, will be read from case type config
 
       try {
         while (!session.aborted && !streamClosed) {
@@ -478,17 +489,9 @@ export async function GET(
               result.transition !== 'waiting_form' &&
               sopAutoTurnCount < sopMaxAutoTurns
             ) {
-              try {
-                const ct = await prisma.caseType.findUnique({
-                  where: { customerId_type: { customerId, type: session.loop!.getCaseType() } },
-                  select: { executionMode: true, sopMaxAutoTurns: true },
-                })
-                if (ct?.executionMode === 'sop') {
-                  if (ct.sopMaxAutoTurns) sopMaxAutoTurns = ct.sopMaxAutoTurns
-                  sopAutoTurnCount++
-                  session.queue.enqueue({ content: '[SOP CONTINUE]' })
-                }
-              } catch { /* continue without auto-trigger */ }
+              sopAutoTurnCount++
+              console.log(`[Stream] SOP auto-continue ${sopAutoTurnCount}/${sopMaxAutoTurns} for ${caseId}`)
+              session.queue.enqueue({ content: '[SOP CONTINUE]' })
             }
 
             // Waiting for form/interaction — stay alive, next message is the response
