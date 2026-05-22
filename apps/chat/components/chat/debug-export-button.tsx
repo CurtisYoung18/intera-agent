@@ -99,8 +99,8 @@ export default function DebugExportButton({
         backdrop-blur-md shadow-[0_1px_3px_rgba(0,0,0,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25`}
     >
       {done
-        ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-        : <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
+        ? <Check className="h-4 w-4" strokeWidth={2.5} />
+        : <Download className="h-4 w-4" strokeWidth={1.75} />
       }
     </button>
   )

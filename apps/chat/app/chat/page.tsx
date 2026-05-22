@@ -15,6 +15,7 @@ import UserLoginScreen from '@/components/chat/user-login-screen'
 import type { TestUser } from '@/components/chat/user-login-screen'
 import UserPill from '@/components/chat/user-pill'
 import DebugExportButton from '@/components/chat/debug-export-button'
+import { PenLine } from 'lucide-react'
 import { useInteraChat } from './use-intera-chat'
 
 export default function ChatPage() {
@@ -46,6 +47,7 @@ export default function ChatPage() {
     selectedUser,
     setSelectedUser,
     isHydrated,
+    newChat,
   } = useInteraChat()
 
   const activeCase = cases.find((c) => c.caseId === activeCaseId) ?? null
@@ -134,12 +136,25 @@ export default function ChatPage() {
 
   return (
     <ChatShell spacious={splitMode}>
-      <header className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">
-        <div className="w-20 flex items-center">
+      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5 border-b border-black/[0.05]">
+        {/* Left — user identity + new chat */}
+        <div className="flex items-center gap-2">
           <UserPill label={currentUserLabel} onClick={handleSwitchUser} />
+          <button
+            onClick={newChat}
+            title="New chat"
+            aria-label="Start a new chat"
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-black/[0.07] bg-white/40 text-fog/60 backdrop-blur-md shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:border-black/10 hover:bg-white/65 hover:text-fog/90 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25"
+          >
+            <PenLine className="h-4 w-4" strokeWidth={1.75} />
+          </button>
         </div>
+
+        {/* Center — agent status */}
         <StatusPill status={agentStatus} label="Intera AI" />
-        <div className="flex items-center justify-end gap-1.5 w-20 sm:w-auto">
+
+        {/* Right — debug export + history */}
+        <div className="flex items-center gap-1.5">
           <DebugExportButton
             chatId={chatId}
             userId={userId}
@@ -153,6 +168,7 @@ export default function ChatPage() {
           <CaseHistoryPanel
             customerId={customerId}
             userId={userId}
+            chatId={chatId}
             onSelectCase={loadHistoricalCase}
             activeCaseId={activeCaseId}
           />

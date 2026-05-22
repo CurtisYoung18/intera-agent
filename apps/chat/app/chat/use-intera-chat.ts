@@ -171,6 +171,8 @@ export interface UseInteraChatReturn {
   composerAssistEnabled: boolean
   composerAssistMissingDeepseekKey?: boolean
   composerMinDraftChars: number
+  /** Start a fresh chat session, clearing messages and cases. Keeps the same logged-in user. */
+  newChat: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +369,7 @@ export function useInteraChat(): UseInteraChatReturn {
     const uid = (selectedUser as TestUser).memberId
     const cid = session.customerId
 
-    fetch(`/api/cases?userId=${encodeURIComponent(uid)}&customerId=${encodeURIComponent(cid)}&limit=1`)
+    fetch(`/api/cases?userId=${encodeURIComponent(uid)}&customerId=${encodeURIComponent(cid)}&chatId=${encodeURIComponent(chatIdRef.current)}&limit=1`)
       .then((r) => r.json())
       .catch(() => null)
       .then(async (data) => {
@@ -1842,6 +1844,37 @@ export function useInteraChat(): UseInteraChatReturn {
     [session.customerId, effectiveUserId, postMessageToCase],
   )
 
+  const newChat = useCallback(() => {
+    // Close all persistent SSE streams
+    for (const [caseId, ac] of persistentStreamAbortsRef.current) {
+      ac.abort()
+    }
+    persistentStreamAbortsRef.current.clear()
+    persistentLanesRef.current.clear()
+
+    // Reset all state
+    setMessages([])
+    setCases([])
+    setActiveCaseIndex(0)
+    setDedicatedAgents([])
+    setSplitMode(false)
+    setCoreAgentProgress(null)
+    setStreamingToolName(null)
+    setAgentStatus('online')
+    setIsLoading(false)
+    setQueuedCount(0)
+    queuedRef.current = []
+    activeStreamsRef.current = 0
+    lastUserMsgRef.current = ''
+    selectedCaseTypeRef.current = null
+    caseIdRef.current = generateCaseId()
+
+    // Generate fresh chatId and persist it
+    const freshChatId = crypto.randomUUID()
+    chatIdRef.current = freshChatId
+    try { localStorage.setItem(CHAT_ID_KEY, freshChatId) } catch { /* noop */ }
+  }, [])
+
   return {
     messages,
     setMessages,
@@ -1873,5 +1906,6 @@ export function useInteraChat(): UseInteraChatReturn {
     composerAssistMissingDeepseekKey,
     composerMinDraftChars,
     chatId: chatIdRef.current,
+    newChat,
   }
 }

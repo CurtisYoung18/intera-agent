@@ -214,7 +214,7 @@ export default function VoiceInputBar({
             disabled={!canSend}
             aria-label="Send message"
             title="Send"
-            className="group/send mb-px flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo/[0.14] text-indigo/[0.92] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] outline-none ring-1 ring-black/[0.04] transition-[transform,opacity,background-color,box-shadow] duration-150 hover:enabled:bg-indigo/[0.22] hover:enabled:text-indigo active:enabled:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-[0.28] focus-visible:ring-2 focus-visible:ring-indigo/35"
+            className="group/send mt-px flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo/[0.14] text-indigo/[0.92] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] outline-none ring-1 ring-black/[0.04] transition-[transform,opacity,background-color,box-shadow] duration-150 hover:enabled:bg-indigo/[0.22] hover:enabled:text-indigo active:enabled:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-[0.28] focus-visible:ring-2 focus-visible:ring-indigo/35"
           >
             <SendIcon className="translate-x-[0.5px] transition-transform duration-150 group-hover/send:translate-x-px group-hover/send:-translate-y-px group-active/send:translate-x-[0.5px] group-active/send:translate-y-px" />
           </button>

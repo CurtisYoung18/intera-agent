@@ -36,11 +36,13 @@ const STATUS_COLORS: Record<string, string> = {
 export default function CaseHistoryPanel({
   customerId,
   userId,
+  chatId,
   onSelectCase,
   activeCaseId,
 }: {
   customerId: string
   userId: string
+  chatId: string
   onSelectCase: (caseId: string) => void
   activeCaseId: string | null
 }) {
@@ -53,7 +55,7 @@ export default function CaseHistoryPanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/cases?userId=${encodeURIComponent(userId)}&customerId=${encodeURIComponent(customerId)}&limit=20`)
+      const res = await fetch(`/api/cases?userId=${encodeURIComponent(userId)}&customerId=${encodeURIComponent(customerId)}&chatId=${encodeURIComponent(chatId)}&limit=20`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setCases(data.cases || [])
@@ -62,7 +64,7 @@ export default function CaseHistoryPanel({
     } finally {
       setLoading(false)
     }
-  }, [customerId, userId])
+  }, [customerId, userId, chatId])
 
   useEffect(() => {
     if (open) fetchCases()
@@ -79,13 +81,14 @@ export default function CaseHistoryPanel({
 
   return (
     <>
-      {/* Toggle button */}
+      {/* Toggle button — matches DebugExportButton glass style */}
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-medium text-fog/60 hover:text-fog hover:bg-white/[0.06] transition-colors"
+        title="Case history"
+        aria-label="View case history"
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-black/[0.07] bg-white/40 text-fog/60 backdrop-blur-md shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:border-black/10 hover:bg-white/65 hover:text-fog/90 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25"
       >
-        <History className="w-4 h-4" />
-        <span className="hidden sm:inline">History</span>
+        <History className="h-4 w-4" strokeWidth={1.75} />
       </button>
 
       {/* Panel */}

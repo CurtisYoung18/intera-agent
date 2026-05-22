@@ -14,6 +14,7 @@ const CHAT_API_BASE = process.env.NEXT_PUBLIC_CHAT_API_URL || 'http://localhost:
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@intera/shared'],
   experimental: {
@@ -23,10 +24,6 @@ const nextConfig = {
   },
   async rewrites() {
     return [
-      {
-        source: '/api/human-chat',
-        destination: `${CHAT_API_BASE}/api/human-chat`,
-      },
       {
         source: '/api/admin/config-changed',
         destination: `${CHAT_API_BASE}/api/admin/config-changed`,

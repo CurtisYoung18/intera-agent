@@ -12,6 +12,7 @@ if (fs.existsSync(rootEnv)) {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@intera/shared'],
   experimental: {
