@@ -2,16 +2,18 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const CUSTOMER_ID = await getActiveCustomerId()
   const { id } = await params
 
   try {
-    const c = await prisma.case.findUnique({
-      where: { id },
+    const c = await prisma.case.findFirst({
+      where: { id, customerId: CUSTOMER_ID },
       include: {
         memory: true,
         humanTasks: { orderBy: { createdAt: 'desc' } },
@@ -35,10 +37,14 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const CUSTOMER_ID = await getActiveCustomerId()
   const { id } = await params
 
   try {
-    const existing = await prisma.case.findUnique({ where: { id }, select: { id: true } })
+    const existing = await prisma.case.findFirst({
+      where: { id, customerId: CUSTOMER_ID },
+      select: { id: true },
+    })
     if (!existing) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }

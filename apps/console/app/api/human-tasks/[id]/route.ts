@@ -2,15 +2,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const CUSTOMER_ID = await getActiveCustomerId()
   const { id } = await params
 
-  const task = await prisma.humanTask.findUnique({
-    where: { id },
+  const task = await prisma.humanTask.findFirst({
+    where: { id, case: { customerId: CUSTOMER_ID } },
     include: {
       case: {
         include: {

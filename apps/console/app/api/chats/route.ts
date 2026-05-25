@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export interface ChatSession {
   chatId: string
@@ -23,13 +24,15 @@ export interface ChatSession {
 }
 
 export async function GET(req: NextRequest) {
+  const CUSTOMER_ID = await getActiveCustomerId()
   const { searchParams } = new URL(req.url)
   const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
   const offset = parseInt(searchParams.get('offset') || '0')
 
   try {
-    // Fetch all cases (ordered newest first) with minimal fields
+    // Fetch all cases for this customer (ordered newest first)
     const cases = await prisma.case.findMany({
+      where: { customerId: CUSTOMER_ID },
       orderBy: { updatedAt: 'desc' },
       include: {
         humanTasks: { select: { id: true }, take: 1 },
