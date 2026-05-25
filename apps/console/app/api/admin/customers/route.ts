@@ -12,13 +12,13 @@ const BUILT_IN_CUSTOMERS = [
 
 export async function GET() {
   try {
-    // Auto-seed built-in customers if they don't exist
-    const existing = await prisma.customer.findMany({ select: { id: true } })
-    const existingIds = new Set(existing.map((c) => c.id))
+    // Auto-seed/update built-in customers
     for (const c of BUILT_IN_CUSTOMERS) {
-      if (!existingIds.has(c.id)) {
-        await prisma.customer.create({ data: c })
-      }
+      await prisma.customer.upsert({
+        where: { id: c.id },
+        update: { name: c.name, password: c.password },
+        create: c,
+      })
     }
 
     const customers = await prisma.customer.findMany({
