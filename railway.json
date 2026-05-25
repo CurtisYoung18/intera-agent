@@ -1,10 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "buildCommand": "npm run build:console"
-  },
-  "deploy": {
-    "preDeployCommand": ["cp -r apps/console/.next/standalone/. ."],
-    "startCommand": "sh apps/console/entrypoint.sh"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.console"
   }
 }
