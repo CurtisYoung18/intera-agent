@@ -6,4 +6,5 @@ npx prisma db push --schema=./packages/shared/prisma/schema.prisma --accept-data
 
 echo "Starting Intera Chat..."
 # .next/standalone contents are copied to WORKDIR (/app), so server.js is at /app/server.js
-exec node server.js
+# In monorepo standalone output, server.js is at apps/chat/ within standalone
+exec node apps/chat/server.js
