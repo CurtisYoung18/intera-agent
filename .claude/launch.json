@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Chat (port 3000)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "apps/chat"],
+      "port": 3000
+    },
+    {
+      "name": "Console (port 3001)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "apps/console"],
+      "port": 3001
+    },
+    {
+      "name": "Case Continuation Worker",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "worker:continuation", "-w", "apps/chat"],
+      "port": 0
+    },
+    {
+      "name": "Prisma Studio (port 5555)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "db:studio", "-w", "packages/shared"],
+      "port": 5555
+    }
+  ]
+}
