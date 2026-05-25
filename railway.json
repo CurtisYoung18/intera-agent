@@ -2,8 +2,5 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "buildCommand": "npm run build:console"
-  },
-  "deploy": {
-    "startCommand": "cd apps/console && npx next start"
   }
 }
