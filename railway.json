@@ -4,6 +4,6 @@
     "buildCommand": "npm run build:console"
   },
   "deploy": {
-    "startCommand": "npm run start -w apps/console"
+    "startCommand": "cd apps/console && npx next start"
   }
 }
