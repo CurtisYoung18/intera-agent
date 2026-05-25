@@ -4,6 +4,6 @@
     "buildCommand": "npm run build:console"
   },
   "deploy": {
-    "startCommand": "node apps/console/.next/standalone/server.js"
+    "startCommand": "sh apps/console/entrypoint.sh"
   }
 }
