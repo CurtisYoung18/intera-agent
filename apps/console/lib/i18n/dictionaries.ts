@@ -343,6 +343,49 @@ export const en: Record<string, string> = {
   'guide.facts.transEval.title': 'Evaluation / judgment',
   'guide.facts.transEval.body':
     'For evaluation-type transitions, a separate pass (or model) can compare system evidence vs. user claims—routing to waiting_human on conflict or resolved when the story is clean.',
+  // ── API Reference ─────────────────────────────────────────────────
+  'guide.doc.api.eyebrow': 'REST API',
+  'guide.doc.api.title': 'Chat API Reference',
+  'guide.doc.api.lead': 'Use these endpoints to integrate Intera Agent into your own chat UI, LiveChat, or test with Postman. All responses are SSE-streamed.',
+
+  'guide.doc.api.baseUrl': 'Base URL',
+  'guide.doc.api.baseUrlDesc': 'Chat service: https://intera-chat.up.railway.app',
+  'guide.doc.api.auth': 'Authentication',
+  'guide.doc.api.authDesc': 'Currently no auth required for internal use. For production multi-tenant use, an Authorization: Bearer <api_key> header will be required (API keys managed in Console → Settings).',
+
+  'guide.doc.api.sendMessageTitle': 'POST /api/messages — Send Message',
+  'guide.doc.api.sendMessageDesc': 'Send a user message to the agent and receive a streaming SSE response. The agent will auto-create cases, call skills, search the knowledge base, and respond.',
+  'guide.doc.api.method': 'Method',
+  'guide.doc.api.contentType': 'Content-Type',
+  'guide.doc.api.reqBody': 'Request Body (JSON)',
+
+  'guide.doc.api.fieldUserId': 'Unique user ID (e.g. player ID). Used to group cases per user.',
+  'guide.doc.api.fieldMessage': 'The user\'s message text.',
+  'guide.doc.api.fieldChatId': 'Conversation session ID. Generate a random UUID per session. Omit for first message — response includes one.',
+  'guide.doc.api.fieldCustomerId': 'Customer/tenant ID. Use "default".',
+
+  'guide.doc.api.sseTitle': 'SSE Stream Response',
+  'guide.doc.api.sseDesc': 'The response is a Server-Sent Events stream. Each event has a type and JSON data payload:',
+  'guide.doc.api.eventTextDelta': 'Token-by-token text output from the agent.',
+  'guide.doc.api.eventToolExecuting': 'A skill/tool is being called (e.g. querying order, searching KB).',
+  'guide.doc.api.eventToolResult': 'Result returned from a skill execution.',
+  'guide.doc.api.eventCaseUpdate': 'Case created, stage advanced, escalated, or resolved.',
+  'guide.doc.api.eventError': 'Error during processing.',
+  'guide.doc.api.eventDone': 'Stream complete. [DONE] sentinel marks end of stream.',
+
+  'guide.doc.api.healthTitle': 'GET /api/health — Health Check',
+  'guide.doc.api.healthDesc': 'Returns service status and DB connectivity.',
+
+  'guide.doc.api.chatUiTitle': 'Built-in Chat UI',
+  'guide.doc.api.chatUiDesc': 'For manual testing in browser: https://intera-chat.up.railway.app/chat',
+
+  'guide.doc.api.postmanTitle': 'Postman Quick Start',
+  'guide.doc.api.postmanP1': '1. Create a new POST request to https://intera-chat.up.railway.app/api/messages',
+  'guide.doc.api.postmanP2': '2. Set header: Content-Type: application/json',
+  'guide.doc.api.postmanP3': '3. Set Body (raw JSON) with the example payload above',
+  'guide.doc.api.postmanP4': '4. Send — the response streams SSE events incrementally',
+  'guide.doc.api.postmanP5': '5. For first message, omit chatId or use "". Copy the chatId from the response for subsequent messages.',
+
   'guide.footer.note':
     'Architecture reference: `doc/spec/Intera_Harness_架构梳理.md`. Runtime behaviour always defers to code + Console configuration.',
   'guide.nav.concepts': 'Core concepts',
@@ -350,6 +393,7 @@ export const en: Record<string, string> = {
   'guide.nav.subAgents': 'Sub-agent dispatch',
   'guide.nav.configLifecycle': 'Configuration flow',
   'guide.nav.adminMap': 'Admin map',
+  'guide.nav.api': 'API Reference',
   'guide.doc.concepts.eyebrow': 'Foundation',
   'guide.doc.concepts.title': 'Five concepts you need to know',
   'guide.doc.concepts.lead': 'Every piece of Intera is built from five primitives. Once you understand these, the rest is detail.',
@@ -1340,6 +1384,49 @@ export const zh: Record<string, string> = {
   'guide.facts.transEval.title': '评估 / 裁决型流转',
   'guide.facts.transEval.body':
     '对 evaluation 类流转，可用独立评估模型比对系统证据与用户主张——发现冲突走 waiting_human，证据链清晰则可进入 resolved。',
+  // ── API 参考 ─────────────────────────────────────────────────────
+  'guide.doc.api.eyebrow': 'REST API',
+  'guide.doc.api.title': 'Chat API 参考',
+  'guide.doc.api.lead': '使用以下端点将 Intera Agent 集成到你自己的聊天 UI、LiveChat 中，或使用 Postman 测试。所有响应均为 SSE 流式输出。',
+
+  'guide.doc.api.baseUrl': 'Base URL',
+  'guide.doc.api.baseUrlDesc': 'Chat 服务: https://intera-chat.up.railway.app',
+  'guide.doc.api.auth': '认证',
+  'guide.doc.api.authDesc': '当前内部使用无需认证。生产多租户环境下需添加 Authorization: Bearer <api_key> 请求头（API Key 在 Console → Settings 管理）。',
+
+  'guide.doc.api.sendMessageTitle': 'POST /api/messages — 发送消息',
+  'guide.doc.api.sendMessageDesc': '向 Agent 发送用户消息并接收 SSE 流式响应。Agent 会自动创建 Case、调用技能、检索知识库并回复。',
+  'guide.doc.api.method': '方法',
+  'guide.doc.api.contentType': 'Content-Type',
+  'guide.doc.api.reqBody': '请求体 (JSON)',
+
+  'guide.doc.api.fieldUserId': '唯一用户标识（如玩家 ID），用于按用户分组 Case。',
+  'guide.doc.api.fieldMessage': '用户消息文本。',
+  'guide.doc.api.fieldChatId': '对话会话 ID。每次会话生成一个随机 UUID。首次消息可省略，响应中会返回。',
+  'guide.doc.api.fieldCustomerId': '客户/租户 ID，填 "default"。',
+
+  'guide.doc.api.sseTitle': 'SSE 流式响应',
+  'guide.doc.api.sseDesc': '响应为 Server-Sent Events 流，每个事件包含类型和 JSON 数据：',
+  'guide.doc.api.eventTextDelta': 'Agent 逐字输出的文本内容。',
+  'guide.doc.api.eventToolExecuting': '正在调用技能/工具（如查询订单、搜索知识库）。',
+  'guide.doc.api.eventToolResult': '技能执行返回的结果。',
+  'guide.doc.api.eventCaseUpdate': 'Case 状态变更（创建、阶段推进、升级、解决）。',
+  'guide.doc.api.eventError': '处理过程中发生错误。',
+  'guide.doc.api.eventDone': '流结束。[DONE] 标记表示流结束。',
+
+  'guide.doc.api.healthTitle': 'GET /api/health — 健康检查',
+  'guide.doc.api.healthDesc': '返回服务状态和数据库连接状态。',
+
+  'guide.doc.api.chatUiTitle': '内置聊天界面',
+  'guide.doc.api.chatUiDesc': '浏览器手动测试: https://intera-chat.up.railway.app/chat',
+
+  'guide.doc.api.postmanTitle': 'Postman 快速开始',
+  'guide.doc.api.postmanP1': '1. 新建 POST 请求: https://intera-chat.up.railway.app/api/messages',
+  'guide.doc.api.postmanP2': '2. 设置 Header: Content-Type: application/json',
+  'guide.doc.api.postmanP3': '3. 设置 Body (raw JSON)，使用上方示例的请求体',
+  'guide.doc.api.postmanP4': '4. 发送 — 响应以 SSE 事件形式逐步返回',
+  'guide.doc.api.postmanP5': '5. 首次消息可不填 chatId，从响应中获取 chatId 后在后续消息中使用',
+
   'guide.footer.note':
     '架构全貌请参阅仓库规格长文「Intera Harness 架构梳理」；线上真实行为始终以 **代码 + Console 后台配置** 为准，本页示意图为便于理解的抽象。',
   'guide.nav.concepts': '核心概念',
@@ -1347,6 +1434,7 @@ export const zh: Record<string, string> = {
   'guide.nav.subAgents': '子代理调度',
   'guide.nav.configLifecycle': '配置生效流程',
   'guide.nav.adminMap': '管理页面地图',
+  'guide.nav.api': 'API 参考',
   'guide.doc.concepts.eyebrow': '基础概念',
   'guide.doc.concepts.title': '需要了解的五个概念',
   'guide.doc.concepts.lead': 'Intera 的一切由五个基本元素构成。理解它们，后面的细节就都清楚了。',

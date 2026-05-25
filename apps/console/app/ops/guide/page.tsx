@@ -178,6 +178,114 @@ export default function OpsGuidePage() {
             </div>
           </DocSection>
 
+          {/* 14. API Reference */}
+          <DocSection id="guide-api" eyebrow={t('guide.doc.api.eyebrow')} title={t('guide.doc.api.title')}>
+            <DocParagraph text={t('guide.doc.api.lead')} />
+
+            <h3 className="text-[13px] font-semibold text-[var(--mist)] !mt-6">{t('guide.doc.api.baseUrl')}</h3>
+            <p className="text-[12px] text-[var(--fog)] mt-1">
+              <code className="px-1.5 py-0.5 rounded-md bg-teal-500/[0.08] text-[11px] text-teal-700 font-mono">
+                {t('guide.doc.api.baseUrlDesc')}
+              </code>
+            </p>
+
+            <h3 className="text-[13px] font-semibold text-[var(--mist)] !mt-5">{t('guide.doc.api.auth')}</h3>
+            <DocParagraph text={t('guide.doc.api.authDesc')} />
+
+            {/* Send Message */}
+            <h3 className="text-[13px] font-semibold text-[var(--mist)] !mt-5">{t('guide.doc.api.sendMessageTitle')}</h3>
+            <DocParagraph text={t('guide.doc.api.sendMessageDesc')} />
+
+            <div className="!mt-3 rounded-xl border border-black/[0.06] bg-black/[0.01] p-4 font-mono text-[11px] leading-relaxed">
+              <div className="text-[var(--fog)] mb-2">
+                <span className="inline-block w-14 text-[10px] uppercase tracking-wider text-teal-600 font-semibold">POST</span>
+                <span className="text-[var(--mist)]">/api/messages</span>
+              </div>
+              <div className="text-[var(--fog)] mb-2">
+                <span className="inline-block w-14 text-[10px] uppercase tracking-wider text-[var(--fog)]/60">Host</span>
+                <span>intera-chat.up.railway.app</span>
+              </div>
+              <div className="text-[var(--fog)] mb-2">
+                <span className="inline-block w-14 text-[10px] uppercase tracking-wider text-[var(--fog)]/60">{t('guide.doc.api.contentType')}</span>
+                <span>application/json</span>
+              </div>
+              <div className="text-[var(--fog)]/60 mt-3 mb-1 text-[10px] uppercase tracking-wider">{t('guide.doc.api.reqBody')}</div>
+              <div className="bg-teal-500/[0.04] rounded-lg p-3 text-[var(--mist)] overflow-x-auto">
+{`{
+  "userId": "player_123",
+  "message": "I deposited 500 Taka but it's not showing in my balance",
+  "chatId": "",
+  "customerId": "default"
+}`}
+              </div>
+            </div>
+
+            <ul className="!mt-3 space-y-1.5 text-[11px] text-[var(--fog)]">
+              <li><code className="text-[10px] bg-black/[0.04] px-1 rounded">userId</code> — {t('guide.doc.api.fieldUserId')}</li>
+              <li><code className="text-[10px] bg-black/[0.04] px-1 rounded">message</code> — {t('guide.doc.api.fieldMessage')}</li>
+              <li><code className="text-[10px] bg-black/[0.04] px-1 rounded">chatId</code> — {t('guide.doc.api.fieldChatId')}</li>
+              <li><code className="text-[10px] bg-black/[0.04] px-1 rounded">customerId</code> — {t('guide.doc.api.fieldCustomerId')}</li>
+            </ul>
+
+            {/* SSE Response */}
+            <h3 className="text-[13px] font-semibold text-[var(--mist)] !mt-5">{t('guide.doc.api.sseTitle')}</h3>
+            <DocParagraph text={t('guide.doc.api.sseDesc')} />
+            <div className="!mt-3 rounded-xl border border-black/[0.06] bg-black/[0.01] p-4 font-mono text-[11px] leading-relaxed overflow-x-auto">
+              <div className="text-[var(--fog)]/60 text-[10px] mb-2">event: text_delta</div>
+              <div className="text-[var(--mist)] mb-3">{`data: {"delta":"Hello"}`}</div>
+
+              <div className="text-[var(--fog)]/60 text-[10px] mb-2">event: tool_executing</div>
+              <div className="text-[var(--mist)] mb-3">{`data: {"name":"kb_hybrid_retrieve","displayLabel":"Searching knowledge base"}`}</div>
+
+              <div className="text-[var(--fog)]/60 text-[10px] mb-2">event: case_update</div>
+              <div className="text-[var(--mist)] mb-3">{`data: {"caseId":"...","status":"investigating","type":"deposit_issue"}`}</div>
+
+              <div className="text-[var(--fog)]/60 text-[10px] mb-2">event: tool_result</div>
+              <div className="text-[var(--mist)] mb-3">{`data: {"name":"kb_hybrid_retrieve","result":{"list":[...],"total":3}}`}</div>
+
+              <div className="text-[var(--fog)]/60 text-[10px] mb-2">event: done</div>
+              <div className="text-[var(--mist)]">data: [DONE]</div>
+            </div>
+
+            <ul className="!mt-3 space-y-1.5 text-[11px] text-[var(--fog)]">
+              <li><strong>text_delta</strong> — {t('guide.doc.api.eventTextDelta')}</li>
+              <li><strong>tool_executing</strong> — {t('guide.doc.api.eventToolExecuting')}</li>
+              <li><strong>tool_result</strong> — {t('guide.doc.api.eventToolResult')}</li>
+              <li><strong>case_update</strong> — {t('guide.doc.api.eventCaseUpdate')}</li>
+              <li><strong>error</strong> — {t('guide.doc.api.eventError')}</li>
+              <li><strong>done</strong> — {t('guide.doc.api.eventDone')}</li>
+            </ul>
+
+            {/* Health check */}
+            <h3 className="text-[13px] font-semibold text-[var(--mist)] !mt-5">{t('guide.doc.api.healthTitle')}</h3>
+            <DocParagraph text={t('guide.doc.api.healthDesc')} />
+            <div className="!mt-2 rounded-xl border border-black/[0.06] bg-black/[0.01] p-3 font-mono text-[11px]">
+              <span className="inline-block w-12 text-[10px] uppercase tracking-wider text-green-600 font-semibold">GET</span>
+              <span className="text-[var(--mist)]">/api/health</span>
+            </div>
+
+            {/* Chat UI */}
+            <h3 className="text-[13px] font-semibold text-[var(--mist)] !mt-5">{t('guide.doc.api.chatUiTitle')}</h3>
+            <p className="text-[12px] text-[var(--fog)] mt-1">
+              <a href="https://intera-chat.up.railway.app/chat" target="_blank" rel="noopener noreferrer"
+                className="text-teal-600 hover:underline font-mono text-[11px]">
+                {t('guide.doc.api.chatUiDesc')}
+              </a>
+            </p>
+
+            {/* Postman Quick Start */}
+            <DocCallout variant="note">
+              <p className="text-[12px] font-semibold mb-2">{t('guide.doc.api.postmanTitle')}</p>
+              <ol className="space-y-1 text-[11px] text-[var(--fog)] list-decimal list-inside">
+                <li>{t('guide.doc.api.postmanP1')}</li>
+                <li>{t('guide.doc.api.postmanP2')}</li>
+                <li>{t('guide.doc.api.postmanP3')}</li>
+                <li>{t('guide.doc.api.postmanP4')}</li>
+                <li>{t('guide.doc.api.postmanP5')}</li>
+              </ol>
+            </DocCallout>
+          </DocSection>
+
           {/* Footer */}
           <p className="border-t border-black/[0.05] pt-10 text-center text-[12px] leading-relaxed text-[var(--smoke)]/80">{t('guide.footer.note')}</p>
         </main>

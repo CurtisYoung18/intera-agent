@@ -18,6 +18,7 @@ export const GUIDE_SECTION_IDS = [
   'guide-config-lifecycle',
   'guide-observability',
   'guide-admin-map',
+  'guide-api',
 ] as const
 
 export type GuideSectionId = (typeof GUIDE_SECTION_IDS)[number]
@@ -189,6 +190,7 @@ export function GuideTableOfContents({ t }: { t: TranslateFn }) {
     { id: 'guide-config-lifecycle', labelKey: 'guide.nav.configLifecycle' },
     { id: 'guide-observability', labelKey: 'guide.nav.observe' },
     { id: 'guide-admin-map', labelKey: 'guide.nav.adminMap' },
+    { id: 'guide-api', labelKey: 'guide.nav.api' },
   ]
 
   return (
