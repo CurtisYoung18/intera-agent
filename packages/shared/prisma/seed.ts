@@ -17,6 +17,7 @@ import {
   DEFAULT_ROUTING,
   DEFAULT_STAGE_CONFIGS,
   DEFAULT_ORCHESTRATOR_CONFIG,
+  DEFAULT_KNOWLEDGE_SOURCES,
 } from '../defaults/index'
 
 function loadEnv(): void {
@@ -213,6 +214,36 @@ async function seed() {
     })
   }
   console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues`)
+
+  // ── Admin: Knowledge Sources ──
+  for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
+    await prisma.knowledgeSource.upsert({
+      where: { customerId_name: { customerId: CUSTOMER_ID, name: ks.name } },
+      update: {
+        description: ks.description ?? null,
+        groupIds: ks.groupIds,
+        embeddingRate: ks.embeddingRate,
+        topK: ks.topK,
+        rerankVersion: ks.rerankVersion ?? null,
+        docCorrelation: ks.docCorrelation ?? null,
+        caseTypeTag: ks.caseTypeTag ?? null,
+        enabled: ks.enabled,
+      },
+      create: {
+        customerId: CUSTOMER_ID,
+        name: ks.name,
+        description: ks.description ?? null,
+        groupIds: ks.groupIds,
+        embeddingRate: ks.embeddingRate,
+        topK: ks.topK,
+        rerankVersion: ks.rerankVersion ?? null,
+        docCorrelation: ks.docCorrelation ?? null,
+        caseTypeTag: ks.caseTypeTag ?? null,
+        enabled: ks.enabled,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources`)
 
   // ── Demo data: Case + Memory + Messages + Traces + HumanTask ──
   const c = await prisma.case.create({

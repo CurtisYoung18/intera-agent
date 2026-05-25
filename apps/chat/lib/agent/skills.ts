@@ -520,48 +520,43 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
   },
   {
     name: 'kb_hybrid_retrieve',
-    description: 'Hybrid knowledge base search (BM25 + vector)',
+    description:
+      'Search the knowledge base for answers. Call when the user asks "how to...", ' +
+      '"what is...", policy questions, or needs reference information. ' +
+      'Returns matched content chunks with relevance scores from GPTBots. ' +
+      'Use the [KB:data_id] citation tag in replies for auditability. ' +
+      'If all results have score < 0.4, tell the user no relevant info was found.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Search query' },
+        query: { type: 'string', description: 'Search query in the user\'s language' },
         topK: {
           type: 'number',
-          description: 'Number of results',
+          description: 'Number of results to return (1-50)',
           default: 5,
+        },
+        sourceName: {
+          type: 'string',
+          description: 'Optional: name of a specific knowledge source to search (e.g. "Deposit FAQ"). Omit to search all enabled sources.',
         },
       },
       required: ['query'],
     },
     isConcurrencySafe: true,
-    mode: 'mock',
+    mode: 'http',
+    endpoint: 'https://api-sg.gptbots.ai/v1/vector/match',
+    httpMethod: 'POST',
+    headers: {
+      Authorization: 'Bearer ${GPTBOTS_API_KEY}',
+    },
+    timeoutMs: 10000,
     enabled: true,
     displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
-    zodSchema: z.object({ query: z.string(), topK: z.number().optional() }),
-    // [MOCK] realistic KB articles about deposit delays and troubleshooting
-    mockFixture: {
-      results: [
-        {
-          title: 'Why is my deposit not showing in my balance?',
-          snippet: 'Deposits via third-party payment channels (Alipay, WeChat Pay) may take up to 2 hours to reflect due to batch settlement cycles. Check your payment provider app for the transaction receipt first. If your deposit still does not appear after 2 hours, please contact support with your transaction ID.',
-          source: 'help_center',
-          relevance: 0.92,
-        },
-        {
-          title: 'Common causes of balance discrepancies',
-          snippet: 'Balance discrepancies can occur due to: (1) pending batch settlements from payment providers — most common, resolves within 30 min to 2 hours; (2) cached balance display — try logging out and back in; (3) recent refunds or adjustments not yet reflected; (4) payment provider-side delays outside our control.',
-          source: 'faq',
-          relevance: 0.85,
-        },
-        {
-          title: 'How to verify your deposit status',
-          snippet: 'You can verify your deposit by: (1) checking the payment provider app (Alipay/WeChat) for the transaction receipt and exact transaction ID; (2) comparing the transaction ID with our system records via the transaction history page; (3) waiting up to 24 hours during peak periods or maintenance windows before escalating.',
-          source: 'help_center',
-          relevance: 0.78,
-        },
-      ],
-      sources: ['help_center/deposit-faq', 'faq/balance-issues', 'help_center/verify-deposit'],
-    },
+    zodSchema: z.object({
+      query: z.string(),
+      topK: z.number().optional(),
+      sourceName: z.string().optional(),
+    }),
   },
   {
     name: 'request_user_input',

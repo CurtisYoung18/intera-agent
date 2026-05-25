@@ -366,11 +366,17 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'kb_hybrid_retrieve',
     displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
-    description: 'Hybrid knowledge base search (BM25 + vector)',
-    inputSchema: '{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture:
-      '{"results":[{"title":"Why is my deposit not showing in my balance?","snippet":"Deposits via third-party payment channels (WeChat Pay, Alipay) may take up to 2 hours to reflect due to batch settlement cycles. If your deposit still does not appear after 2 hours, please contact support with your transaction ID.","source":"help_center","relevance":0.92},{"title":"Common causes of balance discrepancies","snippet":"Balance discrepancies can occur due to: (1) pending batch settlements from payment providers, (2) cached balance display (try refreshing), (3) recent refunds or adjustments not yet reflected, (4) unauthorized transactions — check your transaction history.","source":"faq","relevance":0.85},{"title":"How to verify your deposit status","snippet":"You can verify your deposit by: (1) checking the payment provider app for the transaction receipt, (2) comparing the transaction ID with our system records, (3) waiting up to 24 hours for settlement delays during peak periods or maintenance windows.","source":"help_center","relevance":0.78}],"sources":["help_center/deposit-faq","faq/balance-issues","help_center/verify-deposit"]}',
+    description: 'Search the GPTBots knowledge base for FAQ, policy, and reference answers. Returns matched content chunks with relevance scores.',
+    inputSchema: '{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"topK":{"type":"number","description":"Number of results","default":5},"sourceName":{"type":"string","description":"Optional: specific knowledge source to search"}},"required":["query"]}',
+    mode: 'http',
+    endpoint: 'https://api-sg.gptbots.ai/v1/vector/match',
+    httpMethod: 'POST',
+    headers: '{"Authorization":"Bearer ${GPTBOTS_API_KEY}"}',
+    timeoutMs: 10000,
+    isConcurrencySafe: true,
+    enabled: true,
+    guardPhase: 'post',
+    outputSchema: '{}',
   },
   {
     name: 'propose_interaction',
@@ -1149,5 +1155,93 @@ export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
     queue: 'general', description: 'General support queue for account and other issues',
     skillsAllowed: '["read_case_history","kb_hybrid_retrieve"]',
     priority: 1,
+  },
+]
+
+export interface DefaultKnowledgeSourceSeed {
+  name: string
+  description?: string
+  groupIds: string
+  embeddingRate: number
+  topK: number
+  rerankVersion?: string
+  docCorrelation?: number
+  caseTypeTag?: string
+  enabled: boolean
+}
+
+export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
+  {
+    name: 'Deposit FAQ',
+    description: 'Deposit methods, limits, delays, and troubleshooting',
+    groupIds: '["6777d7a2df784b1af215324d"]',
+    embeddingRate: 0.9,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    caseTypeTag: 'deposit_issue',
+    enabled: true,
+  },
+  {
+    name: 'Withdrawal FAQ',
+    description: 'Withdrawal methods, PIN, conditions, and status',
+    groupIds: '["6777d7976526a22a241862c4"]',
+    embeddingRate: 0.9,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    caseTypeTag: 'withdraw_issue',
+    enabled: true,
+  },
+  {
+    name: 'Account FAQ',
+    description: 'Account login, security, verification, and settings',
+    groupIds: '["6777d77b6526a22a24186282"]',
+    embeddingRate: 0.9,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    caseTypeTag: 'account_issue',
+    enabled: true,
+  },
+  {
+    name: 'Game FAQ',
+    description: 'Game rules, gameplay issues, and troubleshooting',
+    groupIds: '["6777d76fdf784b1af21531e7"]',
+    embeddingRate: 0.9,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    enabled: true,
+  },
+  {
+    name: 'Promotion FAQ',
+    description: 'Active promotions, bonus terms, eligibility, and claiming',
+    groupIds: '["6777d7adaa45953ded935004"]',
+    embeddingRate: 0.7,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    enabled: true,
+  },
+  {
+    name: 'General FAQ',
+    description: 'General platform questions and miscellaneous help',
+    groupIds: '["6777d78adf784b1af2153213"]',
+    embeddingRate: 0.9,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    enabled: true,
+  },
+  {
+    name: 'Scenarios & SOP',
+    description: 'Customer service scenarios and standard operating procedures',
+    groupIds: '["696763795a9460010f69a8d7"]',
+    embeddingRate: 0.9,
+    topK: 5,
+    rerankVersion: 'Jina-reranker-v2-base-multilingual',
+    docCorrelation: 0.5,
+    enabled: true,
   },
 ]

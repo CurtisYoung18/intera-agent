@@ -1,72 +1,259 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Search, Upload, FileText, Globe, RefreshCw, ChevronRight,
-  CheckCircle2, Clock, AlertCircle, Lock, Database, Zap, Layers,
+  Search, Plus, Trash2, Edit3, ToggleLeft, ToggleRight,
+  Play, RefreshCw, CheckCircle2, XCircle, Loader2,
+  ChevronDown, ExternalLink, GripVertical,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-// ── Planned feature cards ────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────
 
-interface FeatureCard {
-  icon: React.ReactNode
-  title: string
-  descKey: string
-  status: 'pending' | 'partial'
-  color: string
+interface KnowledgeSource {
+  id: string
+  name: string
+  description: string | null
+  groupIds: string
+  dataIds: string | null
+  embeddingRate: number
+  topK: number
+  rerankVersion: string | null
+  docCorrelation: number | null
+  caseTypeTag: string | null
+  enabled: boolean
 }
 
-const FEATURES: FeatureCard[] = [
-  {
-    icon: <Upload className="w-5 h-5" />,
-    title: 'kb.feat.uploadTitle',
-    descKey: 'kb.feat.uploadDesc',
-    status: 'pending',
-    color: '#14b8a6',
-  },
-  {
-    icon: <Globe className="w-5 h-5" />,
-    title: 'kb.feat.urlTitle',
-    descKey: 'kb.feat.urlDesc',
-    status: 'pending',
-    color: '#5b8af7',
-  },
-  {
-    icon: <Layers className="w-5 h-5" />,
-    title: 'kb.feat.contextualTitle',
-    descKey: 'kb.feat.contextualDesc',
-    status: 'pending',
-    color: '#8b6ff5',
-  },
-  {
-    icon: <Zap className="w-5 h-5" />,
-    title: 'kb.feat.rerankTitle',
-    descKey: 'kb.feat.rerankDesc',
-    status: 'pending',
-    color: '#d4912e',
-  },
-  {
-    icon: <Search className="w-5 h-5" />,
-    title: 'kb.feat.testTitle',
-    descKey: 'kb.feat.testDesc',
-    status: 'pending',
-    color: '#2ea04a',
-  },
-  {
-    icon: <Database className="w-5 h-5" />,
-    title: 'kb.feat.vectorTitle',
-    descKey: 'kb.feat.vectorDesc',
-    status: 'partial',
-    color: '#e64539',
-  },
+interface GptBotKb {
+  id: string
+  name: string
+  desc: string
+  chunk: number
+  doc: number
+}
+
+interface SearchResult {
+  content: string
+  data_id: string
+  document_name: string
+  score: number
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+const RERANK_OPTIONS = [
+  { value: '', label: 'None' },
+  { value: 'Jina-reranker-v2-base-multilingual', label: 'Jina Reranker v2 (Multilingual)' },
+  { value: 'BGE-Rerank', label: 'BGE Rerank' },
+  { value: 'Jina-colbert-v2', label: 'Jina ColBERT v2' },
+  { value: 'BCE-Rerank', label: 'BCE Rerank' },
 ]
 
-// ── Page ────────────────────────────────────────────────────────────────────
+const CASE_TYPE_OPTIONS = [
+  { value: '', label: 'None (all case types)' },
+  { value: 'deposit_issue', label: 'Deposit Issue' },
+  { value: 'withdraw_issue', label: 'Withdrawal Issue' },
+  { value: 'account_issue', label: 'Account Issue' },
+  { value: 'other', label: 'Other' },
+]
+
+// ── Page ────────────────────────────────────────────────────────────────
 
 export default function KnowledgePage() {
   const { t } = useConsoleLocale()
-  const [searchQuery, setSearchQuery] = useState('')
+
+  // State
+  const [sources, setSources] = useState<KnowledgeSource[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Global toggle
+  const [kbSkillEnabled, setKbSkillEnabled] = useState(true)
+  const [togglingGlobal, setTogglingGlobal] = useState(false)
+
+  // Edit panel
+  const [editingSource, setEditingSource] = useState<Partial<KnowledgeSource> | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // GPTBots KB list
+  const [gptKbs, setGptKbs] = useState<GptBotKb[]>([])
+  const [gptKbsLoading, setGptKbsLoading] = useState(false)
+  const [gptConnected, setGptConnected] = useState<boolean | null>(null)
+
+  // Test panel
+  const [testQuery, setTestQuery] = useState('')
+  const [testSourceId, setTestSourceId] = useState('')
+  const [testResults, setTestResults] = useState<SearchResult[] | null>(null)
+  const [testTotal, setTestTotal] = useState(0)
+  const [testing, setTesting] = useState(false)
+  const [testError, setTestError] = useState<string | null>(null)
+
+  // ── Data loading ───────────────────────────────────────────────────
+
+  const fetchSources = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/knowledge/sources')
+      const data = await res.json()
+      setSources(data.sources || [])
+    } catch {
+      setError('Failed to load knowledge sources')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const fetchGptKbs = useCallback(async () => {
+    setGptKbsLoading(true)
+    try {
+      const res = await fetch('/api/admin/knowledge/gptbots')
+      const data = await res.json()
+      if (data.knowledge_base) {
+        setGptKbs(data.knowledge_base)
+        setGptConnected(true)
+      } else if (data.error) {
+        setGptConnected(false)
+      }
+    } catch {
+      setGptConnected(false)
+    } finally {
+      setGptKbsLoading(false)
+    }
+  }, [])
+
+  const fetchKbSkillStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/skills/kb_hybrid_retrieve')
+      const data = await res.json()
+      if (data.skill) {
+        setKbSkillEnabled(data.skill.enabled)
+      }
+    } catch {
+      // ignore — use default
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchSources()
+    fetchGptKbs()
+    fetchKbSkillStatus()
+  }, [fetchSources, fetchGptKbs, fetchKbSkillStatus])
+
+  // ── Global toggle ──────────────────────────────────────────────────
+
+  const toggleGlobalKb = async () => {
+    setTogglingGlobal(true)
+    const newEnabled = !kbSkillEnabled
+    try {
+      await fetch('/api/admin/skills/kb_hybrid_retrieve', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newEnabled }),
+      })
+      setKbSkillEnabled(newEnabled)
+    } catch {
+      // revert UI on error
+    } finally {
+      setTogglingGlobal(false)
+    }
+  }
+
+  // ── Source CRUD ────────────────────────────────────────────────────
+
+  const handleSave = async () => {
+    if (!editingSource?.name) return
+    setSaving(true)
+    try {
+      const isNew = !editingSource.id
+      const url = isNew
+        ? '/api/admin/knowledge/sources'
+        : `/api/admin/knowledge/sources/${editingSource.id}`
+      const method = isNew ? 'POST' : 'PUT'
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingSource),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error || 'Save failed')
+        return
+      }
+      setEditingSource(null)
+      fetchSources()
+    } catch {
+      alert('Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this knowledge source?')) return
+    try {
+      await fetch(`/api/admin/knowledge/sources/${id}`, { method: 'DELETE' })
+      fetchSources()
+    } catch {
+      alert('Delete failed')
+    }
+  }
+
+  const toggleSource = async (source: KnowledgeSource) => {
+    try {
+      await fetch(`/api/admin/knowledge/sources/${source.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !source.enabled }),
+      })
+      fetchSources()
+    } catch {
+      // ignore
+    }
+  }
+
+  // ── Test search ────────────────────────────────────────────────────
+
+  const runTest = async () => {
+    if (!testQuery.trim()) return
+    setTesting(true)
+    setTestError(null)
+    setTestResults(null)
+    try {
+      const res = await fetch('/api/admin/knowledge/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: testQuery,
+          sourceId: testSourceId || undefined,
+          topK: 5,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setTestError(data.error)
+      } else {
+        setTestResults(data.list || [])
+        setTestTotal(data.total || 0)
+      }
+    } catch {
+      setTestError('Test request failed')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  // ── Parse group IDs for display ────────────────────────────────────
+
+  const parseGroupIds = (groupIds: string): string[] => {
+    try { return JSON.parse(groupIds) } catch { return [] }
+  }
+
+  const getKbName = (groupId: string): string => {
+    const kb = gptKbs.find((k) => k.id === groupId)
+    return kb ? `${kb.name} (${kb.chunk} chunks)` : groupId.slice(0, 8) + '…'
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-auto bg-transparent">
@@ -80,154 +267,407 @@ export default function KnowledgePage() {
                 <Search className="w-4 h-4" />
               </div>
               <h1 className="text-[22px] font-bold tracking-[-0.025em] text-[var(--mist)]">
-                {t('kb.pageTitle')}
+                {t('sidebar.knowledge')}
               </h1>
             </div>
-            <p className="text-[13px] text-[var(--fog)] max-w-2xl leading-relaxed">
-              {t('kb.pageDesc')}
+            <p className="text-[13px] text-[var(--fog)] max-w-2xl leading-relaxed mt-1">
+              Configure GPTBots knowledge sources for the agent. Each source maps to one or more GPTBots knowledge bases with custom retrieval settings.
             </p>
           </div>
 
-          {/* Coming soon badge */}
-          <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border border-teal-500/20 bg-teal-500/[0.06]">
-            <Clock className="w-3.5 h-3.5 text-teal-500" />
-            <span className="text-[11px] font-medium text-teal-600">{t('kb.comingSoon')}</span>
-          </div>
+          {/* Global toggle */}
+          <button
+            onClick={toggleGlobalKb}
+            disabled={togglingGlobal}
+            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
+            style={{
+              borderColor: kbSkillEnabled ? 'rgba(20,184,166,0.25)' : 'rgba(0,0,0,0.08)',
+              background: kbSkillEnabled ? 'rgba(20,184,166,0.06)' : 'rgba(0,0,0,0.03)',
+              color: kbSkillEnabled ? '#0d9488' : 'var(--fog)',
+            }}
+          >
+            {togglingGlobal ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : kbSkillEnabled ? (
+              <ToggleRight className="w-5 h-5" />
+            ) : (
+              <ToggleLeft className="w-5 h-5" />
+            )}
+            <span className="text-[12px] font-semibold">
+              {kbSkillEnabled ? 'KB Enabled' : 'KB Disabled'}
+            </span>
+          </button>
         </div>
       </div>
 
       <div className="flex-1 px-8 pb-8 space-y-6">
 
-        {/* Config shortcut banner */}
-        <div className="flex items-center gap-4 rounded-2xl border border-teal-500/15 bg-gradient-to-r from-teal-500/[0.06] to-transparent px-5 py-4">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, rgba(20,184,166,0.15), rgba(20,184,166,0.05))', color: '#14b8a6' }}>
-            <Lock className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-[var(--mist)]">{t('kb.configBannerTitle')}</p>
-            <p className="text-[11px] text-[var(--fog)] mt-0.5">{t('kb.configBannerDesc')}</p>
-          </div>
-          <a
-            href="/admin/agent"
-            className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl border border-teal-500/25 bg-teal-500/[0.08] text-[12px] font-semibold text-teal-600 hover:bg-teal-500/[0.14] transition-colors"
+        {/* GPTBots connection status */}
+        <div className="flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white/60 backdrop-blur-sm px-4 py-3">
+          {gptKbsLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
+          ) : gptConnected ? (
+            <CheckCircle2 className="w-4 h-4 text-teal-500" />
+          ) : (
+            <XCircle className="w-4 h-4 text-red-400" />
+          )}
+          <span className="text-[12px] text-[var(--mist)]">
+            GPTBots API: {gptConnected ? `Connected (${gptKbs.length} knowledge bases)` : gptConnected === false ? `API key not configured or unreachable` : 'Checking…'}
+          </span>
+          {gptConnected && (
+            <span className="text-[11px] text-[var(--fog)]">
+              {gptKbs.map((k) => k.name).join(', ')}
+            </span>
+          )}
+          <button
+            onClick={fetchGptKbs}
+            className="ml-auto flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-700"
           >
-            {t('kb.configBannerCta')} <ChevronRight className="w-3.5 h-3.5" />
-          </a>
+            <RefreshCw className="w-3 h-3" /> Refresh
+          </button>
         </div>
 
-        {/* Search placeholder */}
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fog)]/40 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('kb.searchPlaceholder')}
-            disabled
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-black/[0.06] bg-white/60 text-[13px] text-[var(--fog)] placeholder:text-[var(--fog)]/40 cursor-not-allowed opacity-60 backdrop-blur-sm"
-          />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--fog)]/40 font-medium">
-            {t('kb.comingSoon')}
-          </div>
-        </div>
-
-        {/* Upload drop-zone placeholder */}
-        <div className="rounded-2xl border-2 border-dashed border-teal-500/20 bg-teal-500/[0.02] px-8 py-12 text-center">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: 'linear-gradient(135deg, rgba(20,184,166,0.12), rgba(20,184,166,0.04))', color: '#14b8a6' }}>
-            <Upload className="w-6 h-6" />
-          </div>
-          <p className="text-[14px] font-semibold text-[var(--mist)] mb-1">{t('kb.uploadTitle')}</p>
-          <p className="text-[12px] text-[var(--fog)] mb-3 max-w-md mx-auto">{t('kb.uploadDesc')}</p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {['Markdown', 'PDF', 'DOCX', 'URL'].map((fmt) => (
-              <span key={fmt} className="px-2.5 py-1 rounded-lg border border-black/[0.06] bg-white/60 text-[11px] font-mono text-[var(--fog)]">
-                {fmt}
-              </span>
-            ))}
-          </div>
-          <p className="mt-4 text-[11px] text-[var(--fog)]/50">{t('kb.uploadNotReady')}</p>
-        </div>
-
-        {/* Feature grid */}
+        {/* Sources list */}
         <div>
-          <h2 className="text-[13px] font-semibold text-[var(--fog)] mb-3 px-1">{t('kb.featuresTitle')}</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((f) => (
-              <div
-                key={f.title}
-                className="relative rounded-xl border border-black/[0.05] bg-white/60 backdrop-blur-sm px-4 py-4 flex gap-3"
-              >
-                <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                  style={{ background: `${f.color}14`, color: f.color }}
-                >
-                  {f.icon}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-[12px] font-semibold text-[var(--mist)] leading-tight">{t(f.title)}</p>
-                    {f.status === 'partial' ? (
-                      <span className="flex-shrink-0 flex items-center gap-1 text-[9px] font-medium text-amber px-1.5 py-0.5 rounded-full border border-amber/20 bg-amber/[0.08]">
-                        <RefreshCw className="w-2.5 h-2.5" /> {t('kb.partial')}
-                      </span>
-                    ) : (
-                      <span className="flex-shrink-0 flex items-center gap-1 text-[9px] font-medium text-[var(--fog)] px-1.5 py-0.5 rounded-full border border-black/[0.06] bg-black/[0.02]">
-                        <Clock className="w-2.5 h-2.5" /> {t('kb.planned')}
-                      </span>
-                    )}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[13px] font-semibold text-[var(--mist)]">
+              Knowledge Sources ({sources.length})
+            </h2>
+            <button
+              onClick={() => setEditingSource({
+                name: '', description: '', groupIds: '[]',
+                embeddingRate: 0.9, topK: 5, rerankVersion: 'Jina-reranker-v2-base-multilingual',
+                docCorrelation: 0.5, caseTypeTag: '', enabled: true,
+              })}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-teal-500/25 bg-teal-500/[0.06] text-[12px] font-semibold text-teal-600 hover:bg-teal-500/[0.12] transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Source
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center gap-2 text-[13px] text-[var(--fog)] py-8 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            </div>
+          ) : sources.length === 0 ? (
+            <div className="text-center py-12 text-[13px] text-[var(--fog)]">
+              No knowledge sources configured. Click "Add Source" to connect a GPTBots knowledge base.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {sources.map((s) => {
+                const groupIds = parseGroupIds(s.groupIds)
+                return (
+                  <div
+                    key={s.id}
+                    className="relative rounded-xl border border-black/[0.05] bg-white/60 backdrop-blur-sm px-4 py-4"
+                  >
+                    {/* Top row: name + toggle */}
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</p>
+                        {s.description && (
+                          <p className="text-[11px] text-[var(--fog)] mt-0.5 line-clamp-2">{s.description}</p>
+                        )}
+                      </div>
+                      <button onClick={() => toggleSource(s)} className="flex-shrink-0 mt-0.5">
+                        {s.enabled
+                          ? <ToggleRight className="w-5 h-5 text-teal-500" />
+                          : <ToggleLeft className="w-5 h-5 text-[var(--fog)]/40" />
+                        }
+                      </button>
+                    </div>
+
+                    {/* Group IDs */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {groupIds.map((gid) => (
+                        <span key={gid} className="px-1.5 py-0.5 rounded-md border border-teal-500/15 bg-teal-500/[0.06] text-[10px] text-teal-700 font-mono"
+                          title={getKbName(gid)}>
+                          {getKbName(gid)}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Params */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[var(--fog)]">
+                      <span>topK: {s.topK}</span>
+                      <span>embed: {s.embeddingRate}</span>
+                      {s.rerankVersion && <span>rerank: {s.rerankVersion?.slice(0, 15)}…</span>}
+                      {s.docCorrelation != null && <span>minScore: {s.docCorrelation}</span>}
+                      {s.caseTypeTag && <span className="text-teal-600">caseType: {s.caseTypeTag}</span>}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 mt-3 pt-2 border-t border-black/[0.04]">
+                      <button
+                        onClick={() => setEditingSource({ ...s })}
+                        className="p-1.5 rounded-lg hover:bg-black/[0.04] text-[var(--fog)] transition-colors"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-[var(--fog)] hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-[var(--fog)] mt-1 leading-relaxed">{t(f.descKey)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Implementation path info */}
-        <div className="rounded-2xl border border-black/[0.05] bg-white/40 backdrop-blur-sm px-6 py-5">
-          <div className="flex items-center gap-2 mb-4">
-            <FileText className="w-4 h-4 text-[var(--fog)]" />
-            <h3 className="text-[13px] font-semibold text-[var(--mist)]">{t('kb.implPathTitle')}</h3>
-          </div>
-          <div className="space-y-3">
-            {[
-              { step: 'A', titleKey: 'kb.path.aTitle', descKey: 'kb.path.aDesc', ready: true },
-              { step: 'B', titleKey: 'kb.path.bTitle', descKey: 'kb.path.bDesc', ready: false },
-              { step: 'C', titleKey: 'kb.path.cTitle', descKey: 'kb.path.cDesc', ready: false },
-            ].map((p) => (
-              <div key={p.step} className="flex items-start gap-3">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5 ${
-                  p.ready
-                    ? 'bg-teal-500/15 text-teal-600 ring-1 ring-teal-500/25'
-                    : 'bg-black/[0.04] text-[var(--fog)]'
-                }`}>
-                  {p.ready ? <CheckCircle2 className="w-3.5 h-3.5" /> : p.step}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-[var(--mist)]">{t(p.titleKey)}</p>
-                  <p className="text-[11px] text-[var(--fog)] mt-0.5 leading-relaxed">{t(p.descKey)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Test panel */}
+        <div className="rounded-2xl border border-black/[0.05] bg-white/60 backdrop-blur-sm px-5 py-5">
+          <h2 className="text-[13px] font-semibold text-[var(--mist)] mb-3 flex items-center gap-2">
+            <Play className="w-4 h-4 text-teal-500" /> Test Retrieval
+          </h2>
 
-        {/* Requirements notice */}
-        <div className="flex gap-3 rounded-xl border border-amber/20 bg-amber/[0.04] px-4 py-3.5">
-          <AlertCircle className="w-4 h-4 text-amber flex-shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="text-[12px] font-semibold text-[var(--mist)]">{t('kb.requiresTitle')}</p>
-            <ul className="text-[11px] text-[var(--fog)] space-y-0.5 list-disc list-inside">
-              <li>{t('kb.req.embedding')}</li>
-              <li>{t('kb.req.pgvector')}</li>
-              <li>{t('kb.req.rerankOptional')}</li>
-            </ul>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              value={testQuery}
+              onChange={(e) => setTestQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runTest()}
+              placeholder="Enter a test query (e.g. 'deposit not showing')"
+              className="flex-1 px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] text-[var(--mist)] placeholder:text-[var(--fog)]/40 outline-none focus:border-teal-500/30"
+            />
+            <select
+              value={testSourceId}
+              onChange={(e) => setTestSourceId(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[12px] text-[var(--mist)] outline-none"
+            >
+              <option value="">All sources</option>
+              {sources.filter((s) => s.enabled).map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={runTest}
+              disabled={testing || !testQuery.trim()}
+              className="px-4 py-2 rounded-lg bg-teal-500 text-white text-[12px] font-semibold hover:bg-teal-600 transition-colors disabled:opacity-40"
+            >
+              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+            </button>
           </div>
+
+          {testError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600 mb-3">
+              {testError}
+            </div>
+          )}
+
+          {testResults && (
+            <div className="space-y-2">
+              <p className="text-[11px] text-[var(--fog)]">{testTotal} results</p>
+              {testResults.map((r, i) => (
+                <div key={i} className="rounded-lg border border-black/[0.05] bg-white/80 px-3 py-2.5">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="text-[10px] text-teal-600 font-mono truncate">{r.document_name}</span>
+                    <span className="flex-shrink-0 text-[11px] font-semibold text-teal-600">
+                      {(r.score * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-[var(--mist)] leading-relaxed line-clamp-4 whitespace-pre-wrap">
+                    {r.content}
+                  </p>
+                </div>
+              ))}
+              {testResults.length === 0 && (
+                <p className="text-[12px] text-[var(--fog)] py-4 text-center">No results found.</p>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
+
+      {/* Edit Modal */}
+      {editingSource && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black/20 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingSource(null) }}>
+          <div className="w-full max-w-lg mx-4 rounded-2xl border border-black/[0.08] bg-white shadow-2xl max-h-[80vh] overflow-auto">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-black/[0.06]">
+              <h3 className="text-[15px] font-bold text-[var(--mist)]">
+                {editingSource.id ? 'Edit Source' : 'Add Knowledge Source'}
+              </h3>
+              <button onClick={() => setEditingSource(null)} className="p-1 rounded-lg hover:bg-black/[0.04]">
+                <XCircle className="w-5 h-5 text-[var(--fog)]" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-5 py-4 space-y-4">
+              {/* Name */}
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={editingSource.name || ''}
+                  onChange={(e) => setEditingSource({ ...editingSource, name: e.target.value })}
+                  placeholder="e.g. Deposit FAQ"
+                  className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] text-[var(--mist)] outline-none focus:border-teal-500/30"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Description</label>
+                <input
+                  type="text"
+                  value={editingSource.description || ''}
+                  onChange={(e) => setEditingSource({ ...editingSource, description: e.target.value })}
+                  placeholder="What this source covers"
+                  className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] text-[var(--mist)] outline-none focus:border-teal-500/30"
+                />
+              </div>
+
+              {/* Group IDs */}
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">
+                  GPTBots Knowledge Bases (group_ids)
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(parseGroupIds(editingSource.groupIds || '[]')).map((gid) => (
+                    <span key={gid} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-teal-500/20 bg-teal-500/[0.06] text-[11px] text-teal-700">
+                      {getKbName(gid)}
+                      <button
+                        onClick={() => {
+                          const current = parseGroupIds(editingSource.groupIds || '[]')
+                          setEditingSource({
+                            ...editingSource,
+                            groupIds: JSON.stringify(current.filter((id) => id !== gid)),
+                          })
+                        }}
+                        className="text-teal-400 hover:text-red-500"
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return
+                    const current = parseGroupIds(editingSource.groupIds || '[]')
+                    if (!current.includes(e.target.value)) {
+                      setEditingSource({
+                        ...editingSource,
+                        groupIds: JSON.stringify([...current, e.target.value]),
+                      })
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[12px] text-[var(--mist)] outline-none"
+                >
+                  <option value="">+ Add knowledge base…</option>
+                  {gptKbs.filter((k) => !parseGroupIds(editingSource.groupIds || '[]').includes(k.id)).map((k) => (
+                    <option key={k.id} value={k.id}>{k.name} ({k.chunk} chunks, {k.doc} docs)</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Params row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">
+                    Embedding Rate ({editingSource.embeddingRate ?? 0.9})
+                  </label>
+                  <input
+                    type="range" min="0" max="1" step="0.1"
+                    value={editingSource.embeddingRate ?? 0.9}
+                    onChange={(e) => setEditingSource({ ...editingSource, embeddingRate: parseFloat(e.target.value) })}
+                    className="w-full accent-teal-500"
+                  />
+                  <div className="flex justify-between text-[9px] text-[var(--fog)]">
+                    <span>Keyword</span><span>Semantic</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Top-K</label>
+                  <input
+                    type="number" min={1} max={50}
+                    value={editingSource.topK ?? 5}
+                    onChange={(e) => setEditingSource({ ...editingSource, topK: parseInt(e.target.value) || 5 })}
+                    className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] text-[var(--mist)] outline-none focus:border-teal-500/30"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Reranker</label>
+                  <select
+                    value={editingSource.rerankVersion || ''}
+                    onChange={(e) => setEditingSource({ ...editingSource, rerankVersion: e.target.value || null })}
+                    className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[12px] text-[var(--mist)] outline-none"
+                  >
+                    {RERANK_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">
+                    Min Relevance ({(editingSource.docCorrelation ?? 0.5).toFixed(2)})
+                  </label>
+                  <input
+                    type="range" min="0.1" max="0.95" step="0.05"
+                    value={editingSource.docCorrelation ?? 0.5}
+                    onChange={(e) => setEditingSource({ ...editingSource, docCorrelation: parseFloat(e.target.value) })}
+                    className="w-full accent-teal-500"
+                  />
+                </div>
+              </div>
+
+              {/* Case type association */}
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Case Type (optional)</label>
+                <select
+                  value={editingSource.caseTypeTag || ''}
+                  onChange={(e) => setEditingSource({ ...editingSource, caseTypeTag: e.target.value || null })}
+                  className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[12px] text-[var(--mist)] outline-none"
+                >
+                  {CASE_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Enabled */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingSource.enabled ?? true}
+                  onChange={(e) => setEditingSource({ ...editingSource, enabled: e.target.checked })}
+                  className="w-4 h-4 rounded accent-teal-500"
+                />
+                <span className="text-[12px] text-[var(--mist)]">Enabled</span>
+              </label>
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center gap-2 px-5 py-3 border-t border-black/[0.06]">
+              <button
+                onClick={() => setEditingSource(null)}
+                className="px-4 py-2 rounded-lg border border-black/[0.08] text-[12px] text-[var(--fog)] hover:bg-black/[0.02] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !editingSource.name}
+                className="px-4 py-2 rounded-lg bg-teal-500 text-white text-[12px] font-semibold hover:bg-teal-600 transition-colors disabled:opacity-40"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

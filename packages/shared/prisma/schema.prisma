@@ -23,12 +23,14 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  agentConfig AgentConfig?
-  caseTypes   CaseType[]
-  skills      Skill[]
-  policies    Policy[]
-  routings    Routing[]
-  cases       Case[]
+  agentConfig           AgentConfig?
+  caseTypes             CaseType[]
+  skills                Skill[]
+  policies              Policy[]
+  routings              Routing[]
+  cases                 Case[]
+  knowledgeSources      KnowledgeSource[]
+  externalConversations ExternalConversation[]
 
   @@map("customers")
 }
@@ -41,21 +43,21 @@ model AgentConfig {
   customerId String   @unique
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  model             String  @default("claude-sonnet-4-20250514")
-  temperature       Float   @default(0.5)
-  thinkingBudget    Int     @default(4096)
-  maxIterations     Int     @default(20)
-  systemPrompt      String
-  showThinking      Boolean @default(false)
+  model          String  @default("claude-sonnet-4-20250514")
+  temperature    Float   @default(0.5)
+  thinkingBudget Int     @default(4096)
+  maxIterations  Int     @default(20)
+  systemPrompt   String
+  showThinking   Boolean @default(false)
 
-  maxOutputTokens     Int?    // default 4096
-  resumePrompt         String? // synthetic message for human task resume
-  formResponseTemplate String? // synthetic message for form submission
-  humanSkills          String? // JSON array of skill names available to human operator during consultation
-  consultationPrompt   String? // override for consultation system prompt (human-chat route)
-  debugMode            Boolean @default(false) // write full API request/response to debug-logs/
+  maxOutputTokens       Int? // default 4096
+  resumePrompt          String? // synthetic message for human task resume
+  formResponseTemplate  String? // synthetic message for form submission
+  humanSkills           String? // JSON array of skill names available to human operator during consultation
+  consultationPrompt    String? // override for consultation system prompt (human-chat route)
+  debugMode             Boolean @default(false) // write full API request/response to debug-logs/
   enableLlmSanitization Boolean @default(false) // LLM-based leaked context sanitization after each stream turn
-  evaluationModel      String? // Model for stage transition evaluation
+  evaluationModel       String? // Model for stage transition evaluation
 
   /// Chat app only: DeepSeek beta chat + prefix row — customer **composer** drafting assist (not agent loop).
   prefixContinuationEnabled         Boolean @default(false)
@@ -64,11 +66,11 @@ model AgentConfig {
   prefixContinuationAssistantPrefix String? // extra system notes for completion (accessibility / tone)
   prefixContinuationStop            String? // JSON string[] optional stop sequences
   /// Composer: min draft chars before continuation request (CJK-aware).
-  prefixContinuationMinDraftChars   Int @default(4)
+  prefixContinuationMinDraftChars   Int     @default(4)
 
   // JSON fields
-  memoryStrategy     String  // MemoryStrategy
-  policyHooks        String  // PolicyHooks
+  memoryStrategy     String // MemoryStrategy
+  policyHooks        String // PolicyHooks
   knowledgeRetrieval String? // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
 
   createdAt DateTime @default(now())
@@ -90,24 +92,24 @@ model CaseType {
   description String?
   icon        String
 
-  requiredFacts       String  // JSON: string[]
-  stages              String  // JSON: string[] — 动态状态机
+  requiredFacts       String // JSON: string[]
+  stages              String // JSON: string[] — 动态状态机
   stageConfigs        String? // JSON: Record<string, StageConfig> — per-stage config
   orchestratorConfig  String? // JSON: OrchestratorConfig — sub-agent dispatch rules
   defaultGoal         String
-  escalateOn          String  // JSON: string[]
+  escalateOn          String // JSON: string[]
   autoCloseConditions String? // JSON
 
-  enabled   Boolean @default(true) // false = excluded from routing / intent classification UI
+  enabled Boolean @default(true) // false = excluded from routing / intent classification UI
 
   requireHumanReview Boolean @default(false) // true = finalize requires a resolved human task
 
   /// "stage" = predefined stage machine (default); "sop" = SOP-driven autonomous todo
-  executionMode String  @default("stage")
+  executionMode   String  @default("stage")
   /// Natural-language Standard Operating Procedure — only used when executionMode = "sop"
-  sop           String?
+  sop             String?
   /// Max auto-continuation turns in SOP mode (prevents infinite loops)
-  sopMaxAutoTurns Int @default(10)
+  sopMaxAutoTurns Int     @default(10)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -181,7 +183,7 @@ model Routing {
 
   queue          String
   description    String?
-  skillsAllowed  String  // JSON: string[]
+  skillsAllowed  String // JSON: string[]
   priority       Int     @default(0)
   autoAssign     Boolean @default(true)
   maxWaitingTime Int     @default(300)
@@ -206,12 +208,12 @@ model Case {
   chatId     String?
 
   type    String
-  status  String @default("created")
+  status  String  @default("created")
   goal    String?
   blocker String?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   resolvedAt DateTime?
 
   memory     CaseMemory?
@@ -231,21 +233,21 @@ model CaseMemory {
   caseId String @unique
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  confirmedFacts  String @default("{}") // JSON
-  missingFacts    String @default("[]") // JSON
-  skillsCalled    String @default("[]") // JSON
-  skillResults    String @default("{}") // JSON
-  keyEvents       String @default("[]") // JSON
-  humanTaskStatus    String @default("none")
-  needsContinuation  Boolean  @default(false)
-  continuationLock   DateTime?
-  summary            String?
+  confirmedFacts    String    @default("{}") // JSON
+  missingFacts      String    @default("[]") // JSON
+  skillsCalled      String    @default("[]") // JSON
+  skillResults      String    @default("{}") // JSON
+  keyEvents         String    @default("[]") // JSON
+  humanTaskStatus   String    @default("none")
+  needsContinuation Boolean   @default(false)
+  continuationLock  DateTime?
+  summary           String?
   /// JSON: TodoItem[] — SOP mode todo list, shared between Core Agent and sub-agents
-  todos              String?
+  todos             String?
   /// JSON: Record<string, TodoItem[]> — per-agent todo lists for shared dashboard isolation
-  agentTodos         String?
+  agentTodos        String?
   /// Increments on every dashboard write; sub-agents use this to detect changes
-  dashboardVersion   Int @default(0)
+  dashboardVersion  Int       @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -292,6 +294,58 @@ model ActionTrace {
 }
 
 // ============================================
+// 知识检索 — 知识源配置（GPTBots / 外部 RAG）
+// ============================================
+model KnowledgeSource {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  name        String // 显示名称
+  description String?
+
+  // GPTBots API 检索参数
+  groupIds       String  @default("[]") // JSON: string[] — GPTBots 知识库 group_id
+  dataIds        String? // JSON: string[] — 可选，限定文档范围
+  embeddingRate  Float   @default(0.9)
+  topK           Int     @default(5)
+  rerankVersion  String? // "Jina-reranker-v2-base-multilingual" | "BGE-Rerank" | etc.
+  docCorrelation Float? // 相关性阈值 0.1-0.95
+
+  // 可选：关联到某个 caseType（如 deposit_issue）
+  caseTypeTag String?
+
+  enabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, name])
+  @@index([customerId, enabled])
+  @@map("knowledge_sources")
+}
+
+// ============================================
+// ExternalConversation — 第三方平台对话映射 (LiveChat/Intercom/Tawk)
+// ============================================
+model ExternalConversation {
+  id             String   @id @default(cuid())
+  customerId     String
+  platform       String // 'livechat' | 'intercom' | 'tawk'
+  externalChatId String
+  internalCaseId String?
+  status         String   @default("active") // active|transferred|closed
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  customer       Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([platform, externalChatId])
+  @@index([customerId, platform, status])
+  @@map("external_conversations")
+}
+
+// ============================================
 // 人工任务
 // ============================================
 model HumanTask {
@@ -299,19 +353,19 @@ model HumanTask {
   caseId String
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  queue   String
-  status  String @default("pending")
+  queue  String
+  status String @default("pending")
 
-  question    String
-  fields      String? // JSON: array of {key, label, type, required?, options?} — structured form for human operator
-  answers     String? // JSON: Record<string, string> — structured answers from operator
-  verdict     String?
-  expectedEta String?
-  notes       String?
-  chatLog     String? // JSON: ConsultMsg[] — full consultation chat history (persisted for re-open)
+  question        String
+  fields          String? // JSON: array of {key, label, type, required?, options?} — structured form for human operator
+  answers         String? // JSON: Record<string, string> — structured answers from operator
+  verdict         String?
+  expectedEta     String?
+  notes           String?
+  chatLog         String? // JSON: ConsultMsg[] — full consultation chat history (persisted for re-open)
   customerMessage String? // Plain-language resolution message for the customer (set on resolve)
 
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   resolvedAt DateTime?
   notifiedAt DateTime?
 

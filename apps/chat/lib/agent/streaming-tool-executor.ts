@@ -283,6 +283,21 @@ export class StreamingToolExecutor {
     return defaultResponses[definition.name] || { success: true }
   }
 
+  private resolveEnvVars(value: string): string {
+    return value.replace(/\$\{(\w+)\}/g, (_, name) => process.env[name] ?? '')
+  }
+
+  private async resolveHeaders(
+    headers?: Record<string, string>,
+  ): Promise<Record<string, string> | undefined> {
+    if (!headers) return undefined
+    const resolved: Record<string, string> = {}
+    for (const [k, v] of Object.entries(headers)) {
+      resolved[k] = this.resolveEnvVars(v)
+    }
+    return resolved
+  }
+
   private async executeHttp(
     definition: SkillDefinition,
     input: Record<string, unknown>,
@@ -293,14 +308,68 @@ export class StreamingToolExecutor {
       )
     }
 
-    const response = await fetch(definition.endpoint, {
+    const resolvedEndpoint = this.resolveEnvVars(definition.endpoint)
+    const resolvedHeaders = await this.resolveHeaders(definition.headers as Record<string, string> | undefined)
+
+    // For kb_hybrid_retrieve: merge enabled KnowledgeSource config into the GPTBots request
+    let body = input
+    if (definition.name === 'kb_hybrid_retrieve') {
+      try {
+        const { prisma } = await import('@intera/shared/prisma')
+        const sources = await prisma.knowledgeSource.findMany({
+          where: { customerId: 'default', enabled: true },
+        })
+
+        if (sources.length > 0) {
+          const allGroupIds: string[] = []
+          let maxTopK = 5
+          let avgEmbeddingRate = 0.9
+          let minDocCorrelation: number | undefined
+
+          for (const s of sources) {
+            const ids = JSON.parse(s.groupIds) as string[]
+            allGroupIds.push(...ids)
+            if (s.topK > maxTopK) maxTopK = s.topK
+            avgEmbeddingRate = s.embeddingRate
+            if (s.docCorrelation != null) {
+              if (minDocCorrelation == null || s.docCorrelation < minDocCorrelation) {
+                minDocCorrelation = s.docCorrelation
+              }
+            }
+          }
+
+          body = {
+            prompt: input.query,
+            top_k: (input.topK as number) ?? maxTopK,
+            group_ids: [...new Set(allGroupIds)],
+            embedding_rate: avgEmbeddingRate,
+            ...(sources[0]?.rerankVersion && { rerank_version: sources[0].rerankVersion }),
+            ...(minDocCorrelation != null && { doc_correlation: minDocCorrelation }),
+          }
+        } else {
+          // Fallback: map input fields directly (no KnowledgeSources configured)
+          body = {
+            prompt: input.query,
+            top_k: (input.topK as number) ?? 5,
+          }
+        }
+      } catch {
+        // DB not available (e.g. build time) — map input fields directly
+        body = {
+          prompt: input.query,
+          top_k: (input.topK as number) ?? 5,
+        }
+      }
+    }
+
+    const response = await fetch(resolvedEndpoint, {
       method: definition.httpMethod || 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...definition.headers,
+        ...resolvedHeaders,
       },
-      body: JSON.stringify(input),
-      signal: AbortSignal.timeout(definition.timeoutMs || 8000),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(definition.timeoutMs || 10000),
     })
 
     if (!response.ok) {
