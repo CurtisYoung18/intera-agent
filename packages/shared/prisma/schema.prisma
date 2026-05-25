@@ -67,8 +67,9 @@ model AgentConfig {
   prefixContinuationMinDraftChars   Int @default(4)
 
   // JSON fields
-  memoryStrategy String // MemoryStrategy
-  policyHooks    String // PolicyHooks
+  memoryStrategy     String  // MemoryStrategy
+  policyHooks        String  // PolicyHooks
+  knowledgeRetrieval String? // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

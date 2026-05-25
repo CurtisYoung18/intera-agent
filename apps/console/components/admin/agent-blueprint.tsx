@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Brain, Cpu, Database, Shield, MessageSquareText, Settings, Zap } from 'lucide-react'
+import { Brain, Cpu, Database, Shield, MessageSquareText, Search, Zap } from 'lucide-react'
 import type { AgentConfigData } from '@/app/admin/agent/types'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'advanced'
+type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'knowledge'
 
 interface BlueprintProps {
   config: AgentConfigData
@@ -89,14 +89,17 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           distance: 0.65,
         },
         {
-          id: 'advanced' as const,
-          icon: <Settings className="w-5 h-5" />,
-          label: t('blueprint.nodeAdvanced'),
-          preview: t('blueprint.advancedPreview', {
-            n: ms.compactCircuitBreakerMaxFailures,
-          }),
-          color: '#b8944c',
-          glow: 'rgba(184,148,76,0.15)',
+          id: 'knowledge' as const,
+          icon: <Search className="w-5 h-5" />,
+          label: t('blueprint.nodeKnowledge'),
+          preview: (() => {
+            const kb = config.knowledgeRetrieval
+            if (!kb || kb.mode === 'disabled') return t('blueprint.knowledgeDisabled')
+            if (kb.mode === 'external-api') return t('blueprint.knowledgeExternal', { k: kb.topK })
+            return t('blueprint.knowledgeNative', { provider: kb.embeddingProvider, k: kb.topK })
+          })(),
+          color: '#14b8a6',
+          glow: 'rgba(20,184,166,0.15)',
           angle: 210,
           distance: 0.65,
         },
@@ -107,8 +110,8 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       config.model,
       config.temperature,
       config.resumePrompt,
+      config.knowledgeRetrieval,
       ms.autocompactThresholdTokens,
-      ms.compactCircuitBreakerMaxFailures,
       hookCount,
     ],
   )

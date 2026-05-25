@@ -9,11 +9,12 @@ import {
   Languages,
   BookOpen,
   MessageSquare,
+  Search,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'cases' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing'
+type NavSlug = 'humanTasks' | 'cases' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing' | 'knowledge'
 
 interface NavItem {
   href: string
@@ -36,6 +37,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/policies', slug: 'policies', icon: Shield, color: '#e64539' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#5bb8f7' },
+  { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {

@@ -56,6 +56,7 @@ export async function PUT(req: NextRequest) {
       prefixContinuationAssistantPrefix,
       prefixContinuationStop,
       prefixContinuationMinDraftChars,
+      knowledgeRetrieval,
     } = body
 
     const data: Record<string, unknown> = {}
@@ -84,6 +85,7 @@ export async function PUT(req: NextRequest) {
     if (prefixContinuationMinDraftChars !== undefined) {
       data.prefixContinuationMinDraftChars = clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4)
     }
+    if (knowledgeRetrieval !== undefined) data.knowledgeRetrieval = typeof knowledgeRetrieval === 'string' ? knowledgeRetrieval : JSON.stringify(knowledgeRetrieval)
 
     await ensureDefaultCustomer(CUSTOMER_ID)
     const config = await prisma.agentConfig.upsert({
@@ -116,6 +118,7 @@ export async function PUT(req: NextRequest) {
         prefixContinuationAssistantPrefix: prefixContinuationAssistantPrefix ?? null,
         prefixContinuationStop: prefixContinuationStop ?? null,
         prefixContinuationMinDraftChars: clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4),
+        knowledgeRetrieval: knowledgeRetrieval ?? null,
         memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
         policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
       },

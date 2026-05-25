@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Settings, X } from 'lucide-react'
+import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Search, X } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
@@ -14,13 +14,13 @@ import {
   drawerFieldClass,
 } from '@/components/admin/agent-config-drawer-ui'
 import { chatApiUrl } from '@/lib/chat-api'
-import type { AgentConfigData, MemoryStrategy, ModelInfo } from './types'
-import { DEFAULT_MEMORY } from './types'
+import type { AgentConfigData, KnowledgeRetrievalConfig, MemoryStrategy, ModelInfo } from './types'
+import { DEFAULT_KNOWLEDGE_RETRIEVAL, DEFAULT_MEMORY } from './types'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'advanced'
+type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'knowledge'
 
 function parseStopJsonSafe(raw: unknown): string[] {
   if (!raw || typeof raw !== 'string') return []
@@ -64,7 +64,7 @@ export default function AgentConfigPage() {
         memory: { icon: <Database className="w-4 h-4" />, title: t('agent.section.memory'), color: '#d4912e' },
         policy: { icon: <Shield className="w-4 h-4" />, title: t('agent.section.policy'), color: '#2ea04a' },
         templates: { icon: <FileText className="w-4 h-4" />, title: t('agent.section.humanOps'), color: '#5bb8f7' },
-        advanced: { icon: <Settings className="w-4 h-4" />, title: t('agent.section.advanced'), color: '#b8944c' },
+        knowledge: { icon: <Search className="w-4 h-4" />, title: t('agent.section.knowledge'), color: '#14b8a6' },
       }) satisfies Record<Section, { icon: React.ReactNode; title: string; color: string }>,
     [t],
   )
@@ -107,6 +107,15 @@ export default function AgentConfigPage() {
         } catch {
           policyHooks = '{}'
         }
+        let knowledgeRetrieval: typeof DEFAULT_KNOWLEDGE_RETRIEVAL = { ...DEFAULT_KNOWLEDGE_RETRIEVAL }
+        try {
+          const kbRaw = (raw as Record<string, unknown>).knowledgeRetrieval
+          if (kbRaw) {
+            const parsed = typeof kbRaw === 'string' ? JSON.parse(kbRaw as string) : kbRaw
+            knowledgeRetrieval = { ...DEFAULT_KNOWLEDGE_RETRIEVAL, ...parsed }
+          }
+        } catch { /* use default */ }
+
         setConfig({
           model: raw.model || 'MiniMax-M2.7-highspeed',
           temperature: raw.temperature ?? 0.5,
@@ -138,6 +147,7 @@ export default function AgentConfigPage() {
             (raw as Record<string, unknown>).prefixContinuationMinDraftChars,
             4,
           ),
+          knowledgeRetrieval,
         })
         setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
         setError(null)
@@ -153,7 +163,7 @@ export default function AgentConfigPage() {
       const current = configRef.current
       if (!current) return
       try {
-        const { prefixContinuationStopText, memoryStrategy, policyHooks: ph, ...persist } = current
+        const { prefixContinuationStopText, memoryStrategy, policyHooks: ph, knowledgeRetrieval: kb, ...persist } = current
         const res = await fetch('/api/admin/agent', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -161,6 +171,7 @@ export default function AgentConfigPage() {
             ...persist,
             policyHooks: ph,
             memoryStrategy: JSON.stringify(memoryStrategy),
+            knowledgeRetrieval: JSON.stringify(kb),
             prefixContinuationStop: multilineToStopJson(prefixContinuationStopText),
           }),
         })
@@ -198,6 +209,16 @@ export default function AgentConfigPage() {
     (field: keyof MemoryStrategy, value: unknown) => {
       setConfig((prev) =>
         prev ? { ...prev, memoryStrategy: { ...prev.memoryStrategy, [field]: value } } : null,
+      )
+      autoSave()
+    },
+    [autoSave],
+  )
+
+  const updateKb = useCallback(
+    (field: keyof KnowledgeRetrievalConfig, value: unknown) => {
+      setConfig((prev) =>
+        prev ? { ...prev, knowledgeRetrieval: { ...prev.knowledgeRetrieval, [field]: value } } : null,
       )
       autoSave()
     },
@@ -504,6 +525,91 @@ export default function AgentConfigPage() {
                     ))}
                   </DrawerCheckboxRail>
                 </DrawerSection>
+
+                {/* ── Composer Assist (Beta) ── moved here from Advanced */}
+                <DrawerSection
+                  accent="#5b8af7"
+                  eyebrow={t('agent.drawer.composerEyebrow')}
+                  title={t('agent.prefixToggle')}
+                  lead={t('agent.prefixSubtitle')}
+                  actions={
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={config.prefixContinuationEnabled}
+                      aria-label={t('agent.prefixToggle')}
+                      onClick={() => update('prefixContinuationEnabled', !config.prefixContinuationEnabled)}
+                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                        config.prefixContinuationEnabled
+                          ? 'bg-indigo shadow-[0_0_0_3px_rgba(99,102,241,0.15)]'
+                          : 'bg-black/[0.12]'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                          config.prefixContinuationEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  }
+                >
+                  <p className="rounded-lg border border-black/[0.05] bg-black/[0.025] px-3 py-2 text-[10px] leading-relaxed text-[var(--fog)]">
+                    {t('agent.prefixEnvHint')}
+                  </p>
+                  {config.prefixContinuationEnabled && (
+                    <div className="space-y-3 rounded-xl border border-black/[0.06] bg-white/30 p-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="block space-y-1">
+                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixBaseUrl')}</span>
+                          <input
+                            type="text"
+                            value={config.prefixContinuationBaseUrl}
+                            onChange={(e) => update('prefixContinuationBaseUrl', e.target.value)}
+                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                            spellCheck={false}
+                          />
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixChatModel')}</span>
+                          <input
+                            type="text"
+                            value={config.prefixContinuationChatModel}
+                            onChange={(e) => update('prefixContinuationChatModel', e.target.value)}
+                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                            spellCheck={false}
+                          />
+                        </label>
+                      </div>
+                      <NumField
+                        label={t('agent.prefixMinDraft')}
+                        hint={t('agent.prefixMinDraftHint')}
+                        value={config.prefixContinuationMinDraftChars}
+                        onChange={(v) => update('prefixContinuationMinDraftChars', clampComposerMinDraftChars(v, 4))}
+                        min={1}
+                        max={120}
+                        step={1}
+                      />
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixComposerNotes')}</span>
+                        <textarea
+                          value={config.prefixContinuationAssistantPrefix}
+                          onChange={(e) => update('prefixContinuationAssistantPrefix', e.target.value)}
+                          rows={3}
+                          className={`glass-input-console w-full resize-y leading-relaxed ${drawerFieldClass()}`}
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixStop')}</span>
+                        <textarea
+                          value={config.prefixContinuationStopText}
+                          onChange={(e) => update('prefixContinuationStopText', e.target.value)}
+                          rows={2}
+                          className={`glass-input-console w-full resize-y ${drawerFieldClass(true)}`}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </DrawerSection>
               </>
             )}
 
@@ -699,202 +805,201 @@ export default function AgentConfigPage() {
                   humanSkills={config.humanSkills}
                   onConsultationPromptChange={(v) => update('consultationPrompt', v)}
                   onHumanSkillsChange={(v) => update('humanSkills', v)}
-                  composerEnabled={config.prefixContinuationEnabled}
-                  composerModel={config.prefixContinuationChatModel}
-                  composerBaseUrl={config.prefixContinuationBaseUrl}
-                  composerAssistantPrefix={config.prefixContinuationAssistantPrefix}
-                  composerStopText={config.prefixContinuationStopText}
-                  composerMinDraftChars={config.prefixContinuationMinDraftChars}
-                  onComposerEnabledChange={(v) => update('prefixContinuationEnabled', v)}
-                  onComposerModelChange={(v) => update('prefixContinuationChatModel', v)}
-                  onComposerBaseUrlChange={(v) => update('prefixContinuationBaseUrl', v)}
-                  onComposerAssistantPrefixChange={(v) => update('prefixContinuationAssistantPrefix', v)}
-                  onComposerStopTextChange={(v) => update('prefixContinuationStopText', v)}
-                  onComposerMinDraftCharsChange={(v) => update('prefixContinuationMinDraftChars', v)}
                 />
               </DrawerSection>
             )}
 
-            {activeSection === 'advanced' && (
+            {activeSection === 'knowledge' && (
               <>
                 <DrawerSection
-                  accent="#b8944c"
-                  eyebrow={t('agent.drawer.composerEyebrow')}
-                  title={t('agent.prefixToggle')}
-                  lead={t('agent.prefixSubtitle')}
-                  actions={
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={config.prefixContinuationEnabled}
-                      aria-label={t('agent.prefixToggle')}
-                      onClick={() => update('prefixContinuationEnabled', !config.prefixContinuationEnabled)}
-                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                        config.prefixContinuationEnabled
-                          ? 'bg-indigo shadow-[0_0_0_3px_rgba(99,102,241,0.15)]'
-                          : 'bg-black/[0.12]'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-                          config.prefixContinuationEnabled ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  }
+                  accent="#14b8a6"
+                  eyebrow="Knowledge Retrieval"
+                  title={t('agent.section.knowledge')}
+                  lead={t('agent.section.knowledgeLead')}
                 >
-                  <p className="rounded-lg border border-black/[0.05] bg-black/[0.025] px-3 py-2 text-[10px] leading-relaxed text-[var(--fog)]">
-                    {t('agent.prefixEnvHint')}
-                  </p>
-                  {config.prefixContinuationEnabled ? (
-                    <div className="space-y-3 rounded-xl border border-black/[0.06] bg-white/30 p-3">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label className="block space-y-1">
-                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixBaseUrl')}</span>
-                          <input
-                            type="text"
-                            value={config.prefixContinuationBaseUrl}
-                            onChange={(e) => update('prefixContinuationBaseUrl', e.target.value)}
-                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                            spellCheck={false}
-                          />
-                        </label>
-                        <label className="block space-y-1">
-                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixChatModel')}</span>
-                          <input
-                            type="text"
-                            value={config.prefixContinuationChatModel}
-                            onChange={(e) => update('prefixContinuationChatModel', e.target.value)}
-                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                            spellCheck={false}
-                          />
-                        </label>
-                      </div>
-                      <NumField
-                        label={t('agent.prefixMinDraft')}
-                        hint={t('agent.prefixMinDraftHint')}
-                        value={config.prefixContinuationMinDraftChars}
-                        onChange={(v) => update('prefixContinuationMinDraftChars', clampComposerMinDraftChars(v, 4))}
-                        min={1}
-                        max={120}
-                        step={1}
-                      />
-                      <label className="block space-y-1">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixComposerNotes')}</span>
-                        <textarea
-                          value={config.prefixContinuationAssistantPrefix}
-                          onChange={(e) => update('prefixContinuationAssistantPrefix', e.target.value)}
-                          rows={3}
-                          className={`glass-input-console w-full resize-y leading-relaxed ${drawerFieldClass()}`}
-                          placeholder=""
+                  {/* Mode selector */}
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.modeLabel')}</span>
+                    <select
+                      value={config.knowledgeRetrieval.mode}
+                      onChange={(e) => updateKb('mode', e.target.value)}
+                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                    >
+                      <option value="disabled">{t('kb.modeDisabled')}</option>
+                      <option value="external-api">{t('kb.modeExternal')}</option>
+                      <option value="intera-native">{t('kb.modeNative')}</option>
+                    </select>
+                  </label>
+
+                  {/* External RAG API */}
+                  {config.knowledgeRetrieval.mode === 'external-api' && (
+                    <div className="space-y-3 rounded-xl border border-teal-500/20 bg-teal-500/[0.03] p-3">
+                      <label className="space-y-1 block">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.externalEndpoint')}</span>
+                        <input
+                          type="text"
+                          value={config.knowledgeRetrieval.externalEndpoint}
+                          onChange={(e) => updateKb('externalEndpoint', e.target.value)}
+                          placeholder="https://your-rag.com/api/search"
+                          className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                          spellCheck={false}
                         />
+                        <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.externalEndpointHint')}</span>
                       </label>
-                      <label className="block space-y-1">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixStop')}</span>
-                        <textarea
-                          value={config.prefixContinuationStopText}
-                          onChange={(e) => update('prefixContinuationStopText', e.target.value)}
-                          rows={2}
-                          className={`glass-input-console w-full resize-y ${drawerFieldClass(true)}`}
+                      <label className="space-y-1 block">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.externalApiKeyEnvVar')}</span>
+                        <input
+                          type="text"
+                          value={config.knowledgeRetrieval.externalApiKeyEnvVar}
+                          onChange={(e) => updateKb('externalApiKeyEnvVar', e.target.value)}
+                          placeholder="RAG_API_KEY"
+                          className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                          spellCheck={false}
                         />
+                        <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.externalApiKeyEnvVarHint')}</span>
                       </label>
                     </div>
-                  ) : null}
+                  )}
+
+                  {/* Intera-native Hybrid */}
+                  {config.knowledgeRetrieval.mode === 'intera-native' && (
+                    <div className="space-y-3 rounded-xl border border-teal-500/20 bg-teal-500/[0.03] p-3">
+                      <label className="space-y-1.5 block">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.embeddingProvider')}</span>
+                        <select
+                          value={config.knowledgeRetrieval.embeddingProvider}
+                          onChange={(e) => updateKb('embeddingProvider', e.target.value)}
+                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                        >
+                          <option value="openai">OpenAI</option>
+                          <option value="cohere">Cohere</option>
+                          <option value="self-hosted">{t('kb.selfHosted')}</option>
+                        </select>
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="space-y-1 block col-span-2 sm:col-span-1">
+                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.embeddingModel')}</span>
+                          <input
+                            type="text"
+                            value={config.knowledgeRetrieval.embeddingModel}
+                            onChange={(e) => updateKb('embeddingModel', e.target.value)}
+                            placeholder="text-embedding-3-small"
+                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                            spellCheck={false}
+                          />
+                        </label>
+                        {config.knowledgeRetrieval.embeddingProvider === 'self-hosted' && (
+                          <label className="space-y-1 block col-span-2 sm:col-span-1">
+                            <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.embeddingBaseUrl')}</span>
+                            <input
+                              type="text"
+                              value={config.knowledgeRetrieval.embeddingBaseUrl}
+                              onChange={(e) => updateKb('embeddingBaseUrl', e.target.value)}
+                              placeholder="http://localhost:8080"
+                              className={`glass-input-console w-full ${drawerFieldClass(true)}`}
+                              spellCheck={false}
+                            />
+                            <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.embeddingBaseUrlHint')}</span>
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Shared retrieval params — shown when not disabled */}
+                  {config.knowledgeRetrieval.mode !== 'disabled' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumField
+                        label={t('kb.topK')}
+                        hint={t('kb.topKHint')}
+                        value={config.knowledgeRetrieval.topK}
+                        onChange={(v) => updateKb('topK', v)}
+                        min={1}
+                        max={20}
+                        step={1}
+                      />
+                      <NumField
+                        label={t('kb.minRelevance')}
+                        hint={t('kb.minRelevanceHint')}
+                        value={config.knowledgeRetrieval.minRelevanceScore}
+                        onChange={(v) => updateKb('minRelevanceScore', v)}
+                        step={0.05}
+                        min={0}
+                        max={1}
+                      />
+                    </div>
+                  )}
+
+                  {/* Placeholder when disabled */}
+                  {config.knowledgeRetrieval.mode === 'disabled' && (
+                    <div className="rounded-xl border border-dashed border-teal-500/25 bg-teal-500/[0.02] px-4 py-6 text-center">
+                      <p className="text-[12px] font-medium text-teal-600/60">{t('kb.statusPending')}</p>
+                      <p className="mt-1 text-[10px] text-[var(--fog)]/50">{t('kb.statusPendingHint')}</p>
+                    </div>
+                  )}
                 </DrawerSection>
 
-                <DrawerSection
-                  accent="#b8944c"
-                  eyebrow={t('agent.drawer.estimationEyebrow')}
-                  title={t('agent.advancedEstimationTitle')}
-                  lead={t('agent.advancedEstimationLead')}
-                >
-                  <label className="block space-y-1">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.factExtractionPrompt')}</span>
-                    <p className="text-[10px] leading-snug text-[var(--smoke)]">{t('agent.hint.factExtractionPrompt')}</p>
-                    <textarea
-                      value={ms.factExtractionPrompt || ''}
-                      onChange={(e) => updateMem('factExtractionPrompt', e.target.value)}
-                      rows={3}
-                      className={`glass-input-console w-full ${drawerFieldClass(true)} resize-y`}
-                    />
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <NumField
-                      label={t('agent.tokensKeyEvent')}
-                      hint={t('agent.hint.tokensKeyEvent')}
-                      value={ms.tokensPerKeyEvent}
-                      onChange={(v) => updateMem('tokensPerKeyEvent', v)}
-                    />
-                    <NumField
-                      label={t('agent.tokensFact')}
-                      hint={t('agent.hint.tokensFact')}
-                      value={ms.tokensPerFact}
-                      onChange={(v) => updateMem('tokensPerFact', v)}
-                    />
-                    <NumField
-                      label={t('agent.tokensSkill')}
-                      hint={t('agent.hint.tokensSkill')}
-                      value={ms.tokensPerSkill}
-                      onChange={(v) => updateMem('tokensPerSkill', v)}
-                    />
-                    <NumField
-                      label={t('agent.cjkCharToken')}
-                      hint={t('agent.hint.cjkCharToken')}
-                      value={ms.cjkCharPerToken}
-                      onChange={(v) => updateMem('cjkCharPerToken', v)}
-                      step={0.1}
-                    />
-                    <NumField
-                      label={t('agent.latinCharToken')}
-                      hint={t('agent.hint.latinCharToken')}
-                      value={ms.latinCharPerToken}
-                      onChange={(v) => updateMem('latinCharPerToken', v)}
-                      step={0.1}
-                    />
-                    <NumField
-                      label={t('agent.minTokenEst')}
-                      hint={t('agent.hint.minTokenEst')}
-                      value={ms.minTokenEstimate}
-                      onChange={(v) => updateMem('minTokenEstimate', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.toolResultRatio')}
-                      hint={t('agent.hint.toolResultRatio')}
-                      value={ms.toolResultTokenRatio}
-                      onChange={(v) => updateMem('toolResultTokenRatio', v)}
-                      step={0.1}
-                    />
-                    <NumField
-                      label={t('agent.contextWindow')}
-                      hint={t('agent.hint.contextWindow')}
-                      value={ms.contextWindow}
-                      onChange={(v) => updateMem('contextWindow', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.outputReserved')}
-                      hint={t('agent.hint.outputReserved')}
-                      value={ms.outputTokensReserved}
-                      onChange={(v) => updateMem('outputTokensReserved', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.circuitBreaker')}
-                      hint={t('agent.hint.circuitBreaker')}
-                      value={ms.compactCircuitBreakerMaxFailures}
-                      onChange={(v) => updateMem('compactCircuitBreakerMaxFailures', v)}
-                      unit={u.failures}
-                    />
-                    <NumField
-                      label={t('agent.sessionMaxAge')}
-                      hint={t('agent.hint.sessionMaxAge')}
-                      value={ms.sessionMemoryMaxAgeMs}
-                      onChange={(v) => updateMem('sessionMemoryMaxAgeMs', v)}
-                      unit={u.ms}
-                    />
-                  </div>
-                </DrawerSection>
+                {/* Advanced features — Intera-native only */}
+                {config.knowledgeRetrieval.mode === 'intera-native' && (
+                  <DrawerSection accent="#14b8a6" title={t('kb.advancedTitle')}>
+                    <DrawerCheckboxRail accent="#14b8a6" layout="stack">
+                      <label className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45">
+                        <input
+                          type="checkbox"
+                          checked={config.knowledgeRetrieval.enableReranker}
+                          onChange={(e) => updateKb('enableReranker', e.target.checked)}
+                          className="accent-teal-500 mt-0.5 shrink-0 rounded"
+                        />
+                        <span className="min-w-0 space-y-0.5">
+                          <span className="block text-[12px] font-medium text-[var(--mist)]">{t('kb.enableReranker')}</span>
+                          <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('kb.enableRerankerHint')}</span>
+                        </span>
+                      </label>
+                      <label className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45">
+                        <input
+                          type="checkbox"
+                          checked={config.knowledgeRetrieval.enableContextualRetrieval}
+                          onChange={(e) => updateKb('enableContextualRetrieval', e.target.checked)}
+                          className="accent-teal-500 mt-0.5 shrink-0 rounded"
+                        />
+                        <span className="min-w-0 space-y-0.5">
+                          <span className="block text-[12px] font-medium text-[var(--mist)]">{t('kb.enableContextual')}</span>
+                          <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('kb.contextualHint')}</span>
+                        </span>
+                      </label>
+                    </DrawerCheckboxRail>
+
+                    {config.knowledgeRetrieval.enableReranker && (
+                      <label className="space-y-1.5 block">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.rerankProvider')}</span>
+                        <select
+                          value={config.knowledgeRetrieval.rerankProvider}
+                          onChange={(e) => updateKb('rerankProvider', e.target.value)}
+                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                        >
+                          <option value="cohere">Cohere Rerank</option>
+                          <option value="self-hosted">{t('kb.selfHosted')} (BGE-Reranker)</option>
+                        </select>
+                      </label>
+                    )}
+
+                    {config.knowledgeRetrieval.enableContextualRetrieval && (
+                      <label className="space-y-1.5 block">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.contextualModel')}</span>
+                        <select
+                          value={config.knowledgeRetrieval.contextualModel}
+                          onChange={(e) => updateKb('contextualModel', e.target.value)}
+                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                        >
+                          {mainModels.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                        <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.contextualModelHint')}</span>
+                      </label>
+                    )}
+                  </DrawerSection>
+                )}
               </>
             )}
                 </DrawerShell>

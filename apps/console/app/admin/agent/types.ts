@@ -40,6 +40,41 @@ export interface MemoryStrategy {
   sessionMemoryMaxAgeMs: number
 }
 
+export interface KnowledgeRetrievalConfig {
+  /** 'disabled' | 'external-api' | 'intera-native' */
+  mode: 'disabled' | 'external-api' | 'intera-native'
+  // External RAG API mode
+  externalEndpoint: string
+  externalApiKeyEnvVar: string
+  // Intera-native: embedding
+  embeddingProvider: 'openai' | 'cohere' | 'self-hosted'
+  embeddingModel: string
+  embeddingBaseUrl: string
+  // Retrieval parameters (both modes)
+  topK: number
+  minRelevanceScore: number
+  // Native-only advanced features
+  enableReranker: boolean
+  rerankProvider: 'cohere' | 'self-hosted'
+  enableContextualRetrieval: boolean
+  contextualModel: string
+}
+
+export const DEFAULT_KNOWLEDGE_RETRIEVAL: KnowledgeRetrievalConfig = {
+  mode: 'disabled',
+  externalEndpoint: '',
+  externalApiKeyEnvVar: '',
+  embeddingProvider: 'openai',
+  embeddingModel: 'text-embedding-3-small',
+  embeddingBaseUrl: '',
+  topK: 5,
+  minRelevanceScore: 0.4,
+  enableReranker: false,
+  rerankProvider: 'cohere',
+  enableContextualRetrieval: false,
+  contextualModel: 'claude-haiku-4-5',
+}
+
 export interface AgentConfigData {
   model: string
   temperature: number
@@ -64,6 +99,7 @@ export interface AgentConfigData {
   /** One stop sequence per line in UI; stored as JSON string[] server-side */
   prefixContinuationStopText: string
   prefixContinuationMinDraftChars: number
+  knowledgeRetrieval: KnowledgeRetrievalConfig
 }
 
 export interface ModelInfo {
