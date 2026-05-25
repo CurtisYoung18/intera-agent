@@ -2,5 +2,8 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "buildCommand": "npm run build:console"
+  },
+  "deploy": {
+    "startCommand": "node apps/console/.next/standalone/server.js"
   }
 }
