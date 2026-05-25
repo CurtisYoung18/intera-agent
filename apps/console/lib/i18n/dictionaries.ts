@@ -157,7 +157,7 @@ export const en: Record<string, string> = {
   'guide.doc.tools.li3':
     'Parallel bursts only apply to skills flagged safe; everything contentious runs strictly one-at-a-time.',
   'guide.doc.tools.li4':
-    'Registries marry factory defaults with per-tenant Admin rows so onboarding stays scripted yet flexible.',
+    'Registries marry factory defaults with per-customer Admin rows so onboarding stays scripted yet flexible.',
   'guide.doc.tools.li5':
     'Policy guardrails (preTool / postTool / preFinalize) check hard rules and LLM-evaluated rules. The preTool hook can enforce skill prerequisites — e.g. `investigate_before_escalation` blocks `create_human_task` until order/payment/account verification skills have run. PostTool policies batch into a single LLM call against natural-language descriptions, without brittle keyword matching.',
   'guide.doc.tools.li6':
@@ -235,7 +235,7 @@ export const en: Record<string, string> = {
 
 	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
-	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per tenant; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
+	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per customer; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
 
 	'guide.doc.codes.ir2': 'propose_cases tool: presents multi-select card when multiple intents detected. create_case tool: creates case row, dispatches sub-agents per stage config, transitions state machine.',
 
@@ -351,7 +351,7 @@ export const en: Record<string, string> = {
   'guide.doc.api.baseUrl': 'Base URL',
   'guide.doc.api.baseUrlDesc': 'Chat service: https://intera-chat.up.railway.app',
   'guide.doc.api.auth': 'Authentication',
-  'guide.doc.api.authDesc': 'Currently no auth required for internal use. For production multi-tenant use, an Authorization: Bearer <api_key> header will be required (API keys managed in Console → Settings).',
+  'guide.doc.api.authDesc': 'Currently no auth required for internal use. For production multi-customer use, an Authorization: Bearer <api_key> header will be required (API keys managed in Console → Settings).',
 
   'guide.doc.api.sendMessageTitle': 'POST /api/messages — Send Message',
   'guide.doc.api.sendMessageDesc': 'Send a user message to the agent and receive a streaming SSE response. The agent will auto-create cases, call skills, search the knowledge base, and respond.',
@@ -362,7 +362,7 @@ export const en: Record<string, string> = {
   'guide.doc.api.fieldUserId': 'Unique user ID (e.g. player ID). Used to group cases per user.',
   'guide.doc.api.fieldMessage': 'The user\'s message text.',
   'guide.doc.api.fieldChatId': 'Conversation session ID. Generate a random UUID per session. Omit for first message — response includes one.',
-  'guide.doc.api.fieldCustomerId': 'Customer/tenant ID. Use "default".',
+  'guide.doc.api.fieldCustomerId': 'Unique customer ID. Use "default" for the demo customer or "api" for the API integration customer.',
 
   'guide.doc.api.sseTitle': 'SSE Stream Response',
   'guide.doc.api.sseDesc': 'The response is a Server-Sent Events stream. Each event has a type and JSON data payload:',
@@ -1209,7 +1209,7 @@ export const zh: Record<string, string> = {
   'guide.doc.tools.li3':
     '只有标记为并发安全的技能才能并行，其余默认串行保护外部系统。',
   'guide.doc.tools.li4':
-    '技能注册表合并出厂默认与租户配置，方便多品牌部署。',
+    '技能注册表合并出厂默认与商户配置，方便多品牌部署。',
   'guide.doc.tools.li5':
     '策略护栏（preTool / postTool / preFinalize）同时支持硬规则检查和 LLM 语义评估。preTool 钩子可强制技能前置条件——例如 `investigate_before_escalation` 策略会阻止 agent 在未运行订单/支付/账号验证技能前直接调用 `create_human_task`。PostTool 策略全部通过单次批量 LLM 调用评估。',
   'guide.doc.tools.li6':
@@ -1275,7 +1275,7 @@ export const zh: Record<string, string> = {
 
 	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
-	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per tenant; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
+	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per customer; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
 
 	'guide.doc.codes.ir2': 'propose_cases tool: presents multi-select card when multiple intents detected. create_case tool: creates case row, dispatches sub-agents per stage config, transitions state machine.',
 
@@ -1392,7 +1392,7 @@ export const zh: Record<string, string> = {
   'guide.doc.api.baseUrl': 'Base URL',
   'guide.doc.api.baseUrlDesc': 'Chat 服务: https://intera-chat.up.railway.app',
   'guide.doc.api.auth': '认证',
-  'guide.doc.api.authDesc': '当前内部使用无需认证。生产多租户环境下需添加 Authorization: Bearer <api_key> 请求头（API Key 在 Console → Settings 管理）。',
+  'guide.doc.api.authDesc': '当前内部使用无需认证。生产多商户环境下需添加 Authorization: Bearer <api_key> 请求头（API Key 在 Console → Settings 管理）。',
 
   'guide.doc.api.sendMessageTitle': 'POST /api/messages — 发送消息',
   'guide.doc.api.sendMessageDesc': '向 Agent 发送用户消息并接收 SSE 流式响应。Agent 会自动创建 Case、调用技能、检索知识库并回复。',
@@ -1403,7 +1403,7 @@ export const zh: Record<string, string> = {
   'guide.doc.api.fieldUserId': '唯一用户标识（如玩家 ID），用于按用户分组 Case。',
   'guide.doc.api.fieldMessage': '用户消息文本。',
   'guide.doc.api.fieldChatId': '对话会话 ID。每次会话生成一个随机 UUID。首次消息可省略，响应中会返回。',
-  'guide.doc.api.fieldCustomerId': '客户/租户 ID，填 "default"。',
+  'guide.doc.api.fieldCustomerId': '客户/商户 ID，填 "default"。',
 
   'guide.doc.api.sseTitle': 'SSE 流式响应',
   'guide.doc.api.sseDesc': '响应为 Server-Sent Events 流，每个事件包含类型和 JSON 数据：',
@@ -1528,7 +1528,7 @@ export const zh: Record<string, string> = {
   'sidebar.switchToZh': '中文',
   'sidebar.switchToEn': 'English',
   'shell.adminUser': '管理员',
-  'shell.demoVendor': '演示租户',
+  'shell.demoVendor': '演示商户',
   'shell.version': 'v0.1',
   'shell.backToTop': '回到顶部',
   'shell.backToTopAria': '滚动到页面顶部',

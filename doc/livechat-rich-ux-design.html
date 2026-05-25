@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intera × LiveChat Rich UX — 设计决策文档</title>
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-light: #dbeafe;
+    --green: #16a34a;
+    --green-light: #dcfce7;
+    --orange: #ea580c;
+    --orange-light: #ffedd5;
+    --red: #dc2626;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-600: #4b5563;
+    --gray-800: #1f2937;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); color: var(--gray-800); line-height: 1.6; background: #fff; }
+
+  /* Layout */
+  .page { max-width: 960px; margin: 0 auto; padding: 40px 32px 80px; }
+  .toc { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 20px 24px; margin-bottom: 40px; }
+  .toc h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--gray-600); margin-bottom: 10px; }
+  .toc ol { padding-left: 18px; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: var(--blue); text-decoration: none; font-size: 14px; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* Hero */
+  .hero { margin-bottom: 48px; }
+  .hero h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .hero .subtitle { color: var(--gray-600); font-size: 15px; }
+  .hero .meta { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+
+  /* Section */
+  .section { margin-bottom: 56px; }
+  .section h2 { font-size: 20px; font-weight: 700; border-bottom: 2px solid var(--blue-light); padding-bottom: 8px; margin-bottom: 20px; }
+  .section h3 { font-size: 16px; font-weight: 600; margin: 24px 0 10px; }
+  p { margin-bottom: 12px; font-size: 15px; }
+
+  /* Decision badge */
+  .decision { display: inline-flex; align-items: center; gap: 6px; background: var(--green-light); color: var(--green); border-radius: 20px; padding: 3px 12px; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+  .pending { background: var(--orange-light); color: var(--orange); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 16px 0; }
+  th { background: var(--gray-100); font-weight: 600; text-align: left; padding: 9px 12px; border: 1px solid var(--gray-200); }
+  td { padding: 8px 12px; border: 1px solid var(--gray-200); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--gray-50); }
+
+  /* Code */
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 13px; background: var(--gray-100); padding: 1px 5px; border-radius: 4px; }
+  pre { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 16px 20px; font-size: 13px; overflow-x: auto; margin: 16px 0; line-height: 1.6; }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* Chat mockup */
+  .mockup-row { display: flex; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
+  .chat-demo { background: #f0f0f0; border-radius: 12px; padding: 12px; font-size: 12px; font-family: var(--font); flex: 1; min-width: 220px; max-width: 280px; }
+  .chat-demo .ch { background: #4a4a4a; color: white; border-radius: 8px 8px 0 0; padding: 6px 10px; font-size: 11px; font-weight: 600; margin: -12px -12px 8px; }
+  .dm { margin: 5px 0; display: flex; flex-direction: column; }
+  .dm.u { align-items: flex-end; }
+  .dm.b { align-items: flex-start; }
+  .bbl { padding: 7px 10px; border-radius: 12px; max-width: 90%; line-height: 1.35; font-size: 12px; }
+  .dm.u .bbl { background: #0071e3; color: white; border-radius: 12px 12px 3px 12px; }
+  .dm.b .bbl { background: white; color: #333; border-radius: 12px 12px 12px 3px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .dm.sys .bbl { background: #fff3cd; color: #856404; border-radius: 8px; font-style: italic; font-size: 11px; width: 100%; text-align: center; }
+  .qr { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .qr span { background: white; border: 1.5px solid #0071e3; color: #0071e3; border-radius: 14px; padding: 3px 9px; font-size: 11px; }
+
+  /* Flow diagram */
+  .flow { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 20px 24px; font-size: 14px; }
+  .flow-step { display: flex; align-items: flex-start; gap: 12px; margin: 10px 0; }
+  .flow-num { background: var(--blue); color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .flow-arrow { text-align: center; color: var(--gray-600); font-size: 18px; margin: 2px 0 2px 11px; }
+
+  /* Tag */
+  .tag { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 12px; font-weight: 600; margin-right: 4px; }
+  .tag.blue { background: var(--blue-light); color: var(--blue); }
+  .tag.green { background: var(--green-light); color: var(--green); }
+  .tag.orange { background: var(--orange-light); color: var(--orange); }
+
+  /* Note box */
+  .note { background: var(--blue-light); border-left: 4px solid var(--blue); border-radius: 6px; padding: 12px 16px; font-size: 14px; margin: 16px 0; }
+  .warn { background: var(--orange-light); border-left: 4px solid var(--orange); }
+
+  /* Skill map */
+  .skill-map { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 0; align-items: center; margin: 20px 0; }
+  .skill-box { background: var(--gray-100); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+  .skill-box .name { font-weight: 700; font-family: monospace; color: var(--blue); margin-bottom: 4px; }
+  .skill-box .desc { color: var(--gray-600); font-size: 12px; }
+  .arrow-mid { text-align: center; font-size: 20px; color: var(--gray-600); }
+  .lc-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+  .lc-box .name { font-weight: 700; color: var(--orange); margin-bottom: 4px; }
+  .lc-box .desc { color: var(--gray-600); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <h1>Intera × LiveChat Rich UX — 集成设计文档</h1>
+    <p class="subtitle">LiveChat 富消息 API 与 Intera Agent Loop 的适配策略、UX 决策及技术规范</p>
+    <p class="meta">状态：设计中 · 最后更新：2026-05-25</p>
+  </div>
+
+  <div class="toc">
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#background">背景与目标</a></li>
+      <li><a href="#livechat-api">LiveChat 开放接口全景</a></li>
+      <li><a href="#skill-mapping">Skill → LiveChat 消息 映射表</a></li>
+      <li><a href="#thinking-chain">思维链 & Skill 状态播报</a>（已确定）</li>
+      <li><a href="#form-strategy">表单输入策略</a>（已确定）</li>
+      <li><a href="#data-flow">数据流：结构化注入原则</a>（已确定）</li>
+      <li><a href="#propose-interaction">propose_interaction 渲染方案</a>（决策中）</li>
+      <li><a href="#bridge-arch">Bridge 架构</a></li>
+      <li><a href="#open-questions">待决策项</a></li>
+    </ol>
+  </div>
+
+  <!-- 1. Background -->
+  <div class="section" id="background">
+    <h2>1. 背景与目标</h2>
+    <p>Intera Agent Loop 通过 SSE 流式输出，具备 thinking chain、多 skill 串联执行、等待用户输入等能力。当接入 LiveChat 作为前端 widget 时，需要一个 <strong>Bridge 服务</strong>在 Intera 的 SSE 事件流与 LiveChat Bot Agent API 之间做翻译，使以下体验成为可能：</p>
+    <ul style="margin: 12px 0 12px 20px; font-size:15px; line-height:2">
+      <li>用户在 LiveChat widget 内看到 Intera 实时执行状态（哪个 skill 在跑）</li>
+      <li>选项交互（<code>propose_interaction</code>）映射为 LiveChat 富消息</li>
+      <li>表单收集（<code>request_user_input</code>）在 widget 内或近 widget 完成</li>
+      <li>人工升级（<code>create_human_task</code>）无缝转接 LiveChat 真实客服</li>
+    </ul>
+  </div>
+
+  <!-- 2. LiveChat API Overview -->
+  <div class="section" id="livechat-api">
+    <h2>2. LiveChat 开放接口全景</h2>
+    <table>
+      <tr><th>接口类型</th><th>用途</th><th>Intera 用法</th></tr>
+      <tr>
+        <td><strong>Bot Agent API</strong><br><code>send_event</code></td>
+        <td>Bot 向 chat 发送消息/富消息</td>
+        <td>发送 thinking 状态消息、quick_replies、cards</td>
+      </tr>
+      <tr>
+        <td><strong>Webhooks</strong><br><code>incoming_chat</code><br><code>incoming_event</code><br><code>chat_transferred</code></td>
+        <td>接收用户消息、聊天事件</td>
+        <td>触发 Intera loop、接收用户回复和表单提交</td>
+      </tr>
+      <tr>
+        <td><strong>transfer_chat</strong></td>
+        <td>将 chat 转给真实客服 agent</td>
+        <td><code>create_human_task</code> skill 触发时调用</td>
+      </tr>
+      <tr>
+        <td><strong>Chat Properties</strong><br><code>update_chat_properties</code></td>
+        <td>给 chat 打结构化标签</td>
+        <td>记录 case_id、intent、resolution status 供客服查阅</td>
+      </tr>
+      <tr>
+        <td><strong>In-Chat Apps</strong><br>（LiveChat App SDK）</td>
+        <td>在 widget 内嵌入自定义 Web App</td>
+        <td>渲染翻转卡片表单、富选项列表</td>
+      </tr>
+      <tr>
+        <td><strong>Rich Messages</strong><br>quick_replies / cards / carousel</td>
+        <td>结构化按钮、卡片展示</td>
+        <td>映射 <code>propose_interaction</code> 和 KB 结果展示</td>
+      </tr>
+      <tr>
+        <td><strong>Tagging API</strong></td>
+        <td>给 chat 打业务标签</td>
+        <td>case 分类、skill 执行结果标注，供报表分析</td>
+      </tr>
+      <tr>
+        <td><strong>Canned Responses</strong></td>
+        <td>预设快速回复模板</td>
+        <td>（当前不使用，由 Intera 动态生成）</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 3. Skill Mapping -->
+  <div class="section" id="skill-mapping">
+    <h2>3. Skill → LiveChat 消息 映射表</h2>
+
+    <div class="skill-map">
+      <div class="skill-box"><div class="name">propose_interaction</div><div class="desc">选项选择，可带文字输入</div></div>
+      <div class="arrow-mid">→</div>
+      <div class="lc-box"><div class="name">quick_replies 或 In-Chat App</div><div class="desc">简单选项用 quick_replies；带描述/文字输入用 In-Chat App 富列表</div></div>
+    </div>
+
+    <div class="skill-map">
+      <div class="skill-box"><div class="name">request_user_input</div><div class="desc">多字段表单（文本/选择/文件等）</div></div>
+      <div class="arrow-mid">→</div>
+      <div class="lc-box"><div class="name">逐问对话 + In-Chat App flip card</div><div class="desc">≤3 个简单字段用对话逐问；复杂/文件上传用 In-Chat App 翻转卡片</div></div>
+    </div>
+
+    <div class="skill-map">
+      <div class="skill-box"><div class="name">create_human_task</div><div class="desc">需要人工介入</div></div>
+      <div class="arrow-mid">→</div>
+      <div class="lc-box"><div class="name">transfer_chat</div><div class="desc">直接调用 LiveChat 转接，附带 chat properties 上下文</div></div>
+    </div>
+
+    <div class="skill-map">
+      <div class="skill-box"><div class="name">kb_hybrid_retrieve</div><div class="desc">知识库检索结果</div></div>
+      <div class="arrow-mid">→</div>
+      <div class="lc-box"><div class="name">cards / carousel</div><div class="desc">多条知识结果用卡片轮播展示，含标题+摘要+链接</div></div>
+    </div>
+
+    <div class="skill-map">
+      <div class="skill-box"><div class="name">propose_cases</div><div class="desc">多个相关案例/问题选项</div></div>
+      <div class="arrow-mid">→</div>
+      <div class="lc-box"><div class="name">quick_replies</div><div class="desc">简洁问题选项，用 quick_replies 文字 chip</div></div>
+    </div>
+
+    <div class="skill-map">
+      <div class="skill-box"><div class="name">finalize_case / create_case</div><div class="desc">案例状态变更</div></div>
+      <div class="arrow-mid">→</div>
+      <div class="lc-box"><div class="name">update_chat_properties + tag</div><div class="desc">在 LiveChat 侧更新 case 状态标签，供客服面板查看</div></div>
+    </div>
+  </div>
+
+  <!-- 4. Thinking Chain -->
+  <div class="section" id="thinking-chain">
+    <h2>4. 思维链 & Skill 状态播报</h2>
+    <div class="decision">✅ 已确定：方案 B — 实时状态文本流</div>
+
+    <p>每触发一个 skill，Bridge 向 LiveChat 发送一条<strong>系统风格的状态消息</strong>，让用户实时感知 Intera 的处理进度，最后输出最终回复。</p>
+
+    <h3>SSE 事件 → LiveChat 消息 映射</h3>
+    <table>
+      <tr><th>Intera SSE 事件</th><th>发送内容</th><th>消息样例</th></tr>
+      <tr><td><code>tool_executing</code></td><td>skill 触发提示</td><td>🔍 正在查阅知识库…</td></tr>
+      <tr><td><code>tool_executing</code> (kb_hybrid_retrieve)</td><td>知识库搜索提示</td><td>📚 正在检索相关知识…</td></tr>
+      <tr><td><code>tool_executing</code> (create_human_task)</td><td>转接准备提示</td><td>👤 正在为您转接人工客服…</td></tr>
+      <tr><td><code>skill_result</code></td><td>（静默，结果内嵌在最终回复）</td><td>—</td></tr>
+      <tr><td><code>form_request</code></td><td>逐问收集或 In-Chat App 触发</td><td>📋 需要几个信息，请逐步回答…</td></tr>
+      <tr><td><code>escalated</code></td><td>转接完成通知</td><td>✅ 已为您转接客服，预计等待 X 分钟</td></tr>
+      <tr><td><code>policy_blocked</code></td><td>策略提示</td><td>⚠️ 此问题需要进一步核实…</td></tr>
+      <tr><td><code>message_stop</code></td><td>（无消息，流结束）</td><td>—</td></tr>
+    </table>
+
+    <h3>效果预览</h3>
+    <div class="mockup-row">
+      <div class="chat-demo">
+        <div class="ch">💬 Intera Support</div>
+        <div class="dm u"><div class="bbl">我的快递三天没动静</div></div>
+        <div class="dm sys"><div class="bbl">🔍 正在查询物流状态…</div></div>
+        <div class="dm sys"><div class="bbl">📋 正在核查订单信息…</div></div>
+        <div class="dm b"><div class="bbl">您好！您的订单 ORD-0512 显示已揽收，但运输途中出现延误。请问您希望如何处理？</div></div>
+        <div class="dm b">
+          <div class="qr">
+            <span>继续等待</span><span>申请退款</span><span>联系人工</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>实现注意：</strong>状态消息的 <code>author_id</code> 设为 Bot Agent 自身（不同于最终回复），在 LiveChat 客服面板里可按消息类型折叠，不影响客服阅读正式对话记录。
+    </div>
+  </div>
+
+  <!-- 5. Form Strategy -->
+  <div class="section" id="form-strategy">
+    <h2>5. 表单输入策略</h2>
+    <div class="decision">✅ 已确定：混合路由（方案 C）</div>
+
+    <p>LiveChat 原生不支持表单输入字段，通过如下路由规则在 widget 内最大化完成度：</p>
+
+    <table>
+      <tr><th>条件</th><th>路由方式</th><th>Intera 侧接收格式</th></tr>
+      <tr>
+        <td>字段数 ≤ 3，均为 text/select 类型</td>
+        <td><span class="tag blue">逐问对话</span> Bot 逐字段发问，用 quick_replies 处理 select，文字回复处理 text</td>
+        <td>Bridge 累积每轮回答 → 收齐后一次性注入为 <code>request_user_input</code> tool result</td>
+      </tr>
+      <tr>
+        <td>字段数 &gt; 3，或含 file/textarea/date</td>
+        <td><span class="tag orange">In-Chat App flip card</span> 触发翻转表单卡片，用户在 widget 内填写</td>
+        <td>In-Chat App 通过 <code>send_event</code> 发送结构化 JSON properties → Bridge 直接注入 tool result</td>
+      </tr>
+    </table>
+
+    <h3>In-Chat App 表单提交格式（规范）</h3>
+    <pre><code>// LiveChat In-Chat App 发送（不经过 LLM）
+window.LiveChatWidget.call("send_event", {
+  type: "intera_form_submit",
+  properties: {
+    skill_id: "request_user_input",
+    fields: [
+      { id: "order_id",  value: "ORD-20240512" },
+      { id: "reason",    value: "商品与描述不符" },
+      { id: "photo_url", value: "https://..." }
+    ]
+  }
+})
+
+// Bridge 侧接收后直接构造 tool result，注入 loop
+// 用户在 LiveChat 界面不会看到这条原始事件</code></pre>
+
+    <div class="warn note">
+      <strong>关键原则：</strong>表单提交事件永远不走 LLM 解析路径。Bridge 检测到 <code>type: "intera_form_submit"</code> 后，直接将 <code>properties.fields</code> 注入为 skill tool result，绕过用户消息队列。
+    </div>
+  </div>
+
+  <!-- 6. Data Flow -->
+  <div class="section" id="data-flow">
+    <h2>6. 数据流：结构化注入原则</h2>
+    <div class="decision">✅ 已确定：Bridge 层结构化，LLM 永不解析表单</div>
+
+    <div class="flow">
+      <div class="flow-step"><div class="flow-num">1</div><div>用户在 LiveChat widget 发送消息 / 点击按钮 / 提交 In-Chat App</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step"><div class="flow-num">2</div><div>LiveChat webhook <code>incoming_event</code> 推送到 Bridge</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step"><div class="flow-num">3</div>
+        <div>
+          <strong>Bridge 路由判断：</strong><br>
+          • <code>event.type = "message"</code> → 普通用户消息 → 送入 Intera user turn<br>
+          • <code>event.type = "intera_form_submit"</code> → 解析 JSON → 注入 skill tool result<br>
+          • <code>event.postback.id</code> 存在 → 解析 option id → 注入 interaction tool result
+        </div>
+      </div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step"><div class="flow-num">4</div><div>Intera loop 处理，SSE 事件流回 Bridge</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step"><div class="flow-num">5</div><div>Bridge 将 SSE 事件翻译为 LiveChat <code>send_event</code> 调用（状态消息 + 最终回复 + 富消息）</div></div>
+    </div>
+
+    <h3>消息类型分类</h3>
+    <table>
+      <tr><th>来源</th><th>格式</th><th>Bridge 处理</th><th>送入 Intera</th></tr>
+      <tr><td>普通文字消息</td><td>自然语言</td><td>原样转发</td><td>user turn</td></tr>
+      <tr><td>quick_replies 点击</td><td><code>postback.id</code> + 文本</td><td>取 id，跳过文本</td><td>interaction tool result</td></tr>
+      <tr><td>逐问对话每轮回答</td><td>自然语言</td><td>累积到字段缓冲区</td><td>字段收齐后注入 tool result</td></tr>
+      <tr><td>In-Chat App 表单</td><td>结构化 JSON event</td><td>解析 properties.fields</td><td>直接注入 tool result</td></tr>
+    </table>
+  </div>
+
+  <!-- 7. propose_interaction -->
+  <div class="section" id="propose-interaction">
+    <h2>7. propose_interaction 渲染方案</h2>
+    <div class="decision pending">🔄 决策中</div>
+
+    <p><code>propose_interaction</code> skill 支持 <code>label</code> + <code>description</code> + 可选 <code>inputType=text</code>（点选后需追加文字输入）。三种渲染方案对比：</p>
+
+    <table>
+      <tr><th>方案</th><th>LiveChat 实现</th><th>description 可见</th><th>inputType=text</th><th>开发成本</th></tr>
+      <tr>
+        <td><strong>A. 原生 quick_replies</strong></td>
+        <td>LiveChat 内置模板</td>
+        <td>❌ 不支持</td>
+        <td>❌ 需额外一问</td>
+        <td>⭐ 最低</td>
+      </tr>
+      <tr>
+        <td><strong>B. Cards Carousel</strong></td>
+        <td>LiveChat cards 模板，每选项一张卡</td>
+        <td>✅ 支持</td>
+        <td>❌ 无法内嵌输入</td>
+        <td>⭐⭐ 中</td>
+      </tr>
+      <tr>
+        <td><strong>C. In-Chat App 选项列表</strong></td>
+        <td>自定义 In-Chat App</td>
+        <td>✅ 支持</td>
+        <td>✅ 可内嵌输入框</td>
+        <td>⭐⭐⭐ 较高（与表单 App 共用框架）</td>
+      </tr>
+    </table>
+
+    <div class="note">
+      <strong>推荐策略（待确认）：</strong>
+      <ul style="margin: 8px 0 0 18px; line-height:1.8">
+        <li>无 description + 无 inputType=text → <strong>方案 A</strong>（quick_replies，零成本）</li>
+        <li>有 description + 无 inputType=text → <strong>方案 B</strong>（cards carousel）</li>
+        <li>有 inputType=text 的选项 → <strong>方案 C</strong>（In-Chat App，与表单 flip card 共用一套 App）</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 8. Bridge Architecture -->
+  <div class="section" id="bridge-arch">
+    <h2>8. Bridge 架构（草案）</h2>
+    <div class="decision pending">🔄 位置待确认：内嵌 apps/chat vs 独立服务</div>
+
+    <h3>核心职责</h3>
+    <ul style="margin: 8px 0 12px 20px; font-size:15px; line-height:2">
+      <li>接收 LiveChat webhooks（<code>incoming_chat</code>, <code>incoming_event</code>, <code>chat_transferred</code>）</li>
+      <li>维护 <strong>chat_id → Intera session</strong> 映射</li>
+      <li>路由消息类型（自然语言 vs 结构化表单 vs interaction 选择）</li>
+      <li>订阅 Intera SSE 流，翻译为 LiveChat <code>send_event</code> 调用</li>
+      <li>管理逐问表单字段缓冲区（含超时处理）</li>
+      <li>在 <code>create_human_task</code> 时调用 <code>transfer_chat</code> + <code>update_chat_properties</code></li>
+    </ul>
+
+    <h3>关键状态机</h3>
+    <pre><code>chat 状态:
+  idle          → 等待用户消息
+  thinking      → Intera loop 运行中
+  waiting_form  → 逐问收集中（字段缓冲区活跃）
+  waiting_ia    → 等待 In-Chat App 表单提交
+  waiting_choice → 等待 quick_replies 点击
+  transferred   → 已转接真实客服</code></pre>
+  </div>
+
+  <!-- 9. Open Questions -->
+  <div class="section" id="open-questions">
+    <h2>9. 待决策项</h2>
+    <table>
+      <tr><th>#</th><th>问题</th><th>影响范围</th><th>状态</th></tr>
+      <tr><td>1</td><td>Bridge 放在 <code>apps/chat</code> 内嵌还是独立微服务？</td><td>部署、开发复杂度</td><td>🔄 讨论中</td></tr>
+      <tr><td>2</td><td><code>propose_interaction</code> 渲染方案最终选哪种？（见第 7 节）</td><td>前端开发量</td><td>🔄 决策中</td></tr>
+      <tr><td>3</td><td>In-Chat App 是否在本期实现，还是先用纯对话降级？</td><td>开发排期</td><td>🔄 待定</td></tr>
+      <tr><td>4</td><td>LiveChat 状态消息是否过滤不显示给用户（仅供客服查看）？</td><td>UX 体验</td><td>🔄 待定</td></tr>
+      <tr><td>5</td><td>Chat Properties 存哪些字段？（case_id, intent, skill_trace 等）</td><td>数据/报表</td><td>🔄 待定</td></tr>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
