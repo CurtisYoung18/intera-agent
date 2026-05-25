@@ -3,12 +3,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-const CUSTOMER_ID = 'default'
+import { getActiveCustomerId } from '@/lib/auth'
 const GPTBOTS_API = 'https://api-sg.gptbots.ai/v1/vector/match'
 const API_KEY = process.env.GPTBOTS_API_KEY
 
 export async function POST(req: NextRequest) {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     const body = await req.json()
     const { query, sourceId } = body
 

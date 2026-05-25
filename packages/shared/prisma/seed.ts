@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { config as loadDotEnv } from 'dotenv'
+import { hashSync } from 'bcryptjs'
 import { PrismaClient } from '@prisma/client'
 
 import {
@@ -42,7 +43,172 @@ function loadEnv(): void {
 loadEnv()
 
 const prisma = new PrismaClient()
-const CUSTOMER_ID = 'default'
+
+// ── Customer definitions ────────────────────────────────────────────
+
+const CUSTOMERS = [
+  { id: 'default', name: 'Demo Vendor', password: null },
+  { id: 'api', name: 'API Vendor', password: hashSync('0000', 10) },
+]
+
+// ── Seed helpers ────────────────────────────────────────────────────
+
+async function seedCustomerConfig(
+  customerId: string,
+  opts: {
+    model: string
+    temperature: number
+    maxIterations: number
+    composerEnabled: boolean
+    showThinking: boolean
+    skillsMode: 'mock' | 'http'
+  },
+) {
+  // AgentConfig
+  const agentPayload = {
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    model: opts.model,
+    temperature: opts.temperature,
+    thinkingBudget: 4096,
+    maxIterations: opts.maxIterations,
+    maxOutputTokens: 4096,
+    memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
+    policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
+    showThinking: opts.showThinking,
+    evaluationModel: process.env.EVALUATION_MODEL || 'MiniMax-M2.7-highspeed',
+    resumePrompt:
+      `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
+    formResponseTemplate: 'Please continue processing based on this information.',
+    prefixContinuationEnabled: opts.composerEnabled,
+    prefixContinuationChatModel: opts.composerEnabled ? (process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-chat') : null,
+    prefixContinuationBaseUrl: opts.composerEnabled
+      ? (process.env.DEEPSEEK_BETA_CHAT_BASE_URL?.trim() || 'https://api.deepseek.com/beta')
+      : null,
+    prefixContinuationAssistantPrefix: opts.composerEnabled
+      ? "Keep completions brief; mirror the visitor's language; supportive, plain wording."
+      : null,
+    prefixContinuationStop: null as string | null,
+    prefixContinuationMinDraftChars: 4,
+  }
+
+  await prisma.agentConfig.upsert({
+    where: { customerId },
+    update: agentPayload,
+    create: { customerId, ...agentPayload },
+  })
+  console.log(`  ✓ AgentConfig (${customerId})`)
+
+  // Skills
+  for (const s of DEFAULT_SKILLS) {
+    // For API tenant, force HTTP mode; for demo, keep original mode
+    const mode = opts.skillsMode === 'http' && s.endpoint ? 'http' : s.mode
+
+    await prisma.skill.upsert({
+      where: { customerId_name: { customerId, name: s.name } },
+      update: {
+        description: s.description,
+        inputSchema: s.inputSchema,
+        outputSchema: s.outputSchema,
+        mode,
+        isConcurrencySafe: s.isConcurrencySafe,
+        enabled: s.enabled,
+        guardPhase: s.guardPhase,
+        mockFixture: s.mockFixture ?? null,
+        endpoint: s.endpoint ?? null,
+        httpMethod: s.httpMethod ?? 'POST',
+        headers: s.headers ?? null,
+        timeoutMs: s.timeoutMs ?? 8000,
+        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+      },
+      create: {
+        customerId,
+        name: s.name,
+        description: s.description,
+        inputSchema: s.inputSchema,
+        outputSchema: s.outputSchema,
+        mode,
+        isConcurrencySafe: s.isConcurrencySafe,
+        enabled: s.enabled,
+        guardPhase: s.guardPhase,
+        mockFixture: s.mockFixture ?? null,
+        endpoint: s.endpoint ?? null,
+        httpMethod: s.httpMethod ?? 'POST',
+        headers: s.headers ?? null,
+        timeoutMs: s.timeoutMs ?? 8000,
+        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills (${customerId})`)
+
+  // Policies
+  for (const p of DEFAULT_POLICIES) {
+    await prisma.policy.upsert({
+      where: { customerId_name: { customerId, name: p.name } },
+      update: { description: p.description, hook: p.hook, rule: p.rule, enabled: true },
+      create: { customerId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${customerId})`)
+
+  const orch = JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG)
+
+  // Case Types
+  for (const ct of DEFAULT_CASE_TYPES) {
+    const stageMap = DEFAULT_STAGE_CONFIGS[ct.type] as Record<string, unknown> | undefined
+    await prisma.caseType.upsert({
+      where: { customerId_type: { customerId, type: ct.type } },
+      update: {
+        displayName: ct.displayName, description: ct.description, icon: ct.icon,
+        requiredFacts: ct.requiredFacts, stages: ct.stages,
+        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
+        orchestratorConfig: orch, defaultGoal: ct.defaultGoal,
+        escalateOn: ct.escalateOn, enabled: true,
+      },
+      create: {
+        customerId, type: ct.type, displayName: ct.displayName,
+        description: ct.description, icon: ct.icon,
+        requiredFacts: ct.requiredFacts, stages: ct.stages,
+        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
+        orchestratorConfig: orch, defaultGoal: ct.defaultGoal,
+        escalateOn: ct.escalateOn, enabled: true,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types (${customerId})`)
+
+  // Routing
+  for (const r of DEFAULT_ROUTING) {
+    await prisma.routing.upsert({
+      where: { customerId_queue: { customerId, queue: r.queue } },
+      update: { description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
+      create: { customerId, queue: r.queue, description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues (${customerId})`)
+
+  // Knowledge Sources
+  for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
+    await prisma.knowledgeSource.upsert({
+      where: { customerId_name: { customerId, name: ks.name } },
+      update: {
+        description: ks.description ?? null, groupIds: ks.groupIds,
+        embeddingRate: ks.embeddingRate, topK: ks.topK,
+        rerankVersion: ks.rerankVersion ?? null, docCorrelation: ks.docCorrelation ?? null,
+        caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
+      },
+      create: {
+        customerId, name: ks.name, description: ks.description ?? null,
+        groupIds: ks.groupIds, embeddingRate: ks.embeddingRate, topK: ks.topK,
+        rerankVersion: ks.rerankVersion ?? null, docCorrelation: ks.docCorrelation ?? null,
+        caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
+      },
+    })
+  }
+  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources (${customerId})`)
+}
+
+// ── Main seed ────────────────────────────────────────────────────────
 
 async function seed() {
   console.log('Seeding…')
@@ -54,202 +220,43 @@ async function seed() {
   await prisma.caseMemory.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.case.deleteMany({ where: { id: 'seed-case-1' } })
 
-  // Ensure default customer exists
-  await prisma.customer.upsert({
-    where: { id: CUSTOMER_ID },
-    update: { name: 'Demo Vendor' },
-    create: { id: CUSTOMER_ID, name: 'Demo Vendor' },
-  })
+  // ── Create customers ──
+  for (const c of CUSTOMERS) {
+    await prisma.customer.upsert({
+      where: { id: c.id },
+      update: { name: c.name, password: c.password },
+      create: { id: c.id, name: c.name, password: c.password },
+    })
+  }
+  console.log(`  ✓ ${CUSTOMERS.length} Customers`)
 
-  // ── Admin: AgentConfig — full demo defaults every run ━━━━━━━━━━━
-  const agentPayload = {
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  // ── Demo Vendor config ──
+  console.log('\n── Demo Vendor ──')
+  await seedCustomerConfig('default', {
     model: 'MiniMax-M2.7-highspeed',
     temperature: 0.5,
-    thinkingBudget: 4096,
     maxIterations: 20,
-    maxOutputTokens: 4096,
-    memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-    policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
+    composerEnabled: true,
     showThinking: true,
-    evaluationModel: process.env.EVALUATION_MODEL || 'MiniMax-M2.7-highspeed',
-    resumePrompt:
-      `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
-    formResponseTemplate: 'Please continue processing based on this information.',
-    prefixContinuationEnabled: true,
-    prefixContinuationChatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-chat',
-    prefixContinuationBaseUrl:
-      process.env.DEEPSEEK_BETA_CHAT_BASE_URL?.trim() || 'https://api.deepseek.com/beta',
-    prefixContinuationAssistantPrefix:
-      "Keep completions brief; mirror the visitor's language; supportive, plain wording.",
-    prefixContinuationStop: null as string | null,
-    prefixContinuationMinDraftChars: 4,
-  }
-
-  await prisma.agentConfig.upsert({
-    where: { customerId: CUSTOMER_ID },
-    update: agentPayload,
-    create: {
-      customerId: CUSTOMER_ID,
-      ...agentPayload,
-    },
+    skillsMode: 'mock',
   })
-  console.log('  ✓ AgentConfig')
 
-  // ── Admin: Skills ──
-  for (const s of DEFAULT_SKILLS) {
-    await prisma.skill.upsert({
-      where: { customerId_name: { customerId: CUSTOMER_ID, name: s.name } },
-      update: {
-        description: s.description,
-        inputSchema: s.inputSchema,
-        outputSchema: s.outputSchema,
-        mode: s.mode,
-        isConcurrencySafe: s.isConcurrencySafe,
-        enabled: s.enabled,
-        guardPhase: s.guardPhase,
-        mockFixture: s.mockFixture ?? null,
-        endpoint: s.endpoint ?? null,
-        httpMethod: s.httpMethod ?? 'POST',
-        headers: s.headers ?? null,
-        timeoutMs: s.timeoutMs ?? 8000,
-        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
-      },
-      create: {
-        customerId: CUSTOMER_ID,
-        name: s.name,
-        description: s.description,
-        inputSchema: s.inputSchema,
-        outputSchema: s.outputSchema,
-        mode: s.mode,
-        isConcurrencySafe: s.isConcurrencySafe,
-        enabled: s.enabled,
-        guardPhase: s.guardPhase,
-        mockFixture: s.mockFixture ?? null,
-        endpoint: s.endpoint ?? null,
-        httpMethod: s.httpMethod ?? 'POST',
-        headers: s.headers ?? null,
-        timeoutMs: s.timeoutMs ?? 8000,
-        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
-      },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills`)
-
-  // ── Admin: Policies ──
-  for (const p of DEFAULT_POLICIES) {
-    await prisma.policy.upsert({
-      where: { customerId_name: { customerId: CUSTOMER_ID, name: p.name } },
-      update: {
-        description: p.description,
-        hook: p.hook,
-        rule: p.rule,
-        enabled: true,
-      },
-      create: {
-        customerId: CUSTOMER_ID,
-        name: p.name,
-        description: p.description,
-        hook: p.hook,
-        rule: p.rule,
-        enabled: true,
-      },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies`)
-
-  const orch = JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG)
-
-  // ── Admin: Case Types ──
-  for (const ct of DEFAULT_CASE_TYPES) {
-    const stageMap = DEFAULT_STAGE_CONFIGS[ct.type] as Record<string, unknown> | undefined
-    await prisma.caseType.upsert({
-      where: { customerId_type: { customerId: CUSTOMER_ID, type: ct.type } },
-      update: {
-        displayName: ct.displayName,
-        description: ct.description,
-        icon: ct.icon,
-        requiredFacts: ct.requiredFacts,
-        stages: ct.stages,
-        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
-        orchestratorConfig: orch,
-        defaultGoal: ct.defaultGoal,
-        escalateOn: ct.escalateOn,
-        enabled: true,
-      },
-      create: {
-        customerId: CUSTOMER_ID,
-        type: ct.type,
-        displayName: ct.displayName,
-        description: ct.description,
-        icon: ct.icon,
-        requiredFacts: ct.requiredFacts,
-        stages: ct.stages,
-        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
-        orchestratorConfig: orch,
-        defaultGoal: ct.defaultGoal,
-        escalateOn: ct.escalateOn,
-        enabled: true,
-      },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types`)
-
-  // ── Admin: Routing ──
-  for (const r of DEFAULT_ROUTING) {
-    await prisma.routing.upsert({
-      where: { customerId_queue: { customerId: CUSTOMER_ID, queue: r.queue } },
-      update: {
-        description: r.description,
-        skillsAllowed: r.skillsAllowed,
-        priority: r.priority,
-      },
-      create: {
-        customerId: CUSTOMER_ID,
-        queue: r.queue,
-        description: r.description,
-        skillsAllowed: r.skillsAllowed,
-        priority: r.priority,
-      },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues`)
-
-  // ── Admin: Knowledge Sources ──
-  for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
-    await prisma.knowledgeSource.upsert({
-      where: { customerId_name: { customerId: CUSTOMER_ID, name: ks.name } },
-      update: {
-        description: ks.description ?? null,
-        groupIds: ks.groupIds,
-        embeddingRate: ks.embeddingRate,
-        topK: ks.topK,
-        rerankVersion: ks.rerankVersion ?? null,
-        docCorrelation: ks.docCorrelation ?? null,
-        caseTypeTag: ks.caseTypeTag ?? null,
-        enabled: ks.enabled,
-      },
-      create: {
-        customerId: CUSTOMER_ID,
-        name: ks.name,
-        description: ks.description ?? null,
-        groupIds: ks.groupIds,
-        embeddingRate: ks.embeddingRate,
-        topK: ks.topK,
-        rerankVersion: ks.rerankVersion ?? null,
-        docCorrelation: ks.docCorrelation ?? null,
-        caseTypeTag: ks.caseTypeTag ?? null,
-        enabled: ks.enabled,
-      },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources`)
+  // ── API Vendor config ──
+  console.log('\n── API Vendor ──')
+  await seedCustomerConfig('api', {
+    model: 'MiniMax-M2.7-highspeed',
+    temperature: 0.7,
+    maxIterations: 10,
+    composerEnabled: false,
+    showThinking: false,
+    skillsMode: 'http',
+  })
 
   // ── Demo data: Case + Memory + Messages + Traces + HumanTask ──
   const c = await prisma.case.create({
     data: {
       id: 'seed-case-1',
-      customerId: CUSTOMER_ID,
+      customerId: 'default',
       userId: 'u_try_1',
       type: 'deposit_issue',
       status: 'waiting_human',
@@ -302,11 +309,11 @@ async function seed() {
       queue: 'payment_ops',
       status: 'pending',
       question:
-        'Customer deposited 500 CNY via WeChat Pay. Our system shows "pending" but the channel reports a delayed batch. Can you confirm: (1) Is this batch being processed? (2) What is the expected ETA? (3) Should we advise the customer to wait or request a reissue?',
+        'Customer deposited 500 Taka via bKash. Our system shows "pending" but the channel reports a delayed batch. Can you confirm: (1) Is this batch being processed? (2) What is the expected ETA? (3) Should we advise the customer to wait or request a reissue?',
     },
   })
 
-  console.log('Seed complete.')
+  console.log('\nSeed complete.')
 }
 
 seed().catch(console.error).finally(() => prisma.$disconnect())

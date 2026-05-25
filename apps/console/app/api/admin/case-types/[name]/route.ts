@@ -3,11 +3,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, ensureSqliteSchemaCompat } from '@intera/shared/prisma'
 
-const CUSTOMER_ID = 'default'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await ensureSqliteSchemaCompat(prisma)
     const ct = await prisma.caseType.findUnique({ where: { customerId_type: { customerId: CUSTOMER_ID, type: name } } })
     if (!ct) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -18,6 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ nam
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await ensureSqliteSchemaCompat(prisma)
     const body = await req.json()
     const data: Record<string, unknown> = {}
@@ -41,6 +43,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ name
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await ensureSqliteSchemaCompat(prisma)
     await prisma.caseType.delete({ where: { customerId_type: { customerId: CUSTOMER_ID, type: name } } })
     return NextResponse.json({ success: true })

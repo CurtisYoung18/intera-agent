@@ -4,10 +4,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
-const CUSTOMER_ID = 'default'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     let policies = await prisma.policy.findMany({
       where: { customerId: CUSTOMER_ID },
       orderBy: { name: 'asc' },
@@ -45,6 +46,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await ensureDefaultCustomer(CUSTOMER_ID)
     const body = await req.json()
     const policy = await prisma.policy.create({

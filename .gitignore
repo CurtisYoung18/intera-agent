@@ -14,3 +14,4 @@ debug-logs
 .env
 .DS_Store
 *.tsbuildinfo
+.superpowers/

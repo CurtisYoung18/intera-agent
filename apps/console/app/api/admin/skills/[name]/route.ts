@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-const CUSTOMER_ID = 'default'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
@@ -11,6 +11,7 @@ export async function GET(
 ) {
   const { name } = await params
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     const skill = await prisma.skill.findUnique({ where: { customerId_name: { customerId: CUSTOMER_ID, name } } })
     if (!skill) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ skill })
@@ -25,6 +26,7 @@ export async function PUT(
 ) {
   const { name } = await params
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     const body = await req.json()
     const data: Record<string, unknown> = {}
     const strFields = ['name', 'description', 'mode', 'endpoint', 'httpMethod', 'guardPhase']
@@ -49,6 +51,7 @@ export async function DELETE(
 ) {
   const { name } = await params
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await prisma.skill.delete({ where: { customerId_name: { customerId: CUSTOMER_ID, name } } })
     return NextResponse.json({ success: true })
   } catch (err) {

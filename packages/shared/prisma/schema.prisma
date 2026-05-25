@@ -20,6 +20,7 @@ model Customer {
   id        String   @id @default(cuid())
   name      String
   apiKey    String?
+  password  String?  // bcrypt hash — null means no password needed for Console
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

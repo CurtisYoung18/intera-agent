@@ -5,10 +5,11 @@ import { prisma, ensureSqliteSchemaCompat, ensureDefaultCustomer } from '@intera
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
-const CUSTOMER_ID = 'default'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await ensureSqliteSchemaCompat(prisma)
     let config = await prisma.agentConfig.findUnique({ where: { customerId: CUSTOMER_ID } })
 
@@ -43,6 +44,7 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     await ensureSqliteSchemaCompat(prisma)
     const body = await req.json()
     const {

@@ -3,13 +3,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-const CUSTOMER_ID = 'default'
+import { getActiveCustomerId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     const { id } = await params
     const source = await prisma.knowledgeSource.findFirst({
       where: { id, customerId: CUSTOMER_ID },
@@ -27,6 +28,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     const { id } = await params
     const body = await req.json()
 
@@ -68,6 +70,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const CUSTOMER_ID = await getActiveCustomerId()
     const { id } = await params
     const result = await prisma.knowledgeSource.deleteMany({
       where: { id, customerId: CUSTOMER_ID },

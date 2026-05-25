@@ -16,6 +16,10 @@
     "db:seed": "npm run db:seed -w packages/shared"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "playwright": "^1.59.1"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3"
   }
 }
