@@ -25,7 +25,7 @@ export default function IntegrationsPage() {
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [showToken, setShowToken] = useState(false)
-  const [customerId, setCustomerId] = useState('default')
+  const [customerId, setCustomerId] = useState('')
 
   // Load current customer from session
   useEffect(() => {

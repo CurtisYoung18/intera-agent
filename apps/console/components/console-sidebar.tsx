@@ -48,7 +48,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#5bb8f7' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
-  { href: '/admin/integrations', slug: 'integrations' as NavSlug, icon: Plug, color: '#7c3aed' },
+  { href: '/admin/integrations', slug: 'integrations', icon: Plug, color: '#7c3aed' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
