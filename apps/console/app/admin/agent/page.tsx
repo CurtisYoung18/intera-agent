@@ -169,6 +169,7 @@ export default function AgentConfigPage() {
           consultationPrompt: raw.consultationPrompt || DEFAULT_CONSULTATION_PROMPT,
           debugMode: Boolean(raw.debugMode),
           enableLlmSanitization: Boolean((raw as Record<string, unknown>).enableLlmSanitization),
+          invariantCheck: Boolean((raw as Record<string, unknown>).invariantCheck),
           evaluationModel: raw.evaluationModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
           prefixContinuationChatModel:
@@ -318,6 +319,7 @@ export default function AgentConfigPage() {
 
   const modelCheckboxes: Array<[keyof AgentConfigData, string]> = [
     ['showThinking', 'agent.showThinking'],
+    ['invariantCheck', 'agent.invariantCheck'],
   ]
 
   const memToggles: Array<[keyof MemoryStrategy, string, string]> = [

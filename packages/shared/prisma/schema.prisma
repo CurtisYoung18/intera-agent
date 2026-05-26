@@ -72,8 +72,9 @@ model AgentConfig {
   // JSON fields
   memoryStrategy     String  // MemoryStrategy
   policyHooks        String  // PolicyHooks
-  knowledgeRetrieval String? // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
-  gptbotsApiKey      String? // per-customer GPTBots API key (overrides GPTBOTS_API_KEY env var)
+  knowledgeRetrieval String?  // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
+  gptbotsApiKey      String?  // per-customer GPTBots API key (overrides GPTBOTS_API_KEY env var)
+  invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

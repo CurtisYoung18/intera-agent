@@ -328,7 +328,7 @@ export class AgentLoop {
     // S1 tool-result invariant: track why each tool_use didn't produce a real result
     const missingReasons = new Map<string, import('./tool-result-invariant').SynthesisReason>()
     const pendingPolicyFeedback: string[] = []
-    const invariantCheckEnabled = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test' || process.env.INTERA_INVARIANT_CHECK === '1'))
+    const invariantCheckEnabled = this.deps.config.invariantCheck === true || (typeof process !== 'undefined' && process.env.INTERA_INVARIANT_CHECK === '1')
 
     while (this.iterationCount < this.deps.config.maxIterations) {
       this.iterationCount++

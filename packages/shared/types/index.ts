@@ -260,6 +260,8 @@ export interface AgentConfigData {
   debugMode?: boolean
   /** When enabled, runs an LLM eval after each stream turn to detect and strip leaked model-context (think blocks, tool-result echoes). */
   enableLlmSanitization?: boolean
+  /** When enabled, asserts the S1 tool-result invariant after every iteration (catches unmatched tool_use before API rejections). */
+  invariantCheck?: boolean
 
   /**
    * DeepSeek beta chat completions — **customer-side composer** drafting assist only (`/api/composer-assist/*`).
