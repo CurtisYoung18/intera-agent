@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, Trash2, ClipboardList, Bot } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronDown, ChevronRight, Trash2, ClipboardList, Bot, Shield, ShieldOff } from 'lucide-react'
 import ChipInput from '@/components/ui/chip-input'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -10,6 +10,10 @@ export interface TaskChecklist {
   requiredChecks: string[]
   outputFormat: string
   rules: string[]
+}
+
+export interface GuardrailOverride {
+  disabled: string[]
 }
 
 export interface SubAgentConfig {
@@ -23,6 +27,7 @@ export interface SubAgentConfig {
   parallel: boolean
   executionMode?: 'stage' | 'cc'
   taskChecklist?: TaskChecklist
+  guardrailOverrides?: GuardrailOverride
 }
 
 interface Props {
@@ -238,7 +243,119 @@ export default function SubAgentForm({
             </div>
           </div>
         )}
+
+        {/* ── Guardrails: inherit + override ── */}
+        <GuardrailsSection
+          value={value}
+          onChange={onChange}
+        />
       </div>
+    </div>
+  )
+}
+
+// ── Guardrails Section ───────────────────────────────────────────────
+
+interface PolicyItem {
+  name: string
+  description?: string
+  hook: string
+  rule: string  // JSON
+}
+
+function GuardrailsSection({ value, onChange }: Pick<Props, 'value' | 'onChange'>) {
+  const [expanded, setExpanded] = useState(false)
+  const [globalPolicies, setGlobalPolicies] = useState<PolicyItem[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!expanded || loaded) return
+    fetch('/api/admin/policies')
+      .then((r) => r.json())
+      .then((d) => setGlobalPolicies((d.policies || []) as PolicyItem[]))
+      .catch(() => {})
+      .finally(() => setLoaded(true))
+  }, [expanded, loaded])
+
+  const disabled = value.guardrailOverrides?.disabled || []
+
+  const toggleDisable = (name: string) => {
+    const next = disabled.includes(name)
+      ? disabled.filter((n) => n !== name)
+      : [...disabled, name]
+    onChange({
+      ...value,
+      guardrailOverrides: { disabled: next },
+    })
+  }
+
+  const activeCount = globalPolicies.filter((p) => !disabled.includes(p.name)).length
+
+  return (
+    <div className="border-t border-[var(--border-subtle)]/30 pt-3 mt-1">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-black/[0.02] transition-colors text-left"
+      >
+        <ChevronRight
+          className={`w-3.5 h-3.5 text-[var(--fog)] transition-transform duration-200 ${
+            expanded ? 'rotate-90' : ''
+          }`}
+        />
+        <Shield className="w-3.5 h-3.5 text-lavender" />
+        <span className="text-[11px] font-medium text-[var(--mist)] flex-1">Guardrails</span>
+        <span className="text-[10px] text-[var(--smoke)]">
+          {activeCount}/{globalPolicies.length} active
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2 border-t border-[var(--border-subtle)]/30 pt-3">
+          <p className="text-[10px] text-[var(--fog)]">
+            Inherited from global guardrails. Toggle off rules this sub-agent should skip.
+          </p>
+
+          {globalPolicies.length === 0 ? (
+            <p className="text-[11px] text-[var(--smoke)] italic">No global guardrails configured.</p>
+          ) : (
+            globalPolicies.map((p) => {
+              const isDisabled = disabled.includes(p.name)
+              return (
+                <label
+                  key={p.name}
+                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+                    isDisabled
+                      ? 'border-[var(--border-subtle)] bg-black/[0.02] opacity-50'
+                      : 'border-[var(--border-subtle)] bg-white/40 hover:border-lavender/15'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!isDisabled}
+                    onChange={() => toggleDisable(p.name)}
+                    className="mt-0.5 w-3.5 h-3.5 rounded accent-lavender"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-medium text-[var(--mist)]">{p.name}</span>
+                      <span className="text-[9px] text-[var(--smoke)] uppercase">{p.hook}</span>
+                    </div>
+                    {p.description && (
+                      <p className="text-[10px] text-[var(--fog)] mt-0.5 line-clamp-1">{p.description}</p>
+                    )}
+                  </div>
+                  {isDisabled ? (
+                    <ShieldOff className="w-3.5 h-3.5 text-[var(--smoke)]/40 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <Shield className="w-3.5 h-3.5 text-lavender/60 flex-shrink-0 mt-0.5" />
+                  )}
+                </label>
+              )
+            })
+          )}
+        </div>
+      )}
     </div>
   )
 }
