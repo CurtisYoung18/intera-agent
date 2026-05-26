@@ -1,8 +1,8 @@
 // apps/chat/lib/livechat/bridge.ts
 // Orchestrates: LiveChat webhook → /api/messages SSE → LiveChat API calls.
 
-import type { LiveChatConfig, BridgeSession, InteraInteractionSubmit, InteraFormSubmit } from './types'
-import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer } from './session-store'
+import type { LiveChatConfig, InteraInteractionSubmit, InteraFormSubmit } from './types'
+import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, type BridgeSessionRow } from './session-store'
 import { translateSSEEvent } from './event-translators'
 import {
   sendTextMessage,
@@ -51,7 +51,7 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator
 /** Build the /api/messages POST body based on the incoming event type. */
 function buildMessagesBody(
   event: { type: 'message' | 'form_submit' | 'interaction_submit'; text?: string; form?: InteraFormSubmit; interaction?: InteraInteractionSubmit },
-  session: BridgeSession,
+  session: BridgeSessionRow,
 ): Record<string, unknown> {
   const base = {
     customerId: session.customerId,

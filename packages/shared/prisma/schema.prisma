@@ -332,10 +332,12 @@ model KnowledgeSource {
 model ExternalConversation {
   id             String   @id @default(cuid())
   customerId     String
-  platform       String // 'livechat' | 'intercom' | 'tawk'
+  platform       String   // 'livechat' | 'intercom' | 'tawk'
   externalChatId String
   internalCaseId String?
   status         String   @default("active") // active|transferred|closed
+  bridgeState    String   @default("idle")   // idle|thinking|waiting_choice|waiting_form|transferred
+  textBuffer     String   @default("")
   metadata       Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -372,23 +374,6 @@ model HumanTask {
 
   @@index([caseId])
   @@map("human_tasks")
-}
-
-// ============================================
-// LiveChat Bridge — 会话管理
-// ============================================
-model LiveChatSession {
-  chatId      String   @id
-  customerId  String
-  userId      String
-  caseId      String
-  state       String   @default("idle")
-  textBuffer  String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([customerId])
-  @@map("livechat_sessions")
 }
 
 // ============================================

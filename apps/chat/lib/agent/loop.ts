@@ -322,6 +322,30 @@ export class AgentLoop {
       this.iterationCount++
       this.profiler.incrementIteration()
 
+      // ── Consume queued messages from concurrent requests ──────
+      try {
+        const { hasSession, getOrCreateSession } = await import('./session-store')
+        if (this.deps.caseId && hasSession(this.deps.caseId)) {
+          const session = getOrCreateSession(this.deps.caseId)
+          let pending
+          while ((pending = session.queue.dequeueNonBlocking())) {
+            if (pending.content === '__SESSION_CLOSED__') continue
+            this.messages.push({
+              id: crypto.randomUUID(),
+              role: 'user' as const,
+              content: `[SYSTEM] 用户补充了新信息：${pending.content}`,
+              createdAt: new Date(),
+            })
+            this.caseMemory.bumpDashboardVersion()
+            sendEvent({
+              type: 'withheld',
+              data: 'Processing additional user input...',
+              timestamp: new Date().toISOString(),
+            })
+          }
+        }
+      } catch { /* session-store unavailable (e.g. build-time), skip */ }
+
       // ── Graduated policy escalation check ─────────────────────
       // If any policy has been violated 3+ times in this session, escalate.
       const buildHitCounts = (): Map<string, number> => {

@@ -4,6 +4,7 @@
 
 import { NextRequest } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
+import { enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
 import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
@@ -704,6 +705,27 @@ export async function POST(request: NextRequest) {
         coreSystemPrompt = resolvePrompt(coreSystemPrompt, promptCtx)
         systemPrompt = resolvePrompt(systemPrompt, promptCtx)
 
+        // ── Concurrency guard: if an AgentLoop is already running for this caseId,
+        //     enqueue the message and return 202 — don't create a second loop.
+        if (hasSession(resolvedCaseId)) {
+          enqueueMessageOrCreate(resolvedCaseId, { content: userMessage, formAnswers })
+          sendEvent({
+            type: 'withheld',
+            data: 'Message queued — agent is currently processing',
+            timestamp: new Date().toISOString(),
+          })
+          sendEvent({
+            type: 'message_stop',
+            data: { reason: 'queued' },
+            timestamp: new Date().toISOString(),
+          })
+          controller.close()
+          return
+        }
+
+        // Register the session so subsequent requests for this caseId are queued.
+        const activeSession = getOrCreateSession(resolvedCaseId)
+
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
           caseId: resolvedCaseId,
@@ -747,6 +769,9 @@ export async function POST(request: NextRequest) {
         } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
 
         const result = await agentLoop.run(userMessage, sendEvent, formAnswers)
+
+        // Mark session as resolved so subsequent messages create a new loop.
+        activeSession.resolved = true
 
         // ── Persist case memory — only if real work was done (not casual chat) ──
         const mem = agentLoop.getMemorySummary()

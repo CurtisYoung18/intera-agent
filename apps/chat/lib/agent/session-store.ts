@@ -57,11 +57,15 @@ export class MessageQueue {
     })
   }
 
+  /** Non-blocking dequeue: returns the next message or null if queue is empty. */
+  dequeueNonBlocking(): QueuedMessage | null {
+    if (this.queue.length > 0) return this.queue.shift()!
+    return null
+  }
+
   /** Abort the waiting consumer with an error (e.g. on session close). */
   abort(): void {
     if (this.waiter) {
-      // We don't have a reject ref, so we enqueue a sentinel. The loop
-      // checks session.aborted before processing.
       this.waiter({ content: '__SESSION_CLOSED__' })
       this.waiter = null
     }
@@ -80,6 +84,8 @@ export interface CaseSession {
   loop: AgentLoop | null
   /** True once the SSE handler has started its session loop. */
   initialized: boolean
+  /** True once the agent loop has completed (case resolved/escalated). */
+  resolved: boolean
   queue: MessageQueue
   aborted: boolean
   lastActiveAt: number
@@ -104,6 +110,7 @@ export function getOrCreateSession(caseId: string): CaseSession {
     caseId,
     loop: null,
     initialized: false,
+    resolved: false,
     queue: new MessageQueue(),
     aborted: false,
     lastActiveAt: Date.now(),
@@ -136,6 +143,7 @@ export function enqueueMessageOrCreate(caseId: string, msg: QueuedMessage): Case
       caseId,
       loop: null,
       initialized: false,
+      resolved: false,
       queue: new MessageQueue(),
       aborted: false,
       lastActiveAt: Date.now(),
