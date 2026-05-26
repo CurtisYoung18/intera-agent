@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { Plug, Eye, EyeOff, Save, CheckCircle2, AlertCircle } from 'lucide-react'
 import { chatApiUrl } from '@/lib/chat-api'
+import { useConsoleLocale } from '@/components/locale-provider'
 
 interface IntegrationConfig {
   botAccessToken: string
@@ -20,6 +21,7 @@ const EMPTY_CONFIG: IntegrationConfig = {
 }
 
 export default function IntegrationsPage() {
+  const { t } = useConsoleLocale()
   const [config, setConfig] = useState<IntegrationConfig>(EMPTY_CONFIG)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -67,7 +69,7 @@ export default function IntegrationsPage() {
 
   if (loading) {
     return (
-      <div className="p-8 text-[13px] text-[var(--fog)]">Loading…</div>
+      <div className="p-8 text-[13px] text-[var(--fog)]">{t('integrations.loading')}</div>
     )
   }
 
@@ -78,8 +80,8 @@ export default function IntegrationsPage() {
           <Plug className="w-4 h-4 text-purple-600" />
         </div>
         <div>
-          <h1 className="text-[18px] font-bold text-[var(--mist)]">集成</h1>
-          <p className="text-[12px] text-[var(--fog)]">配置 LiveChat Bot Agent 接入</p>
+          <h1 className="text-[18px] font-bold text-[var(--mist)]">{t('integrations.title')}</h1>
+          <p className="text-[12px] text-[var(--fog)]">{t('integrations.subtitle')}</p>
         </div>
       </div>
 
@@ -87,8 +89,8 @@ export default function IntegrationsPage() {
         {/* Enable toggle */}
         <div className="flex items-center justify-between p-4 bg-white border border-black/[0.06] rounded-xl">
           <div>
-            <p className="text-[13px] font-semibold text-[var(--mist)]">启用 LiveChat 集成</p>
-            <p className="text-[11px] text-[var(--fog)] mt-0.5">开启后 Bridge 将处理 LiveChat 对话</p>
+            <p className="text-[13px] font-semibold text-[var(--mist)]">{t('integrations.enableLabel')}</p>
+            <p className="text-[11px] text-[var(--fog)] mt-0.5">{t('integrations.enableDesc')}</p>
           </div>
           <button
             onClick={() => setConfig(c => ({ ...c, enabled: !c.enabled }))}
@@ -100,7 +102,7 @@ export default function IntegrationsPage() {
 
         {/* License ID */}
         <div className="space-y-1.5">
-          <label className="block text-[12px] font-semibold text-[var(--mist)]">LiveChat License ID</label>
+          <label className="block text-[12px] font-semibold text-[var(--mist)]">{t('integrations.licenseIdLabel')}</label>
           <input
             type="text"
             value={config.licenseId}
@@ -108,12 +110,12 @@ export default function IntegrationsPage() {
             placeholder="e.g. 12345678"
             className="w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo-300"
           />
-          <p className="text-[11px] text-[var(--fog)]">在 LiveChat Developer Console → Apps → 你的 Bot 里找到</p>
+          <p className="text-[11px] text-[var(--fog)]">{t('integrations.licenseIdHint')}</p>
         </div>
 
         {/* Bot Access Token */}
         <div className="space-y-1.5">
-          <label className="block text-[12px] font-semibold text-[var(--mist)]">Bot Access Token</label>
+          <label className="block text-[12px] font-semibold text-[var(--mist)]">{t('integrations.tokenLabel')}</label>
           <div className="relative">
             <input
               type={showToken ? 'text' : 'password'}
@@ -129,14 +131,14 @@ export default function IntegrationsPage() {
               {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          <p className="text-[11px] text-[var(--fog)]">在部署时于此填写，加密存入数据库</p>
+          <p className="text-[11px] text-[var(--fog)]">{t('integrations.tokenHint')}</p>
         </div>
 
         {/* Show skill status toggle */}
         <div className="flex items-center justify-between p-4 bg-white border border-black/[0.06] rounded-xl">
           <div>
-            <p className="text-[13px] font-semibold text-[var(--mist)]">对用户显示 Skill 执行状态</p>
-            <p className="text-[11px] text-[var(--fog)] mt-0.5">开启后用户可在 widget 内看到 Intera 的处理步骤</p>
+            <p className="text-[13px] font-semibold text-[var(--mist)]">{t('integrations.skillStatusLabel')}</p>
+            <p className="text-[11px] text-[var(--fog)] mt-0.5">{t('integrations.skillStatusDesc')}</p>
           </div>
           <button
             onClick={() => setConfig(c => ({ ...c, showSkillStatus: !c.showSkillStatus }))}
@@ -148,11 +150,11 @@ export default function IntegrationsPage() {
 
         {/* Webhook URL hint */}
         <div className="p-4 bg-gray-50 border border-black/[0.04] rounded-xl text-[12px] text-[var(--fog)] space-y-1">
-          <p className="font-semibold text-[var(--mist)]">在 LiveChat 填写的 Webhook URL</p>
+          <p className="font-semibold text-[var(--mist)]">{t('integrations.webhookTitle')}</p>
           <code className="block text-indigo-600 mt-1 break-all">
             {`${process.env.NEXT_PUBLIC_CHAT_API_URL ?? ''}/api/livechat/webhook`}
           </code>
-          <p className="mt-1">Event: <code>incoming_event</code></p>
+          <p className="mt-1">{t('integrations.webhookEvent')}</p>
         </div>
 
         {/* Save button */}
@@ -170,7 +172,7 @@ export default function IntegrationsPage() {
           ) : (
             <Save className="w-4 h-4" />
           )}
-          {saveStatus === 'saved' ? '已保存' : saveStatus === 'error' ? '保存失败' : '保存配置'}
+          {saveStatus === 'saved' ? t('integrations.saved') : saveStatus === 'error' ? t('integrations.saveError') : t('integrations.save')}
         </button>
       </div>
     </div>
