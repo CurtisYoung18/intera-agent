@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Layers, Plus, Search, Wand2, ArrowRight, Settings2, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 import { chatApiUrl } from '@/lib/chat-api'
 import { ListSkeleton } from '@/components/ui/skeleton'
@@ -43,6 +44,7 @@ const ctFieldKey: Record<(typeof CT_JSON_FIELDS)[number], string> = {
 
 export default function CaseTypesPage() {
   const { t } = useConsoleLocale()
+  const router = useRouter()
   const [items, setItems] = useState<CaseTypeItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -107,6 +109,9 @@ export default function CaseTypesPage() {
     setEditing({ ...ct })
     setIsNew(false)
     setActiveTab('basic')
+  }
+  const openDetail = (ct: CaseTypeItem) => {
+    router.push(`/admin/case-types/${encodeURIComponent(ct.type)}`)
   }
   const openNew = () => {
     setEditing(emptyItem())
@@ -245,7 +250,7 @@ export default function CaseTypesPage() {
               }
             })()
             return (
-              <TiltCard key={ct.id || ct.type} accentColor="#b8944c" onClick={() => openEdit(ct)}>
+              <TiltCard key={ct.id || ct.type} accentColor="#b8944c" onClick={() => openDetail(ct)}>
                 <div className={`p-5 ${!ct.enabled ? 'opacity-70' : ''}`}>
                   <div className="flex items-start gap-3 mb-3">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gold/[0.08] text-lg flex-shrink-0">

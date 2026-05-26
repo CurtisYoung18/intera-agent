@@ -339,13 +339,25 @@ The whole S3 is too big to land as one PR. Phases below; each phase has its own 
 
 ## 3. Open questions / cleanup parametrization
 
-### 3.1 Classifier — keep
+### 3.1 Classifier — KILL
 
-**Decision (2026-05-26)**: keep. Both `executionMode: 'stage'` and `executionMode: 'cc'` (formerly `'sop'`) will coexist — stage mode remains the predictability-first option for compliance-heavy deployments. The classifier is intrinsic to stage mode (it's how per-message case/core routing happens), so it stays alive.
+**Decision (2026-05-26, updated)**: kill the per-message classifier in both modes.
 
-Action in Phase 3c: extract `classifyMessage` to `pre-iteration/classify-message.ts` as a pure function. Same gate at the call site (`stageActive && executionMode === 'stage'`). S2's `classifier` QuerySource row in the retry policy stays.
+Rationale (revised from the earlier "keep" decision in this same doc):
+- Cost is non-trivial at scale (~$5/day + ~300ms latency per user message at 50k msgs/day).
+- The risk it guards against (model fabricating a tool call on chit-chat) is better caught **engine-side** by S1's tool-result invariant plus the existing ReAct-compliance nudge — both run regardless of mode.
+- Removing it is a step toward CC's "trust the model" pattern. Replacement is one sentence in the case system prompt: *"If the user's message is conversational filler or unrelated to the active case, respond conversationally without firing any case tools."*
 
-If `executionMode: 'cc'` is added later as part of the SOP → CC rename, the gate becomes `executionMode === 'stage'` (single mode, not the negation).
+Action in Phase 3c:
+1. Delete `classifyMessage` method ([loop.ts:2455](apps/chat/lib/agent/loop.ts#L2455)) entirely.
+2. Delete the `if (this.caseLoop?.isStageActive() && executionMode !== 'sop') { ... forceCoreMode = ... }` block ([loop.ts:313-322](apps/chat/lib/agent/loop.ts#L313)).
+3. Delete every downstream use of `forceCoreMode` — search and remove. The Core/Discovery path through `ConversationLoop` stays available for cases where `caseSchema` is absent (truly no-case state), just not as a runtime branch in active stage cases.
+4. Add the off-topic instruction to the case system prompt template (resolved via `prompt-resolver.ts` defaults).
+5. Remove the `classifier` row from S2's `QuerySource` enum and `RETRY_POLICY` table (S2 spec already updated).
+
+Net effect: loop.ts drops ~80 lines; `evaluationModel` is no longer used by classifier (still used by other LLM evaluators); per-turn latency drops by one LLM round-trip.
+
+**Safety net assertion**: After landing, monitor for one week — sample 50 chit-chat messages mid-case. Expectation: zero fabricated tool calls (S1's invariant + ReAct nudge catch any). If non-zero, revisit (don't restore the classifier — strengthen the prompt or the nudge).
 
 ### 3.2 LLM leak sanitizer — keep or kill?
 
@@ -480,10 +492,10 @@ Per-phase rules:
 4. **Phase 3e is the riskiest.** Test sub-agent flow on a real Anthropic key against a real case before merging.
 
 Open these issues / questions to your tech lead before starting:
-- Q1: ~~classifier — keep or kill?~~ **Resolved 2026-05-26: keep (dual-mode design — see §3.5).**
+- Q1: ~~classifier — keep or kill?~~ **Resolved 2026-05-26: KILL (see §3.1). S2 policy table updated; loop.ts loses ~80 lines.**
 - Q2: LLM leak sanitizer — keep or kill? (§3.2)
 
-If sanitizer is killed, S2's policy table loses 1 row and `loop.ts` drops another ~80 lines. Classifier is now confirmed kept.
+If sanitizer is also killed, S2's policy table loses another row and `loop.ts` drops another ~80 lines.
 
 Do NOT do these in the same PRs:
 - S4 (tool interface) — different concern.

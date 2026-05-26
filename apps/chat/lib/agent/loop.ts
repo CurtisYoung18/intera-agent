@@ -27,19 +27,7 @@ import type { ExecutionPolicy } from './policies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
-
-// ---------------------------------------------------------------------------
-// Content block tracking during streaming
-// ---------------------------------------------------------------------------
-
-interface StreamContentBlock {
-  index: number
-  type: 'text' | 'tool_use' | 'thinking'
-  id: string
-  name: string
-  content: string
-  completed: boolean
-}
+import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
 
 // ---------------------------------------------------------------------------
 // StreamingTextSanitizer
@@ -304,25 +292,6 @@ export class AgentLoop {
     // 2.5 Dispatch dedicated agents on case creation (first stage)
     await this.startDedicatedAgents(sendEvent)
 
-    // 2.6 Per-message mode classification
-    // When a case is active, classify this user message as case-related or
-    // casual/off-topic. Casual messages bypass the Case ReAct loop and are
-    // handled by ConversationLoop (lightweight, no stage enforcement).
-    //
-    // Step mode: fully trust the model (CC pattern) — skip the secondary LLM
-    // classification call and always route to the case loop.
-    let forceCoreMode = false
-    if (this.caseLoop?.isStageActive() && this.deps.caseSchema?.executionMode !== 'sop') {
-      const msgMode = await this.classifyMessage(userMessage)
-      forceCoreMode = msgMode === 'core'
-      if (forceCoreMode) {
-        await this.traceWriter.write('loop_decision', 'Per-message route: Core (off-topic)', {
-          messageLength: userMessage.length,
-          stage: this.currentStage,
-        })
-      }
-    }
-
     // 3. ReAct loop
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
@@ -398,10 +367,7 @@ export class AgentLoop {
       }
 
       // ── isCaseActive for this iteration ─────────────────────────────────
-      // forceCoreMode is set at the start of run() when the user message was
-      // classified as off-topic — it overrides the stage check so casual messages
-      // don't enter the Case ReAct loop.
-      const isCaseActive = forceCoreMode ? false : (this.caseLoop?.isStageActive() ?? false)
+      const isCaseActive = this.caseLoop?.isStageActive() ?? false
       // Consultation mode: human operator is reviewing the case via the same chat UI.
       // Restrict the agent to pure conversation + finalize_consultation only.
       const isConsultation = this.caseMemory.getSummary().caseStatus === 'waiting_human'
@@ -465,7 +431,7 @@ export class AgentLoop {
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
-      // Core mode  → no active case (or forceCoreMode): conversational discovery.
+      // Core mode  → no active case: conversational discovery.
       // Case/Stage → case past "created": stage-driven execution, tools filtered.
       // Case/SOP   → SOP-driven: todo tools + full skill set, prompt includes SOP doc + todos.
       const allTools = this.skillRouter.getTools()
@@ -564,200 +530,73 @@ export class AgentLoop {
       )
 
       try {
-      for await (const event of stream) {
-        switch (event.type) {
-          // ── message start ──────────────────────────────────────
-          case 'message_start':
-            assistantMessage = {
-              id: event.message.id,
-              role: 'assistant',
-              content: '',
-              createdAt: new Date(),
-              isStreaming: true,
-            }
-            break
+        const streamResult = await consumeStream(stream, blocks, {
+          sendEvent,
+          sanitizeChunk: (text: string) => textSanitizer.feed(text),
+          flushSanitizer: () => textSanitizer.flush(),
+          recordFirstToken: () => this.profiler.recordFirstToken(),
+          showThinking: this.deps.config.showThinking,
+          onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
+            // PreTool policy check
+            const preToolEval = await this.policyEngine.evaluate('preTool', {
+              skillName: toolUse.name,
+              skillInput: toolUse.input,
+              confirmedFacts: this.caseMemory.getConfirmedFacts(),
+              skillsCalled: this.caseMemory.getSkillsCalled(),
+              skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
+            }, buildHitCounts())
 
-          // ── content block start ────────────────────────────────
-          case 'content_block_start': {
-            const b = event.content_block
-            if (b.type === 'tool_use') {
-              // Some Anthropic-compatible providers (MiniMax, DeepSeek) send the
-              // complete tool input in content_block_start.input instead of
-              // streaming it via input_json_delta events. Seed content from
-              // b.input so those providers don't silently drop the input.
-              const seedContent =
-                b.input && typeof b.input === 'object' && Object.keys(b.input as Record<string, unknown>).length > 0
-                  ? JSON.stringify(b.input)
-                  : ''
-              blocks.set(event.index, {
-                index: event.index,
-                type: 'tool_use',
-                id: b.id,
-                name: b.name,
-                content: seedContent,
-                completed: false,
-              })
-            } else if (b.type === 'text') {
-              blocks.set(event.index, {
-                index: event.index,
-                type: 'text',
-                id: '',
-                name: '',
-                content: '',
-                completed: false,
-              })
-            } else if (b.type === 'thinking') {
-              blocks.set(event.index, {
-                index: event.index,
-                type: 'thinking',
-                id: '',
-                name: '',
-                content: '',
-                completed: false,
-              })
-            }
-            break
-          }
-
-          // ── content block delta ────────────────────────────────
-          case 'content_block_delta': {
-            const d = event.delta
-            const cb = blocks.get(event.index)
-            if (!cb) break
-
-            if (d.type === 'text_delta') {
-              if (!fullText) this.profiler.recordFirstToken()
-              cb.content += d.text
-              fullText += d.text
-              const cleanChunk = textSanitizer.feed(d.text)
-              if (cleanChunk) {
-                sendEvent({
-                  type: 'text_delta',
-                  data: cleanChunk,
-                  timestamp: new Date().toISOString(),
-                })
-              }
-            } else if (d.type === 'input_json_delta') {
-              cb.content += d.partial_json
-            } else if (d.type === 'thinking_delta') {
-              cb.content += d.thinking
-              if (this.deps.config.showThinking) {
-                sendEvent({
-                  type: 'thinking_delta',
-                  data: d.thinking,
-                  timestamp: new Date().toISOString(),
-                })
-              }
-            }
-            break
-          }
-
-          // ── content block stop ─────────────────────────────
-          // This is the critical moment: a tool_use block just
-          // finished streaming its input JSON. Parse it and
-          // enqueue for immediate execution.
-          case 'content_block_stop': {
-            const stoppedBlock = blocks.get(event.index)
-            if (!stoppedBlock) break
-            stoppedBlock.completed = true
-
-            if (stoppedBlock.type === 'tool_use') {
-              let input: Record<string, unknown> = {}
-              try {
-                input = JSON.parse(stoppedBlock.content || '{}')
-              } catch {
-                // Malformed JSON — tool will run with empty input
-              }
-
-              const toolUse: ToolUse = {
-                id: stoppedBlock.id,
-                name: stoppedBlock.name,
-                input,
-              }
-
-              // PreTool policy check
-              const preToolEval = await this.policyEngine.evaluate('preTool', {
-                skillName: toolUse.name,
-                skillInput: toolUse.input,
-                confirmedFacts: this.caseMemory.getConfirmedFacts(),
-                skillsCalled: this.caseMemory.getSkillsCalled(),
-                skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
-              }, buildHitCounts())
-
-              if (preToolEval.summary === 'blocked') {
-                // Record policy hit for graduated response
-                const blockingPolicies: string[] = []
-                for (const r of preToolEval.results) {
-                  if (r.result !== 'pass') {
-                    this.caseMemory.recordPolicyHit(r.policyName)
-                    if (r.result === 'blocked') blockingPolicies.push(r.policyName)
-                  }
+            if (preToolEval.summary === 'blocked') {
+              // Record policy hit for graduated response
+              const blockingPolicies: string[] = []
+              for (const r of preToolEval.results) {
+                if (r.result !== 'pass') {
+                  this.caseMemory.recordPolicyHit(r.policyName)
+                  if (r.result === 'blocked') blockingPolicies.push(r.policyName)
                 }
-                await this.traceWriter.write(
-                  'policy_hit',
-                  `Blocked: ${toolUse.name}`,
-                  preToolEval as unknown as Record<string, unknown>,
-                )
-                sendEvent({
-                  type: 'policy_blocked',
-                  data: { toolName: toolUse.name, policyNames: blockingPolicies },
-                  timestamp: new Date().toISOString(),
-                })
-                // S1: record missing reason — post-stream synthesis will build the tool_result.
-                // The feedback message comes AFTER the tool_result, not instead of it.
-                missingReasons.set(toolUse.id, 'policy_blocked')
-                if (preToolEval.feedbackMessage) {
-                  pendingPolicyFeedback.push(preToolEval.feedbackMessage)
-                }
-                if (!assistantPushed && assistantMessage) {
-                  this.messages.push(assistantMessage)
-                  assistantPushed = true
-                }
-                continue
               }
-
-              // ★ Enqueue — starts executing immediately.
-              // text/thinking blocks that follow will stream to the
-              // frontend concurrently while this tool runs.
-              toolExecutor.enqueue(toolUse)
-            }
-            break
-          }
-
-          // ── message delta (usage + stop_reason) ──────────────
-          case 'message_delta': {
-            const msgDelta = event as unknown as {
-              type: 'message_delta'
-              delta: { stop_reason?: string | null; usage?: Record<string, unknown> }
-              usage?: Record<string, unknown>
-            }
-            const delta = msgDelta.delta
-            if (delta?.stop_reason != null) {
-              stopReason = delta.stop_reason
               await this.traceWriter.write(
-                'stream_event',
-                `stop_reason: ${stopReason}`,
-                { stopReason, iteration: this.iterationCount },
+                'policy_hit',
+                `Blocked: ${toolUse.name}`,
+                preToolEval as unknown as Record<string, unknown>,
               )
+              sendEvent({
+                type: 'policy_blocked',
+                data: { toolName: toolUse.name, policyNames: blockingPolicies },
+                timestamp: new Date().toISOString(),
+              })
+              // S1: record missing reason — post-stream synthesis will build the tool_result.
+              // The feedback message comes AFTER the tool_result, not instead of it.
+              missingReasons.set(toolUse.id, 'policy_blocked')
+              if (preToolEval.feedbackMessage) {
+                pendingPolicyFeedback.push(preToolEval.feedbackMessage)
+              }
+              if (!assistantPushed && am) {
+                this.messages.push(am)
+                assistantPushed = true
+              }
+              return
             }
-            const mergedUsage = msgDelta.usage ?? delta?.usage
-            if (mergedUsage) {
-              usage = mergedUsage
-            }
-            break
-          }
 
-          // ── message stop ──────────────────────────────────────
-          case 'message_stop': {
-            // Flush any text still held back in the sanitizer's lookahead buffer.
-            const tail = textSanitizer.flush()
-            if (tail) {
-              sendEvent({ type: 'text_delta', data: tail, timestamp: new Date().toISOString() })
-            }
-            break
-          }
+            // Enqueue — starts executing immediately.
+            // text/thinking blocks that follow will stream to the
+            // frontend concurrently while this tool runs.
+            toolExecutor.enqueue(toolUse)
+          },
+        })
+
+        assistantMessage = streamResult.assistantMessage
+        fullText = streamResult.fullText
+        stopReason = streamResult.stopReason
+        usage = streamResult.usage
+
+        if (stopReason) {
+          await this.traceWriter.write(
+            'stream_event',
+            `stop_reason: ${stopReason}`,
+            { stopReason, iteration: this.iterationCount },
+          )
         }
-      }
       } catch (streamErr) {
         const errStr = String(streamErr)
         console.error('[AgentLoop] Stream error:', streamErr)
@@ -826,20 +665,6 @@ export class AgentLoop {
       }
       assistantMessage.content = fullText
       assistantMessage.isStreaming = false
-
-      // ── LLM-based leaked context sanitization ──────────────────
-      // MiniMax-class models occasionally leak internal context into
-      // text output: <think> blocks, orphan </think>, "Tool X result:"
-      // echoes. An LLM eval detects and strips these patterns — more
-      // robust than regex against new/evolving leakage formats.
-      // Gated behind enableLlmSanitization (off by default).
-      if (fullText && this.deps.config.enableLlmSanitization) {
-        const sanitized = await this.sanitizeLeakedContext(fullText)
-        if (sanitized !== fullText) {
-          fullText = sanitized
-          assistantMessage.content = sanitized
-        }
-      }
 
       // ── Wait for all tools to finish ─────────────────────────
       let toolResults = await toolExecutor.waitForAll()
@@ -996,10 +821,9 @@ export class AgentLoop {
 
       if (toolResults.length === 0) {
         // No tools called — delegate stage evaluation to CaseAgentLoop.
-        // Skip only when forceCoreMode is true (casual off-topic message).
         // Must NOT gate on isCaseActive: the 'created' → stage-1 bootstrap
         // transition fires here while isCaseActive is still false.
-        if (!forceCoreMode && !isConsultation && this.caseLoop?.hasStageConfigs()) {
+        if (!isConsultation && this.caseLoop?.hasStageConfigs()) {
           const transitionEval = await this.caseLoop.evaluateStageTransitionAfterNoTools(this.iterationCount)
           if (transitionEval.modelUsed) {
             await this.traceWriter.write('stage_eval', `Stage eval: ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
@@ -1137,46 +961,6 @@ export class AgentLoop {
             // Don't count the nudge against maxIterations — the model needs
             // one extra turn to correct its mistake (bounded by nudgeCount < 3).
             this.iterationCount--
-            continue
-          }
-        }
-
-        // ── ReAct compliance guard ──────────────────────────────────────
-        // When the model produces text without calling tools, use an LLM eval
-        // to check whether the response is a legitimate end-of-turn or the
-        // model is "describing instead of doing."
-        //
-        // Threshold is 1 for all modes — even short Chinese narrations like
-        // "现在查询历史工单和知识库。" (13 chars) or "让我再查询一下当前有效的活动详情："
-        // (15 chars) slip past a 30-char cutoff yet are exactly the verbal
-        // hallucination pattern we need to catch. The LLM eval correctly
-        // classifies legitimate short responses ("好的", "明白了").
-        //
-        // Consultation mode: pure conversation with a human operator is always
-        // legitimate — skip the ReAct guard entirely.
-        if (!isConsultation && fullText && fullText.length >= 1) {
-          const reactResult = await this.evaluateReactCompliance(fullText)
-
-          if (reactResult === 'nudge') {
-            this.nudgeCount++
-            const nudge = '[SYSTEM] Your last response describes a problem or implies action is needed, ' +
-                'but you did not call any tool to act on it. If investigation, verification, or ' +
-                'escalation is required, call the appropriate tool now. Describing the need in ' +
-                'text is not sufficient — you must use tools to take action.'
-            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(this.makeUserMessage(nudge))
-
-            await this.traceWriter.write('loop_decision', 'ReAct nudge: describing without acting', {
-              stage: this.currentStage,
-              nudgeCount: this.nudgeCount,
-              iteration: this.iterationCount,
-            })
-
-            sendEvent({
-              type: 'message_stop',
-              data: { reason: 'react_nudge', stage: this.currentStage },
-              timestamp: new Date().toISOString(),
-            })
             continue
           }
         }
@@ -1667,511 +1451,6 @@ export class AgentLoop {
   }
 
   // -----------------------------------------------------------------------
-  // runReActLoop — unified ReAct loop shared by all ExecutionPolicy impls
-  // -----------------------------------------------------------------------
-
-  /**
-   * Unified ReAct loop encapsulating iteration, streaming, tool execution,
-   * error recovery, compaction, and chain tracking. Delegates prompt
-   * assembly, tool filtering, continuation decisions, and terminal-tool
-   * interception to the supplied {@link ExecutionPolicy}.
-   *
-   * The existing `run()` method remains unchanged for backward compat.
-   */
-  async runReActLoop(
-    ctx: AgentContext,
-    policy: ExecutionPolicy,
-    sendEvent: (event: SSEEvent) => void,
-    userMessage: string,
-  ): Promise<LoopResult> {
-    // Wrap sendEvent for abort safety (same pattern as run())
-    const safeSendEvent = (event: SSEEvent) => {
-      if (this.aborted) return
-      try { sendEvent(event) } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          this.aborted = true
-          this.abortController.abort()
-        }
-      }
-    }
-
-    // ── Chain tracking ───────────────────────────────────────────
-    const agentName = ctx.isSubAgent
-      ? `SubAgent[${ctx.agentId.slice(-8)}]`
-      : `Main[${ctx.agentId.slice(-8)}]`
-    await this.traceWriter.writeAgentTreeNode(agentName, ctx.depth, ctx.chainId, 'runReActLoop start')
-
-    // ── Record user message ──────────────────────────────────────
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: userMessage,
-      createdAt: new Date(),
-    }
-    this.messages.push(userMsg)
-
-    // ── ReAct loop ───────────────────────────────────────────────
-    const maxIter = ctx.maxIterations || this.deps.config.maxIterations
-    let iteration = 0
-
-    while (iteration < maxIter) {
-      iteration++
-      this.profiler.incrementIteration()
-
-      // ── Compaction ───────────────────────────────────────────
-      const compactResult = await this.checkAndCompact()
-      if (compactResult.shouldCompact) {
-        safeSendEvent({
-          type: 'withheld',
-          data: 'Compacting context...',
-          timestamp: new Date().toISOString(),
-        })
-      }
-
-      // ── Concurrent message consumption + MessageBus polling ──
-      try {
-        const { hasSession, getOrCreateSession } = await import('./session-store')
-        if (this.deps.caseId && hasSession(this.deps.caseId)) {
-          const session = getOrCreateSession(this.deps.caseId)
-          // Drain queued messages from concurrent requests
-          let pending
-          while ((pending = session.queue.dequeueNonBlocking())) {
-            if (pending.content === '__SESSION_CLOSED__') continue
-            this.messages.push({
-              id: crypto.randomUUID(),
-              role: 'user' as const,
-              content: `[SYSTEM] 用户补充了新信息：${pending.content}`,
-              createdAt: new Date(),
-            })
-            this.caseMemory.bumpDashboardVersion()
-            safeSendEvent({
-              type: 'withheld',
-              data: 'Processing additional user input...',
-              timestamp: new Date().toISOString(),
-            })
-          }
-          // Poll MessageBus for directives from other agents
-          const msgs = ctx.messageBus.poll(ctx.agentId)
-          for (const m of msgs) {
-            this.messages.push({
-              id: crypto.randomUUID(),
-              role: 'user' as const,
-              content: `[SYSTEM] Message from ${m.from}: ${m.content}`,
-              createdAt: new Date(),
-            })
-          }
-        }
-      } catch { /* session-store unavailable, skip */ }
-
-      safeSendEvent({
-        type: 'stream_request_start',
-        data: null,
-        timestamp: new Date().toISOString(),
-      })
-
-      // ── System prompt via policy ─────────────────────────────
-      const basePrompt = this.deps.systemPrompt || ''
-      const systemPrompt = policy.buildPrompt(basePrompt)
-
-      // ── Tools: restrict by ctx.allowedTools, then policy ──────
-      const allTools = this.skillRouter.getTools()
-      const allowedTools = allTools.filter((t) => ctx.allowedTools.has(t.name))
-      const tools = policy.filterTools(allowedTools, iteration)
-
-      // ── Streaming text sanitizer (per-iteration) ──────────────
-      const textSanitizer = new StreamingTextSanitizer()
-
-      // ── StreamingToolExecutor ────────────────────────────────
-      const toolExecutor = new StreamingToolExecutor(
-        this.skillRouter.getToolDefinitions(),
-        (toolUse, status) => {
-          safeSendEvent({
-            type: status === 'executing' ? 'tool_executing' : 'skill_result',
-            data: {
-              name: toolUse.name,
-              status,
-              result: status !== 'executing' ? toolUse.result : undefined,
-            },
-            timestamp: new Date().toISOString(),
-          })
-        },
-      )
-
-      // ── Build API messages ───────────────────────────────────
-      const apiMessages = this.buildApiMessages()
-
-      // ── Stream with error recovery (+ reactiveCompact on 413) ─
-      let stream: ReturnType<typeof this.anthropicClient.messages.stream>
-      let streamAttempt = 0
-      const maxStreamAttempts = 2
-
-      while (streamAttempt < maxStreamAttempts) {
-        streamAttempt++
-        try {
-          if (this.abortController.signal.aborted) break
-
-          stream = this.anthropicClient.messages.stream({
-            model: this.deps.config.model,
-            max_tokens: this.deps.config.maxOutputTokens ?? 4096,
-            system: systemPrompt,
-            messages: apiMessages,
-            tools,
-            ...(this.deps.config.showThinking ? {
-              thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
-            } : {}),
-          }, { signal: this.abortController.signal })
-          break
-        } catch (err) {
-          const errStr = String(err)
-
-          // Reactive compact on 413 / context_length_exceeded
-          if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
-            this.messages = reactiveCompact(this.messages)
-            await this.traceWriter.write('loop_decision', 'Reactive compact on 413', { error: errStr })
-          }
-
-          if (streamAttempt >= maxStreamAttempts || this.abortController.signal.aborted) {
-            safeSendEvent({
-              type: 'error',
-              data: `LLM API error after ${streamAttempt} attempts`,
-              timestamp: new Date().toISOString(),
-            })
-            await this.traceWriter.write('loop_decision', 'Exit: LLM API error', { error: errStr, attempts: streamAttempt })
-            await this.writeProfilerSnapshot()
-            return {
-              messages: this.messages,
-              caseStatus: 'escalated' as CaseStatus,
-              transition: 'error',
-              reason: 'llm_api_error',
-            }
-          }
-
-          await this.traceWriter.write('loop_decision', `LLM stream retry ${streamAttempt}/${maxStreamAttempts}`, { error: errStr })
-          await new Promise((r) => setTimeout(r, 1000 * streamAttempt))
-        }
-      }
-
-      if (this.abortController.signal.aborted) break
-      stream = stream!
-
-      // ── Stream event handling ────────────────────────────────
-      const blocks = new Map<number, StreamContentBlock>()
-      let assistantMessage: AssistantMessage | null = null
-      let assistantPushed = false
-      let fullText = ''
-      let stopReason: string | null = null
-      let usage: Record<string, unknown> | null = null
-
-      const iterationStartTime = Date.now()
-      let streamEndedAt = iterationStartTime
-
-      try {
-        for await (const event of stream) {
-          switch (event.type) {
-            case 'message_start':
-              assistantMessage = {
-                id: event.message.id,
-                role: 'assistant',
-                content: '',
-                createdAt: new Date(),
-                isStreaming: true,
-              }
-              break
-
-            case 'content_block_start': {
-              const b = event.content_block
-              if (b.type === 'tool_use') {
-                const seedContent =
-                  b.input && typeof b.input === 'object' && Object.keys(b.input as Record<string, unknown>).length > 0
-                    ? JSON.stringify(b.input)
-                    : ''
-                blocks.set(event.index, {
-                  index: event.index,
-                  type: 'tool_use',
-                  id: b.id,
-                  name: b.name,
-                  content: seedContent,
-                  completed: false,
-                })
-              } else if (b.type === 'text') {
-                blocks.set(event.index, {
-                  index: event.index,
-                  type: 'text',
-                  id: '',
-                  name: '',
-                  content: '',
-                  completed: false,
-                })
-              } else if (b.type === 'thinking') {
-                blocks.set(event.index, {
-                  index: event.index,
-                  type: 'thinking',
-                  id: '',
-                  name: '',
-                  content: '',
-                  completed: false,
-                })
-              }
-              break
-            }
-
-            case 'content_block_delta': {
-              const d = event.delta
-              const cb = blocks.get(event.index)
-              if (!cb) break
-
-              if (d.type === 'text_delta') {
-                if (!fullText) this.profiler.recordFirstToken()
-                cb.content += d.text
-                fullText += d.text
-                const cleanChunk = textSanitizer.feed(d.text)
-                if (cleanChunk) {
-                  safeSendEvent({
-                    type: 'text_delta',
-                    data: cleanChunk,
-                    timestamp: new Date().toISOString(),
-                  })
-                }
-              } else if (d.type === 'input_json_delta') {
-                cb.content += d.partial_json
-              } else if (d.type === 'thinking_delta') {
-                cb.content += d.thinking
-                if (this.deps.config.showThinking) {
-                  safeSendEvent({
-                    type: 'thinking_delta',
-                    data: d.thinking,
-                    timestamp: new Date().toISOString(),
-                  })
-                }
-              }
-              break
-            }
-
-            case 'content_block_stop': {
-              const stoppedBlock = blocks.get(event.index)
-              if (!stoppedBlock) break
-              stoppedBlock.completed = true
-
-              if (stoppedBlock.type === 'tool_use') {
-                let input: Record<string, unknown> = {}
-                try {
-                  input = JSON.parse(stoppedBlock.content || '{}')
-                } catch { /* malformed JSON — tool runs with empty input */ }
-
-                const toolUse: ToolUse = {
-                  id: stoppedBlock.id,
-                  name: stoppedBlock.name,
-                  input,
-                }
-                toolExecutor.enqueue(toolUse)
-              }
-              break
-            }
-
-            case 'message_delta': {
-              const msgDelta = event as unknown as {
-                type: 'message_delta'
-                delta: { stop_reason?: string | null; usage?: Record<string, unknown> }
-                usage?: Record<string, unknown>
-              }
-              const delta = msgDelta.delta
-              if (delta?.stop_reason != null) stopReason = delta.stop_reason
-              const mergedUsage = msgDelta.usage ?? delta?.usage
-              if (mergedUsage) usage = mergedUsage
-              break
-            }
-
-            case 'message_stop': {
-              const tail = textSanitizer.flush()
-              if (tail) {
-                safeSendEvent({ type: 'text_delta', data: tail, timestamp: new Date().toISOString() })
-              }
-              break
-            }
-          }
-        }
-      } catch (streamErr) {
-        const errStr = String(streamErr)
-
-        if (this.abortController.signal.aborted) {
-          await toolExecutor.waitForAll().catch(() => {})
-          await this.traceWriter.write('loop_decision', 'Stream aborted (connection lost)', { iteration })
-          await this.writeProfilerSnapshot()
-          return {
-            messages: this.messages,
-            caseStatus: this.currentStage as CaseStatus,
-            transition: 'connection_lost',
-            reason: 'connection_lost',
-          }
-        }
-
-        // Reactive compact on 413 during streaming
-        if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
-          this.messages = reactiveCompact(this.messages)
-          await this.traceWriter.write('loop_decision', 'Reactive compact on stream error', { error: errStr })
-          continue
-        }
-
-        await this.traceWriter.write('loop_decision', 'Stream error', { error: errStr, iteration })
-        break
-      }
-
-      streamEndedAt = Date.now()
-
-      // ── Trace LLM response ───────────────────────────────────
-      if (usage) {
-        const calledToolNames = [...blocks.values()].filter((b) => b.type === 'tool_use').map((b) => b.name)
-        await this.traceWriter.writeLlmResponse(stopReason, usage, iteration, fullText, calledToolNames)
-        this.profiler.addTokens(
-          Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
-          Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
-        )
-      }
-
-      // ── Finalize assistant message ────────────────────────────
-      if (!assistantMessage) {
-        throw new Error('No assistant message received in runReActLoop')
-      }
-      assistantMessage.content = fullText
-      assistantMessage.isStreaming = false
-
-      // ── Wait for tool execution ──────────────────────────────
-      const toolResults = await toolExecutor.waitForAll()
-      for (const tr of toolResults) {
-        this.profiler.addToolExecution(tr.latencyMs || 0)
-      }
-
-      // ── Terminal tool interception via policy ─────────────────
-      let terminalResult: LoopResult | null = null
-      for (const tr of toolResults) {
-        const handled = policy.handleTerminalTool(tr.name, tr.toolUse?.input ?? {})
-        if (handled?.type === 'handled') {
-          terminalResult = handled.result as LoopResult
-          break
-        }
-      }
-
-      // Add assistant + tool results to message history
-      if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-      this.addToolResultMessages(toolResults)
-
-      // S1 invariant assertion (dev only)
-      if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.env.INTERA_INVARIANT_CHECK === '1')) {
-        try {
-          assertToolResultInvariant(
-            this.messages.filter((m) => 'role' in m) as Array<{ role: string; content: unknown; toolUses?: ToolUse[] }>,
-          )
-        } catch (err) { console.error('[Invariant] runReActLoop:', (err as Error).message) }
-      }
-
-      if (terminalResult) {
-        await this.writeProfilerSnapshot()
-        return terminalResult
-      }
-
-      // ── Apply tool results to case memory ────────────────────
-      for (const result of toolResults) {
-        const payload = unwrapToolExecutionPayload(result.output)
-        await this.caseMemory.applySkillResult(result.name, payload)
-      }
-
-      // ── Evaluate continuation via policy ──────────────────────
-      const mappedResults: ToolResult[] = toolResults.map((r) => {
-        const inner = r.output as ToolResult | undefined
-        return {
-          ok: inner?.ok ?? true,
-          output: inner?.output ?? r.output,
-          error: inner?.error,
-          latencyMs: r.latencyMs,
-        }
-      })
-
-      const continuation = await policy.evaluateContinuation(
-        assistantMessage,
-        mappedResults,
-        iteration,
-      )
-
-      switch (continuation.action) {
-        case 'continue':
-          safeSendEvent({
-            type: 'message_stop',
-            data: { reason: 'next_turn', stopReason, stage: this.currentStage },
-            timestamp: new Date().toISOString(),
-          })
-          continue
-
-        case 'stop':
-          await this.traceWriter.write('loop_decision', 'Exit: policy stop', {
-            reason: continuation.reason,
-            isError: continuation.isError,
-            iteration,
-          })
-          safeSendEvent({
-            type: 'message_stop',
-            data: { reason: continuation.reason, stopReason },
-            timestamp: new Date().toISOString(),
-          })
-          await this.writeProfilerSnapshot()
-          return {
-            messages: this.messages,
-            caseStatus: this.currentStage as CaseStatus,
-            transition: continuation.isError ? 'error' : 'next_turn',
-            currentStage: this.currentStage,
-            reason: continuation.reason,
-          }
-
-        case 'transition':
-          await this.traceWriter.write('loop_decision', `Stage transition: ${continuation.nextStage}`, {
-            nextStage: continuation.nextStage,
-            iteration,
-          })
-          safeSendEvent({
-            type: 'message_stop',
-            data: { reason: 'stage_transition', stage: continuation.nextStage },
-            timestamp: new Date().toISOString(),
-          })
-          continue
-
-        case 'complete_task':
-          await this.traceWriter.write('loop_decision', 'Exit: task complete', {
-            iteration,
-            subAgentResult: continuation.result,
-          })
-          safeSendEvent({
-            type: 'message_stop',
-            data: { reason: 'task_complete' },
-            timestamp: new Date().toISOString(),
-          })
-          await this.writeProfilerSnapshot()
-          return {
-            messages: this.messages,
-            caseStatus: this.currentStage as CaseStatus,
-            transition: 'next_turn',
-            currentStage: this.currentStage,
-            reason: 'task_complete',
-          }
-      }
-    }
-
-    // ── Max iterations reached ──────────────────────────────────
-    await this.traceWriter.write('loop_decision', 'Exit: max iterations', { iteration, messageCount: this.messages.length })
-    safeSendEvent({
-      type: 'message_stop',
-      data: { reason: 'max_iterations' },
-      timestamp: new Date().toISOString(),
-    })
-    await this.writeProfilerSnapshot()
-    return {
-      messages: this.messages,
-      caseStatus: this.currentStage as CaseStatus,
-      transition: 'next_turn',
-      currentStage: this.currentStage,
-      reason: 'max_iterations',
-    }
-  }
-
-  // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
 
@@ -2420,265 +1699,6 @@ export class AgentLoop {
     }
     if (this.deps.config.debugMode) {
       writeDebugTranscript(this.deps.caseId, this.messages)
-    }
-  }
-
-  /**
-   * Per-message classifier — called once at the start of each run() turn
-   * when a case is currently active.
-   *
-   * Returns "core" when the user message is clearly casual / off-topic
-   * (greetings, date questions, unrelated queries), so the turn is handled
-   * by ConversationLoop without stage enforcement or ReAct pressure.
-   *
-   * Returns "case" when the message relates to the active case or investigation.
-   * Defaults to "case" on any error so we never accidentally drop case context.
-   *
-   * System/worker continuation messages bypass the LLM and return "case"
-   * immediately. Everything else goes to a cheap structured LLM eval.
-   */
-  private async classifyMessage(userMessage: string): Promise<'case' | 'core'> {
-    // System/worker messages are always case-related
-    if (
-      userMessage.startsWith('[System]') ||
-      userMessage.startsWith('[SYSTEM]') ||
-      userMessage.startsWith('[Human task') ||
-      userMessage.startsWith('[Intent selected') ||
-      userMessage.startsWith('Tool ')  // tool result injections
-    ) {
-      return 'case'
-    }
-
-    // All other messages → cheap LLM structured call
-    try {
-      const caseDisplayName = this.deps.caseSchema?.displayName || this.deps.caseSchema?.type || 'case'
-
-      const classifyTool: Tool = {
-        name: 'classify_mode',
-        description: 'Classify whether this customer message is about the active case or off-topic.',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            mode: {
-              type: 'string' as const,
-              enum: ['case', 'core'],
-              description:
-                '"case" — message is about the active case, its status, or related financial/account issues. ' +
-                '"core" — message is a general question, greeting, acknowledgement, or completely unrelated topic.',
-            },
-          },
-          required: ['mode'],
-        },
-      }
-
-      const evalModel = this.deps.config.evaluationModel || this.deps.config.model
-      const resp = await this.anthropicClient.messages.create({
-        model: evalModel,
-        max_tokens: 64,
-        temperature: 0,
-        system: `A customer has an active "${caseDisplayName}" support case in progress. Classify their latest message.`,
-        tools: [classifyTool],
-        messages: [{ role: 'user', content: userMessage.slice(0, 300) }],
-      })
-
-      for (const block of resp.content) {
-        if (block.type === 'tool_use') {
-          const input = (block as any).input as Record<string, unknown>
-          return input.mode === 'core' ? 'core' : 'case'
-        }
-      }
-      return 'case' // safe default — never drop case context accidentally
-    } catch (err) {
-      console.warn('[AgentLoop] classifyMessage failed, defaulting to case:', err)
-      return 'case'
-    }
-  }
-
-  /**
-   * LLM-based leaked-context sanitizer.
-   *
-   * MiniMax-class models occasionally leak internal context strings into text
-   * output: <think> blocks, orphan </think> tags, "Tool X result:" echoes of
-   * addToolResultMessages() payloads. An LLM eval detects and removes these
-   * patterns — more robust than regex against new/evolving leakage formats.
-   *
-   * Returns cleaned text, or the original if no leakage is detected.
-   */
-  private async sanitizeLeakedContext(assistantText: string): Promise<string> {
-    const cleanTool: Tool = {
-      name: 'clean_response',
-      description:
-        'Return the user-facing portion of the assistant response with any leaked model-context removed.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          has_leaked_context: {
-            type: 'boolean' as const,
-            description:
-              'True if the response contains leaked model internal context ' +
-              '(thinking blocks, tool result echoes, system-level content).',
-          },
-          cleaned_text: {
-            type: 'string' as const,
-            description:
-              'The response with all leaked internal context removed. ' +
-              'If has_leaked_context is false, this should match the original text.',
-          },
-        },
-        required: ['has_leaked_context', 'cleaned_text'],
-      },
-    }
-
-    const evalModel =
-      this.deps.config.evaluationModel || this.deps.config.model
-
-    try {
-      const msg = await this.anthropicClient.messages.create({
-        model: evalModel,
-        max_tokens: 1024,
-        temperature: 0,
-        system:
-          'You are a response sanitizer. Some assistant responses accidentally leak ' +
-          'internal model context that should NOT be shown to users:\n' +
-          '\n' +
-          '  1. <think>...</think> blocks — chain-of-thought reasoning\n' +
-          '  2. Orphan </think> tags — leaked CoT without opening tag\n' +
-          '  3. "Tool <name> result: {...}" — verbatim echoes of tool outputs\n' +
-          '     that were injected as assistant messages (addToolResultMessages)\n' +
-          '\n' +
-          'Your job: detect whether ANY of these patterns appear in the response. ' +
-          'If they do, return the cleaned version with the leaked context removed. ' +
-          'Preserve all genuine user-facing content exactly as-is.',
-        tools: [cleanTool],
-        messages: [
-          {
-            role: 'user',
-            content: assistantText,
-          },
-        ],
-      })
-
-      for (const block of msg.content) {
-        if (block.type === 'tool_use' && block.name === 'clean_response') {
-          const input = block.input as { has_leaked_context?: boolean; cleaned_text?: string }
-          if (input.has_leaked_context && input.cleaned_text !== undefined) {
-            return input.cleaned_text
-          }
-        }
-      }
-    } catch {
-      // If the sanitizer eval fails, return the original text — better to show
-      // potentially noisy output than to drop the response entirely.
-    }
-
-    return assistantText
-  }
-
-  /**
-   * ReAct compliance check — runs when the model produces a text-only turn
-   * (no tool calls). Uses a cheap LLM to decide whether the response is a
-   * legitimate end-of-turn or the model is "describing instead of doing."
-   *
-   * Returns "nudge" when the assistant text implies action is needed
-   * (investigation, escalation, verification, external help) but no tool
-   * was called to perform it. Returns "pass" for genuine clarifications,
-   * resolutions, or conversational turns.
-   */
-  private async evaluateReactCompliance(assistantText: string): Promise<'pass' | 'nudge'> {
-    const mem = this.caseMemory.getSummary()
-    const skillsAvailable = this.skillRouter
-      .getToolDefinitions()
-      .map((s) => `${s.name}: ${s.description}`)
-      .join('\n')
-
-    const decideTool: Tool = {
-      name: 'decide_action',
-      description: 'Record whether the assistant response is a valid end-of-turn or needs a nudge.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          decision: {
-            type: 'string' as const,
-            enum: ['pass', 'nudge'],
-            description:
-              '"pass" — the response asks a clarifying question, delivers a final resolution, ' +
-              'provides requested information, or is a natural conversational turn. ' +
-              '"nudge" — the response describes a problem, expresses uncertainty, ' +
-              'indicates something needs to happen (check, verify, review, escalate, wait for external help), ' +
-              'or implies action is required, but no tool was called to perform that action.',
-          },
-          reason: { type: 'string' as const, description: 'Brief explanation of the decision.' },
-        },
-        required: ['decision', 'reason'],
-      },
-    }
-
-    const evalModel =
-      this.deps.config.evaluationModel || this.deps.config.model
-
-    // Surface sub-agent findings — these often trigger verbal escalations
-    // (the model sees the conflict, then describes escalation instead of acting).
-    const subAgentFindings = Object.entries(mem.skillResults as Record<string, unknown>)
-      .filter(([k]) => k.startsWith('subagent:'))
-      .map(([k, v]) => `${k}: ${JSON.stringify(v).slice(0, 300)}`)
-      .join('\n') || '(none)'
-
-    try {
-      const msg = await this.anthropicClient.messages.create({
-        model: evalModel,
-        max_tokens: 128,
-        temperature: 0,
-        system:
-          'You are a ReAct compliance checker for a customer-service agent. ' +
-          'Decide whether an assistant text-only response is a legitimate end-of-turn ' +
-          'or whether the assistant is "describing instead of doing."',
-        tools: [decideTool],
-        messages: [
-          {
-            role: 'user',
-            content: [
-              'Decide: pass or nudge.',
-              '',
-              'NUDGE when ANY of these hold:',
-              '  • The assistant says it WILL do something concrete (核查/核实/查询/确认/' +
-              '提交/转交/升级/escalate/check/verify/look up) but did not call the matching tool.',
-              '  • The assistant mentions handing the case to a human/specialist (人工/客服/' +
-              'specialist/human) but did not call create_human_task.',
-              '  • The assistant describes a problem (conflict / mismatch / missing data) that ' +
-              'a tool can resolve, but did not call that tool.',
-              '  • The assistant promises future work ("我会..." / "let me...") without doing it now.',
-              '',
-              'PASS when:',
-              '  • The response is a complete final answer for the user.',
-              '  • The response asks the user a clarifying question.',
-              '  • The response confirms a resolution that has already been performed.',
-              '  • The response is conversational (greeting/thanks/acknowledgement) with no implied action.',
-              '',
-              'Available tools (consider which tool the assistant SHOULD have called):',
-              skillsAvailable,
-              '',
-              'Skills already called this turn: ' + JSON.stringify(mem.skillsCalled),
-              'Sub-agent findings (often the trigger for verbal escalation):',
-              subAgentFindings,
-              '',
-              'Assistant response:',
-              assistantText.slice(0, 1500),
-            ].join('\n'),
-          },
-        ],
-      })
-
-      for (const block of msg.content) {
-        if (block.type === 'tool_use') {
-          const input = (block as any).input as Record<string, unknown> | undefined
-          if (input?.decision === 'nudge') return 'nudge'
-          return 'pass'
-        }
-      }
-      return 'pass'
-    } catch (err) {
-      console.warn('[AgentLoop] ReAct compliance check failed, defaulting to pass:', err)
-      return 'pass'
     }
   }
 

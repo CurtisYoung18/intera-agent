@@ -808,6 +808,7 @@ export const en: Record<string, string> = {
   // ── Knowledge Base page ───────────────────────────────────────
   'sidebar.knowledge': 'Knowledge Retrieval',
   'sidebar.integrations': 'Integrations',
+  'sidebar.subAgents': 'Sub-Agents',
   'kb.pageTitle': 'Knowledge Base',
   'kb.pageDesc': 'Upload and manage knowledge documents for the agent. Documents are chunked, embedded, and retrieved at runtime to give the agent accurate, citable context.',
   'kb.comingSoon': 'Coming soon',
@@ -1884,6 +1885,7 @@ export const zh: Record<string, string> = {
   // ── Knowledge Base page (ZH) ─────────────────────────────────
   'sidebar.knowledge': '知识检索',
   'sidebar.integrations': '集成',
+  'sidebar.subAgents': '子代理',
   'kb.pageTitle': '知识库',
   'kb.pageDesc': '上传并管理 Agent 的知识文档。文档将被切片、向量化，并在运行时检索以为 Agent 提供准确可引用的上下文。',
   'kb.comingSoon': '即将上线',

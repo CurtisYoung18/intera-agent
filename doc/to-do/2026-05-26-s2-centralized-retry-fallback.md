@@ -87,10 +87,12 @@ export type QuerySource =
   | 'main_loop'         // user-blocking, foreground
   | 'sub_agent_loop'    // user-blocking (orchestrator waits)
   | 'consultation_loop' // user-blocking
-  | 'classifier'        // background (message-mode classifier)
-  | 'sanitizer'         // background
+  | 'sanitizer'         // background (only kept if LLM leak sanitizer survives §3.2 decision)
   | 'policy_eval'       // background (LLM-evaluated guardrails)
   | 'compact'           // memory compaction — background but cannot drop
+  // NOTE (2026-05-26): 'classifier' source removed. The per-message classifier
+  // call (loop.ts:2455 classifyMessage) is being deleted in S3 — see S3 §3.1.
+  // Stage-mode off-topic handling moves to the case prompt + ReAct-nudge safety net.
 
 export type ErrorClass =
   | 'transient_network'   // ECONNRESET, EPIPE, APIConnectionError
@@ -180,7 +182,6 @@ const RETRY_POLICY: Record<QuerySource, {
   main_loop:         { maxRetries: 5, retryOn: SET_OF(transient_network,overloaded,rate_limit,timeout,server_error,context_overflow), bailOn529: false },
   sub_agent_loop:    { maxRetries: 5, retryOn: same as main, bailOn529: false },
   consultation_loop: { maxRetries: 5, retryOn: same as main, bailOn529: false },
-  classifier:        { maxRetries: 2, retryOn: SET_OF(transient_network,timeout),    bailOn529: true },
   sanitizer:         { maxRetries: 2, retryOn: SET_OF(transient_network,timeout),    bailOn529: true },
   policy_eval:       { maxRetries: 3, retryOn: SET_OF(transient_network,timeout,server_error), bailOn529: true },
   compact:           { maxRetries: 5, retryOn: SET_OF(transient_network,timeout,overloaded,server_error,context_overflow), bailOn529: false },
@@ -392,7 +393,7 @@ The main loop's outer error handler maps these to `LoopResult.transition`:
 - `apps/chat/lib/agent/__tests__/retry-integration.test.ts` — integration tests with mocked Anthropic.
 
 ### Modified
-- `apps/chat/lib/agent/loop.ts` — replace 5 call sites with wrapper calls; delete inline `streamAttempt` blocks; map `CannotRetryError` / `FallbackTriggeredError` to `LoopResult.transition`. Estimated ~150 lines net deletion.
+- `apps/chat/lib/agent/loop.ts` — replace 4 call sites with wrapper calls (the 5th, `classifyMessage`, is being deleted in S3 — do not wire `withRetry` into it; if S3 hasn't started yet, leave classifyMessage untouched in S2, S3 deletes it cleanly). Delete inline `streamAttempt` blocks; map `CannotRetryError` / `FallbackTriggeredError` to `LoopResult.transition`. Estimated ~150 lines net deletion.
 - `apps/chat/lib/agent/consultation-agent.ts` — same swap if it has its own call sites (verify with grep).
 - `packages/shared/types/index.ts` — add `fallbackModel?: string` to `AgentConfigData`; add `'retry_pending'` to `SSEEvent` union.
 - `apps/console/app/admin/agent/page.tsx` + `agent-blueprint.tsx` — add `fallbackModel` dropdown in the Brain drawer (per console-audit-v5 spec).

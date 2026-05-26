@@ -14,11 +14,12 @@ import {
   XCircle,
   Plug,
   HandPlatter,
+  Users2,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'humanOps' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations'
+type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'humanOps' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations' | 'subAgents'
 
 interface NavItem {
   href: string
@@ -68,6 +69,7 @@ const OPS_ITEMS: NavItem[] = [
 const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
   { href: '/admin/skills', slug: 'skills', icon: Puzzle, color: '#5b8af7' },
+  { href: '/admin/sub-agents', slug: 'subAgents', icon: Users2, color: '#b8944c' },
   { href: '/admin/policies', slug: 'policies', icon: Shield, color: '#e64539' },
   { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },

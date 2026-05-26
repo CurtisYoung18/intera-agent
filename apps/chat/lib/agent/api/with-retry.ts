@@ -17,8 +17,6 @@ export type QuerySource =
   | 'main_loop'
   | 'sub_agent_loop'
   | 'consultation_loop'
-  | 'classifier'
-  | 'sanitizer'
   | 'policy_eval'
   | 'compact'
 
@@ -77,8 +75,6 @@ const RETRY_POLICY: Record<QuerySource, Policy> = {
   main_loop:         { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
   sub_agent_loop:    { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
   consultation_loop: { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
-  classifier:        { maxRetries: 2, retryOn: new Set(['transient_network', 'timeout']), bailOn529: true },
-  sanitizer:         { maxRetries: 2, retryOn: new Set(['transient_network', 'timeout']), bailOn529: true },
   policy_eval:       { maxRetries: 3, retryOn: new Set(['transient_network', 'timeout', 'server_error']), bailOn529: true },
   compact:           { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
 }
