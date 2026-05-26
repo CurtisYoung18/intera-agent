@@ -11,7 +11,7 @@
 //   • Applies stage transitions evaluated by StageExecutor
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { Message, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
+import type { Message, SSEEvent, CaseSchemaConfig, TodoItem } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StageExecutor, type TransitionEval } from './stage-executor'
 import { OrchestratorAgent } from './orchestrator'
@@ -115,6 +115,56 @@ export class CaseAgentLoop {
    * Prepends an explicit mode/stage banner, then delegates to
    * StageExecutor.buildStagePrompt() for stage-specific instructions.
    */
+  /** True when this case type uses SOP-driven autonomous todo execution. */
+  isSopMode(): boolean {
+    return this.caseSchema.executionMode === 'sop'
+  }
+
+  /**
+   * Build the SOP-mode system prompt.
+   * Embeds the natural-language SOP document and current todo list so the
+   * agent can plan and track its own investigation steps — CC full-trust pattern.
+   */
+  buildSopPrompt(basePrompt: string, todos: TodoItem[], facts: Record<string, unknown>): string {
+    const sopDoc = this.caseSchema.sop?.trim() || '(No SOP document provided — use your best judgment.)'
+
+    const todoLines = todos.length === 0
+      ? '  ⚠️ EMPTY — You MUST create todos via todo_write BEFORE calling any investigation tools.'
+      : todos.map((t) => {
+          const icon = t.status === 'completed' ? '✓' : t.status === 'cancelled' ? '✗' : t.status === 'in_progress' ? '→' : '○'
+          const notes = t.notes ? ` — ${t.notes}` : ''
+          return `  [${icon}] ${t.id} ${t.text}${notes}`
+        }).join('\n')
+
+    const factLines = Object.entries(facts).length === 0
+      ? '  (none yet)'
+      : Object.entries(facts)
+          .filter(([k]) => !k.startsWith('__'))
+          .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
+          .join('\n')
+
+    const header = [
+      `[INTERA MODE: SOP EXECUTION | type: ${this.caseSchema.type} | stage: ${this._currentStage}]`,
+      '',
+      '## Standard Operating Procedure',
+      sopDoc,
+      '',
+      '## Current Investigation Todos',
+      todoLines,
+      '',
+      '## Confirmed Facts',
+      factLines,
+      '',
+      '## NON-NEGOTIABLE EXECUTION RULES',
+      '',
+      'Rule 1 — Decision conditions are HARD TRIGGERS, not suggestions.',
+      'When a condition is satisfied, call the prescribed tool IN THAT SAME TURN.',
+      'Rule 2 — Create todos via todo_write BEFORE calling investigation tools.',
+      'Rule 3 — Complete each todo after its tool call succeeds.',
+    ].join('\n')
+    return header + '\n\n' + basePrompt
+  }
+
   buildPrompt(basePrompt: string): string {
     const header = [
       `[INTERA MODE: CASE EXECUTION | type: ${this.caseSchema.type} | stage: ${this._currentStage}]`,

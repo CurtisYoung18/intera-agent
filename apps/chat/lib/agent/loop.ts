@@ -484,7 +484,11 @@ export class AgentLoop {
         ].join('\n')
         stageTools = []  // No tools — pure text acknowledgement only
       } else if (this.deps.caseSchema?.executionMode === 'sop') {
-        stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
+        stagePrompt = this.caseLoop!.buildSopPrompt(
+          this.deps.systemPrompt,
+          this.caseMemory.getTodos(),
+          this.caseMemory.getConfirmedFacts(),
+        )
         stageTools = this.caseLoop!.filterSopTools(allTools)
       } else {
         stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
