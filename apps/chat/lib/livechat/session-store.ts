@@ -3,6 +3,7 @@
 // chatId is the LiveChat chat_id — globally unique per conversation.
 
 import { prisma } from '@intera/shared/prisma'
+import { Prisma } from '@prisma/client'
 import type { BridgeSession, BridgeState } from './types'
 
 export async function getSession(chatId: string): Promise<BridgeSession | null> {
@@ -45,35 +46,37 @@ export async function upsertSession(session: BridgeSession): Promise<void> {
 }
 
 export async function updateSessionState(chatId: string, state: BridgeState): Promise<void> {
-  await prisma.liveChatSession.update({
-    where: { chatId },
-    data: { state },
-  })
+  try {
+    await prisma.liveChatSession.update({
+      where: { chatId },
+      data: { state },
+    })
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      return
+    }
+    throw err
+  }
 }
 
 export async function appendTextBuffer(chatId: string, delta: string): Promise<void> {
-  const current = await prisma.liveChatSession.findUnique({
-    where: { chatId },
-    select: { textBuffer: true },
-  })
-  await prisma.liveChatSession.update({
-    where: { chatId },
-    data: { textBuffer: (current?.textBuffer ?? '') + delta },
-  })
+  await prisma.$executeRaw`
+    UPDATE livechat_sessions SET "textBuffer" = "textBuffer" || ${delta} WHERE "chatId" = ${chatId}
+  `
 }
 
 /** Returns the buffered text and resets the buffer to empty. */
 export async function flushTextBuffer(chatId: string): Promise<string> {
-  const row = await prisma.liveChatSession.findUnique({
-    where: { chatId },
-    select: { textBuffer: true },
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ textBuffer: string }>>`
+      SELECT "textBuffer" FROM livechat_sessions WHERE "chatId" = ${chatId} FOR UPDATE
+    `
+    const text = rows[0]?.textBuffer ?? ''
+    if (text) {
+      await tx.$executeRaw`
+        UPDATE livechat_sessions SET "textBuffer" = '' WHERE "chatId" = ${chatId}
+      `
+    }
+    return text
   })
-  const text = row?.textBuffer ?? ''
-  if (text) {
-    await prisma.liveChatSession.update({
-      where: { chatId },
-      data: { textBuffer: '' },
-    })
-  }
-  return text
 }
