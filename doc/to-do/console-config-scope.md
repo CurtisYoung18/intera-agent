@@ -278,7 +278,7 @@ model Skill {
 
 | 位置 (角度) | 卡片 | 内容摘要 |
 |------------|------|---------|
-| -90° (正上) | **Model & Prompt** | system prompt（主区域）+ model + temperature（Advanced 折叠） |
+| -90° (正上) | **Model** | system prompt（主区域）+ model + temperature（Advanced 折叠） |
 | -18° | **Memory** | 三档 slider（Short-term / Balanced / Long-term） |
 | 54° | **Guardrails** | 业务语义的 Policy Builder |
 | 126° | **Human Ops** | consultation prompt + human skills |

@@ -1647,6 +1647,41 @@ export class AgentLoop {
         })
       }
 
+      // ── Concurrent message consumption + MessageBus polling ──
+      try {
+        const { hasSession, getOrCreateSession } = await import('./session-store')
+        if (this.deps.caseId && hasSession(this.deps.caseId)) {
+          const session = getOrCreateSession(this.deps.caseId)
+          // Drain queued messages from concurrent requests
+          let pending
+          while ((pending = session.queue.dequeueNonBlocking())) {
+            if (pending.content === '__SESSION_CLOSED__') continue
+            this.messages.push({
+              id: crypto.randomUUID(),
+              role: 'user' as const,
+              content: `[SYSTEM] 用户补充了新信息：${pending.content}`,
+              createdAt: new Date(),
+            })
+            this.caseMemory.bumpDashboardVersion()
+            safeSendEvent({
+              type: 'withheld',
+              data: 'Processing additional user input...',
+              timestamp: new Date().toISOString(),
+            })
+          }
+          // Poll MessageBus for directives from other agents
+          const msgs = ctx.messageBus.poll(ctx.agentId)
+          for (const m of msgs) {
+            this.messages.push({
+              id: crypto.randomUUID(),
+              role: 'user' as const,
+              content: `[SYSTEM] Message from ${m.from}: ${m.content}`,
+              createdAt: new Date(),
+            })
+          }
+        }
+      } catch { /* session-store unavailable, skip */ }
+
       safeSendEvent({
         type: 'stream_request_start',
         data: null,
