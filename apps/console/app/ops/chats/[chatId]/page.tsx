@@ -124,14 +124,23 @@ function computeMetrics(traces: TraceItem[]): Metrics {
         m.llmCalls++
       } catch { /* skip malformed */ }
     }
+    // Legacy: profiler snapshots written as loop_decision before llm_response was added
     if (t.actionType === 'loop_decision' && t.payload) {
       try {
         const p = JSON.parse(t.payload) as Record<string, unknown>
         m.toolPhaseMs += (p.toolPhaseMs as number) ?? 0
+        // Legacy profiler format: { iterations, totalTokens, totalWallMs, ... }
+        if (p.totalTokens && m.llmCalls === 0) {
+          m.totalTokens = (p.totalTokens as number) || 0
+          m.inputTokens = (p.inputTokens as number) || Math.floor((p.totalTokens as number) * 0.7)
+          m.outputTokens = (p.outputTokens as number) || Math.floor((p.totalTokens as number) * 0.3)
+          m.llmCalls = (p.iterations as number) || (p.llmCalls as number) || 1
+          m.turnWallMs = (p.totalWallMs as number) || m.turnWallMs
+        }
       } catch { /* skip */ }
     }
   }
-  if (firstTs && lastTs) m.turnWallMs = lastTs - firstTs
+  if (firstTs && lastTs && m.turnWallMs === 0) m.turnWallMs = lastTs - firstTs
   return m
 }
 
