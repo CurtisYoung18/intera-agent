@@ -8,8 +8,8 @@ export async function POST(req: NextRequest) {
   try {
     const { customerId, password } = await req.json()
 
-    if (!customerId || !password) {
-      return NextResponse.json({ error: 'customerId and password are required' }, { status: 400 })
+    if (!customerId) {
+      return NextResponse.json({ error: 'customerId is required' }, { status: 400 })
     }
 
     const customer = await prisma.customer.findUnique({ where: { id: customerId } })
