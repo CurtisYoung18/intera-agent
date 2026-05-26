@@ -212,7 +212,7 @@ function FormCard({
                 />
               ) : (
                 <input
-                  type={field.type === 'file' ? 'file' : field.type === 'date' ? 'date' : 'text'}
+                  type={field.type === 'file' ? 'file' : field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
                   placeholder={field.placeholder}
                   value={field.type === 'file' ? undefined : (values[field.id] ?? '')}
                   onChange={(e) => set(field.id, field.type === 'file' ? (e.target.files?.[0]?.name ?? '') : e.target.value)}
