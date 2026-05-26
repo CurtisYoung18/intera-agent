@@ -390,32 +390,32 @@ chatId: livechat_PJ0MRSHTDG
 
 ```
 Phase 1 ─ 基础（无外部依赖）
-  ├─ Trace 扩展（9 个新 ActionType + chatId 字段 + schema 变更）
-  ├─ Query Chain Tracking
+  ├─ Trace 扩展（9 个新 ActionType + chatId 字段 + schema 变更）✅
+  ├─ Query Chain Tracking ✅
   └─ 上下文压缩补齐
 
 Phase 2 ─ 统一 Loop（Phase 1 完成后）
-  ├─ AgentContext + loop.ts 条件分支
-  ├─ Sub-Agent 轻量 SOP（task checklist + tool whitelist）
+  ├─ AgentContext + loop.ts 条件分支 ✅
+  ├─ Sub-Agent 轻量 SOP（task checklist + tool whitelist）✅
   ├─ 废弃 sub-agent.ts 独立 run()
-  └─ Orchestrator 传递 AgentContext + task checklist 注入
+  └─ Orchestrator 传递 AgentContext + task checklist 注入 ✅
 
 Phase 3 ─ 通信 + 并发（Phase 2 完成后）
-  ├─ MessageBus + MessageQueue 集成到 session-store
-  ├─ /api/messages 接入队列 → 202（✅ 已完成）
-  ├─ Loop 内队列消费 + MessageBus 广播（✅ 已完成）
-  └─ 自动错误恢复
+  ├─ MessageBus + MessageQueue 集成到 session-store ✅
+  ├─ /api/messages 接入队列 → 202 ✅
+  ├─ Loop 内队列消费 + MessageBus 广播 ✅
+  └─ 自动错误恢复 ✅
 
 Phase 4 ─ Console Trace 重构（Phase 3 完成后）
-  ├─ ActionTrace 加 chatId 字段
+  ├─ ActionTrace 加 chatId 字段 ✅
   ├─ Chats 页面升级为通用 Trace 看板
   └─ /ops/cases/[id]/memory 合并废弃
 
 Phase 5 ─ 性能优化（Phase 3 完成后，可与 Phase 4 并行）
   └─ Fork 模式 cache 共享
 
-Phase 6 ─ LiveChat Bridge（✅ 已完成）
-  └─ /api/livechat/webhook 路由
+Phase 6 ─ LiveChat Bridge ✅
+  └─ /api/livechat/webhook 路由 ✅
 ```
 
 ---

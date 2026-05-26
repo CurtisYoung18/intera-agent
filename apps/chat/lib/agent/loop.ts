@@ -270,11 +270,16 @@ export class AgentLoop {
       }
     }
 
+    // 0. Chain tracking for agent tree observability
+    const chainId = crypto.randomUUID()
+    const agentName = this.deps.caseId ? `Main[${this.deps.caseId.slice(-8)}]` : 'Main'
+
     // 1. Record user message
     this.profiler.startTurn()
     const userMsg = this.makeUserMessage(userMessage)
     this.messages.push(userMsg)
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
+    await this.traceWriter.writeAgentTreeNode(agentName, 0, chainId, 'run start')
 
     // 2. Ingest facts into Case Memory (LLM-based extraction)
     const requiredFacts = this.deps.caseSchema?.requiredFacts
@@ -503,16 +508,40 @@ export class AgentLoop {
       if (this.abortController.signal.aborted) break
 
       const apiMessages = this.buildApiMessages()
-      const stream = this.anthropicClient.messages.stream({
-        model: this.deps.config.model,
-        max_tokens: this.deps.config.maxOutputTokens ?? 4096,
-        system: stagePrompt,
-        messages: apiMessages,
-        tools: stageTools,
-        ...(this.deps.config.showThinking ? {
-          thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
-        } : {}),
-      }, { signal: this.abortController.signal })
+
+      // ── Auto error recovery: retry once on transient API errors ──
+      let stream: ReturnType<typeof this.anthropicClient.messages.stream>
+      let streamAttempt = 0
+      const maxStreamAttempts = 2
+
+      while (streamAttempt < maxStreamAttempts) {
+        streamAttempt++
+        try {
+          stream = this.anthropicClient.messages.stream({
+            model: this.deps.config.model,
+            max_tokens: this.deps.config.maxOutputTokens ?? 4096,
+            system: stagePrompt,
+            messages: apiMessages,
+            tools: stageTools,
+            ...(this.deps.config.showThinking ? {
+              thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
+            } : {}),
+          }, { signal: this.abortController.signal })
+          break // success — exit retry loop
+        } catch (err) {
+          if (streamAttempt >= maxStreamAttempts || this.abortController.signal.aborted) {
+            sendEvent({ type: 'error', data: `LLM API error after ${streamAttempt} attempts`, timestamp: new Date().toISOString() })
+            await this.traceWriter.write('loop_decision', 'Exit: LLM API error', { error: String(err), attempts: streamAttempt })
+            sendEvent({ type: 'escalated', data: { reason: `LLM API error after ${streamAttempt} attempts` }, timestamp: new Date().toISOString() })
+            return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
+          }
+          await this.traceWriter.write('loop_decision', `LLM stream retry ${streamAttempt}/${maxStreamAttempts}`, { error: String(err) })
+          await new Promise((r) => setTimeout(r, 1000 * streamAttempt)) // backoff
+        }
+      }
+
+      // stream is guaranteed to be assigned here (while loop always breaks or returns)
+      stream = stream!
 
       // Debug: full API request
       let debugSeq = -1

@@ -581,3 +581,34 @@ export interface IntentClassification {
   extractedFacts: Record<string, string>
   modelUsed?: string
 }
+
+// ── Agent Context — unified execution context for main + sub agents ──
+
+export interface AgentContext {
+  agentId: string
+  chainId: string
+  depth: number
+  parentAgentId?: string
+  allowedTools: Set<string>
+  isSubAgent: boolean
+  maxIterations: number
+  messageBus: MessageBus
+}
+
+export interface MessageBus {
+  send(to: string, msg: AgentMessage): void
+  poll(agentId: string): AgentMessage[]
+}
+
+export interface AgentMessage {
+  from: string
+  type: 'update' | 'directive' | 'query' | 'result' | 'user_input'
+  content: string
+  timestamp: string
+}
+
+export interface ChainTracking {
+  chainId: string
+  depth: number
+  parentAgentId?: string
+}
