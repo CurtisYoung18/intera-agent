@@ -12,11 +12,12 @@ import {
   Search,
   Loader2,
   XCircle,
+  Plug,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'cases' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing' | 'knowledge'
+type NavSlug = 'humanTasks' | 'cases' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations'
 
 interface NavItem {
   href: string
@@ -47,6 +48,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#5bb8f7' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
+  { href: '/admin/integrations', slug: 'integrations' as NavSlug, icon: Plug, color: '#7c3aed' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
