@@ -60,9 +60,39 @@ interface AgentContext {
 | 终端工具 (`finalize_case`, `create_case`, `create_human_task`) | 允许 | 禁止 |
 | `StreamingTextSanitizer` | 启用 | 启用 |
 | `PolicyEngine` 三 Hook | 启用 | postTool 启用 |
-| `StageExecutor` | 启用 | 跳过（sub-agent 无 stage 概念） |
+| `StageExecutor` | 启用 | **轻量 task checklist 替代**（见 1.3） |
 | compaction 阈值 | 80% context window | 60% context window |
 | TraceWriter | 完整 | 精简（仅 skill 调用 + 错误） |
+
+### 1.3 Sub-Agent 结构化执行（轻量 SOP）
+
+Sub-Agent 不走完整 StageExecutor，但通过以下三层约束保证执行确定性：
+
+**Layer 1 — Task Checklist（Orchestrator dispatch 时注入 system prompt）：**
+
+```
+[SUB-AGENT TASK: investigate_deposit]
+核查充值记录并返回结论。
+
+Required checks:
+  □ 调用 query_deposit_channel 确认支付渠道状态
+  □ 调用 get_transaction_history 拉取近7天交易
+  □ 如果渠道状态 = pending → 调用 search_delay_notice 查公告
+
+Output format:
+  { "channel_status": "...", "transactions": [...], "delay_notice": "..." }
+
+Rules:
+  - 至少完成 3 个 required checks 中的 2 个
+  - 如果找不到交易记录，报告 "no_transactions" 而非猜测
+  - 完成后调用 finalize_sub_agent，禁止调用其他终端工具
+```
+
+**Layer 2 — Tool Whitelist（`allowedTools`）：** Sub-Agent 只能调用白名单里的工具，Orchestrator dispatch 时从 `StageConfig.subAgents[].allowedSkills` 读取。
+
+**Layer 3 — SOP 模式可选保留：** 对合规要求极高的场景（如提现审核），在 `SubAgentConfig` 里设 `executionMode: 'sop'`，sub-agent 走完整 SOP todo 循环。默认用轻量 task checklist。
+
+与 CC 的区别：CC 的 sub-agent 完全自由调用工具，靠 system prompt 软约束。Intera 保留了 iGaming 需要的确定性——task checklist 比 CC 更结构化，但比完整 StageExecutor 更轻量。
 
 ---
 
@@ -273,7 +303,53 @@ const chain = {
 
 ---
 
-## 8. Console Trace 新增 ActionType
+## 8. Console Trace 重构 — 以 chatId 为结算单位
+
+### 8.1 当前问题
+
+ActionTrace 以 `caseId` 为单位。LiveChat 场景下，一个对话可能产生多个 case，`caseId` 无法承载对话级别的全局视图（如 `incoming_chat`、`queue_enqueued`、跨 case 的 agent 树）。
+
+### 8.2 改造方案
+
+**ActionTrace 加 `chatId` 可选字段：**
+
+```prisma
+model ActionTrace {
+  // ... existing fields ...
+  chatId     String?  // 新增：所属对话 ID
+  @@index([chatId])
+}
+```
+
+写入 trace 时，若 AgentContext 有 chatId 则填入。所有现有 `caseId` 查询不受影响。
+
+**Console Chats 页面升级为通用 Trace 看板：**
+
+```
+Console → Chats → 点开一个 chat
+
+chatId: livechat_PJ0MRSHTDG
+├─ 14:32:01  incoming_chat         新对话
+├─ 14:32:02  case_created          deposit_issue (case_xxx)
+│   ├─ 14:32:03  skill_called      kb_hybrid_retrieve
+│   ├─ 14:32:04  skill_result      kb_hybrid_retrieve (3 hits)
+│   ├─ 14:32:05  agent_tree_node   sub:investigator dispatch (depth=1)
+│   ├─ 14:32:08  queue_enqueued    用户补充: "交易号 TX12345"
+│   ├─ 14:32:09  dashboard_bump    v12 → v13
+│   ├─ 14:32:10  sub_agent_done    investigator completed (1.2s)
+│   └─ 14:32:13  final_resolution  resolved
+├─ 14:35:22  case_created          withdraw_issue (case_yyy)
+│   └─ ...
+└─ 14:40:00  chat_deactivated      对话关闭
+```
+
+**可舍弃的旧页面：**
+- `/ops/cases/[id]/memory` 独立页面 → 合并到 chat trace 时间线可展开 section
+- `/ops/cases/[id]/traces` 独立 API → chat trace API 直接覆盖（GitHub issue: `DELETE /api/cases/[id]/traces`）
+
+**Cases 页面保持不变但降级：** 作为按 case 过滤的快捷入口，查询时从 chat trace 中筛选 `caseId = xxx` 的节点。
+
+### 8.3 新增 ActionType
 
 ```typescript
 // trace.ts 新增:
@@ -283,9 +359,10 @@ const chain = {
 | 'message_bus_receive'       // Agent 收到消息
 | 'agent_tree_node'           // Agent 调用树节点（payload: chainId, depth）
 | 'fork_dispatch'             // Fork 模式批量 dispatch（payload: childCount）
+| 'incoming_chat'             // LiveChat 新对话（payload: platform, externalChatId）
+| 'chat_deactivated'          // 对话关闭
+| 'case_merged'               // 同 chat 内多个 case 的关联标记
 ```
-
-全部通过 `caseId` → `chatId` 关联，Console → Cases → Timeline 可追溯完整链路。
 
 ---
 
@@ -295,14 +372,17 @@ const chain = {
 |------|------|----------|
 | `loop.ts` | 重构 | 1,3,5,6 — AgentContext + 队列消费 + 错误恢复 + chain tracking |
 | `sub-agent.ts` | 废弃独立 run() | 1 — 改为调 AgentLoop.run(ctx) |
-| `orchestrator.ts` | 修改 | 4 — Fork 模式 + AgentContext 传递 |
+| `orchestrator.ts` | 修改 | 1.3, 4 — task checklist 注入 + Fork 模式 + AgentContext 传递 |
 | `session-store.ts` | 扩展 | 2,3 — MessageBus + dequeueNonBlocking + resolved |
 | `compact.ts` | 扩展 | 7 — contextCollapse + reactiveCompact |
-| `trace.ts` | 扩展 | 8 — 6 个新 ActionType |
+| `trace.ts` | 扩展 | 8 — 9 个新 ActionType + chatId 字段 |
 | `types/index.ts` | 扩展 | — AgentContext, MessageBus, ChainTracking 类型 |
 | `config-cache.ts` | 修改 | 5 — 读取 models.fallback |
 | `messages/route.ts` | 修改 | 3 — 接入 MessageQueue，202 返回 |
-| `livechat/webhook/route.ts` | 新建 | — HMAC 验签 + 透传 /api/messages |
+| `schema.prisma` | 修改 | 8 — ActionTrace 加 chatId 字段 |
+| `apps/console/app/ops/chats/` | 重构 | 8 — 升级为通用 Trace 看板 |
+| `apps/console/app/ops/cases/[id]/memory/` | 废弃 | 8 — 合并到 chat trace |
+| `livechat/webhook/route.ts` | 已完成 | — HMAC 验签 + 透传 /api/messages |
 
 ---
 
@@ -310,25 +390,31 @@ const chain = {
 
 ```
 Phase 1 ─ 基础（无外部依赖）
-  ├─ Trace 扩展（6 个新 ActionType）
+  ├─ Trace 扩展（9 个新 ActionType + chatId 字段 + schema 变更）
   ├─ Query Chain Tracking
   └─ 上下文压缩补齐
 
 Phase 2 ─ 统一 Loop（Phase 1 完成后）
   ├─ AgentContext + loop.ts 条件分支
+  ├─ Sub-Agent 轻量 SOP（task checklist + tool whitelist）
   ├─ 废弃 sub-agent.ts 独立 run()
-  └─ Orchestrator 传递 AgentContext
+  └─ Orchestrator 传递 AgentContext + task checklist 注入
 
 Phase 3 ─ 通信 + 并发（Phase 2 完成后）
   ├─ MessageBus + MessageQueue 集成到 session-store
-  ├─ /api/messages 接入队列 → 202
-  ├─ Loop 内队列消费 + MessageBus 广播
+  ├─ /api/messages 接入队列 → 202（✅ 已完成）
+  ├─ Loop 内队列消费 + MessageBus 广播（✅ 已完成）
   └─ 自动错误恢复
 
-Phase 4 ─ 性能优化（Phase 3 完成后）
+Phase 4 ─ Console Trace 重构（Phase 3 完成后）
+  ├─ ActionTrace 加 chatId 字段
+  ├─ Chats 页面升级为通用 Trace 看板
+  └─ /ops/cases/[id]/memory 合并废弃
+
+Phase 5 ─ 性能优化（Phase 3 完成后，可与 Phase 4 并行）
   └─ Fork 模式 cache 共享
 
-Phase 5 ─ LiveChat Bridge（Phase 3 完成后，可与 Phase 4 并行）
+Phase 6 ─ LiveChat Bridge（✅ 已完成）
   └─ /api/livechat/webhook 路由
 ```
 

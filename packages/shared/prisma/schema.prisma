@@ -282,6 +282,7 @@ model ActionTrace {
   id     String @id @default(cuid())
   caseId String
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  chatId String?
 
   actionType String
   title      String
@@ -291,6 +292,7 @@ model ActionTrace {
   createdAt DateTime @default(now())
 
   @@index([caseId])
+  @@index([chatId])
   @@map("action_traces")
 }
 

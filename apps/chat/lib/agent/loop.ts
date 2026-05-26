@@ -183,6 +183,7 @@ export class AgentLoop {
     this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.skillRouter = new SkillRouter(deps.customerId)
     this.traceWriter = new TraceWriter(deps.caseId)
+    if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.abortController = new AbortController()
     this.anthropicClient = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,

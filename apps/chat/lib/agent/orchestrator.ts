@@ -60,20 +60,37 @@ export class OrchestratorAgent {
         .replace(/\{\{confirmedFacts\}\}/g, JSON.stringify(caseMemory.confirmedFacts))
         .replace(/\{\{missingFacts\}\}/g, JSON.stringify(caseMemory.missingFacts))
 
+      // ── Build task checklist for structured execution ──
+      const skillNames = config.skills?.length
+        ? config.skills.map((s) => `  □ 调用 ${s}`).join('\n')
+        : '  □ 根据 task 描述自行判断需要调用哪些工具'
+      const taskDirective = `[SUB-AGENT TASK: ${config.name}]
+${taskPrompt}
+
+Required tools (you may ONLY use these):
+${skillNames}
+
+Rules:
+  - 严格按照 task 描述执行，不得自由发挥
+  - 工具调用失败时报告具体错误，不得猜测结果
+  - 完成后调用 finalize_sub_agent，禁止调用其他终端工具（finalize_case、create_case、create_human_task）
+  - 如果收集到了足够信息，尽早完成，不要反复核查`
+
       // Surface key facts explicitly so sub-agents don't miss them (e.g. txnId
       // is critical for query_order_status to return correct results).
       const facts = caseMemory.confirmedFacts as Record<string, unknown>
       const txnId = facts?.txnId
       const paymentMethod = facts?.paymentMethod
-      if (txnId) {
-        taskPrompt += `\n\n[Harness] Use txnId="${txnId}" when calling query_order_status.`
-      }
-      if (paymentMethod) {
-        taskPrompt += `\n[Harness] Use paymentMethod="${paymentMethod}" when calling query_payment_channel_status.`
-      }
-
+      const extraHints: string[] = []
+      if (txnId) extraHints.push(`Use txnId="${txnId}" when calling query_order_status.`)
+      if (paymentMethod) extraHints.push(`Use paymentMethod="${paymentMethod}" when calling query_payment_channel_status.`)
       const uid = this.platformUserId.trim() || 'anonymous'
-      taskPrompt += `\n[Harness] platformUserId for tools (e.g. read_case_history): "${uid}". Use this as userId unless the customer explicitly gives another authoritative ID.`
+      extraHints.push(`platformUserId for tools (e.g. read_case_history): "${uid}"`)
+      if (extraHints.length) {
+        taskPrompt = taskDirective + '\n\n[Harness Hints]\n' + extraHints.map((h) => `- ${h}`).join('\n')
+      } else {
+        taskPrompt = taskDirective
+      }
 
       tasks.push({
         id: `subagent_${config.name}_${Date.now()}`,

@@ -24,6 +24,16 @@ export type ActionType =
   | 'microcompact'
   | 'stage_eval'
   | 'intent_classify'
+  // ── LiveChat / multi-agent trace ──
+  | 'incoming_chat'
+  | 'chat_deactivated'
+  | 'queue_message_enqueued'
+  | 'queue_message_consumed'
+  | 'message_bus_send'
+  | 'message_bus_receive'
+  | 'agent_tree_node'
+  | 'fork_dispatch'
+  | 'case_merged'
 
 export interface TraceEntry {
   id: string
@@ -36,7 +46,14 @@ export interface TraceEntry {
 }
 
 export class TraceWriter {
+  private chatId: string | null = null
+
   constructor(private caseId: string) {}
+
+  /** Set the chatId for all subsequent trace writes. */
+  setChatId(chatId: string | null): void {
+    this.chatId = chatId
+  }
 
   async write(
     actionType: ActionType,
@@ -62,6 +79,7 @@ export class TraceWriter {
       .create({
         data: {
           caseId: entry.caseId,
+          chatId: this.chatId,
           actionType: entry.actionType,
           title: entry.title,
           detail: entry.detail || null,
@@ -165,5 +183,52 @@ export class TraceWriter {
       textPreview: textContent ? textContent.slice(0, 3000) : undefined,
       toolCalls: toolNames?.length ? toolNames : undefined,
     })
+  }
+
+  // ── LiveChat / multi-agent trace helpers ──
+
+  async writeQueueEnqueued(queueDepth: number, messagePreview: string): Promise<void> {
+    await this.write('queue_message_enqueued', `Message queued (depth: ${queueDepth})`, {
+      queueDepth,
+      messagePreview: messagePreview.slice(0, 200),
+    })
+  }
+
+  async writeQueueConsumed(messageCount: number, iteration: number): Promise<void> {
+    await this.write('queue_message_consumed', `Consumed ${messageCount} queued messages`, {
+      messageCount,
+      iteration,
+    })
+  }
+
+  async writeAgentTreeNode(
+    agentName: string,
+    depth: number,
+    chainId: string,
+    detail: string,
+  ): Promise<void> {
+    await this.write('agent_tree_node', `[${agentName}] ${detail}`, {
+      agentName,
+      depth,
+      chainId,
+    })
+  }
+
+  async writeForkDispatch(childCount: number, stage: string): Promise<void> {
+    await this.write('fork_dispatch', `Fork dispatched ${childCount} agents`, {
+      childCount,
+      stage,
+    })
+  }
+
+  async writeIncomingChat(platform: string, externalId: string): Promise<void> {
+    await this.write('incoming_chat', `New chat: ${platform}/${externalId}`, {
+      platform,
+      externalId,
+    })
+  }
+
+  async writeChatDeactivated(): Promise<void> {
+    await this.write('chat_deactivated', 'Chat deactivated')
   }
 }
