@@ -14,13 +14,10 @@ export async function GET() {
       orderBy: { name: 'asc' },
     })
 
-    // Ensure all default skills exist (insert missing, skip existing)
-    const existingNames = new Set(skills.map((s) => s.name))
-    const missing = DEFAULT_SKILLS.filter((s) => !existingNames.has(s.name))
-
-    if (missing.length > 0) {
+    // Auto-seed only when skills table is completely empty (first access for a customer)
+    if (skills.length === 0) {
       await ensureDefaultCustomer(CUSTOMER_ID)
-      for (const s of missing) {
+      for (const s of DEFAULT_SKILLS) {
         await prisma.skill.create({
           data: {
             customerId: CUSTOMER_ID,
