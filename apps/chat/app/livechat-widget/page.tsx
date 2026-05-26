@@ -1,0 +1,307 @@
+// apps/chat/app/livechat-widget/page.tsx
+'use client'
+
+import { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
+import type { WidgetPayload, StatusTrackStep, InteractionOption, FormField } from '@/lib/livechat/types'
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input'
+
+interface AppState {
+  view: ViewKind
+  caseId: string
+  steps: StatusTrackStep[]
+  options: InteractionOption[]
+  fields: FormField[]
+}
+
+const INITIAL_STATE: AppState = {
+  view: 'idle',
+  caseId: '',
+  steps: [],
+  options: [],
+  fields: [],
+}
+
+// ── LiveChat SDK bridge ───────────────────────────────────────────────────────
+
+declare global {
+  interface Window {
+    LiveChatWidget?: {
+      on: (event: string, cb: (data: unknown) => void) => void
+      call: (action: string, payload?: unknown) => void
+    }
+  }
+}
+
+function sendToLiveChat(type: string, properties: Record<string, unknown>) {
+  window.LiveChatWidget?.call('send_event', { type, properties })
+}
+
+// ── StatusTrack View ─────────────────────────────────────────────────────────
+
+function StatusTrack({ steps }: { steps: StatusTrackStep[] }) {
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-[10px] uppercase tracking-widest text-indigo-400 font-semibold mb-3">
+        Intera 处理中
+      </p>
+      <AnimatePresence initial={false}>
+        {steps.map((step) => (
+          <motion.div
+            key={step.id + step.state}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center gap-2.5 bg-white/70 backdrop-blur-sm border border-indigo-100 rounded-xl px-3 py-2 shadow-sm"
+          >
+            {step.state === 'running' ? (
+              <div className="w-3 h-3 rounded-full border-2 border-indigo-200 border-t-indigo-500 animate-spin flex-shrink-0" />
+            ) : (
+              <div className="w-3 h-3 rounded-full border-2 border-emerald-300 bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                <svg className="w-2 h-2 text-emerald-500" viewBox="0 0 8 8" fill="none">
+                  <path d="M1 4l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className={`text-[12px] font-medium truncate ${step.state === 'done' ? 'text-gray-700' : 'text-gray-900'}`}>
+                {step.label}
+              </p>
+            </div>
+            {step.state === 'done' && step.durationMs != null && (
+              <span className="text-[10px] text-emerald-400 flex-shrink-0">
+                {(step.durationMs / 1000).toFixed(1)}s
+              </span>
+            )}
+            {step.state === 'running' && (
+              <span className="text-[10px] text-indigo-400 flex-shrink-0">进行中</span>
+            )}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ── OptionList View ──────────────────────────────────────────────────────────
+
+function OptionList({
+  caseId,
+  options,
+  onSubmit,
+}: {
+  caseId: string
+  options: InteractionOption[]
+  onSubmit: () => void
+}) {
+  const [textInputs, setTextInputs] = useState<Record<string, string>>({})
+
+  const handleSelect = (opt: InteractionOption) => {
+    const input = opt.inputType === 'text' ? (textInputs[opt.id] ?? '') : undefined
+    sendToLiveChat('intera_interaction_submit', { caseId, optionId: opt.id, input })
+    onSubmit()
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      {options.map((opt) => (
+        <div key={opt.id} className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
+          <button
+            onClick={() => opt.inputType !== 'text' && handleSelect(opt)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-gray-800 truncate">{opt.label}</p>
+              {opt.description && (
+                <p className="text-[11px] text-gray-400 truncate">{opt.description}</p>
+              )}
+            </div>
+            <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          {opt.inputType === 'text' && (
+            <div className="px-3 pb-2.5 space-y-2 border-t border-gray-50">
+              <input
+                type="text"
+                placeholder={opt.inputPlaceholder ?? '请输入…'}
+                value={textInputs[opt.id] ?? ''}
+                onChange={(e) => setTextInputs(prev => ({ ...prev, [opt.id]: e.target.value }))}
+                className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg outline-none focus:border-indigo-300"
+              />
+              <button
+                onClick={() => handleSelect(opt)}
+                disabled={!(textInputs[opt.id] ?? '').trim()}
+                className="w-full py-1.5 text-[12px] font-semibold text-white bg-indigo-500 rounded-lg disabled:opacity-40"
+              >
+                提交
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── FormCard View ────────────────────────────────────────────────────────────
+
+function FormCard({
+  caseId,
+  fields,
+  onSubmit,
+}: {
+  caseId: string
+  fields: FormField[]
+  onSubmit: () => void
+}) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [flipped, setFlipped] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  const set = (id: string, val: string) => setValues(prev => ({ ...prev, [id]: val }))
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    setFlipped(true)
+    await new Promise(r => setTimeout(r, 350)) // wait for flip animation
+    sendToLiveChat('intera_form_submit', { caseId, answers: values })
+    onSubmit()
+  }
+
+  const isValid = fields.every(f => !f.required || (values[f.id] ?? '').trim())
+
+  return (
+    <div className="p-3" style={{ perspective: '600px' }}>
+      <div
+        className="relative transition-transform duration-500"
+        style={{ transformStyle: 'preserve-3d', transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)' } as React.CSSProperties}
+      >
+        {/* Front */}
+        <div
+          className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 space-y-3"
+          style={{ backfaceVisibility: 'hidden' } as React.CSSProperties}
+        >
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">请填写信息</p>
+          {fields.map((field) => (
+            <div key={field.id} className="space-y-1">
+              <label className="block text-[12px] font-medium text-gray-700">
+                {field.label}{field.required && <span className="text-red-400 ml-0.5">*</span>}
+              </label>
+              {field.type === 'select' ? (
+                <select
+                  value={values[field.id] ?? ''}
+                  onChange={(e) => set(field.id, e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg bg-white"
+                >
+                  <option value="">请选择…</option>
+                  {(field.options ?? []).map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              ) : field.type === 'textarea' ? (
+                <textarea
+                  rows={3}
+                  placeholder={field.placeholder}
+                  value={values[field.id] ?? ''}
+                  onChange={(e) => set(field.id, e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg resize-none"
+                />
+              ) : (
+                <input
+                  type={field.type === 'file' ? 'file' : field.type === 'date' ? 'date' : 'text'}
+                  placeholder={field.placeholder}
+                  value={field.type === 'file' ? undefined : (values[field.id] ?? '')}
+                  onChange={(e) => set(field.id, field.type === 'file' ? (e.target.files?.[0]?.name ?? '') : e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg"
+                />
+              )}
+            </div>
+          ))}
+          <button
+            onClick={() => { void handleSubmit() }}
+            disabled={!isValid || submitting}
+            className="w-full py-2 text-[13px] font-semibold text-white bg-indigo-500 rounded-xl disabled:opacity-40"
+          >
+            提交
+          </button>
+        </div>
+
+        {/* Back (success state) */}
+        <div
+          className="absolute inset-0 bg-emerald-50 border border-emerald-100 rounded-xl flex flex-col items-center justify-center gap-2 text-emerald-600"
+          style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' } as React.CSSProperties}
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-[13px] font-semibold">已提交，请稍候…</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main App ─────────────────────────────────────────────────────────────────
+
+export default function LiveChatWidget() {
+  const [state, setState] = useState<AppState>(INITIAL_STATE)
+
+  useEffect(() => {
+    // Listen for intera_widget_payload events from Bridge
+    window.LiveChatWidget?.on('new_event', (raw: unknown) => {
+      const data = raw as { type?: string; content?: WidgetPayload }
+      if (data?.type !== 'intera_widget_payload' || !data.content) return
+
+      const payload = data.content
+      setState(prev => {
+        switch (payload.kind) {
+          case 'status_track': {
+            const step = payload.step
+            if (!step) return prev
+            const existingIdx = prev.steps.findIndex(s => s.id === step.id)
+            const steps = existingIdx >= 0
+              ? prev.steps.map((s, i) => i === existingIdx ? step : s)
+              : [...prev.steps, step]
+            return { ...prev, view: 'status_track', caseId: payload.caseId, steps }
+          }
+          case 'propose_interaction':
+            return { ...prev, view: 'propose_interaction', caseId: payload.caseId, options: payload.options ?? [], steps: [] }
+          case 'request_user_input':
+            return { ...prev, view: 'request_user_input', caseId: payload.caseId, fields: payload.fields ?? [], steps: [] }
+          default:
+            return prev
+        }
+      })
+    })
+  }, [])
+
+  const handleViewComplete = () => setState(INITIAL_STATE)
+
+  if (state.view === 'idle') return null
+
+  return (
+    <div className="font-sans bg-gray-50 min-h-screen">
+      <AnimatePresence mode="wait">
+        {state.view === 'status_track' && (
+          <motion.div key="status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <StatusTrack steps={state.steps} />
+          </motion.div>
+        )}
+        {state.view === 'propose_interaction' && (
+          <motion.div key="options" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <OptionList caseId={state.caseId} options={state.options} onSubmit={handleViewComplete} />
+          </motion.div>
+        )}
+        {state.view === 'request_user_input' && (
+          <motion.div key="form" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <FormCard caseId={state.caseId} fields={state.fields} onSubmit={handleViewComplete} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
