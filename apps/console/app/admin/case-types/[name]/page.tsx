@@ -172,14 +172,14 @@ export default function CaseTypeDetailPage() {
     if (newMode === ct.executionMode) return
 
     if (ct.executionMode !== 'sop' && newMode === 'sop') {
-      // stage -> sop
+      // stage -> adaptive
       if (!confirm(
-        'Stage-mode sub-agent configs will be archived to the case type\'s JSON metadata but no longer dispatched. Switch?'
+        'Switch to Adaptive mode? Stage-mode sub-agent configs will be archived to JSON metadata but no longer dispatched.'
       )) return
     } else if (ct.executionMode === 'sop' && newMode !== 'sop') {
-      // sop -> stage
+      // adaptive -> stage
       if (!confirm(
-        'You\'ll need to assign sub-agents per stage. Existing sub-agent suggestions will be saved to the case type\'s metadata for reference.'
+        'Switch to Stage mode? You\'ll need to assign sub-agents per stage. Existing sub-agent suggestions will be preserved.'
       )) return
     }
 
@@ -303,13 +303,13 @@ export default function CaseTypeDetailPage() {
               }`}
             >
               <Wand2 className="w-3.5 h-3.5" />
-              SOP Mode
+              Adaptive
             </button>
           </div>
           <p className="text-[10px] text-[var(--smoke)]">
             {isStageMode
-              ? 'Agent follows a predefined stage pipeline with configurable guardrails per stage.'
-              : 'Agent reads your SOP document and builds a dynamic todo list — no predefined stage pipeline.'}
+              ? 'Predefined stage pipeline with configurable guardrails. Best for structured workflows.'
+              : 'LLM-driven execution. The agent autonomously plans and adapts — define sub-agents in the global registry.'}
           </p>
         </div>
       </div>
@@ -423,7 +423,7 @@ export default function CaseTypeDetailPage() {
         </div>
       )}
 
-      {/* ── SOP/CC-mode: Sub-agent suggestions ────────────────── */}
+      {/* ── Adaptive mode: Sub-agent suggestions ──────────────── */}
       {!isStageMode && (
         <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 space-y-4">
           <h2 className="text-[14px] font-semibold text-[var(--mist)] flex items-center gap-2">
