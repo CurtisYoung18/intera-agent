@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Search, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertCircle, Brain, Database, Shield, Users, MessageSquareText, Search, X, ChevronDown, ChevronRight } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
-import AgentPolicyHooksPicker from '@/components/admin/agent-policy-hooks-picker'
+import GuardrailSummaryList from '@/components/admin/guardrail-summary-list'
+import SubAgentSummaryList from '@/components/admin/sub-agent-summary-list'
 import AgentHumanInteractionPanel from '@/components/admin/agent-human-interaction-panel'
 import {
   DrawerCheckboxRail,
@@ -20,7 +21,7 @@ import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT } from '@intera/shar
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'knowledge'
+type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'humanOps' | 'knowledge'
 type MemoryTier = 'short' | 'balanced' | 'long' | 'custom'
 
 const TIER_LABELS: Record<MemoryTier, string> = {
@@ -95,11 +96,11 @@ export default function AgentConfigPage() {
   const sectionMeta = useMemo(
     () =>
       ({
-        prompt: { icon: <Brain className="w-4 h-4" />, title: t('agent.section.prompt'), color: '#8b6ff5' },
-        model: { icon: <Cpu className="w-4 h-4" />, title: t('agent.section.model'), color: '#5b8af7' },
+        brain: { icon: <Brain className="w-4 h-4" />, title: t('agent.section.brain'), color: '#8b6ff5' },
         memory: { icon: <Database className="w-4 h-4" />, title: t('agent.section.memory'), color: '#d4912e' },
-        policy: { icon: <Shield className="w-4 h-4" />, title: t('agent.section.policy'), color: '#2ea04a' },
-        templates: { icon: <FileText className="w-4 h-4" />, title: t('agent.section.humanOps'), color: '#5bb8f7' },
+        guardrails: { icon: <Shield className="w-4 h-4" />, title: t('agent.section.guardrails'), color: '#2ea04a' },
+        subAgents: { icon: <Users className="w-4 h-4" />, title: t('agent.section.subAgents'), color: '#e75c8a' },
+        humanOps: { icon: <MessageSquareText className="w-4 h-4" />, title: t('agent.section.humanOps'), color: '#5bb8f7' },
         knowledge: { icon: <Search className="w-4 h-4" />, title: t('agent.section.knowledge'), color: '#14b8a6' },
       }) satisfies Record<Section, { icon: React.ReactNode; title: string; color: string }>,
     [t],
@@ -317,7 +318,6 @@ export default function AgentConfigPage() {
 
   const modelCheckboxes: Array<[keyof AgentConfigData, string]> = [
     ['showThinking', 'agent.showThinking'],
-    ['enableLlmSanitization', 'agent.enableLlmSanitization'],
   ]
 
   const memToggles: Array<[keyof MemoryStrategy, string, string]> = [
@@ -419,86 +419,86 @@ export default function AgentConfigPage() {
                 }
               >
                 <DrawerShell>
-            {activeSection === 'prompt' && (
-              <DrawerSection
-                accent="#8b6ff5"
-                eyebrow={t('agent.promptEyebrow')}
-                title={t('agent.section.prompt')}
-                lead={t('agent.promptHelp')}
-                actions={
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(t('agent.promptResetConfirm')))
-                        update('systemPrompt', DEFAULT_SYSTEM_PROMPT)
-                    }}
-                    className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
-                  >
-                    {t('agent.promptResetDefault')}
-                  </button>
-                }
-              >
-                <div className="flex flex-col gap-3">
-                  <HighlightedTextarea
-                    id="system-prompt-textarea"
-                    value={config.systemPrompt}
-                    onChange={(v) => update('systemPrompt', v)}
-                    spellCheck={false}
-                    className={`w-full ${drawerFieldClass(true)}`}
-                    highlights={[
-                      { pattern: /\{\{case_types\}\}/g, color: '#7c5ce7' },
-                      { pattern: /\{\{active_policies\}\}/g, color: '#e75c8a' },
-                      { pattern: /\{\{case_schema\}\}/g, color: '#2ea04a' },
-                      { pattern: /\{\{case_state\}\}/g, color: '#d4912e' },
-                      { pattern: /\{\{session_binding\}\}/g, color: '#5b8af7' },
-                    ]}
-                  />
-                  <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5 text-[10px] text-[var(--fog)]/60">
-                    <span className="mr-1 font-medium text-[var(--fog)]/80">{t('agent.promptPlaceholders')}</span>
-                    {[
-                      { key: '{{case_types}}', desc: t('agent.plhCaseTypes') },
-                      { key: '{{active_policies}}', desc: t('agent.plhPolicies') },
-                      { key: '{{case_schema}}', desc: t('agent.plhCaseSchema') },
-                      { key: '{{case_state}}', desc: t('agent.plhCaseState') },
-                      { key: '{{session_binding}}', desc: t('agent.plhSessionBinding') },
-                    ].map((ph) => (
-                      <button
-                        key={ph.key}
-                        type="button"
-                        title={ph.desc}
-                        onClick={() => {
-                          const ta = document.getElementById('system-prompt-textarea') as HTMLTextAreaElement | null
-                          if (!ta) { update('systemPrompt', (config.systemPrompt + '\n' + ph.key).trimStart()); return }
-                          const start = ta.selectionStart ?? ta.value.length
-                          const end = ta.selectionEnd ?? start
-                          const next = ta.value.slice(0, start) + ph.key + ta.value.slice(end)
-                          update('systemPrompt', next)
-                          requestAnimationFrame(() => {
-                            const el = document.getElementById('system-prompt-textarea') as HTMLTextAreaElement | null
-                            if (el) { el.selectionStart = el.selectionEnd = start + ph.key.length; el.focus() }
-                          })
-                        }}
-                        className="rounded-full border border-black/[0.06] bg-white/70 px-2 py-0.5 font-mono text-[10px] leading-relaxed hover:bg-lavender/15 hover:border-lavender/30 transition-colors"
-                      >
-                        {ph.key}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
-                    <span>{t('agent.promptAutosaveHint')}</span>
-                    <span className="font-mono tabular-nums opacity-95">
-                      {t('agent.promptCharCount', { n: config.systemPrompt?.length ?? 0 })}
-                    </span>
-                  </div>
-                </div>
-              </DrawerSection>
-            )}
-
-            {activeSection === 'model' && (
+            {activeSection === 'brain' && (
               <>
+                {/* ── Prompt sub-section ── */}
                 <DrawerSection
-                  accent="#5b8af7"
-                  title={t('agent.section.model')}
+                  accent="#8b6ff5"
+                  eyebrow={t('agent.promptEyebrow')}
+                  title={t('agent.brain.subPrompt')}
+                  lead={t('agent.promptHelp')}
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(t('agent.promptResetConfirm')))
+                          update('systemPrompt', DEFAULT_SYSTEM_PROMPT)
+                      }}
+                      className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
+                    >
+                      {t('agent.promptResetDefault')}
+                    </button>
+                  }
+                >
+                  <div className="flex flex-col gap-3">
+                    <HighlightedTextarea
+                      id="system-prompt-textarea"
+                      value={config.systemPrompt}
+                      onChange={(v) => update('systemPrompt', v)}
+                      spellCheck={false}
+                      className={`w-full ${drawerFieldClass(true)}`}
+                      highlights={[
+                        { pattern: /\{\{case_types\}\}/g, color: '#7c5ce7' },
+                        { pattern: /\{\{active_policies\}\}/g, color: '#e75c8a' },
+                        { pattern: /\{\{case_schema\}\}/g, color: '#2ea04a' },
+                        { pattern: /\{\{case_state\}\}/g, color: '#d4912e' },
+                        { pattern: /\{\{session_binding\}\}/g, color: '#5b8af7' },
+                      ]}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5 text-[10px] text-[var(--fog)]/60">
+                      <span className="mr-1 font-medium text-[var(--fog)]/80">{t('agent.promptPlaceholders')}</span>
+                      {[
+                        { key: '{{case_types}}', desc: t('agent.plhCaseTypes') },
+                        { key: '{{active_policies}}', desc: t('agent.plhPolicies') },
+                        { key: '{{case_schema}}', desc: t('agent.plhCaseSchema') },
+                        { key: '{{case_state}}', desc: t('agent.plhCaseState') },
+                        { key: '{{session_binding}}', desc: t('agent.plhSessionBinding') },
+                      ].map((ph) => (
+                        <button
+                          key={ph.key}
+                          type="button"
+                          title={ph.desc}
+                          onClick={() => {
+                            const ta = document.getElementById('system-prompt-textarea') as HTMLTextAreaElement | null
+                            if (!ta) { update('systemPrompt', (config.systemPrompt + '\n' + ph.key).trimStart()); return }
+                            const start = ta.selectionStart ?? ta.value.length
+                            const end = ta.selectionEnd ?? start
+                            const next = ta.value.slice(0, start) + ph.key + ta.value.slice(end)
+                            update('systemPrompt', next)
+                            requestAnimationFrame(() => {
+                              const el = document.getElementById('system-prompt-textarea') as HTMLTextAreaElement | null
+                              if (el) { el.selectionStart = el.selectionEnd = start + ph.key.length; el.focus() }
+                            })
+                          }}
+                          className="rounded-full border border-black/[0.06] bg-white/70 px-2 py-0.5 font-mono text-[10px] leading-relaxed hover:bg-lavender/15 hover:border-lavender/30 transition-colors"
+                        >
+                          {ph.key}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
+                      <span>{t('agent.promptAutosaveHint')}</span>
+                      <span className="font-mono tabular-nums opacity-95">
+                        {t('agent.promptCharCount', { n: config.systemPrompt?.length ?? 0 })}
+                      </span>
+                    </div>
+                  </div>
+                </DrawerSection>
+
+                {/* ── Model sub-section ── */}
+                <DrawerSection
+                  accent="#8b6ff5"
+                  title={t('agent.brain.subModel')}
                   lead={t('agent.modelCaseTypeNote')}
                 >
                   <label className="space-y-1.5 block">
@@ -523,7 +523,7 @@ export default function AgentConfigPage() {
                       onChange={(e) => update('evaluationModel', e.target.value)}
                       className={`glass-input-console ${drawerFieldClass(true)} w-full`}
                     >
-                      <option value="">— Default (haiku) —</option>
+                      <option value="">-- Default (haiku) --</option>
                       {mainModels.map((m) => (
                         <option key={m} value={m}>
                           {m}
@@ -535,7 +535,9 @@ export default function AgentConfigPage() {
                     </span>
                   </label>
                 </DrawerSection>
-                <DrawerSection accent="#5b8af7" title={t('agent.drawer.perfTitle')}>
+
+                {/* ── Generation sub-section ── */}
+                <DrawerSection accent="#8b6ff5" title={t('agent.brain.subGeneration')}>
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] font-medium text-[var(--fog)]">
                       {t('agent.temperature', { n: config.temperature })}
@@ -568,7 +570,7 @@ export default function AgentConfigPage() {
                       unit={u.tokens}
                     />
                   </div>
-                  <DrawerCheckboxRail accent="#5b8af7">
+                  <DrawerCheckboxRail accent="#8b6ff5">
                     {modelCheckboxes.map(([key, tk]) => (
                       <label key={String(key)} className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-white/50">
                         <input
@@ -581,91 +583,6 @@ export default function AgentConfigPage() {
                       </label>
                     ))}
                   </DrawerCheckboxRail>
-                </DrawerSection>
-
-                {/* ── Composer Assist (Beta) ── moved here from Advanced */}
-                <DrawerSection
-                  accent="#5b8af7"
-                  eyebrow={t('agent.drawer.composerEyebrow')}
-                  title={t('agent.prefixToggle')}
-                  lead={t('agent.prefixSubtitle')}
-                  actions={
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={config.prefixContinuationEnabled}
-                      aria-label={t('agent.prefixToggle')}
-                      onClick={() => update('prefixContinuationEnabled', !config.prefixContinuationEnabled)}
-                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                        config.prefixContinuationEnabled
-                          ? 'bg-indigo shadow-[0_0_0_3px_rgba(99,102,241,0.15)]'
-                          : 'bg-black/[0.12]'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-                          config.prefixContinuationEnabled ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  }
-                >
-                  <p className="rounded-lg border border-black/[0.05] bg-black/[0.025] px-3 py-2 text-[10px] leading-relaxed text-[var(--fog)]">
-                    {t('agent.prefixEnvHint')}
-                  </p>
-                  {config.prefixContinuationEnabled && (
-                    <div className="space-y-3 rounded-xl border border-black/[0.06] bg-white/30 p-3">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label className="block space-y-1">
-                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixBaseUrl')}</span>
-                          <input
-                            type="text"
-                            value={config.prefixContinuationBaseUrl}
-                            onChange={(e) => update('prefixContinuationBaseUrl', e.target.value)}
-                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                            spellCheck={false}
-                          />
-                        </label>
-                        <label className="block space-y-1">
-                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixChatModel')}</span>
-                          <input
-                            type="text"
-                            value={config.prefixContinuationChatModel}
-                            onChange={(e) => update('prefixContinuationChatModel', e.target.value)}
-                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                            spellCheck={false}
-                          />
-                        </label>
-                      </div>
-                      <NumField
-                        label={t('agent.prefixMinDraft')}
-                        hint={t('agent.prefixMinDraftHint')}
-                        value={config.prefixContinuationMinDraftChars}
-                        onChange={(v) => update('prefixContinuationMinDraftChars', clampComposerMinDraftChars(v, 4))}
-                        min={1}
-                        max={120}
-                        step={1}
-                      />
-                      <label className="block space-y-1">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixComposerNotes')}</span>
-                        <textarea
-                          value={config.prefixContinuationAssistantPrefix}
-                          onChange={(e) => update('prefixContinuationAssistantPrefix', e.target.value)}
-                          rows={3}
-                          className={`glass-input-console w-full resize-y leading-relaxed ${drawerFieldClass()}`}
-                        />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.prefixStop')}</span>
-                        <textarea
-                          value={config.prefixContinuationStopText}
-                          onChange={(e) => update('prefixContinuationStopText', e.target.value)}
-                          rows={2}
-                          className={`glass-input-console w-full resize-y ${drawerFieldClass(true)}`}
-                        />
-                      </label>
-                    </div>
-                  )}
                 </DrawerSection>
               </>
             )}
@@ -877,40 +794,24 @@ export default function AgentConfigPage() {
                         ))}
                       </DrawerCheckboxRail>
                     </DrawerSection>
-
-                    <DrawerSection
-                      accent="#b8944c"
-                      eyebrow="Debug"
-                      title="API Data Flow Logging"
-                      lead="Write full API request/response payloads to debug-logs/ directory for troubleshooting."
-                      actions={
-                        <label className="flex items-center gap-2 cursor-pointer shrink-0">
-                          <input
-                            type="checkbox"
-                            checked={config.debugMode}
-                            onChange={(e) => update('debugMode', e.target.checked)}
-                            className="accent-amber rounded"
-                          />
-                          <span className="text-[11px] font-medium text-[var(--mist)]">Enable</span>
-                        </label>
-                      }
-                    >
-                      <p className="text-[10px] text-[var(--fog)]/60">When enabled, raw API payloads are written to <code className="text-[10px] bg-black/[0.04] px-1 rounded">debug-logs/&lt;caseId&gt;/</code> as JSON files. Restart not required.</p>
-                    </DrawerSection>
                   </>
                 )}
               </>
             )}
 
-            {activeSection === 'policy' && (
-              <DrawerSection accent="#2ea04a" title={t('agent.section.policy')} lead={t('agent.policyLead')} dense>
-                <div className="flex flex-1 flex-col min-h-0">
-                  <AgentPolicyHooksPicker value={config.policyHooks} onChange={(v) => update('policyHooks', v)} />
-                </div>
+            {activeSection === 'guardrails' && (
+              <DrawerSection accent="#2ea04a" title={t('agent.section.guardrails')} dense>
+                <GuardrailSummaryList policyHooks={config.policyHooks} />
               </DrawerSection>
             )}
 
-            {activeSection === 'templates' && (
+            {activeSection === 'subAgents' && (
+              <DrawerSection accent="#e75c8a" title={t('agent.section.subAgents')}>
+                <SubAgentSummaryList />
+              </DrawerSection>
+            )}
+
+            {activeSection === 'humanOps' && (
               <DrawerSection accent="#5bb8f7" title={t('agent.section.humanOps')} lead={t('agent.section.humanOpsLead')}>
                 <AgentHumanInteractionPanel
                   consultationPrompt={config.consultationPrompt}

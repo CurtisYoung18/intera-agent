@@ -4,7 +4,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
 import { getActiveCustomerId } from '@/lib/auth'
-import { CRITICAL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES } from '@/lib/skill-classifications'
+
+function isProtected(name: string): boolean {
+  return SYSTEM_SKILL_NAMES.has(name) || SPECIAL_SKILL_NAMES.has(name)
+}
+
+function isMutationAllowed(name: string, body: Record<string, unknown>): boolean {
+  if (!isProtected(name)) return true
+  // Only 'enabled' toggle is allowed for protected skills
+  const keys = Object.keys(body).filter((k) => k !== 'enabled')
+  return keys.length === 0
+}
 
 export async function GET(
   _req: NextRequest,
@@ -30,18 +41,12 @@ export async function PUT(
     const CUSTOMER_ID = await getActiveCustomerId()
     const body = await req.json()
 
-    // Critical skills: reject changes to name, inputSchema, mode
-    if (CRITICAL_SKILL_NAMES.has(name)) {
-      const blocked: string[] = []
-      if (body.name !== undefined && body.name !== name) blocked.push('name')
-      if (body.inputSchema !== undefined) blocked.push('inputSchema')
-      if (body.mode !== undefined) blocked.push('mode')
-      if (blocked.length > 0) {
-        return NextResponse.json(
-          { error: `Cannot modify ${blocked.join(', ')} on critical skill "${name}"` },
-          { status: 400 },
-        )
-      }
+    // Protected (System/Special) skills: reject all mutations except enabled toggle
+    if (!isMutationAllowed(name, body)) {
+      return NextResponse.json(
+        { error: `Skill "${name}" is protected. Only the 'enabled' field can be changed.` },
+        { status: 403 },
+      )
     }
 
     const data: Record<string, unknown> = {}
@@ -68,6 +73,12 @@ export async function DELETE(
   const { name } = await params
   try {
     const CUSTOMER_ID = await getActiveCustomerId()
+    if (isProtected(name)) {
+      return NextResponse.json(
+        { error: `Cannot delete protected skill "${name}"` },
+        { status: 403 },
+      )
+    }
     await prisma.skill.delete({ where: { customerId_name: { customerId: CUSTOMER_ID, name } } })
     return NextResponse.json({ success: true })
   } catch (err) {

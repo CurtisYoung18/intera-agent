@@ -18,7 +18,7 @@ interface SkillItem {
   mockFixture?: string; guardPhase?: string
   isConcurrencySafe: boolean; enabled: boolean
   isSystem?: boolean
-  isCritical?: boolean
+  isSpecial?: boolean
 }
 
 function parseJsonField(raw: string | undefined): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -135,14 +135,15 @@ export default function SkillsPage() {
     setIsNew(true); setOriginalName('')
   }
 
-  const openEdit = (s: SkillItem) => { setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
+  const openEdit = (s: SkillItem) => { if (s.isSpecial) return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
 
   const filtered = skills.filter(s =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.description || '').toLowerCase().includes(search.toLowerCase())
   )
 
   const systemSkills = filtered.filter(s => s.isSystem)
-  const businessSkills = filtered.filter(s => !s.isSystem)
+  const specialSkills = filtered.filter(s => s.isSpecial)
+  const businessSkills = filtered.filter(s => !s.isSystem && !s.isSpecial)
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
@@ -189,7 +190,7 @@ export default function SkillsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</span>
-                            {s.isCritical && <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />}
+                            {s.isSystem && <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : 'bg-lavender/[0.08] text-lavender'}`}>{t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
@@ -252,6 +253,38 @@ export default function SkillsPage() {
                           </button>
                         </div>
                       </div>
+                    </div>
+                  </TiltCard>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Special Skills ── */}
+          {specialSkills.length > 0 && (
+            <section className="mb-8">
+              <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-1">{t('skills.specialSkills')}</h2>
+              <p className="text-[12px] text-[var(--fog)] mb-4">Configured in dedicated pages</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {specialSkills.map(s => (
+                  <TiltCard key={s.id || s.name} accentColor="#14b8a6" onClick={() => openEdit(s)}>
+                    <div className="p-5">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-teal-500/[0.08]">
+                          <Search className="w-5 h-5 text-teal-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0">
+                          {s.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
+                        </button>
+                      </div>
+                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
+                      <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
+                        <ExternalLink className="w-3 h-3" />
+                        {t('skills.configureInKnowledge')}
+                      </Link>
                     </div>
                   </TiltCard>
                 ))}
@@ -343,14 +376,14 @@ export default function SkillsPage() {
             <label className="space-y-1.5 block">
               <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
                 {t('common.name')}
-                {editing.isCritical && <Lock className="w-3 h-3 text-amber/70" />}
+                {editing.isSystem && <Lock className="w-3 h-3 text-amber/70" />}
               </span>
-              <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew || !!editing.isCritical} />
+              <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew || !!editing.isSystem} />
             </label>
             <label className="space-y-1.5 block">
               <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
                 {t('common.mode')}
-                {editing.isCritical && <Lock className="w-3 h-3 text-amber/70" />}
+                {editing.isSystem && <Lock className="w-3 h-3 text-amber/70" />}
               </span>
               <select value={editing.mode} onChange={e => {
                 const newMode = e.target.value
@@ -359,7 +392,7 @@ export default function SkillsPage() {
                   update.mockFixture = prefillDefaultMock(editing.name) || '{"status":"ok"}'
                 }
                 setEditing({ ...editing, ...update })
-              }} className="glass-input-console text-[13px]" disabled={!!editing.isCritical}>
+              }} className="glass-input-console text-[13px]" disabled={!!editing.isSystem}>
                 <option value="mock">{t('common.mock')}</option><option value="http">{t('common.http')}</option>
               </select>
             </label>
@@ -476,7 +509,7 @@ export default function SkillsPage() {
                   headers: 'skills.headers',
                 } as const
               )[f]
-              const isInputLocked = f === 'inputSchema' && editing.isCritical
+              const isInputLocked = f === 'inputSchema' && editing.isSystem
               return (
               <label key={f} className="space-y-1.5 block">
                 <div className="flex items-center justify-between">

@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Brain, Cpu, Database, Shield, MessageSquareText, Search, Zap } from 'lucide-react'
+import { Brain, Database, Shield, Users, MessageSquareText, Search, Zap } from 'lucide-react'
 import type { AgentConfigData } from '@/app/admin/agent/types'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'knowledge'
+type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'humanOps' | 'knowledge'
 
 interface BlueprintProps {
   config: AgentConfigData
@@ -21,12 +21,48 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 })
   const { t } = useConsoleLocale()
+  const [subAgentCount, setSubAgentCount] = useState(0)
+  const [caseTypeCount, setCaseTypeCount] = useState(0)
 
   const ms = config.memoryStrategy
 
-  const hookCount = useMemo(() => {
+  // Fetch case-type info for sub-agent preview
+  useEffect(() => {
+    fetch('/api/admin/case-types')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
+      .then((d) => {
+        const types = (d.types || []) as Array<{
+          type: string; displayName: string; enabled: boolean; stageConfigs: string | null
+        }>
+        const enabled = types.filter((ct) => ct.enabled)
+        let saCount = 0
+        for (const ct of enabled) {
+          if (ct.stageConfigs) {
+            try {
+              const configs = JSON.parse(ct.stageConfigs)
+              for (const stageName of Object.keys(configs || {})) {
+                const stage = configs[stageName]
+                if (stage && Array.isArray(stage.subAgents)) {
+                  saCount += stage.subAgents.length
+                }
+              }
+            } catch { /* ignore */ }
+          }
+        }
+        setSubAgentCount(saCount)
+        setCaseTypeCount(enabled.length)
+      })
+      .catch(() => { /* ignore */ })
+  }, [])
+
+  const guardrailCount = useMemo(() => {
     try {
-      return Object.keys(JSON.parse(config.policyHooks || '{}')).length
+      const obj = JSON.parse(config.policyHooks || '{}')
+      let count = 0
+      for (const key of ['preTool', 'postTool', 'preFinalize']) {
+        if (Array.isArray(obj[key])) count += obj[key].length
+      }
+      return count
     } catch {
       return 0
     }
@@ -36,24 +72,13 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
     () =>
       [
         {
-          id: 'prompt' as const,
+          id: 'brain' as const,
           icon: <Brain className="w-5 h-5" />,
-          label: t('blueprint.nodePrompt'),
-          preview:
-            (config.systemPrompt?.slice(0, 120).replace(/\n/g, ' ') + '…') || t('blueprint.notConfigured'),
+          label: t('blueprint.nodeBrain'),
+          preview: `${config.model} · T=${config.temperature} · prompt ${(config.systemPrompt?.length ?? 0)} chars`,
           color: '#8b6ff5',
           glow: 'rgba(139,111,245,0.15)',
           angle: -90,
-          distance: 0.65,
-        },
-        {
-          id: 'model' as const,
-          icon: <Cpu className="w-5 h-5" />,
-          label: t('blueprint.nodeModel'),
-          preview: `${config.model} ${t('common.or')} T=${config.temperature}`,
-          color: '#5b8af7',
-          glow: 'rgba(91,138,247,0.15)',
-          angle: -30,
           distance: 0.65,
         },
         {
@@ -65,21 +90,31 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           }),
           color: '#d4912e',
           glow: 'rgba(212,145,46,0.15)',
+          angle: -30,
+          distance: 0.65,
+        },
+        {
+          id: 'guardrails' as const,
+          icon: <Shield className="w-5 h-5" />,
+          label: t('blueprint.nodeGuardrails'),
+          preview: t('blueprint.guardrailsCount', { n: guardrailCount }),
+          color: '#2ea04a',
+          glow: 'rgba(46,160,74,0.15)',
           angle: 30,
           distance: 0.65,
         },
         {
-          id: 'policy' as const,
-          icon: <Shield className="w-5 h-5" />,
-          label: t('blueprint.nodePolicy'),
-          preview: t('blueprint.hooksCount', { n: hookCount }),
-          color: '#2ea04a',
-          glow: 'rgba(46,160,74,0.15)',
+          id: 'subAgents' as const,
+          icon: <Users className="w-5 h-5" />,
+          label: t('blueprint.nodeSubAgents'),
+          preview: t('blueprint.subAgentsPreview', { n: subAgentCount, c: caseTypeCount }),
+          color: '#e75c8a',
+          glow: 'rgba(231,92,138,0.15)',
           angle: 90,
           distance: 0.65,
         },
         {
-          id: 'templates' as const,
+          id: 'humanOps' as const,
           icon: <MessageSquareText className="w-5 h-5" />,
           label: t('blueprint.nodeHumanOps'),
           preview: config.consultationPrompt ? t('blueprint.humanOpsReady') : t('blueprint.notConfigured'),
@@ -111,8 +146,11 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       config.temperature,
       config.resumePrompt,
       config.knowledgeRetrieval,
+      config.consultationPrompt,
       ms.autocompactThresholdTokens,
-      hookCount,
+      guardrailCount,
+      subAgentCount,
+      caseTypeCount,
     ],
   )
 

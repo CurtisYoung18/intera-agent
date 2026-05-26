@@ -13,11 +13,12 @@ import {
   Loader2,
   XCircle,
   Plug,
+  HandPlatter,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations'
+type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'humanOps' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations'
 
 interface NavItem {
   href: string
@@ -34,6 +35,30 @@ interface CustomerInfo {
   hasApiKey: boolean
 }
 
+/**
+ * Console route map (purpose, not just label):
+ *
+ * OPS — day-to-day:
+ *   /ops/chats         Live conversation viewer + per-case trace.
+ *   /ops/human-tasks   Queue of escalations awaiting human action.
+ *   /ops/guide         Operator onboarding / runbook.
+ *
+ * ADMIN — configuration:
+ *   /admin/agent           Agent blueprint (prompt, model, memory, guardrail-summary,
+ *                          sub-agent-summary, human-ops, knowledge). Single-customer scope.
+ *   /admin/skills          System (read-only 7) + Special (kb_hybrid_retrieve) + Business skills.
+ *   /admin/policies        Guardrails canonical editor (sentence-builder + advanced JSON).
+ *                          Agent-config "Guardrails" satellite is a read-only mirror.
+ *   /admin/case-types      Stage / SOP definitions, sub-agent configuration.
+ *                          Agent-config "Sub-Agents" satellite is a read-only mirror.
+ *   /admin/routing         Channel → case-type routing rules.
+ *   /admin/knowledge       Knowledge sources + GPTBots API key + retrieval params.
+ *                          Mirrored from agent-config "Knowledge" satellite.
+ *   /admin/human-ops       Consultation prompt + human skills allowed list.
+ *                          Mirrored from agent-config "Human Ops" satellite.
+ *   /admin/integrations    Channel integrations (LiveChat active; Slack/Discord placeholders).
+ */
+
 const OPS_ITEMS: NavItem[] = [
   { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
   { href: '/ops/human-tasks', slug: 'humanTasks', icon: ClipboardList, color: '#f0b050' },
@@ -44,6 +69,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
   { href: '/admin/skills', slug: 'skills', icon: Puzzle, color: '#5b8af7' },
   { href: '/admin/policies', slug: 'policies', icon: Shield, color: '#e64539' },
+  { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#5bb8f7' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
@@ -322,7 +348,7 @@ export default function ConsoleSidebar() {
               <button
                 onClick={handlePasswordSubmit}
                 disabled={passwordLoading || !password}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo-500 text-white text-[12px] font-semibold hover:bg-indigo-600 transition-colors disabled:opacity-40"
+                className="flex-1 px-4 py-2 rounded-lg bg-indigo text-white text-[12px] font-semibold hover:bg-indigo/90 transition-colors disabled:opacity-40"
               >
                 {passwordLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Login'}
               </button>

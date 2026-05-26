@@ -5,7 +5,7 @@ import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 
 import { getActiveCustomerId } from '@/lib/auth'
-import { BUILT_IN_SKILL_NAMES, CRITICAL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 export async function GET() {
   try {
@@ -47,8 +47,8 @@ export async function GET() {
 
     const enriched = skills.map((s) => ({
       ...s,
-      isSystem: BUILT_IN_SKILL_NAMES.has(s.name),
-      isCritical: CRITICAL_SKILL_NAMES.has(s.name),
+      isSystem: SYSTEM_SKILL_NAMES.has(s.name),
+      isSpecial: SPECIAL_SKILL_NAMES.has(s.name),
     }))
 
     return NextResponse.json({ skills: enriched })
