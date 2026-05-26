@@ -879,6 +879,11 @@ export const en: Record<string, string> = {
   'skills.testFailed': 'Test Failed: {err}',
   'skills.testConnFailed': 'Test request failed',
   'skills.concurrencySafe': 'Concurrency Safe',
+  'skills.systemSkills': 'System Skills',
+  'skills.businessSkills': 'Business Skills',
+  'skills.system': 'SYSTEM',
+  'skills.criticalLocked': 'This field is locked for critical system skills',
+  'skills.configureInKnowledge': 'Configure in Knowledge page',
 
   // ── Policies ─────────────────────────────────────────────────
   'policies.title': 'Policies',
@@ -1927,6 +1932,11 @@ export const zh: Record<string, string> = {
   'skills.testFailed': '测试失败：{err}',
   'skills.testConnFailed': '测试请求失败',
   'skills.concurrencySafe': '并发安全',
+  'skills.systemSkills': '系统技能',
+  'skills.businessSkills': '业务技能',
+  'skills.system': '系统',
+  'skills.criticalLocked': '关键系统技能，此字段不可修改',
+  'skills.configureInKnowledge': '前往知识库页面配置',
 
   'policies.title': '策略',
   'policies.subtitle': '已配置 {n} 条规则',

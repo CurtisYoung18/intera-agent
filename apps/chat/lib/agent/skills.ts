@@ -838,6 +838,16 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
   },
 ]
 
+/** Set of built-in skill names for fast lookup. */
+export const BUILT_IN_SKILL_NAMES: Set<string> = new Set(BUILT_IN_SKILLS.map((s) => s.name))
+
+/**
+ * Returns true if the given skill name is a built-in (system) skill.
+ */
+export function isBuiltInSkill(name: string): boolean {
+  return BUILT_IN_SKILL_NAMES.has(name)
+}
+
 /**
  * Skill Router — manages the skill registry and provides tool definitions
  * in Anthropic API format.

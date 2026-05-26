@@ -814,7 +814,7 @@ export class CaseAgentLoop {
             stageCfg.description || this._currentStage,
           )
           if (tasks.length > 0) {
-            const results = await this.orchestrator.dispatch(tasks, sendEvent)
+            const results = await this.orchestrator.dispatch(tasks, sendEvent, this._currentStage)
             this.orchestrator.mergeResults(
               results,
               mem.confirmedFacts as Record<string, unknown>,

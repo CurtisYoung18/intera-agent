@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
@@ -16,6 +17,8 @@ interface SkillItem {
   inputSchema?: string; outputSchema?: string; headers?: string
   mockFixture?: string; guardPhase?: string
   isConcurrencySafe: boolean; enabled: boolean
+  isSystem?: boolean
+  isCritical?: boolean
 }
 
 function parseJsonField(raw: string | undefined): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -138,6 +141,9 @@ export default function SkillsPage() {
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.description || '').toLowerCase().includes(search.toLowerCase())
   )
 
+  const systemSkills = filtered.filter(s => s.isSystem)
+  const businessSkills = filtered.filter(s => !s.isSystem)
+
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
   return (
@@ -163,73 +169,170 @@ export default function SkillsPage() {
       {filtered.length === 0 ? (
         <EmptyState icon={Puzzle} title={t('skills.noSkills')} description={search ? t('common.noMatches') : t('skills.noSkillsDesc')} />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(s => (
-            <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : '#8b6ff5'} onClick={() => openEdit(s)}>
-              <div className="p-5">
-                {/* Top row: icon + info + toggle */}
-                <div className="flex items-start gap-3 mb-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : 'bg-lavender/[0.08]'}`}>
-                    {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : <Box className="w-5 h-5 text-lavender" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : 'bg-lavender/[0.08] text-lavender'}`}>{t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
-                    </div>
-                  </div>
-                  <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
-                    {s.enabled
-                      ? <ToggleRight className="w-7 h-7 text-malachite" />
-                      : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />
-                    }
-                  </button>
-                </div>
-
-                {/* Description */}
-                <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{s.description || t('common.noDescription')}</p>
-
-                {s.mode === 'mock' && (
-                  <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
-                    <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
-                    {(() => {
-                      const chips = mockFixtureChips(s.mockFixture)
-                      if (!s.mockFixture?.trim()) {
-                        return <p className="text-[11px] text-[var(--smoke)] italic">{t('skills.noMockYet')}</p>
-                      }
-                      if (chips === null) {
-                        return <p className="text-[11px] text-vermillion/80">{t('skills.mockMalformedCard')}</p>
-                      }
-                      if (chips.length === 0) {
-                        return <span className="text-[11px] font-mono text-[var(--fog)]">{'{}'}</span>
-                      }
-                      return (
-                        <div className="flex flex-wrap gap-1">
-                          {chips.map((c, i) => (
-                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md bg-lavender/[0.08] text-lavender/90 font-mono max-w-full truncate border border-lavender/15" title={c}>{c}</span>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
-                {/* Bottom actions — slide up on hover */}
-                <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
-                  <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
-                  <div className="flex gap-1">
-                    <button onClick={e => { e.stopPropagation(); openEdit(s) }}
-                      className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" title={t('common.edit')}>
-                      <Pencil className="w-3.5 h-3.5 text-[var(--fog)]" />
-                    </button>
-                    <button onClick={e => { e.stopPropagation(); handleDelete(s.name) }}
-                      className="p-1.5 rounded-lg hover:bg-vermillion/5 transition-colors" title={t('common.delete')}>
-                      <Trash2 className="w-3.5 h-3.5 text-vermillion/60" />
-                    </button>
-                  </div>
-                </div>
+        <div className="space-y-10">
+          {/* ── System Skills ── */}
+          {systemSkills.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('skills.systemSkills')}</h2>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-sky/[0.08] text-sky border border-sky/20">{t('skills.system')}</span>
               </div>
-            </TiltCard>
-          ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {systemSkills.map(s => (
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : '#8b6ff5'} onClick={() => openEdit(s)}>
+                    <div className="p-5">
+                      {/* Top row: icon + info + toggle */}
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : 'bg-lavender/[0.08]'}`}>
+                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : <Box className="w-5 h-5 text-lavender" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</span>
+                            {s.isCritical && <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : 'bg-lavender/[0.08] text-lavender'}`}>{t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                          </div>
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
+                          {s.enabled
+                            ? <ToggleRight className="w-7 h-7 text-malachite" />
+                            : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />
+                          }
+                        </button>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
+
+                      {/* kb_hybrid_retrieve special link */}
+                      {s.name === 'kb_hybrid_retrieve' && (
+                        <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-sky hover:text-sky/80 mb-2 transition-colors">
+                          <ExternalLink className="w-3 h-3" />
+                          {t('skills.configureInKnowledge')}
+                        </Link>
+                      )}
+
+                      {s.mode === 'mock' && (
+                        <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
+                          {(() => {
+                            const chips = mockFixtureChips(s.mockFixture)
+                            if (!s.mockFixture?.trim()) {
+                              return <p className="text-[11px] text-[var(--smoke)] italic">{t('skills.noMockYet')}</p>
+                            }
+                            if (chips === null) {
+                              return <p className="text-[11px] text-vermillion/80">{t('skills.mockMalformedCard')}</p>
+                            }
+                            if (chips.length === 0) {
+                              return <span className="text-[11px] font-mono text-[var(--fog)]">{'{}'}</span>
+                            }
+                            return (
+                              <div className="flex flex-wrap gap-1">
+                                {chips.map((c, i) => (
+                                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md bg-lavender/[0.08] text-lavender/90 font-mono max-w-full truncate border border-lavender/15" title={c}>{c}</span>
+                                ))}
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      )}
+                      {/* Bottom actions — slide up on hover */}
+                      <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
+                        <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
+                        <div className="flex gap-1">
+                          <button onClick={e => { e.stopPropagation(); openEdit(s) }}
+                            className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" title={t('common.edit')}>
+                            <Pencil className="w-3.5 h-3.5 text-[var(--fog)]" />
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); handleDelete(s.name) }}
+                            className="p-1.5 rounded-lg hover:bg-vermillion/5 transition-colors" title={t('common.delete')}>
+                            <Trash2 className="w-3.5 h-3.5 text-vermillion/60" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </TiltCard>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Business Skills ── */}
+          {businessSkills.length > 0 && (
+            <section>
+              <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-4">{t('skills.businessSkills')}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {businessSkills.map(s => (
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : '#8b6ff5'} onClick={() => openEdit(s)}>
+                    <div className="p-5">
+                      {/* Top row: icon + info + toggle */}
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : 'bg-lavender/[0.08]'}`}>
+                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : <Box className="w-5 h-5 text-lavender" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : 'bg-lavender/[0.08] text-lavender'}`}>{t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                          </div>
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
+                          {s.enabled
+                            ? <ToggleRight className="w-7 h-7 text-malachite" />
+                            : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />
+                          }
+                        </button>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{s.description || t('common.noDescription')}</p>
+
+                      {s.mode === 'mock' && (
+                        <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
+                          {(() => {
+                            const chips = mockFixtureChips(s.mockFixture)
+                            if (!s.mockFixture?.trim()) {
+                              return <p className="text-[11px] text-[var(--smoke)] italic">{t('skills.noMockYet')}</p>
+                            }
+                            if (chips === null) {
+                              return <p className="text-[11px] text-vermillion/80">{t('skills.mockMalformedCard')}</p>
+                            }
+                            if (chips.length === 0) {
+                              return <span className="text-[11px] font-mono text-[var(--fog)]">{'{}'}</span>
+                            }
+                            return (
+                              <div className="flex flex-wrap gap-1">
+                                {chips.map((c, i) => (
+                                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md bg-lavender/[0.08] text-lavender/90 font-mono max-w-full truncate border border-lavender/15" title={c}>{c}</span>
+                                ))}
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      )}
+                      {/* Bottom actions — slide up on hover */}
+                      <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
+                        <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
+                        <div className="flex gap-1">
+                          <button onClick={e => { e.stopPropagation(); openEdit(s) }}
+                            className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" title={t('common.edit')}>
+                            <Pencil className="w-3.5 h-3.5 text-[var(--fog)]" />
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); handleDelete(s.name) }}
+                            className="p-1.5 rounded-lg hover:bg-vermillion/5 transition-colors" title={t('common.delete')}>
+                            <Trash2 className="w-3.5 h-3.5 text-vermillion/60" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </TiltCard>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 
@@ -237,10 +340,18 @@ export default function SkillsPage() {
       <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('skills.newSkill') : t('skills.editSkill')}>
         {editing && (
           <div className="space-y-4">
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span>
-              <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} />
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
+                {t('common.name')}
+                {editing.isCritical && <Lock className="w-3 h-3 text-amber/70" />}
+              </span>
+              <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew || !!editing.isCritical} />
             </label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.mode')}</span>
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
+                {t('common.mode')}
+                {editing.isCritical && <Lock className="w-3 h-3 text-amber/70" />}
+              </span>
               <select value={editing.mode} onChange={e => {
                 const newMode = e.target.value
                 const update: Partial<SkillItem> = { mode: newMode }
@@ -248,7 +359,7 @@ export default function SkillsPage() {
                   update.mockFixture = prefillDefaultMock(editing.name) || '{"status":"ok"}'
                 }
                 setEditing({ ...editing, ...update })
-              }} className="glass-input-console text-[13px]">
+              }} className="glass-input-console text-[13px]" disabled={!!editing.isCritical}>
                 <option value="mock">{t('common.mock')}</option><option value="http">{t('common.http')}</option>
               </select>
             </label>
@@ -365,12 +476,19 @@ export default function SkillsPage() {
                   headers: 'skills.headers',
                 } as const
               )[f]
+              const isInputLocked = f === 'inputSchema' && editing.isCritical
               return (
               <label key={f} className="space-y-1.5 block">
-                <div className="flex items-center justify-between"><span className="text-[11px] text-[var(--fog)]">{t(fk)}</span>
-                  <button type="button" onClick={() => formatField(f)} className="text-[10px] text-indigo/70 hover:text-indigo"><Wand2 className="w-3 h-3 inline mr-1" />{t('common.format')}</button>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
+                    {t(fk)}
+                    {isInputLocked && <Lock className="w-3 h-3 text-amber/70" />}
+                  </span>
+                  {!isInputLocked && (
+                    <button type="button" onClick={() => formatField(f)} className="text-[10px] text-indigo/70 hover:text-indigo"><Wand2 className="w-3 h-3 inline mr-1" />{t('common.format')}</button>
+                  )}
                 </div>
-                <textarea value={(editing[f] as string) || ''} onChange={e => setEditing({ ...editing, [f]: e.target.value })} rows={4} className="glass-input-console text-[12px] font-mono resize-y" />
+                <textarea value={(editing[f] as string) || ''} onChange={e => setEditing({ ...editing, [f]: e.target.value })} rows={4} className="glass-input-console text-[12px] font-mono resize-y" disabled={isInputLocked} />
               </label>
             )})}
             <div className="flex items-center gap-4 pt-2">

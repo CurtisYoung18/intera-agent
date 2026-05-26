@@ -34,6 +34,8 @@ export type ActionType =
   | 'agent_tree_node'
   | 'fork_dispatch'
   | 'case_merged'
+  | 'sub_agent_dispatched'
+  | 'sub_agent_merged'
 
 export interface TraceEntry {
   id: string

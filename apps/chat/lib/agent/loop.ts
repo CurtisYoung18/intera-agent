@@ -518,6 +518,7 @@ export class AgentLoop {
       while (streamAttempt < maxStreamAttempts) {
         streamAttempt++
         try {
+          if (this.abortController.signal.aborted) break
           stream = this.anthropicClient.messages.stream({
             model: this.deps.config.model,
             max_tokens: this.deps.config.maxOutputTokens ?? 4096,
@@ -530,13 +531,21 @@ export class AgentLoop {
           }, { signal: this.abortController.signal })
           break // success — exit retry loop
         } catch (err) {
+          const errStr = String(err)
+
+          // Reactive compact on 413 / context_length_exceeded
+          if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
+            this.messages = reactiveCompact(this.messages)
+            await this.traceWriter.write('loop_decision', 'Reactive compact on 413', { error: errStr })
+          }
+
           if (streamAttempt >= maxStreamAttempts || this.abortController.signal.aborted) {
             sendEvent({ type: 'error', data: `LLM API error after ${streamAttempt} attempts`, timestamp: new Date().toISOString() })
-            await this.traceWriter.write('loop_decision', 'Exit: LLM API error', { error: String(err), attempts: streamAttempt })
+            await this.traceWriter.write('loop_decision', 'Exit: LLM API error', { error: errStr, attempts: streamAttempt })
             sendEvent({ type: 'escalated', data: { reason: `LLM API error after ${streamAttempt} attempts` }, timestamp: new Date().toISOString() })
             return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
           }
-          await this.traceWriter.write('loop_decision', `LLM stream retry ${streamAttempt}/${maxStreamAttempts}`, { error: String(err) })
+          await this.traceWriter.write('loop_decision', `LLM stream retry ${streamAttempt}/${maxStreamAttempts}`, { error: errStr })
           await new Promise((r) => setTimeout(r, 1000 * streamAttempt)) // backoff
         }
       }
@@ -758,7 +767,9 @@ export class AgentLoop {
         }
       }
       } catch (streamErr) {
+        const errStr = String(streamErr)
         console.error('[AgentLoop] Stream error:', streamErr)
+
         if (this.abortController.signal.aborted) {
           // Connection lost — drain pending tools and exit without escalating.
           // The case stays at its current stage so the user can retry.
@@ -775,9 +786,17 @@ export class AgentLoop {
             reason: 'connection_lost',
           }
         }
+
+        // Reactive compact on 413 during streaming
+        if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
+          this.messages = reactiveCompact(this.messages)
+          await this.traceWriter.write('loop_decision', 'Reactive compact on stream error', { error: errStr })
+          continue
+        }
+
         // Non-connection error: record and exit the loop gracefully
         await this.traceWriter.write('loop_decision', 'Stream error', {
-          error: String(streamErr),
+          error: errStr,
           iteration: this.iterationCount,
         })
         break

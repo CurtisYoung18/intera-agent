@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles } from 'lucide-react'
+import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
@@ -50,6 +50,54 @@ function buildRule(f: RuleFields): string {
 
 const HOOK_SLUGS = ['preTool', 'postTool', 'preFinalize'] as const
 
+type GuardrailType = 'must_call' | 'never_allow' | 'ai_eval'
+type PolicyFormMode = 'simple' | 'advanced'
+
+const GUARDRAIL_LABELS: Record<GuardrailType, string> = {
+  must_call: 'Must call',
+  never_allow: 'Never allow',
+  ai_eval: 'AI evaluation',
+}
+
+const HOOK_SIMPLE_LABELS: Record<string, string> = {
+  preTool: 'Before any tool',
+  postTool: 'After any tool',
+  preFinalize: 'Before case resolution',
+}
+
+function detectGuardrailType(f: RuleFields): GuardrailType {
+  if (f.deny_skills.length > 0) return 'never_allow'
+  if (f.require_skills.length > 0) return 'must_call'
+  if (f.enableLlm && f.evaluationPrompt) return 'ai_eval'
+  return 'must_call'
+}
+
+function getGuardrailTargetSkills(f: RuleFields): string[] {
+  const gt = detectGuardrailType(f)
+  if (gt === 'never_allow') return f.deny_skills
+  if (gt === 'must_call') return f.require_skills
+  return []
+}
+
+function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string[], condition: string): RuleFields {
+  const base: RuleFields = {
+    deny_skills: [],
+    require_skills: [],
+    require_skills_any: [],
+    hook_skills: [],
+    enableLlm: false,
+    evaluationPrompt: '',
+  }
+  switch (type) {
+    case 'must_call':
+      return { ...base, require_skills: skills }
+    case 'never_allow':
+      return { ...base, deny_skills: skills }
+    case 'ai_eval':
+      return { ...base, enableLlm: true, evaluationPrompt: condition }
+  }
+}
+
 export default function PoliciesPage() {
   const { t } = useConsoleLocale()
   const hookMeta = useMemo(
@@ -67,6 +115,7 @@ export default function PoliciesPage() {
   const [isNew, setIsNew] = useState(false)
   const defaultFields: RuleFields = { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
   const [ruleFields, setRuleFields] = useState<RuleFields>(defaultFields)
+  const [formMode, setFormMode] = useState<PolicyFormMode>('simple')
   const [allSkills, setAllSkills] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -108,8 +157,8 @@ export default function PoliciesPage() {
     load()
   }, [load])
 
-  const openEdit = (p: PolicyItem) => { setEditing({ ...p }); setIsNew(false); setRuleFields(parseRule(p.rule)) }
-  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields(defaultFields) }
+  const openEdit = (p: PolicyItem) => { setEditing({ ...p }); setIsNew(false); setRuleFields(parseRule(p.rule)); setFormMode('simple') }
+  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields(defaultFields); setFormMode('simple') }
 
   const handleSave = useCallback(async () => {
     if (!editing) return
@@ -167,75 +216,213 @@ export default function PoliciesPage() {
       <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
         {editing && (
           <div className="space-y-4">
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('policies.hook')}</span><select value={editing.hook} onChange={e => setEditing({ ...editing, hook: e.target.value })} className="glass-input-console text-[13px]">{HOOK_SLUGS.map(h => <option key={h} value={h}>{h}</option>)}</select></label>
-            <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('policies.ruleFields')}</span></div>
-
-            {/* ── Exact-match rules ──────────────────────── */}
-            <label className="space-y-1.5 block">
-              <span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span>
-              <ChipInput values={ruleFields.deny_skills} onChange={v => setRuleFields({ ...ruleFields, deny_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-            </label>
-
-            <label className="space-y-1.5 block">
-              <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span>
-              <ChipInput values={ruleFields.require_skills} onChange={v => setRuleFields({ ...ruleFields, require_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-            </label>
-
-            <label className="space-y-1.5 block">
-              <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkillsAny')}</span>
-              <ChipInput values={ruleFields.require_skills_any} onChange={v => setRuleFields({ ...ruleFields, require_skills_any: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-            </label>
-
-            {/* ── postTool hook_skills ──────────────────── */}
-            {editing.hook === 'postTool' && (
-              <label className="space-y-1.5 block">
-                <span className="text-[11px] text-[var(--fog)]">{t('policies.hookSkills')}</span>
-                <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">{t('policies.hookSkillsDesc')}</p>
-                <ChipInput values={ruleFields.hook_skills} onChange={v => setRuleFields({ ...ruleFields, hook_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-              </label>
-            )}
-
-            {/* ── LLM evaluation toggle ─────────────────── */}
-            <div className="border-t border-[var(--border-subtle)] pt-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={ruleFields.enableLlm} onChange={e => setRuleFields({ ...ruleFields, enableLlm: e.target.checked })} className="accent-indigo rounded" />
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-lavender" />
-                  <span className="text-[12px] font-medium text-[var(--mist)]">{t('policies.enableLlm')}</span>
-                </span>
-              </label>
-              <p className="text-[10px] text-[var(--smoke)] mt-0.5 ml-6">{ruleFields.enableLlm ? t('policies.enableLlmDesc') : t('policies.llmDisabledHint')}</p>
+            {/* ── Mode toggle: Simple / Advanced ── */}
+            <div className="flex rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-0.5">
+              <button
+                type="button"
+                onClick={() => setFormMode('simple')}
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all ${
+                  formMode === 'simple'
+                    ? 'bg-white shadow-sm text-[var(--mist)]'
+                    : 'text-[var(--fog)] hover:text-[var(--mist)]'
+                }`}
+              >
+                <Layout className="w-3 h-3" />
+                Simple
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormMode('advanced')}
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all ${
+                  formMode === 'advanced'
+                    ? 'bg-white shadow-sm text-[var(--mist)]'
+                    : 'text-[var(--fog)] hover:text-[var(--mist)]'
+                }`}
+              >
+                <Code className="w-3 h-3" />
+                Advanced
+              </button>
             </div>
 
-            {/* ── evaluationPrompt (LLM) ────────────────── */}
-            {ruleFields.enableLlm && (
-              <label className="space-y-1.5 block">
-                <span className="text-[11px] text-[var(--fog)]">{t('policies.evaluationPrompt')}</span>
-                <textarea
-                  ref={textareaRef}
-                  value={ruleFields.evaluationPrompt}
-                  onChange={e => setRuleFields({ ...ruleFields, evaluationPrompt: e.target.value })}
-                  rows={5}
-                  className="glass-input-console text-[13px] resize-y"
-                  placeholder={t('policies.phEvalPrompt')}
-                />
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
-                  {PLACEHOLDERS.map(ph => (
-                    <button
-                      key={ph}
-                      type="button"
-                      onClick={() => insertPlaceholder(ph)}
-                      className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
-                      title={`Insert ${ph}`}
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
+
+            {/* ── When dropdown (hook) ── */}
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)]">When</span>
+              <select
+                value={editing.hook}
+                onChange={e => setEditing({ ...editing, hook: e.target.value })}
+                className="glass-input-console text-[13px]"
+              >
+                {HOOK_SLUGS.map(h => (
+                  <option key={h} value={h}>{HOOK_SIMPLE_LABELS[h] || h}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* ── Simple mode (Guardrails Builder) ── */}
+            {formMode === 'simple' && (() => {
+              const gt = detectGuardrailType(ruleFields)
+              const skills = getGuardrailTargetSkills(ruleFields)
+              return (
+                <>
+                  <div className="border-t border-[var(--border-subtle)] pt-3">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">Rule Type</span>
+                  </div>
+
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] text-[var(--fog)]">Guardrail type</span>
+                    <select
+                      value={gt}
+                      onChange={e => {
+                        const newType = e.target.value as GuardrailType
+                        setRuleFields(applyGuardrailToRule(ruleFields, newType, skills, ruleFields.evaluationPrompt))
+                      }}
+                      className="glass-input-console text-[13px]"
                     >
-                      {ph}
-                    </button>
-                  ))}
+                      {(Object.keys(GUARDRAIL_LABELS) as GuardrailType[]).map(t => (
+                        <option key={t} value={t}>{GUARDRAIL_LABELS[t]}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {/* Target skills — shown for must_call and never_allow */}
+                  {(gt === 'must_call' || gt === 'never_allow') && (
+                    <label className="space-y-1.5 block">
+                      <span className="text-[11px] text-[var(--fog)]">Target skills</span>
+                      <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
+                        {gt === 'must_call'
+                          ? 'Skills the agent must call before this hook triggers'
+                          : 'Skills the agent is never allowed to call'}
+                      </p>
+                      <ChipInput
+                        values={skills}
+                        onChange={v =>
+                          setRuleFields(applyGuardrailToRule(ruleFields, gt, v, ruleFields.evaluationPrompt))
+                        }
+                        suggestions={allSkills}
+                        placeholder={t('policies.addSkill')}
+                      />
+                    </label>
+                  )}
+
+                  {/* AI evaluation condition */}
+                  {gt === 'ai_eval' && (
+                    <label className="space-y-1.5 block">
+                      <span className="text-[11px] text-[var(--fog)]">Evaluation condition</span>
+                      <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
+                        Describe what the AI should check for. Use {'{{skill_name}}'} and {'{{skill_output}}'} as placeholders.
+                      </p>
+                      <textarea
+                        ref={textareaRef}
+                        value={ruleFields.evaluationPrompt}
+                        onChange={e =>
+                          setRuleFields(applyGuardrailToRule(ruleFields, 'ai_eval', [], e.target.value))
+                        }
+                        rows={5}
+                        className="glass-input-console text-[13px] resize-y"
+                        placeholder="e.g. Check if the agent verified the user's identity before resolving the case"
+                      />
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
+                        {PLACEHOLDERS.map(ph => (
+                          <button
+                            key={ph}
+                            type="button"
+                            onClick={() => insertPlaceholder(ph)}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
+                            title={`Insert ${ph}`}
+                          >
+                            {ph}
+                          </button>
+                        ))}
+                      </div>
+                    </label>
+                  )}
+
+                  {/* Preview of generated JSON */}
+                  <div className="rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-2.5">
+                    <span className="text-[10px] font-medium text-[var(--fog)]/60">Generated policy JSON</span>
+                    <pre className="text-[10px] font-mono text-[var(--mist)] mt-1 whitespace-pre-wrap break-all">
+                      {JSON.stringify(JSON.parse(buildRule(ruleFields)), null, 2)}
+                    </pre>
+                  </div>
+                </>
+              )
+            })()}
+
+            {/* ── Advanced mode (raw JSON editor) ── */}
+            {formMode === 'advanced' && (
+              <>
+                <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('policies.ruleFields')}</span></div>
+
+                {/* ── Exact-match rules ──────────────────────── */}
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span>
+                  <ChipInput values={ruleFields.deny_skills} onChange={v => setRuleFields({ ...ruleFields, deny_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+                </label>
+
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span>
+                  <ChipInput values={ruleFields.require_skills} onChange={v => setRuleFields({ ...ruleFields, require_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+                </label>
+
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkillsAny')}</span>
+                  <ChipInput values={ruleFields.require_skills_any} onChange={v => setRuleFields({ ...ruleFields, require_skills_any: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+                </label>
+
+                {/* ── postTool hook_skills ──────────────────── */}
+                {editing.hook === 'postTool' && (
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] text-[var(--fog)]">{t('policies.hookSkills')}</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">{t('policies.hookSkillsDesc')}</p>
+                    <ChipInput values={ruleFields.hook_skills} onChange={v => setRuleFields({ ...ruleFields, hook_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
+                  </label>
+                )}
+
+                {/* ── LLM evaluation toggle ─────────────────── */}
+                <div className="border-t border-[var(--border-subtle)] pt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={ruleFields.enableLlm} onChange={e => setRuleFields({ ...ruleFields, enableLlm: e.target.checked })} className="accent-indigo rounded" />
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-lavender" />
+                      <span className="text-[12px] font-medium text-[var(--mist)]">{t('policies.enableLlm')}</span>
+                    </span>
+                  </label>
+                  <p className="text-[10px] text-[var(--smoke)] mt-0.5 ml-6">{ruleFields.enableLlm ? t('policies.enableLlmDesc') : t('policies.llmDisabledHint')}</p>
                 </div>
-              </label>
+
+                {/* ── evaluationPrompt (LLM) ────────────────── */}
+                {ruleFields.enableLlm && (
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] text-[var(--fog)]">{t('policies.evaluationPrompt')}</span>
+                    <textarea
+                      ref={textareaRef}
+                      value={ruleFields.evaluationPrompt}
+                      onChange={e => setRuleFields({ ...ruleFields, evaluationPrompt: e.target.value })}
+                      rows={5}
+                      className="glass-input-console text-[13px] resize-y"
+                      placeholder={t('policies.phEvalPrompt')}
+                    />
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
+                      {PLACEHOLDERS.map(ph => (
+                        <button
+                          key={ph}
+                          type="button"
+                          onClick={() => insertPlaceholder(ph)}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
+                          title={`Insert ${ph}`}
+                        >
+                          {ph}
+                        </button>
+                      ))}
+                    </div>
+                  </label>
+                )}
+              </>
             )}
 
             <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>

@@ -115,6 +115,7 @@ Rules:
   async dispatch(
     tasks: SubAgentTask[],
     sendEvent: (event: SSEEvent) => void,
+    stage?: string,
   ): Promise<SubAgentResult[]> {
     const results: SubAgentResult[] = []
     const parallelTasks: SubAgentTask[] = []
@@ -176,6 +177,24 @@ Rules:
             batch.map((task) => this.runSubAgent(task)),
           )
           results.push(...batchResults)
+
+          // Write sub_agent_dispatched trace for this batch
+          const caseId = batch[0]?.context.caseId
+          if (caseId) {
+            prisma.actionTrace.create({
+              data: {
+                caseId,
+                actionType: 'sub_agent_dispatched',
+                title: `Dispatched ${batch.length} sub-agent${batch.length > 1 ? 's' : ''}`,
+                detail: batch.map((t) => t.agentConfig.name).join(', '),
+                payload: JSON.stringify({
+                  agentNames: batch.map((t) => t.agentConfig.name),
+                  stage: stage ?? null,
+                  caseId,
+                }),
+              },
+            }).catch((err) => console.error('[Orchestrator] Trace write failed (sub_agent_dispatched):', err))
+          }
         }
       }
     }
@@ -194,6 +213,24 @@ Rules:
 
       const result = await this.runSubAgent(task)
       results.push(result)
+
+      // Write sub_agent_dispatched trace for serial task
+      const sCaseId = task.context.caseId
+      if (sCaseId) {
+        prisma.actionTrace.create({
+          data: {
+            caseId: sCaseId,
+            actionType: 'sub_agent_dispatched',
+            title: `Dispatched 1 sub-agent`,
+            detail: task.agentConfig.name,
+            payload: JSON.stringify({
+              agentNames: [task.agentConfig.name],
+              stage: stage ?? null,
+              caseId: sCaseId,
+            }),
+          },
+        }).catch((err) => console.error('[Orchestrator] Trace write failed (sub_agent_dispatched):', err))
+      }
     }
 
     // Emit completion events for each result
@@ -472,6 +509,21 @@ Rules:
       text: `Sub-agent ${result.agentName} completed: ${result.recommendation || 'no recommendation'}`,
       source: 'llm',
     })
+
+    // Write sub_agent_merged trace
+    prisma.actionTrace.create({
+      data: {
+        caseId: result.caseId,
+        actionType: 'sub_agent_merged',
+        title: `Sub-agent ${result.agentName} merged`,
+        detail: `Findings: ${Object.keys(result.findings).join(', ') || '(none)'}`,
+        payload: JSON.stringify({
+          agentName: result.agentName,
+          findingsKeys: Object.keys(result.findings),
+          durationMs: result.durationMs,
+        }),
+      },
+    }).catch((err) => console.error('[Orchestrator] Trace write failed (sub_agent_merged):', err))
   }
 
   /** Merge sub-agent findings into case memory. */

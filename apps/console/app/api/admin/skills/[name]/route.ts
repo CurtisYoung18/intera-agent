@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
 import { getActiveCustomerId } from '@/lib/auth'
+import { CRITICAL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 export async function GET(
   _req: NextRequest,
@@ -28,6 +29,21 @@ export async function PUT(
   try {
     const CUSTOMER_ID = await getActiveCustomerId()
     const body = await req.json()
+
+    // Critical skills: reject changes to name, inputSchema, mode
+    if (CRITICAL_SKILL_NAMES.has(name)) {
+      const blocked: string[] = []
+      if (body.name !== undefined && body.name !== name) blocked.push('name')
+      if (body.inputSchema !== undefined) blocked.push('inputSchema')
+      if (body.mode !== undefined) blocked.push('mode')
+      if (blocked.length > 0) {
+        return NextResponse.json(
+          { error: `Cannot modify ${blocked.join(', ')} on critical skill "${name}"` },
+          { status: 400 },
+        )
+      }
+    }
+
     const data: Record<string, unknown> = {}
     const strFields = ['name', 'description', 'mode', 'endpoint', 'httpMethod', 'guardPhase']
     for (const f of strFields) if (body[f] !== undefined) data[f] = body[f]

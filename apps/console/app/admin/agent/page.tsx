@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Search, X } from 'lucide-react'
+import { AlertCircle, Brain, Cpu, Database, Shield, FileText, Search, X, ChevronDown, ChevronRight } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
@@ -21,6 +21,40 @@ import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 type Section = 'prompt' | 'model' | 'memory' | 'policy' | 'templates' | 'knowledge'
+type MemoryTier = 'short' | 'balanced' | 'long' | 'custom'
+
+const TIER_LABELS: Record<MemoryTier, string> = {
+  short: 'Short-term',
+  balanced: 'Balanced',
+  long: 'Long-term',
+  custom: 'Custom',
+}
+
+interface TierPreset {
+  autocompactThresholdTokens: number
+  compactionKeepMin: number
+  l1MaxMessages: number
+}
+
+const TIER_PRESETS: Record<Exclude<MemoryTier, 'custom'>, TierPreset> = {
+  short: { autocompactThresholdTokens: 20000, compactionKeepMin: 4, l1MaxMessages: 8 },
+  balanced: { autocompactThresholdTokens: 40000, compactionKeepMin: 8, l1MaxMessages: 20 },
+  long: { autocompactThresholdTokens: 80000, compactionKeepMin: 16, l1MaxMessages: 40 },
+}
+
+function detectMemoryTier(ms: MemoryStrategy): MemoryTier {
+  for (const tier of ['short', 'balanced', 'long'] as const) {
+    const p = TIER_PRESETS[tier]
+    if (
+      ms.autocompactThresholdTokens === p.autocompactThresholdTokens &&
+      ms.compactionKeepMin === p.compactionKeepMin &&
+      ms.l1MaxMessages === p.l1MaxMessages
+    ) {
+      return tier
+    }
+  }
+  return 'custom'
+}
 
 function parseStopJsonSafe(raw: unknown): string[] {
   if (!raw || typeof raw !== 'string') return []
@@ -53,6 +87,8 @@ export default function AgentConfigPage() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const [mainModels, setMainModels] = useState<string[]>([])
   const [activeSection, setActiveSection] = useState<Section | null>(null)
+  const [memoryTier, setMemoryTier] = useState<MemoryTier>('balanced')
+  const [showMemoryAdvanced, setShowMemoryAdvanced] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const configRef = useRef(config)
 
@@ -149,6 +185,7 @@ export default function AgentConfigPage() {
           ),
           knowledgeRetrieval,
         })
+        setMemoryTier(detectMemoryTier(memoryStrategy))
         setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
         setError(null)
       })
@@ -210,6 +247,26 @@ export default function AgentConfigPage() {
       setConfig((prev) =>
         prev ? { ...prev, memoryStrategy: { ...prev.memoryStrategy, [field]: value } } : null,
       )
+      // When user manually edits any advanced field, mark tier as custom
+      setMemoryTier('custom')
+      autoSave()
+    },
+    [autoSave],
+  )
+
+  const applyTierPreset = useCallback(
+    (tier: MemoryTier) => {
+      if (tier === 'custom') return
+      const preset = TIER_PRESETS[tier]
+      setConfig((prev) =>
+        prev
+          ? {
+              ...prev,
+              memoryStrategy: { ...prev.memoryStrategy, ...preset },
+            }
+          : null,
+      )
+      setMemoryTier(tier)
       autoSave()
     },
     [autoSave],
@@ -620,173 +677,228 @@ export default function AgentConfigPage() {
                   title={t('agent.drawer.memoryTiers')}
                   lead={t('agent.drawer.memoryTiersLead')}
                 >
-                  <div className="grid grid-cols-2 gap-3">
-                    <NumField
-                      label={t('agent.mem.autocompact')}
-                      hint={t('agent.mem.hint.autocompact')}
-                      value={ms.autocompactThresholdTokens}
-                      onChange={(v) => updateMem('autocompactThresholdTokens', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.warning')}
-                      hint={t('agent.mem.hint.warning')}
-                      value={ms.warningThresholdTokens}
-                      onChange={(v) => updateMem('warningThresholdTokens', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.error')}
-                      hint={t('agent.mem.hint.error')}
-                      value={ms.errorThresholdTokens}
-                      onChange={(v) => updateMem('errorThresholdTokens', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.blocking')}
-                      hint={t('agent.mem.hint.blocking')}
-                      value={ms.blockingThresholdTokens}
-                      onChange={(v) => updateMem('blockingThresholdTokens', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.l1Max')}
-                      hint={t('agent.mem.hint.l1Max')}
-                      value={ms.l1MaxMessages}
-                      onChange={(v) => updateMem('l1MaxMessages', v)}
-                      unit={u.msgs}
-                    />
-                    <NumField
-                      label={t('agent.mem.l2Summary')}
-                      hint={t('agent.mem.hint.l2Summary')}
-                      value={ms.l2SummaryMaxTokens}
-                      onChange={(v) => updateMem('l2SummaryMaxTokens', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.l4Historical')}
-                      hint={t('agent.mem.hint.l4Historical')}
-                      value={ms.l4MaxHistoricalCases}
-                      onChange={(v) => updateMem('l4MaxHistoricalCases', v)}
-                      unit={u.cases}
-                    />
-                    <NumField
-                      label={t('agent.mem.maxTraces')}
-                      hint={t('agent.mem.hint.maxTraces')}
-                      value={ms.maxRecentTraces}
-                      onChange={(v) => updateMem('maxRecentTraces', v)}
-                      unit={u.traces}
-                    />
+                  {/* ── Memory tier slider ── */}
+                  <div className="flex rounded-xl border border-black/[0.08] bg-black/[0.02] p-1 gap-1">
+                    {(['short', 'balanced', 'long'] as const).map((tier) => {
+                      const isActive = memoryTier === tier
+                      const isCustom = memoryTier === 'custom'
+                      return (
+                        <button
+                          key={tier}
+                          type="button"
+                          onClick={() => applyTierPreset(tier)}
+                          className={`flex-1 rounded-lg px-3 py-2 text-[12px] font-medium transition-all ${
+                            isActive
+                              ? 'bg-[#d4912e] text-white shadow-sm'
+                              : isCustom
+                                ? 'text-[var(--fog)] hover:bg-black/[0.04]'
+                                : 'text-[var(--fog)] hover:bg-black/[0.04]'
+                          }`}
+                        >
+                          {TIER_LABELS[tier]}
+                        </button>
+                      )
+                    })}
                   </div>
-                </DrawerSection>
-                <DrawerSection
-                  accent="#d4912e"
-                  title={t('agent.drawer.memoryCompact')}
-                  lead={t('agent.drawer.memoryCompactLead')}
-                >
-                  <label className="block space-y-1.5">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.mem.compactModel')}</span>
-                    <select
-                      value={ms.compactModel}
-                      onChange={(e) => updateMem('compactModel', e.target.value)}
-                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                    >
-                      {mainModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('agent.mem.hint.compactModel')}</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <NumField
-                      label={t('agent.mem.compactMaxMsgs')}
-                      hint={t('agent.mem.hint.compactMaxMsgs')}
-                      value={ms.compactMaxMessages}
-                      onChange={(v) => updateMem('compactMaxMessages', v)}
-                      unit={u.msgs}
-                    />
-                    <NumField
-                      label={t('agent.mem.compactTemp')}
-                      hint={t('agent.mem.hint.compactTemp')}
-                      value={ms.compactTemperature}
-                      onChange={(v) => updateMem('compactTemperature', v)}
-                      step={0.1}
-                      min={0}
-                      max={1}
-                    />
-                    <NumField
-                      label={t('agent.mem.compactMaxTokens')}
-                      hint={t('agent.mem.hint.compactMaxTokens')}
-                      value={ms.compactMaxTokensCap}
-                      onChange={(v) => updateMem('compactMaxTokensCap', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.minSummaryLen')}
-                      hint={t('agent.mem.hint.minSummaryLen')}
-                      value={ms.compactMinSummaryLength}
-                      onChange={(v) => updateMem('compactMinSummaryLength', v)}
-                      unit={u.tokens}
-                    />
-                    <NumField
-                      label={t('agent.mem.keepMin')}
-                      hint={t('agent.mem.hint.keepMin')}
-                      value={ms.compactionKeepMin}
-                      onChange={(v) => updateMem('compactionKeepMin', v)}
-                      unit={u.msgs}
-                    />
-                    <NumField
-                      label={t('agent.mem.keepRatio')}
-                      hint={t('agent.mem.hint.keepRatio')}
-                      value={ms.compactionKeepRatio}
-                      onChange={(v) => updateMem('compactionKeepRatio', v)}
-                      step={0.1}
-                      min={0}
-                      max={1}
-                    />
+                  {memoryTier === 'custom' && (
+                    <p className="text-[10px] text-[var(--fog)]/60 mt-1.5 px-1">
+                      Custom — advanced fields have been manually edited
+                    </p>
+                  )}
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-[10px] text-[var(--fog)]/70 px-1">
+                    <span>Autocompact: {ms.autocompactThresholdTokens.toLocaleString()} tokens</span>
+                    <span>Keep: {ms.compactionKeepMin} msgs</span>
+                    <span>L1 max: {ms.l1MaxMessages} msgs</span>
                   </div>
-                  <DrawerCheckboxRail accent="#d4912e" layout="stack">
-                    {memToggles.map(([key, tk, hintKey]) => (
-                      <label
-                        key={key}
-                        className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!ms[key]}
-                          onChange={(e) => updateMem(key, e.target.checked)}
-                          className="accent-amber mt-0.5 shrink-0 rounded"
-                        />
-                        <span className="min-w-0 space-y-0.5">
-                          <span className="block text-[12px] font-medium text-[var(--mist)]">{t(tk)}</span>
-                          <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t(hintKey)}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </DrawerCheckboxRail>
+
+                  {/* ── Advanced toggle ── */}
+                  <button
+                    type="button"
+                    onClick={() => setShowMemoryAdvanced(!showMemoryAdvanced)}
+                    className="flex items-center gap-1.5 mt-3 text-[11px] font-medium text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
+                  >
+                    {showMemoryAdvanced ? (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    )}
+                    Advanced
+                  </button>
                 </DrawerSection>
 
-                <DrawerSection
-                  accent="#b8944c"
-                  eyebrow="Debug"
-                  title="API Data Flow Logging"
-                  lead="Write full API request/response payloads to debug-logs/ directory for troubleshooting."
-                  actions={
-                    <label className="flex items-center gap-2 cursor-pointer shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={config.debugMode}
-                        onChange={(e) => update('debugMode', e.target.checked)}
-                        className="accent-amber rounded"
-                      />
-                      <span className="text-[11px] font-medium text-[var(--mist)]">Enable</span>
-                    </label>
-                  }
-                >
-                  <p className="text-[10px] text-[var(--fog)]/60">When enabled, raw API payloads are written to <code className="text-[10px] bg-black/[0.04] px-1 rounded">debug-logs/&lt;caseId&gt;/</code> as JSON files. Restart not required.</p>
-                </DrawerSection>
+                {/* ── Advanced fields (collapsible) ── */}
+                {showMemoryAdvanced && (
+                  <>
+                    <DrawerSection accent="#d4912e" title="Thresholds">
+                      <div className="grid grid-cols-2 gap-3">
+                        <NumField
+                          label={t('agent.mem.autocompact')}
+                          hint={t('agent.mem.hint.autocompact')}
+                          value={ms.autocompactThresholdTokens}
+                          onChange={(v) => updateMem('autocompactThresholdTokens', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.warning')}
+                          hint={t('agent.mem.hint.warning')}
+                          value={ms.warningThresholdTokens}
+                          onChange={(v) => updateMem('warningThresholdTokens', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.error')}
+                          hint={t('agent.mem.hint.error')}
+                          value={ms.errorThresholdTokens}
+                          onChange={(v) => updateMem('errorThresholdTokens', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.blocking')}
+                          hint={t('agent.mem.hint.blocking')}
+                          value={ms.blockingThresholdTokens}
+                          onChange={(v) => updateMem('blockingThresholdTokens', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.l1Max')}
+                          hint={t('agent.mem.hint.l1Max')}
+                          value={ms.l1MaxMessages}
+                          onChange={(v) => updateMem('l1MaxMessages', v)}
+                          unit={u.msgs}
+                        />
+                        <NumField
+                          label={t('agent.mem.l2Summary')}
+                          hint={t('agent.mem.hint.l2Summary')}
+                          value={ms.l2SummaryMaxTokens}
+                          onChange={(v) => updateMem('l2SummaryMaxTokens', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.l4Historical')}
+                          hint={t('agent.mem.hint.l4Historical')}
+                          value={ms.l4MaxHistoricalCases}
+                          onChange={(v) => updateMem('l4MaxHistoricalCases', v)}
+                          unit={u.cases}
+                        />
+                        <NumField
+                          label={t('agent.mem.maxTraces')}
+                          hint={t('agent.mem.hint.maxTraces')}
+                          value={ms.maxRecentTraces}
+                          onChange={(v) => updateMem('maxRecentTraces', v)}
+                          unit={u.traces}
+                        />
+                      </div>
+                    </DrawerSection>
+                    <DrawerSection
+                      accent="#d4912e"
+                      title={t('agent.drawer.memoryCompact')}
+                      lead={t('agent.drawer.memoryCompactLead')}
+                    >
+                      <label className="block space-y-1.5">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.mem.compactModel')}</span>
+                        <select
+                          value={ms.compactModel}
+                          onChange={(e) => updateMem('compactModel', e.target.value)}
+                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                        >
+                          {mainModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('agent.mem.hint.compactModel')}</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <NumField
+                          label={t('agent.mem.compactMaxMsgs')}
+                          hint={t('agent.mem.hint.compactMaxMsgs')}
+                          value={ms.compactMaxMessages}
+                          onChange={(v) => updateMem('compactMaxMessages', v)}
+                          unit={u.msgs}
+                        />
+                        <NumField
+                          label={t('agent.mem.compactTemp')}
+                          hint={t('agent.mem.hint.compactTemp')}
+                          value={ms.compactTemperature}
+                          onChange={(v) => updateMem('compactTemperature', v)}
+                          step={0.1}
+                          min={0}
+                          max={1}
+                        />
+                        <NumField
+                          label={t('agent.mem.compactMaxTokens')}
+                          hint={t('agent.mem.hint.compactMaxTokens')}
+                          value={ms.compactMaxTokensCap}
+                          onChange={(v) => updateMem('compactMaxTokensCap', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.minSummaryLen')}
+                          hint={t('agent.mem.hint.minSummaryLen')}
+                          value={ms.compactMinSummaryLength}
+                          onChange={(v) => updateMem('compactMinSummaryLength', v)}
+                          unit={u.tokens}
+                        />
+                        <NumField
+                          label={t('agent.mem.keepMin')}
+                          hint={t('agent.mem.hint.keepMin')}
+                          value={ms.compactionKeepMin}
+                          onChange={(v) => updateMem('compactionKeepMin', v)}
+                          unit={u.msgs}
+                        />
+                        <NumField
+                          label={t('agent.mem.keepRatio')}
+                          hint={t('agent.mem.hint.keepRatio')}
+                          value={ms.compactionKeepRatio}
+                          onChange={(v) => updateMem('compactionKeepRatio', v)}
+                          step={0.1}
+                          min={0}
+                          max={1}
+                        />
+                      </div>
+                      <DrawerCheckboxRail accent="#d4912e" layout="stack">
+                        {memToggles.map(([key, tk, hintKey]) => (
+                          <label
+                            key={key}
+                            className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!ms[key]}
+                              onChange={(e) => updateMem(key, e.target.checked)}
+                              className="accent-amber mt-0.5 shrink-0 rounded"
+                            />
+                            <span className="min-w-0 space-y-0.5">
+                              <span className="block text-[12px] font-medium text-[var(--mist)]">{t(tk)}</span>
+                              <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t(hintKey)}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </DrawerCheckboxRail>
+                    </DrawerSection>
+
+                    <DrawerSection
+                      accent="#b8944c"
+                      eyebrow="Debug"
+                      title="API Data Flow Logging"
+                      lead="Write full API request/response payloads to debug-logs/ directory for troubleshooting."
+                      actions={
+                        <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={config.debugMode}
+                            onChange={(e) => update('debugMode', e.target.checked)}
+                            className="accent-amber rounded"
+                          />
+                          <span className="text-[11px] font-medium text-[var(--mist)]">Enable</span>
+                        </label>
+                      }
+                    >
+                      <p className="text-[10px] text-[var(--fog)]/60">When enabled, raw API payloads are written to <code className="text-[10px] bg-black/[0.04] px-1 rounded">debug-logs/&lt;caseId&gt;/</code> as JSON files. Restart not required.</p>
+                    </DrawerSection>
+                  </>
+                )}
               </>
             )}
 
