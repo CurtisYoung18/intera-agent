@@ -540,11 +540,6 @@ Rules:
   /** Run a single sub-agent. Creates a fresh instance each call so task-specific
    *  configuration (taskPrompt, context) is never stale from a previous dispatch. */
   private async runSubAgent(task: SubAgentTask): Promise<SubAgentResult> {
-    // Wire the live dashboard reader into the task context so SubAgent can poll
-    if (this.memoryManager) {
-      task.context.dashboardReader = this.memoryManager
-    }
-
     const ctx: AgentContext = {
       agentId: task.id,
       chainId: task.forkContext?.chainId ?? '',
@@ -556,7 +551,7 @@ Rules:
       messageBus: this.messageBus ?? { send: () => {}, poll: () => [] },
     }
 
-    const agent = new SubAgent(task.agentConfig, this.skillDefinitions, this.memoryManager)
+    const agent = new SubAgent(task.agentConfig, this.skillDefinitions)
     return agent.run(ctx, task)
   }
 }

@@ -5,7 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, DashboardReader, AgentContext, SSEEvent } from '@intera/shared/types'
+import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, AgentContext, SSEEvent } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { ChecklistPolicy } from './policies/checklist-policy'
 import { AgentLoop } from './loop'
@@ -58,8 +58,6 @@ export class SubAgent {
   constructor(
     private config: SubAgentConfig,
     private skillDefinitions: SkillDefinition[] = [],
-    /** Live dashboard reader for change detection. Undefined = dashboard disabled (backward compat). */
-    private dashboardReader?: DashboardReader,
   ) {
     this.client = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
@@ -170,55 +168,6 @@ export class SubAgent {
 
     try {
       for (let iter = 0; iter < maxIterations; iter++) {
-        // ── Dashboard polling ──────────────────────────────────────
-        if (this.dashboardReader) {
-          const currentVersion = this.dashboardReader.getDashboardVersion()
-          const lastKnownVersion = task.context.caseMemory.dashboardVersion ?? 0
-
-          if (currentVersion > lastKnownVersion) {
-            const diff = this.dashboardReader.getDashboardDiff(lastKnownVersion)
-
-            const updateLines: string[] = [
-              `[DASHBOARD UPDATE — version ${currentVersion}]`,
-              'The core agent has updated the shared dashboard. Review the changes below and adapt your investigation accordingly.',
-            ]
-
-            const factEntries = Object.entries(diff.changedFacts)
-            if (factEntries.length > 0) {
-              updateLines.push('')
-              updateLines.push('## Updated Confirmed Facts')
-              for (const [k, v] of factEntries) {
-                updateLines.push(`- ${k}: ${JSON.stringify(v)}`)
-              }
-            }
-
-            const myTodos = diff.agentTodoChanges[this.config.name]
-            if (myTodos && myTodos.length > 0) {
-              updateLines.push('')
-              updateLines.push('## Your Updated Todos')
-              for (const t of myTodos) {
-                const icon = t.status === 'completed' ? '[x]' : t.status === 'cancelled' ? '[-]' : t.status === 'in_progress' ? '[>]' : '[ ]'
-                updateLines.push(`${icon} ${t.text}${t.notes ? ` (${t.notes})` : ''}`)
-              }
-            }
-
-            if (diff.newKeyEvents.length > 0) {
-              updateLines.push('')
-              updateLines.push('## Recent Events')
-              for (const e of diff.newKeyEvents.slice(-5)) {
-                updateLines.push(`- ${e.at}: ${e.text}`)
-              }
-            }
-
-            messages.push({
-              role: 'user',
-              content: updateLines.join('\n'),
-            })
-
-            task.context.caseMemory.dashboardVersion = currentVersion
-          }
-        }
-
         const remainingMs = Math.max(0, DEFAULT_TIMEOUT_MS - (Date.now() - startTime))
         const timeoutId = setTimeout(() => {
           abortController.abort()

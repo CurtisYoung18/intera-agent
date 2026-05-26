@@ -136,19 +136,6 @@ export interface DashboardChange {
   newKeyEvents: KeyEvent[]
 }
 
-/**
- * Minimal interface for dashboard-aware sub-agents to poll.
- * CaseMemoryManager satisfies this — avoids circular imports between types and agent code.
- */
-export interface DashboardReader {
-  getDashboardVersion(): number
-  getConfirmedFacts(): Record<string, unknown>
-  getTodos(): TodoItem[]
-  getAgentTodos(agentName: string): TodoItem[]
-  getKeyEvents(): KeyEvent[]
-  getDashboardDiff(sinceVersion: number): DashboardChange
-}
-
 // ============================================
 // SOP Mode — Todo List
 // ============================================
@@ -529,8 +516,6 @@ export interface SubAgentTask {
     caseId: string
     caseMemory: CaseMemoryData
     stageGoal: string
-    /** Live dashboard reader for change polling. Undefined = dashboard disabled (backward compat). */
-    dashboardReader?: DashboardReader
   }
   /** Fork cache context — shared across same-type parallel sub-agents for prompt prefix reuse. */
   forkContext?: {
