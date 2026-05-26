@@ -417,7 +417,7 @@ export interface CaseSchemaConfig {
   orchestrator?: OrchestratorConfig
   requireHumanReview?: boolean
   /** "stage" = predefined stage machine (default); "step" = engine-driven step executor */
-  executionMode?: 'stage' | 'step'
+  executionMode?: 'stage' | 'sop'
   /** Natural-language Standard Operating Procedure (only used when executionMode = "sop") */
   sop?: string
 }

@@ -310,7 +310,7 @@ export class AgentLoop {
     // Step mode: fully trust the model (CC pattern) — skip the secondary LLM
     // classification call and always route to the case loop.
     let forceCoreMode = false
-    if (this.caseLoop?.isStageActive() && this.deps.caseSchema?.executionMode !== 'step') {
+    if (this.caseLoop?.isStageActive() && this.deps.caseSchema?.executionMode !== 'sop') {
       const msgMode = await this.classifyMessage(userMessage)
       forceCoreMode = msgMode === 'core'
       if (forceCoreMode) {
@@ -483,7 +483,7 @@ export class AgentLoop {
           this.deps.systemPrompt,
         ].join('\n')
         stageTools = []  // No tools — pure text acknowledgement only
-      } else if (this.deps.caseSchema?.executionMode === 'step') {
+      } else if (this.deps.caseSchema?.executionMode === 'sop') {
         stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
         stageTools = this.caseLoop!.filterSopTools(allTools)
       } else {
@@ -835,7 +835,7 @@ export class AgentLoop {
       // ── Step-mode todo interception (pure in-memory, no side effects) ─────
       // todo_write and todo_read bypass the skill executor — their mock outputs
       // are replaced here with real in-memory operations on CaseMemory.
-      if (this.deps.caseSchema?.executionMode === 'step') {
+      if (this.deps.caseSchema?.executionMode === 'sop') {
         toolResults = this.processTodoTools(toolResults)
 
         // Auto-complete todo items whose corresponding investigation tools succeeded.
@@ -1017,7 +1017,7 @@ export class AgentLoop {
         // When the agent just received tool results (there ARE previous tool
         // messages) but produced empty text and no new tool calls, it silently
         // swallowed the findings. Nudge it to either tell the user or finalize.
-        if (this.deps.caseSchema?.executionMode === 'step' && !fullText) {
+        if (this.deps.caseSchema?.executionMode === 'sop' && !fullText) {
           const lastFewMessages = this.messages.slice(-6)
           const hasPendingToolResults = lastFewMessages.some(
             (m) => m.role === 'assistant' && typeof m.content === 'string' &&
@@ -1231,7 +1231,7 @@ export class AgentLoop {
       // because of wrong format, AND also ran investigation tools in the same
       // turn, we must tell it to fix the plan BEFORE acting on the results.
       // This fires even on non-empty turns (so it's not gated on !fullText).
-      if (this.deps.caseSchema?.executionMode === 'step' && this.nudgeCount < 3) {
+      if (this.deps.caseSchema?.executionMode === 'sop' && this.nudgeCount < 3) {
         const todoFailed = toolResults.some(
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
@@ -1337,8 +1337,8 @@ export class AgentLoop {
                 defaultGoal: ctRow.defaultGoal,
                 escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
                 requireHumanReview: (ctRow as any).requireHumanReview === true,
-                // Normalize legacy 'sop' value to 'step'
-                executionMode: (((ctRow as any).executionMode === 'sop' ? 'step' : (ctRow as any).executionMode) as 'stage' | 'step' | undefined) || 'stage',
+                // Normalize legacy 'sop' value to 'sop'
+                executionMode: (((ctRow as any).executionMode === 'sop' ? 'sop' : (ctRow as any).executionMode) as 'stage' | 'sop' | undefined) || 'stage',
                 sop: (ctRow as any).sop || undefined,
               }
               this.deps.caseSchema = schema
@@ -1388,7 +1388,7 @@ export class AgentLoop {
               // whether or not investigation tools were pre-called in the same
               // batch. addToolResultMessages() was already called above so any
               // pre-fetched results are already in this.messages.
-              if (this.deps.caseSchema?.executionMode === 'step') {
+              if (this.deps.caseSchema?.executionMode === 'sop') {
                 const alreadyCalledTools = toolResults
                   .filter((r) => r.name !== 'create_case')
                   .map((r) => r.name)
@@ -2049,7 +2049,7 @@ export class AgentLoop {
   /**
    * Intercept step-mode internal tools (todo_write / todo_read) — replace their
    * mock executor outputs with real in-memory CaseMemory operations.
-   * Must be called after toolExecutor.waitForAll() when executionMode is 'step'.
+   * Must be called after toolExecutor.waitForAll() when executionMode is 'sop'.
    */
   private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
     const sopToolNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))

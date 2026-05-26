@@ -100,7 +100,7 @@ export class CaseAgentLoop {
    */
   isStageActive(): boolean {
     if (this._currentStage !== 'created') return true
-    return this.caseSchema.executionMode === 'step'
+    return this.caseSchema.executionMode === 'sop'
   }
 
   /** Re-sync stage from CaseMemory — call this after loadMemory. */
@@ -170,7 +170,7 @@ export class CaseAgentLoop {
     missingEvidence: string[]
   } {
     // Step mode: no stage nudges — the agent drives itself via todos
-    if (this.caseSchema.executionMode === 'step') {
+    if (this.caseSchema.executionMode === 'sop') {
       return { advanced: false, needsNudge: false, nudgeMessage: '', missingSkills: [], missingEvidence: [] }
     }
 
@@ -208,7 +208,7 @@ export class CaseAgentLoop {
   ): Promise<TransitionEval> {
     // Step mode: skip LLM stage evaluator — advance 'created' → first stage automatically,
     // then let the agent drive via todos (no further stage machine transitions).
-    if (this.caseSchema.executionMode === 'step') {
+    if (this.caseSchema.executionMode === 'sop') {
       if (this._currentStage === 'created') {
         const next = this.stageExecutor.getNextStageName('created')
         if (next) {
