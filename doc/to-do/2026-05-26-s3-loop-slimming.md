@@ -339,16 +339,13 @@ The whole S3 is too big to land as one PR. Phases below; each phase has its own 
 
 ## 3. Open questions / cleanup parametrization
 
-### 3.1 Classifier — keep or kill?
+### 3.1 Classifier — keep
 
-Per your earlier feedback, `classifyMessage` is gated by `executionMode === 'stage'` and effectively dormant if deployments standardize on SOP mode. Two paths:
+**Decision (2026-05-26)**: keep. Both `executionMode: 'stage'` and `executionMode: 'cc'` (formerly `'sop'`) will coexist — stage mode remains the predictability-first option for compliance-heavy deployments. The classifier is intrinsic to stage mode (it's how per-message case/core routing happens), so it stays alive.
 
-- **Keep**: extract to `pre-iteration/classify-message.ts`, gate stays the same. S2's `classifier` QuerySource row in the retry policy still applies.
-- **Kill**: delete `classifyMessage`, delete the gate at [loop.ts:313](apps/chat/lib/agent/loop.ts#L313), delete the `classifier` row from S2's policy table. Stage mode loses per-message case/core routing — every message in an active case goes through `CaseAgentLoop`.
+Action in Phase 3c: extract `classifyMessage` to `pre-iteration/classify-message.ts` as a pure function. Same gate at the call site (`stageActive && executionMode === 'stage'`). S2's `classifier` QuerySource row in the retry policy stays.
 
-**Recommended**: Kill it in Phase 3c if you've committed to SOP being the canonical execution mode. If `stage` is still supported, keep it.
-
-→ Decision needed before Phase 3c lands. Default to **keep** if no signal.
+If `executionMode: 'cc'` is added later as part of the SOP → CC rename, the gate becomes `executionMode === 'stage'` (single mode, not the negation).
 
 ### 3.2 LLM leak sanitizer — keep or kill?
 
@@ -372,6 +369,34 @@ Same shape: gated by `enableLlmSanitization` flag. v4 console-config-scope.md ma
 CC's `queryLoop` is an async generator (`async function*`). Generators give clean composition via `yield*`. But Intera's SSE callback pattern (`sendEvent(event)`) is *callback-based*. To switch to generators we'd have to rewrite every SSE consumer.
 
 → **No generators for S3.** Keep callback-based event emission. Generators are a follow-up if we ever want SDK-style consumption (which would be S5 / S6 territory).
+
+### 3.5 Dual-mode design — what S3 must NOT close off
+
+**Decision (2026-05-26)**: Intera will support two `executionMode` values:
+
+- `'stage'` — current Design A. Sub-agents pinned to (case-type, stage); declarative dispatch on stage entry. Predictability-first. Used where compliance demands "this case type always runs these sub-agents".
+- `'cc'` — evolves from current `'sop'`. Single main agent + todo-driven checklist + a new `dispatch_subagent` tool that the main agent calls when it judges one useful. Sub-agent registry lives at a new `/admin/sub-agents` page (separate from Case Types). Flexibility-first.
+
+**Both modes share the same iteration body** (`runIteration`). Both modes ultimately spawn sub-agents that run the same iteration loop. The only difference is the trigger:
+
+| | `stage` | `cc` |
+|---|---|---|
+| Where sub-agent dispatch is decided | `StageConfig.subAgents[]` on stage entry — declarative | LLM calls `dispatch_subagent` tool — runtime decision |
+| Sub-agent definitions live | Inside Case Types (per-stage) | In a global registry (`/admin/sub-agents`) |
+| Stage transitions | LLM-judged via `evaluateStageTransitionAfterNoTools` | None — case progresses via todo checklist completion |
+| Classifier `'case' \| 'core'` | Yes — `loop.ts:313` gate | No |
+
+**Implication for S3 phases**:
+
+- **Phase 3e (sub-agent unification)** stays correct — both modes go through `runIteration`. What it must guarantee: the sub-agent path accepts an `IterationDeps` derived from *either* a `StageConfig.subAgents[]` entry (stage mode) *or* a sub-agent registry entry (cc mode). Both produce the same shape — `model`, `systemPrompt`, `allowedTools`, `taskChecklist`, `maxIterations`. Phase 3e doesn't need to know which source; it just needs to take the dict.
+
+- **Phase 3c (helper extraction)** must NOT delete `classifyMessage` or the stage-mode-specific stage-transition logic. Both are stage-mode-only but they're not dead code.
+
+- **No phase introduces the `dispatch_subagent` tool.** That belongs in S4 (tool interface) once the new `Tool<I,O>` abstraction exists. S3 sets up `sub-agent.ts` so that adding a new caller (the tool's executor) is trivial — but does not add the tool itself.
+
+- **No phase introduces `executionMode: 'cc'`.** The rename from `'sop'` to `'cc'` plus the dispatch_subagent tool are explicit S4 deliverables. S3 just preserves the existing `'sop'` code paths so they're ready to be enhanced.
+
+**Rollback safety**: if the dual-mode decision is reversed (e.g. decision is to collapse to one mode), S3's refactor doesn't lock us in. The `runIteration` body is mode-agnostic; only its callers branch on `executionMode`.
 
 ---
 
@@ -455,10 +480,10 @@ Per-phase rules:
 4. **Phase 3e is the riskiest.** Test sub-agent flow on a real Anthropic key against a real case before merging.
 
 Open these issues / questions to your tech lead before starting:
-- Q1: classifier — keep or kill? (§3.1)
+- Q1: ~~classifier — keep or kill?~~ **Resolved 2026-05-26: keep (dual-mode design — see §3.5).**
 - Q2: LLM leak sanitizer — keep or kill? (§3.2)
 
-If both are killed, S2's policy table loses 2 rows and `loop.ts` drops another ~150 lines.
+If sanitizer is killed, S2's policy table loses 1 row and `loop.ts` drops another ~80 lines. Classifier is now confirmed kept.
 
 Do NOT do these in the same PRs:
 - S4 (tool interface) — different concern.

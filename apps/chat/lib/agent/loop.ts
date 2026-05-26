@@ -19,6 +19,7 @@ import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
 import { microCompact } from './microCompact'
 import { synthesizeMissingToolResults, assertToolResultInvariant } from './tool-result-invariant'
+import { classifyError } from './api/error-classifier'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
@@ -515,48 +516,32 @@ export class AgentLoop {
 
       const apiMessages = this.buildApiMessages()
 
-      // ── Auto error recovery: retry once on transient API errors ──
+      // ── S2: Stream creation with classified retry (stream consumption errors
+      //     are handled in the for-await catch below — full streaming retry
+      //     integration with stream→non-streaming fallback is deferred to S3).
       let stream: ReturnType<typeof this.anthropicClient.messages.stream>
-      let streamAttempt = 0
-      const maxStreamAttempts = 2
-
-      while (streamAttempt < maxStreamAttempts) {
-        streamAttempt++
-        try {
-          if (this.abortController.signal.aborted) break
-          stream = this.anthropicClient.messages.stream({
-            model: this.deps.config.model,
-            max_tokens: this.deps.config.maxOutputTokens ?? 4096,
-            system: stagePrompt,
-            messages: apiMessages,
-            tools: stageTools,
-            ...(this.deps.config.showThinking ? {
-              thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
-            } : {}),
-          }, { signal: this.abortController.signal })
-          break // success — exit retry loop
-        } catch (err) {
-          const errStr = String(err)
-
-          // Reactive compact on 413 / context_length_exceeded
-          if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
-            this.messages = reactiveCompact(this.messages)
-            await this.traceWriter.write('loop_decision', 'Reactive compact on 413', { error: errStr })
-          }
-
-          if (streamAttempt >= maxStreamAttempts || this.abortController.signal.aborted) {
-            sendEvent({ type: 'error', data: `LLM API error after ${streamAttempt} attempts`, timestamp: new Date().toISOString() })
-            await this.traceWriter.write('loop_decision', 'Exit: LLM API error', { error: errStr, attempts: streamAttempt })
-            sendEvent({ type: 'escalated', data: { reason: `LLM API error after ${streamAttempt} attempts` }, timestamp: new Date().toISOString() })
-            return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
-          }
-          await this.traceWriter.write('loop_decision', `LLM stream retry ${streamAttempt}/${maxStreamAttempts}`, { error: errStr })
-          await new Promise((r) => setTimeout(r, 1000 * streamAttempt)) // backoff
+      try {
+        stream = this.anthropicClient.messages.stream({
+          model: this.deps.config.model,
+          max_tokens: this.deps.config.maxOutputTokens ?? 4096,
+          system: stagePrompt,
+          messages: apiMessages,
+          tools: stageTools,
+          ...(this.deps.config.showThinking ? {
+            thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
+          } : {}),
+        }, { signal: this.abortController.signal })
+      } catch (err) {
+        const classified = classifyError(err)
+        if (classified === 'context_overflow') {
+          this.messages = reactiveCompact(this.messages)
+          await this.traceWriter.write('loop_decision', 'Reactive compact on context overflow', { error: String(err) })
+          continue
         }
+        sendEvent({ type: 'error', data: `LLM API error (${classified})`, timestamp: new Date().toISOString() })
+        sendEvent({ type: 'escalated', data: { reason: `LLM API error: ${classified}` }, timestamp: new Date().toISOString() })
+        return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
       }
-
-      // stream is guaranteed to be assigned here (while loop always breaks or returns)
-      stream = stream!
 
       // Debug: full API request
       let debugSeq = -1
