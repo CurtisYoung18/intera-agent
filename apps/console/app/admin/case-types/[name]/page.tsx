@@ -167,6 +167,35 @@ export default function CaseTypeDetailPage() {
   }
 
   // Change execution mode with warning
+  // ── Stage management ──────────────────────────────────────────
+
+  const addStage = () => {
+    if (!ct) return
+    const stages = parseStages()
+    const name = `stage_${stages.length + 1}`
+    stages.push(name)
+    setCt({ ...ct, stages: JSON.stringify(stages) })
+  }
+
+  const removeStage = (stage: string) => {
+    if (!ct) return
+    const stages = parseStages().filter((s) => s !== stage)
+    setCt({ ...ct, stages: JSON.stringify(stages) })
+  }
+
+  const renameStage = (oldName: string, newName: string) => {
+    if (!ct || !newName.trim()) return
+    const stages = parseStages().map((s) => (s === oldName ? newName.trim() : s))
+    setCt({ ...ct, stages: JSON.stringify(stages) })
+    // Also rename in stageConfigs
+    const cfgs = parseStageConfigs()
+    if (cfgs[oldName]) {
+      cfgs[newName.trim()] = cfgs[oldName]
+      delete cfgs[oldName]
+      setCt((prev) => prev ? { ...prev, stageConfigs: JSON.stringify(cfgs) } : prev)
+    }
+  }
+
   const changeExecutionMode = (newMode: string) => {
     if (!ct) return
     if (newMode === ct.executionMode) return
@@ -316,18 +345,43 @@ export default function CaseTypeDetailPage() {
 
       {/* Lifecycle */}
       <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
-        <h2 className="text-[14px] font-semibold text-[var(--mist)] mb-3">Lifecycle</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[14px] font-semibold text-[var(--mist)]">Lifecycle</h2>
+          <button
+            type="button"
+            onClick={addStage}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-[var(--border-subtle)] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03] transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Stage
+          </button>
+        </div>
         <div className="flex items-center gap-1.5 flex-wrap p-3 rounded-xl bg-[var(--abyss)]/50 border border-[var(--border-subtle)]">
           {stageNames.map((stage, i) => (
-            <div key={stage} className="flex items-center gap-1.5">
-              <span className="px-3 py-1.5 rounded-lg text-[12px] font-medium bg-white/40 border border-[var(--border-subtle)] text-[var(--mist)]">
-                {stage}
-              </span>
+            <div key={stage} className="flex items-center gap-1.5 group/stage">
+              <div className="relative">
+                <input
+                  value={stage}
+                  onChange={(e) => renameStage(stage, e.target.value)}
+                  className="px-3 py-1.5 rounded-lg text-[12px] font-medium bg-white/40 border border-[var(--border-subtle)] text-[var(--mist)] w-[150px] outline-none focus:border-lavender/30 hover:border-lavender/20 transition-colors"
+                  title="Click to rename"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeStage(stage)}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-vermillion/80 text-white flex items-center justify-center text-[8px] opacity-0 group-hover/stage:opacity-100 transition-opacity hover:bg-vermillion"
+                  title="Remove stage"
+                >
+                  x
+                </button>
+              </div>
               {i < stageNames.length - 1 && (
                 <span className="text-[var(--smoke)]/40 text-[11px]">&rarr;</span>
               )}
             </div>
           ))}
+          {stageNames.length === 0 && (
+            <span className="text-[12px] text-[var(--smoke)] italic">No stages defined — click "Add Stage"</span>
+          )}
         </div>
       </div>
 

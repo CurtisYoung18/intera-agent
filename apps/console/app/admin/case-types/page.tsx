@@ -140,8 +140,13 @@ export default function CaseTypesPage() {
     })
     if (!res.ok) return alert(t('common.failedSave', { status: res.status }))
     notifyConfigChanged()
-    setEditing(null)
-    load()
+    if (isNew) {
+      // After creating, open the detail page for full editing
+      router.push(`/admin/case-types/${encodeURIComponent(editing.type)}`)
+    } else {
+      setEditing(null)
+      load()
+    }
   }, [editing, isNew, load, notifyConfigChanged, t])
 
   const toggleEnabled = useCallback(
