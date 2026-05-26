@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Search, Plus, Trash2, Edit3, ToggleLeft, ToggleRight,
   Play, RefreshCw, CheckCircle2, XCircle, Loader2,
-  ChevronDown, ExternalLink, GripVertical,
+  ChevronDown, ExternalLink, GripVertical, Eye, EyeOff, Key,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -302,7 +302,7 @@ export default function KnowledgePage() {
 
       <div className="flex-1 px-8 pb-8 space-y-6">
 
-        {/* GPTBots connection status */}
+        {/* GPTBots connection status + API key config */}
         <div className="flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white/60 backdrop-blur-sm px-4 py-3">
           {gptKbsLoading ? (
             <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
@@ -315,16 +315,21 @@ export default function KnowledgePage() {
             GPTBots API: {gptConnected ? `Connected (${gptKbs.length} knowledge bases)` : gptConnected === false ? `API key not configured or unreachable` : 'Checking…'}
           </span>
           {gptConnected && (
-            <span className="text-[11px] text-[var(--fog)]">
+            <span className="text-[11px] text-[var(--fog)] hidden sm:inline">
               {gptKbs.map((k) => k.name).join(', ')}
             </span>
           )}
           <button
             onClick={fetchGptKbs}
-            className="ml-auto flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-700"
+            className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-700"
           >
             <RefreshCw className="w-3 h-3" /> Refresh
           </button>
+        </div>
+
+        {/* GPTBots API key config */}
+        <div className="flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white/60 backdrop-blur-sm px-4 py-3">
+          <ApiKeyInput onSaved={() => { fetchGptKbs() }} />
         </div>
 
         {/* Sources list */}
@@ -668,6 +673,55 @@ export default function KnowledgePage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function ApiKeyInput({ onSaved }: { onSaved: () => void }) {
+  const [key, setKey] = useState('')
+  const [show, setShow] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/knowledge/gptbots', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: key }),
+      })
+      if (!res.ok) throw new Error('save failed')
+      setStatus('saved')
+      setTimeout(() => setStatus('idle'), 2000)
+      onSaved()
+    } catch { setStatus('error') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <Key className="w-4 h-4 text-teal-500 flex-shrink-0" />
+      <span className="text-[11px] font-semibold text-[var(--mist)] flex-shrink-0">API Key</span>
+      <div className="relative flex-1">
+        <input
+          type={show ? 'text' : 'password'}
+          value={key}
+          onChange={(e) => { setKey(e.target.value); setStatus('idle') }}
+          placeholder="app-..."
+          className="w-full px-2.5 py-1.5 text-[12px] border border-black/[0.08] rounded-lg bg-white outline-none focus:border-teal-500/30 pr-8"
+        />
+        <button onClick={() => setShow(!show)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--fog)]">
+          {show ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+        </button>
+      </div>
+      <button
+        onClick={handleSave}
+        disabled={saving || !key.trim()}
+        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-40 flex-shrink-0"
+      >
+        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : status === 'saved' ? '✓ Saved' : status === 'error' ? 'Retry' : 'Save'}
+      </button>
     </div>
   )
 }

@@ -145,6 +145,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   const [traces, setTraces] = useState<TraceItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showTraces, setShowTraces] = useState(false)
+  const [showAnalysis, setShowAnalysis] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const metrics = useMemo(() => computeMetrics(traces), [traces])
@@ -238,24 +239,68 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
         </div>
       </header>
 
-      {/* Metrics bar */}
-      {metrics.llmCalls > 0 && (
-        <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label="LLM Calls" value={String(metrics.llmCalls)} />
-          <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label="Total Tokens" value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
-          <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label="Wall Time" value={fmtMs(metrics.turnWallMs)} />
-          <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label="Tool Phase" value={fmtMs(metrics.toolPhaseMs)} />
+      {/* Metrics bar + Analysis toggle */}
+      <div className="mb-4 space-y-3">
+        {metrics.llmCalls > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label="LLM Calls" value={String(metrics.llmCalls)} />
+            <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label="Tokens" value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
+            <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label="Wall Time" value={fmtMs(metrics.turnWallMs)} />
+            <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label="Tool Phase" value={fmtMs(metrics.toolPhaseMs)} />
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          {traces.length > 0 && (
+            <button onClick={() => setShowTraces(!showTraces)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-black/[0.06] bg-white/60 hover:bg-white transition-colors">
+              <BarChart3 className="w-3.5 h-3.5" />
+              {showTraces ? 'Hide Trace' : `Traces (${traces.length})`}
+            </button>
+          )}
+          {metrics.llmCalls > 0 && (
+            <button onClick={() => setShowAnalysis(!showAnalysis)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo/20 bg-indigo/[0.04] hover:bg-indigo/[0.08] transition-colors text-indigo">
+              <Zap className="w-3.5 h-3.5" />
+              {showAnalysis ? 'Hide Analysis' : 'Analysis'}
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Trace toggle */}
-      {traces.length > 0 && (
-        <div className="mb-3 flex justify-end">
-          <button onClick={() => setShowTraces(!showTraces)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-black/[0.06] bg-white/60 hover:bg-white transition-colors">
-            <BarChart3 className="w-3.5 h-3.5" />
-            {showTraces ? 'Hide Trace' : `Show Trace (${traces.length})`}
-          </button>
+      {/* Analysis panel */}
+      {showAnalysis && metrics.llmCalls > 0 && (
+        <div className="mb-4 rounded-2xl border border-indigo/[0.08] bg-white/70 p-5 space-y-4">
+          <h3 className="text-[13px] font-bold text-[var(--mist)]">Token & Timing Analysis</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <AnalysisStat label="Input Tokens" value={metrics.inputTokens.toLocaleString()} />
+            <AnalysisStat label="Output Tokens" value={metrics.outputTokens.toLocaleString()} />
+            <AnalysisStat label="Cache Read" value={metrics.cacheReadTokens.toLocaleString()} sub={metrics.cacheReadTokens > 0 ? `${((metrics.cacheReadTokens / Math.max(metrics.totalTokens, 1)) * 100).toFixed(0)}% hit` : undefined} />
+            <AnalysisStat label="Cache Write" value={metrics.cacheWriteTokens.toLocaleString()} />
+            {metrics.compactTokens > 0 && (
+              <AnalysisStat label="Compact Tokens" value={metrics.compactTokens.toLocaleString()} />
+            )}
+            <AnalysisStat label="Avg Tokens/Call" value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
+            <AnalysisStat label="Avg Output/Call" value={metrics.llmCalls > 0 ? (metrics.outputTokens / metrics.llmCalls).toFixed(0) : '0'} />
+            <AnalysisStat label="Tokens/sec" value={metrics.turnWallMs > 0 ? ((metrics.outputTokens / (metrics.turnWallMs / 1000))).toFixed(0) : '0'} />
+          </div>
+          {session && (
+            <div className="pt-2 border-t border-black/[0.04]">
+              <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">Per-Case Summary</h4>
+              <div className="space-y-1.5">
+                {session.cases.map((c) => {
+                  const caseTraces = traces.filter((t) => t.caseId === c.id)
+                  const caseSkills = caseTraces.filter((t) => t.actionType === 'skill_called').length
+                  return (
+                    <div key={c.id} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-16 text-[var(--fog)]/50">{c.id.slice(0, 8)}</span>
+                      <span className="text-[var(--mist)]">{c.type.replace(/_/g, ' ')}</span>
+                      <span className="text-[var(--fog)]/50">· {caseTraces.length} traces · {caseSkills} skills</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -319,6 +364,16 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
           {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
         </div>
       ))}
+    </div>
+  )
+}
+
+function AnalysisStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg border border-black/[0.04] bg-white/40 px-3 py-2">
+      <p className="text-[10px] text-[var(--fog)]">{label}</p>
+      <p className="text-[14px] font-semibold text-[var(--mist)]">{value}</p>
+      {sub && <p className="text-[10px] text-teal-500">{sub}</p>}
     </div>
   )
 }

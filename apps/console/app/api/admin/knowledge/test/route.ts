@@ -5,7 +5,14 @@ import { prisma } from '@intera/shared/prisma'
 
 import { getActiveCustomerId } from '@/lib/auth'
 const GPTBOTS_API = 'https://api-sg.gptbots.ai/v1/vector/match'
-const API_KEY = process.env.GPTBOTS_API_KEY
+
+async function getApiKey(customerId: string): Promise<string | null> {
+  try {
+    const config = await prisma.agentConfig.findUnique({ where: { customerId }, select: { gptbotsApiKey: true } })
+    if (config?.gptbotsApiKey) return config.gptbotsApiKey
+  } catch { /* DB not ready */ }
+  return process.env.GPTBOTS_API_KEY ?? null
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,8 +24,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'query is required' }, { status: 400 })
     }
 
-    if (!API_KEY) {
-      return NextResponse.json({ error: 'GPTBOTS_API_KEY not configured on server' }, { status: 503 })
+    const apiKey = await getApiKey(CUSTOMER_ID)
+    if (!apiKey) {
+      return NextResponse.json({ error: 'GPTBOTS_API_KEY not configured' }, { status: 503 })
     }
 
     // Build GPTBots request
@@ -65,7 +73,7 @@ export async function POST(req: NextRequest) {
     const response = await fetch(GPTBOTS_API, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(gptBody),

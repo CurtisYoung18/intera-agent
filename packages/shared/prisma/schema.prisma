@@ -70,9 +70,10 @@ model AgentConfig {
   prefixContinuationMinDraftChars   Int     @default(4)
 
   // JSON fields
-  memoryStrategy     String // MemoryStrategy
-  policyHooks        String // PolicyHooks
+  memoryStrategy     String  // MemoryStrategy
+  policyHooks        String  // PolicyHooks
   knowledgeRetrieval String? // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
+  gptbotsApiKey      String? // per-customer GPTBots API key (overrides GPTBOTS_API_KEY env var)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
