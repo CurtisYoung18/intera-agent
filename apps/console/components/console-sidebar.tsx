@@ -135,10 +135,11 @@ export default function ConsoleSidebar() {
       setSwitchOpen(false)
       setPasswordTarget(null)
       setPassword('')
-      // Reload to apply new customer context
-      window.location.reload()
+      setAvatarOpen(false)
+      // Full page reload to pick up new cookie on server side
+      window.location.href = window.location.pathname
     } catch {
-      setPasswordError('Login failed')
+      setPasswordError('Network error — try again')
     }
   }
 

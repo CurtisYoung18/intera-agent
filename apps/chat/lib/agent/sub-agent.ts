@@ -52,10 +52,17 @@ export class SubAgent {
     let totalTokens = 0
     const abortController = new AbortController()
 
+    // ── Fork cache: reuse shared system prompt across same-type parallel agents ──
+    const fc = task.forkContext
+    const systemPrompt = fc?.sharedSystemPrompt ?? this.config.systemPrompt
+    const promptPrefix = fc
+      ? `[FORK:${fc.chainId}] batch ${fc.batchIndex + 1}/${fc.batchSize}\n\n`
+      : ''
+
     // Anthropic requires typed content blocks — use `any` to allow both
     // string (first user turn) and structured block arrays (tool turns).
     const messages: Array<{ role: 'user' | 'assistant'; content: any }> = [
-      { role: 'user', content: task.taskPrompt },
+      { role: 'user', content: promptPrefix + task.taskPrompt },
     ]
 
     try {
@@ -120,7 +127,7 @@ export class SubAgent {
             model: this.config.model,
             max_tokens: 2048,
             temperature: 0.3,
-            system: this.config.systemPrompt,
+            system: systemPrompt,
             tools: tools.length > 0 ? tools : undefined,
             messages: messages as any,
           }, {

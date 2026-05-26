@@ -159,8 +159,8 @@ export default function ChatsPage() {
   const [search, setSearch] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
     try {
       const res = await fetch('/api/chats?limit=200')
       if (!res.ok) throw new Error('Failed')
@@ -168,15 +168,15 @@ export default function ChatsPage() {
       setSessions(data.sessions)
       setTotal(data.total)
     } catch {
-      setSessions([])
+      if (showLoading) setSessions([])
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    load()
-    const id = setInterval(load, 15_000)
+    load(true) // show loading only on initial fetch
+    const id = setInterval(() => load(false), 15_000) // silent background poll
     return () => clearInterval(id)
   }, [load])
 

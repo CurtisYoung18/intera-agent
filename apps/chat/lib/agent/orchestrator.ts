@@ -127,22 +127,52 @@ Rules:
     // Run parallel tasks concurrently (with concurrency cap)
     if (parallelTasks.length > 0) {
       const maxParallel = this.getMaxParallelAgents()
-      for (let i = 0; i < parallelTasks.length; i += maxParallel) {
-        const batch = parallelTasks.slice(i, i + maxParallel)
-        sendEvent({
-          type: 'tool_executing',
-          data: {
-            name: 'orchestrator',
-            status: 'executing',
-            detail: `Dispatching ${batch.length} parallel sub-agents: ${batch.map((t) => t.agentConfig.name).join(', ')}`,
-          },
-          timestamp: new Date().toISOString(),
-        })
 
-        const batchResults = await Promise.all(
-          batch.map((task) => this.runSubAgent(task)),
-        )
-        results.push(...batchResults)
+      // ── Fork cache: share prompt context across same-type parallel agents ──
+      // Group by agent model (same model = same system prompt + tools = cacheable prefix)
+      const forkGroups = new Map<string, SubAgentTask[]>()
+      for (const t of parallelTasks) {
+        const key = t.agentConfig.model || 'default'
+        if (!forkGroups.has(key)) forkGroups.set(key, [])
+        forkGroups.get(key)!.push(t)
+      }
+
+      for (const [model, group] of forkGroups) {
+        // Build shared fork context once per group
+        const forkChainId = `fork_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        const sharedSystemPrompt = group[0]?.agentConfig.systemPrompt ?? ''
+        const sharedSkills = group[0]?.agentConfig.skills ?? []
+
+        for (let i = 0; i < group.length; i += maxParallel) {
+          const batch = group.slice(i, i + maxParallel)
+          const isFork = batch.length > 1
+
+          sendEvent({
+            type: 'tool_executing',
+            data: {
+              name: 'orchestrator',
+              status: 'executing',
+              detail: `${isFork ? 'Fork' : 'Dispatching'} ${batch.length} sub-agent${batch.length > 1 ? 's' : ''}: ${batch.map((t) => t.agentConfig.name).join(', ')}`,
+            },
+            timestamp: new Date().toISOString(),
+          })
+
+          // Inject fork context into each task
+          for (const task of batch) {
+            task.forkContext = {
+              chainId: forkChainId,
+              sharedSystemPrompt,
+              sharedSkills,
+              batchIndex: i,
+              batchSize: batch.length,
+            }
+          }
+
+          const batchResults = await Promise.all(
+            batch.map((task) => this.runSubAgent(task)),
+          )
+          results.push(...batchResults)
+        }
       }
     }
 

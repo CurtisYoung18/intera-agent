@@ -499,6 +499,14 @@ export interface SubAgentTask {
     /** Live dashboard reader for change polling. Undefined = dashboard disabled (backward compat). */
     dashboardReader?: DashboardReader
   }
+  /** Fork cache context — shared across same-type parallel sub-agents for prompt prefix reuse. */
+  forkContext?: {
+    chainId: string
+    sharedSystemPrompt: string
+    sharedSkills: string[]
+    batchIndex: number
+    batchSize: number
+  }
 }
 
 export interface SubAgentResult {
