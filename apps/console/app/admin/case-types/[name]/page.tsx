@@ -343,47 +343,97 @@ export default function CaseTypeDetailPage() {
         </div>
       </div>
 
-      {/* Lifecycle */}
-      <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[14px] font-semibold text-[var(--mist)]">Lifecycle</h2>
-          <button
-            type="button"
-            onClick={addStage}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-[var(--border-subtle)] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03] transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add Stage
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap p-3 rounded-xl bg-[var(--abyss)]/50 border border-[var(--border-subtle)]">
-          {stageNames.map((stage, i) => (
-            <div key={stage} className="flex items-center gap-1.5 group/stage">
-              <div className="relative">
-                <input
-                  value={stage}
-                  onChange={(e) => renameStage(stage, e.target.value)}
-                  className="px-3 py-1.5 rounded-lg text-[12px] font-medium bg-white/40 border border-[var(--border-subtle)] text-[var(--mist)] w-[150px] outline-none focus:border-lavender/30 hover:border-lavender/20 transition-colors"
-                  title="Click to rename"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeStage(stage)}
-                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-vermillion/80 text-white flex items-center justify-center text-[8px] opacity-0 group-hover/stage:opacity-100 transition-opacity hover:bg-vermillion"
-                  title="Remove stage"
-                >
-                  x
-                </button>
-              </div>
-              {i < stageNames.length - 1 && (
-                <span className="text-[var(--smoke)]/40 text-[11px]">&rarr;</span>
-              )}
+      {/* Lifecycle — Stage mode only */}
+      {isStageMode && (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-[14px] font-semibold text-[var(--mist)]">Lifecycle</h2>
+              <p className="text-[11px] text-[var(--fog)] mt-0.5">Define the stage pipeline. Drag to reorder.</p>
             </div>
-          ))}
-          {stageNames.length === 0 && (
-            <span className="text-[12px] text-[var(--smoke)] italic">No stages defined — click "Add Stage"</span>
+            <button
+              type="button"
+              onClick={addStage}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-lavender/[0.08] border border-lavender/20 text-lavender hover:bg-lavender/[0.14] transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Stage
+            </button>
+          </div>
+          {stageNames.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[var(--border-subtle)] bg-black/[0.01] p-6 text-center">
+              <p className="text-[12px] text-[var(--fog)]">
+                No stages defined. Click "Add Stage" to build the pipeline.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {stageNames.map((stage, i) => (
+                <div
+                  key={stage}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-white/60 border border-[var(--border-subtle)] group hover:border-lavender/20 transition-colors"
+                >
+                  {/* Step number */}
+                  <div className="w-7 h-7 rounded-full bg-lavender/[0.1] text-lavender flex items-center justify-center text-[11px] font-bold flex-shrink-0">
+                    {i + 1}
+                  </div>
+
+                  {/* Stage name input */}
+                  <input
+                    value={stage}
+                    onChange={(e) => renameStage(stage, e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 rounded-md bg-transparent text-[12px] font-medium text-[var(--mist)] outline-none border border-transparent focus:border-lavender/25 hover:border-[var(--border-subtle)] transition-colors"
+                    placeholder="Stage name"
+                  />
+
+                  {/* Arrow to next */}
+                  {i < stageNames.length - 1 && (
+                    <span className="text-[var(--smoke)]/30 text-[16px]">→</span>
+                  )}
+
+                  {/* Remove */}
+                  <button
+                    type="button"
+                    onClick={() => removeStage(stage)}
+                    className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--smoke)]/30 hover:text-vermillion hover:bg-vermillion/[0.06] transition-colors opacity-0 group-hover:opacity-100"
+                    title="Remove stage"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* Adaptive mode: SOP document editor */}
+      {!isStageMode && (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
+          <h2 className="text-[14px] font-semibold text-[var(--mist)] mb-1">SOP Document</h2>
+          <p className="text-[11px] text-[var(--fog)] mb-3">
+            The SOP (Standard Operating Procedure) guides the agent in Adaptive mode. Write it as a step-by-step playbook — the agent uses this to plan its investigation via todo_write/todo_read.
+          </p>
+          <textarea
+            value={ct.sop || ''}
+            onChange={(e) => setCt({ ...ct, sop: e.target.value })}
+            placeholder={`Example SOP for deposit_issue:\n\n1. Greet the customer and acknowledge their deposit issue\n2. Ask for transaction ID, amount, and payment method\n3. Call query_order_status with the transaction ID\n4. If status is pending, call query_payment_channel_status\n5. If channel shows delayed batch, inform customer of ETA\n6. If payment not found at all, escalate to payment_ops`}
+            rows={10}
+            className="glass-input-console text-[12px] font-mono resize-y w-full"
+          />
+          <label className="space-y-1 block mt-3">
+            <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Max Auto Turns</span>
+            <input
+              type="number"
+              value={ct.sopMaxAutoTurns ?? 10}
+              onChange={(e) => setCt({ ...ct, sopMaxAutoTurns: parseInt(e.target.value) || 10 })}
+              min={3} max={30}
+              className="glass-input-console text-[13px] w-24"
+            />
+          </label>
+        </div>
+      )}
 
       {/* ── Stage-mode: Per-stage sub-agent panels ────────────── */}
       {isStageMode && (
