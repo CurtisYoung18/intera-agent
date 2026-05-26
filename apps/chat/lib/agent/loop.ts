@@ -18,6 +18,7 @@ import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
 import { microCompact } from './microCompact'
+import { synthesizeMissingToolResults, assertToolResultInvariant } from './tool-result-invariant'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
@@ -324,6 +325,10 @@ export class AgentLoop {
     // 3. ReAct loop
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
+    // S1 tool-result invariant: track why each tool_use didn't produce a real result
+    const missingReasons = new Map<string, import('./tool-result-invariant').SynthesisReason>()
+    const pendingPolicyFeedback: string[] = []
+    const invariantCheckEnabled = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test' || process.env.INTERA_INVARIANT_CHECK === '1'))
 
     while (this.iterationCount < this.deps.config.maxIterations) {
       this.iterationCount++
@@ -713,13 +718,15 @@ export class AgentLoop {
                   data: { toolName: toolUse.name, policyNames: blockingPolicies },
                   timestamp: new Date().toISOString(),
                 })
-                // Inject feedback so the agent knows why and what to do instead
-                if (preToolEval.feedbackMessage && assistantMessage) {
-                  if (!assistantPushed) {
-                    this.messages.push(assistantMessage)
-                    assistantPushed = true
-                  }
-                  this.messages.push(this.makeUserMessage(preToolEval.feedbackMessage))
+                // S1: record missing reason — post-stream synthesis will build the tool_result.
+                // The feedback message comes AFTER the tool_result, not instead of it.
+                missingReasons.set(toolUse.id, 'policy_blocked')
+                if (preToolEval.feedbackMessage) {
+                  pendingPolicyFeedback.push(preToolEval.feedbackMessage)
+                }
+                if (!assistantPushed && assistantMessage) {
+                  this.messages.push(assistantMessage)
+                  assistantPushed = true
                 }
                 continue
               }
@@ -853,6 +860,76 @@ export class AgentLoop {
       let toolResults = await toolExecutor.waitForAll()
       for (const tr of toolResults) {
         this.profiler.addToolExecution(tr.latencyMs || 0)
+      }
+
+      // ── S1: Post-stream synthesis — guarantee one tool_result per tool_use ──
+      if (assistantPushed && assistantMessage) {
+        const toolUseBlocks = blocks
+          ? [...(blocks as unknown as Map<unknown, { type: string; id: string; name: string }>).values()]
+            .filter((b) => b.type === 'tool_use')
+          : []
+        const trimmedToolUseIds = new Set(toolResults.map((r) => r.name))
+
+        // For any tool_use_id without a completed result AND without a missingReasons
+        // entry, record 'stream_aborted' (defensive default)
+        for (const tuBlock of toolUseBlocks) {
+          const id = (tuBlock as { id: string }).id
+          if (!trimmedToolUseIds.has(id) && !missingReasons.has(id)) {
+            // Check if we can find a matching tool_use in the assistant
+            const found = (assistantMessage as { toolUses?: Array<{ id: string }> }).toolUses?.find((t) => t.id === id)
+            if (found && !missingReasons.has(id)) {
+              missingReasons.set(id, 'stream_aborted')
+            }
+          }
+        }
+
+        // Synthesize results for any missing tool_use blocks
+        if (missingReasons.size > 0) {
+          const toolUses = (assistantMessage as { toolUses?: ToolUse[] }).toolUses ?? []
+          if (toolUses.length > 0) {
+            const synthesisBlocks = synthesizeMissingToolResults({
+              toolUses,
+              completedResults: toolResults.map((r) => ({
+                toolUseId: r.toolUse?.id ?? r.name,
+                output: r.output,
+                isError: (r.output as { ok?: boolean })?.ok === false,
+              })),
+              missingReasons,
+            })
+
+            // Push a user message with synthetic tool_results
+            // (content is structured blocks — Anthropic API format, not plain text)
+            this.messages.push({
+              id: crypto.randomUUID(),
+              role: 'user' as const,
+              content: synthesisBlocks.map((b) => ({
+                type: 'tool_result' as const,
+                tool_use_id: b.tool_use_id,
+                content: b.content,
+                is_error: b.is_error,
+              })) as unknown as string,
+              createdAt: new Date(),
+            })
+          }
+        }
+
+        // Now push pending policy feedback AFTER the tool_result message
+        for (const feedback of pendingPolicyFeedback) {
+          this.messages.push(this.makeUserMessage(feedback))
+        }
+        pendingPolicyFeedback.length = 0
+        missingReasons.clear()
+
+        // Dev-only invariant assertion
+        if (invariantCheckEnabled) {
+          try {
+            assertToolResultInvariant(
+              this.messages.filter((m) => 'role' in m) as Array<{ role: string; content: unknown; toolUses?: ToolUse[] }>,
+            )
+          } catch (err) {
+            console.error('[Invariant]', (err as Error).message)
+          }
+        }
       }
 
       // ── Step-mode todo interception (pure in-memory, no side effects) ─────
@@ -1992,6 +2069,15 @@ export class AgentLoop {
       // Add assistant + tool results to message history
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
       this.addToolResultMessages(toolResults)
+
+      // S1 invariant assertion (dev only)
+      if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.env.INTERA_INVARIANT_CHECK === '1')) {
+        try {
+          assertToolResultInvariant(
+            this.messages.filter((m) => 'role' in m) as Array<{ role: string; content: unknown; toolUses?: ToolUse[] }>,
+          )
+        } catch (err) { console.error('[Invariant] runReActLoop:', (err as Error).message) }
+      }
 
       if (terminalResult) {
         await this.writeProfilerSnapshot()
