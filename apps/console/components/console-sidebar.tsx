@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers, GitBranch,
+  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Languages, Lock, Unlock,
   BookOpen,
@@ -19,7 +19,7 @@ import {
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'humanOps' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations' | 'subAgents'
+type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'humanOps' | 'caseTypes' | 'knowledge' | 'integrations' | 'subAgents'
 
 interface NavItem {
   href: string
@@ -73,7 +73,6 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/policies', slug: 'policies', icon: Shield, color: '#e64539' },
   { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
-  { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#5bb8f7' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
   { href: '/admin/integrations', slug: 'integrations', icon: Plug, color: '#7c3aed' },
 ]
