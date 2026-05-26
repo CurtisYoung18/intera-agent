@@ -373,3 +373,34 @@ model HumanTask {
   @@index([caseId])
   @@map("human_tasks")
 }
+
+// ============================================
+// LiveChat Bridge — セッション管理
+// ============================================
+model LiveChatSession {
+  chatId      String   @id
+  customerId  String
+  userId      String
+  caseId      String
+  state       String   @default("idle")
+  textBuffer  String   @default("")
+  updatedAt   DateTime @updatedAt
+
+  @@map("livechat_sessions")
+}
+
+// ============================================
+// LiveChat Bridge — 集成配置
+// ============================================
+model LiveChatConfig {
+  id              String   @id @default(cuid())
+  customerId      String   @unique
+  botAccessToken  String
+  licenseId       String
+  showSkillStatus Boolean  @default(true)
+  enabled         Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("livechat_configs")
+}
