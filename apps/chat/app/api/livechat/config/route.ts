@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
+import { prisma } from '@intera/shared/prisma'
 
 export async function GET(request: NextRequest) {
   const customerId = request.nextUrl.searchParams.get('customerId') ?? 'default'
@@ -40,10 +41,15 @@ export async function PUT(request: NextRequest) {
 
   if (!customerId) return NextResponse.json({ error: 'customerId required' }, { status: 400 })
 
-  // If botAccessToken is the mask string, preserve the existing token
+  // If botAccessToken is the mask string, preserve the existing token.
+  // Use prisma directly (not getLiveChatConfig) so we read the raw DB record
+  // even when enabled=false — getLiveChatConfig returns null for disabled configs.
   let tokenToSave = botAccessToken
   if (botAccessToken === '••••••••') {
-    const existing = await getLiveChatConfig(customerId)
+    const existing = await prisma.liveChatConfig.findUnique({
+      where: { customerId },
+      select: { botAccessToken: true },
+    })
     tokenToSave = existing?.botAccessToken ?? ''
   }
 
