@@ -23,7 +23,7 @@ export default function SubAgentsPage() {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d) => {
         const all: SubAgentInfo[] = []
-        const types = (d.caseTypes || []) as Array<{
+        const types = (d.types || d.caseTypes || []) as Array<{
           type: string; displayName: string; executionMode?: string
           stageConfigs?: string
         }>
