@@ -682,6 +682,106 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     }),
     mockFixture: { status: 'presented' },
   },
+  // ── Todo-list skills (general-purpose, not SOP-specific) ──────────────────
+  {
+    name: 'todo_write',
+    description:
+      'Create or update a structured todo list. ' +
+      'Use this to plan complex investigations, track progress through multi-step workflows, ' +
+      'and communicate current state to the user. Each item should have a unique id, ' +
+      'a content description, and a status (pending, in_progress, completed, or cancelled).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        todos: {
+          type: 'array',
+          description: 'The complete todo list to persist. Replaces the existing list.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Unique identifier for this todo item' },
+              content: { type: 'string', description: 'Description of what needs to be done' },
+              status: {
+                type: 'string',
+                enum: ['pending', 'in_progress', 'completed', 'cancelled'],
+                description: 'Current status of this item',
+              },
+              notes: { type: 'string', description: 'Optional findings or notes for this item' },
+            },
+            required: ['id', 'content', 'status'],
+          },
+        },
+      },
+      required: ['todos'],
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Updating task list', icon: 'dots' },
+    zodSchema: z.object({
+      todos: z.array(
+        z.object({
+          id: z.string(),
+          content: z.string(),
+          status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+          notes: z.string().optional(),
+        }),
+      ),
+    }),
+    mockFixture: { ok: true, todos: [] },
+  },
+  {
+    name: 'todo_read',
+    description:
+      'Read the current todo list. Call this at the start of a turn to see pending, ' +
+      'in-progress, and completed items before deciding what to do next.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    isConcurrencySafe: true,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Reviewing task list', icon: 'scan' },
+    zodSchema: z.object({}),
+    mockFixture: { todos: [] },
+  },
+  // ── Sub-agent terminal tool ─────────────────────────────────────────────
+  {
+    name: 'finalize_sub_agent',
+    description:
+      '子代理完成任务后调用，将调查结果返回给主 Agent。调用后子代理循环终止。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        findings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { key: { type: 'string' }, value: {} },
+          },
+          description: '调查发现的事实列表',
+        },
+        evidence: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '支持结论的证据引用',
+        },
+        recommendation: { type: 'string', description: '建议的后续行动' },
+      },
+      required: ['findings', 'recommendation'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
+    zodSchema: z.object({
+      findings: z.array(z.object({ key: z.string(), value: z.unknown() })),
+      evidence: z.array(z.string()).optional(),
+      recommendation: z.string(),
+    }),
+    mockFixture: { status: 'finalized' },
+  },
 ]
 
 /**

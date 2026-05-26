@@ -51,7 +51,7 @@
 |----------|------|
 | `uiHints` | **ADD** — 集成方渲染提示：`renderAs`（form/confirm/picker/card）、`fields`（每字段的 widget 类型/label/校验规则）、`resultRenderAs`。这是 "能力在 Intera，体验在集成层" 的关键契约 |
 | `triggerConditions` | **ADD** — 关键词/意图匹配时才注入 prompt。减少无关技能占用上下文 |
-| `allowedIntegrations` | **ADD** — 此技能暴露给哪些集成通道（chat / livechat / api / 全部） |
+| `allowedIntegrations` | **ADD** — 此技能暴露给哪些集成通道（chat / livechat / api / 全部）。**降级策略**：Console 绑定 UI 在渠道不支持该 skill 的 uiHints 类型时直接 disable 对应渠道开关，悬停显示原因。无运行时自动降级——约束在配置阶段，交付人员需明确知道哪些 skill 能配到哪些集成 |
 
 ### 改造后的 Skill 表单
 
@@ -267,27 +267,62 @@ model Skill {
 
 ## 三、Agent 配置（`apps/console/app/admin/agent/`）
 
-这是当前最过载的页面——6 个 drawer section，暴露了 50+ 个可配置字段。大部分是工程调参，交付人员不该碰。
+这是当前最过载的页面——6 个 drawer section，暴露了 50+ 个可配置字段。改造后仍保持 **6 个卫星节点**，但重新分配职责：
+- **Prompt 不再独立成卡**，并入 Model 卡（两者强相关：怎么说话 + 用什么模型说）
+- **Model 卡升级为核心配置卡**，包含 system prompt + 模型参数
+- 原 Prompt 卡的 -90° 位置留给新卡（待定，见 §3.0）
 
-### 3.1 Prompt 区域
+### 3.0 发散图卡片布局（重构后）
+
+| 位置 (角度) | 卡片 | 内容摘要 |
+|------------|------|---------|
+| -90° (正上) | **Model & Prompt** | system prompt + model + temperature |
+| -30° | **Memory** | 三档 slider（Short/Balanced/Long-term） |
+| 30° | **Guardrails** | 业务语义的 Policy Builder |
+| 90° | **Human Ops** | consultation prompt + human skills |
+| 150° | **Knowledge** | KB 配置简化版 |
+| 210° | **??? (待定)** | 候选：Skills 概览 / Channels 集成状态 / 去掉变 5 卡 |
+
+> ⬆ 210° 第 6 张卡的决策见下方讨论。
+
+### 3.1 Model & Prompt 卡（合并，原 Prompt + Model 两个区域）
+
+> **设计原则**：System prompt 是 "Agent 说什么"，model 是 "Agent 怎么说"——两者在同一个 drawer 里更自然。
+> 展示时 prompt 在上（主要），模型参数在下（Advanced 折叠区）。
 
 | 字段 | 决策 | 理由 |
 |------|------|------|
-| `systemPrompt` | **KEEP** | **核心差异化配置。** 决定了 Agent "怎么说话"、行为风格、边界约束。不同客户/不同 case type 的 prompt 完全不同。模板变量（`{{case_types}}` 等）保留 |
-
-### 3.2 Model 区域
-
-| 字段 | 决策 | 理由 |
-|------|------|------|
-| `model` | **HARDCODE** | 交付人员不需要知道用 Sonnet 还是 Haiku。模型选型是工程/成本决策。写进 `packages/shared/defaults/index.ts`，按部署环境覆盖 |
-| `evaluationModel` | **HARDCODE** | Stage 过渡评估、Policy LLM 评估统一用轻量模型（如 Haiku），不应暴露 |
-| `temperature` | **HARDCODE** | 客服场景应固定低温度（0.1-0.3），交付人员调这个容易让 Agent 行为不稳定 |
+| `systemPrompt` | **KEEP（主区域）** | 核心差异化配置，不同客户完全不同。模板变量（`{{case_types}}` 等）保留 |
+| `model` | **KEEP（Advanced 折叠）** | 保留可配置——不同部署环境、不同客户预算可能需要不同模型。交付人员需能理解自己在用哪个模型 |
+| `temperature` | **KEEP（Advanced 折叠）** | 保留可配置，但 UI 改为语义化 slider：`0.1 精准` ←→ `1.0 创意`，并标注推荐区间（客服场景建议 0.1–0.4） |
+| `evaluationModel` | **HARDCODE** | Stage 过渡评估统一用轻量模型（Haiku），内部决策 |
 | `thinkingBudget` | **HARDCODE** | 成本/性能权衡，工程决策 |
-| `maxIterations` | **HARDCODE** | 固定 15-20，防止死循环。写进 `AgentLoop` 默认值 |
+| `maxIterations` | **HARDCODE** | 固定 15-20，防止死循环 |
 | `maxOutputTokens` | **HARDCODE** | 基础设施参数 |
-| `showThinking` | **REMOVE** | 调试功能。如果 Chat 需要展示思考过程，由 Chat 的 UI 配置决定，不是 Agent 配置 |
-| `enableLlmSanitization` | **HARDCODE** | 安全检查应始终开启，不应该有开关 |
-| `prefixContinuation*` (5 个字段) | **REMOVE** | Composer Assist 是独立的聊天输入辅助功能，不属于 Agent 配置。如果保留此功能，移到独立的 `/admin/composer-assist` 页面 |
+| `showThinking` | **REMOVE** | 调试功能，不属于 Agent 配置 |
+| `enableLlmSanitization` | **HARDCODE** | 安全检查始终开启 |
+| `prefixContinuation*` (5 个字段) | **REMOVE** | Composer Assist 独立功能，移到 `/admin/composer-assist` |
+
+**Drawer 布局示意**：
+
+```
+┌─ Model & Prompt ────────────────────────────────────────┐
+│                                                           │
+│  System Prompt                                            │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │ 你是 Intera，一个专业的 AI 客服助手。你的职责是...  │ │
+│  │ {{case_types}} {{policies}}                         │ │
+│  └─────────────────────────────────────────────────────┘ │
+│  Template vars: {{case_types}} {{skills}} {{policies}}    │
+│                                                           │
+│  ▼ Advanced                                               │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │ Model: [claude-sonnet-4 ▾]                          │ │
+│  │ Temperature: |──●────────| 0.3  (推荐: 0.1–0.4)    │ │
+│  └─────────────────────────────────────────────────────┘ │
+│                                                [Save]     │
+└───────────────────────────────────────────────────────────┘
+```
 
 ### 3.3 Memory 区域（最需要动刀的区域）
 
@@ -422,14 +457,14 @@ Case Type 定义是 Console 的核心价值——交付人员通过它定义 "�
 | `description` | **KEEP** | 交付人员理解 case 用途 |
 | `defaultGoal` | **KEEP** | Agent 的目标描述 |
 | `enabled` | **KEEP** | 开关 |
-| `executionMode` | **KEEP**（简化为 `'stage'`/`'step'`） | 两种模式覆盖全部场景。移除 `'sop'`，SOP 文档退化为 `StageConfig.sop` 字段 |
-| `stages` | **KEEP** | 阶段序列是核心配置 |
+| `executionMode` | **KEEP**（保留 `'stage'` / `'sop'` 两档） | 覆盖现有两种场景，不引入 `'step'`——stage 配合 requiredSkills 已足够约束，保持引擎简洁 |
+| `stages` | **KEEP** | 阶段序列是核心配置（stage 模式必须；sop 模式可选，作为 milestone 检查点） |
 | `requiredFacts` | **KEEP** | 必须收集的信息 |
 | `escalateOn` | **KEEP** | 什么条件触发人工 |
 | `requireHumanReview` | **MERGE** 进 `StageConfig.transition` | "最终阶段需要人工确认" 是阶段过渡规则，不是 case 级别的独立开关 |
 | `autoCloseConditions` | **SIMPLIFY** | 当前是 raw JSON。改为结构化条件：`[{ factKey, operator, value }]` |
-| `sop` | **MERGE** 进 `StageConfig.sop` | SOP 文档是阶段级别的 prompt 附录。见 §5.2 |
-| `sopMaxAutoTurns` | **REMOVE** | 退化为 `StepPolicy.maxRetries` |
+| `sop` | **KEEP**（case 级别） | SOP 文档注入 case-level 上下文，agent 跟随文档执行。不下沉到 per-stage |
+| `sopMaxAutoTurns` | **KEEP** | 每个 SOP 节点的最大自动轮次，防止 agent 在某一步空转死循环 |
 
 ### 5.2 Stage Config 区域（`apps/console/components/admin/stage-config-editor.tsx`）
 
@@ -448,12 +483,28 @@ Case Type 定义是 Console 的核心价值——交付人员通过它定义 "�
 |  |  | `Manual: operator confirms` |
 | `subAgents` | **HARDCODE** | Sub-Agent 的 model/systemPrompt/taskTemplate/maxIterations 是工程配置。哪些阶段需要 Sub-Agent、Sub-Agent 能调哪些技能，由 Case Type 设计者决定——但 Sub-Agent 本身的运行参数不应暴露 |
 
-### 5.3 建议新增
+### 5.3 两模式与 Agent Engine 的适配
+
+两种模式共用同一个 `agent.query()` loop，差异在于传入 query 的上下文构造方式：
+
+| | `stage` 模式 | `sop` 模式 |
+|---|---|---|
+| **系统提示来源** | `stage.systemPrompt`（每阶段独立） | `case.sop` 全文注入 + case-level systemPrompt |
+| **工具约束** | `stage.availableSkills`（每阶段白名单） | 所有启用技能都可调用（SOP 文档自带顺序约束） |
+| **阶段过渡** | 显式 transition（auto / AI / manual） | `sopMaxAutoTurns` 控制每节最大轮次，超限自动推进 |
+| **Console 配置面** | Stage 列表 + 每 Stage 抽屉 | 单一 Markdown 编辑器 + sopMaxAutoTurns 数字输入 |
+| **适用场景** | 流程分支多、阶段间差异大 | 标准化操作规程、步骤线性明确 |
+
+**适配要点**（实施时注意）：
+- `query()` 接收 `{ systemPrompt, availableSkills, context }` —— stage 模式每次过渡前重新构造这三个参数；sop 模式 systemPrompt 在 case 开始时固定，availableSkills 全量传入
+- SOP 模式的 `stages` 字段可选保留，用作进度里程碑展示，但不触发 transition 逻辑
+- 两种模式的 `escalateOn` / `requiredFacts` / `guardrails` 完全共用，不分叉
+
+### 5.4 建议新增
 
 | 新增 | 说明 |
 |------|------|
-| `steps[]` (Step 模式) | **ADD** — 当 `executionMode === 'step'` 时，Stage Config 出现 Step 编辑器：每步的 goal / requiredTools / optionalTools / completionCriteria / onFailure。这是高确定性场景的核心配置 |
-| `sop` (per-stage) | **ADD** — Markdown 编辑器，注入到该阶段的 system prompt 末尾。替代原来 case 级别的 `executionMode: 'sop'` |
+| `sop`（Case Type 级 Markdown 编辑器） | **ADD** — 已有字段，补全 Console 的富文本编辑器 UI，支持 Markdown 预览 |
 
 ---
 
@@ -530,7 +581,7 @@ Case Type 定义是 Console 的核心价值——交付人员通过它定义 "�
 
 ```
 Agent Config:
-  model, evaluationModel, temperature, thinkingBudget
+  evaluationModel, thinkingBudget
   maxIterations, maxOutputTokens, showThinking
   enableLlmSanitization
   prefixContinuation* (5 个字段)
@@ -563,8 +614,8 @@ Skills:
   outputSchema (改用 uiHints.resultRenderAs)
 
 Case Types:
-  sopMaxAutoTurns (改用 StepPolicy.maxRetries)
   requireHumanReview (合并进 transition)
+  executionMode: 'step' (不引入，stage + sop 两档已足够)
 ```
 
 ### 简化的（SIMPLIFY——保留意图，改 UI）
@@ -608,7 +659,11 @@ Integrations:
 
 ```
 Skills: name, description, enabled, displayVerb, inputSchema (只读)
-Agent Config: systemPrompt, consultationPrompt, humanSkills
+Agent Config:
+  systemPrompt (主区域)
+  model (Advanced 折叠，KEEP 而非 hardcode)
+  temperature (Advanced 折叠，语义化 slider 0.1 精准←→1.0 创意)
+  consultationPrompt, humanSkills
 Case Types: type, displayName, icon, description, defaultGoal, enabled,
             executionMode, stages, requiredFacts, escalateOn
 Stage Config: description, systemPrompt, requiredSkills, availableSkills
@@ -624,7 +679,7 @@ Integrations: enabled, licenseId, botAccessToken, showSkillStatus
 | 优先级 | 范围 | 工作量 |
 |--------|------|--------|
 | **P0** | Memory 区域简化（20+ 字段 → 三档 slider） | 小 |
-| **P0** | Model 区域 hardcode（移除 model/temperature/threshold） | 小 |
+| **P0** | Model & Prompt 卡重构（合并 Prompt，model/temperature 移入 Advanced 折叠区，hardcode 其余参数） | 小 |
 | **P1** | Policy → Guardrails Builder 改造 | 中 |
 | **P1** | Skills 移除工程字段 + 新增 uiHints/triggerConditions | 中 |
 | **P2** | Case Types 简化（autoCloseConditions 结构化、evidence 简化） | 中 |

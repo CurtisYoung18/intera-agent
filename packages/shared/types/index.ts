@@ -416,8 +416,8 @@ export interface CaseSchemaConfig {
   autoCloseConditions?: Record<string, unknown>
   orchestrator?: OrchestratorConfig
   requireHumanReview?: boolean
-  /** "stage" = predefined stage machine (default); "sop" = SOP-driven autonomous todo */
-  executionMode?: 'stage' | 'sop'
+  /** "stage" = predefined stage machine (default); "step" = engine-driven step executor */
+  executionMode?: 'stage' | 'step'
   /** Natural-language Standard Operating Procedure (only used when executionMode = "sop") */
   sop?: string
 }
@@ -439,6 +439,10 @@ export interface StageConfig {
   evidenceRequirements?: EvidenceRequirement[]
   transition?: StageTransitionRule
   subAgents?: SubAgentConfig[]
+  /** Step mode only: ordered list of execution steps. Non-empty triggers step-driven execution. */
+  steps?: ExecutionStep[]
+  /** SOP prompt appendix (referenced in both stage and step modes). */
+  sop?: string
 }
 
 export interface StageGuardrail {
@@ -469,6 +473,33 @@ export interface StageTransitionCondition {
 }
 
 // ============================================
+// Step Mode — Engine-Driven Execution
+// ============================================
+
+export interface StepCriterion {
+  type: 'tool_called' | 'fact_extracted' | 'output_matches' | 'llm_evaluation'
+  value: string
+}
+
+export interface StepFailurePolicy {
+  action: 'retry' | 'skip_step' | 'escalate_to_human' | 'abort_case'
+  escalationQueue?: string
+  escalationNote?: string
+}
+
+export interface ExecutionStep {
+  id: string
+  name: string
+  goal: string
+  requiredTools: string[]
+  optionalTools?: string[]
+  completionCriteria: StepCriterion[]
+  onFailure: StepFailurePolicy
+  maxRetries?: number
+  timeoutMs?: number
+}
+
+// ============================================
 // Sub-Agent Configuration
 // ============================================
 
@@ -480,6 +511,8 @@ export interface SubAgentConfig {
   taskTemplate: string
   maxIterations?: number
   parallel: boolean
+  /** Sub-agent execution mode: "stage" (LLM-driven, default) or "sop" (SOP-driven). */
+  executionMode?: 'stage' | 'sop'
 }
 
 export interface OrchestratorConfig {
@@ -601,6 +634,14 @@ export interface AgentContext {
   isSubAgent: boolean
   maxIterations: number
   messageBus: MessageBus
+
+  /** Sub-Agent: orchestrator-injected task checklist for ChecklistPolicy. */
+  taskChecklist?: {
+    goal: string
+    requiredChecks: string[]
+    outputFormat: string
+    rules: string[]
+  }
 }
 
 export interface MessageBus {

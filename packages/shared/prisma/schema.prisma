@@ -106,7 +106,7 @@ model CaseType {
 
   requireHumanReview Boolean @default(false) // true = finalize requires a resolved human task
 
-  /// "stage" = predefined stage machine (default); "sop" = SOP-driven autonomous todo
+  /// "stage" = predefined stage machine (default); "step" = engine-driven step executor
   executionMode   String  @default("stage")
   /// Natural-language Standard Operating Procedure — only used when executionMode = "sop"
   sop             String?

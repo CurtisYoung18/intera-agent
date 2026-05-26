@@ -536,6 +536,30 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     headers: '{"apiKey":"G71fGn7G8vb1T2824rr7"}',
     timeoutMs: 8000,
   },
+  {
+    name: 'todo_write',
+    displayVerb: { text: 'Updating task list', icon: 'dots' },
+    description: 'Create or update a structured todo list. Use to plan complex investigations, track progress, and communicate current state.',
+    inputSchema: '{"type":"object","properties":{"todos":{"type":"array","description":"The complete todo list to persist","items":{"type":"object","properties":{"id":{"type":"string","description":"Unique identifier"},"content":{"type":"string","description":"What needs to be done"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]},"notes":{"type":"string","description":"Optional findings"}},"required":["id","content","status"]}}},"required":["todos"]}',
+    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"ok":true,"todos":[]}',
+  },
+  {
+    name: 'todo_read',
+    displayVerb: { text: 'Reviewing task list', icon: 'scan' },
+    description: 'Read the current todo list to see pending, in-progress, and completed items.',
+    inputSchema: '{"type":"object","properties":{}}',
+    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"todos":[]}',
+  },
+  {
+    name: 'finalize_sub_agent',
+    displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
+    description: '子代理完成任务后调用，将调查结果返回给主 Agent。调用后子代理循环终止。',
+    inputSchema: '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"value":{}}},"description":"调查发现的事实列表"},"evidence":{"type":"array","items":{"type":"string"},"description":"支持结论的证据引用"},"recommendation":{"type":"string","description":"建议的后续行动"}},"required":["findings","recommendation"]}',
+    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mockFixture: '{"status":"finalized"}',
+  },
 ]
 
 export interface DefaultPolicySeed {

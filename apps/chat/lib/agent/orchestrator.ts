@@ -10,6 +10,8 @@ import type {
   CaseMemoryData,
   SSEEvent,
   SkillDefinition,
+  AgentContext,
+  MessageBus,
 } from '@intera/shared/types'
 import type { CaseMemoryManager } from './memory'
 import { SubAgent } from './sub-agent'
@@ -26,6 +28,8 @@ export class OrchestratorAgent {
     private platformUserId: string = 'anonymous',
     /** Live memory manager for shared dashboard polling by sub-agents. */
     private memoryManager?: CaseMemoryManager,
+    /** Message bus for sub-agent communication (AgentContext). */
+    private messageBus?: MessageBus,
   ) {}
 
   /** Whether sub-agent dispatch is enabled for this case type. */
@@ -540,7 +544,19 @@ Rules:
     if (this.memoryManager) {
       task.context.dashboardReader = this.memoryManager
     }
+
+    const ctx: AgentContext = {
+      agentId: task.id,
+      chainId: task.forkContext?.chainId ?? '',
+      depth: 1,
+      parentAgentId: 'main',
+      allowedTools: new Set(task.agentConfig.skills),
+      isSubAgent: true,
+      maxIterations: task.agentConfig.maxIterations || 5,
+      messageBus: this.messageBus ?? { send: () => {}, poll: () => [] },
+    }
+
     const agent = new SubAgent(task.agentConfig, this.skillDefinitions, this.memoryManager)
-    return agent.investigate(task)
+    return agent.run(ctx, task)
   }
 }

@@ -5,11 +5,45 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, DashboardReader } from '@intera/shared/types'
+import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, DashboardReader, AgentContext, SSEEvent } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
+import { ChecklistPolicy } from './policies/checklist-policy'
+import { AgentLoop } from './loop'
 
 const DEFAULT_MAX_ITERATIONS = 5
 const DEFAULT_TIMEOUT_MS = 30_000
+
+/** Terminal tool for sub-agents — intercepted by ChecklistPolicy, never executed. */
+const FINALIZE_SUB_AGENT_SKILL: SkillDefinition = {
+  name: 'finalize_sub_agent',
+  description:
+    'Call this when you have completed all required investigation checks. ' +
+    'Returns your findings, evidence, and recommendation to the orchestrator. ' +
+    'Calling this tool ends the sub-agent loop.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      findings: {
+        type: 'array',
+        items: { type: 'object', properties: { key: { type: 'string' }, value: {} } },
+        description: 'Investigation findings as key-value pairs.',
+      },
+      evidence: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Evidence citations supporting the conclusions.',
+      },
+      recommendation: {
+        type: 'string',
+        description: 'Recommended next action for the orchestrator.',
+      },
+    },
+    required: ['findings', 'recommendation'],
+  },
+  mode: 'mock',
+  isConcurrencySafe: false,
+  enabled: true,
+}
 
 export interface SubAgentProgressEvent {
   type: 'thinking' | 'tool_call' | 'tool_result'
@@ -33,12 +67,81 @@ export class SubAgent {
     })
   }
 
-  /** Run the sub-agent investigation with optional ReAct loop. */
+  /**
+   * Run the sub-agent investigation using the unified AgentLoop.runReActLoop().
+   *
+   * Creates a ChecklistPolicy from `ctx.allowedTools` and `ctx.taskChecklist`,
+   * then delegates all ReAct iteration to the shared loop engine. The policy
+   * intercepts `finalize_sub_agent` to produce a SubAgentResult.
+   */
+  async run(ctx: AgentContext, task: SubAgentTask): Promise<SubAgentResult> {
+    const startTime = Date.now()
+
+    // ── Build skill definitions including the terminal tool ────────
+    const allSkills = [...this.skillDefinitions, FINALIZE_SUB_AGENT_SKILL]
+
+    // ── Build ChecklistPolicy ──────────────────────────────────────
+    const allowedTools = new Set(ctx.allowedTools)
+    allowedTools.add('finalize_sub_agent')
+
+    const policy = new ChecklistPolicy({
+      allowedTools,
+      taskChecklist: ctx.taskChecklist
+        ? {
+            goal: ctx.taskChecklist.goal,
+            requiredChecks: ctx.taskChecklist.requiredChecks,
+            outputFormat: ctx.taskChecklist.outputFormat,
+            rules: ctx.taskChecklist.rules,
+          }
+        : undefined,
+    })
+
+    // ── Run unified ReAct loop ─────────────────────────────────────
+    const noopSendEvent = (_event: SSEEvent) => {}
+
+    const loopResult = await AgentLoop.runReActLoop(
+      this.client,
+      this.config.systemPrompt,
+      allSkills,
+      ctx,
+      policy,
+      noopSendEvent,
+      task.taskPrompt,
+    )
+
+    // ── Extract SubAgentResult from policy ─────────────────────────
+    const durationMs = Date.now() - startTime
+    const policyResult = policy.getSubAgentResult()
+
+    if (policyResult) {
+      return {
+        ...policyResult,
+        taskId: task.id,
+        agentName: this.config.name,
+        caseId: task.context.caseId,
+        durationMs,
+      }
+    }
+
+    // Fallback: policy didn't produce a result (e.g. max iterations)
+    return {
+      taskId: task.id,
+      agentName: this.config.name,
+      caseId: task.context.caseId,
+      findings: {},
+      evidence: [],
+      recommendation: loopResult.reason ?? 'Investigation completed',
+      tokensUsed: 0,
+      durationMs,
+    }
+  }
+
+  /** @deprecated Use run(ctx, task) instead — delegates to the unified AgentLoop.runReActLoop(). */
   async investigate(task: SubAgentTask): Promise<SubAgentResult> {
     return this.investigateStreaming(task, () => {})
   }
 
-  /** Run with progress events for real-time UI updates. */
+  /** @deprecated Use run(ctx, task) instead — delegates to the unified AgentLoop.runReActLoop(). */
   async investigateStreaming(
     task: SubAgentTask,
     onProgress: (event: SubAgentProgressEvent) => void,

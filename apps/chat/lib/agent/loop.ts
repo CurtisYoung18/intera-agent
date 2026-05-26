@@ -8,7 +8,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
+import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { CaseMemoryManager } from './memory'
@@ -19,8 +19,9 @@ import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
 import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
-import { compactConversation } from './compact'
+import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
+import type { ExecutionPolicy } from './policies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
@@ -306,10 +307,10 @@ export class AgentLoop {
     // casual/off-topic. Casual messages bypass the Case ReAct loop and are
     // handled by ConversationLoop (lightweight, no stage enforcement).
     //
-    // SOP mode: fully trust the model (CC pattern) — skip the secondary LLM
+    // Step mode: fully trust the model (CC pattern) — skip the secondary LLM
     // classification call and always route to the case loop.
     let forceCoreMode = false
-    if (this.caseLoop?.isStageActive() && !this.caseLoop.isSopMode()) {
+    if (this.caseLoop?.isStageActive() && this.deps.caseSchema?.executionMode !== 'step') {
       const msgMode = await this.classifyMessage(userMessage)
       forceCoreMode = msgMode === 'core'
       if (forceCoreMode) {
@@ -482,12 +483,8 @@ export class AgentLoop {
           this.deps.systemPrompt,
         ].join('\n')
         stageTools = []  // No tools — pure text acknowledgement only
-      } else if (this.caseLoop!.isSopMode()) {
-        stagePrompt = this.caseLoop!.buildSopPrompt(
-          this.deps.systemPrompt,
-          this.caseMemory.getTodos(),
-          this.caseMemory.getConfirmedFacts(),
-        )
+      } else if (this.deps.caseSchema?.executionMode === 'step') {
+        stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
         stageTools = this.caseLoop!.filterSopTools(allTools)
       } else {
         stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
@@ -835,10 +832,10 @@ export class AgentLoop {
         this.profiler.addToolExecution(tr.latencyMs || 0)
       }
 
-      // ── SOP todo interception (pure in-memory, no side effects) ──────────
+      // ── Step-mode todo interception (pure in-memory, no side effects) ─────
       // todo_write and todo_read bypass the skill executor — their mock outputs
       // are replaced here with real in-memory operations on CaseMemory.
-      if (this.caseLoop?.isSopMode()) {
+      if (this.deps.caseSchema?.executionMode === 'step') {
         toolResults = this.processTodoTools(toolResults)
 
         // Auto-complete todo items whose corresponding investigation tools succeeded.
@@ -1016,11 +1013,11 @@ export class AgentLoop {
           }
         }
 
-        // ── SOP mode: guard against silent end_turn after tool results ──────
+        // ── Step mode: guard against silent end_turn after tool results ──────
         // When the agent just received tool results (there ARE previous tool
         // messages) but produced empty text and no new tool calls, it silently
         // swallowed the findings. Nudge it to either tell the user or finalize.
-        if (this.caseLoop?.isSopMode() && !fullText) {
+        if (this.deps.caseSchema?.executionMode === 'step' && !fullText) {
           const lastFewMessages = this.messages.slice(-6)
           const hasPendingToolResults = lastFewMessages.some(
             (m) => m.role === 'assistant' && typeof m.content === 'string' &&
@@ -1229,12 +1226,12 @@ export class AgentLoop {
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
       this.addToolResultMessages(toolResults)
 
-      // ── SOP: detect todo_write failure + investigation in same batch ─────
+      // ── Step mode: detect todo_write failure + investigation in same batch
       // If the model tried to plan (called todo_write) but the call failed
       // because of wrong format, AND also ran investigation tools in the same
       // turn, we must tell it to fix the plan BEFORE acting on the results.
       // This fires even on non-empty turns (so it's not gated on !fullText).
-      if (this.caseLoop?.isSopMode() && this.nudgeCount < 3) {
+      if (this.deps.caseSchema?.executionMode === 'step' && this.nudgeCount < 3) {
         const todoFailed = toolResults.some(
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
@@ -1340,7 +1337,8 @@ export class AgentLoop {
                 defaultGoal: ctRow.defaultGoal,
                 escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
                 requireHumanReview: (ctRow as any).requireHumanReview === true,
-                executionMode: ((ctRow as any).executionMode as 'stage' | 'sop' | undefined) || 'stage',
+                // Normalize legacy 'sop' value to 'step'
+                executionMode: (((ctRow as any).executionMode === 'sop' ? 'step' : (ctRow as any).executionMode) as 'stage' | 'step' | undefined) || 'stage',
                 sop: (ctRow as any).sop || undefined,
               }
               this.deps.caseSchema = schema
@@ -1390,7 +1388,7 @@ export class AgentLoop {
               // whether or not investigation tools were pre-called in the same
               // batch. addToolResultMessages() was already called above so any
               // pre-fetched results are already in this.messages.
-              if (this.caseLoop.isSopMode()) {
+              if (this.deps.caseSchema?.executionMode === 'step') {
                 const alreadyCalledTools = toolResults
                   .filter((r) => r.name !== 'create_case')
                   .map((r) => r.name)
@@ -1584,13 +1582,474 @@ export class AgentLoop {
   }
 
   // -----------------------------------------------------------------------
+  // runReActLoop — unified ReAct loop shared by all ExecutionPolicy impls
+  // -----------------------------------------------------------------------
+
+  /**
+   * Unified ReAct loop encapsulating iteration, streaming, tool execution,
+   * error recovery, compaction, and chain tracking. Delegates prompt
+   * assembly, tool filtering, continuation decisions, and terminal-tool
+   * interception to the supplied {@link ExecutionPolicy}.
+   *
+   * The existing `run()` method remains unchanged for backward compat.
+   */
+  async runReActLoop(
+    ctx: AgentContext,
+    policy: ExecutionPolicy,
+    sendEvent: (event: SSEEvent) => void,
+    userMessage: string,
+  ): Promise<LoopResult> {
+    // Wrap sendEvent for abort safety (same pattern as run())
+    const safeSendEvent = (event: SSEEvent) => {
+      if (this.aborted) return
+      try { sendEvent(event) } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          this.aborted = true
+          this.abortController.abort()
+        }
+      }
+    }
+
+    // ── Chain tracking ───────────────────────────────────────────
+    const agentName = ctx.isSubAgent
+      ? `SubAgent[${ctx.agentId.slice(-8)}]`
+      : `Main[${ctx.agentId.slice(-8)}]`
+    await this.traceWriter.writeAgentTreeNode(agentName, ctx.depth, ctx.chainId, 'runReActLoop start')
+
+    // ── Record user message ──────────────────────────────────────
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: userMessage,
+      createdAt: new Date(),
+    }
+    this.messages.push(userMsg)
+
+    // ── ReAct loop ───────────────────────────────────────────────
+    const maxIter = ctx.maxIterations || this.deps.config.maxIterations
+    let iteration = 0
+
+    while (iteration < maxIter) {
+      iteration++
+      this.profiler.incrementIteration()
+
+      // ── Compaction ───────────────────────────────────────────
+      const compactResult = await this.checkAndCompact()
+      if (compactResult.shouldCompact) {
+        safeSendEvent({
+          type: 'withheld',
+          data: 'Compacting context...',
+          timestamp: new Date().toISOString(),
+        })
+      }
+
+      safeSendEvent({
+        type: 'stream_request_start',
+        data: null,
+        timestamp: new Date().toISOString(),
+      })
+
+      // ── System prompt via policy ─────────────────────────────
+      const basePrompt = this.deps.systemPrompt || ''
+      const systemPrompt = policy.buildPrompt(basePrompt)
+
+      // ── Tools: restrict by ctx.allowedTools, then policy ──────
+      const allTools = this.skillRouter.getTools()
+      const allowedTools = allTools.filter((t) => ctx.allowedTools.has(t.name))
+      const tools = policy.filterTools(allowedTools, iteration)
+
+      // ── Streaming text sanitizer (per-iteration) ──────────────
+      const textSanitizer = new StreamingTextSanitizer()
+
+      // ── StreamingToolExecutor ────────────────────────────────
+      const toolExecutor = new StreamingToolExecutor(
+        this.skillRouter.getToolDefinitions(),
+        (toolUse, status) => {
+          safeSendEvent({
+            type: status === 'executing' ? 'tool_executing' : 'skill_result',
+            data: {
+              name: toolUse.name,
+              status,
+              result: status !== 'executing' ? toolUse.result : undefined,
+            },
+            timestamp: new Date().toISOString(),
+          })
+        },
+      )
+
+      // ── Build API messages ───────────────────────────────────
+      const apiMessages = this.buildApiMessages()
+
+      // ── Stream with error recovery (+ reactiveCompact on 413) ─
+      let stream: ReturnType<typeof this.anthropicClient.messages.stream>
+      let streamAttempt = 0
+      const maxStreamAttempts = 2
+
+      while (streamAttempt < maxStreamAttempts) {
+        streamAttempt++
+        try {
+          if (this.abortController.signal.aborted) break
+
+          stream = this.anthropicClient.messages.stream({
+            model: this.deps.config.model,
+            max_tokens: this.deps.config.maxOutputTokens ?? 4096,
+            system: systemPrompt,
+            messages: apiMessages,
+            tools,
+            ...(this.deps.config.showThinking ? {
+              thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
+            } : {}),
+          }, { signal: this.abortController.signal })
+          break
+        } catch (err) {
+          const errStr = String(err)
+
+          // Reactive compact on 413 / context_length_exceeded
+          if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
+            this.messages = reactiveCompact(this.messages)
+            await this.traceWriter.write('loop_decision', 'Reactive compact on 413', { error: errStr })
+          }
+
+          if (streamAttempt >= maxStreamAttempts || this.abortController.signal.aborted) {
+            safeSendEvent({
+              type: 'error',
+              data: `LLM API error after ${streamAttempt} attempts`,
+              timestamp: new Date().toISOString(),
+            })
+            await this.traceWriter.write('loop_decision', 'Exit: LLM API error', { error: errStr, attempts: streamAttempt })
+            await this.writeProfilerSnapshot()
+            return {
+              messages: this.messages,
+              caseStatus: 'escalated' as CaseStatus,
+              transition: 'error',
+              reason: 'llm_api_error',
+            }
+          }
+
+          await this.traceWriter.write('loop_decision', `LLM stream retry ${streamAttempt}/${maxStreamAttempts}`, { error: errStr })
+          await new Promise((r) => setTimeout(r, 1000 * streamAttempt))
+        }
+      }
+
+      if (this.abortController.signal.aborted) break
+      stream = stream!
+
+      // ── Stream event handling ────────────────────────────────
+      const blocks = new Map<number, StreamContentBlock>()
+      let assistantMessage: AssistantMessage | null = null
+      let assistantPushed = false
+      let fullText = ''
+      let stopReason: string | null = null
+      let usage: Record<string, unknown> | null = null
+
+      const iterationStartTime = Date.now()
+      let streamEndedAt = iterationStartTime
+
+      try {
+        for await (const event of stream) {
+          switch (event.type) {
+            case 'message_start':
+              assistantMessage = {
+                id: event.message.id,
+                role: 'assistant',
+                content: '',
+                createdAt: new Date(),
+                isStreaming: true,
+              }
+              break
+
+            case 'content_block_start': {
+              const b = event.content_block
+              if (b.type === 'tool_use') {
+                const seedContent =
+                  b.input && typeof b.input === 'object' && Object.keys(b.input as Record<string, unknown>).length > 0
+                    ? JSON.stringify(b.input)
+                    : ''
+                blocks.set(event.index, {
+                  index: event.index,
+                  type: 'tool_use',
+                  id: b.id,
+                  name: b.name,
+                  content: seedContent,
+                  completed: false,
+                })
+              } else if (b.type === 'text') {
+                blocks.set(event.index, {
+                  index: event.index,
+                  type: 'text',
+                  id: '',
+                  name: '',
+                  content: '',
+                  completed: false,
+                })
+              } else if (b.type === 'thinking') {
+                blocks.set(event.index, {
+                  index: event.index,
+                  type: 'thinking',
+                  id: '',
+                  name: '',
+                  content: '',
+                  completed: false,
+                })
+              }
+              break
+            }
+
+            case 'content_block_delta': {
+              const d = event.delta
+              const cb = blocks.get(event.index)
+              if (!cb) break
+
+              if (d.type === 'text_delta') {
+                if (!fullText) this.profiler.recordFirstToken()
+                cb.content += d.text
+                fullText += d.text
+                const cleanChunk = textSanitizer.feed(d.text)
+                if (cleanChunk) {
+                  safeSendEvent({
+                    type: 'text_delta',
+                    data: cleanChunk,
+                    timestamp: new Date().toISOString(),
+                  })
+                }
+              } else if (d.type === 'input_json_delta') {
+                cb.content += d.partial_json
+              } else if (d.type === 'thinking_delta') {
+                cb.content += d.thinking
+                if (this.deps.config.showThinking) {
+                  safeSendEvent({
+                    type: 'thinking_delta',
+                    data: d.thinking,
+                    timestamp: new Date().toISOString(),
+                  })
+                }
+              }
+              break
+            }
+
+            case 'content_block_stop': {
+              const stoppedBlock = blocks.get(event.index)
+              if (!stoppedBlock) break
+              stoppedBlock.completed = true
+
+              if (stoppedBlock.type === 'tool_use') {
+                let input: Record<string, unknown> = {}
+                try {
+                  input = JSON.parse(stoppedBlock.content || '{}')
+                } catch { /* malformed JSON — tool runs with empty input */ }
+
+                const toolUse: ToolUse = {
+                  id: stoppedBlock.id,
+                  name: stoppedBlock.name,
+                  input,
+                }
+                toolExecutor.enqueue(toolUse)
+              }
+              break
+            }
+
+            case 'message_delta': {
+              const msgDelta = event as unknown as {
+                type: 'message_delta'
+                delta: { stop_reason?: string | null; usage?: Record<string, unknown> }
+                usage?: Record<string, unknown>
+              }
+              const delta = msgDelta.delta
+              if (delta?.stop_reason != null) stopReason = delta.stop_reason
+              const mergedUsage = msgDelta.usage ?? delta?.usage
+              if (mergedUsage) usage = mergedUsage
+              break
+            }
+
+            case 'message_stop': {
+              const tail = textSanitizer.flush()
+              if (tail) {
+                safeSendEvent({ type: 'text_delta', data: tail, timestamp: new Date().toISOString() })
+              }
+              break
+            }
+          }
+        }
+      } catch (streamErr) {
+        const errStr = String(streamErr)
+
+        if (this.abortController.signal.aborted) {
+          await toolExecutor.waitForAll().catch(() => {})
+          await this.traceWriter.write('loop_decision', 'Stream aborted (connection lost)', { iteration })
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: this.currentStage as CaseStatus,
+            transition: 'connection_lost',
+            reason: 'connection_lost',
+          }
+        }
+
+        // Reactive compact on 413 during streaming
+        if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
+          this.messages = reactiveCompact(this.messages)
+          await this.traceWriter.write('loop_decision', 'Reactive compact on stream error', { error: errStr })
+          continue
+        }
+
+        await this.traceWriter.write('loop_decision', 'Stream error', { error: errStr, iteration })
+        break
+      }
+
+      streamEndedAt = Date.now()
+
+      // ── Trace LLM response ───────────────────────────────────
+      if (usage) {
+        const calledToolNames = [...blocks.values()].filter((b) => b.type === 'tool_use').map((b) => b.name)
+        await this.traceWriter.writeLlmResponse(stopReason, usage, iteration, fullText, calledToolNames)
+        this.profiler.addTokens(
+          Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
+          Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
+        )
+      }
+
+      // ── Finalize assistant message ────────────────────────────
+      if (!assistantMessage) {
+        throw new Error('No assistant message received in runReActLoop')
+      }
+      assistantMessage.content = fullText
+      assistantMessage.isStreaming = false
+
+      // ── Wait for tool execution ──────────────────────────────
+      const toolResults = await toolExecutor.waitForAll()
+      for (const tr of toolResults) {
+        this.profiler.addToolExecution(tr.latencyMs || 0)
+      }
+
+      // ── Terminal tool interception via policy ─────────────────
+      let terminalResult: LoopResult | null = null
+      for (const tr of toolResults) {
+        const handled = policy.handleTerminalTool(tr.name, tr.toolUse?.input ?? {})
+        if (handled?.type === 'handled') {
+          terminalResult = handled.result as LoopResult
+          break
+        }
+      }
+
+      // Add assistant + tool results to message history
+      if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
+      this.addToolResultMessages(toolResults)
+
+      if (terminalResult) {
+        await this.writeProfilerSnapshot()
+        return terminalResult
+      }
+
+      // ── Apply tool results to case memory ────────────────────
+      for (const result of toolResults) {
+        const payload = unwrapToolExecutionPayload(result.output)
+        await this.caseMemory.applySkillResult(result.name, payload)
+      }
+
+      // ── Evaluate continuation via policy ──────────────────────
+      const mappedResults: ToolResult[] = toolResults.map((r) => {
+        const inner = r.output as ToolResult | undefined
+        return {
+          ok: inner?.ok ?? true,
+          output: inner?.output ?? r.output,
+          error: inner?.error,
+          latencyMs: r.latencyMs,
+        }
+      })
+
+      const continuation = await policy.evaluateContinuation(
+        assistantMessage,
+        mappedResults,
+        iteration,
+      )
+
+      switch (continuation.action) {
+        case 'continue':
+          safeSendEvent({
+            type: 'message_stop',
+            data: { reason: 'next_turn', stopReason, stage: this.currentStage },
+            timestamp: new Date().toISOString(),
+          })
+          continue
+
+        case 'stop':
+          await this.traceWriter.write('loop_decision', 'Exit: policy stop', {
+            reason: continuation.reason,
+            isError: continuation.isError,
+            iteration,
+          })
+          safeSendEvent({
+            type: 'message_stop',
+            data: { reason: continuation.reason, stopReason },
+            timestamp: new Date().toISOString(),
+          })
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: this.currentStage as CaseStatus,
+            transition: continuation.isError ? 'error' : 'next_turn',
+            currentStage: this.currentStage,
+            reason: continuation.reason,
+          }
+
+        case 'transition':
+          await this.traceWriter.write('loop_decision', `Stage transition: ${continuation.nextStage}`, {
+            nextStage: continuation.nextStage,
+            iteration,
+          })
+          safeSendEvent({
+            type: 'message_stop',
+            data: { reason: 'stage_transition', stage: continuation.nextStage },
+            timestamp: new Date().toISOString(),
+          })
+          continue
+
+        case 'complete_task':
+          await this.traceWriter.write('loop_decision', 'Exit: task complete', {
+            iteration,
+            subAgentResult: continuation.result,
+          })
+          safeSendEvent({
+            type: 'message_stop',
+            data: { reason: 'task_complete' },
+            timestamp: new Date().toISOString(),
+          })
+          await this.writeProfilerSnapshot()
+          return {
+            messages: this.messages,
+            caseStatus: this.currentStage as CaseStatus,
+            transition: 'next_turn',
+            currentStage: this.currentStage,
+            reason: 'task_complete',
+          }
+      }
+    }
+
+    // ── Max iterations reached ──────────────────────────────────
+    await this.traceWriter.write('loop_decision', 'Exit: max iterations', { iteration, messageCount: this.messages.length })
+    safeSendEvent({
+      type: 'message_stop',
+      data: { reason: 'max_iterations' },
+      timestamp: new Date().toISOString(),
+    })
+    await this.writeProfilerSnapshot()
+    return {
+      messages: this.messages,
+      caseStatus: this.currentStage as CaseStatus,
+      transition: 'next_turn',
+      currentStage: this.currentStage,
+      reason: 'max_iterations',
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
 
   /**
-   * Intercept SOP internal tools (todo_write / todo_read) — replace their
+   * Intercept step-mode internal tools (todo_write / todo_read) — replace their
    * mock executor outputs with real in-memory CaseMemory operations.
-   * Must be called after toolExecutor.waitForAll() when isSopMode() is true.
+   * Must be called after toolExecutor.waitForAll() when executionMode is 'step'.
    */
   private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
     const sopToolNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
@@ -2117,6 +2576,222 @@ export class AgentLoop {
 
     // Fallback: programmatic XML summary
     this.caseMemory.recordCompaction()
+  }
+
+  // -----------------------------------------------------------------------
+  // Unified ReAct Loop (shared by main agent and sub-agents)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Run a policy-driven ReAct loop.
+   *
+   * Delegates all behavior decisions (prompt assembly, tool filtering,
+   * continuation, terminal tools) to the `ExecutionPolicy`, making the core
+   * ReAct iteration reusable across main-agent, sub-agent, stage, and step
+   * execution modes.
+   *
+   * Used by `SubAgent.run()` via `ChecklistPolicy`.
+   */
+  static async runReActLoop(
+    client: Anthropic,
+    systemPrompt: string,
+    skillDefinitions: SkillDefinition[],
+    ctx: AgentContext,
+    policy: ExecutionPolicy,
+    sendEvent: (event: SSEEvent) => void,
+    taskPrompt: string,
+    abortController?: AbortController,
+  ): Promise<LoopResult> {
+    const ac = abortController ?? new AbortController()
+    let totalTokens = 0
+
+    // ── Build initial messages ──────────────────────────────────────
+    const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
+      { role: 'user', content: taskPrompt },
+    ]
+
+    // ── ReAct iteration loop ───────────────────────────────────────
+    for (let iter = 0; iter < ctx.maxIterations; iter++) {
+      if (ac.signal.aborted) break
+
+      // Build prompt and filter tools via policy
+      const stagePrompt = policy.buildPrompt(systemPrompt)
+      const allAnthropicTools = AgentLoop.buildAnthropicTools(skillDefinitions)
+      const stageTools = policy.filterTools(allAnthropicTools, iter)
+
+      // ── Call LLM ─────────────────────────────────────────────
+      let msg: Anthropic.Messages.Message
+      try {
+        msg = await client.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4096,
+          temperature: 0.3,
+          system: stagePrompt,
+          tools: stageTools.length > 0 ? stageTools : undefined,
+          messages: messages as any,
+        }, { signal: ac.signal })
+      } catch (err) {
+        if (ac.signal.aborted) {
+          return {
+            messages: [],
+            caseStatus: 'escalated' as const,
+            transition: 'connection_lost' as const,
+            reason: 'aborted',
+          }
+        }
+        throw err
+      }
+
+      const usage = (msg as any).usage || {}
+      totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0)
+
+      // ── Parse response ────────────────────────────────────────
+      let textContent = ''
+      const toolUses: ToolUse[] = []
+
+      for (const block of msg.content) {
+        if (block.type === 'text') {
+          textContent += (block as any).text
+        } else if (block.type === 'tool_use') {
+          toolUses.push({
+            id: (block as any).id,
+            name: (block as any).name,
+            input: (block as any).input || {},
+          })
+        }
+      }
+
+      sendEvent({
+        type: 'text_delta',
+        data: textContent,
+        timestamp: new Date().toISOString(),
+      })
+
+      const assistantMsg: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant' as const,
+        content: textContent,
+        toolUses: toolUses.length > 0 ? toolUses : undefined,
+        createdAt: new Date(),
+      }
+
+      // ── Intercept terminal tools BEFORE execution ─────────────
+      // The policy may claim a tool call and terminate the loop
+      // without running it (e.g. finalize_sub_agent).
+      for (const tu of toolUses) {
+        const terminalResult = policy.handleTerminalTool(tu.name, tu.input)
+        if (terminalResult && terminalResult.type === 'handled') {
+          messages.push({ role: 'assistant' as const, content: msg.content })
+          const result = terminalResult.result
+          return {
+            messages: [assistantMsg],
+            caseStatus: result.caseStatus,
+            transition: result.transition as LoopResult['transition'],
+            currentStage: result.currentStage,
+            reason: result.reason,
+            pendingSubAgents: result.pendingSubAgents,
+          }
+        }
+      }
+
+      // ── No tool calls — evaluate continuation ─────────────────
+      if (toolUses.length === 0) {
+        messages.push({ role: 'assistant' as const, content: msg.content })
+        const decision = await policy.evaluateContinuation(assistantMsg, [], iter + 1)
+
+        if (decision.action === 'complete_task') {
+          return {
+            messages: [assistantMsg],
+            caseStatus: 'resolved' as const,
+            transition: 'stage_continue' as const,
+            reason: 'sub_agent_complete',
+          }
+        }
+        if (decision.action === 'stop') {
+          return {
+            messages: [assistantMsg],
+            caseStatus: 'resolved' as const,
+            transition: 'stage_continue' as const,
+            reason: decision.reason,
+          }
+        }
+        continue
+      }
+
+      // ── Execute tools ─────────────────────────────────────────
+      const execResults = await StreamingToolExecutor.executeAll(skillDefinitions, toolUses)
+
+      // Build Anthropic-format tool result blocks
+      const toolResultBlocks = execResults.map((er) => {
+        const toolUseId =
+          er.toolUse?.id ??
+          toolUses.find((tu) => tu.name === er.name)?.id ??
+          ''
+        return {
+          type: 'tool_result' as const,
+          tool_use_id: toolUseId,
+          content: JSON.stringify(unwrapToolExecutionPayload(er.output)),
+        }
+      })
+
+      // Add assistant + tool results to message history
+      messages.push({ role: 'assistant' as const, content: msg.content })
+      messages.push({ role: 'user' as const, content: toolResultBlocks })
+
+      // ── Emit tool call progress events ────────────────────────
+      for (const tu of toolUses) {
+        sendEvent({
+          type: 'sub_agent_progress',
+          data: { agentName: ctx.agentId, toolName: tu.name },
+          timestamp: new Date().toISOString(),
+        })
+      }
+
+      // ── Evaluate continuation after tools ──────────────────────
+      const policyToolResults: ToolResult[] = execResults.map((er) => ({
+        ok: true,
+        output: er.output,
+        latencyMs: er.latencyMs,
+      }))
+
+      const decision = await policy.evaluateContinuation(assistantMsg, policyToolResults, iter + 1)
+
+      if (decision.action === 'complete_task') {
+        return {
+          messages: [assistantMsg],
+          caseStatus: 'resolved' as const,
+          transition: 'stage_continue' as const,
+          reason: 'sub_agent_complete',
+        }
+      }
+      if (decision.action === 'stop') {
+        return {
+          messages: [assistantMsg],
+          caseStatus: 'resolved' as const,
+          transition: 'stage_continue' as const,
+          reason: decision.reason,
+        }
+      }
+    }
+
+    // Max iterations reached
+    return {
+      messages: [],
+      caseStatus: 'escalated' as const,
+      transition: 'stage_continue' as const,
+      reason: 'max_iterations',
+    }
+  }
+
+  /** Build Anthropic tool definitions from skill definitions. */
+  private static buildAnthropicTools(skillDefinitions: SkillDefinition[]): Tool[] {
+    return skillDefinitions
+      .filter((s) => s.enabled)
+      .map((s) => ({
+        name: s.name,
+        description: s.description,
+        input_schema: s.inputSchema as Tool['input_schema'],
+      }))
   }
 
   getCaseType(): string {

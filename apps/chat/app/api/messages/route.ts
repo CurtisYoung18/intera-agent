@@ -156,7 +156,7 @@ function schemaFromCaseTypeRow(caseType: {
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
     orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
     requireHumanReview: caseType.requireHumanReview === true,
-    executionMode: (caseType.executionMode as 'stage' | 'sop' | undefined) || 'stage',
+    executionMode: (caseType.executionMode as 'stage' | 'step' | undefined) || 'stage',
     sop: caseType.sop || undefined,
   }
 }
