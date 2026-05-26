@@ -66,7 +66,7 @@ export interface WidgetPayload {
 }
 
 // Events sent from In-Chat App back to Bridge via LiveChat send_event
-export interface IntereaInteractionSubmit {
+export interface InteraInteractionSubmit {
   caseId: string
   optionId: string
   input?: string

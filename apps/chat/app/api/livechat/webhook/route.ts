@@ -1,16 +1,39 @@
 // apps/chat/app/api/livechat/webhook/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
-import type { IntereaInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
+import type { InteraInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
+
+function verifyWebhookSignature(request: NextRequest, rawBody: string): boolean {
+  const secret = process.env.LIVECHAT_WEBHOOK_SECRET
+  if (!secret) {
+    console.warn('[Webhook] LIVECHAT_WEBHOOK_SECRET not set — skipping signature verification')
+    return true
+  }
+  const incoming = request.headers.get('x-livechat-webhook-signature')
+  if (!incoming) return false
+  const expected = createHmac('sha256', secret).update(rawBody, 'utf-8').digest('hex')
+  try {
+    return timingSafeEqual(Buffer.from(incoming, 'utf-8'), Buffer.from(expected, 'utf-8'))
+  } catch {
+    return false
+  }
+}
 
 export async function POST(request: NextRequest) {
+  let rawBody: string
   let body: Record<string, unknown>
   try {
-    body = await request.json()
+    rawBody = await request.text()
+    body = JSON.parse(rawBody)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  if (!verifyWebhookSignature(request, rawBody)) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   // LiveChat sends the action name in the body
@@ -55,7 +78,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (contentType === 'intera_interaction_submit') {
-        const interaction = content as unknown as IntereaInteractionSubmit
+        const interaction = content as unknown as InteraInteractionSubmit
         handleIncomingEvent(chatId, customerId, userId, { type: 'interaction_submit', interaction }, config)
           .catch(err => console.error('[Webhook] interaction_submit error:', err))
       }
