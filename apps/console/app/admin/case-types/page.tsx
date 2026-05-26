@@ -31,7 +31,7 @@ interface CaseTypeItem {
   sopMaxAutoTurns?: number
 }
 
-type ModalTab = 'basic' | 'stages' | 'sop'
+type ModalTab = 'basic' | 'stages' | 'cc'
 
 const CT_JSON_FIELDS = ['stages', 'requiredFacts', 'escalateOn', 'autoCloseConditions'] as const
 
@@ -240,7 +240,7 @@ export default function CaseTypesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((ct) => {
-            const isSop = ct.executionMode === 'sop'
+            const isSop = ct.executionMode === 'cc'
             const hasStageConfig = !isSop && (() => {
               try {
                 const cfg = JSON.parse(ct.stageConfigs || '{}')
@@ -365,7 +365,7 @@ export default function CaseTypesPage() {
               >
                 {t('caseTypes.tab.basic')}
               </button>
-              {editing.executionMode !== 'sop' && (
+              {editing.executionMode !== 'cc' && (
                 <button
                   type="button"
                   onClick={() => setActiveTab('stages')}
@@ -379,12 +379,12 @@ export default function CaseTypesPage() {
                   {t('caseTypes.tab.stages')}
                 </button>
               )}
-              {editing.executionMode === 'sop' && (
+              {editing.executionMode === 'cc' && (
                 <button
                   type="button"
-                  onClick={() => setActiveTab('sop')}
+                  onClick={() => setActiveTab('cc')}
                   className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
-                    activeTab === 'sop'
+                    activeTab === 'cc'
                       ? 'bg-white/80 text-[var(--mist)] shadow-sm'
                       : 'text-[var(--fog)] hover:text-[var(--mist)]'
                   }`}
@@ -470,7 +470,7 @@ export default function CaseTypesPage() {
                       type="button"
                       onClick={() => setEditing({ ...editing, executionMode: 'stage' })}
                       className={`flex-1 py-2 px-3 rounded-lg text-[12px] font-medium border transition-all flex items-center justify-center gap-1.5 ${
-                        editing.executionMode !== 'sop'
+                        editing.executionMode !== 'cc'
                           ? 'bg-lavender/[0.12] border-lavender/30 text-lavender'
                           : 'bg-transparent border-[var(--border-subtle)] text-[var(--fog)] hover:border-[var(--border-hover)]'
                       }`}
@@ -481,11 +481,11 @@ export default function CaseTypesPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setEditing({ ...editing, executionMode: 'sop' })
-                        setActiveTab('sop')
+                        setEditing({ ...editing, executionMode: 'cc' })
+                        setActiveTab('cc')
                       }}
                       className={`flex-1 py-2 px-3 rounded-lg text-[12px] font-medium border transition-all flex items-center justify-center gap-1.5 ${
-                        editing.executionMode === 'sop'
+                        editing.executionMode === 'cc'
                           ? 'bg-malachite/[0.12] border-malachite/30 text-malachite'
                           : 'bg-transparent border-[var(--border-subtle)] text-[var(--fog)] hover:border-[var(--border-hover)]'
                       }`}
@@ -495,7 +495,7 @@ export default function CaseTypesPage() {
                     </button>
                   </div>
                   <p className="text-[10px] text-[var(--smoke)]">
-                    {editing.executionMode === 'sop'
+                    {editing.executionMode === 'cc'
                       ? 'Agent reads your SOP document and builds a dynamic todo list — no predefined stage pipeline.'
                       : 'Agent follows a predefined stage pipeline with configurable guardrails per stage.'}
                   </p>
@@ -541,7 +541,7 @@ export default function CaseTypesPage() {
             )}
 
             {/* ── SOP Config Tab ────────────────────────────── */}
-            {activeTab === 'sop' && (
+            {activeTab === 'cc' && (
               <div className="space-y-4 animate-fade-up">
                 <div className="p-3 rounded-xl bg-malachite/[0.06] border border-malachite/20 text-[12px] text-malachite/80 space-y-1">
                   <p className="font-medium">SOP Mode — Autonomous Todo Execution</p>

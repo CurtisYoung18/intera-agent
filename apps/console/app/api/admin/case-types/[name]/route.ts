@@ -32,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ name
     for (const f of ['requiredFacts', 'stages', 'escalateOn', 'autoCloseConditions', 'stageConfigs', 'orchestratorConfig']) {
       if (body[f] !== undefined) data[f] = typeof body[f] === 'string' ? body[f] : JSON.stringify(body[f])
     }
-    if (body.executionMode !== undefined) data.executionMode = body.executionMode === 'sop' ? 'sop' : 'stage'
+    if (body.executionMode !== undefined) data.executionMode = body.executionMode === 'cc' ? 'cc' : 'stage'
     if (body.sop !== undefined) data.sop = body.sop || null
     if (body.sopMaxAutoTurns !== undefined) data.sopMaxAutoTurns = Math.max(1, Math.min(50, Number(body.sopMaxAutoTurns) || 10))
     const ct = await prisma.caseType.update({ where: { customerId_type: { customerId: CUSTOMER_ID, type: name } }, data })

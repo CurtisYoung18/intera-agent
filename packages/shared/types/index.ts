@@ -406,7 +406,7 @@ export interface CaseSchemaConfig {
   orchestrator?: OrchestratorConfig
   requireHumanReview?: boolean
   /** "stage" = predefined stage machine (default); "step" = engine-driven step executor */
-  executionMode?: 'stage' | 'sop'
+  executionMode?: 'stage' | 'cc'
   /** Natural-language Standard Operating Procedure (only used when executionMode = "sop") */
   sop?: string
 }
@@ -501,7 +501,7 @@ export interface SubAgentConfig {
   maxIterations?: number
   parallel: boolean
   /** Sub-agent execution mode: "stage" (LLM-driven, default) or "sop" (SOP-driven). */
-  executionMode?: 'stage' | 'sop'
+  executionMode?: 'stage' | 'cc'
 }
 
 export interface OrchestratorConfig {

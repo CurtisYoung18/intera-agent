@@ -455,7 +455,7 @@ export class AgentLoop {
           this.deps.systemPrompt,
         ].join('\n')
         stageTools = []  // No tools — pure text acknowledgement only
-      } else if (this.deps.caseSchema?.executionMode === 'sop') {
+      } else if (this.deps.caseSchema?.executionMode === 'cc') {
         stagePrompt = this.caseLoop!.buildSopPrompt(
           this.deps.systemPrompt,
           this.caseMemory.getTodos(),
@@ -745,7 +745,7 @@ export class AgentLoop {
       // ── Step-mode todo interception (pure in-memory, no side effects) ─────
       // todo_write and todo_read bypass the skill executor — their mock outputs
       // are replaced here with real in-memory operations on CaseMemory.
-      if (this.deps.caseSchema?.executionMode === 'sop') {
+      if (this.deps.caseSchema?.executionMode === 'cc') {
         toolResults = this.processTodoTools(toolResults)
 
         // Auto-complete todo items whose corresponding investigation tools succeeded.
@@ -926,7 +926,7 @@ export class AgentLoop {
         // When the agent just received tool results (there ARE previous tool
         // messages) but produced empty text and no new tool calls, it silently
         // swallowed the findings. Nudge it to either tell the user or finalize.
-        if (this.deps.caseSchema?.executionMode === 'sop' && !fullText) {
+        if (this.deps.caseSchema?.executionMode === 'cc' && !fullText) {
           const lastFewMessages = this.messages.slice(-6)
           const hasPendingToolResults = lastFewMessages.some(
             (m) => m.role === 'assistant' && typeof m.content === 'string' &&
@@ -1100,7 +1100,7 @@ export class AgentLoop {
       // because of wrong format, AND also ran investigation tools in the same
       // turn, we must tell it to fix the plan BEFORE acting on the results.
       // This fires even on non-empty turns (so it's not gated on !fullText).
-      if (this.deps.caseSchema?.executionMode === 'sop' && this.nudgeCount < 3) {
+      if (this.deps.caseSchema?.executionMode === 'cc' && this.nudgeCount < 3) {
         const todoFailed = toolResults.some(
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
@@ -1206,8 +1206,8 @@ export class AgentLoop {
                 defaultGoal: ctRow.defaultGoal,
                 escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
                 requireHumanReview: (ctRow as any).requireHumanReview === true,
-                // Normalize legacy 'sop' value to 'sop'
-                executionMode: (((ctRow as any).executionMode === 'sop' ? 'sop' : (ctRow as any).executionMode) as 'stage' | 'sop' | undefined) || 'stage',
+                // Normalize legacy 'sop' value to 'cc'
+                executionMode: (((ctRow as any).executionMode === 'sop' ? 'cc' : (ctRow as any).executionMode) as 'stage' | 'cc' | undefined) || 'stage',
                 sop: (ctRow as any).sop || undefined,
               }
               this.deps.caseSchema = schema
@@ -1257,7 +1257,7 @@ export class AgentLoop {
               // whether or not investigation tools were pre-called in the same
               // batch. addToolResultMessages() was already called above so any
               // pre-fetched results are already in this.messages.
-              if (this.deps.caseSchema?.executionMode === 'sop') {
+              if (this.deps.caseSchema?.executionMode === 'cc') {
                 const alreadyCalledTools = toolResults
                   .filter((r) => r.name !== 'create_case')
                   .map((r) => r.name)

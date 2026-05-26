@@ -136,7 +136,7 @@ function schemaFromCaseTypeRow(caseType: {
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
     orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
     requireHumanReview: caseType.requireHumanReview === true,
-    executionMode: (caseType.executionMode as 'stage' | 'sop' | undefined) || 'stage',
+    executionMode: (caseType.executionMode as 'stage' | 'cc' | undefined) || 'stage',
     sop: caseType.sop || undefined,
   }
 }
@@ -419,7 +419,7 @@ export async function GET(
               where: { customerId_type: { customerId, type: loop.getCaseType() } },
               select: { executionMode: true, sopMaxAutoTurns: true },
             })
-            if ((ct?.executionMode === 'sop') && ct.sopMaxAutoTurns) {
+            if ((ct?.executionMode === 'cc') && ct.sopMaxAutoTurns) {
               sopMaxAutoTurns = ct.sopMaxAutoTurns
             }
           } catch { /* keep default */ }

@@ -109,7 +109,7 @@ model CaseType {
 
   /// "stage" = predefined stage machine (default); "step" = engine-driven step executor
   executionMode   String  @default("stage")
-  /// Natural-language Standard Operating Procedure — only used when executionMode = "sop"
+  /// Natural-language Standard Operating Procedure — only used when executionMode = "cc"
   sop             String?
   /// Max auto-continuation turns in SOP mode (prevents infinite loops)
   sopMaxAutoTurns Int     @default(10)

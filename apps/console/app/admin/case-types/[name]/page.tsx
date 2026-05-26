@@ -128,7 +128,7 @@ export default function CaseTypeDetailPage() {
 
   const stageNames = parseStages()
   const stageConfigs = parseStageConfigs()
-  const isStageMode = ct?.executionMode !== 'sop'
+  const isStageMode = ct?.executionMode !== 'cc'
   const defaultModel = availableModels.length > 0 ? availableModels[0] : 'MiniMax-M2.7-highspeed'
 
   // Toggle stage expansion
@@ -171,12 +171,12 @@ export default function CaseTypeDetailPage() {
     if (!ct) return
     if (newMode === ct.executionMode) return
 
-    if (ct.executionMode !== 'sop' && newMode === 'sop') {
+    if (ct.executionMode !== 'cc' && newMode === 'cc') {
       // stage -> adaptive
       if (!confirm(
         'Switch to Adaptive mode? Stage-mode sub-agent configs will be archived to JSON metadata but no longer dispatched.'
       )) return
-    } else if (ct.executionMode === 'sop' && newMode !== 'sop') {
+    } else if (ct.executionMode === 'cc' && newMode !== 'cc') {
       // adaptive -> stage
       if (!confirm(
         'Switch to Stage mode? You\'ll need to assign sub-agents per stage. Existing sub-agent suggestions will be preserved.'
@@ -295,7 +295,7 @@ export default function CaseTypeDetailPage() {
             </button>
             <button
               type="button"
-              onClick={() => changeExecutionMode('sop')}
+              onClick={() => changeExecutionMode('cc')}
               className={`flex-1 py-2 px-3 rounded-lg text-[12px] font-medium border transition-all flex items-center justify-center gap-1.5 ${
                 !isStageMode
                   ? 'bg-malachite/[0.12] border-malachite/30 text-malachite'

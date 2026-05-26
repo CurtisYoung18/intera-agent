@@ -21,7 +21,7 @@ export interface SubAgentConfig {
   taskTemplate?: string
   maxIterations?: number
   parallel: boolean
-  executionMode?: 'stage' | 'sop'
+  executionMode?: 'stage' | 'cc'
   taskChecklist?: TaskChecklist
 }
 
