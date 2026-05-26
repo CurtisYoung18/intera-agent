@@ -375,7 +375,7 @@ model HumanTask {
 }
 
 // ============================================
-// LiveChat Bridge — セッション管理
+// LiveChat Bridge — 会话管理
 // ============================================
 model LiveChatSession {
   chatId      String   @id
@@ -384,8 +384,10 @@ model LiveChatSession {
   caseId      String
   state       String   @default("idle")
   textBuffer  String   @default("")
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([customerId])
   @@map("livechat_sessions")
 }
 
