@@ -406,16 +406,22 @@ Phase 3 ─ 通信 + 并发（Phase 2 完成后）
   ├─ Loop 内队列消费 + MessageBus 广播 ✅
   └─ 自动错误恢复 ✅
 
-Phase 4 ─ Console Trace 重构（Phase 3 完成后）
+Phase 4 ─ Console Trace 重构 ✅
   ├─ ActionTrace 加 chatId 字段 ✅
-  ├─ Chats 页面升级为通用 Trace 看板
-  └─ /ops/cases/[id]/memory 合并废弃
+  ├─ Chats 页面升级为通用 Trace 看板 ✅
+  ├─ /ops/cases/* 废弃（swimlane + detail + memory）✅
+  ├─ Token/timing 指标迁移到 Chat 视图 ✅
+  └─ /api/chats/[chatId]/traces API ✅
 
-Phase 5 ─ 性能优化（Phase 3 完成后，可与 Phase 4 并行）
-  └─ Fork 模式 cache 共享
+Phase 5 ─ 性能优化
+  └─ Fork 模式 cache 共享（设计完成，需 API 验证）
 
 Phase 6 ─ LiveChat Bridge ✅
   └─ /api/livechat/webhook 路由 ✅
+  
+Phase 7 ─ 上下文压缩补齐 ✅
+  ├─ contextCollapse ✅
+  └─ reactiveCompact ✅
 ```
 
 ---

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -8,122 +8,88 @@ import {
   MessageSquare,
   User,
   Bot,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Tag,
   Trash2,
+  BarChart3,
+  Clock,
+  Zap,
+  Cpu,
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+// Trace timeline rendered inline below
 import { useConsoleLocale } from '@/components/locale-provider'
 
 interface MsgItem {
-  id: string
-  role: string
-  content: string
-  createdAt: string
-  caseId: string
-  caseType?: string
-  caseStatus?: string
+  id: string; role: string; content: string; createdAt: string
+  caseId: string; caseType?: string; caseStatus?: string
 }
 
 interface CaseSummary {
-  id: string
-  type: string
-  status: string
-  goal: string | null
-  createdAt: string
-  updatedAt: string
+  id: string; type: string; status: string; goal: string | null
+  createdAt: string; updatedAt: string
   _count?: { messages: number }
 }
 
 interface ChatSession {
-  chatId: string
-  userId: string
-  cases: CaseSummary[]
-  messageCount: number
-  lastActivity: string
-  hasHumanTask: boolean
+  chatId: string; userId: string; cases: CaseSummary[]
+  messageCount: number; lastActivity: string; hasHumanTask: boolean
+}
+
+interface TraceItem {
+  id: string; actionType: string; title: string; detail: string | null
+  payload: string | null; createdAt: string; caseId: string
+}
+
+interface Metrics {
+  totalTokens: number; inputTokens: number; outputTokens: number
+  cacheReadTokens: number; cacheWriteTokens: number; compactTokens: number
+  turnWallMs: number; toolPhaseMs: number; llmCalls: number
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  created: '#a09888',
-  collecting: '#5b8af7',
-  investigating: '#6366f1',
-  waiting_human: '#d4912e',
-  resolved: '#2ea04a',
-  escalated: '#e64539',
+  created: '#a09888', collecting: '#5b8af7', investigating: '#6366f1',
+  waiting_human: '#d4912e', resolved: '#2ea04a', escalated: '#e64539',
 }
 
 function fmtTime(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+function fmtMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 function CasePill({ caseItem }: { caseItem: CaseSummary }) {
   const color = STATUS_COLOR[caseItem.status] ?? '#a09888'
   return (
-    <Link
-      href={`/ops/cases/${caseItem.id}`}
-      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold hover:brightness-105 transition-[filter]"
-      style={{ borderColor: `${color}44`, color, background: `${color}0f` }}
-    >
+    <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold"
+      style={{ borderColor: `${color}44`, color, background: `${color}0f` }}>
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {caseItem.type.replace(/_/g, ' ')}
       <span className="opacity-60">#{caseItem.id.slice(0, 8)}</span>
-    </Link>
+    </span>
   )
 }
 
-function MessageRow({ msg, cases }: { msg: MsgItem; cases: CaseSummary[] }) {
+function MessageRow({ msg }: { msg: MsgItem }) {
   const isUser = msg.role === 'user'
-  const isAssistant = msg.role === 'assistant'
-
-  // Detect if this message is from a tool result (starts with "Tool ")
   const isToolResult = msg.content.startsWith('Tool ') && msg.role === 'assistant'
-
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-      {/* Avatar */}
-      <div
-        className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${
-          isUser ? 'bg-indigo/80' : 'bg-[var(--surface)] border border-black/[0.06]'
-        }`}
-      >
-        {isUser ? (
-          <User className="h-3.5 w-3.5" />
-        ) : (
-          <Bot className="h-3.5 w-3.5 text-indigo/60" />
-        )}
+      <div className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${
+        isUser ? 'bg-indigo/80' : 'bg-[var(--surface)] border border-black/[0.06]'}`}>
+        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5 text-indigo/60" />}
       </div>
-
-      {/* Bubble */}
       <div className={`min-w-0 max-w-[72%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-        <div
-          className={`rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
-            isUser
-              ? 'bg-indigo/[0.12] text-[var(--mist)] rounded-tr-sm'
-              : isToolResult
-              ? 'bg-black/[0.04] font-mono text-[11px] text-[var(--fog)] rounded-tl-sm border border-black/[0.05]'
-              : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'
-          }`}
-        >
-          {isToolResult ? (
-            <pre className="whitespace-pre-wrap break-words">{msg.content}</pre>
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-          )}
+        <div className={`rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+          isUser ? 'bg-indigo/[0.12] text-[var(--mist)] rounded-tr-sm'
+          : isToolResult ? 'bg-black/[0.04] font-mono text-[11px] text-[var(--fog)] rounded-tl-sm border border-black/[0.05]'
+          : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'}`}>
+          {isToolResult ? <pre className="whitespace-pre-wrap break-words">{msg.content}</pre>
+          : <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>}
         </div>
         <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt)}</span>
       </div>
@@ -131,58 +97,90 @@ function MessageRow({ msg, cases }: { msg: MsgItem; cases: CaseSummary[] }) {
   )
 }
 
+function computeMetrics(traces: TraceItem[]): Metrics {
+  const m: Metrics = {
+    totalTokens: 0, inputTokens: 0, outputTokens: 0,
+    cacheReadTokens: 0, cacheWriteTokens: 0, compactTokens: 0,
+    turnWallMs: 0, toolPhaseMs: 0, llmCalls: 0,
+  }
+  let firstTs: number | null = null
+  let lastTs: number | null = null
+
+  for (const t of traces) {
+    const ts = new Date(t.createdAt).getTime()
+    if (firstTs == null || ts < firstTs) firstTs = ts
+    if (lastTs == null || ts > lastTs) lastTs = ts
+
+    if (t.actionType === 'llm_response' && t.payload) {
+      try {
+        const p = JSON.parse(t.payload) as Record<string, unknown>
+        const usage = (p.usage ?? {}) as Record<string, number>
+        m.inputTokens += usage.input_tokens ?? usage.inputTokens ?? 0
+        m.outputTokens += usage.output_tokens ?? usage.outputTokens ?? 0
+        m.cacheReadTokens += usage.cache_read_input_tokens ?? 0
+        m.cacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+        m.compactTokens += (p as Record<string, number>).compactTokens ?? 0
+        m.totalTokens += (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
+        m.llmCalls++
+      } catch { /* skip malformed */ }
+    }
+    if (t.actionType === 'loop_decision' && t.payload) {
+      try {
+        const p = JSON.parse(t.payload) as Record<string, unknown>
+        m.toolPhaseMs += (p.toolPhaseMs as number) ?? 0
+      } catch { /* skip */ }
+    }
+  }
+  if (firstTs && lastTs) m.turnWallMs = lastTs - firstTs
+  return m
+}
+
 export default function ChatDetailPage({ params }: { params: Promise<{ chatId: string }> }) {
   const { chatId } = use(params)
   const decodedChatId = decodeURIComponent(chatId)
   const router = useRouter()
-  const { t } = useConsoleLocale()
 
   const [session, setSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<MsgItem[]>([])
+  const [traces, setTraces] = useState<TraceItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [showTraces, setShowTraces] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const metrics = useMemo(() => computeMetrics(traces), [traces])
 
   useEffect(() => {
     async function load() {
       setLoading(true)
       try {
-        // Fetch session info via cases API — filter by chatId
-        const [sessRes] = await Promise.all([
-          fetch(`/api/chats?limit=200`),
+        const [sessRes, tracesRes] = await Promise.all([
+          fetch('/api/chats?limit=200'),
+          fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/traces?limit=200`),
         ])
         const sessData = (await sessRes.json()) as { sessions: ChatSession[] }
         const found = sessData.sessions.find((s) => s.chatId === decodedChatId)
         if (!found) { setLoading(false); return }
         setSession(found)
 
-        // Fetch messages for all cases in this session, interleave by time
+        const tracesData = (await tracesRes.json()) as { traces: TraceItem[] }
+        setTraces(tracesData.traces ?? [])
+
         const msgArrays = await Promise.all(
           found.cases.map(async (c) => {
             const r = await fetch(`/api/cases/${c.id}/messages?limit=200`)
             if (!r.ok) return []
             const d = (await r.json()) as { messages: { id: string; role: string; content: string; createdAt: string }[] }
-            return d.messages.map((m) => ({
-              ...m,
-              caseId: c.id,
-              caseType: c.type,
-              caseStatus: c.status,
-            }))
+            return d.messages.map((m) => ({ ...m, caseId: c.id, caseType: c.type, caseStatus: c.status }))
           }),
         )
-        const merged = msgArrays.flat().sort((a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        )
-        setMessages(merged)
-      } catch (e) {
-        console.error('Chat load failed:', e)
-      } finally {
-        setLoading(false)
-      }
+        setMessages(msgArrays.flat().sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
+      } catch (e) { console.error('Chat load failed:', e) }
+      finally { setLoading(false) }
     }
     load()
   }, [decodedChatId])
 
-  // Group messages, injecting a case-divider when caseId changes
   type Row = { type: 'msg'; msg: MsgItem } | { type: 'case_banner'; c: CaseSummary }
   const rows: Row[] = []
   let lastCaseId = ''
@@ -197,97 +195,78 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
 
   async function handleDelete() {
     if (!session) return
-    const label = decodedChatId.slice(0, 16) + '…'
-    if (!confirm(`Delete chat session ${label} and all ${session.cases.length} case(s)?\nThis cannot be undone.`)) return
+    if (!confirm(`Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} case(s)?`)) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
-      if (!res.ok) { alert('Failed to delete — see console'); setDeleting(false); return }
+      await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
       router.push('/ops/chats')
-    } catch {
-      alert('Failed to delete — network error')
-      setDeleting(false)
-    }
+    } catch { alert('Delete failed'); setDeleting(false) }
   }
 
-  const headerTitle = session
-    ? `Chat · ${session.userId}`
-    : `Chat · ${decodedChatId.slice(0, 16)}…`
-
   return (
-    <div className="mx-auto flex min-h-[100dvh] max-w-[900px] flex-col px-4 py-4 sm:px-6">
+    <div className="mx-auto flex min-h-[100dvh] max-w-[960px] flex-col px-4 py-4 sm:px-6">
       {/* Toolbar */}
       <header className="sticky top-0 z-30 mb-4 flex flex-shrink-0 items-center justify-between gap-3 rounded-2xl border border-black/[0.06] bg-white/55 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.push('/ops/chats')}
-            className="console-btn-icon-square"
-            aria-label="Back"
-          >
+          <button type="button" onClick={() => router.push('/ops/chats')}
+            className="console-btn-icon-square" aria-label="Back">
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0">
             <h1 className="truncate text-[14px] font-semibold tracking-tight text-[var(--mist)]">
-              {headerTitle}
+              Chat · {session?.userId ?? decodedChatId.slice(0, 16) + '…'}
             </h1>
             {session && (
               <p className="mt-0.5 text-[11px] text-[var(--fog)]/70">
-                {session.cases.length} case{session.cases.length !== 1 ? 's' : ''} ·{' '}
-                {session.messageCount} messages
+                {session.cases.length} case{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} traces
               </p>
             )}
           </div>
         </div>
-
-        {/* Case pills + actions */}
         <div className="flex shrink-0 items-center gap-2">
-          {session && (
-            <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
-              {session.cases.map((c) => (
-                <CasePill key={c.id} caseItem={c} />
-              ))}
-            </div>
-          )}
+          {session?.cases.map((c) => <CasePill key={c.id} caseItem={c} />)}
           {!loading && session && (
             <>
-              <ExportButton
-                filename={`chat-${decodedChatId.slice(0, 8)}`}
-                label="Export chat as JSON"
-                getData={() => ({
-                  _version: 'intera_console_chat_export_v1',
-                  exportedAt: new Date().toISOString(),
-                  session: {
-                    chatId: session.chatId,
-                    userId: session.userId,
-                    messageCount: session.messageCount,
-                    caseCount: session.cases.length,
-                    lastActivity: session.lastActivity,
-                    hasHumanTask: session.hasHumanTask,
-                  },
-                  cases: session.cases,
-                  messages,
-                })}
-              />
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                title="Delete chat session"
-                aria-label="Delete chat session and all its cases"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-transparent text-[var(--fog)]/50 transition-all duration-200 hover:border-[var(--vermillion)]/25 hover:bg-[var(--vermillion)]/[0.07] hover:text-[var(--vermillion)] disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vermillion)]/25"
-              >
-                {deleting
-                  ? <OrganicLoader icon="spin" size={14} className="text-[var(--vermillion)]" />
-                  : <Trash2 className="h-3.5 w-3.5" />
-                }
+              <ExportButton filename={`chat-${decodedChatId.slice(0, 8)}`} label="Export"
+                getData={() => ({ session, messages, traces, exportedAt: new Date().toISOString() })} />
+              <button type="button" onClick={handleDelete} disabled={deleting}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--fog)]/50 hover:text-[var(--vermillion)] transition-colors">
+                {deleting ? <OrganicLoader icon="spin" size={14} className="text-[var(--vermillion)]" /> : <Trash2 className="h-3.5 w-3.5" />}
               </button>
             </>
           )}
         </div>
       </header>
 
-      {/* Transcript */}
+      {/* Metrics bar */}
+      {metrics.llmCalls > 0 && (
+        <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label="LLM Calls" value={String(metrics.llmCalls)} />
+          <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label="Total Tokens" value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
+          <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label="Wall Time" value={fmtMs(metrics.turnWallMs)} />
+          <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label="Tool Phase" value={fmtMs(metrics.toolPhaseMs)} />
+        </div>
+      )}
+
+      {/* Trace toggle */}
+      {traces.length > 0 && (
+        <div className="mb-3 flex justify-end">
+          <button onClick={() => setShowTraces(!showTraces)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-black/[0.06] bg-white/60 hover:bg-white transition-colors">
+            <BarChart3 className="w-3.5 h-3.5" />
+            {showTraces ? 'Hide Trace' : `Show Trace (${traces.length})`}
+          </button>
+        </div>
+      )}
+
+      {/* Trace timeline */}
+      {showTraces && traces.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-black/[0.06] bg-white/60 p-4 max-h-[400px] overflow-auto">
+          <TraceList traces={traces} />
+        </div>
+      )}
+
+      {/* Messages */}
       <main className="flex-1 overflow-y-auto rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/60 to-white/30 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
         {loading ? (
           <div className="flex h-48 items-center justify-center">
@@ -296,13 +275,12 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
         ) : rows.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center text-[var(--fog)]">
             <MessageSquare className="mb-2 h-8 w-8 opacity-20" strokeWidth={1} />
-            <p className="text-[13px]">No messages in this session</p>
+            <p className="text-[13px]">No messages</p>
           </div>
         ) : (
           <div className="space-y-4">
             {rows.map((row, i) => {
               if (row.type === 'case_banner') {
-                const color = STATUS_COLOR[row.c.status] ?? '#a09888'
                 return (
                   <div key={`banner-${row.c.id}`} className="flex items-center gap-3 py-2">
                     <div className="h-px flex-1 bg-black/[0.06]" />
@@ -311,17 +289,50 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
                   </div>
                 )
               }
-              return (
-                <MessageRow
-                  key={row.msg.id}
-                  msg={row.msg}
-                  cases={session?.cases ?? []}
-                />
-              )
+              return <MessageRow key={row.msg.id} msg={row.msg} />
             })}
           </div>
         )}
       </main>
+    </div>
+  )
+}
+
+function TraceList({ traces }: { traces: TraceItem[] }) {
+  const ACTION_COLORS: Record<string, string> = {
+    user_message: '#6366f1', case_created: '#2ea04a', skill_called: '#5b8af7',
+    skill_result: '#14b8a6', human_task_created: '#d4912e', final_resolution: '#2ea04a',
+    llm_request_start: '#8b6ff5', llm_response: '#8b6ff5', error: '#e64539',
+    escalated: '#e64539', loop_decision: '#a09888',
+    queue_message_enqueued: '#f0b050', queue_message_consumed: '#f0b050',
+    agent_tree_node: '#7c3aed',
+  }
+  return (
+    <div className="space-y-1">
+      {traces.slice().reverse().map((t) => (
+        <div key={t.id} className="flex items-start gap-2 py-1.5 text-[11px]">
+          <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+            style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
+          <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
+          <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{t.actionType}</span>
+          <span className="text-[var(--mist)] truncate">{t.title}</span>
+          {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-black/[0.05] bg-white/60 px-3 py-2.5">
+      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo/[0.08] text-indigo">
+        {icon}
+      </div>
+      <div>
+        <p className="text-[10px] text-[var(--fog)]">{label}</p>
+        <p className="text-[13px] font-semibold text-[var(--mist)]">{value}</p>
+      </div>
     </div>
   )
 }

@@ -178,3 +178,29 @@ export async function compactConversation(
     return { summary: null, model, provider, error: errorMsg }
   }
 }
+
+/**
+ * Context collapse: persists a compressed snapshot of the conversation
+ * to the CaseMemory.summary field, allowing the agent to restore context
+ * across restarts without keeping all messages in memory.
+ */
+export async function contextCollapse(
+  messages: Message[],
+  memoryStrategy: import('@intera/shared/types').MemoryStrategy,
+  caseId: string,
+): Promise<string | null> {
+  if (messages.length < 6) return null // not enough context to collapse
+  const result = await compactConversation(messages, memoryStrategy)
+  return result.summary
+}
+
+/**
+ * Reactive compact: emergency trim when context overflows (413 error).
+ * Keeps only the last N messages plus system prompt.
+ */
+export function reactiveCompact(messages: Message[], keepLast: number = 4): Message[] {
+  if (messages.length <= keepLast) return messages
+  const systemMsgs = messages.filter((m) => m.role === 'system')
+  const recentMsgs = messages.slice(-keepLast)
+  return [...systemMsgs, ...recentMsgs]
+}

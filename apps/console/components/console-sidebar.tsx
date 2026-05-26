@@ -17,7 +17,7 @@ import {
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'cases' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations'
+type NavSlug = 'humanTasks' | 'chats' | 'guide' | 'agentConfig' | 'skills' | 'policies' | 'caseTypes' | 'routing' | 'knowledge' | 'integrations'
 
 interface NavItem {
   href: string
@@ -37,7 +37,6 @@ interface CustomerInfo {
 const OPS_ITEMS: NavItem[] = [
   { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
   { href: '/ops/human-tasks', slug: 'humanTasks', icon: ClipboardList, color: '#f0b050' },
-  { href: '/ops/cases', slug: 'cases', icon: FolderOpen, color: '#5b8af7', matchPattern: '/ops/cases' },
   { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
 ]
 
