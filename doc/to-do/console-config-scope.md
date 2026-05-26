@@ -267,23 +267,24 @@ model Skill {
 
 ## 三、Agent 配置（`apps/console/app/admin/agent/`）
 
-这是当前最过载的页面——6 个 drawer section，暴露了 50+ 个可配置字段。改造后仍保持 **6 个卫星节点**，但重新分配职责：
+这是当前最过载的页面——6 个 drawer section，暴露了 50+ 个可配置字段。改造后精简为 **5 个卫星节点 @ 72°**，每张卡都有实质可配置内容：
 - **Prompt 不再独立成卡**，并入 Model 卡（两者强相关：怎么说话 + 用什么模型说）
-- **Model 卡升级为核心配置卡**，包含 system prompt + 模型参数
-- 原 Prompt 卡的 -90° 位置留给新卡（待定，见 §3.0）
+- **Model 卡升级为核心配置卡**，包含 system prompt + 模型参数（Advanced 折叠）
+- 不引入第 6 张卡，由 5 卡均匀分布取代原 6 卡布局
 
-### 3.0 发散图卡片布局（重构后）
+### 3.0 发散图卡片布局（最终方案：5 卡 @ 72°）
+
+**决策：不引入第 6 张卡。** 5 张卡均匀分布，每张都有实质可配置内容，拒绝为对称凑数。
 
 | 位置 (角度) | 卡片 | 内容摘要 |
 |------------|------|---------|
-| -90° (正上) | **Model & Prompt** | system prompt + model + temperature |
-| -30° | **Memory** | 三档 slider（Short/Balanced/Long-term） |
-| 30° | **Guardrails** | 业务语义的 Policy Builder |
-| 90° | **Human Ops** | consultation prompt + human skills |
-| 150° | **Knowledge** | KB 配置简化版 |
-| 210° | **??? (待定)** | 候选：Skills 概览 / Channels 集成状态 / 去掉变 5 卡 |
+| -90° (正上) | **Model & Prompt** | system prompt（主区域）+ model + temperature（Advanced 折叠） |
+| -18° | **Memory** | 三档 slider（Short-term / Balanced / Long-term） |
+| 54° | **Guardrails** | 业务语义的 Policy Builder |
+| 126° | **Human Ops** | consultation prompt + human skills |
+| 198° | **Knowledge** | KB 配置简化版 |
 
-> ⬆ 210° 第 6 张卡的决策见下方讨论。
+> 前端角度从原来的 60° 间隔改为 72° 间隔，代码需更新 `SATELLITE_ANGLES` 常量。
 
 ### 3.1 Model & Prompt 卡（合并，原 Prompt + Model 两个区域）
 
@@ -457,14 +458,14 @@ Case Type 定义是 Console 的核心价值——交付人员通过它定义 "�
 | `description` | **KEEP** | 交付人员理解 case 用途 |
 | `defaultGoal` | **KEEP** | Agent 的目标描述 |
 | `enabled` | **KEEP** | 开关 |
-| `executionMode` | **KEEP**（保留 `'stage'` / `'sop'` 两档） | 覆盖现有两种场景，不引入 `'step'`——stage 配合 requiredSkills 已足够约束，保持引擎简洁 |
-| `stages` | **KEEP** | 阶段序列是核心配置（stage 模式必须；sop 模式可选，作为 milestone 检查点） |
+| `executionMode` | **KEEP**（`'stage'` / `'step'` 两档） | 引擎已落地两种模式。`stage` = LLM 驱动过渡；`step` = 引擎强制执行 `StageConfig.steps[]` 序列 |
+| `stages` | **KEEP** | 阶段序列是核心配置（两种模式都需要） |
 | `requiredFacts` | **KEEP** | 必须收集的信息 |
 | `escalateOn` | **KEEP** | 什么条件触发人工 |
 | `requireHumanReview` | **MERGE** 进 `StageConfig.transition` | "最终阶段需要人工确认" 是阶段过渡规则，不是 case 级别的独立开关 |
 | `autoCloseConditions` | **SIMPLIFY** | 当前是 raw JSON。改为结构化条件：`[{ factKey, operator, value }]` |
-| `sop` | **KEEP**（case 级别） | SOP 文档注入 case-level 上下文，agent 跟随文档执行。不下沉到 per-stage |
-| `sopMaxAutoTurns` | **KEEP** | 每个 SOP 节点的最大自动轮次，防止 agent 在某一步空转死循环 |
+| `sop` | **KEEP**（prompt appendix） | 不再是执行模式，而是注入 StepPolicy.buildPrompt 的 SOP 文本。case 级和 stage 级都可配 |
+| `sopMaxAutoTurns` | **REMOVE** | 已从引擎移除，被 `ExecutionStep.maxRetries` 替代 |
 
 ### 5.2 Stage Config 区域（`apps/console/components/admin/stage-config-editor.tsx`）
 
@@ -481,30 +482,59 @@ Case Type 定义是 Console 的核心价值——交付人员通过它定义 "�
 |  |  | `Auto: when [condition]`（选：all_skills_called / all_evidence / min_iterations） |
 |  |  | `AI: [evaluation prompt]` |
 |  |  | `Manual: operator confirms` |
+| `steps[]` | **KEEP**（step 模式专属） | 引擎已落地 `StepPolicy`。Console 需要 Step 序列编辑器：每步配置 `name / goal / requiredTools / optionalTools / completionCriteria / onFailure / maxRetries`。见 §5.3 |
+| `sop` (per-stage) | **KEEP** | stage 级 SOP prompt appendix，注入 StepPolicy.buildPrompt。Markdown 编辑器 |
 | `subAgents` | **HARDCODE** | Sub-Agent 的 model/systemPrompt/taskTemplate/maxIterations 是工程配置。哪些阶段需要 Sub-Agent、Sub-Agent 能调哪些技能，由 Case Type 设计者决定——但 Sub-Agent 本身的运行参数不应暴露 |
 
 ### 5.3 两模式与 Agent Engine 的适配
 
-两种模式共用同一个 `agent.query()` loop，差异在于传入 query 的上下文构造方式：
+两种模式共用同一个 `runReActLoop()` + `agent.query()`，差异在于传入的 `ExecutionPolicy`：
 
-| | `stage` 模式 | `sop` 模式 |
+| | `stage` 模式 | `step` 模式 |
 |---|---|---|
-| **系统提示来源** | `stage.systemPrompt`（每阶段独立） | `case.sop` 全文注入 + case-level systemPrompt |
-| **工具约束** | `stage.availableSkills`（每阶段白名单） | 所有启用技能都可调用（SOP 文档自带顺序约束） |
-| **阶段过渡** | 显式 transition（auto / AI / manual） | `sopMaxAutoTurns` 控制每节最大轮次，超限自动推进 |
-| **Console 配置面** | Stage 列表 + 每 Stage 抽屉 | 单一 Markdown 编辑器 + sopMaxAutoTurns 数字输入 |
-| **适用场景** | 流程分支多、阶段间差异大 | 标准化操作规程、步骤线性明确 |
+| **Policy 类** | `StagePolicy` | `StepPolicy` |
+| **系统提示** | `stage.systemPrompt`（每阶段独立） | `StepPolicy.buildPrompt()` 注入当前步骤 goal + requiredTools |
+| **工具过滤** | `stage.availableSkills` 白名单 | `StepPolicy.filterTools()` 锁定 `requiredTools ∪ optionalTools` |
+| **推进条件** | 显式 transition（auto / AI / manual） | `completionCriteria` 全部满足后自动推进；超 `maxRetries` 触发 `onFailure` |
+| **Console 配置面** | Stage 列表 + 每 Stage 抽屉 | Stage 抽屉内出现 Step 序列编辑器 |
+| **SOP 文本** | 不使用 | `stage.sop` / `case.sop` 注入 prompt appendix |
+| **适用场景** | 流程分支多、阶段间差异大 | 标准操作规程、步骤线性明确、需要引擎强制执行顺序 |
 
-**适配要点**（实施时注意）：
-- `query()` 接收 `{ systemPrompt, availableSkills, context }` —— stage 模式每次过渡前重新构造这三个参数；sop 模式 systemPrompt 在 case 开始时固定，availableSkills 全量传入
-- SOP 模式的 `stages` 字段可选保留，用作进度里程碑展示，但不触发 transition 逻辑
-- 两种模式的 `escalateOn` / `requiredFacts` / `guardrails` 完全共用，不分叉
+**适配要点**：
+- `case.executionMode === 'step'` 时，Console 的 Stage Config 抽屉显示 Step 序列编辑器取代 transition 选择器
+- 两种模式的 `escalateOn` / `requiredFacts` / `guardrails` 完全共用
+- `finalize_case` / `create_human_task` 在 step 模式下始终可用（StepPolicy.filterTools 强制保留）
 
-### 5.4 建议新增
+### 5.4 Step 序列编辑器（Console 新增 UI）
 
-| 新增 | 说明 |
-|------|------|
-| `sop`（Case Type 级 Markdown 编辑器） | **ADD** — 已有字段，补全 Console 的富文本编辑器 UI，支持 Markdown 预览 |
+**引擎已落地，Console UI 缺失，P1 优先级。**
+
+每个 `ExecutionStep` 的配置面：
+
+```
+┌─ Step 2 / 3: 身份核实 ─────────────────────────────────────┐
+│                                                               │
+│  Name:  [身份核实______________________]                      │
+│  Goal:  [通过核实工单信息确认用户身份___]                      │
+│                                                               │
+│  Required tools:  [verify_identity] [×]  [+ Add]            │
+│  Optional tools:  [query_account  ] [×]  [+ Add]            │
+│                                                               │
+│  ── Completion Criteria ──────────────────────────────────  │
+│  [tool_called ▾]  verify_identity           [×]             │
+│  [fact_extracted ▾]  identity_verified      [×]             │
+│  [+ Add criterion]                                           │
+│                                                               │
+│  ── On Failure (after [2___] retries) ──────────────────── │
+│  Action: [escalate_to_human ▾]                               │
+│  Queue:  [identity_review_queue_____________]                │
+│  Note:   [身份核实失败，需人工审核__________]                  │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+```
+
+`completionCriteria.type` 选项：`tool_called` / `fact_extracted` / `output_matches`  
+`onFailure.action` 选项：`retry` / `skip_step` / `escalate_to_human` / `abort_case`
 
 ---
 
@@ -615,7 +645,8 @@ Skills:
 
 Case Types:
   requireHumanReview (合并进 transition)
-  executionMode: 'step' (不引入，stage + sop 两档已足够)
+  sopMaxAutoTurns (引擎已移除，被 ExecutionStep.maxRetries 替代)
+  executionMode: 'sop' (不再作为 case 级执行模式，sop 降为 prompt appendix 字段)
 ```
 
 ### 简化的（SIMPLIFY——保留意图，改 UI）
@@ -665,8 +696,10 @@ Agent Config:
   temperature (Advanced 折叠，语义化 slider 0.1 精准←→1.0 创意)
   consultationPrompt, humanSkills
 Case Types: type, displayName, icon, description, defaultGoal, enabled,
-            executionMode, stages, requiredFacts, escalateOn
-Stage Config: description, systemPrompt, requiredSkills, availableSkills
+            executionMode ('stage'|'step'), stages, requiredFacts, escalateOn,
+            sop (prompt appendix，两种模式均可用)
+Stage Config: description, systemPrompt, requiredSkills, availableSkills,
+              steps[] (step 模式专属), sop (per-stage appendix)
 Routing: 全部 6 个字段
 Knowledge: name, description, groupIds, enabled, topK, caseTypeTag
 Integrations: enabled, licenseId, botAccessToken, showSkillStatus
@@ -676,13 +709,16 @@ Integrations: enabled, licenseId, botAccessToken, showSkillStatus
 
 ## 十、实施 Roadmap
 
+> 引擎已支持 `stage` + `step` 两种执行模式，Console UI 需跟上引擎能力。
+
 | 优先级 | 范围 | 工作量 |
 |--------|------|--------|
 | **P0** | Memory 区域简化（20+ 字段 → 三档 slider） | 小 |
 | **P0** | Model & Prompt 卡重构（合并 Prompt，model/temperature 移入 Advanced 折叠区，hardcode 其余参数） | 小 |
+| **P0** | Agent Config 发散图：从 6 卡改为 5 卡 @ 72°（更新前端 `SATELLITE_ANGLES`） | 小 |
+| **P1** | Case Type：`executionMode` 切换器 + Step 序列编辑器（引擎已落地，Console 缺 UI） | 中 |
 | **P1** | Policy → Guardrails Builder 改造 | 中 |
-| **P1** | Skills 移除工程字段 + 新增 uiHints/triggerConditions | 中 |
+| **P1** | Skills 移除工程字段 + 新增 uiHints/triggerConditions/allowedIntegrations | 中 |
 | **P2** | Case Types 简化（autoCloseConditions 结构化、evidence 简化） | 中 |
 | **P2** | Knowledge 移除工程字段 | 小 |
-| **P3** | Stage Config 新增 steps[] + sop 字段 | 大 |
 | **P3** | Integrations 新增 channelSkillBinding/rateLimit/webhookEvents | 中 |
