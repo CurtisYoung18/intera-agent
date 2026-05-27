@@ -904,6 +904,10 @@ export const en: Record<string, string> = {
   'skills.system': 'SYSTEM',
   'skills.criticalLocked': 'This field is locked for critical system skills',
   'skills.configureInKnowledge': 'Configure in Knowledge page',
+  'skills.subAgents': 'Sub-Agents',
+  'skills.subAgentCount': '{n} sub-agents across case types',
+  'skills.editInSubAgentRegistry': 'Edit in Sub-Agent Registry →',
+  'skills.subAgentBadge': 'SUB-AGENT',
 
   // ── Policies ─────────────────────────────────────────────────
   'policies.title': 'Policies',
@@ -1980,6 +1984,10 @@ export const zh: Record<string, string> = {
   'skills.system': '系统',
   'skills.criticalLocked': '关键系统技能，此字段不可修改',
   'skills.configureInKnowledge': '前往知识库页面配置',
+  'skills.subAgents': '子代理',
+  'skills.subAgentCount': '跨案例类型的 {n} 个子代理',
+  'skills.editInSubAgentRegistry': '在子代理注册表中编辑 →',
+  'skills.subAgentBadge': '子代理',
 
   'policies.title': '策略',
   'policies.subtitle': '已配置 {n} 条规则',

@@ -13,6 +13,7 @@ import {
   Clock,
   Zap,
   Cpu,
+  ChevronDown,
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
@@ -352,27 +353,202 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   )
 }
 
-function TraceList({ traces }: { traces: TraceItem[] }) {
-  const ACTION_COLORS: Record<string, string> = {
-    user_message: '#6366f1', case_created: '#2ea04a', skill_called: '#5b8af7',
-    skill_result: '#14b8a6', human_task_created: '#d4912e', final_resolution: '#2ea04a',
-    llm_request_start: '#8b6ff5', llm_response: '#8b6ff5', error: '#e64539',
-    escalated: '#e64539', loop_decision: '#a09888',
-    queue_message_enqueued: '#f0b050', queue_message_consumed: '#f0b050',
-    agent_tree_node: '#7c3aed',
+const ACTION_COLORS: Record<string, string> = {
+  user_message: '#6366f1', case_created: '#2ea04a', skill_called: '#5b8af7',
+  skill_result: '#14b8a6', human_task_created: '#d4912e', final_resolution: '#2ea04a',
+  llm_request_start: '#8b6ff5', llm_response: '#8b6ff5', error: '#e64539',
+  escalated: '#e64539', loop_decision: '#a09888',
+  queue_message_enqueued: '#f0b050', queue_message_consumed: '#f0b050',
+  agent_tree_node: '#7c3aed',
+}
+
+const FILTER_KEYS = ['All', 'LLM', 'Tools', 'Policy', 'Sub-Agents'] as const
+type FilterKey = (typeof FILTER_KEYS)[number]
+
+const STORAGE_KEY = 'trace-viewer-filters'
+
+function matchFilter(actionType: string, activeFilters: Set<string>): boolean {
+  if (activeFilters.size === 0 || activeFilters.has('All')) return true
+  if (activeFilters.has('LLM') && (actionType.startsWith('llm_') || actionType === 'stream_event')) return true
+  if (activeFilters.has('Tools') && (actionType.startsWith('skill_') || actionType.startsWith('tool_'))) return true
+  if (activeFilters.has('Policy') && (actionType === 'policy_hit' || actionType === 'loop_decision')) return true
+  if (activeFilters.has('Sub-Agents') && (actionType.includes('sub_agent') || actionType.includes('dispatch_subagent'))) return true
+  return false
+}
+
+function parseIteration(payload: string | null): number | null {
+  if (!payload) return null
+  try {
+    const p = JSON.parse(payload)
+    if (typeof p.iteration === 'number') return p.iteration as number
+    return null
+  } catch {
+    return null
   }
+}
+
+function TraceList({ traces }: { traces: TraceItem[] }) {
+  const [expandedIterations, setExpandedIterations] = useState<Set<string>>(new Set())
+  const [filters, setFilters] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) return new Set(JSON.parse(stored) as string[])
+    } catch { /* empty */ }
+    return new Set(['All'])
+  })
+
+  // Persist filter selection
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...filters]))
+  }, [filters])
+
+  const toggleFilter = (key: string) => {
+    setFilters((prev) => {
+      const next = new Set(prev)
+      if (key === 'All') {
+        if (prev.has('All')) return new Set()
+        return new Set(['All'])
+      }
+      next.delete('All')
+      if (prev.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  // Filter and group by iteration
+  const { groups, unassigned } = useMemo(() => {
+    const filtered = traces.filter((t) => matchFilter(t.actionType, filters))
+
+    const g = new Map<number, TraceItem[]>()
+    const u: TraceItem[] = []
+
+    for (const t of filtered) {
+      const iter = parseIteration(t.payload)
+      if (iter != null) {
+        if (!g.has(iter)) g.set(iter, [])
+        g.get(iter)!.push(t)
+      } else {
+        u.push(t)
+      }
+    }
+
+    return { groups: g, unassigned: u }
+  }, [traces, filters])
+
+  // Initialize expanded state: latest iteration expanded, others collapsed
+  const sortedIterations = useMemo(() => Array.from(groups.keys()).sort((a, b) => a - b), [groups])
+  useEffect(() => {
+    const init = new Set<string>()
+    init.add('Initial')
+    if (sortedIterations.length > 0) init.add(`Iteration ${sortedIterations[sortedIterations.length - 1]}`)
+    setExpandedIterations(init)
+  }, [sortedIterations])
+
+  const toggleExpanded = (key: string) => {
+    setExpandedIterations((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const totalFiltered = unassigned.length + sortedIterations.reduce((s, i) => s + (groups.get(i)?.length ?? 0), 0)
+
   return (
-    <div className="space-y-1">
-      {traces.slice().reverse().map((t) => (
-        <div key={t.id} className="flex items-start gap-2 py-1.5 text-[11px]">
-          <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
-            style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
-          <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
-          <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{t.actionType}</span>
-          <span className="text-[var(--mist)] truncate">{t.title}</span>
-          {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+    <div className="space-y-3">
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 flex-wrap pb-2 border-b border-black/[0.06]">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--smoke)] mr-1">Filter:</span>
+        {FILTER_KEYS.map((k) => {
+          const active = filters.has(k) || (k === 'All' && filters.size === 0)
+          return (
+            <button
+              key={k}
+              onClick={() => toggleFilter(k)}
+              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                active
+                  ? 'bg-indigo/[0.08] border-indigo/30 text-indigo font-medium'
+                  : 'border-black/[0.06] text-[var(--fog)]/60 hover:border-black/[0.12]'
+              }`}
+            >
+              {k}
+            </button>
+          )
+        })}
+        <span className="text-[10px] text-[var(--fog)]/40 ml-1">{totalFiltered} traces</span>
+      </div>
+
+      {/* Initial group (traces without iteration) */}
+      {unassigned.length > 0 && (
+        <div className="rounded-lg border border-black/[0.06] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => toggleExpanded('Initial')}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
+          >
+            <ChevronDown
+              className={`h-3 w-3 text-[var(--fog)]/60 transition-transform ${expandedIterations.has('Initial') ? '' : '-rotate-90'}`}
+            />
+            <span className="text-[11px] font-semibold text-[var(--fog)]">Initial</span>
+            <span className="text-[10px] text-[var(--fog)]/40">{unassigned.length} traces</span>
+          </button>
+          {expandedIterations.has('Initial') && (
+            <div className="border-t border-black/[0.04]">
+              {unassigned.slice().reverse().map((t) => (
+                <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
+                  <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                    style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
+                  <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
+                  <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{t.actionType}</span>
+                  <span className="text-[var(--mist)] truncate">{t.title}</span>
+                  {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      ))}
+      )}
+
+      {/* Iteration groups */}
+      {sortedIterations.map((iter) => {
+        const group = groups.get(iter)!
+        const key = `Iteration ${iter}`
+        return (
+          <div key={key} className="rounded-lg border border-indigo/[0.08] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleExpanded(key)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-indigo/[0.02] transition-colors"
+            >
+              <ChevronDown
+                className={`h-3 w-3 text-indigo/60 transition-transform ${expandedIterations.has(key) ? '' : '-rotate-90'}`}
+              />
+              <span className="text-[11px] font-semibold text-indigo/80">{key}</span>
+              <span className="text-[10px] text-[var(--fog)]/40">{group.length} traces</span>
+            </button>
+            {expandedIterations.has(key) && (
+              <div className="border-t border-indigo/[0.06]">
+                {group.slice().reverse().map((t) => (
+                  <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
+                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                      style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
+                    <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
+                    <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{t.actionType}</span>
+                    <span className="text-[var(--mist)] truncate">{t.title}</span>
+                    {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          )
+      })}
+
+      {totalFiltered === 0 && (
+        <p className="text-center text-[12px] text-[var(--fog)]/50 py-6">No traces match the selected filters.</p>
+      )}
     </div>
   )
 }
