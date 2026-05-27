@@ -31,11 +31,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['caseType'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Creating your case', icon: 'dots' },
     zodSchema: z.object({ caseType: z.string() }),
-    mockFixture: { caseId: 'case_mock_001', status: 'created' },
   },
   {
     name: 'propose_cases',
@@ -62,13 +61,12 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['cases'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Analyzing your issue', icon: 'dots' },
     zodSchema: z.object({
       cases: z.array(z.object({ caseType: z.string(), summary: z.string() })),
     }),
-    mockFixture: { status: 'proposed' },
   },
   {
     name: 'read_case_history',
@@ -86,36 +84,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['userId'],
     },
     isConcurrencySafe: true,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Looking up past cases', icon: 'scan' },
     zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
-    mockFixture: {
-      cases: [
-        {
-          id: 'C2026-0482',
-          type: 'deposit_issue',
-          status: 'resolved',
-          summary: 'User deposited 2000 CNY via WeChat Pay, funds credited after 1.5 hour batch settlement delay',
-          resolvedAt: '2026-05-15T14:30:00Z',
-        },
-        {
-          id: 'C2026-0501',
-          type: 'deposit_issue',
-          status: 'resolved',
-          summary: 'User deposited 500 CNY via Alipay, transaction confirmed but balance not updated; traced to cached balance display issue, resolved by manual refresh',
-          resolvedAt: '2026-05-10T09:15:00Z',
-        },
-        {
-          id: 'C2026-0550',
-          type: 'withdrawal_issue',
-          status: 'resolved',
-          summary: 'User withdrawal of 3000 CNY delayed due to bank maintenance window, credited within 4 hours',
-          resolvedAt: '2026-05-20T16:45:00Z',
-        },
-      ],
-      total: 3,
-    },
   },
   {
     name: 'query_order_status',
@@ -468,7 +440,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['queue', 'question'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     zodSchema: z.object({
       queue: z.string(),
@@ -484,8 +456,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       context: z.object({}).optional(),
     }),
     displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
-    // [MOCK]
-    mockFixture: { taskId: 'htask_mock_001', status: 'pending' },
   },
   {
     name: 'finalize_case',
@@ -508,15 +478,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['status', 'conclusion'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
     zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
-    // [MOCK]
-    mockFixture: {
-      status: 'resolved',
-      resolvedAt: new Date().toISOString(),
-    },
   },
   // kb_search_* tools are dynamically injected from KnowledgeSource records
   // in SkillRouter.create(). Each source becomes kb_search_<name> with its
@@ -571,12 +536,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['title', 'fields'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
     zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file","date"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
-    // [MOCK] — form is rendered by the Chat UI, not executed here
-    mockFixture: { status: 'form_displayed' },
   },
   {
     name: 'finalize_consultation',
@@ -590,11 +553,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['summary', 'resolution'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Closing consultation', icon: 'spin' },
     zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
-    mockFixture: { status: 'consultation_closed' },
   },
   {
     name: 'propose_interaction',
@@ -629,7 +591,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['title', 'options'],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Asking you a question', icon: 'pulse' },
     zodSchema: z.object({
@@ -644,7 +606,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       })),
       multiSelect: z.boolean().optional(),
     }),
-    mockFixture: { status: 'presented' },
   },
   // ── Todo-list skills (general-purpose, not SOP-specific) ──────────────────
   {
@@ -679,7 +640,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       required: ['todos'],
     },
     isConcurrencySafe: true,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Updating task list', icon: 'dots' },
     zodSchema: z.object({
@@ -692,7 +653,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
         }),
       ),
     }),
-    mockFixture: { ok: true, todos: [] },
   },
   {
     name: 'todo_read',
@@ -704,11 +664,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       properties: {},
     },
     isConcurrencySafe: true,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Reviewing task list', icon: 'scan' },
     zodSchema: z.object({}),
-    mockFixture: { todos: [] },
   },
   // ── Sub-agent terminal tool ─────────────────────────────────────────────
   {
@@ -802,7 +761,7 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
       required: [],
     },
     isConcurrencySafe: false,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Updating investigation plan', icon: 'dots' },
     zodSchema: z.object({
@@ -811,7 +770,6 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
       text: z.string().optional(),
       notes: z.string().optional(),
     }),
-    mockFixture: { ok: true, todos: [] },
   },
   {
     name: 'todo_read',
@@ -821,10 +779,9 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
       properties: {},
     },
     isConcurrencySafe: true,
-    mode: 'mock',
+    mode: 'engine_managed',
     enabled: true,
     displayVerb: { text: 'Reviewing investigation plan', icon: 'scan' },
-    mockFixture: { todos: [] },
   },
 ]
 

@@ -207,8 +207,12 @@ export class StreamingToolExecutor {
     try {
       let output: unknown
 
-      if (tool.definition.mode === 'mock') {
-        // [MOCK] Simulated execution with random latency
+      if (tool.definition.mode === 'engine_managed') {
+        // Engine-managed skills are handled by the agent loop directly
+        // (create_case, finalize_case, todo_write, etc.) —
+        // the executor should never receive them.
+        output = { ok: true, handled: 'engine_managed' }
+      } else if (tool.definition.mode === 'mock') {
         output = await this.executeMock(tool.definition)
       } else {
         output = await this.executeHttp(tool.definition, tool.input)

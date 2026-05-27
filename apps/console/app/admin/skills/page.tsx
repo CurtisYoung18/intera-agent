@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Bot } from 'lucide-react'
+import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Bot, Eye, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
@@ -19,15 +19,6 @@ interface SkillItem {
   isConcurrencySafe: boolean; enabled: boolean
   isSystem?: boolean
   isSpecial?: boolean
-}
-
-interface SubAgentInfo {
-  name: string
-  model: string
-  maxIterations?: number
-  parallel: boolean
-  skills: string[]
-  source: { caseType: string; stage: string }
 }
 
 function parseJsonField(raw: string | undefined): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -67,9 +58,6 @@ export default function SkillsPage() {
   const [isNew, setIsNew] = useState(false)
   const [originalName, setOriginalName] = useState('')
   const [testing, setTesting] = useState(false)
-  const [subAgents, setSubAgents] = useState<SubAgentInfo[]>([])
-  const [subAgentsLoading, setSubAgentsLoading] = useState(true)
-
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/skills')
     const data = await res.json()
@@ -78,36 +66,6 @@ export default function SkillsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  useEffect(() => {
-    fetch('/api/admin/case-types')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => {
-        const all: SubAgentInfo[] = []
-        const types = (d.types || []) as Array<{
-          type: string; displayName: string; executionMode?: string
-          stageConfigs?: string
-        }>
-        for (const ct of types) {
-          let stageConfigs: Record<string, { subAgents?: Array<{
-            name: string; model: string; maxIterations?: number; parallel: boolean; skills: string[]
-          }> }> = {}
-          try { stageConfigs = JSON.parse(ct.stageConfigs || '{}') } catch { /* skip */ }
-
-          for (const [stage, cfg] of Object.entries(stageConfigs)) {
-            for (const sa of (cfg.subAgents || [])) {
-              all.push({
-                ...sa,
-                source: { caseType: ct.type, stage },
-              })
-            }
-          }
-        }
-        setSubAgents(all)
-      })
-      .catch(() => setSubAgents([]))
-      .finally(() => setSubAgentsLoading(false))
-  }, [])
 
   const toggleEnabled = useCallback(async (skill: SkillItem) => {
     const updated = { ...skill, enabled: !skill.enabled }
@@ -237,12 +195,12 @@ export default function SkillsPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {systemSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : '#8b6ff5'} onClick={() => openEdit(s)}>
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : '#8b6ff5'} onClick={() => openEdit(s)}>
                     <div className="p-5">
                       {/* Top row: icon + info + toggle */}
                       <div className="flex items-start gap-3 mb-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : 'bg-lavender/[0.08]'}`}>
-                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : <Box className="w-5 h-5 text-lavender" />}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : 'bg-lavender/[0.08]'}`}>
+                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : <Box className="w-5 h-5 text-lavender" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -250,7 +208,7 @@ export default function SkillsPage() {
                             {s.isSystem && <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : 'bg-lavender/[0.08] text-lavender'}`}>{t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                           </div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
@@ -369,17 +327,17 @@ export default function SkillsPage() {
               <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-4">{t('skills.businessSkills')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {businessSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : '#8b6ff5'} onClick={() => openEdit(s)}>
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : '#8b6ff5'} onClick={() => openEdit(s)}>
                     <div className="p-5">
                       {/* Top row: icon + info + toggle */}
                       <div className="flex items-start gap-3 mb-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : 'bg-lavender/[0.08]'}`}>
-                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : <Box className="w-5 h-5 text-lavender" />}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : 'bg-lavender/[0.08]'}`}>
+                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : <Box className="w-5 h-5 text-lavender" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : 'bg-lavender/[0.08] text-lavender'}`}>{t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                           </div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
@@ -440,58 +398,6 @@ export default function SkillsPage() {
         </div>
       )}
 
-      {/* ── Sub-Agents ── */}
-      {!subAgentsLoading && subAgents.length > 0 && (
-        <section className="mt-10">
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('skills.subAgents')}</h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber/[0.1] text-amber border border-amber/20">{t('skills.subAgentBadge')}</span>
-            <span className="text-[11px] text-[var(--fog)]">{t('skills.subAgentCount', { n: subAgents.length })}</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {subAgents.map((sa) => (
-              <TiltCard key={`${sa.source.caseType}-${sa.source.stage}-${sa.name}`} accentColor="#d4912e" onClick={() => {}}>
-                <div className="p-5">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber/[0.08]">
-                      <Bot className="w-5 h-5 text-amber" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{sa.name}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-amber/[0.08] text-amber border border-amber/20 flex-shrink-0">{t('skills.subAgentBadge')}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-[var(--fog)]">{sa.model}</span>
-                        {sa.skills.length > 0 && (
-                          <span className="text-[10px] text-[var(--fog)]/50">{sa.skills.length} skill{sa.skills.length !== 1 ? 's' : ''}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {sa.skills.slice(0, 4).map((s) => (
-                      <span key={s} className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber/[0.06] text-amber/80 font-mono truncate border border-amber/15 max-w-[160px]" title={s}>{s}</span>
-                    ))}
-                    {sa.skills.length > 4 && (
-                      <span className="text-[10px] text-[var(--fog)]/50 px-1">+{sa.skills.length - 4} more</span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-[var(--smoke)]">
-                      {sa.source.caseType} / {sa.source.stage}
-                    </span>
-                    <Link href="/admin/sub-agents"
-                      className="inline-flex items-center gap-1 text-[11px] text-indigo hover:text-indigo/80 transition-colors">
-                      {t('skills.editInSubAgentRegistry')}
-                    </Link>
-                  </div>
-                </div>
-              </TiltCard>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Slide Panel Editor — same logic as before */}
       <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('skills.newSkill') : t('skills.editSkill')}>
@@ -517,14 +423,31 @@ export default function SkillsPage() {
                 }
                 setEditing({ ...editing, ...update })
               }} className="glass-input-console text-[13px]" disabled={!!editing.isSystem}>
-                <option value="mock">{t('common.mock')}</option><option value="http">{t('common.http')}</option>
+                <option value="mock">{t('common.mock')}</option><option value="http">{t('common.http')}</option><option value="engine_managed">Engine Managed</option>
               </select>
             </label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span>
               <input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" />
             </label>
 
-            {/* Mock fixture — primary when mode is mock */}
+            {/* Model Preview — LLM perspective of this tool */}
+            <details className="rounded-xl border border-indigo/15 bg-indigo/[0.02] px-4 py-3">
+              <summary className="text-[11px] font-semibold text-indigo cursor-pointer list-none flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5" /> Model Preview (LLM sees)
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-indigo/60 group-open:rotate-180 transition-transform" />
+              </summary>
+              <pre className="mt-3 text-[10px] font-mono text-[var(--mist)] p-3 rounded-lg bg-black/[0.04] border border-[var(--border-subtle)] overflow-auto max-h-[200px] whitespace-pre-wrap">
+{JSON.stringify({
+  name: editing.name || '(unnamed)',
+  description: editing.description || '(no description)',
+  input_schema: (() => { try { return JSON.parse(editing.inputSchema || '{}') } catch { return {} } })(),
+}, null, 2)}
+              </pre>
+            </details>
+
+            {/* Static fixture — primary when mode is mock */}
             {editing.mode === 'mock' ? (
               <div className="rounded-xl border border-lavender/25 bg-lavender/[0.05] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
