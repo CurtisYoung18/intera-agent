@@ -567,13 +567,13 @@ export default function SkillsPage() {
                     <span className={testResult.ok ? 'text-malachite' : 'text-vermillion'}>
                       {testResult.ok ? `HTTP ${testResult.status}` : `Error: ${String(testResult.body)}`}
                     </span>
-                    {testResult.ok && testResult.body && typeof testResult.body === 'object' && (
+                    {testResult.ok && !!testResult.body && typeof testResult.body === 'object' && (
                       <button onClick={inferOutputSchema} className="text-[10px] px-2 py-0.5 rounded bg-malachite/[0.1] border border-malachite/20 text-malachite hover:bg-malachite/[0.2] transition-colors">
                         Infer outputSchema
                       </button>
                     )}
                   </div>
-                  {testResult.ok && testResult.body && (
+                  {testResult.ok && !!testResult.body && (
                     <pre className="text-[10px] font-mono text-[var(--mist)] max-h-[120px] overflow-auto whitespace-pre-wrap">{JSON.stringify(testResult.body, null, 2)}</pre>
                   )}
                 </div>
