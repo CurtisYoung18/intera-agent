@@ -24,8 +24,8 @@ import {
 // Hosts (single source of truth; if Railway URLs change, update here)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CHAT_HOST = 'https://intera-chat.up.railway.app'
-const CONSOLE_HOST = 'https://intera-console.up.railway.app'
+const CHAT_HOST = process.env.NEXT_PUBLIC_CHAT_API_URL || 'https://intera-chat.up.railway.app'
+const CONSOLE_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://intera-console.up.railway.app'
 const CHAT_UI_URL = `${CHAT_HOST}/chat`
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,8 +274,8 @@ const SSE_EVENTS: Array<{ type: string; desc: string }> = [
   { type: 'error', desc: 'Fatal error (string payload).' },
 ]
 
-const CONCEPT_KEYS = ['case', 'stage', 'skill', 'policy', 'memory'] as const
-const ADMIN_KEYS = ['agent', 'skills', 'policies', 'caseTypes', 'routing', 'models'] as const
+const CONCEPT_KEYS = ['customer', 'channel', 'agent', 'caseType', 'case', 'capability', 'subAgent', 'guardrail'] as const
+const ADMIN_KEYS = ['agent', 'capabilities', 'guardrails', 'caseTypes', 'channels', 'subAgents', 'knowledge'] as const
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -772,28 +772,18 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
           {/* 3. Core abstractions (Intera's 8 first-class concepts)         */}
           {/* ═══════════════════════════════════════════════════════════════ */}
           <DocSection id="guide-concepts" eyebrow={t('guide.doc.concepts.eyebrow')} title={t('guide.doc.concepts.title')}>
-            <DocParagraph text="Intera has 8 first-class abstractions. Every Console field, API parameter, and DB table maps to exactly one of them." />
+            <DocParagraph text={t('guide.doc.concepts.lead')} />
             <div className="!mt-6 grid gap-4 md:grid-cols-2">
-              {[
-                { name: 'Customer', body: 'A deployment unit. One Intera instance serves one customer (multi-tenant by row scoping).' },
-                { name: 'Channel', body: 'Entry point: web-chat, livechat, slack, etc. Each has its own credentials, render hints, and human-ops strategy.' },
-                { name: 'Agent', body: 'The brain: system prompt, model, memory strategy, generation params. Channel-agnostic.' },
-                { name: 'Case Type', body: 'Business issue taxonomy (deposit_issue, withdrawal_issue, …). Has stages, required facts, escalation conditions.' },
-                { name: 'Case', body: 'A live instance of a Case Type for a specific user turn. Has state machine, evidence, memory, tools called.' },
-                { name: 'Capability (Skill / Tool)', body: '3 tiers: system (engine-managed, read-only), special (kb_hybrid_retrieve), business (HTTP or mock).' },
-                { name: 'Sub-agent', body: 'A specialist with its own brain + restricted toolset. Stage mode: pinned per (case-type, stage). CC mode: dispatched via dispatch_subagent tool.' },
-                { name: 'Guardrail (Policy)', body: 'Constraint on agent behavior. Hooks: preTool / postTool / preFinalize. Supports deny / require / LLM-evaluated.' },
-              ].map((c) => (
-                <div key={c.name} className="rounded-xl border border-black/[0.06] bg-gradient-to-br from-white/55 to-[var(--void)]/30 p-4 shadow-[var(--shadow-card)] backdrop-blur-md">
-                  <h3 className="text-[13px] font-semibold text-[var(--mist)]">{c.name}</h3>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--fog)]">{c.body}</p>
+              {CONCEPT_KEYS.map((key) => (
+                <div key={key} className="rounded-xl border border-black/[0.06] bg-gradient-to-br from-white/55 to-[var(--void)]/30 p-4 shadow-[var(--shadow-card)] backdrop-blur-md">
+                  <h3 className="text-[13px] font-semibold text-[var(--mist)]">{t(`guide.doc.concepts.${key}Title`)}</h3>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--fog)]">{t(`guide.doc.concepts.${key}Body`)}</p>
+                  <p className="mt-2 text-[10px] text-indigo/70">{t(`guide.doc.concepts.${key}Cta`)}</p>
                 </div>
               ))}
             </div>
             <DocCallout variant="note">
-              <span className="text-[12px]">
-                Knowledge and Human Ops are auxiliary — Knowledge is an Agent dependency (RAG sources); Human Ops is a per-Channel behavior, not a standalone abstraction.
-              </span>
+              <span className="text-[12px]">{t('guide.doc.concepts.callout')}</span>
             </DocCallout>
           </DocSection>
 

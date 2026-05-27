@@ -115,7 +115,7 @@ export default function WebChatDetailPage() {
               {l('openHumanTasks')} <ExternalLink className="w-3 h-3" />
             </a>
           </div>
-          <iframe src="/ops/human-tasks?embed=1" className="w-full border-0" style={{ height: 520 }} title="Human Tasks" />
+          <iframe src="/embed/human-tasks" className="w-full border-0" style={{ height: 520 }} title="Human Tasks" />
         </div>
       )}
     </div>
