@@ -8,7 +8,7 @@ const mockDelete = vi.fn()
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
-    livechatPendingEvent: {
+    liveChatPendingEvent: {
       create: (...args: unknown[]) => mockCreate(...args),
       findMany: (...args: unknown[]) => mockFindMany(...args),
       update: (...args: unknown[]) => mockUpdate(...args),

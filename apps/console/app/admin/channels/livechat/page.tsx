@@ -172,7 +172,7 @@ export default function LiveChatDetailPage() {
             <p className="text-[12px] text-[var(--fog)]">
               Configure how each skill&apos;s result appears in LiveChat. For each business skill, open the Tools page editor and use the &quot;LiveChat Rendering&quot; tab to set card/carousel/quick_replies/plain rendering with JSONPath field mappings.
             </p>
-            <Link href="/admin/skills"
+            <Link href="/admin/tools"
               className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80 mt-1">
               <ExternalLink className="w-3.5 h-3.5" /> Open Tools page
             </Link>

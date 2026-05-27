@@ -135,7 +135,7 @@ export default function AgentPolicyHooksPicker({ value, onChange }: Props) {
       )}
       <div className="flex flex-wrap gap-2 shrink-0">
         <Link
-          href="/admin/policies"
+          href="/admin/guardrails"
           className="inline-flex items-center gap-1 text-[11px] text-indigo hover:underline"
         >
           {t('agent.policyOpenLibrary')}

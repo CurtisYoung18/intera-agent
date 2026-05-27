@@ -130,7 +130,7 @@ export default function GuardrailSummaryList({ policyHooks }: Props) {
           No guardrails configured.
         </p>
         <Link
-          href="/admin/policies"
+          href="/admin/guardrails"
           className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:underline"
         >
           {t('agent.guardrails.editLink')}
@@ -167,7 +167,7 @@ export default function GuardrailSummaryList({ policyHooks }: Props) {
       </div>
 
       <Link
-        href="/admin/policies"
+        href="/admin/guardrails"
         className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:underline"
       >
         {t('agent.guardrails.editLink')}
