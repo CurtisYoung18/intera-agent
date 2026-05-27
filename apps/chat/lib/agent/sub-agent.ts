@@ -9,6 +9,7 @@ import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, Too
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { ChecklistPolicy } from './policies/checklist-policy'
 import { AgentLoop } from './loop'
+import { withRetry, CannotRetryError } from './api/with-retry'
 
 const DEFAULT_MAX_ITERATIONS = 5
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -99,6 +100,8 @@ export class SubAgent {
 
     const loopResult = await AgentLoop.runReActLoop(
       this.client,
+      this.config.model,
+      this.config.fallbackModel,
       this.config.systemPrompt,
       allSkills,
       ctx,
@@ -175,20 +178,32 @@ export class SubAgent {
 
         let msg: Anthropic.Messages.Message
         try {
-          msg = await this.client.messages.create({
-            model: this.config.model,
-            max_tokens: 2048,
-            temperature: 0.3,
-            system: systemPrompt,
-            tools: tools.length > 0 ? tools : undefined,
-            messages: messages as any,
-          }, {
-            signal: abortController.signal,
-          })
+          msg = await withRetry(
+            (retryClient) => retryClient.messages.create({
+              model: this.config.model,
+              max_tokens: 2048,
+              temperature: 0.3,
+              system: systemPrompt,
+              tools: tools.length > 0 ? tools : undefined,
+              messages: messages as any,
+            }, {
+              signal: abortController.signal,
+            }),
+            {
+              querySource: 'sub_agent_loop',
+              model: this.config.model,
+              fallbackModel: this.config.fallbackModel,
+              signal: abortController.signal,
+            },
+            () => this.client,
+          )
         } catch (err) {
           clearTimeout(timeoutId)
-          if (abortController.signal.aborted) {
+          if (err instanceof CannotRetryError && err.errorClass === 'aborted') {
             throw new Error(`Sub-agent ${this.config.name} timed out`)
+          }
+          if (err instanceof CannotRetryError) {
+            throw new Error(`Sub-agent ${this.config.name} LLM error: ${err.errorClass}`)
           }
           throw err
         }

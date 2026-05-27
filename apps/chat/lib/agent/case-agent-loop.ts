@@ -413,6 +413,44 @@ export class CaseAgentLoop {
     }
   }
 
+  /**
+   * Dispatch a single sub-agent by name (used by dispatch_subagent tool in CC mode).
+   * Searches all stages for the sub-agent config matching agentName.
+   */
+  async dispatchSingle(
+    agentName: string,
+    taskDescription: string,
+    taskPrompt: string,
+    sendEvent: (event: SSEEvent) => void,
+  ): Promise<void> {
+    if (!this.orchestrator?.isEnabled()) {
+      throw new Error('Orchestrator is not enabled for this case type')
+    }
+
+    let config: import('@intera/shared/types').SubAgentConfig | undefined
+    for (const stageName of this.caseSchema.stages ?? []) {
+      const stageCfg = this.stageExecutor.getStageConfig(stageName)
+      const cfg = stageCfg?.subAgents?.find((c) => c.name === agentName)
+      if (cfg) { config = cfg; break }
+    }
+    if (!config) {
+      throw new Error(`Unknown sub-agent: ${agentName}`)
+    }
+
+    const task: import('@intera/shared/types').SubAgentTask = {
+      id: `dispatch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      agentConfig: config,
+      taskPrompt,
+      context: {
+        caseId: this.services.caseId,
+        caseMemory: this.services.caseMemory.getSummary(),
+        stageGoal: this._currentStage,
+      },
+    }
+
+    await this.orchestrator.dispatch([task], sendEvent, this._currentStage)
+  }
+
   // ── Case terminal tool dispatch ───────────────────────────────────────────
 
   /**

@@ -782,6 +782,32 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     }),
     mockFixture: { status: 'finalized' },
   },
+  {
+    name: 'dispatch_subagent',
+    description:
+      'Dispatch a specialist sub-agent to investigate a specific aspect of the case. ' +
+      'Available sub-agents are defined in the case type stage configuration. ' +
+      'Use this to delegate research tasks to specialized agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentName: { type: 'string', description: 'Name of the sub-agent to dispatch' },
+        taskDescription: { type: 'string', description: 'Short human-readable task summary' },
+        taskPrompt: { type: 'string', description: 'Detailed investigation instructions for the sub-agent' },
+      },
+      required: ['agentName', 'taskDescription', 'taskPrompt'],
+    },
+    isConcurrencySafe: false,
+    mode: 'mock',
+    enabled: true,
+    displayVerb: { text: 'Dispatching specialist agent', icon: 'pulse' },
+    zodSchema: z.object({
+      agentName: z.string(),
+      taskDescription: z.string(),
+      taskPrompt: z.string(),
+    }),
+    mockFixture: { status: 'dispatched', message: 'Sub-agent task dispatched' },
+  },
 ]
 
 /**
