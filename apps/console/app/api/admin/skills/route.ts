@@ -5,7 +5,7 @@ import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 
 import { getActiveCustomerId } from '@/lib/auth'
-import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 export async function GET() {
   try {
@@ -57,6 +57,7 @@ export async function GET() {
     const enriched = skills.map((s) => ({
       ...s,
       isSystem: SYSTEM_SKILL_NAMES.has(s.name),
+      isChannel: CHANNEL_SKILL_NAMES.has(s.name),
       isSpecial: SPECIAL_SKILL_NAMES.has(s.name),
     }))
 

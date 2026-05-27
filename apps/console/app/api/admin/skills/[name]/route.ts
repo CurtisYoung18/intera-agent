@@ -4,10 +4,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
 import { getActiveCustomerId } from '@/lib/auth'
-import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 function isProtected(name: string): boolean {
-  return SYSTEM_SKILL_NAMES.has(name) || SPECIAL_SKILL_NAMES.has(name)
+  return SYSTEM_SKILL_NAMES.has(name) || SPECIAL_SKILL_NAMES.has(name) || CHANNEL_SKILL_NAMES.has(name)
 }
 
 function isMutationAllowed(name: string, body: Record<string, unknown>): boolean {

@@ -18,6 +18,7 @@ interface SkillItem {
   mockFixture?: string; guardPhase?: string
   isConcurrencySafe: boolean; enabled: boolean
   isSystem?: boolean
+  isChannel?: boolean
   isSpecial?: boolean
 }
 
@@ -154,8 +155,9 @@ export default function SkillsPage() {
   )
 
   const systemSkills = filtered.filter(s => s.isSystem)
+  const channelSkills = filtered.filter(s => s.isChannel)
   const specialSkills = filtered.filter(s => s.isSpecial)
-  const businessSkills = filtered.filter(s => !s.isSystem && !s.isSpecial)
+  const businessSkills = filtered.filter(s => !s.isSystem && !s.isChannel && !s.isSpecial)
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
@@ -287,6 +289,40 @@ export default function SkillsPage() {
                           </button>
                         </div>
                       </div>
+                    </div>
+                  </TiltCard>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Channel Tools ── */}
+          {channelSkills.length > 0 && (
+            <section className="mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-[15px] font-semibold text-[var(--mist)]">Channel Tools</h2>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-purple/[0.08] text-purple border border-purple/20">Channel</span>
+              </div>
+              <p className="text-[12px] text-[var(--fog)] mb-4">Behavior varies per channel — configured in each Channel&apos;s detail page.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {channelSkills.map(s => (
+                  <TiltCard key={s.id || s.name} accentColor="#7c3aed" onClick={() => {}}>
+                    <div className="p-5">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple/[0.08]">
+                          <Plug className="w-5 h-5 text-purple" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple/[0.08] text-purple">Channel</span>
+                          </div>
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0">
+                          {s.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
+                        </button>
+                      </div>
+                      {s.description ? <p className="text-[12px] text-[var(--fog)] line-clamp-3">{s.description}</p> : null}
                     </div>
                   </TiltCard>
                 ))}

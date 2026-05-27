@@ -87,6 +87,7 @@ export default function AgentConfigPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+  const [kbSourceCount, setKbSourceCount] = useState(0)
   const [mainModels, setMainModels] = useState<string[]>([])
   const [activeSection, setActiveSection] = useState<Section | null>(null)
   const [memoryTier, setMemoryTier] = useState<MemoryTier>('balanced')
@@ -121,6 +122,9 @@ export default function AgentConfigPage() {
         if (!r.ok) throw new Error(`Models: ${r.status}`)
         return r.json()
       }),
+      fetch('/api/admin/knowledge/sources').then(r => r.ok ? r.json() : null).then(d => {
+        if (d?.sources) setKbSourceCount(d.sources.filter((s: {enabled: boolean}) => s.enabled).length)
+      }).catch(() => {}),
     ])
       .then(([agentData, modelsData]) => {
         const raw = agentData.config || {}
@@ -851,13 +855,13 @@ export default function AgentConfigPage() {
                       <Search className="w-4 h-4 text-teal-600" />
                     </div>
                     <div>
-                      <p className="text-[13px] font-semibold text-[var(--mist)]">GPTBots</p>
-                      <p className="text-[11px] text-[var(--fog)]">Vector search via GPTBots API</p>
+                      <p className="text-[13px] font-semibold text-[var(--mist)]">GPTBots · {kbSourceCount} source{kbSourceCount !== 1 ? 's' : ''} active</p>
+                      <p className="text-[11px] text-[var(--fog)]">{kbSourceCount > 0 ? `${kbSourceCount} kb_search_* tool${kbSourceCount !== 1 ? 's' : ''} generated` : 'No knowledge sources configured'}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 text-[11px] text-[var(--fog)]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${kbSourceCount > 0 ? 'bg-malachite' : 'bg-[var(--fog)]/30'}`} />
                     Each enabled{' '}
                     <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline font-medium">
                       Knowledge Source
