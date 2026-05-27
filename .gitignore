@@ -16,3 +16,4 @@ debug-logs
 *.tsbuildinfo
 .superpowers/
 .claude/worktrees/
+pnpm-lock.yaml
