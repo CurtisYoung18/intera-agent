@@ -1,5 +1,5 @@
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { ExecutionPolicy, ContinueDecision, TerminalToolResult } from './types'
+import type { ExecutionStrategy, ContinueDecision, TerminalToolResult } from './types'
 import type { Message, SubAgentResult, LoopResult, ToolResult } from '@intera/shared/types'
 
 // ── TaskChecklist ────────────────────────────────────────────────────────
@@ -11,10 +11,10 @@ interface TaskChecklist {
   rules: string[]
 }
 
-// ── ChecklistPolicy ──────────────────────────────────────────────────────
+// ── ChecklistStrategy ──────────────────────────────────────────────────────
 
 /**
- * ExecutionPolicy for Sub-Agent execution.
+ * ExecutionStrategy for Sub-Agent execution.
  *
  * - Injects a structured task checklist into the system prompt.
  * - Restricts the sub-agent to only the tools whitelisted in `allowedTools`.
@@ -23,7 +23,7 @@ interface TaskChecklist {
  * - Stops the loop if the sub-agent produces no tool calls beyond the
  *   first iteration (stuck guard).
  */
-export class ChecklistPolicy implements ExecutionPolicy {
+export class ChecklistStrategy implements ExecutionStrategy {
   private allowedTools: Set<string>
   private taskChecklist?: TaskChecklist
   private pendingSubAgentResult: SubAgentResult | null = null

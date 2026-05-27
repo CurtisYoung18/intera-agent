@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout } from 'lucide-react'
+import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout, BarChart3 } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
@@ -144,6 +144,8 @@ export default function PoliciesPage() {
   const [isNew, setIsNew] = useState(false)
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [hitStats, setHitStats] = useState<Map<string, number>>(new Map())
+  const [usedByAgent, setUsedByAgent] = useState<Set<string>>(new Set())
   const defaultFields: RuleFields = { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
   const [ruleFields, setRuleFields] = useState<RuleFields>(defaultFields)
   const [formMode, setFormMode] = useState<PolicyFormMode>('simple')
@@ -158,6 +160,36 @@ export default function PoliciesPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Load which policies are currently assigned to the agent
+  useEffect(() => {
+    fetch('/api/admin/agent')
+      .then((r) => r.json())
+      .then((d) => {
+        try {
+          const hooks = typeof d.config?.policyHooks === 'string' ? JSON.parse(d.config.policyHooks) : d.config?.policyHooks
+          const names = new Set<string>()
+          for (const key of ['preTool', 'postTool', 'preFinalize']) {
+            if (Array.isArray(hooks?.[key])) {
+              for (const n of hooks[key]) if (typeof n === 'string') names.add(n)
+            }
+          }
+          setUsedByAgent(names)
+        } catch { /* ignore */ }
+      })
+      .catch(() => {})
+  }, [items])
+
+  useEffect(() => {
+    fetch('/api/admin/policies/stats')
+      .then((r) => r.json())
+      .then((d) => {
+        const m = new Map<string, number>()
+        for (const s of d.stats || []) m.set(s.name, s.hits)
+        setHitStats(m)
+      })
+      .catch(() => {})
+  }, [items])
 
   useEffect(() => {
     fetch('/api/admin/skills')
@@ -274,7 +306,12 @@ export default function PoliciesPage() {
                           <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-1">{p.description || t('common.noDescription')}</p>
                           <p className="text-[10px] text-[var(--smoke)] font-mono line-clamp-2 mb-3">{summarizeRule(p.rule)}</p>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
+                              {usedByAgent.has(p.name) && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-malachite/[0.08] text-malachite font-medium">Assigned to agent</span>
+                              )}
+                            </div>
                             <div className="flex gap-1">
                               <button type="button" onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5" title={t('common.edit')}><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
                               <button type="button" onClick={e => { e.stopPropagation(); handleDelete(p.name) }} className="p-1.5 rounded-lg hover:bg-vermillion/5" title={t('common.delete')}><Trash2 className="w-3.5 h-3.5 text-vermillion/60" /></button>
@@ -288,6 +325,36 @@ export default function PoliciesPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Hit Stats ── */}
+      {items.length > 0 && (
+        <div className="mt-8 rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl px-5 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="w-4 h-4 text-[var(--fog)]" />
+            <h2 className="text-[13px] font-semibold text-[var(--mist)]">Hit Statistics</h2>
+            <span className="text-[10px] text-[var(--fog)]/60 ml-1">(last 7 days)</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {items.filter(p => p.enabled).slice(0, 6).map(p => (
+              <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-black/[0.04] bg-white">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-[var(--mist)] truncate">{p.name}</p>
+                  <p className="text-[10px] text-[var(--fog)]">
+                    {p.hook === 'preTool' ? 'Before tool' : p.hook === 'postTool' ? 'After tool' : 'Before resolve'}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0 ml-3">
+                  <p className="text-[16px] font-bold text-[var(--mist)]">{hitStats.get(p.name) ?? '—'}</p>
+                  <p className="text-[9px] text-[var(--fog)]/50">hits</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          {hitStats.size === 0 && (
+            <p className="text-[10px] text-[var(--fog)]/50 mt-2">No policy hits recorded in the last 7 days.</p>
+          )}
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { ExecutionPolicy, ContinueDecision, TerminalToolResult } from './types'
+import type { ExecutionStrategy, ContinueDecision, TerminalToolResult } from './types'
 import type { AssistantMessage, LoopResult, Message } from '@intera/shared/types'
 
 // ── Core Allowlist ─────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ function isCoreAllowed(name: string): boolean {
   return false
 }
 
-// ── DiscoveryPolicy ────────────────────────────────────────────────────
+// ── DiscoveryStrategy ────────────────────────────────────────────────────
 
 /**
  * Execution policy for session mode (no active case).
@@ -25,7 +25,7 @@ function isCoreAllowed(name: string): boolean {
  * Used for casual chat / QA — no case context, no stage awareness.
  * Allows only lookup tools and case-creation tools.
  */
-export class DiscoveryPolicy implements ExecutionPolicy {
+export class DiscoveryStrategy implements ExecutionStrategy {
   // ── Prompt ───────────────────────────────────────────────────────────
 
   buildPrompt(basePrompt: string): string {

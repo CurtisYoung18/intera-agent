@@ -1,5 +1,5 @@
-// Intera Harness — StagePolicy
-// ExecutionPolicy for executionMode='stage'.
+// Intera Harness — StageStrategy
+// ExecutionStrategy for executionMode='stage'.
 // LLM-driven execution with stage transitions, tool allowlisting,
 // and nudge-based progressive narrowing of available tools.
 //
@@ -19,7 +19,7 @@ const TERMINAL_TOOLS = new Set([
   'finalize_consultation',
 ])
 
-export interface StagePolicyOptions {
+export interface StageStrategyOptions {
   /** Stage configuration for the current stage. */
   stageConfig?: StageConfig
   /** StageExecutor instance for transition evaluation and nudge generation. */
@@ -28,17 +28,17 @@ export interface StagePolicyOptions {
   nudgeCount?: number
 }
 
-// NOTE: StagePolicy conforms to the ExecutionPolicy interface shape but does
-// not formally `implements ExecutionPolicy` because evaluateContinuation must
+// NOTE: StageStrategy conforms to the ExecutionStrategy interface shape but does
+// not formally `implements ExecutionStrategy` because evaluateContinuation must
 // be async (StageExecutor.evaluateTransition() may call an LLM), while the
-// current ExecutionPolicy interface declares a synchronous return type.
+// current ExecutionStrategy interface declares a synchronous return type.
 // The interface in types.ts should be updated to Promise<ContinueDecision>.
-export class StagePolicy {
+export class StageStrategy {
   private stageConfig?: StageConfig
   private stageExecutor?: StageExecutor
   private nudgeCount: number
 
-  constructor(options: StagePolicyOptions = {}) {
+  constructor(options: StageStrategyOptions = {}) {
     this.stageConfig = options.stageConfig
     this.stageExecutor = options.stageExecutor
     this.nudgeCount = options.nudgeCount ?? 0

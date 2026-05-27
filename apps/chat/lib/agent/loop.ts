@@ -24,7 +24,7 @@ import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
-import type { ExecutionPolicy } from './policies/types'
+import type { ExecutionStrategy } from './strategies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
@@ -1836,7 +1836,7 @@ export class AgentLoop {
    * Run a policy-driven ReAct loop.
    *
    * Delegates all behavior decisions (prompt assembly, tool filtering,
-   * continuation, terminal tools) to the `ExecutionPolicy`, making the core
+   * continuation, terminal tools) to the `ExecutionStrategy`, making the core
    * ReAct iteration reusable across main-agent, sub-agent, stage, and step
    * execution modes.
    *
@@ -1849,7 +1849,7 @@ export class AgentLoop {
     systemPrompt: string,
     skillDefinitions: SkillDefinition[],
     ctx: AgentContext,
-    policy: ExecutionPolicy,
+    policy: ExecutionStrategy,
     sendEvent: (event: SSEEvent) => void,
     taskPrompt: string,
     abortController?: AbortController,

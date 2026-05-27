@@ -7,14 +7,14 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, AgentContext, SSEEvent } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
-import { ChecklistPolicy } from './policies/checklist-policy'
+import { ChecklistStrategy } from './strategies/checklist-strategy'
 import { AgentLoop } from './loop'
 import { withRetry, CannotRetryError } from './api/with-retry'
 
 const DEFAULT_MAX_ITERATIONS = 5
 const DEFAULT_TIMEOUT_MS = 30_000
 
-/** Terminal tool for sub-agents — intercepted by ChecklistPolicy, never executed. */
+/** Terminal tool for sub-agents — intercepted by ChecklistStrategy, never executed. */
 const FINALIZE_SUB_AGENT_SKILL: SkillDefinition = {
   name: 'finalize_sub_agent',
   description:
@@ -69,7 +69,7 @@ export class SubAgent {
   /**
    * Run the sub-agent investigation using the unified AgentLoop.runReActLoop().
    *
-   * Creates a ChecklistPolicy from `ctx.allowedTools` and `ctx.taskChecklist`,
+   * Creates a ChecklistStrategy from `ctx.allowedTools` and `ctx.taskChecklist`,
    * then delegates all ReAct iteration to the shared loop engine. The policy
    * intercepts `finalize_sub_agent` to produce a SubAgentResult.
    */
@@ -79,11 +79,11 @@ export class SubAgent {
     // ── Build skill definitions including the terminal tool ────────
     const allSkills = [...this.skillDefinitions, FINALIZE_SUB_AGENT_SKILL]
 
-    // ── Build ChecklistPolicy ──────────────────────────────────────
+    // ── Build ChecklistStrategy ──────────────────────────────────────
     const allowedTools = new Set(ctx.allowedTools)
     allowedTools.add('finalize_sub_agent')
 
-    const policy = new ChecklistPolicy({
+    const policy = new ChecklistStrategy({
       allowedTools,
       taskChecklist: ctx.taskChecklist
         ? {

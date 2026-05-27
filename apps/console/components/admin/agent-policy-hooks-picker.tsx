@@ -196,9 +196,14 @@ export default function AgentPolicyHooksPicker({ value, onChange }: Props) {
                       >
                         <div className="px-2.5 py-1.5 min-w-0 max-w-[280px]">
                           <div className="flex items-center gap-1.5">
-                            <div className="text-[11px] font-mono text-[var(--mist)] truncate" title={name}>
+                            <a
+                              href="/admin/guardrails"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[11px] font-mono text-indigo hover:underline truncate cursor-pointer"
+                              title={`Edit ${name}`}
+                            >
                               {name}
-                            </div>
+                            </a>
                             {hookMismatch && (
                               <span
                                 className="shrink-0 text-[12px] leading-none cursor-help"

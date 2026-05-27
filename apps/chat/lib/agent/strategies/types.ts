@@ -1,9 +1,9 @@
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { Message, LoopResult, SubAgentResult, ToolResult } from '@intera/shared/types'
 
-// ── ExecutionPolicy ─────────────────────────────────────────────
+// ── ExecutionStrategy ───────────────────────────────────────────
 
-export interface ExecutionPolicy {
+export interface ExecutionStrategy {
   /** 组装系统提示词 */
   buildPrompt(basePrompt: string): string
 
