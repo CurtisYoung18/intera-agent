@@ -13,6 +13,7 @@ import type {
   AgentConfigData,
   CaseMemoryData,
 } from '@intera/shared/types'
+import { withRetry, CannotRetryError } from './api/with-retry'
 import { DEFAULT_STAGE_CONFIGS } from '@intera/shared/defaults'
 import type { CaseMemoryManager } from './memory'
 
@@ -400,21 +401,32 @@ export class StageExecutor {
       },
     }
 
-    const client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
-
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 256,
-      temperature: 0.1,
-      system: 'You are a case stage transition evaluator. Call the stage_transition_decision tool with your decision.',
-      tools: [transitionTool],
-      messages: [
-        { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
-      ],
-    })
+    let msg: Anthropic.Messages.Message
+    try {
+      msg = await withRetry(
+        (retryClient) => retryClient.messages.create({
+          model,
+          max_tokens: 256,
+          temperature: 0.1,
+          system: 'You are a case stage transition evaluator. Call the stage_transition_decision tool with your decision.',
+          tools: [transitionTool],
+          messages: [
+            { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
+          ],
+        }),
+        { querySource: 'policy_eval', model },
+        () => new Anthropic({
+          apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
+          baseURL: process.env.ANTHROPIC_BASE_URL,
+        }),
+      )
+    } catch (err) {
+      if (err instanceof CannotRetryError) {
+        this.consecutiveEvalParseFailures++
+        return { shouldTransition: false, reason: `evaluation error: ${err.errorClass}` }
+      }
+      throw err
+    }
 
     // Try tool_use blocks FIRST — structured output is preferred.
     for (const block of msg.content) {

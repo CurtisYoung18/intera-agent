@@ -12,6 +12,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Message, MemoryStrategy } from '@intera/shared/types'
+import { withRetry, CannotRetryError } from './api/with-retry'
 
 // 9-section prompt adapted from Claude Code's summarization prompt,
 // tailored for customer service rather than code.
@@ -141,14 +142,18 @@ export async function compactConversation(
   try {
     const client = new Anthropic({ apiKey, baseURL })
 
-    const response = await client.messages.create({
-      model,
-      max_tokens: Math.min(strategy.l2SummaryMaxTokens, strategy.compactMaxTokensCap),
-      system: systemPrompt,
-      messages: apiMessages,
-      temperature: strategy.compactTemperature,
-      thinking: { type: 'disabled' as const },
-    })
+    const response = await withRetry(
+      (retryClient, ctx) => retryClient.messages.create({
+        model: ctx.model,
+        max_tokens: Math.min(strategy.l2SummaryMaxTokens, strategy.compactMaxTokensCap),
+        system: systemPrompt,
+        messages: apiMessages,
+        temperature: strategy.compactTemperature,
+        thinking: { type: 'disabled' as const },
+      }),
+      { querySource: 'compact', model },
+      () => new Anthropic({ apiKey, baseURL }),
+    )
 
     const rawText = response.content
       .filter((block) => block.type === 'text')

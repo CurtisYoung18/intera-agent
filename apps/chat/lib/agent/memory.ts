@@ -7,6 +7,7 @@
 import type { KeyEvent, CaseMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import Anthropic from '@anthropic-ai/sdk'
+import { withRetry } from './api/with-retry'
 
 /** Persisted in skillResults — avoids duplicate background sub-agent dispatch across HTTP turns. */
 export const SUB_AGENT_DISPATCH_MARKER_KEY = '__intera_sub_agent_dispatch'
@@ -184,14 +185,18 @@ export class CaseMemoryManager {
 
     try {
       const client = this.getExtractionClient()
-      const msg = await client.messages.create({
-        model: process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed',
-        max_tokens: 256,
-        temperature: 0,
-        system: systemPrompt,
-        tools: [extractTool as any],
-        messages: [{ role: 'user', content: userPrompt }],
-      })
+      const msg = await withRetry(
+        (retryClient) => retryClient.messages.create({
+          model: process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed',
+          max_tokens: 256,
+          temperature: 0,
+          system: systemPrompt,
+          tools: [extractTool as any],
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+        { querySource: 'compact', model: process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed' },
+        () => this.getExtractionClient(),
+      )
 
       // Read tool_use block first (native path, guaranteed valid JSON)
       let parsed: Record<string, unknown> | null = null

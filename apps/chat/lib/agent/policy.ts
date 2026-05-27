@@ -14,6 +14,7 @@ import type {
   PolicyEvaluationResult,
   StageGuardrail,
 } from '@intera/shared/types'
+import { withRetry, CannotRetryError } from './api/with-retry'
 
 export interface PolicyContext {
   skillName?: string
@@ -355,14 +356,31 @@ export class PolicyEngine {
       },
     }
 
-    const msg = await this.llmClient.messages.create({
-      model: this.policyModel,
-      max_tokens: 512,
-      temperature: 0,
-      system: systemPrompt,
-      tools: [policyTool as any],
-      messages: [{ role: 'user', content: userPrompt }],
-    })
+    let msg: Anthropic.Messages.Message
+    try {
+      msg = await withRetry(
+        (retryClient) => retryClient.messages.create({
+          model: this.policyModel,
+          max_tokens: 512,
+          temperature: 0,
+          system: systemPrompt,
+          tools: [policyTool as any],
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+        { querySource: 'policy_eval', model: this.policyModel },
+        () => this.llmClient,
+      )
+    } catch (err) {
+      // Policy evaluation is advisory — on failure, pass all checks
+      if (err instanceof CannotRetryError) {
+        return policies.map((p) => ({
+          policyName: p.name,
+          result: 'pass' as PolicyResult,
+          reason: `Policy evaluation skipped (${err.errorClass})`,
+        }))
+      }
+      throw err
+    }
 
     const results: PolicyCheckResult[] = []
     const seen = new Set<string>()

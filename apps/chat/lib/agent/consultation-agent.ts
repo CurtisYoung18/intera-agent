@@ -12,6 +12,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { SSEEvent } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
+import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
 import { SkillRouter } from './skills'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { StreamingTextSanitizer } from './loop'
@@ -87,13 +88,29 @@ export class ConsultationAgent {
 
     for (let iter = 0; iter < maxIter; iter++) {
       // ── Stream one LLM turn ──────────────────────────────────────────────
-      const stream = this.anthropicClient.messages.stream({
-        model: this.config.model,
-        max_tokens: 2048,
-        system: this.config.systemPrompt,
-        messages,
-        tools,
-      })
+      let stream: ReturnType<typeof this.anthropicClient.messages.stream>
+      try {
+        stream = await withRetry(
+          async (_client, ctx) => this.anthropicClient.messages.stream({
+            model: ctx.model,
+            max_tokens: 2048,
+            system: this.config.systemPrompt,
+            messages,
+            tools,
+          }),
+          {
+            querySource: 'consultation_loop',
+            model: this.config.model,
+          },
+          () => this.anthropicClient,
+        )
+      } catch (err) {
+        if (err instanceof CannotRetryError) {
+          console.error('[ConsultationAgent] Stream creation failed:', err.errorClass)
+          return { transition: 'consultation_complete' }
+        }
+        throw err
+      }
 
       type StreamBlock = {
         index: number
@@ -108,13 +125,14 @@ export class ConsultationAgent {
       let fullText = ''
       const toolExecutor = new StreamingToolExecutor(
         this.skillRouter.getToolDefinitions(),
-        (toolUse, status) => {
+        (toolUse, status, renderHints) => {
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'skill_result',
             data: {
               name: toolUse.name,
               status,
               result: status !== 'executing' ? toolUse.result : undefined,
+              renderHints,
             },
             timestamp: new Date().toISOString(),
           })
