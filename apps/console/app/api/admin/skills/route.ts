@@ -15,25 +15,34 @@ export async function GET() {
       orderBy: { name: 'asc' },
     })
 
-    // Auto-seed only when skills table is completely empty (first access for a customer)
-    if (skills.length === 0) {
+    // Auto-seed: always ensure system + special skills exist (idempotent upsert).
+    // Previously only seeded when the table was empty, which meant new skills
+    // added in later releases never appeared for existing customers.
+    const requiredNames = new Set([...SYSTEM_SKILL_NAMES, ...SPECIAL_SKILL_NAMES])
+    const existingNames = new Set(skills.map((s) => s.name))
+    const toCreate = DEFAULT_SKILLS.filter((s) => !existingNames.has(s.name))
+    const toUpsert = DEFAULT_SKILLS.filter((s) => requiredNames.has(s.name) && !existingNames.has(s.name))
+
+    if (skills.length === 0 || toUpsert.length > 0) {
       await ensureDefaultCustomer(CUSTOMER_ID)
-      for (const s of DEFAULT_SKILLS) {
-        await prisma.skill.create({
-          data: {
-            customerId: CUSTOMER_ID,
-            name: s.name,
-            description: s.description,
-            inputSchema: s.inputSchema,
-            outputSchema: s.outputSchema,
-            mode: s.mode,
-            isConcurrencySafe: s.isConcurrencySafe,
-            enabled: s.enabled,
-            guardPhase: s.guardPhase,
-            endpoint: s.endpoint ?? null,
-            httpMethod: s.httpMethod ?? 'POST',
-            headers: s.headers ?? null,
-            timeoutMs: s.timeoutMs ?? 8000,
+      const namesToSeed = skills.length === 0 ? DEFAULT_SKILLS : toUpsert
+      for (const s of namesToSeed) {
+        await prisma.skill.upsert({
+          where: { customerId_name: { customerId: CUSTOMER_ID, name: s.name } },
+          update: {
+            description: s.description, inputSchema: s.inputSchema, outputSchema: s.outputSchema,
+            mode: s.mode, isConcurrencySafe: s.isConcurrencySafe, enabled: s.enabled,
+            guardPhase: s.guardPhase, endpoint: s.endpoint ?? null, httpMethod: s.httpMethod ?? 'POST',
+            headers: s.headers ?? null, timeoutMs: s.timeoutMs ?? 8000,
+            mockFixture: s.mockFixture ?? null,
+            displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+          },
+          create: {
+            customerId: CUSTOMER_ID, name: s.name, description: s.description,
+            inputSchema: s.inputSchema, outputSchema: s.outputSchema, mode: s.mode,
+            isConcurrencySafe: s.isConcurrencySafe, enabled: s.enabled, guardPhase: s.guardPhase,
+            endpoint: s.endpoint ?? null, httpMethod: s.httpMethod ?? 'POST',
+            headers: s.headers ?? null, timeoutMs: s.timeoutMs ?? 8000,
             mockFixture: s.mockFixture ?? null,
             displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
           },
