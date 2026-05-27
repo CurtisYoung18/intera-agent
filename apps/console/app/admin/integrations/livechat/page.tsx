@@ -168,11 +168,26 @@ export default function LiveChatDetailPage() {
       {activeTab === 'rendering' && (
         <div className="grid md:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4">
-            <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">Channel Defaults</p>
-            <div className="p-4 bg-amber/[0.04] border border-amber/15 rounded-xl text-[12px] text-[var(--fog)]">
-              Per-skill render overrides are configured on the{' '}
-              <Link href="/admin/skills" className="text-indigo hover:text-indigo/80 underline">Tools page</Link>
-              {' '}under each skill&apos;s LiveChat Rendering tab. Channel-level defaults coming in next release.
+            <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">Skill Render Overrides</p>
+            <p className="text-[12px] text-[var(--fog)]">
+              Configure how each skill&apos;s result appears in LiveChat. For each business skill, open the Tools page editor and use the &quot;LiveChat Rendering&quot; tab to set card/carousel/quick_replies/plain rendering with JSONPath field mappings.
+            </p>
+            <Link href="/admin/skills"
+              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80 mt-1">
+              <ExternalLink className="w-3.5 h-3.5" /> Open Tools page
+            </Link>
+
+            <div className="border-t border-black/[0.05] pt-4 mt-2">
+              <p className="text-[11px] font-semibold text-[var(--mist)] mb-2">Channel Defaults</p>
+              <div className="grid grid-cols-3 gap-2">
+                {(['card', 'quick_replies', 'plain'] as const).map(kind => (
+                  <label key={kind} className="flex items-center gap-2 p-2 rounded-lg border border-black/[0.06] text-[11px] text-[var(--mist)] cursor-pointer hover:border-indigo/20">
+                    <input type="radio" name="defaultKind" defaultChecked={kind === 'quick_replies'} className="accent-indigo" />
+                    {kind === 'card' ? 'Card' : kind === 'quick_replies' ? 'Quick Replies' : 'Plain'}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[10px] text-[var(--fog)] mt-1.5">Default render style when a skill has no explicit renderHints configured.</p>
             </div>
           </div>
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl overflow-hidden">
@@ -200,10 +215,42 @@ export default function LiveChatDetailPage() {
       {activeTab === 'humanOps' && (
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4 max-w-2xl">
           <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">Escalation Strategy</p>
-          <div className="p-4 bg-amber/[0.04] border border-amber/15 rounded-xl text-[12px] text-[var(--fog)]">
-            Human Ops configuration per channel is coming in the next release. Currently, LiveChat escalates via{' '}
-            <code className="text-[11px] bg-amber/[0.08] px-1 rounded">transfer_chat</code> to the default agent queue.
-            Per-channel <code className="text-[11px] bg-amber/[0.08] px-1 rounded">consultationPrompt</code> and routing rules will be configurable here.
+
+          <div>
+            <label className={labelCls}>When escalation needed</label>
+            <select className={inputCls} defaultValue="transfer_chat">
+              <option value="transfer_chat">Transfer chat to human queue</option>
+              <option value="consult">Consult LLM while waiting</option>
+              <option value="silent_task">Create silent human task</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={labelCls}>Transfer target</label>
+            <select className={inputCls} defaultValue="queue">
+              <option value="queue">Default agent queue</option>
+              <option value="group">Specific group</option>
+            </select>
+          </div>
+
+          <div>
+            <label className={labelCls}>Consultation prompt (when consult mode)</label>
+            <textarea
+              className={inputCls}
+              rows={4}
+              placeholder={`You are consulting on a LiveChat case. The customer is waiting for a response...
+Review the case context and provide guidance to the operator.`}
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>Skills available during consultation</label>
+            <input
+              className={inputCls}
+              placeholder="read_case_history, kb_search_General"
+              defaultValue="read_case_history"
+            />
+            <p className="text-[10px] text-[var(--fog)] mt-1">Comma-separated skill names. Leave empty to allow all.</p>
           </div>
         </div>
       )}

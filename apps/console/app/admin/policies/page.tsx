@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout } from 'lucide-react'
+import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout, BarChart3 } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
@@ -224,6 +224,35 @@ export default function PoliciesPage() {
           })}
         </div>
       )}
+
+      {/* ── Hit Stats ── */}
+      {items.length > 0 && (
+        <div className="mt-8 rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl px-5 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="w-4 h-4 text-[var(--fog)]" />
+            <h2 className="text-[13px] font-semibold text-[var(--mist)]">Hit Statistics</h2>
+            <span className="text-[10px] text-[var(--fog)]/60 ml-1">(last 7 days)</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {items.filter(p => p.enabled).slice(0, 6).map(p => (
+              <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-black/[0.04] bg-white">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-[var(--mist)] truncate">{p.name}</p>
+                  <p className="text-[10px] text-[var(--fog)]">
+                    {p.hook === 'preTool' ? 'Before tool' : p.hook === 'postTool' ? 'After tool' : 'Before resolve'}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0 ml-3">
+                  <p className="text-[16px] font-bold text-[var(--mist)]">—</p>
+                  <p className="text-[9px] text-[var(--fog)]/50">hits</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-[var(--fog)]/50 mt-2">Hit tracking requires trace aggregation. Stats will populate automatically once enabled.</p>
+        </div>
+      )}
+
       <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
         {editing && (
           <div className="space-y-4">
