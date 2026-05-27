@@ -294,6 +294,16 @@ export default function SkillsPage() {
             </section>
           )}
 
+          {/* ── Knowledge Sources (auto-generated kb_search_* tools) ── */}
+          <section className="mb-8">
+            <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-1">Knowledge Search Tools</h2>
+            <p className="text-[12px] text-[var(--fog)] mb-4">
+              kb_search_* tools are auto-generated from{' '}
+              <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline">Knowledge Sources</Link>.
+              Enable or disable sources there — each enabled source becomes a tool.
+            </p>
+          </section>
+
           {/* ── Special Skills ── */}
           {specialSkills.length > 0 && (
             <section className="mb-8">

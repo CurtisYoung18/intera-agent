@@ -370,6 +370,10 @@ export default function AgentConfigPage() {
                   <h2 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--mist)]">
                     {sectionMeta[activeSection].title}
                   </h2>
+                  {activeSection === 'guardrails' && <Link href="/admin/policies" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Open Guardrails page →</Link>}
+                  {activeSection === 'knowledge' && <Link href="/admin/knowledge" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Open Knowledge page →</Link>}
+                  {activeSection === 'humanOps' && <Link href="/admin/integrations/livechat" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Configure in Channels →</Link>}
+                  {activeSection === 'subAgents' && <Link href="/admin/case-types" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Manage in Case Types →</Link>}
                   <div className="flex items-center gap-1.5 mt-1">
                     <div
                       className={`w-1.5 h-1.5 rounded-full ${
