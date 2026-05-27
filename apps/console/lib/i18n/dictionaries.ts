@@ -9,8 +9,7 @@ export const en: Record<string, string> = {
   'sidebar.humanTasks': 'Human Tasks',
   'sidebar.cases': 'Cases',
   'sidebar.agentConfig': 'Agent Config',
-  'sidebar.skills': 'Tools',
-  'sidebar.policies': 'Guardrails',
+  'sidebar.tools': 'Tools',
   'sidebar.guardrails': 'Guardrails',
   'sidebar.caseTypes': 'Case Types',
   'sidebar.humanOps': 'Human Ops',
@@ -807,7 +806,7 @@ export const en: Record<string, string> = {
 
   // ── Knowledge Base page ───────────────────────────────────────
   'sidebar.knowledge': 'Knowledge',
-  'sidebar.integrations': 'Channels',
+  'sidebar.channels': 'Channels',
   'sidebar.subAgents': 'Sub-Agents',
   'kb.pageTitle': 'Knowledge Base',
   'kb.pageDesc': 'Upload and manage knowledge documents for the agent. Documents are chunked, embedded, and retrieved at runtime to give the agent accurate, citable context.',
@@ -1123,8 +1122,7 @@ export const zh: Record<string, string> = {
   'sidebar.humanTasks': '人工任务',
   'sidebar.cases': '案例',
   'sidebar.agentConfig': 'Agent 配置',
-  'sidebar.skills': '工具',
-  'sidebar.policies': '护栏',
+  'sidebar.tools': '工具',
   'sidebar.guardrails': '护栏',
   'sidebar.caseTypes': '案例类型',
   'sidebar.humanOps': '人工配置',
@@ -1888,7 +1886,7 @@ export const zh: Record<string, string> = {
 
   // ── Knowledge Base page (ZH) ─────────────────────────────────
   'sidebar.knowledge': '知识库',
-  'sidebar.integrations': '渠道',
+  'sidebar.channels': '渠道',
   'sidebar.subAgents': '子代理',
   'kb.pageTitle': '知识库',
   'kb.pageDesc': '上传并管理 Agent 的知识文档。文档将被切片、向量化，并在运行时检索以为 Agent 提供准确可引用的上下文。',

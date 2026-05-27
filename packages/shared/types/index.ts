@@ -89,7 +89,7 @@ export interface SkillDefinition {
   inputSchema: Tool['input_schema']
   outputSchema?: Record<string, unknown>
   // Runtime config
-  mode: 'mock' | 'http' | 'engine_managed'
+  mode: 'mock' | 'http' | 'engine_managed' | 'channel'
   endpoint?: string
   httpMethod?: 'GET' | 'POST'
   headers?: Record<string, string>

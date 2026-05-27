@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Bot, Eye, ChevronDown } from 'lucide-react'
+import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Bot, Eye, ChevronDown, Plug } from 'lucide-react'
 import Link from 'next/link'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
@@ -147,7 +147,7 @@ export default function SkillsPage() {
     setIsNew(true); setOriginalName('')
   }
 
-  const openEdit = (s: SkillItem) => { if (s.isSpecial) return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
+  const openEdit = (s: SkillItem) => { if (s.isSpecial || s.mode === 'engine_managed' || s.mode === 'channel') return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
 
   const filtered = skills.filter(s =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.description || '').toLowerCase().includes(search.toLowerCase())
@@ -208,12 +208,12 @@ export default function SkillsPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {systemSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : '#8b6ff5'} onClick={() => openEdit(s)}>
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
                     <div className="p-5">
                       {/* Top row: icon + info + toggle */}
                       <div className="flex items-start gap-3 mb-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : 'bg-lavender/[0.08]'}`}>
-                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : <Box className="w-5 h-5 text-lavender" />}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : s.mode === 'channel' ? 'bg-purple/[0.08]' : 'bg-lavender/[0.08]'}`}>
+                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : s.mode === 'channel' ? <Plug className="w-5 h-5 text-purple" /> : <Box className="w-5 h-5 text-lavender" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -221,7 +221,7 @@ export default function SkillsPage() {
                             {s.isSystem && <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />}
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                           </div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
@@ -301,7 +301,7 @@ export default function SkillsPage() {
               <p className="text-[12px] text-[var(--fog)] mb-4">Configured in dedicated pages</p>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {specialSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor="#14b8a6" onClick={() => openEdit(s)}>
+                  <TiltCard key={s.id || s.name} accentColor="#14b8a6" onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
                     <div className="p-5">
                       <div className="flex items-start gap-3 mb-3">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-teal-500/[0.08]">
@@ -340,17 +340,17 @@ export default function SkillsPage() {
               <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-4">{t('skills.businessSkills')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {businessSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : '#8b6ff5'} onClick={() => openEdit(s)}>
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
                     <div className="p-5">
                       {/* Top row: icon + info + toggle */}
                       <div className="flex items-start gap-3 mb-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : 'bg-lavender/[0.08]'}`}>
-                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : <Box className="w-5 h-5 text-lavender" />}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : s.mode === 'channel' ? 'bg-purple/[0.08]' : 'bg-lavender/[0.08]'}`}>
+                          {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : s.mode === 'channel' ? <Plug className="w-5 h-5 text-purple" /> : <Box className="w-5 h-5 text-lavender" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                           </div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">

@@ -207,11 +207,10 @@ export class StreamingToolExecutor {
     try {
       let output: unknown
 
-      if (tool.definition.mode === 'engine_managed') {
-        // Engine-managed skills are handled by the agent loop directly
-        // (create_case, finalize_case, todo_write, etc.) —
-        // the executor should never receive them.
-        output = { ok: true, handled: 'engine_managed' }
+      if (tool.definition.mode === 'engine_managed' || tool.definition.mode === 'channel') {
+        // Engine-managed and channel-dependent skills are handled by the
+        // agent loop directly — the executor should never receive them.
+        output = { ok: true, handled: tool.definition.mode }
       } else if (tool.definition.mode === 'mock') {
         output = await this.executeMock(tool.definition)
       } else {
