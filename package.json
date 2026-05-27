@@ -13,7 +13,10 @@
     "db:generate": "npm run db:generate -w packages/shared",
     "db:push": "npm run db:push -w packages/shared",
     "db:studio": "npm run db:studio -w packages/shared",
-    "db:seed": "npm run db:seed -w packages/shared"
+    "db:seed": "npm run db:seed -w packages/shared",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "test:coverage": "npx vitest run --coverage"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
