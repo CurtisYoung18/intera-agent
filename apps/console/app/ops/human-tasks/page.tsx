@@ -43,6 +43,29 @@ export default function HumanTasksPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  const isEmbed = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('embed')
+  if (loading) return <div className="p-8 text-[13px] text-[var(--fog)]">{isEmbed ? 'Loading...' : <ListSkeleton />}</div>
+  if (!isEmbed && tasks.length === 0) return <div className="max-w-4xl mx-auto px-8 py-8"><EmptyState icon={ClipboardList} title={t('humanTasks.noTasks')} description={t('humanTasks.noTasksDesc')} /></div>
+
+  if (isEmbed) return (
+    <div className="p-4 space-y-2">
+      {tasks.length === 0 ? (
+        <p className="text-[12px] text-[var(--fog)] text-center py-8">{t('humanTasks.noTasks')}</p>
+      ) : (
+        tasks.map(task => (
+          <Link key={task.id} href={`/ops/human-tasks/${task.id}`}
+            className="flex items-center justify-between p-3 rounded-xl border border-black/[0.06] bg-white hover:border-indigo/20 transition-colors">
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium text-[var(--mist)] truncate">{task.question || task.caseId}</p>
+              <p className="text-[10px] text-[var(--fog)]">{task.queue} · {timeAgo(task.createdAt)}</p>
+            </div>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${task.status === 'pending' ? 'bg-amber/[0.08] text-amber' : 'bg-malachite/[0.08] text-malachite'}`}>{task.status}</span>
+          </Link>
+        ))
+      )}
+    </div>
+  )
+
   return (
     <div className="max-w-4xl mx-auto px-8 py-8 animate-fade-up flex flex-col min-h-[calc(100dvh-2rem)]">
       <div className="flex items-center justify-between mb-6 flex-shrink-0">

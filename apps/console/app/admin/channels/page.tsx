@@ -1,6 +1,6 @@
 'use client'
 
-import { Plug, MessageCircle, ArrowRight } from 'lucide-react'
+import { Plug, MessageCircle, ArrowRight, Send, Headset, Globe } from 'lucide-react'
 import Link from 'next/link'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -23,20 +23,20 @@ const CHANNELS: ChannelInfo[] = [
   },
   {
     id: 'web-chat', label: 'Web Chat',
-    description: 'Embedded chat widget for your website',
-    icon: MessageCircle, href: '/admin/channels/web-chat',
+    description: 'Embedded widget · Human Tasks queue',
+    icon: Globe, href: '/admin/channels/web-chat',
+    active: true, comingSoon: false,
+  },
+  {
+    id: 'telegram', label: 'Telegram',
+    description: 'Connect Intera to Telegram chats',
+    icon: Send, href: '/admin/channels/telegram',
     active: false, comingSoon: true,
   },
   {
-    id: 'slack', label: 'Slack',
-    description: 'Connect Intera to your Slack workspace',
-    icon: Plug, href: '/admin/channels/slack',
-    active: false, comingSoon: true,
-  },
-  {
-    id: 'discord', label: 'Discord',
-    description: 'Connect Intera to your Discord server',
-    icon: Plug, href: '/admin/channels/discord',
+    id: 'livedesk', label: 'LiveDesk',
+    description: 'Customer service platform integration',
+    icon: Headset, href: '/admin/channels/livedesk',
     active: false, comingSoon: true,
   },
 ]
