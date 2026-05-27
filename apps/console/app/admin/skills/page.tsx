@@ -248,11 +248,17 @@ export default function SkillsPage() {
                       {/* Description */}
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
 
-                      {/* kb_hybrid_retrieve special link */}
+                      {/* Special skill configure links */}
                       {s.name === 'kb_hybrid_retrieve' && (
                         <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-sky hover:text-sky/80 mb-2 transition-colors">
                           <ExternalLink className="w-3 h-3" />
                           {t('skills.configureInKnowledge')}
+                        </Link>
+                      )}
+                      {s.name === 'create_human_task' && (
+                        <Link href="/admin/human-ops" className="inline-flex items-center gap-1 text-[11px] text-amber hover:text-amber/80 mb-2 transition-colors">
+                          <ExternalLink className="w-3 h-3" />
+                          Configure in Human Ops
                         </Link>
                       )}
 
@@ -322,10 +328,18 @@ export default function SkillsPage() {
                         </button>
                       </div>
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
-                      <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
-                        <ExternalLink className="w-3 h-3" />
-                        {t('skills.configureInKnowledge')}
-                      </Link>
+                      {s.name === 'kb_hybrid_retrieve' && (
+                        <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
+                          <ExternalLink className="w-3 h-3" />
+                          {t('skills.configureInKnowledge')}
+                        </Link>
+                      )}
+                      {s.name === 'create_human_task' && (
+                        <Link href="/admin/human-ops" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
+                          <ExternalLink className="w-3 h-3" />
+                          Configure in Human Ops
+                        </Link>
+                      )}
                     </div>
                   </TiltCard>
                 ))}
