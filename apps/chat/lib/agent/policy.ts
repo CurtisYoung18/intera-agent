@@ -48,24 +48,20 @@ export class PolicyEngine {
   private policyModel: string
   private llmClient: Anthropic
 
-  constructor(private customerId: string, policyHooks?: PolicyHooks) {
+  constructor(private customerId: string, _policyHooks?: PolicyHooks) {
     this.policyModel = process.env.POLICY_EVAL_MODEL || 'MiniMax-M2.7-highspeed'
     this.llmClient = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
       baseURL: process.env.ANTHROPIC_BASE_URL,
     })
     this.loadBuiltInPolicies()
-    if (policyHooks) {
-      if (policyHooks.preTool !== undefined) this.hooks.preTool = policyHooks.preTool
-      if (policyHooks.postTool !== undefined) this.hooks.postTool = policyHooks.postTool
-      if (policyHooks.preFinalize !== undefined) this.hooks.preFinalize = policyHooks.preFinalize
-    }
   }
 
   /** Create and initialize a PolicyEngine — loads built-ins + DB policies. */
   static async create(customerId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
     const engine = new PolicyEngine(customerId, policyHooks)
 
+    // Load DB policies into the rules Map
     try {
       const { prisma } = await import('@intera/shared/prisma')
       const dbPolicies = await prisma.policy.findMany({
@@ -75,14 +71,38 @@ export class PolicyEngine {
       for (const p of dbPolicies) {
         const rule = JSON.parse(p.rule || '{}') as Record<string, unknown>
         engine.policies.set(p.name, rule as any)
-
-        const hook = p.hook as 'preTool' | 'postTool' | 'preFinalize'
-        if (!engine.hooks[hook].includes(p.name)) {
-          engine.hooks[hook].push(p.name)
-        }
       }
     } catch (err) {
       console.warn('[PolicyEngine] Failed to load policies from DB, using built-ins only:', err)
+    }
+
+    // Determine hook assignment (priority: AgentConfig > DB > built-in fallback)
+    if (policyHooks) {
+      // AgentConfig.policyHooks is authoritative — resolve each name against the rule Map
+      engine.hooks.preTool = (policyHooks.preTool || []).filter((n) => engine.policies.has(n))
+      engine.hooks.postTool = (policyHooks.postTool || []).filter((n) => engine.policies.has(n))
+      engine.hooks.preFinalize = (policyHooks.preFinalize || []).filter((n) => engine.policies.has(n))
+    } else {
+      // Build from DB enabled policies grouped by their hook field
+      try {
+        const { prisma } = await import('@intera/shared/prisma')
+        const dbPolicies = await prisma.policy.findMany({
+          where: { customerId, enabled: true },
+        })
+
+        for (const p of dbPolicies) {
+          const hook = p.hook as 'preTool' | 'postTool' | 'preFinalize'
+          if (!engine.hooks[hook].includes(p.name)) {
+            engine.hooks[hook].push(p.name)
+          }
+        }
+      } catch { /* DB load already attempted above */ }
+
+      // Fallback to built-in defaults when DB has no policies
+      const total = engine.hooks.preTool.length + engine.hooks.postTool.length + engine.hooks.preFinalize.length
+      if (total === 0) {
+        engine.applyBuiltInHookDefaults()
+      }
     }
 
     return engine
@@ -148,7 +168,10 @@ export class PolicyEngine {
       hook_skills: ['create_human_task'],
       require_skills_any: ['query_order_status', 'query_payment_channel_status', 'get_account_status', 'get_kyc_status'],
     })
+  }
 
+  /** Apply default hook assignments (used only when no DB data and no AgentConfig config). */
+  private applyBuiltInHookDefaults(): void {
     this.hooks.preTool = ['no_high_risk_account_change', 'investigate_before_escalation']
     this.hooks.postTool = ['conflict_requires_human']
     this.hooks.preFinalize = [

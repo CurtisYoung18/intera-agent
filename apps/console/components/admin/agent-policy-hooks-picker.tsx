@@ -13,6 +13,25 @@ type PolicyRow = {
   description: string | null
   hook: string
   enabled: boolean
+  rule?: string
+}
+
+function summarizeRule(rule?: string): string {
+  if (!rule) return ''
+  try {
+    const r = JSON.parse(rule || '{}')
+    const parts: string[] = []
+    if (Array.isArray(r.deny_skills) && r.deny_skills.length) parts.push(`Deny: ${r.deny_skills.join(', ')}`)
+    if (Array.isArray(r.require_skills) && r.require_skills.length) parts.push(`Need all: ${r.require_skills.join(', ')}`)
+    if (Array.isArray(r.require_skills_any) && r.require_skills_any.length) parts.push(`Need any: ${r.require_skills_any.join(', ')}`)
+    if (r.evaluationPrompt && r.enableLlm !== false) {
+      const preview = r.evaluationPrompt.length > 50 ? r.evaluationPrompt.slice(0, 50) + '…' : r.evaluationPrompt
+      parts.push(`AI: ${preview}`)
+    }
+    return parts.join(' · ')
+  } catch {
+    return ''
+  }
 }
 
 const HOOK_ORDER: PolicyHook[] = ['preTool', 'postTool', 'preFinalize']
@@ -168,17 +187,31 @@ export default function AgentPolicyHooksPicker({ value, onChange }: Props) {
                   hooks[hook].map((name, idx) => {
                     const meta = byName.get(name)
                     const unknown = !meta
+                    const hookMismatch = meta && (meta.hook as PolicyHook) !== hook
+                    const ruleDesc = summarizeRule(meta?.rule)
                     return (
                       <div
                         key={`${hook}-${name}-${idx}`}
                         className="group inline-flex items-stretch rounded-lg border border-black/[0.08] bg-white/80 shadow-sm overflow-hidden"
                       >
-                        <div className="px-2.5 py-1.5 min-w-0 max-w-[260px]">
-                          <div className="text-[11px] font-mono text-[var(--mist)] truncate" title={name}>
-                            {name}
+                        <div className="px-2.5 py-1.5 min-w-0 max-w-[280px]">
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-[11px] font-mono text-[var(--mist)] truncate" title={name}>
+                              {name}
+                            </div>
+                            {hookMismatch && (
+                              <span
+                                className="shrink-0 text-[12px] leading-none cursor-help"
+                                title={`Original hook: ${meta!.hook}. Assigned here to ${hook}.`}
+                              >
+                                ⚠
+                              </span>
+                            )}
                           </div>
                           {unknown ? (
                             <div className="text-[10px] text-amber-700/80">{t('agent.policyOrphan')}</div>
+                          ) : ruleDesc ? (
+                            <div className="text-[10px] text-[var(--fog)]/60 truncate mt-0.5" title={ruleDesc}>{ruleDesc}</div>
                           ) : null}
                         </div>
                         <div className="flex flex-col border-l border-black/[0.06] bg-black/[0.02]">
@@ -226,12 +259,29 @@ export default function AgentPolicyHooksPicker({ value, onChange }: Props) {
                   }}
                 >
                   <option value="">{t('agent.policyPickAdd')}</option>
-                  {eligibleToAdd(hook).map((p) => (
-                    <option key={p.id} value={p.name}>
-                      {p.name}
-                      {(p.hook as PolicyHook) === hook ? '' : `  ·· ${p.hook}`}
-                    </option>
-                  ))}
+                  {(() => {
+                    const eligible = eligibleToAdd(hook)
+                    const matching = eligible.filter(p => (p.hook as PolicyHook) === hook)
+                    const other = eligible.filter(p => (p.hook as PolicyHook) !== hook)
+                    return (
+                      <>
+                        {matching.length > 0 && (
+                          <optgroup label={`— ${hookLabel(hook)} —`}>
+                            {matching.map((p) => (
+                              <option key={p.id} value={p.name}>{p.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {other.length > 0 && (
+                          <optgroup label="— Other hooks —">
+                            {other.map((p) => (
+                              <option key={p.id} value={p.name}>{p.name} ({p.hook})</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    )
+                  })()}
                 </select>
               </div>
             </div>

@@ -759,7 +759,7 @@ export const en: Record<string, string> = {
   'blueprint.nodeSubAgents': 'Sub-Agents',
   'blueprint.nodeTemplates': 'Templates',
   'blueprint.nodeHumanOps': 'Human Ops',
-  'blueprint.nodeKnowledge': 'Knowledge Retrieval',
+  'blueprint.nodeKnowledge': 'Knowledge',
   'blueprint.notConfigured': 'Not configured',
   'blueprint.hooksCount': '{n} hooks',
   'blueprint.guardrailsCount': '{n} rules active',
@@ -767,9 +767,8 @@ export const en: Record<string, string> = {
   'blueprint.compactTokens': 'Compact: {n} tokens',
   'blueprint.templatesReady': 'Resume + Form ready',
   'blueprint.humanOpsReady': 'Consult prompt set',
+  'blueprint.knowledgeActive': '{n} sources active',
   'blueprint.knowledgeDisabled': 'Not configured',
-  'blueprint.knowledgeExternal': 'External API · top-{k}',
-  'blueprint.knowledgeNative': '{provider} · top-{k}',
 
   // ── Agent config — section: knowledge ────────────────────────
   'agent.section.knowledge': 'Knowledge Retrieval',
@@ -1839,7 +1838,7 @@ export const zh: Record<string, string> = {
   'blueprint.nodeSubAgents': '子代理',
   'blueprint.nodeTemplates': '模板',
   'blueprint.nodeHumanOps': '人工交互',
-  'blueprint.nodeKnowledge': '知识检索',
+  'blueprint.nodeKnowledge': '知识库',
   'blueprint.notConfigured': '未配置',
   'blueprint.hooksCount': '{n} 个钩子',
   'blueprint.guardrailsCount': '{n} 条规则启用',
@@ -1847,9 +1846,8 @@ export const zh: Record<string, string> = {
   'blueprint.compactTokens': '压缩阈值：{n} tokens',
   'blueprint.templatesReady': '恢复与表单已就绪',
   'blueprint.humanOpsReady': '咨询 prompt 已配置',
+  'blueprint.knowledgeActive': '{n} 个知识源已启用',
   'blueprint.knowledgeDisabled': '未配置',
-  'blueprint.knowledgeExternal': '外部 API · top-{k}',
-  'blueprint.knowledgeNative': '{provider} · top-{k}',
 
   // ── Agent config — section: knowledge (ZH) ───────────────────
   'agent.section.knowledge': '知识检索',

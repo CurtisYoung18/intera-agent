@@ -12,12 +12,13 @@ interface BlueprintProps {
   activeSection: Section | null
   onSelectSection: (s: Section | null) => void
   syncStatus: 'idle' | 'syncing' | 'synced' | 'error'
+  kbSourceCount?: number
 }
 
 const CORE_RADIUS = 52 // px, edge of core orb for line endpoints — clears rings
 const NODE_OFFSET = 60  // px, offset from node center for line target
 
-export default function AgentBlueprint({ config, activeSection, onSelectSection, syncStatus }: BlueprintProps) {
+export default function AgentBlueprint({ config, activeSection, onSelectSection, syncStatus, kbSourceCount = 0 }: BlueprintProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 })
   const { t } = useConsoleLocale()
@@ -127,12 +128,9 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           id: 'knowledge' as const,
           icon: <Search className="w-5 h-5" />,
           label: t('blueprint.nodeKnowledge'),
-          preview: (() => {
-            const kb = config.knowledgeRetrieval
-            if (!kb || kb.mode === 'disabled') return t('blueprint.knowledgeDisabled')
-            if (kb.mode === 'external-api') return t('blueprint.knowledgeExternal', { k: kb.topK })
-            return t('blueprint.knowledgeNative', { provider: kb.embeddingProvider, k: kb.topK })
-          })(),
+          preview: kbSourceCount > 0
+            ? t('blueprint.knowledgeActive', { n: kbSourceCount })
+            : t('blueprint.knowledgeDisabled'),
           color: '#14b8a6',
           glow: 'rgba(20,184,166,0.15)',
           angle: 210,

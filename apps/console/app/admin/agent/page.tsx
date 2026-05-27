@@ -334,6 +334,7 @@ export default function AgentConfigPage() {
           activeSection={activeSection}
           onSelectSection={(s) => setActiveSection((prev) => (prev === s ? null : s))}
           syncStatus={syncStatus}
+          kbSourceCount={kbSourceCount}
         />
       </div>
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout, BarChart3 } from 'lucide-react'
+import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
@@ -50,13 +50,15 @@ function buildRule(f: RuleFields): string {
 
 const HOOK_SLUGS = ['preTool', 'postTool', 'preFinalize'] as const
 
-type GuardrailType = 'must_call' | 'never_allow' | 'ai_eval'
+type GuardrailType = 'must_call' | 'must_call_any' | 'never_allow' | 'ai_eval' | 'ai_eval_filtered'
 type PolicyFormMode = 'simple' | 'advanced'
 
 const GUARDRAIL_LABELS: Record<GuardrailType, string> = {
-  must_call: 'Must call',
+  must_call: 'Must call (all)',
+  must_call_any: 'Must call (any one)',
   never_allow: 'Never allow',
   ai_eval: 'AI evaluation',
+  ai_eval_filtered: 'AI evaluation (filtered)',
 }
 
 const HOOK_SIMPLE_LABELS: Record<string, string> = {
@@ -66,46 +68,63 @@ const HOOK_SIMPLE_LABELS: Record<string, string> = {
 }
 
 function detectGuardrailType(f: RuleFields): GuardrailType {
+  // Priority: deny > require_skills > require_skills_any > ai eval
   if (f.deny_skills.length > 0) return 'never_allow'
   if (f.require_skills.length > 0) return 'must_call'
-  if (f.enableLlm && f.evaluationPrompt) return 'ai_eval'
+  if (f.require_skills_any.length > 0) return 'must_call_any'
+  if (f.evaluationPrompt && f.enableLlm) {
+    return f.hook_skills.length > 0 ? 'ai_eval_filtered' : 'ai_eval'
+  }
+  // Fallback: if nothing configured, default to must_call
   return 'must_call'
 }
 
-function getGuardrailTargetSkills(f: RuleFields): string[] {
-  const gt = detectGuardrailType(f)
+function getGuardrailTargetSkills(f: RuleFields, type?: GuardrailType): string[] {
+  const gt = type || detectGuardrailType(f)
   if (gt === 'never_allow') return f.deny_skills
   if (gt === 'must_call') return f.require_skills
+  if (gt === 'must_call_any') return f.require_skills_any
   return []
 }
 
 function summarizeRule(rule: string): string {
   const f = parseRule(rule)
-  const gt = detectGuardrailType(f)
-  const targets = getGuardrailTargetSkills(f)
-  if (gt === 'never_allow' && targets.length) return `Blocks: ${targets.join(', ')}`
-  if (gt === 'must_call' && targets.length) return `Requires: ${targets.join(', ')} before proceeding`
-  if (gt === 'ai_eval' && f.evaluationPrompt) return `AI checks: ${f.evaluationPrompt.slice(0, 80)}${f.evaluationPrompt.length > 80 ? '…' : ''}`
-  return 'No conditions configured'
+  const parts: string[] = []
+  if (f.deny_skills.length) parts.push(`Blocks: ${f.deny_skills.join(', ')}`)
+  if (f.require_skills.length) parts.push(`Requires ALL: ${f.require_skills.join(', ')}`)
+  if (f.require_skills_any.length) parts.push(`Requires ANY: ${f.require_skills_any.join(', ')}`)
+  if (f.hook_skills.length) parts.push(`Trigger: ${f.hook_skills.join(', ')}`)
+  if (f.evaluationPrompt && f.enableLlm !== false) {
+    const preview = f.evaluationPrompt.length > 60 ? f.evaluationPrompt.slice(0, 60) + '…' : f.evaluationPrompt
+    parts.push(`AI: ${preview}`)
+  }
+  return parts.length ? parts.join(' · ') : 'No conditions configured'
 }
 
 function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string[], condition: string): RuleFields {
-  const base: RuleFields = {
-    deny_skills: [],
-    require_skills: [],
-    require_skills_any: [],
-    hook_skills: [],
-    enableLlm: false,
-    evaluationPrompt: '',
-  }
+  // Preserve existing fields — only modify what this guardrail type controls
+  const next = { ...f }
   switch (type) {
     case 'must_call':
-      return { ...base, require_skills: skills }
+      next.require_skills = skills
+      break
+    case 'must_call_any':
+      next.require_skills_any = skills
+      break
     case 'never_allow':
-      return { ...base, deny_skills: skills }
+      next.deny_skills = skills
+      break
     case 'ai_eval':
-      return { ...base, enableLlm: true, evaluationPrompt: condition }
+      next.evaluationPrompt = condition
+      next.enableLlm = true
+      break
+    case 'ai_eval_filtered':
+      next.evaluationPrompt = condition
+      next.enableLlm = true
+      // hook_skills is controlled separately via the filtered skills chip in UI
+      break
   }
+  return next
 }
 
 export default function PoliciesPage() {
@@ -123,6 +142,8 @@ export default function PoliciesPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PolicyItem | null>(null)
   const [isNew, setIsNew] = useState(false)
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const defaultFields: RuleFields = { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
   const [ruleFields, setRuleFields] = useState<RuleFields>(defaultFields)
   const [formMode, setFormMode] = useState<PolicyFormMode>('simple')
@@ -172,18 +193,44 @@ export default function PoliciesPage() {
 
   const handleSave = useCallback(async () => {
     if (!editing) return
+    setSaveError(null)
+
+    // Validate: name is required
+    if (!editing.name.trim()) {
+      setSaveError('Name is required.')
+      return
+    }
+    // Validate: at least one rule condition is configured
+    const hasRule = ruleFields.deny_skills.length > 0
+      || ruleFields.require_skills.length > 0
+      || ruleFields.require_skills_any.length > 0
+      || (ruleFields.enableLlm && ruleFields.evaluationPrompt.trim().length > 0)
+    if (!hasRule) {
+      setSaveError('Configure at least one rule condition (deny skills, required skills, or an AI evaluation prompt).')
+      return
+    }
+
     const payload = { ...editing, rule: buildRule(ruleFields) }
     const url = isNew ? '/api/admin/policies' : `/api/admin/policies/${encodeURIComponent(editing.name)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    if (!res.ok) return alert(t('common.failedSave', { status: res.status }))
+    if (!res.ok) {
+      setSaveError(`Save failed (HTTP ${res.status}).`)
+      return
+    }
     setEditing(null); load()
-  }, [editing, isNew, load, ruleFields, t])
+  }, [editing, isNew, load, ruleFields])
 
   const handleDelete = useCallback(async (name: string) => {
-    if (!confirm(t('common.deleteConfirm', { name }))) return
+    setConfirmDeleteName(name)
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    const name = confirmDeleteName
+    if (!name) return
+    setConfirmDeleteName(null)
     await fetch(`/api/admin/policies/${encodeURIComponent(name)}`, { method: 'DELETE' })
     load()
-  }, [load, t])
+  }, [confirmDeleteName, load])
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
@@ -194,66 +241,73 @@ export default function PoliciesPage() {
         <button type="button" onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> {t('policies.new')}</button>
       </div>
       {items.length === 0 ? <EmptyState icon={Shield} title={t('policies.noPolicies')} description={t('policies.noPoliciesDesc')} /> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {items.map(p => { const hm = hookMeta[p.hook] || hookMeta.preTool; const Icon = hm.icon
+        <div className="space-y-6">
+          {HOOK_SLUGS.map(hook => {
+            const hookItems = items.filter(p => p.hook === hook)
+            if (hookItems.length === 0) return null
+            const hm = hookMeta[hook]
+            const HIcon = hm.icon
             return (
-              <TiltCard key={p.id || p.name} accentColor={hm.color} onClick={() => openEdit(p)}>
-                <div className="p-5">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber/[0.06] flex-shrink-0"><Icon className="w-5 h-5 text-amber" /></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{p.name}</div>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-indigo/[0.06] text-indigo mt-0.5 inline-block">{hm.label}</span>
-                    </div>
-                    <button onClick={e => { e.stopPropagation(); toggleEnabled(p) }} className="flex-shrink-0">
-                      {p.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
-                    </button>
-                  </div>
-                  <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-1">{p.description || t('common.noDescription')}</p>
-                  <p className="text-[10px] text-[var(--smoke)] font-mono line-clamp-2 mb-3">{summarizeRule(p.rule)}</p>
-                  <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
-                    <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
-                    <div className="flex gap-1">
-                      <button type="button" onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5" title={t('common.edit')}><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
-                      <button type="button" onClick={e => { e.stopPropagation(); handleDelete(p.name) }} className="p-1.5 rounded-lg hover:bg-vermillion/5" title={t('common.delete')}><Trash2 className="w-3.5 h-3.5 text-vermillion/60" /></button>
-                    </div>
-                  </div>
+              <div key={hook}>
+                <div className="flex items-center gap-2 mb-3">
+                  <HIcon className="w-4 h-4" style={{ color: hm.color }} />
+                  <span className="text-[13px] font-semibold text-[var(--mist)]">{hm.label}</span>
+                  <span className="text-[11px] text-[var(--fog)]/50">{hookItems.length}</span>
                 </div>
-              </TiltCard>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {hookItems.map(p => {
+                    return (
+                      <TiltCard key={p.id || p.name} accentColor={hm.color} onClick={() => openEdit(p)}>
+                        <div className="p-5">
+                          <div className="flex items-start gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${hm.color}10` }}>
+                              <HIcon className="w-5 h-5" style={{ color: hm.color }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{p.name}</div>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium mt-0.5 inline-block" style={{ backgroundColor: `${hm.color}12`, color: hm.color }}>{hm.label}</span>
+                            </div>
+                            <button onClick={e => { e.stopPropagation(); toggleEnabled(p) }} className="flex-shrink-0">
+                              {p.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
+                            </button>
+                          </div>
+                          <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-1">{p.description || t('common.noDescription')}</p>
+                          <p className="text-[10px] text-[var(--smoke)] font-mono line-clamp-2 mb-3">{summarizeRule(p.rule)}</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
+                            <div className="flex gap-1">
+                              <button type="button" onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5" title={t('common.edit')}><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
+                              <button type="button" onClick={e => { e.stopPropagation(); handleDelete(p.name) }} className="p-1.5 rounded-lg hover:bg-vermillion/5" title={t('common.delete')}><Trash2 className="w-3.5 h-3.5 text-vermillion/60" /></button>
+                            </div>
+                          </div>
+                        </div>
+                      </TiltCard>
+                    )
+                  })}
+                </div>
+              </div>
             )
           })}
         </div>
       )}
 
-      {/* ── Hit Stats ── */}
-      {items.length > 0 && (
-        <div className="mt-8 rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl px-5 py-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="w-4 h-4 text-[var(--fog)]" />
-            <h2 className="text-[13px] font-semibold text-[var(--mist)]">Hit Statistics</h2>
-            <span className="text-[10px] text-[var(--fog)]/60 ml-1">(last 7 days)</span>
+      {/* ── Delete Confirmation Dialog ── */}
+      {confirmDeleteName && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl border border-black/[0.06] shadow-2xl p-6 max-w-sm w-full mx-4">
+            <p className="text-[14px] font-semibold text-[var(--mist)] mb-2">Delete Guardrail</p>
+            <p className="text-[13px] text-[var(--fog)] mb-5">
+              Permanently delete <span className="font-mono text-[var(--mist)] font-medium">{confirmDeleteName}</span>? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setConfirmDeleteName(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">Cancel</button>
+              <button type="button" onClick={confirmDelete} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-vermillion/10 border border-vermillion/20 text-vermillion hover:bg-vermillion/15 transition-all">Delete</button>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {items.filter(p => p.enabled).slice(0, 6).map(p => (
-              <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-black/[0.04] bg-white">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-medium text-[var(--mist)] truncate">{p.name}</p>
-                  <p className="text-[10px] text-[var(--fog)]">
-                    {p.hook === 'preTool' ? 'Before tool' : p.hook === 'postTool' ? 'After tool' : 'Before resolve'}
-                  </p>
-                </div>
-                <div className="text-right flex-shrink-0 ml-3">
-                  <p className="text-[16px] font-bold text-[var(--mist)]">—</p>
-                  <p className="text-[9px] text-[var(--fog)]/50">hits</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="text-[10px] text-[var(--fog)]/50 mt-2">Hit tracking requires trace aggregation. Stats will populate automatically once enabled.</p>
         </div>
       )}
 
-      <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
+      <ImmersiveModal open={!!editing} onClose={() => { setEditing(null); setSaveError(null) }} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
         {editing && (
           <div className="space-y-4">
             {/* ── Mode toggle: Simple / Advanced ── */}
@@ -284,7 +338,7 @@ export default function PoliciesPage() {
               </button>
             </div>
 
-            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} /></label>
+            <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} placeholder="e.g. investigate_before_escalation" />{!isNew && <p className="text-[10px] text-[var(--smoke)]">Name cannot be changed after creation.</p>}</label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
 
             {/* ── When dropdown (hook) ── */}
@@ -327,14 +381,16 @@ export default function PoliciesPage() {
                     </select>
                   </label>
 
-                  {/* Target skills — shown for must_call and never_allow */}
-                  {(gt === 'must_call' || gt === 'never_allow') && (
+                  {/* Target skills — shown for must_call, must_call_any, and never_allow */}
+                  {(gt === 'must_call' || gt === 'must_call_any' || gt === 'never_allow') && (
                     <label className="space-y-1.5 block">
                       <span className="text-[11px] text-[var(--fog)]">Target skills</span>
                       <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
-                        {gt === 'must_call'
-                          ? 'Skills the agent must call before this hook triggers'
-                          : 'Skills the agent is never allowed to call'}
+                        {gt === 'never_allow'
+                          ? 'Skills the agent is never allowed to call'
+                          : gt === 'must_call_any'
+                            ? 'Skills the agent must call at least one of before proceeding'
+                            : 'Skills the agent must call (all of them) before this hook triggers'}
                       </p>
                       <ChipInput
                         values={skills}
@@ -347,38 +403,56 @@ export default function PoliciesPage() {
                     </label>
                   )}
 
-                  {/* AI evaluation condition */}
-                  {gt === 'ai_eval' && (
-                    <label className="space-y-1.5 block">
-                      <span className="text-[11px] text-[var(--fog)]">Evaluation condition</span>
-                      <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
-                        Describe what the AI should check for. Use {'{{skill_name}}'} and {'{{skill_output}}'} as placeholders.
-                      </p>
-                      <textarea
-                        ref={textareaRef}
-                        value={ruleFields.evaluationPrompt}
-                        onChange={e =>
-                          setRuleFields(applyGuardrailToRule(ruleFields, 'ai_eval', [], e.target.value))
-                        }
-                        rows={5}
-                        className="glass-input-console text-[13px] resize-y"
-                        placeholder="e.g. Check if the agent verified the user's identity before resolving the case"
-                      />
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
-                        {PLACEHOLDERS.map(ph => (
-                          <button
-                            key={ph}
-                            type="button"
-                            onClick={() => insertPlaceholder(ph)}
-                            className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
-                            title={`Insert ${ph}`}
-                          >
-                            {ph}
-                          </button>
-                        ))}
-                      </div>
-                    </label>
+                  {/* AI evaluation condition (for ai_eval and ai_eval_filtered) */}
+                  {(gt === 'ai_eval' || gt === 'ai_eval_filtered') && (
+                    <>
+                      <label className="space-y-1.5 block">
+                        <span className="text-[11px] text-[var(--fog)]">Evaluation condition</span>
+                        <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
+                          Describe what the AI should check for. Use {'{{skill_name}}'} and {'{{skill_output}}'} as placeholders.
+                        </p>
+                        <textarea
+                          ref={textareaRef}
+                          value={ruleFields.evaluationPrompt}
+                          onChange={e =>
+                            setRuleFields(applyGuardrailToRule(ruleFields, gt, [], e.target.value))
+                          }
+                          rows={5}
+                          className="glass-input-console text-[13px] resize-y"
+                          placeholder="e.g. Check if the agent verified the user's identity before resolving the case"
+                        />
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
+                          {PLACEHOLDERS.map(ph => (
+                            <button
+                              key={ph}
+                              type="button"
+                              onClick={() => insertPlaceholder(ph)}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
+                              title={`Insert ${ph}`}
+                            >
+                              {ph}
+                            </button>
+                          ))}
+                        </div>
+                      </label>
+
+                      {/* Trigger skills (hook_skills) — only for ai_eval_filtered, or always shown when hook is postTool */}
+                      {gt === 'ai_eval_filtered' && (
+                        <label className="space-y-1.5 block">
+                          <span className="text-[11px] text-[var(--fog)]">Trigger skills (filter)</span>
+                          <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
+                            Only evaluate this guardrail when these specific skills are called. Leave empty to evaluate on all skills.
+                          </p>
+                          <ChipInput
+                            values={ruleFields.hook_skills}
+                            onChange={v => setRuleFields({ ...ruleFields, hook_skills: v })}
+                            suggestions={allSkills}
+                            placeholder={t('policies.addSkill')}
+                          />
+                        </label>
+                      )}
+                    </>
                   )}
 
                   {/* Preview of generated JSON */}
@@ -466,7 +540,12 @@ export default function PoliciesPage() {
             )}
 
             <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
-            <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">{t('common.save')}</button><button type="button" onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button></div>
+
+            {saveError && (
+              <div className="text-[12px] text-vermillion bg-vermillion/[0.06] border border-vermillion/15 rounded-lg px-3 py-2">{saveError}</div>
+            )}
+
+            <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]"><button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">{t('common.save')}</button><button type="button" onClick={() => { setEditing(null); setSaveError(null) }} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button></div>
           </div>
         )}
       </ImmersiveModal>

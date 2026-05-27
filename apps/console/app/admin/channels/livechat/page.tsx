@@ -218,7 +218,7 @@ export default function LiveChatDetailPage() {
               <div><p className="text-[13px] font-semibold text-[var(--mist)]">{l('enabled')}</p></div>
               <button onClick={() => setConfig(c => ({ ...c, enabled: !c.enabled }))}
                 className={`relative w-10 h-6 rounded-full transition-colors ${config.enabled ? 'bg-indigo' : 'bg-black/[0.08]'}`}>
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${config.enabled ? 'left-[18px]' : 'left-0.5'}`} />
               </button>
             </div>
 

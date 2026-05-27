@@ -201,7 +201,123 @@ ORDER BY hit_count DESC
 
 ---
 
-## 6. 工作量评估
+---
+## 6. Console Guardrails 页面 UI/UX 细化
+
+### 6.1 卡片视觉层次缺失
+
+**现状**：每张 policy 卡片在 TiltCard 中渲染，所有卡片外观相同。关键信息层级混乱：
+
+- 图标颜色**硬编码为 amber**（[page.tsx:203](apps/console/app/admin/guardrails/page.tsx#L203) `bg-amber/[0.06]`、`text-amber`），无视 hook 类型（preTool=amber, postTool=blue, preFinalize=green）。预定义了 `hookMeta` 的 `icon` 和 `color`，但渲染卡片图标时直接用字符串 `"amber"` 而非 `hm.color`
+- `summarizeRule()` 函数只覆盖 `never_allow`/`must_call`/`ai_eval` 三种类型，缺失 `require_skills_any` 和同时存在多种 rule 的组合情况，此时显示 "No conditions configured"
+- 无法区分"已分配给 Agent"和"仅存在于库中"的 policy
+- hover 才出现的编辑/删除按钮在触屏设备上无法使用
+
+**方案**：
+
+1. **修复图标颜色** — 使用 `hookMeta[p.hook].color` 动态设置图标容器颜色
+2. **补全 summarizeRule()**：
+   ```typescript
+   function summarizeRule(rule: string): string {
+     const f = parseRule(rule)
+     const parts: string[] = []
+     if (f.deny_skills.length) parts.push(`Blocks: ${f.deny_skills.join(', ')}`)
+     if (f.require_skills.length) parts.push(`Requires ALL: ${f.require_skills.join(', ')}`)
+     if (f.require_skills_any.length) parts.push(`Requires ANY: ${f.require_skills_any.join(', ')}`)
+     if (f.evaluationPrompt && f.enableLlm) parts.push(`AI: ${f.evaluationPrompt.slice(0, 60)}…`)
+     return parts.length ? parts.join(' · ') : 'No conditions configured'
+   }
+   ```
+3. **卡片分组**：按 hook phase 分三个 section，各 section 标题带对应颜色标识
+4. **编辑/删除按钮常驻**：去掉 `opacity-0 group-hover:opacity-100`，改为始终可见的半透明按钮
+5. **"使用中"标记**：如果某 policy 名字出现在 AgentConfig.policyHooks 中，卡片右上角显示小绿点 + "Active" tooltip
+
+### 6.2 简单模式数据丢失问题
+
+**现状**：`applyGuardrailToRule()` 切换类型时**完全重置所有字段**：
+
+```typescript
+function applyGuardrailToRule(...): RuleFields {
+  const base: RuleFields = {
+    deny_skills: [], require_skills: [], require_skills_any: [],
+    hook_skills: [], enableLlm: false, evaluationPrompt: '',
+  }
+  // 只填充当前类型对应的字段，其他全部丢失
+}
+```
+
+同时 `detectGuardrailType()` 检测逻辑不覆盖 `require_skills_any` 和 `hook_skills`，导致这些配置在简单模式下不可见/不可编辑。
+
+**方案**：
+
+1. **保留跨类型字段** — `applyGuardrailToRule()` 改为只修改当前类型对应的字段，保留其余：
+   ```typescript
+   function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string[], condition: string): RuleFields {
+     const next = { ...f }
+     switch (type) {
+       case 'must_call':       next.require_skills = skills; break
+       case 'must_call_any':   next.require_skills_any = skills; break
+       case 'never_allow':     next.deny_skills = skills; break
+       case 'ai_eval':         next.evaluationPrompt = condition; next.enableLlm = true; break
+       case 'ai_eval_filtered': next.evaluationPrompt = condition; next.enableLlm = true; break
+     }
+     return next
+   }
+   ```
+2. **切换 Simple→Advanced→Simple 防丢**：进入 Advanced 模式前缓存 `ruleFields` 快照，回到 Simple 时若结构可表达则恢复
+3. **`detectGuardrailType()` 扩展**：增加对 `require_skills_any` 和 `hook_skills` 的检测，若包含不可简单表达的组合则自动切换为 Advanced 模式
+
+### 6.3 AgentPolicyHooksPicker 信息密度不足
+
+**现状**：三列布局每列显示已分配的 policy name chips + 添加下拉。问题是：
+
+- 每个 chip **只显示 policy name**，不知道它做什么（deny？require？AI eval？）
+- 用户必须记住 policy 名字才能理解当前护栏配置
+- dropdown 中跨 hook 的 policy 用 `·· postTool` 标记，但分配后警告消失
+- "孤儿" policy（名字在 hooks 但 catalog 中不存在）有一定提示，但太弱
+
+**方案**：
+
+1. **Chip 内显示简短摘要**：每个 chip 内部两行 — 第一行 policy name（加粗），第二行 `summarizeRule()` 简短描述（10px 灰色文字）。如果 catalog 中查不到则显示 "Not in library"
+2. **跨 hook 警告持久化**：分配后 chip 右侧始终显示小警告图标（若 policy.hook ≠ 当前列 hook），tooltip 显示 "此策略原始配置为 postTool，当前分配到 preTool"
+3. **下拉分组**：`eligibleToAdd` 下拉中用 `<optgroup>` 按 hook 匹配 vs 非匹配分组，视觉上区分
+
+### 6.4 GuardrailSummaryList 缺失组合规则
+
+**现状**：GuardrailSummaryList 为每条 policy 最多生成 1 个 chip。但一条 policy 可以同时有 `require_skills_any` + `evaluationPrompt`（AI 评估 + 硬性前置条件），应显示 2 个 chip。
+
+**方案**：改为对每条 policy 的每个非空 rule 字段分别生成 chip：
+- `deny_skills` → amber chip
+- `require_skills` / `require_skills_any` → malachite chip
+- `evaluationPrompt` + `enableLlm` → lavender chip
+
+### 6.5 库与分配的认知割裂
+
+**现状**：用户在 `/admin/guardrails` 创建 policy，再去 `/admin/agent` 分配。两者之间没有导航上下文——从 policy 列表看不到谁在用，从 Agent 配置看不到 policy 详情。
+
+**方案**：
+
+1. **Guardrails 列表页增加"Used by"列**：每张卡片底部显示一行小字 "Used by: Agent Config"（如果该 policy 出现在 AgentConfig.policyHooks 中），否则 "Not assigned to any agent"
+2. **AgentPolicyHooksPicker 中的 chip 可点击**：点击 chip 跳转到 `/admin/guardrails?edit=policyName` 打开该 policy 的编辑弹窗
+
+### 6.6 编辑器细节问题
+
+- **Name 不可变但无提示**：`<input disabled={!isNew}>` 但没有说明文字。应该加一行 `text-[10px] text-[var(--smoke)]` 的 "Name cannot be changed after creation"
+- **保存无校验**：允许保存空 rule、空 name。应该至少校验 name 非空、rule 至少有一条规则
+- **删除用原生 confirm()**：Chrome 的 `confirm()` 弹窗与整个 glass-morphism 风格格格不入。应使用自定义确认弹窗
+- **新建后 Modal 关闭时列表不刷新**：如果 API 返回非 200，`alert()` 弹出但 Modal 不关闭，用户可能困惑
+
+---
+
+## 7. Open Questions
+
+1. **Policy 是否需要版本控制？** 改了 policy rule 会影响所有使用它的 Agent。是否需要在 AgentConfig 中记录 "policy snapshot" 而非只记录名字？
+2. **是否支持 policy 的测试/模拟？** 运营人员配置了一条 AI evaluation 策略后，无法预览它对某个 skill output 的判断结果
+3. **是否需要 policy 模板库？** 目前只有 6 条内置 policy，是否预置更多行业模板（电商客服、游戏客服、金融客服）？
+
+---
+
+## 8. 工作量评估（更新）
 
 | # | 项 | 工作量 | 风险 |
 |---|-----|--------|------|
@@ -210,12 +326,29 @@ ORDER BY hit_count DESC
 | 3 | Guardrail Builder 简单模式补全 | 1.5h | 低 — UI 增量改动 |
 | 4 | Hook 不匹配校验 | 0.5h | 低 — 仅 UI 提示 |
 | 5 | Hit Stats 后端 | 2h | 低 — 新增独立 API |
-| **合计** | | **~1 天** | |
+| 6.1 | 卡片视觉层次修复 | 1h | 低 — CSS + summarizeRule 补全 |
+| 6.2 | 简单模式防数据丢失 | 1.5h | 中 — 需要改切换逻辑 |
+| 6.3 | Picker chip 增强 | 1h | 低 — UI 增量 |
+| 6.4 | SummaryList 组合规则 | 0.5h | 低 — 小改动 |
+| 6.5 | 库/分配关联（Used by + chip 跳转） | 1.5h | 低 — 需要查询 AgentConfig |
+| 6.6 | 编辑器细节修复 | 1h | 低 — 校验 + 自定义确认弹窗 |
+| **合计** | | **~2.5 天** | |
 
-## 7. 建议优先级
+## 9. 建议优先级
 
-1. **#1（Bug Fix）** — 最高。当前 policyHooks 覆盖逻辑有 bug，影响每个配置了自定义 hooks 的 Agent
-2. **#3（简单模式补全）** — 高。运营人员无法在简单模式下创建最常见的护栏类型
-3. **#5（Hit Stats）** — 中。演示时客户问"护栏命中次数"时能看到真实数据
-4. **#4（Hook 不匹配校验）** — 低。视觉提示，不阻塞功能
-5. **#2（重命名）** — 低。代码卫生，不影响行为
+**Phase 1 — 必须修（演示前）**
+1. **#1 Bug Fix**（2h）— policyHooks 覆盖逻辑 bug
+2. **#6.1 卡片视觉修复**（1h）— 图标颜色 bug + summarizeRule 补全
+3. **#6.2 简单模式防丢数据**（1.5h）— 运营人员切换类型时丢失配置
+4. **#6.6 编辑器细节**（1h）— 校验 + 确认弹窗
+
+**Phase 2 — 演示加分**
+5. **#3 简单模式新增 2 种类型**（1.5h）
+6. **#6.3 Picker chip 显示摘要**（1h）— Agent 配置页面可读性
+7. **#5 Hit Stats**（2h）— 真实数据
+
+**Phase 3 — 后续迭代**
+8. **#6.5 库/分配关联**（1.5h）
+9. **#6.4 SummaryList 组合规则**（0.5h）
+10. **#4 Hook 不匹配校验**（0.5h）
+11. **#2 重命名**（1h）
