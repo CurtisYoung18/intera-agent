@@ -78,7 +78,7 @@ export default function LiveChatDetailPage() {
   return (
     <div className="p-8 max-w-5xl">
       <div className="flex items-center gap-2 mb-2">
-        <a href="/admin/integrations" className="text-[11px] text-indigo hover:text-indigo/80">&larr; Channels</a>
+        <a href="/admin/channels" className="text-[11px] text-indigo hover:text-indigo/80">&larr; Channels</a>
       </div>
       <div className="flex items-center gap-3 mb-6">
         <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center"><MessageCircle className="w-4 h-4 text-purple-600" /></div>

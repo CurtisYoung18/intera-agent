@@ -74,7 +74,7 @@ const ADMIN_ITEMS: NavItem[] = [
   // { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' }, // Phase B: merged into Channels Human Ops tab
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
-  { href: '/admin/integrations', slug: 'channels', icon: Plug, color: '#7c3aed' },
+  { href: '/admin/channels', slug: 'channels', icon: Plug, color: '#7c3aed' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {

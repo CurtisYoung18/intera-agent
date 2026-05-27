@@ -5,20 +5,20 @@ import { CONSOLE_SCROLL_ROOT_ID } from '@/components/console-back-to-top'
 import type { TranslateFn } from '@/lib/i18n/types'
 
 export const GUIDE_SECTION_IDS = [
+  'guide-api',
   'guide-intro',
-  'guide-routes',
   'guide-concepts',
+  'guide-routes',
   'guide-case-lifecycle',
-  'guide-intent-routing',
-  'guide-stage-runtime',
-  'guide-facts-memory',
   'guide-loop-engine',
   'guide-sub-agents',
   'guide-tools-policy',
+  'guide-facts-memory',
+  'guide-stage-runtime',
+  'guide-intent-routing',
   'guide-config-lifecycle',
   'guide-observability',
   'guide-admin-map',
-  'guide-api',
 ] as const
 
 export type GuideSectionId = (typeof GUIDE_SECTION_IDS)[number]
@@ -177,20 +177,20 @@ export function GuideTableOfContents({ t }: { t: TranslateFn }) {
   }, [active])
 
   const links: { id: GuideSectionId; labelKey: string }[] = [
+    { id: 'guide-api', labelKey: 'guide.nav.api' },
     { id: 'guide-intro', labelKey: 'guide.nav.intro' },
-    { id: 'guide-routes', labelKey: 'guide.nav.routes' },
     { id: 'guide-concepts', labelKey: 'guide.nav.concepts' },
+    { id: 'guide-routes', labelKey: 'guide.nav.routes' },
     { id: 'guide-case-lifecycle', labelKey: 'guide.nav.caseLifecycle' },
-    { id: 'guide-intent-routing', labelKey: 'guide.nav.intentRouting' },
-    { id: 'guide-stage-runtime', labelKey: 'guide.nav.stage' },
-    { id: 'guide-facts-memory', labelKey: 'guide.nav.facts' },
     { id: 'guide-loop-engine', labelKey: 'guide.nav.loop' },
     { id: 'guide-sub-agents', labelKey: 'guide.nav.subAgents' },
     { id: 'guide-tools-policy', labelKey: 'guide.nav.toolsPolicy' },
+    { id: 'guide-facts-memory', labelKey: 'guide.nav.facts' },
+    { id: 'guide-stage-runtime', labelKey: 'guide.nav.stage' },
+    { id: 'guide-intent-routing', labelKey: 'guide.nav.intentRouting' },
     { id: 'guide-config-lifecycle', labelKey: 'guide.nav.configLifecycle' },
     { id: 'guide-observability', labelKey: 'guide.nav.observe' },
     { id: 'guide-admin-map', labelKey: 'guide.nav.adminMap' },
-    { id: 'guide-api', labelKey: 'guide.nav.api' },
   ]
 
   return (
