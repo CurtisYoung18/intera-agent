@@ -31,6 +31,15 @@ function parseJsonField(raw: string | undefined): { ok: true; value: unknown } |
   }
 }
 
+function inferJsonSchema(obj: Record<string, unknown>): Record<string, unknown> {
+  const properties: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    const type = Array.isArray(value) ? 'array' : typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : typeof value === 'object' && value !== null ? 'object' : 'string'
+    properties[key] = { type }
+  }
+  return { type: 'object', properties }
+}
+
 function mockFixtureChips(raw?: string | null): string[] | null {
   const p = parseJsonField(raw ?? undefined)
   if (!p.ok) return null
@@ -58,6 +67,7 @@ export default function SkillsPage() {
   const [isNew, setIsNew] = useState(false)
   const [originalName, setOriginalName] = useState('')
   const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; status: number; body: unknown } | null>(null)
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/skills')
     const data = await res.json()
@@ -105,19 +115,22 @@ export default function SkillsPage() {
   const handleTestEndpoint = useCallback(async () => {
     if (!editing) return
     setTesting(true)
+    setTestResult(null)
     try {
       const res = await fetch('/api/admin/skills/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
       const data = await res.json()
-      alert(
-        data.ok
-          ? t('skills.testOk', { status: data.status ?? data.statusCode ?? 200 })
-          : t('skills.testFailed', { err: data.error || 'Unknown' }),
-      )
+      setTestResult(data)
     } catch {
-      alert(t('skills.testConnFailed'))
+      setTestResult({ ok: false, status: 0, body: 'Connection failed' })
     }
     finally { setTesting(false) }
-  }, [editing, t])
+  }, [editing])
+
+  const inferOutputSchema = useCallback(() => {
+    if (!editing || !testResult?.body || typeof testResult.body !== 'object') return
+    const schema = inferJsonSchema(testResult.body as Record<string, unknown>)
+    setEditing({ ...editing, outputSchema: JSON.stringify(schema, null, 2) })
+  }, [editing, testResult])
 
   const formatField = (field: keyof SkillItem) => {
     if (!editing) return
@@ -547,6 +560,24 @@ export default function SkillsPage() {
               <button onClick={handleTestEndpoint} disabled={testing} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] bg-sky/[0.06] border border-sky/20 text-sky hover:bg-sky/[0.1] transition-all">
                 <Zap className="w-3.5 h-3.5" />{testing ? t('skills.testing') : t('skills.testEndpoint')}
               </button>
+
+              {testResult && (
+                <div className={`rounded-lg p-3 text-[11px] ${testResult.ok ? 'bg-malachite/[0.06] border border-malachite/20' : 'bg-vermillion/[0.06] border border-vermillion/20'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={testResult.ok ? 'text-malachite' : 'text-vermillion'}>
+                      {testResult.ok ? `HTTP ${testResult.status}` : `Error: ${String(testResult.body)}`}
+                    </span>
+                    {testResult.ok && testResult.body && typeof testResult.body === 'object' && (
+                      <button onClick={inferOutputSchema} className="text-[10px] px-2 py-0.5 rounded bg-malachite/[0.1] border border-malachite/20 text-malachite hover:bg-malachite/[0.2] transition-colors">
+                        Infer outputSchema
+                      </button>
+                    )}
+                  </div>
+                  {testResult.ok && testResult.body && (
+                    <pre className="text-[10px] font-mono text-[var(--mist)] max-h-[120px] overflow-auto whitespace-pre-wrap">{JSON.stringify(testResult.body, null, 2)}</pre>
+                  )}
+                </div>
+              )}
             </div>
             {(['inputSchema', 'outputSchema', 'headers'] as const).map(f => {
               const fk = (
