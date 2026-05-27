@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Search, Plus, Trash2, Edit3, ToggleLeft, ToggleRight,
   Play, RefreshCw, CheckCircle2, XCircle, Loader2,
-  ChevronDown, ExternalLink, GripVertical, Eye, EyeOff, Key,
+  ChevronDown, ExternalLink, GripVertical, Eye, EyeOff, Key, Bot,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -67,9 +67,6 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Global toggle
-  const [kbSkillEnabled, setKbSkillEnabled] = useState(true)
-  const [togglingGlobal, setTogglingGlobal] = useState(false)
 
   // Edit panel
   const [editingSource, setEditingSource] = useState<Partial<KnowledgeSource> | null>(null)
@@ -120,42 +117,14 @@ export default function KnowledgePage() {
     }
   }, [])
 
-  const fetchKbSkillStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/skills/kb_hybrid_retrieve')
-      const data = await res.json()
-      if (data.skill) {
-        setKbSkillEnabled(data.skill.enabled)
-      }
-    } catch {
-      // ignore — use default
-    }
-  }, [])
-
   useEffect(() => {
     fetchSources()
     fetchGptKbs()
-    fetchKbSkillStatus()
-  }, [fetchSources, fetchGptKbs, fetchKbSkillStatus])
+  }, [fetchSources, fetchGptKbs])
 
-  // ── Global toggle ──────────────────────────────────────────────────
+  // ── Tool name helper ───────────────────────────────────────────────
 
-  const toggleGlobalKb = async () => {
-    setTogglingGlobal(true)
-    const newEnabled = !kbSkillEnabled
-    try {
-      await fetch('/api/admin/skills/kb_hybrid_retrieve', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newEnabled }),
-      })
-      setKbSkillEnabled(newEnabled)
-    } catch {
-      // revert UI on error
-    } finally {
-      setTogglingGlobal(false)
-    }
-  }
+  const getToolName = (name: string) => `kb_search_${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
 
   // ── Source CRUD ────────────────────────────────────────────────────
 
@@ -271,32 +240,18 @@ export default function KnowledgePage() {
               </h1>
             </div>
             <p className="text-[13px] text-[var(--fog)] max-w-2xl leading-relaxed mt-1">
-              Configure GPTBots knowledge sources for the agent. Each source maps to one or more GPTBots knowledge bases with custom retrieval settings.
+              Each enabled knowledge source becomes a <code className="text-[11px] bg-teal-500/[0.08] px-1 rounded">kb_search_*</code> tool for the agent.
+              The agent reads each source&apos;s description and decides which one(s) to query — calling multiple in parallel when needed.
             </p>
           </div>
 
-          {/* Global toggle */}
-          <button
-            onClick={toggleGlobalKb}
-            disabled={togglingGlobal}
-            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
-            style={{
-              borderColor: kbSkillEnabled ? 'rgba(20,184,166,0.25)' : 'rgba(0,0,0,0.08)',
-              background: kbSkillEnabled ? 'rgba(20,184,166,0.06)' : 'rgba(0,0,0,0.03)',
-              color: kbSkillEnabled ? '#0d9488' : 'var(--fog)',
-            }}
-          >
-            {togglingGlobal ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : kbSkillEnabled ? (
-              <ToggleRight className="w-5 h-5" />
-            ) : (
-              <ToggleLeft className="w-5 h-5" />
-            )}
-            <span className="text-[12px] font-semibold">
-              {kbSkillEnabled ? 'KB Enabled' : 'KB Disabled'}
+          {/* Tool generation info badge */}
+          <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl border border-teal-500/15 bg-teal-500/[0.06]">
+            <Bot className="w-4 h-4 text-teal-600" />
+            <span className="text-[12px] font-semibold text-teal-700">
+              {sources.filter(s => s.enabled).length} tools active
             </span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -370,7 +325,10 @@ export default function KnowledgePage() {
                     {/* Top row: name + toggle */}
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</p>
+                          <code className="text-[9px] font-mono text-teal-600 bg-teal-500/[0.08] px-1 py-0.5 rounded">{getToolName(s.name)}</code>
+                        </div>
                         {s.description && (
                           <p className="text-[11px] text-[var(--fog)] mt-0.5 line-clamp-2">{s.description}</p>
                         )}

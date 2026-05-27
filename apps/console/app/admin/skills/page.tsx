@@ -208,6 +208,22 @@ export default function SkillsPage() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('skills.searchPh')} className="glass-input-console pl-10 text-[13px]" />
       </div>
 
+      {/* Knowledge search tools notice */}
+      <div className="mb-6 p-4 rounded-xl border border-teal-500/15 bg-teal-500/[0.04] flex items-start gap-3">
+        <div className="w-8 h-8 rounded-lg bg-teal-500/[0.08] flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Search className="w-4 h-4 text-teal-600" />
+        </div>
+        <div>
+          <p className="text-[13px] font-semibold text-[var(--mist)]">Knowledge search tools are auto-generated</p>
+          <p className="text-[12px] text-[var(--fog)] mt-0.5">
+            Each{' '}
+            <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline">Knowledge Source</Link>
+            {' '}creates a <code className="text-[11px] bg-teal-500/[0.08] px-1 rounded">kb_search_&lt;name&gt;</code> tool automatically.
+            Enable or disable sources on the Knowledge page — no manual skill setup needed.
+          </p>
+        </div>
+      </div>
+
       {filtered.length === 0 ? (
         <EmptyState icon={Puzzle} title={t('skills.noSkills')} description={search ? t('common.noMatches') : t('skills.noSkillsDesc')} />
       ) : (
