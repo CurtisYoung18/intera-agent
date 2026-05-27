@@ -153,7 +153,7 @@ export default function SkillRenderHintsEditor({ value, onChange, mockFixture }:
         <p className="text-[11px] text-[var(--fog)]">Output will be sent as plain text.</p>
       )}
 
-      {mockFixture && hint && (
+      {!!mockFixture && hint && (
         <div className="mt-4 p-3 bg-black/[0.02] rounded-lg border border-black/[0.04]">
           <p className="text-[10px] font-semibold text-[var(--fog)]/60 mb-1">Preview</p>
           <pre className="text-[10px] text-[var(--mist)] overflow-x-auto">

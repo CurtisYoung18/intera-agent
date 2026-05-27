@@ -10,9 +10,9 @@ import type { InteraInteractionSubmit, InteraFormSubmit, AttachmentData } from '
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { customerId: string } },
+  { params }: { params: Promise<{ customerId: string }> },
 ) {
-  const { customerId } = params
+  const { customerId } = await params
 
   let rawBody: string
   let body: Record<string, unknown>
@@ -29,7 +29,7 @@ export async function POST(
     return NextResponse.json({ error: 'Customer not configured' }, { status: 404 })
   }
 
-  const secret = (config as Record<string, unknown>).webhookSecret as string | undefined
+  const secret = ((config as unknown as Record<string, unknown>).webhookSecret as string | undefined)
     ?? process.env.LIVECHAT_WEBHOOK_SECRET
 
   if (!secret) {

@@ -10,32 +10,32 @@ export function renderSkillByHint(
 ): BridgeAction[] {
   switch (hint.kind) {
     case 'card': {
-      const title = readPath(output, hint.titleField)
-      const subtitle = hint.subtitleField ? readPath(output, hint.subtitleField) : undefined
-      const imageUrl = hint.imageUrlField ? readPath(output, hint.imageUrlField) : undefined
+      const title = String(readPath(output, hint.titleField) ?? '')
+      const subtitle = hint.subtitleField ? String(readPath(output, hint.subtitleField) ?? '') : undefined
+      const imageUrl = hint.imageUrlField ? String(readPath(output, hint.imageUrlField) ?? '') : undefined
       const buttons: CardSpec['buttons'] = (hint.buttons ?? []).map(b => ({
         id: b.postback,
-        label: b.labelField ? readPath(output, b.labelField) : (b.labelStatic ?? b.id),
-        type: b.type,
+        label: String(b.labelField ? (readPath(output, b.labelField) ?? '') : (b.labelStatic ?? b.id)),
+        type: b.type as 'message' | 'url' | 'webview' | undefined,
         url: b.url,
       }))
-      return [{ type: 'send_card', card: { title: title || '(untitled)', subtitle, imageUrl, buttons } }]
+      return [{ type: 'send_card', card: { title: title || '(untitled)', subtitle: subtitle || undefined, imageUrl: imageUrl || undefined, buttons } }]
     }
 
     case 'carousel': {
-      const items = readPath(output, hint.itemsField) as unknown[]
+      const items = readPath(output, hint.itemsField)
       if (!Array.isArray(items) || items.length === 0) {
         return [{ type: 'send_text', text: '(no results)' }]
       }
       const tpl = hint.itemTemplate!
-      const cards: CardSpec[] = items.slice(0, 10).map((item, i) => ({
-        title: readPath(item, tpl.titleField) || `Item ${i + 1}`,
-        subtitle: tpl.subtitleField ? readPath(item, tpl.subtitleField) : undefined,
-        imageUrl: tpl.imageUrlField ? readPath(item, tpl.imageUrlField) : undefined,
+      const cards: CardSpec[] = (items as unknown[]).slice(0, 10).map((item, i) => ({
+        title: String(readPath(item, tpl.titleField) ?? `Item ${i + 1}`),
+        subtitle: tpl.subtitleField ? String(readPath(item, tpl.subtitleField) ?? '') : undefined,
+        imageUrl: tpl.imageUrlField ? String(readPath(item, tpl.imageUrlField) ?? '') : undefined,
         buttons: (tpl.buttons ?? []).map(b => ({
-          id: `${b.postback}:${readPath(item, hint.idField ?? '$.id') || i}`,
-          label: b.labelField ? readPath(item, b.labelField) : (b.labelStatic ?? b.id),
-          type: b.type,
+          id: `${b.postback}:${String(readPath(item, hint.idField ?? '$.id') ?? i)}`,
+          label: String(b.labelField ? (readPath(item, b.labelField) ?? '') : (b.labelStatic ?? b.id)),
+          type: b.type as 'message' | 'url' | 'webview' | undefined,
           url: b.url,
         })),
       }))
@@ -43,14 +43,14 @@ export function renderSkillByHint(
     }
 
     case 'quick_replies': {
-      const options = readPath(output, hint.optionsField) as unknown[]
+      const options = readPath(output, hint.optionsField)
       if (!Array.isArray(options)) return [{ type: 'noop' }]
       return [{
         type: 'send_quick_replies',
         text: hint.titleStatic ?? 'Please select:',
-        options: options.map((o) => ({
-          id: String(readPath(o, hint.optionIdField ?? '$.id') || ''),
-          label: String(readPath(o, hint.optionLabelField ?? '$.label') || ''),
+        options: (options as unknown[]).map((o) => ({
+          id: String(readPath(o, hint.optionIdField ?? '$.id') ?? ''),
+          label: String(readPath(o, hint.optionLabelField ?? '$.label') ?? ''),
         })),
       }]
     }
@@ -65,15 +65,15 @@ export function renderSkillByHint(
   }
 }
 
-function readPath(obj: unknown, path?: string): string {
-  if (!path) return ''
+function readPath(obj: unknown, path?: string): unknown {
+  if (!path) return undefined
   try {
     const cleaned = path.startsWith('$.') ? path.slice(2) : path
-    return cleaned.split('.').reduce((acc, key) => {
-      if (acc === undefined || acc === null) return ''
+    return cleaned.split('.').reduce<unknown>((acc, key) => {
+      if (acc === undefined || acc === null) return undefined
       return (acc as Record<string, unknown>)?.[key]
-    }, obj) as string ?? ''
+    }, obj)
   } catch {
-    return ''
+    return undefined
   }
 }

@@ -759,7 +759,7 @@ query_order_status 和 query_payment_channel_status 的 txnId 参数必须使用
 
 若发现需要客户补充信息（截图等），必须用 request_user_input 表单收集，禁止纯文本提问。`,
       requiredSkills: ['query_order_status', 'query_payment_channel_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', '''request_user_input'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'status',
@@ -1037,7 +1037,7 @@ JSON ONLY:
       name: 'investigating',
       description: '调用取款状态与打码量条件接口核对平台记录。若发现数据矛盾需要客户补充信息，使用 request_user_input 表单收集。',
       requiredSkills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
-      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', '''request_user_input'],
+      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'withdrawalStatus',

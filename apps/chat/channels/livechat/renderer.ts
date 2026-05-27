@@ -25,10 +25,11 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
 
   /** Translate a single SSE event into BridgeAction(s). */
   render(event: SSEEvent, ctx: RenderContext): BridgeAction[] {
-    return [this.translateEvent(event, ctx)]
+    const result = this.translateEvent(event, ctx)
+    return Array.isArray(result) ? result : [result]
   }
 
-  private translateEvent(event: SSEEvent, ctx: RenderContext): BridgeAction {
+  private translateEvent(event: SSEEvent, ctx: RenderContext): BridgeAction | BridgeAction[] {
     const { caseId } = ctx
 
     switch (event.type) {

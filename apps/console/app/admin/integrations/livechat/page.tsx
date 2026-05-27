@@ -4,7 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { MessageCircle, ExternalLink, Eye, EyeOff, Save, CheckCircle2, AlertCircle } from 'lucide-react'
 import { chatApiUrl } from '@/lib/chat-api'
 import { useConsoleLocale } from '@/components/locale-provider'
-import type { WidgetPayload } from '@/lib/livechat/types'
+
+interface WidgetPayload {
+  kind: 'status_track' | 'propose_interaction' | 'request_user_input'
+  caseId: string
+  step?: { id: string; label: string; state: 'running' | 'done'; durationMs?: number }
+  options?: Array<{ id: string; label: string; description?: string; inputType?: 'none' | 'text'; inputPlaceholder?: string }>
+  fields?: Array<{ id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string }>
+}
 
 interface LiveChatConfig {
   botAccessToken: string

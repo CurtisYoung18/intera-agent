@@ -21,11 +21,11 @@ export async function enqueueRetry(
   error: string,
 ): Promise<void> {
   try {
-    await prisma.livechatPendingEvent.create({
+    await prisma.liveChatPendingEvent.create({
       data: {
         chatId,
         customerId,
-        payload: { userId, event },
+        payload: { userId, event } as never,
         attempt: 0,
         lastError: error,
         nextRetryAt: new Date(Date.now() + BACKOFF_MS[0]),
@@ -38,7 +38,7 @@ export async function enqueueRetry(
 
 export async function processRetryQueue(): Promise<number> {
   const now = new Date()
-  const items = await prisma.livechatPendingEvent.findMany({
+  const items = await prisma.liveChatPendingEvent.findMany({
     where: { nextRetryAt: { lte: now }, attempt: { lt: MAX_RETRIES } },
     orderBy: { nextRetryAt: 'asc' },
     take: 10,
@@ -49,7 +49,7 @@ export async function processRetryQueue(): Promise<number> {
     try {
       const config = await getLiveChatConfig(item.customerId)
       if (!config?.enabled) {
-        await prisma.livechatPendingEvent.delete({ where: { id: item.id } })
+        await prisma.liveChatPendingEvent.delete({ where: { id: item.id } })
         continue
       }
 
@@ -58,7 +58,7 @@ export async function processRetryQueue(): Promise<number> {
       const event = payload.event as IncomingEvent
 
       await handleIncomingEvent(item.chatId, item.customerId, userId, event, config)
-      await prisma.livechatPendingEvent.delete({ where: { id: item.id } })
+      await prisma.liveChatPendingEvent.delete({ where: { id: item.id } })
       processed++
     } catch (err) {
       const nextAttempt = item.attempt + 1
@@ -66,12 +66,12 @@ export async function processRetryQueue(): Promise<number> {
 
       if (nextAttempt >= MAX_RETRIES) {
         console.error(`[RetryQueue] Dead letter: ${item.id}, error: ${errMsg}`)
-        await prisma.livechatPendingEvent.update({
+        await prisma.liveChatPendingEvent.update({
           where: { id: item.id },
           data: { attempt: nextAttempt, lastError: errMsg },
         })
       } else {
-        await prisma.livechatPendingEvent.update({
+        await prisma.liveChatPendingEvent.update({
           where: { id: item.id },
           data: {
             attempt: nextAttempt,
