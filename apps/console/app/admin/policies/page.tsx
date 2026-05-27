@@ -79,6 +79,16 @@ function getGuardrailTargetSkills(f: RuleFields): string[] {
   return []
 }
 
+function summarizeRule(rule: string): string {
+  const f = parseRule(rule)
+  const gt = detectGuardrailType(f)
+  const targets = getGuardrailTargetSkills(f)
+  if (gt === 'never_allow' && targets.length) return `Blocks: ${targets.join(', ')}`
+  if (gt === 'must_call' && targets.length) return `Requires: ${targets.join(', ')} before proceeding`
+  if (gt === 'ai_eval' && f.evaluationPrompt) return `AI checks: ${f.evaluationPrompt.slice(0, 80)}${f.evaluationPrompt.length > 80 ? '…' : ''}`
+  return 'No conditions configured'
+}
+
 function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string[], condition: string): RuleFields {
   const base: RuleFields = {
     deny_skills: [],
@@ -199,7 +209,8 @@ export default function PoliciesPage() {
                       {p.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
                     </button>
                   </div>
-                  <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{p.description || t('common.noDescription')}</p>
+                  <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-1">{p.description || t('common.noDescription')}</p>
+                  <p className="text-[10px] text-[var(--smoke)] font-mono line-clamp-2 mb-3">{summarizeRule(p.rule)}</p>
                   <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
                     <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
                     <div className="flex gap-1">

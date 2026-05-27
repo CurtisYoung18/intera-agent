@@ -26,6 +26,7 @@ const WIDGET_VIEWS: Array<{ label: string; payload: WidgetPayload }> = [
 
 const TABS = [
   { id: 'connection', label: 'Connection', icon: Globe },
+  { id: 'routing', label: 'Routing', icon: GitBranch },
   { id: 'rendering', label: 'Rendering', icon: Monitor },
   { id: 'humanOps', label: 'Human Ops', icon: UserCheck },
 ] as const
@@ -138,6 +139,27 @@ export default function LiveChatDetailPage() {
                 <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${config.showSkillStatus ? 'translate-x-5' : 'translate-x-1'}`} />
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Routing Tab ── */}
+      {activeTab === 'routing' && (
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4 max-w-2xl">
+          <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">Case Type Routing</p>
+          <div className="p-4 bg-white border border-black/[0.06] rounded-xl">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[13px] font-semibold text-[var(--mist)]">Auto-transfer to human</p>
+              <button className={`w-10 h-6 rounded-full transition-colors relative bg-black/[0.08]`}>
+                <span className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow" />
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--fog)]">When enabled, all incoming chats are transferred to the default agent queue instead of being handled by Intera.</p>
+          </div>
+          <div className="p-4 bg-amber/[0.04] border border-amber/15 rounded-xl text-[12px] text-[var(--fog)]">
+            Case-type-level routing rules are managed on the{' '}
+            <Link href="/admin/case-types" className="text-indigo hover:text-indigo/80 underline">Case Types page</Link>.
+            Per-channel routing overrides coming in next release.
           </div>
         </div>
       )}
