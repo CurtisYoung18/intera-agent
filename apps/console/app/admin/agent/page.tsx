@@ -155,6 +155,7 @@ export default function AgentConfigPage() {
 
         setConfig({
           model: raw.model || 'MiniMax-M2.7-highspeed',
+          fallbackModel: raw.fallbackModel || '',
           temperature: raw.temperature ?? 0.5,
           thinkingBudget: raw.thinkingBudget ?? 4096,
           maxIterations: raw.maxIterations ?? 20,
@@ -517,6 +518,22 @@ export default function AgentConfigPage() {
                       ))}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.modelMainHint')}</span>
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">Fallback Model</span>
+                    <select
+                      value={config.fallbackModel}
+                      onChange={(e) => update('fallbackModel', e.target.value)}
+                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                    >
+                      <option value="">-- None --</option>
+                      {mainModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">Switches to this model after 3 consecutive 529 (overloaded) errors from the main model.</span>
                   </label>
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.evaluationModel')}</span>

@@ -20,6 +20,7 @@ export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknow
 type StatusCallback = (
   toolUse: ToolUse,
   status: 'executing' | 'completed' | 'error',
+  renderHints?: SkillDefinition['renderHints'],
 ) => void
 
 interface TrackedTool {
@@ -169,7 +170,7 @@ export class StreamingToolExecutor {
       input: tool.input,
       status: 'executing',
     }
-    this.onStatusChange?.(toolUse, 'executing')
+    this.onStatusChange?.(toolUse, 'executing', tool.definition.renderHints)
 
     // ── Zod validation (Claude Code pattern: safeParse before execution) ──
     try {
@@ -191,6 +192,7 @@ export class StreamingToolExecutor {
           this.onStatusChange?.(
             { id: tool.id, name: tool.name, input: tool.input, result: tool.result },
             'error',
+            tool.definition.renderHints,
           )
           this.results.push({ name: tool.name, output: tool.result, latencyMs: 0 })
           return
@@ -238,6 +240,7 @@ export class StreamingToolExecutor {
     this.onStatusChange?.(
       completedToolUse,
       tool.status === 'completed' ? 'completed' : 'error',
+      tool.definition.renderHints,
     )
 
     this.results.push({

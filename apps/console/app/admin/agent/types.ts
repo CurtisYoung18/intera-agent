@@ -77,6 +77,7 @@ export const DEFAULT_KNOWLEDGE_RETRIEVAL: KnowledgeRetrievalConfig = {
 
 export interface AgentConfigData {
   model: string
+  fallbackModel: string
   temperature: number
   thinkingBudget: number
   maxIterations: number
