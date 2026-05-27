@@ -41,7 +41,7 @@ const FINALIZE_SUB_AGENT_SKILL: SkillDefinition = {
     },
     required: ['findings', 'recommendation'],
   },
-  mode: 'mock',
+  mode: 'engine_managed',
   isConcurrencySafe: false,
   enabled: true,
 }

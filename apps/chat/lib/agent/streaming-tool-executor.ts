@@ -211,7 +211,7 @@ export class StreamingToolExecutor {
         // Engine-managed and channel-dependent skills are handled by the
         // agent loop directly — the executor should never receive them.
         output = { ok: true, handled: tool.definition.mode }
-      } else if (tool.definition.mode === 'mock') {
+      } else if (tool.definition.mode === 'static') {
         output = await this.executeMock(tool.definition)
       } else {
         output = await this.executeHttp(tool.definition, tool.input)

@@ -143,7 +143,7 @@ export default function SkillsPage() {
   }
 
   const openNew = () => {
-    setEditing({ id: '', name: '', description: '', mode: 'mock', mockFixture: '{"status":"ok"}', isConcurrencySafe: true, enabled: true })
+    setEditing({ id: '', name: '', description: '', mode: 'static', mockFixture: '{"status":"ok"}', isConcurrencySafe: true, enabled: true })
     setIsNew(true); setOriginalName('')
   }
 
@@ -249,7 +249,7 @@ export default function SkillsPage() {
                         </Link>
                       )}
 
-                      {s.mode === 'mock' && (
+                      {s.mode === 'static' && (
                         <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
                           <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
                           {(() => {
@@ -364,7 +364,7 @@ export default function SkillsPage() {
                       {/* Description */}
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{s.description || t('common.noDescription')}</p>
 
-                      {s.mode === 'mock' && (
+                      {s.mode === 'static' && (
                         <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
                           <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
                           {(() => {
@@ -431,7 +431,7 @@ export default function SkillsPage() {
               <select value={editing.mode} onChange={e => {
                 const newMode = e.target.value
                 const update: Partial<SkillItem> = { mode: newMode }
-                if (newMode === 'mock' && !editing.mockFixture?.trim()) {
+                if (newMode === 'static' && !editing.mockFixture?.trim()) {
                   update.mockFixture = prefillDefaultMock(editing.name) || '{"status":"ok"}'
                 }
                 setEditing({ ...editing, ...update })
@@ -461,7 +461,7 @@ export default function SkillsPage() {
             </details>
 
             {/* Static fixture — primary when mode is mock */}
-            {editing.mode === 'mock' ? (
+            {editing.mode === 'static' ? (
               <div className="rounded-xl border border-lavender/25 bg-lavender/[0.05] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold text-lavender">{t('skills.mockResponseEditor')}</span>
@@ -541,7 +541,7 @@ export default function SkillsPage() {
                 </div>
               </details>
             )}
-            <div className={`space-y-3 ${editing.mode === 'mock' ? 'opacity-40 pointer-events-none' : ''}`}>
+            <div className={`space-y-3 ${editing.mode === 'static' ? 'opacity-40 pointer-events-none' : ''}`}>
               <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('skills.httpConfig')}</span></div>
               <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('skills.endpoint')}</span>
                 <input value={editing.endpoint || ''} onChange={e => setEditing({ ...editing, endpoint: e.target.value })} className="glass-input-console text-[13px] font-mono" />

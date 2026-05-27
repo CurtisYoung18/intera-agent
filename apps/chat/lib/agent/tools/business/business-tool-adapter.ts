@@ -28,7 +28,7 @@ export function adaptBusinessTool(def: SkillDefinition): Tool {
     isReadOnly() { return def.isConcurrencySafe },
 
     async call(input: unknown, ctx: ToolContext) {
-      if (def.mode === 'mock') return executeMock(def, input)
+      if (def.mode === 'static') return executeMock(def, input)
       return executeHttp(def, input, ctx)
     },
   }
