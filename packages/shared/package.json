@@ -9,6 +9,7 @@
     "./types": "./types/index.ts",
     "./prisma": "./prisma/index.ts",
     "./composer-min-draft": "./composer-min-draft.ts",
+    "./defaults": "./defaults/index.ts",
     "./ui/*": "./ui/*.tsx"
   },
   "scripts": {
@@ -32,6 +33,7 @@
     "dotenv": "^16.6.1",
     "prisma": "^6.6.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.0"
   }
 }
