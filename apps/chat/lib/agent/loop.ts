@@ -20,6 +20,7 @@ import { ConversationLoop } from './conversation-loop'
 import { microCompact } from './microCompact'
 import { synthesizeMissingToolResults, assertToolResultInvariant } from './tool-result-invariant'
 import { classifyError } from './api/error-classifier'
+import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
@@ -414,7 +415,7 @@ export class AgentLoop {
       sopInternalNames.add('create_case')
       const toolExecutor = new StreamingToolExecutor(
         this.skillRouter.getToolDefinitions(),
-        (toolUse, status) => {
+        (toolUse, status, renderHints) => {
           if (sopInternalNames.has(toolUse.name)) return
           const skillDef = this.skillRouter.getSkill(toolUse.name)
           sendEvent({
@@ -424,6 +425,7 @@ export class AgentLoop {
               status,
               result: status !== 'executing' ? toolUse.result : undefined,
               displayVerb: status === 'executing' ? skillDef?.displayVerb : undefined,
+              renderHints: renderHints ?? skillDef?.renderHints,
             },
             timestamp: new Date().toISOString(),
           })
@@ -477,33 +479,60 @@ export class AgentLoop {
 
       const iterationStartTime = Date.now()
       let streamEndedAt = iterationStartTime
+      let streamFatalError: string | null = null
 
       if (this.abortController.signal.aborted) break
 
       const apiMessages = this.buildApiMessages()
 
-      // ── S2: Stream creation with classified retry (stream consumption errors
-      //     are handled in the for-await catch below — full streaming retry
-      //     integration with stream→non-streaming fallback is deferred to S3).
+      // ── S2: Stream creation with classified retry ──
       let stream: ReturnType<typeof this.anthropicClient.messages.stream>
       try {
-        stream = this.anthropicClient.messages.stream({
-          model: this.deps.config.model,
-          max_tokens: this.deps.config.maxOutputTokens ?? 4096,
-          system: stagePrompt,
-          messages: apiMessages,
-          tools: stageTools,
-          ...(this.deps.config.showThinking ? {
-            thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
-          } : {}),
-        }, { signal: this.abortController.signal })
+        stream = await withRetry(
+          async (_client, ctx) => {
+            return this.anthropicClient.messages.stream({
+              model: ctx.model,
+              max_tokens: ctx.maxTokensOverride ?? (this.deps.config.maxOutputTokens ?? 4096),
+              system: stagePrompt,
+              messages: apiMessages,
+              tools: stageTools,
+              ...(this.deps.config.showThinking ? {
+                thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
+              } : {}),
+            }, { signal: this.abortController.signal })
+          },
+          {
+            querySource: 'main_loop',
+            model: this.deps.config.model,
+            fallbackModel: this.deps.config.fallbackModel,
+            signal: this.abortController.signal,
+            onRetry: (info) => {
+              sendEvent({
+                type: 'retry_pending',
+                data: { attempt: info.attempt, delayMs: info.delayMs, errorClass: info.errorClass, message: info.message },
+                timestamp: new Date().toISOString(),
+              })
+            },
+          },
+          () => this.anthropicClient,
+        )
       } catch (err) {
-        const classified = classifyError(err)
-        if (classified === 'context_overflow') {
+        if (err instanceof FallbackTriggeredError) {
+          sendEvent({ type: 'error', data: `Model fallback exhausted: ${err.originalModel}`, timestamp: new Date().toISOString() })
+          sendEvent({ type: 'escalated', data: { reason: `LLM API error: ${err.reason}` }, timestamp: new Date().toISOString() })
+          return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
+        }
+        if (err instanceof CannotRetryError && err.errorClass === 'context_overflow') {
           this.messages = reactiveCompact(this.messages)
           await this.traceWriter.write('loop_decision', 'Reactive compact on context overflow', { error: String(err) })
           continue
         }
+        if (err instanceof CannotRetryError && err.errorClass === 'aborted') {
+          await this.traceWriter.write('loop_decision', 'Stream aborted', { iteration: this.iterationCount })
+          await this.writeProfilerSnapshot()
+          return { messages: this.messages, caseStatus: this.currentStage as CaseStatus, transition: 'connection_lost', currentStage: this.currentStage, reason: 'connection_lost' }
+        }
+        const classified = err instanceof CannotRetryError ? err.errorClass : classifyError(err)
         sendEvent({ type: 'error', data: `LLM API error (${classified})`, timestamp: new Date().toISOString() })
         sendEvent({ type: 'escalated', data: { reason: `LLM API error: ${classified}` }, timestamp: new Date().toISOString() })
         return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
@@ -625,12 +654,8 @@ export class AgentLoop {
           continue
         }
 
-        // Non-connection error: record and exit the loop gracefully
-        await this.traceWriter.write('loop_decision', 'Stream error', {
-          error: errStr,
-          iteration: this.iterationCount,
-        })
-        break
+        // Non-connection error: record, let S1 synthesis run, then exit
+        streamFatalError = errStr
       }
 
       streamEndedAt = Date.now()
@@ -742,6 +767,22 @@ export class AgentLoop {
         }
       }
 
+      // ── Stream fatal error after S1 synthesis: exit gracefully ──
+      if (streamFatalError) {
+        await this.traceWriter.write('loop_decision', 'Fatal stream error after S1 synthesis', {
+          error: streamFatalError, iteration: this.iterationCount,
+        })
+        sendEvent({ type: 'error', data: `Stream error: ${streamFatalError}`, timestamp: new Date().toISOString() })
+        await this.writeProfilerSnapshot()
+        return {
+          messages: this.messages,
+          caseStatus: 'escalated',
+          transition: 'error',
+          currentStage: this.currentStage,
+          reason: 'stream_error',
+        }
+      }
+
       // ── Step-mode todo interception (pure in-memory, no side effects) ─────
       // todo_write and todo_read bypass the skill executor — their mock outputs
       // are replaced here with real in-memory operations on CaseMemory.
@@ -792,6 +833,9 @@ export class AgentLoop {
             timestamp: new Date().toISOString(),
           })
         }
+
+        // ── Intercept dispatch_subagent (CC mode sub-agent dispatch) ──
+        toolResults = await this.processDispatchSubagent(toolResults, sendEvent)
       }
 
       if (
@@ -1564,6 +1608,48 @@ export class AgentLoop {
     })
   }
 
+  /**
+   * Intercept dispatch_subagent calls in CC mode.
+   * Replaces the mock result with an actual orchestrator dispatch.
+   */
+  private async processDispatchSubagent(
+    toolResults: ToolExecutionResult[],
+    sendEvent: (event: SSEEvent) => void,
+  ): Promise<ToolExecutionResult[]> {
+    if (!this.caseLoop) return toolResults
+
+    const dispatchResults: ToolExecutionResult[] = []
+    for (const tr of toolResults) {
+      if (tr.name !== 'dispatch_subagent') {
+        dispatchResults.push(tr)
+        continue
+      }
+      const input = tr.output as { agentName?: string; taskDescription?: string; taskPrompt?: string } | undefined
+      if (!input?.agentName || !input?.taskPrompt) {
+        dispatchResults.push({
+          ...tr,
+          output: { ok: false, error: 'dispatch_subagent requires agentName, taskDescription, and taskPrompt' },
+        })
+        continue
+      }
+      try {
+        await this.caseLoop.dispatchSingle(
+          input.agentName,
+          input.taskDescription ?? input.agentName,
+          input.taskPrompt,
+          sendEvent,
+        )
+        dispatchResults.push({ ...tr, output: { ok: true, status: 'dispatched', agentName: input.agentName } })
+      } catch (err) {
+        dispatchResults.push({
+          ...tr,
+          output: { ok: false, error: String(err) },
+        })
+      }
+    }
+    return dispatchResults
+  }
+
   private buildApiMessages() {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
     const recentMessages = this.messages.slice(-limit)
@@ -1743,6 +1829,8 @@ export class AgentLoop {
    */
   static async runReActLoop(
     client: Anthropic,
+    model: string,
+    fallbackModel: string | undefined,
     systemPrompt: string,
     skillDefinitions: SkillDefinition[],
     ctx: AgentContext,
@@ -1771,22 +1859,32 @@ export class AgentLoop {
       // ── Call LLM ─────────────────────────────────────────────
       let msg: Anthropic.Messages.Message
       try {
-        msg = await client.messages.create({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 4096,
-          temperature: 0.3,
-          system: stagePrompt,
-          tools: stageTools.length > 0 ? stageTools : undefined,
-          messages: messages as any,
-        }, { signal: ac.signal })
+        msg = await withRetry(
+          (retryClient, retryCtx) => retryClient.messages.create({
+            model: retryCtx.model,
+            max_tokens: 4096,
+            temperature: 0.3,
+            system: stagePrompt,
+            tools: stageTools.length > 0 ? stageTools : undefined,
+            messages: messages as any,
+          }, { signal: ac.signal }),
+          { querySource: 'sub_agent_loop', model, fallbackModel, signal: ac.signal },
+          () => client,
+        )
       } catch (err) {
-        if (ac.signal.aborted) {
+        if (err instanceof FallbackTriggeredError) {
+          return { messages: [], caseStatus: 'escalated' as const, transition: 'waiting_human' as const, reason: 'model_fallback_exhausted' }
+        }
+        if (err instanceof CannotRetryError && err.errorClass === 'aborted') {
           return {
             messages: [],
             caseStatus: 'escalated' as const,
             transition: 'connection_lost' as const,
             reason: 'aborted',
           }
+        }
+        if (err instanceof CannotRetryError) {
+          return { messages: [], caseStatus: 'escalated' as const, transition: 'waiting_human' as const, reason: `sub_agent_llm_${err.errorClass}` }
         }
         throw err
       }
@@ -1883,9 +1981,25 @@ export class AgentLoop {
         }
       })
 
+      // ── S1: Guarantee one tool_result per tool_use ──
+      const completedIds = new Set(
+        execResults.map((er) => er.toolUse?.id ?? toolUses.find((tu) => tu.name === er.name)?.id ?? ''),
+      )
+      const missingBlocks: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = []
+      for (const tu of toolUses) {
+        if (!completedIds.has(tu.id)) {
+          missingBlocks.push({
+            type: 'tool_result' as const,
+            tool_use_id: tu.id,
+            content: JSON.stringify({ error: 'tool_execution_failed', reason: 'executor_did_not_produce_result' }),
+          })
+        }
+      }
+      const allToolResultBlocks = [...toolResultBlocks, ...missingBlocks]
+
       // Add assistant + tool results to message history
       messages.push({ role: 'assistant' as const, content: msg.content })
-      messages.push({ role: 'user' as const, content: toolResultBlocks })
+      messages.push({ role: 'user' as const, content: allToolResultBlocks })
 
       // ── Emit tool call progress events ────────────────────────
       for (const tu of toolUses) {

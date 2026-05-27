@@ -98,6 +98,8 @@ export interface SkillDefinition {
   // Zod validation — catches type errors at runtime, feeds back to LLM for correction
   // Pattern from Claude Code: tool.inputSchema.safeParse(input)
   zodSchema?: import('zod').ZodType
+  /** Per-channel render hints for tool results (S5 — set by operator, consumed by ChannelRenderer). */
+  renderHints?: Partial<Record<string, import('../channels/render-hints').RenderHint>>
 }
 
 // ============================================
@@ -262,6 +264,8 @@ export interface AgentConfigData {
   enableLlmSanitization?: boolean
   /** When enabled, asserts the S1 tool-result invariant after every iteration (catches unmatched tool_use before API rejections). */
   invariantCheck?: boolean
+  /** Fallback model to use when the primary model is overloaded (consecutive 529s). */
+  fallbackModel?: string
 
   /**
    * DeepSeek beta chat completions — **customer-side composer** drafting assist only (`/api/composer-assist/*`).
@@ -370,6 +374,7 @@ export type SSEEventType =
   | 'core_agent_progress'
   | 'clarification'
   | 'policy_blocked'
+  | 'retry_pending'
   | 'escalated'
   | 'error'
 
@@ -502,6 +507,8 @@ export interface SubAgentConfig {
   parallel: boolean
   /** Sub-agent execution mode: "stage" (LLM-driven, default) or "sop" (SOP-driven). */
   executionMode?: 'stage' | 'cc'
+  /** Fallback model when primary model is overloaded (consecutive 529s). */
+  fallbackModel?: string
 }
 
 export interface OrchestratorConfig {
