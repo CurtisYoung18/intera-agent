@@ -518,46 +518,10 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       resolvedAt: new Date().toISOString(),
     },
   },
-  {
-    name: 'kb_hybrid_retrieve',
-    description:
-      'Search the knowledge base for answers. Call when the user asks "how to...", ' +
-      '"what is...", policy questions, or needs reference information. ' +
-      'Returns matched content chunks with relevance scores from GPTBots. ' +
-      'Use the [KB:data_id] citation tag in replies for auditability. ' +
-      'If all results have score < 0.4, tell the user no relevant info was found.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query in the user\'s language' },
-        topK: {
-          type: 'number',
-          description: 'Number of results to return (1-50)',
-          default: 5,
-        },
-        sourceName: {
-          type: 'string',
-          description: 'Optional: name of a specific knowledge source to search (e.g. "Deposit FAQ"). Omit to search all enabled sources.',
-        },
-      },
-      required: ['query'],
-    },
-    isConcurrencySafe: true,
-    mode: 'http',
-    endpoint: 'https://api-sg.gptbots.ai/v1/vector/match',
-    httpMethod: 'POST',
-    headers: {
-      Authorization: 'Bearer ${GPTBOTS_API_KEY}',
-    },
-    timeoutMs: 10000,
-    enabled: true,
-    displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
-    zodSchema: z.object({
-      query: z.string(),
-      topK: z.number().optional(),
-      sourceName: z.string().optional(),
-    }),
-  },
+  // kb_search_* tools are dynamically injected from KnowledgeSource records
+  // in SkillRouter.create(). Each source becomes kb_search_<name> with its
+  // own description, so the LLM can choose which source(s) to query.
+
   {
     name: 'request_user_input',
     description:
@@ -895,7 +859,7 @@ export class SkillRouter {
     }
   }
 
-  /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills. */
+  /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources. */
   static async create(customerId: string): Promise<SkillRouter> {
     const router = new SkillRouter(customerId)
 
@@ -924,6 +888,38 @@ export class SkillRouter {
           displayVerb: s.displayVerb ? JSON.parse(s.displayVerb) : undefined,
           isConcurrencySafe: s.isConcurrencySafe,
           enabled: s.enabled,
+        })
+      }
+
+      // Load enabled KnowledgeSources and inject each as a kb_search_<name> tool.
+      // The LLM sees each source as a separate tool with its own description,
+      // allowing it to decide which source(s) to query — including calling
+      // multiple in parallel (isConcurrencySafe: true).
+      const knowledgeSources = await prisma.knowledgeSource.findMany({
+        where: { customerId, enabled: true },
+      })
+
+      for (const ks of knowledgeSources) {
+        const toolName = `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+        router.skills.set(toolName, {
+          name: toolName,
+          description: ks.description || `Search the "${ks.name}" knowledge base`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Search query in the user\'s language' },
+              topK: { type: 'number', description: 'Number of results to return (1-50)', default: 5 },
+            },
+            required: ['query'],
+          },
+          mode: 'http',
+          endpoint: 'https://api-sg.gptbots.ai/v1/vector/match',
+          httpMethod: 'POST',
+          headers: { Authorization: 'Bearer ${GPTBOTS_API_KEY}' },
+          timeoutMs: 10000,
+          isConcurrencySafe: true,
+          enabled: true,
+          displayVerb: { text: `Searching ${ks.name}`, icon: 'dots' },
         })
       }
     } catch (err) {

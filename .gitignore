@@ -17,3 +17,4 @@ debug-logs
 .superpowers/
 .claude/worktrees/
 pnpm-lock.yaml
+coverage/

@@ -314,14 +314,32 @@ export class StreamingToolExecutor {
     const resolvedEndpoint = this.resolveEnvVars(definition.endpoint)
     const resolvedHeaders = await this.resolveHeaders(definition.headers as Record<string, string> | undefined)
 
-    // For kb_hybrid_retrieve: merge enabled KnowledgeSource config into the GPTBots request
+    // For kb_search_* tools: each knowledge source is a separate skill with its
+    // groupIds baked into the endpoint or resolved from DB at execution time.
+    // The old kb_hybrid_retrieve fallback remains for backwards compatibility.
     let body = input
-    if (definition.name === 'kb_hybrid_retrieve') {
+    if (definition.name === 'kb_hybrid_retrieve' || definition.name.startsWith('kb_search_')) {
       try {
         const { prisma } = await import('@intera/shared/prisma')
-        const sources = await prisma.knowledgeSource.findMany({
-          where: { customerId: 'default', enabled: true },
-        })
+
+        // kb_search_<sourceName>: load the specific source
+        let sources: Array<{
+          groupIds: string; topK: number; embeddingRate: number;
+          docCorrelation: number | null; rerankVersion: string | null;
+        }> = []
+
+        if (definition.name.startsWith('kb_search_')) {
+          const sourceName = definition.name.slice('kb_search_'.length)
+          const source = await prisma.knowledgeSource.findFirst({
+            where: { name: sourceName, enabled: true },
+          })
+          if (source) sources = [source]
+        } else {
+          // kb_hybrid_retrieve: load all enabled (backwards compat)
+          sources = await prisma.knowledgeSource.findMany({
+            where: { enabled: true },
+          })
+        }
 
         if (sources.length > 0) {
           const allGroupIds: string[] = []
@@ -350,14 +368,12 @@ export class StreamingToolExecutor {
             ...(minDocCorrelation != null && { doc_correlation: minDocCorrelation }),
           }
         } else {
-          // Fallback: map input fields directly (no KnowledgeSources configured)
           body = {
             prompt: input.query,
             top_k: (input.topK as number) ?? 5,
           }
         }
       } catch {
-        // DB not available (e.g. build time) — map input fields directly
         body = {
           prompt: input.query,
           top_k: (input.topK as number) ?? 5,

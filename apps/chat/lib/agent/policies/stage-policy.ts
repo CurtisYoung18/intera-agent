@@ -108,9 +108,10 @@ export class StagePolicy {
       return allTools.filter((t) => forced.has(t.name))
     }
 
-    // Normal operation: allow configured skills + terminal tools
+    // Normal operation: allow configured skills + terminal tools + kb_search_*
     const allowed = new Set(cfg.availableSkills)
     TERMINAL_TOOLS.forEach((t) => allowed.add(t))
+    const isAllowed = (name: string) => allowed.has(name) || name.startsWith('kb_search_')
 
     // Prevent duplicate case creation — once past the "created" stage,
     // remove create_case so the agent doesn't call it again.
@@ -118,7 +119,7 @@ export class StagePolicy {
       allowed.delete('create_case')
     }
 
-    return allTools.filter((t) => allowed.has(t.name))
+    return allTools.filter((t) => isAllowed(t.name))
   }
 
   // ── Continuation decision ────────────────────────────────────────────

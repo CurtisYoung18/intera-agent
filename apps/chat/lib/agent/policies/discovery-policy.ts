@@ -8,9 +8,14 @@ import type { AssistantMessage, LoopResult, Message } from '@intera/shared/types
 const CORE_ALLOWED_TOOLS = new Set([
   'create_case',
   'propose_cases',
-  'kb_hybrid_retrieve',
   'propose_interaction',
 ])
+
+function isCoreAllowed(name: string): boolean {
+  if (CORE_ALLOWED_TOOLS.has(name)) return true
+  if (name.startsWith('kb_search_')) return true
+  return false
+}
 
 // ── DiscoveryPolicy ────────────────────────────────────────────────────
 
@@ -30,7 +35,7 @@ export class DiscoveryPolicy implements ExecutionPolicy {
   // ── Tools ────────────────────────────────────────────────────────────
 
   filterTools(allTools: Tool[], _iteration: number): Tool[] {
-    return allTools.filter((t) => CORE_ALLOWED_TOOLS.has(t.name))
+    return allTools.filter((t) => isCoreAllowed(t.name))
   }
 
   // ── Continuation ─────────────────────────────────────────────────────

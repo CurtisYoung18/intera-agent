@@ -82,7 +82,7 @@ Simple inquiry signals (→ just answer with lookup tools, no case needed):
 
 ## Tools you can use for simple inquiries (no case needed)
 
-- **kb_hybrid_retrieve** — search knowledge base articles for FAQ / policy answers
+- **kb_search_<name>** — search specific knowledge bases. Each available knowledge source has its own tool with a description of what it covers. Read the descriptions to pick the right one(s) — you can call multiple in parallel.
 - **get_account_status** — check account state, balance, or verification status
 - **get_kyc_status** — check identity verification progress
 - **get_latest_deposit** / **get_latest_withdrawal** — check recent transaction status
@@ -179,7 +179,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
     'query_payment_channel_status',
     'search_delay_notice',
     'read_case_history',
-    'kb_hybrid_retrieve',
+    // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
     'ocr_receipt',
   ],
 
@@ -362,21 +362,6 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     inputSchema: '{"type":"object","properties":{"conclusion":{"type":"string","description":"Case conclusion"},"basis":{"type":"array","items":{"type":"string"},"description":"Evidence basis"}},"required":["conclusion","basis"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"resolved","resolvedAt":"2026-05-01T12:00:00.000Z"}',
-  },
-  {
-    name: 'kb_hybrid_retrieve',
-    displayVerb: { text: 'Searching knowledge base', icon: 'dots' },
-    description: 'Search the GPTBots knowledge base for FAQ, policy, and reference answers. Returns matched content chunks with relevance scores.',
-    inputSchema: '{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"topK":{"type":"number","description":"Number of results","default":5},"sourceName":{"type":"string","description":"Optional: specific knowledge source to search"}},"required":["query"]}',
-    mode: 'http',
-    endpoint: 'https://api-sg.gptbots.ai/v1/vector/match',
-    httpMethod: 'POST',
-    headers: '{"Authorization":"Bearer ${GPTBOTS_API_KEY}"}',
-    timeoutMs: 10000,
-    isConcurrencySafe: true,
-    enabled: true,
-    guardPhase: 'post',
-    outputSchema: '{}',
   },
   {
     name: 'propose_interaction',
@@ -764,7 +749,7 @@ query_order_status 和 query_payment_channel_status 的 txnId 参数必须使用
 
 **调查顺序：**
 1. 调用 query_order_status（传入 confirmedFacts.txnId）和 query_payment_channel_status — 必须同一轮完成，不要分两轮调用。
-2. 如有必要可调用 read_case_history 查历史工单、search_delay_notice 查公告、kb_hybrid_retrieve 查知识库。
+2. 如有必要可调用 read_case_history 查历史工单、search_delay_notice 查公告、kb_search_<name> 查对应知识库。
 
 **结果判断：**
 - query_order_status 返回的 txnId 与 confirmedFacts.txnId 不符（订单未找到或记录属于别的交易）→ 视为"订单查无此号"，直接调用 create_human_task，不要再问用户确认 txnId。
@@ -774,7 +759,7 @@ query_order_status 和 query_payment_channel_status 的 txnId 参数必须使用
 
 若发现需要客户补充信息（截图等），必须用 request_user_input 表单收集，禁止纯文本提问。`,
       requiredSkills: ['query_order_status', 'query_payment_channel_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve', 'request_user_input'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', '''request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'status',
@@ -840,7 +825,7 @@ Respond JSON ONLY:
       name: 'investigating',
       description: 'Investigate order issue',
       requiredSkills: ['query_payment_channel_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'kb_hybrid_retrieve'],
+      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history'],
       subAgents: [
         {
           name: 'order_verifier',
@@ -914,7 +899,7 @@ JSON ONLY:
         'get_account_status',
         'get_kyc_status',
         'read_case_history',
-        'kb_hybrid_retrieve',
+        // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
         'request_user_input',
       ],
       evidenceRequirements: [
@@ -957,9 +942,9 @@ JSON ONLY:
           model: 'MiniMax-M2.7-highspeed',
           systemPrompt:
             'You review historical tickets and KB articles for ban patterns, appeal flows, and known outages.',
-          skills: ['read_case_history', 'kb_hybrid_retrieve'],
+          skills: ['read_case_history'],
           taskTemplate:
-            'For case {{caseId}}, review prior cases and KB for patterns matching the issue type. Stage goal: {{stageGoal}}. Facts: {{confirmedFacts}}. Use read_case_history and kb_hybrid_retrieve.',
+            'For case {{caseId}}, review prior cases and KB for patterns matching the issue type. Stage goal: {{stageGoal}}. Facts: {{confirmedFacts}}. Use read_case_history and kb_search_* for knowledge base queries.',
           maxIterations: 3,
           parallel: true,
         },
@@ -1052,7 +1037,7 @@ JSON ONLY:
       name: 'investigating',
       description: '调用取款状态与打码量条件接口核对平台记录。若发现数据矛盾需要客户补充信息，使用 request_user_input 表单收集。',
       requiredSkills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
-      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', 'kb_hybrid_retrieve', 'request_user_input'],
+      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', '''request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'withdrawalStatus',
@@ -1166,7 +1151,7 @@ export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
   {
     queue: 'account_ops',
     description: 'Account & security — login failures, bans, risk flags, appeals, KYC verification',
-    skillsAllowed: '["get_account_status","get_kyc_status","read_case_history","kb_hybrid_retrieve"]',
+    skillsAllowed: '["get_account_status","get_kyc_status","read_case_history"]',
     priority: 0,
   },
   {
@@ -1177,7 +1162,7 @@ export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
   },
   {
     queue: 'general', description: 'General support queue for account and other issues',
-    skillsAllowed: '["read_case_history","kb_hybrid_retrieve"]',
+    skillsAllowed: '["read_case_history"]',
     priority: 1,
   },
 ]
