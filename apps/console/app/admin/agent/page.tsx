@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { AlertCircle, Brain, Database, Shield, Users, MessageSquareText, Search, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertCircle, Brain, Database, Shield, Users, MessageSquareText, Search, X, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
 import GuardrailSummaryList from '@/components/admin/guardrail-summary-list'
 import SubAgentSummaryList from '@/components/admin/sub-agent-summary-list'
 import AgentHumanInteractionPanel from '@/components/admin/agent-human-interaction-panel'
+import Link from 'next/link'
 import {
   DrawerCheckboxRail,
   DrawerSection,
@@ -275,15 +276,6 @@ export default function AgentConfigPage() {
     [autoSave],
   )
 
-  const updateKb = useCallback(
-    (field: keyof KnowledgeRetrievalConfig, value: unknown) => {
-      setConfig((prev) =>
-        prev ? { ...prev, knowledgeRetrieval: { ...prev.knowledgeRetrieval, [field]: value } } : null,
-      )
-      autoSave()
-    },
-    [autoSave],
-  )
 
   const u = {
     tokens: t('common.unitTokens'),
@@ -842,197 +834,49 @@ export default function AgentConfigPage() {
             )}
 
             {activeSection === 'knowledge' && (
-              <>
-                <DrawerSection
-                  accent="#14b8a6"
-                  eyebrow="Knowledge Retrieval"
-                  title={t('agent.section.knowledge')}
-                  lead={t('agent.section.knowledgeLead')}
-                >
-                  {/* Mode selector */}
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.modeLabel')}</span>
-                    <select
-                      value={config.knowledgeRetrieval.mode}
-                      onChange={(e) => updateKb('mode', e.target.value)}
-                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                    >
-                      <option value="disabled">{t('kb.modeDisabled')}</option>
-                      <option value="external-api">{t('kb.modeExternal')}</option>
-                      <option value="intera-native">{t('kb.modeNative')}</option>
-                    </select>
-                  </label>
-
-                  {/* External RAG API */}
-                  {config.knowledgeRetrieval.mode === 'external-api' && (
-                    <div className="space-y-3 rounded-xl border border-teal-500/20 bg-teal-500/[0.03] p-3">
-                      <label className="space-y-1 block">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.externalEndpoint')}</span>
-                        <input
-                          type="text"
-                          value={config.knowledgeRetrieval.externalEndpoint}
-                          onChange={(e) => updateKb('externalEndpoint', e.target.value)}
-                          placeholder="https://your-rag.com/api/search"
-                          className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                          spellCheck={false}
-                        />
-                        <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.externalEndpointHint')}</span>
-                      </label>
-                      <label className="space-y-1 block">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.externalApiKeyEnvVar')}</span>
-                        <input
-                          type="text"
-                          value={config.knowledgeRetrieval.externalApiKeyEnvVar}
-                          onChange={(e) => updateKb('externalApiKeyEnvVar', e.target.value)}
-                          placeholder="RAG_API_KEY"
-                          className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                          spellCheck={false}
-                        />
-                        <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.externalApiKeyEnvVarHint')}</span>
-                      </label>
+              <DrawerSection
+                accent="#14b8a6"
+                eyebrow="Knowledge Retrieval"
+                title={t('agent.section.knowledge')}
+                lead="Knowledge search tools (kb_search_*) are auto-generated from GPTBots knowledge sources."
+              >
+                {/* GPTBots status */}
+                <div className="rounded-xl border border-teal-500/20 bg-teal-500/[0.04] p-4 space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-teal-500/[0.1] flex items-center justify-center">
+                      <Search className="w-4 h-4 text-teal-600" />
                     </div>
-                  )}
-
-                  {/* Intera-native Hybrid */}
-                  {config.knowledgeRetrieval.mode === 'intera-native' && (
-                    <div className="space-y-3 rounded-xl border border-teal-500/20 bg-teal-500/[0.03] p-3">
-                      <label className="space-y-1.5 block">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.embeddingProvider')}</span>
-                        <select
-                          value={config.knowledgeRetrieval.embeddingProvider}
-                          onChange={(e) => updateKb('embeddingProvider', e.target.value)}
-                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                        >
-                          <option value="openai">OpenAI</option>
-                          <option value="cohere">Cohere</option>
-                          <option value="self-hosted">{t('kb.selfHosted')}</option>
-                        </select>
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="space-y-1 block col-span-2 sm:col-span-1">
-                          <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.embeddingModel')}</span>
-                          <input
-                            type="text"
-                            value={config.knowledgeRetrieval.embeddingModel}
-                            onChange={(e) => updateKb('embeddingModel', e.target.value)}
-                            placeholder="text-embedding-3-small"
-                            className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                            spellCheck={false}
-                          />
-                        </label>
-                        {config.knowledgeRetrieval.embeddingProvider === 'self-hosted' && (
-                          <label className="space-y-1 block col-span-2 sm:col-span-1">
-                            <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.embeddingBaseUrl')}</span>
-                            <input
-                              type="text"
-                              value={config.knowledgeRetrieval.embeddingBaseUrl}
-                              onChange={(e) => updateKb('embeddingBaseUrl', e.target.value)}
-                              placeholder="http://localhost:8080"
-                              className={`glass-input-console w-full ${drawerFieldClass(true)}`}
-                              spellCheck={false}
-                            />
-                            <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.embeddingBaseUrlHint')}</span>
-                          </label>
-                        )}
-                      </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-[var(--mist)]">GPTBots</p>
+                      <p className="text-[11px] text-[var(--fog)]">Vector search via GPTBots API</p>
                     </div>
-                  )}
+                  </div>
 
-                  {/* Shared retrieval params — shown when not disabled */}
-                  {config.knowledgeRetrieval.mode !== 'disabled' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <NumField
-                        label={t('kb.topK')}
-                        hint={t('kb.topKHint')}
-                        value={config.knowledgeRetrieval.topK}
-                        onChange={(v) => updateKb('topK', v)}
-                        min={1}
-                        max={20}
-                        step={1}
-                      />
-                      <NumField
-                        label={t('kb.minRelevance')}
-                        hint={t('kb.minRelevanceHint')}
-                        value={config.knowledgeRetrieval.minRelevanceScore}
-                        onChange={(v) => updateKb('minRelevanceScore', v)}
-                        step={0.05}
-                        min={0}
-                        max={1}
-                      />
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 text-[11px] text-[var(--fog)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                    Each enabled{' '}
+                    <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline font-medium">
+                      Knowledge Source
+                    </Link>
+                    {' '}becomes a <code className="text-[10px] bg-teal-500/[0.08] px-1 rounded">kb_search_&lt;name&gt;</code> tool.
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-[var(--fog)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                    The agent reads each source&apos;s description and picks which one(s) to query — in parallel when needed.
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-[var(--fog)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                    Per-source settings (topK, reranker, relevance threshold) are configured on the Knowledge page.
+                  </div>
 
-                  {/* Placeholder when disabled */}
-                  {config.knowledgeRetrieval.mode === 'disabled' && (
-                    <div className="rounded-xl border border-dashed border-teal-500/25 bg-teal-500/[0.02] px-4 py-6 text-center">
-                      <p className="text-[12px] font-medium text-teal-600/60">{t('kb.statusPending')}</p>
-                      <p className="mt-1 text-[10px] text-[var(--fog)]/50">{t('kb.statusPendingHint')}</p>
-                    </div>
-                  )}
-                </DrawerSection>
-
-                {/* Advanced features — Intera-native only */}
-                {config.knowledgeRetrieval.mode === 'intera-native' && (
-                  <DrawerSection accent="#14b8a6" title={t('kb.advancedTitle')}>
-                    <DrawerCheckboxRail accent="#14b8a6" layout="stack">
-                      <label className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45">
-                        <input
-                          type="checkbox"
-                          checked={config.knowledgeRetrieval.enableReranker}
-                          onChange={(e) => updateKb('enableReranker', e.target.checked)}
-                          className="accent-teal-500 mt-0.5 shrink-0 rounded"
-                        />
-                        <span className="min-w-0 space-y-0.5">
-                          <span className="block text-[12px] font-medium text-[var(--mist)]">{t('kb.enableReranker')}</span>
-                          <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('kb.enableRerankerHint')}</span>
-                        </span>
-                      </label>
-                      <label className="flex cursor-pointer gap-3 rounded-xl border border-black/[0.04] bg-white/25 px-2.5 py-2 hover:bg-white/45">
-                        <input
-                          type="checkbox"
-                          checked={config.knowledgeRetrieval.enableContextualRetrieval}
-                          onChange={(e) => updateKb('enableContextualRetrieval', e.target.checked)}
-                          className="accent-teal-500 mt-0.5 shrink-0 rounded"
-                        />
-                        <span className="min-w-0 space-y-0.5">
-                          <span className="block text-[12px] font-medium text-[var(--mist)]">{t('kb.enableContextual')}</span>
-                          <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('kb.contextualHint')}</span>
-                        </span>
-                      </label>
-                    </DrawerCheckboxRail>
-
-                    {config.knowledgeRetrieval.enableReranker && (
-                      <label className="space-y-1.5 block">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.rerankProvider')}</span>
-                        <select
-                          value={config.knowledgeRetrieval.rerankProvider}
-                          onChange={(e) => updateKb('rerankProvider', e.target.value)}
-                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                        >
-                          <option value="cohere">Cohere Rerank</option>
-                          <option value="self-hosted">{t('kb.selfHosted')} (BGE-Reranker)</option>
-                        </select>
-                      </label>
-                    )}
-
-                    {config.knowledgeRetrieval.enableContextualRetrieval && (
-                      <label className="space-y-1.5 block">
-                        <span className="text-[11px] font-medium text-[var(--fog)]">{t('kb.contextualModel')}</span>
-                        <select
-                          value={config.knowledgeRetrieval.contextualModel}
-                          onChange={(e) => updateKb('contextualModel', e.target.value)}
-                          className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                        >
-                          {mainModels.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                        <span className="text-[10px] text-[var(--fog)]/60 leading-snug block">{t('kb.contextualModelHint')}</span>
-                      </label>
-                    )}
-                  </DrawerSection>
-                )}
-              </>
+                  <Link
+                    href="/admin/knowledge"
+                    className="inline-flex items-center gap-1.5 text-[12px] font-medium text-teal-600 hover:text-teal-700 mt-1"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Manage Knowledge Sources
+                  </Link>
+                </div>
+              </DrawerSection>
             )}
                 </DrawerShell>
               </div>
