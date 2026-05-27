@@ -266,10 +266,11 @@ model Message {
   caseId String
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  role        String
-  content     String
-  isStreaming Boolean @default(false)
-  streamId    String?
+  role          String
+  content       String
+  contentBlocks Json?
+  isStreaming   Boolean @default(false)
+  streamId      String?
 
   createdAt DateTime @default(now())
 
@@ -394,6 +395,51 @@ model LiveChatConfig {
   updatedAt       DateTime @updatedAt
 
   @@map("livechat_configs")
+}
+
+// ============================================
+// Webhook Event — idempotency dedup (LiveChat / Slack / etc.)
+// ============================================
+model WebhookEvent {
+  id          String   @id // external event id from webhook payload (e.g. LiveChat event.id)
+  platform    String   // 'livechat' | 'slack' | ...
+  processedAt DateTime @default(now())
+
+  @@index([platform, processedAt])
+  @@map("webhook_events")
+}
+
+// ============================================
+// LiveChat Pending Events — retry queue for failed bridge processing
+// ============================================
+model LiveChatPendingEvent {
+  id          String   @id @default(cuid())
+  chatId      String
+  customerId  String
+  payload     Json
+  attempt     Int      @default(0)
+  lastError   String?
+  nextRetryAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([nextRetryAt, attempt])
+  @@map("livechat_pending_events")
+}
+
+// ============================================
+// Channel Health — per-customer channel status monitoring
+// ============================================
+model ChannelHealth {
+  id          String   @id @default(cuid())
+  customerId  String
+  channel     String
+  status      String   @default("healthy")
+  lastChecked DateTime @default(now())
+  lastError   String?
+  metadata    Json?
+
+  @@unique([customerId, channel])
+  @@map("channel_health")
 }
 
 // ============================================

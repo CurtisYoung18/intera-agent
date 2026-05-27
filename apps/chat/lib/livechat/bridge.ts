@@ -1,29 +1,26 @@
 // apps/chat/lib/livechat/bridge.ts
 // Orchestrates: LiveChat webhook → /api/messages SSE → LiveChat API calls.
 
-import type { LiveChatConfig, InteraInteractionSubmit, InteraFormSubmit } from './types'
-import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, type BridgeSessionRow } from './session-store'
+import type { LiveChatConfig, IncomingEvent, ContentBlock } from './types'
+import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, closeSession, type BridgeSessionRow } from './session-store'
 import { LiveChatRenderer } from '@/channels/livechat/renderer'
 import type { RenderContext } from '@intera/shared/channels/renderer'
 import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 import {
-  sendTextMessage,
-  sendWidgetPayload,
-  sendQuickReplies,
-  transferChat,
-  updateChatProperties,
+  sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
+  sendImage, sendSystemMessage, setTypingIndicator, transferChat, updateChatProperties,
 } from './livechat-api'
+import { enqueueRetry } from './retry-queue'
+import { markChannelUnhealthy, markChannelHealthy } from './channel-health'
+import { downloadAndEncode } from './image-utils'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent } from '@intera/shared/types'
 
 function getInternalMessagesUrl(): string {
-  // In Railway, apps/chat calls its own API directly (same process).
-  // Use localhost to avoid going through the public URL.
   const base = process.env.INTERNAL_CHAT_API_URL ?? 'http://localhost:3000'
   return `${base}/api/messages`
 }
 
-/** Parse an SSE stream body into individual SSEEvent objects. */
 async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator<SSEEvent> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -41,7 +38,7 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator
           try {
             const event = JSON.parse(line.slice(6)) as SSEEvent
             yield event
-          } catch (_e) { /* skip malformed lines */ }
+          } catch { /* skip malformed */ }
         }
       }
     }
@@ -50,59 +47,57 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator
   }
 }
 
-/** Build the /api/messages POST body based on the incoming event type. */
 function buildMessagesBody(
-  event: { type: 'message' | 'form_submit' | 'interaction_submit'; text?: string; form?: InteraFormSubmit; interaction?: InteraInteractionSubmit },
+  event: IncomingEvent,
   session: BridgeSessionRow,
 ): Record<string, unknown> {
-  const base = {
-    customerId: session.customerId,
-    userId: session.userId,
-    chatId: session.chatId,
-  }
+  const base = { customerId: session.customerId, userId: session.userId, chatId: session.chatId }
 
-  if (event.type === 'form_submit' && event.form) {
-    return { ...base, formResult: { caseId: session.caseId, answers: event.form.answers } }
+  switch (event.type) {
+    case 'form_submit':
+      return { ...base, formResult: { caseId: session.caseId, answers: event.form?.answers ?? {} } }
+    case 'interaction_submit':
+      return { ...base, interactionResult: { caseId: session.caseId, optionId: event.interaction?.optionId, input: event.interaction?.input } }
+    case 'attachment':
+      return {
+        ...base,
+        message: `[用户上传文件] ${event.attachment.filename} (${event.attachment.contentType})`,
+      }
+    case 'postback':
+      return { ...base, message: `[用户点击] ${event.postbackId}` }
+    case 'chat_archived':
+      return { ...base, message: '[会话已归档]' }
+    default:
+      return { ...base, message: event.text ?? '' }
   }
-
-  if (event.type === 'interaction_submit' && event.interaction) {
-    return {
-      ...base,
-      interactionResult: {
-        caseId: session.caseId,
-        optionId: event.interaction.optionId,
-        input: event.interaction.input,
-      },
-    }
-  }
-
-  // Plain user message
-  return { ...base, message: event.text ?? '' }
 }
 
-/** Main entry: handle an incoming LiveChat event for a given chat. */
-export async function handleIncomingEvent(
-  chatId: string,
-  customerId: string,
-  userId: string,
-  event: { type: 'message' | 'form_submit' | 'interaction_submit'; text?: string; form?: InteraFormSubmit; interaction?: InteraInteractionSubmit },
-  config: LiveChatConfig,
+async function sendFailureNotice(
+  chatId: string, config: LiveChatConfig, reason: 'engine_unreachable' | 'stream_truncated' | 'action_failed',
 ): Promise<void> {
-  // Load or create session
+  const msg = {
+    engine_unreachable: '抱歉，系统暂时无法处理您的请求。我们正在恢复中，请稍后再试。',
+    stream_truncated: '抱歉，回复中断。请重新发送您的问题。',
+    action_failed: '抱歉，出现技术问题，已记录。如长时间无响应可联系人工。',
+  }[reason]
+  await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId).catch(() => {})
+}
+
+export async function handleIncomingEvent(
+  chatId: string, customerId: string, userId: string,
+  event: IncomingEvent, config: LiveChatConfig,
+): Promise<void> {
+  if (event.type === 'chat_archived') {
+    await closeSession(chatId, 'archived_by_agent')
+    return
+  }
+
   let session = await getSession(chatId)
   if (!session) {
-    session = {
-      chatId,
-      customerId,
-      userId,
-      caseId: generateCaseId(),
-      state: 'idle',
-      textBuffer: '',
-    }
+    session = { chatId, customerId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
     await upsertSession(session)
   }
 
-  // Update caseId from incoming event if form/interaction submit carries it
   if (event.type === 'form_submit' && event.form?.caseId) {
     session = { ...session, caseId: event.form.caseId }
     await upsertSession(session)
@@ -114,7 +109,28 @@ export async function handleIncomingEvent(
 
   await updateSessionState(chatId, 'thinking')
 
+  // Typing indicator on
+  setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId).catch(() => {})
+
   const body = buildMessagesBody(event, session)
+
+  // For attachment events, download and encode image for multimodal
+  let contentBlocks: ContentBlock[] | undefined
+  if (event.type === 'attachment') {
+    try {
+      const imageData = await downloadAndEncode(event.attachment.url)
+      contentBlocks = [
+        { type: 'text', text: `用户上传了图片: ${event.attachment.filename}` },
+        { type: 'image', source: { type: 'base64', media_type: event.attachment.contentType, data: imageData } },
+      ]
+    } catch (err) {
+      console.error('[Bridge] Failed to download attachment:', err)
+    }
+  }
+
+  if (contentBlocks) {
+    (body as Record<string, unknown>).contentBlocks = contentBlocks
+  }
 
   let response: Response
   try {
@@ -125,18 +141,24 @@ export async function handleIncomingEvent(
     })
   } catch (err) {
     console.error('[Bridge] Failed to call /api/messages:', err)
+    await sendFailureNotice(chatId, config, 'engine_unreachable')
+    await enqueueRetry(chatId, customerId, userId, event, String(err))
     await updateSessionState(chatId, 'idle')
+    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
     return
   }
 
   if (!response.ok || !response.body) {
     console.error('[Bridge] /api/messages returned', response.status)
+    await sendFailureNotice(chatId, config, 'engine_unreachable')
     await updateSessionState(chatId, 'idle')
+    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
     return
   }
 
-  // S5 Phase 5b — use LiveChatRenderer (ChannelRenderer<BridgeAction>) instead of
-  // the old translateSSEEvent helper.
+  // Typing indicator off when first text_delta arrives (handled in SSE loop)
+  let typingStopped = false
+
   const livechatRenderer = new LiveChatRenderer(config.showSkillStatus)
   const binding: ChannelBindingConfig = {
     channel: 'livechat',
@@ -144,62 +166,94 @@ export async function handleIncomingEvent(
     credentials: { botAccessToken: config.botAccessToken, licenseId: config.licenseId },
   }
   const renderCtx: RenderContext = {
-    caseId: session.caseId,
-    customerId,
-    sessionId: chatId,
-    binding,
+    caseId: session.caseId, customerId, sessionId: chatId, binding,
   }
 
-  // Consume SSE stream
-  for await (const sseEvent of parseSSEStream(response.body)) {
-    const actions = livechatRenderer.render(sseEvent, renderCtx)
+  let streamTruncated = true
+  try {
+    for await (const sseEvent of parseSSEStream(response.body)) {
+      // Stop typing on first text content
+      if (!typingStopped && (sseEvent.type === 'text_delta' || sseEvent.type === 'message_stop')) {
+        typingStopped = true
+        setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
+      }
 
-    for (const action of actions) {
-      try {
-        switch (action.type) {
-          case 'send_widget_payload':
-            await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId)
-            break
+      const actions = livechatRenderer.render(sseEvent, renderCtx)
 
-          case 'send_text':
-            await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId)
-            break
-
-          case 'send_quick_replies':
-            await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId)
-            break
-
-          case 'transfer_chat':
-            await transferChat(chatId, config.botAccessToken, config.licenseId)
-            await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId)
-            await updateSessionState(chatId, 'transferred')
-            break
-
-          case 'update_chat_properties':
-            await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId)
-            break
-
-          case 'buffer_text':
-            await appendTextBuffer(chatId, action.delta)
-            break
-
-          case 'flush_text': {
-            const text = await flushTextBuffer(chatId)
-            if (text.trim()) {
-              await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId)
+      for (const action of actions) {
+        try {
+          switch (action.type) {
+            case 'send_widget_payload':
+              await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId)
+              break
+            case 'send_text':
+              await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId)
+              break
+            case 'send_quick_replies':
+              await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId)
+              break
+            case 'send_card':
+              await sendCard(chatId, action.card, config.botAccessToken, config.licenseId)
+              break
+            case 'send_carousel':
+              await sendCarousel(chatId, action.cards, config.botAccessToken, config.licenseId)
+              break
+            case 'send_image':
+              await sendImage(chatId, action.url, action.caption, config.botAccessToken, config.licenseId)
+              break
+            case 'send_system_message':
+              await sendSystemMessage(chatId, action.text, config.botAccessToken, config.licenseId)
+              break
+            case 'set_typing':
+              await setTypingIndicator(chatId, action.isTyping, config.botAccessToken, config.licenseId)
+              break
+            case 'transfer_chat':
+              await transferChat(chatId, action.group ? { type: 'group', ids: [action.group] } : { type: 'queue' }, config.botAccessToken, config.licenseId)
+              await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId)
+              await updateSessionState(chatId, 'transferred')
+              break
+            case 'update_chat_properties':
+              await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId)
+              break
+            case 'buffer_text':
+              await appendTextBuffer(chatId, action.delta)
+              break
+            case 'flush_text': {
+              const text = await flushTextBuffer(chatId)
+              if (text.trim()) {
+                await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId)
+              }
+              break
             }
-            break
+            case 'noop':
+            default:
+              break
           }
-
-          case 'noop':
-          default:
-            break
+        } catch (err) {
+          const code = (err as { code?: string })?.code
+          if (code === 'TOKEN_EXPIRED') {
+            await markChannelUnhealthy(customerId, 'livechat', 'token_expired', String(err))
+          } else if (code === 'RATE_LIMITED') {
+            await markChannelUnhealthy(customerId, 'livechat', 'rate_limited', String(err))
+          }
+          console.error('[Bridge] action failed:', action.type, err)
         }
-      } catch (err) {
-        console.error('[Bridge] action failed:', action.type, err)
       }
     }
+    streamTruncated = false
+  } catch (err) {
+    console.error('[Bridge] SSE stream error:', err)
+    await sendFailureNotice(chatId, config, 'stream_truncated')
+    await enqueueRetry(chatId, customerId, userId, event, String(err))
+  } finally {
+    // Ensure typing is off
+    if (!typingStopped) {
+      setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
+    }
+    await updateSessionState(chatId, 'idle')
   }
 
-  await updateSessionState(chatId, 'idle')
+  if (!streamTruncated) {
+    await markChannelHealthy(customerId, 'livechat').catch(() => {})
+  }
 }

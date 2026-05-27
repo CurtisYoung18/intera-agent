@@ -238,6 +238,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json()
         const {
           message,
+          contentBlocks,
           resumeTrigger,
           formResult,
           interactionResult,
@@ -286,6 +287,9 @@ export async function POST(request: NextRequest) {
           controller.close()
           return
         }
+
+        // Validate contentBlocks format
+        const resolvedContentBlocks = contentBlocks && Array.isArray(contentBlocks) ? contentBlocks : undefined
 
         let userMessage = message
         let resolvedCaseId = caseId || generateCaseId()
@@ -708,7 +712,7 @@ export async function POST(request: NextRequest) {
         // ── Concurrency guard: if an AgentLoop is already running for this caseId,
         //     enqueue the message and return 202 — don't create a second loop.
         if (hasSession(resolvedCaseId)) {
-          enqueueMessageOrCreate(resolvedCaseId, { content: userMessage, formAnswers })
+          enqueueMessageOrCreate(resolvedCaseId, { content: userMessage, contentBlocks, formAnswers })
           sendEvent({
             type: 'withheld',
             data: 'Message queued — agent is currently processing',
@@ -768,7 +772,7 @@ export async function POST(request: NextRequest) {
           }
         } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
 
-        const result = await agentLoop.run(userMessage, sendEvent, formAnswers)
+        const result = await agentLoop.run(userMessage, sendEvent, formAnswers, contentBlocks)
 
         // Mark session as resolved so subsequent messages create a new loop.
         activeSession.resolved = true

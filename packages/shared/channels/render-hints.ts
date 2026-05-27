@@ -37,3 +37,57 @@ export interface ImageHint {
   urlPath: string
   altPath?: string
 }
+
+// ── Channel-specific render hints ──────────────────────────────────────────
+
+export type LivechatRenderHint =
+  | LivechatCardHint
+  | LivechatCarouselHint
+  | LivechatQuickRepliesHint
+  | LivechatPlainHint
+
+export interface LivechatCardHint {
+  kind: 'card'
+  titleField: string
+  subtitleField?: string
+  imageUrlField?: string
+  buttons?: Array<{
+    id: string
+    postback: string
+    labelField?: string
+    labelStatic?: string
+    type?: 'message' | 'url' | 'webview'
+    url?: string
+  }>
+}
+
+export interface LivechatCarouselHint {
+  kind: 'carousel'
+  itemsField: string
+  idField?: string
+  itemTemplate: {
+    titleField: string
+    subtitleField?: string
+    imageUrlField?: string
+    buttons?: Array<{
+      id: string
+      postback: string
+      labelField?: string
+      labelStatic?: string
+      type?: 'message' | 'url' | 'webview'
+      url?: string
+    }>
+  }
+}
+
+export interface LivechatQuickRepliesHint {
+  kind: 'quick_replies'
+  optionsField: string
+  optionIdField?: string
+  optionLabelField?: string
+  titleStatic?: string
+}
+
+export interface LivechatPlainHint {
+  kind: 'plain'
+}

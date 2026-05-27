@@ -87,6 +87,20 @@ export async function appendTextBuffer(chatId: string, delta: string): Promise<v
   `
 }
 
+export async function closeSession(chatId: string, reason: string): Promise<void> {
+  try {
+    await prisma.externalConversation.update({
+      where: { platform_externalChatId: { platform: PLATFORM, externalChatId: chatId } },
+      data: { status: 'archived', bridgeState: 'idle' },
+    })
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      return
+    }
+    throw err
+  }
+}
+
 /** Returns the buffered text and resets the buffer to empty. */
 export async function flushTextBuffer(chatId: string): Promise<string> {
   return prisma.$transaction(async (tx) => {

@@ -50,7 +50,13 @@ export default function FormCard({ title, description, fields, onSubmit, onCance
   const handleFileChange = useCallback((key: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      handleChange(key, file.name)
+      const reader = new FileReader()
+      reader.onload = () => {
+        const base64WithPrefix = reader.result as string
+        const base64 = base64WithPrefix.includes(',') ? base64WithPrefix.split(',')[1]! : base64WithPrefix
+        handleChange(key, JSON.stringify({ filename: file.name, contentType: file.type, data: base64 }))
+      }
+      reader.readAsDataURL(file)
     }
   }, [handleChange])
 

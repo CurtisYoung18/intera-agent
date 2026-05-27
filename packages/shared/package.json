@@ -10,7 +10,8 @@
     "./prisma": "./prisma/index.ts",
     "./composer-min-draft": "./composer-min-draft.ts",
     "./defaults": "./defaults/index.ts",
-    "./ui/*": "./ui/*.tsx"
+    "./ui/*": "./ui/*.tsx",
+    "./channels/*": "./channels/*.ts"
   },
   "scripts": {
     "db:generate": "prisma generate --schema=./prisma/schema.prisma",

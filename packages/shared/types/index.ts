@@ -23,10 +23,15 @@ export type CaseType = string // e.g. "deposit_issue", "account_ban"
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+
 export interface BaseMessage {
   id: string
   role: MessageRole
   content: string
+  contentBlocks?: ContentBlock[]
   createdAt: Date
 }
 

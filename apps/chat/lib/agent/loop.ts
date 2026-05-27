@@ -244,6 +244,7 @@ export class AgentLoop {
     userMessage: string,
     rawSendEvent: (event: SSEEvent) => void,
     preIngestedFacts?: Record<string, string>,
+    contentBlocks?: import('@intera/shared/types').ContentBlock[],
   ): Promise<LoopResult> {
     // One-time log on first run
     if (this.deps.config.debugMode) {
@@ -268,7 +269,7 @@ export class AgentLoop {
 
     // 1. Record user message
     this.profiler.startTurn()
-    const userMsg = this.makeUserMessage(userMessage)
+    const userMsg = this.makeUserMessage(userMessage, contentBlocks)
     this.messages.push(userMsg)
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
     await this.traceWriter.writeAgentTreeNode(agentName, 0, chainId, 'run start')
@@ -1654,6 +1655,18 @@ export class AgentLoop {
     const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
     const recentMessages = this.messages.slice(-limit)
 
+    const toAnthropic = (msg: Message): { role: string; content: string | Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> } => {
+      if (msg.contentBlocks?.length) {
+        const blocks = msg.contentBlocks.map((b) => {
+          if (b.type === 'text') return { type: 'text' as const, text: b.text }
+          if (b.type === 'image') return { type: 'image' as const, source: { type: b.source.type, media_type: b.source.media_type, data: b.source.data } }
+          return { type: 'text' as const, text: '' }
+        })
+        return { role: msg.role, content: blocks }
+      }
+      return { role: msg.role, content: msg.content }
+    }
+
     if (this.caseMemory.hasSummary()) {
       const maxSummaryChars = this.deps.config.memoryStrategy.l2SummaryMaxTokens * 3
       let summaryText = this.caseMemory.getSummary().summary || ''
@@ -1663,17 +1676,19 @@ export class AgentLoop {
       const summaryMsg = this.makeUserMessage(
         `[Case context from previous turns — use this to stay oriented]\n${summaryText}`
       )
-      return [summaryMsg, ...recentMessages] as any
+      const apiSummary = toAnthropic(summaryMsg)
+      return [apiSummary, ...recentMessages.map(toAnthropic)] as any
     }
 
-    return recentMessages as any
+    return recentMessages.map(toAnthropic) as any
   }
 
-  private makeUserMessage(content: string): Message {
+  private makeUserMessage(content: string, contentBlocks?: import('@intera/shared/types').ContentBlock[]): Message {
     return {
       id: crypto.randomUUID(),
       role: 'user',
       content,
+      contentBlocks,
       createdAt: new Date(),
     }
   }

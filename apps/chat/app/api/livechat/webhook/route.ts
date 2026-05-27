@@ -4,12 +4,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
+import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import type { InteraInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
 
 function verifyWebhookSignature(request: NextRequest, rawBody: string): boolean {
   const secret = process.env.LIVECHAT_WEBHOOK_SECRET
   if (!secret) {
-    console.warn('[Webhook] LIVECHAT_WEBHOOK_SECRET not set — skipping signature verification')
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('LIVECHAT_WEBHOOK_SECRET is required in production')
+    }
+    console.warn('[Webhook] LIVECHAT_WEBHOOK_SECRET not set — DEV ONLY, skipping verification')
     return true
   }
   const incoming = request.headers.get('x-livechat-webhook-signature')
@@ -36,7 +40,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
-  // LiveChat sends the action name in the body
   const action = body.action as string
   const chatId = (body.chat_id ?? (body.payload as Record<string, unknown>)?.chat_id) as string | undefined
 
@@ -44,27 +47,40 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing chat_id' }, { status: 400 })
   }
 
-  // Extract customer/user context.
   const payload = (body.payload ?? {}) as Record<string, unknown>
   const event = (payload.event ?? {}) as Record<string, unknown>
   const userId = (event.author_id ?? 'anonymous') as string
   const customerId = (payload.license_id ?? process.env.DEFAULT_CUSTOMER_ID ?? 'default') as string
 
+  // Dedup: use LiveChat event.id; fall back to webhook_id or raw body prefix
+  const eventId = `livechat:${(event.id ?? body.webhook_id ?? rawBody.slice(0, 64)) as string}`
+  if (await isDuplicateWebhook(eventId)) {
+    return NextResponse.json({ ok: true, deduped: true })
+  }
+
   const config = await getLiveChatConfig(customerId)
   if (!config?.enabled) {
-    // Integration not configured for this customer — silently ack
     return NextResponse.json({ ok: true })
   }
 
-  // Route by event type
   if (action === 'incoming_event') {
     const eventType = event.type as string
 
     if (eventType === 'message') {
       const text = event.text as string
-      // Fire-and-forget: webhook must respond quickly, Bridge runs async
       handleIncomingEvent(chatId, customerId, userId, { type: 'message', text }, config)
         .catch(err => console.error('[Webhook] handleIncomingEvent error:', err))
+    }
+
+    if (eventType === 'file') {
+      handleIncomingEvent(chatId, customerId, userId, {
+        type: 'attachment',
+        attachment: {
+          url: event.url as string,
+          contentType: (event.content_type ?? 'application/octet-stream') as string,
+          filename: (event.name ?? 'file') as string,
+        },
+      }, config).catch(err => console.error('[Webhook] attachment error:', err))
     }
 
     if (eventType === 'custom') {
@@ -83,8 +99,22 @@ export async function POST(request: NextRequest) {
           .catch(err => console.error('[Webhook] interaction_submit error:', err))
       }
     }
+
+    if (eventType === 'rich_message_postback') {
+      const postbackId = (event.postback as Record<string, unknown>)?.id as string
+      if (postbackId) {
+        handleIncomingEvent(chatId, customerId, userId, {
+          type: 'postback',
+          postbackId,
+        }, config).catch(err => console.error('[Webhook] postback error:', err))
+      }
+    }
   }
 
-  // Always return 200 quickly — LiveChat retries if it receives anything else
+  if (action === 'chat_archived') {
+    handleIncomingEvent(chatId, customerId, userId, { type: 'chat_archived' }, config)
+      .catch(err => console.error('[Webhook] chat_archived error:', err))
+  }
+
   return NextResponse.json({ ok: true })
 }

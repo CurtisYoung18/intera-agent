@@ -58,8 +58,11 @@ export class MessageBus {
 
 // ─── Queued message shape ─────────────────────────────────────────────────────
 
+import type { ContentBlock } from '@intera/shared/types'
+
 export interface QueuedMessage {
   content: string
+  contentBlocks?: ContentBlock[]
   formAnswers?: Record<string, string>
 }
 

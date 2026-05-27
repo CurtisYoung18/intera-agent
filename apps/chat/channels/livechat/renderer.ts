@@ -8,6 +8,8 @@ import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
 import type { BridgeAction, StatusTrackStep, FormField } from '@/lib/livechat/types'
+import { renderSkillByHint } from './render-skill-by-hint'
+import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
 function skillLabel(name: string, displayVerb?: { text: string; icon: string }): string {
   // Prefer the displayVerb text from the skill definition (already i18n-friendly).
@@ -45,10 +47,21 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         }
       }
 
-      // ── skill_result: { name, status: 'completed', result } ──
+      // ── skill_result: { name, status: 'completed', result, renderHints? } ──
       case 'skill_result': {
+        const d = event.data as {
+          name: string; status: string; result?: unknown
+          renderHints?: Record<string, unknown>
+        }
+        const livechatHint = d.renderHints?.livechat as LivechatRenderHint | undefined
+
+        // If renderHints.livechat is configured, use it for rich message rendering
+        if (livechatHint && d.result !== undefined) {
+          return renderSkillByHint(d.result, livechatHint)
+        }
+
+        // Fallback: status_track widget
         if (!this.showSkillStatus) return { type: 'noop' }
-        const d = event.data as { name: string; status: string; result?: unknown }
         const step: StatusTrackStep = {
           id: d.name,
           label: skillLabel(d.name),

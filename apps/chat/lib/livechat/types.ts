@@ -31,8 +31,8 @@ export type WidgetPayloadKind =
   | 'request_user_input'
 
 export interface StatusTrackStep {
-  id: string           // tool/skill name
-  label: string        // human-readable label
+  id: string
+  label: string
   state: 'running' | 'done'
   durationMs?: number
 }
@@ -50,18 +50,15 @@ export interface FormField {
   type: 'text' | 'number' | 'select' | 'textarea' | 'file' | 'date'
   label: string
   required?: boolean
-  options?: string[]   // for type=select
+  options?: string[]
   placeholder?: string
 }
 
 export interface WidgetPayload {
   kind: WidgetPayloadKind
   caseId: string
-  // status_track
   step?: StatusTrackStep
-  // propose_interaction
   options?: InteractionOption[]
-  // request_user_input
   fields?: FormField[]
 }
 
@@ -77,12 +74,51 @@ export interface InteraFormSubmit {
   answers: Record<string, string>
 }
 
-// Bridge action descriptor returned by event-translators
+// Content block for multimodal messages (Anthropic-compatible)
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+
+// Attachment data from file events
+export interface AttachmentData {
+  url: string
+  contentType: string
+  filename: string
+}
+
+// Incoming event types from webhook → bridge
+export type IncomingEvent =
+  | { type: 'message'; text?: string }
+  | { type: 'form_submit'; form?: InteraFormSubmit }
+  | { type: 'interaction_submit'; interaction?: InteraInteractionSubmit }
+  | { type: 'attachment'; attachment: AttachmentData }
+  | { type: 'postback'; postbackId: string }
+  | { type: 'chat_archived' }
+
+// Card spec for send_card / send_carousel
+export interface CardSpec {
+  title: string
+  subtitle?: string
+  imageUrl?: string
+  buttons: Array<{
+    id: string
+    label: string
+    type?: 'message' | 'url' | 'webview'
+    url?: string
+  }>
+}
+
+// Bridge action descriptor returned by renderers
 export type BridgeAction =
   | { type: 'send_widget_payload'; payload: WidgetPayload }
   | { type: 'send_text'; text: string }
   | { type: 'send_quick_replies'; text: string; options: Array<{ id: string; label: string }> }
-  | { type: 'transfer_chat'; caseId: string }
+  | { type: 'send_card'; card: CardSpec }
+  | { type: 'send_carousel'; cards: CardSpec[] }
+  | { type: 'send_image'; url: string; caption?: string }
+  | { type: 'send_system_message'; text: string }
+  | { type: 'set_typing'; isTyping: boolean }
+  | { type: 'transfer_chat'; caseId: string; group?: number }
   | { type: 'update_chat_properties'; props: Record<string, string> }
   | { type: 'buffer_text'; delta: string }
   | { type: 'flush_text' }

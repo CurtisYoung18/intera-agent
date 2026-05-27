@@ -249,42 +249,87 @@ function FormCard({
 
 export default function LiveChatWidget() {
   const [state, setState] = useState<AppState>(INITIAL_STATE)
+  const [isOnline, setIsOnline] = useState(true)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const isPreview = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview')
+
+  // Online/offline detection
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true)
+    const onOffline = () => setIsOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
 
   useEffect(() => {
-    // Listen for intera_widget_payload events from Bridge
+    // Listen for intera_widget_payload events from Bridge (LiveChat SDK)
     window.LiveChatWidget?.on('new_event', (raw: unknown) => {
       const data = raw as { type?: string; content?: WidgetPayload }
       if (data?.type !== 'intera_widget_payload' || !data.content) return
-
-      const payload = data.content
-      setState(prev => {
-        switch (payload.kind) {
-          case 'status_track': {
-            const step = payload.step
-            if (!step) return prev
-            const existingIdx = prev.steps.findIndex(s => s.id === step.id)
-            const steps = existingIdx >= 0
-              ? prev.steps.map((s, i) => i === existingIdx ? step : s)
-              : [...prev.steps, step]
-            return { ...prev, view: 'status_track', caseId: payload.caseId, steps }
-          }
-          case 'propose_interaction':
-            return { ...prev, view: 'propose_interaction', caseId: payload.caseId, options: payload.options ?? [], steps: [] }
-          case 'request_user_input':
-            return { ...prev, view: 'request_user_input', caseId: payload.caseId, fields: payload.fields ?? [], steps: [] }
-          default:
-            return prev
-        }
-      })
+      processPayload(data.content)
     })
-  }, [])
+
+    // Dual-mode: listen for postMessage preview events (Console iframe)
+    if (isPreview || !window.LiveChatWidget) {
+      const onMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'intera_widget_preview' && event.data.payload) {
+          processPayload(event.data.payload as WidgetPayload)
+        }
+      }
+      window.addEventListener('message', onMessage)
+      return () => window.removeEventListener('message', onMessage)
+    }
+  }, [isPreview])
+
+  function processPayload(payload: WidgetPayload) {
+    setState(prev => {
+      switch (payload.kind) {
+        case 'status_track': {
+          const step = payload.step
+          if (!step) return prev
+          const existingIdx = prev.steps.findIndex(s => s.id === step.id)
+          const steps = existingIdx >= 0
+            ? prev.steps.map((s, i) => i === existingIdx ? step : s)
+            : [...prev.steps, step]
+          return { ...prev, view: 'status_track', caseId: payload.caseId, steps }
+        }
+        case 'propose_interaction':
+          return { ...prev, view: 'propose_interaction', caseId: payload.caseId, options: payload.options ?? [], steps: [] }
+        case 'request_user_input':
+          return { ...prev, view: 'request_user_input', caseId: payload.caseId, fields: payload.fields ?? [], steps: [] }
+        default:
+          return prev
+      }
+    })
+  }
 
   const handleViewComplete = () => setState(INITIAL_STATE)
 
-  if (state.view === 'idle') return null
+  if (state.view === 'idle') {
+    return (
+      <div className="font-sans bg-gray-50 min-h-screen flex items-center justify-center">
+        <p className="text-[11px] text-gray-400">Intera preparing...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="font-sans bg-gray-50 min-h-screen">
+      {!isOnline && (
+        <div className="bg-red-500 text-white text-[10px] text-center py-1 px-2">
+          Connection lost — waiting for network...
+        </div>
+      )}
+      {submitError && (
+        <div className="bg-amber-500 text-white text-[10px] text-center py-1 px-2 flex justify-between items-center">
+          <span>Submit failed. Please try again.</span>
+          <button onClick={() => setSubmitError(null)} className="text-white ml-2">&times;</button>
+        </div>
+      )}
       <AnimatePresence mode="wait">
         {state.view === 'status_track' && (
           <motion.div key="status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
