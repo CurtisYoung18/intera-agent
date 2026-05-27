@@ -3,7 +3,9 @@
 
 import type { LiveChatConfig, InteraInteractionSubmit, InteraFormSubmit } from './types'
 import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, type BridgeSessionRow } from './session-store'
-import { translateSSEEvent } from './event-translators'
+import { LiveChatRenderer } from '@/channels/livechat/renderer'
+import type { RenderContext } from '@intera/shared/channels/renderer'
+import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 import {
   sendTextMessage,
   sendWidgetPayload,
@@ -133,55 +135,69 @@ export async function handleIncomingEvent(
     return
   }
 
+  // S5 Phase 5b — use LiveChatRenderer (ChannelRenderer<BridgeAction>) instead of
+  // the old translateSSEEvent helper.
+  const livechatRenderer = new LiveChatRenderer(config.showSkillStatus)
+  const binding: ChannelBindingConfig = {
+    channel: 'livechat',
+    enabled: config.enabled,
+    credentials: { botAccessToken: config.botAccessToken, licenseId: config.licenseId },
+  }
+  const renderCtx: RenderContext = {
+    caseId: session.caseId,
+    customerId,
+    sessionId: chatId,
+    binding,
+  }
+
   // Consume SSE stream
   for await (const sseEvent of parseSSEStream(response.body)) {
-    const action = translateSSEEvent(sseEvent, {
-      showSkillStatus: config.showSkillStatus,
-      caseId: session.caseId,
-    })
+    const actions = livechatRenderer.render(sseEvent, renderCtx)
 
-    try {
-      switch (action.type) {
-        case 'send_widget_payload':
-          await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId)
-          break
+    for (const action of actions) {
+      try {
+        switch (action.type) {
+          case 'send_widget_payload':
+            await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId)
+            break
 
-        case 'send_text':
-          await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId)
-          break
+          case 'send_text':
+            await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId)
+            break
 
-        case 'send_quick_replies':
-          await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId)
-          break
+          case 'send_quick_replies':
+            await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId)
+            break
 
-        case 'transfer_chat':
-          await transferChat(chatId, config.botAccessToken, config.licenseId)
-          await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId)
-          await updateSessionState(chatId, 'transferred')
-          break
+          case 'transfer_chat':
+            await transferChat(chatId, config.botAccessToken, config.licenseId)
+            await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId)
+            await updateSessionState(chatId, 'transferred')
+            break
 
-        case 'update_chat_properties':
-          await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId)
-          break
+          case 'update_chat_properties':
+            await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId)
+            break
 
-        case 'buffer_text':
-          await appendTextBuffer(chatId, action.delta)
-          break
+          case 'buffer_text':
+            await appendTextBuffer(chatId, action.delta)
+            break
 
-        case 'flush_text': {
-          const text = await flushTextBuffer(chatId)
-          if (text.trim()) {
-            await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId)
+          case 'flush_text': {
+            const text = await flushTextBuffer(chatId)
+            if (text.trim()) {
+              await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId)
+            }
+            break
           }
-          break
-        }
 
-        case 'noop':
-        default:
-          break
+          case 'noop':
+          default:
+            break
+        }
+      } catch (err) {
+        console.error('[Bridge] action failed:', action.type, err)
       }
-    } catch (err) {
-      console.error('[Bridge] action failed:', action.type, err)
     }
   }
 

@@ -395,3 +395,22 @@ model LiveChatConfig {
 
   @@map("livechat_configs")
 }
+
+// ============================================
+// S5 — Channel Binding — per-customer channel config
+// ============================================
+model ChannelBinding {
+  id                  String   @id @default(cuid())
+  customerId          String
+  channel             String   // 'web-chat' | 'livechat' | 'slack' | 'discord' | 'whatsapp'
+  enabled             Boolean  @default(false)
+  credentials         String   @default("{}") // JSON
+  toolOverrides       String?  // JSON: Record<string, RenderHint>
+  defaults            String?  // JSON: { plain?, card?, form? }
+  channelSkillBinding String?  // JSON: string[] — allowlist of tool names
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([customerId, channel])
+  @@map("channel_bindings")
+}
