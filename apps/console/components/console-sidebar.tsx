@@ -71,7 +71,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/skills', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
   // { href: '/admin/sub-agents', slug: 'subAgents', icon: Users2, color: '#b8944c' }, // Phase A: hidden — merged into Capabilities tab
   { href: '/admin/policies', slug: 'guardrails', icon: Shield, color: '#e64539' },
-  { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' },
+  // { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' }, // Phase B: merged into Channels Human Ops tab
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
   { href: '/admin/integrations', slug: 'channels', icon: Plug, color: '#7c3aed' },
