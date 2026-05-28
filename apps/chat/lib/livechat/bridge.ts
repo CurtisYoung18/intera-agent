@@ -207,11 +207,17 @@ export async function handleIncomingEvent(
             case 'set_typing':
               await setTypingIndicator(chatId, action.isTyping, config.botAccessToken, config.licenseId)
               break
-            case 'transfer_chat':
-              await transferChat(chatId, action.group ? { type: 'group', ids: [action.group] } : { type: 'queue' }, config.botAccessToken, config.licenseId)
+            case 'transfer_chat': {
+              const target = action.group
+                ? { type: 'group' as const, ids: [action.group] }
+                : config.transferGroupId != null
+                  ? { type: 'group' as const, ids: [config.transferGroupId] }
+                  : { type: 'queue' as const }
+              await transferChat(chatId, target, config.botAccessToken, config.licenseId)
               await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId)
               await updateSessionState(chatId, 'transferred')
               break
+            }
             case 'update_chat_properties':
               await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId)
               break

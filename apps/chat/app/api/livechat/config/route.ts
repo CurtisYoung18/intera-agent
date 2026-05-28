@@ -35,8 +35,9 @@ export async function PUT(request: NextRequest) {
   let body: Record<string, unknown>
   try { body = await request.json() } catch { return json({ error: 'Invalid JSON' }, { status: 400 }) }
 
-  const { customerId, botAccessToken, licenseId, webhookSecret, showSkillStatus, enabled } = body as {
+  const { customerId, botAccessToken, licenseId, webhookSecret, showSkillStatus, enabled, transferGroupId, transferMessage } = body as {
     customerId: string; botAccessToken: string; licenseId: string; webhookSecret?: string; showSkillStatus: boolean; enabled: boolean
+    transferGroupId?: number; transferMessage?: string
   }
 
   if (!customerId) return json({ error: 'customerId required' }, { status: 400 })
@@ -55,6 +56,8 @@ export async function PUT(request: NextRequest) {
     botAccessToken: tokenToSave, licenseId: licenseId ?? '',
     webhookSecret: secretToSave,
     showSkillStatus: showSkillStatus ?? true, enabled: enabled ?? false,
+    transferGroupId: transferGroupId ?? undefined,
+    transferMessage: transferMessage ?? undefined,
   })
 
   return json({ ok: true })

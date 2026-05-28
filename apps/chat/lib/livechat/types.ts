@@ -23,6 +23,8 @@ export interface LiveChatConfig {
   webhookSecret?: string
   showSkillStatus: boolean
   enabled: boolean
+  transferGroupId?: number
+  transferMessage?: string
 }
 
 // intera_widget_payload variants

@@ -1,17 +1,18 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, Eye, EyeOff, Save, CheckCircle2, AlertCircle, ExternalLink, Globe, Monitor, UserCheck, GitBranch, Copy, RotateCcw } from 'lucide-react'
+import { MessageCircle, Eye, EyeOff, Save, CheckCircle2, ExternalLink, Globe, Monitor, UserCheck, Copy, RotateCcw } from 'lucide-react'
 import { chatApiUrl } from '@/lib/chat-api'
 import { useConsoleLocale } from '@/components/locale-provider'
-import Link from 'next/link'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface LiveChatConfig {
   botAccessToken: string; licenseId: string; showSkillStatus: boolean
   enabled: boolean; webhookSecret?: string
+  transferGroupId?: number; transferMessage?: string
 }
+interface LiveChatGroup { id: number; name: string; agents_count: number }
 interface WidgetPayload {
   kind: 'status_track' | 'propose_interaction' | 'request_user_input'; caseId: string
   step?: { id: string; label: string; state: 'running' | 'done'; durationMs?: number }
@@ -29,9 +30,8 @@ const WIDGET_VIEWS: Array<{ label: string; payload: WidgetPayload }> = [
 
 const TABS = [
   { id: 'connection', label: 'Connection', labelZh: '连接', icon: Globe },
-  { id: 'routing', label: 'Routing', labelZh: '路由', icon: GitBranch },
   { id: 'rendering', label: 'Rendering', labelZh: '渲染', icon: Monitor },
-  { id: 'humanOps', label: 'Human Ops', labelZh: '人工配置', icon: UserCheck },
+  { id: 'escalation', label: 'Escalation', labelZh: '人工升级', icon: UserCheck },
 ] as const
 
 type ConnectionState = 'unconfigured' | 'disabled' | 'connecting' | 'connected' | 'failed'
@@ -67,11 +67,15 @@ const L = {
   saved: { en: 'Saved', zh: '已保存' },
   saveError: { en: 'Save failed — please retry', zh: '保存失败 — 请重试' },
   required: { en: 'Required', zh: '必填' },
-  // Routing tab
-  caseTypeRouting: { en: 'Case Type Routing', zh: '案例类型路由' },
-  autoTransfer: { en: 'Auto-transfer to human', zh: '自动转人工' },
-  autoTransferDesc: { en: 'When enabled, all incoming chats are transferred to the default agent queue.', zh: '启用后，所有新会话将直接转接到默认人工队列。' },
-  routingNote: { en: 'Case-type-level routing rules are managed on the Case Types page.', zh: '案例类型级别的路由规则在案例类型页面管理。' },
+  // Escalation tab
+  escalationStrategy: { en: 'Human Escalation', zh: '人工升级' },
+  escalationDesc: { en: 'When the agent calls create_human_task, the LiveChat conversation is transferred to a human group via the transfer_chat API. Select which group below.', zh: '当 Agent 调用 create_human_task 时，LiveChat 会话将通过 transfer_chat API 转接给人工分组。请在下方选择目标分组。' },
+  transferGroup: { en: 'Transfer Target Group', zh: '转接目标分组' },
+  transferGroupHint: { en: 'Select a group from your LiveChat account. If empty or "Default queue", the chat is transferred to the default agent queue.', zh: '从 LiveChat 账号中选择一个分组。留空或选择"默认队列"时，会话转接到默认人工队列。' },
+  defaultQueue: { en: '— Default agent queue —', zh: '— 默认人工队列 —' },
+  loadingGroups: { en: 'Loading groups...', zh: '加载分组中...' },
+  transferMessage: { en: 'Transfer Message (optional)', zh: '转接消息（可选）' },
+  transferMessageHint: { en: 'Sent to the customer before transferring. Leave empty for default system message.', zh: '转接前发送给客户的消息。留空则使用系统默认消息。' },
   // Rendering tab
   skillOverrides: { en: 'Skill Render Overrides', zh: '工具渲染覆盖' },
   skillOverridesDesc: { en: 'Configure how each skill result appears in LiveChat. Open the Tools page and use the LiveChat Rendering tab per skill.', zh: '配置每个工具结果在 LiveChat 中的呈现方式。打开工具页面，每个工具可独立配置。' },
@@ -82,18 +86,6 @@ const L = {
   quickReplies: { en: 'Quick Replies', zh: '快捷回复' },
   plain: { en: 'Plain', zh: '纯文本' },
   widgetPreview: { en: 'Widget Preview', zh: '组件预览' },
-  // HumanOps tab
-  escalationStrategy: { en: 'Escalation Strategy', zh: '升级策略' },
-  whenEscalation: { en: 'When escalation needed', zh: '需要升级时' },
-  transferChat: { en: 'Transfer chat to human queue', zh: '转接到人工队列' },
-  consultLlm: { en: 'Consult LLM while waiting', zh: '等待时咨询 LLM' },
-  silentTask: { en: 'Create silent human task', zh: '创建静默人工任务' },
-  transferTarget: { en: 'Transfer target', zh: '转接目标' },
-  defaultQueue: { en: 'Default agent queue', zh: '默认人工队列' },
-  specificGroup: { en: 'Specific group', zh: '指定组' },
-  consultationPrompt: { en: 'Consultation prompt (consult mode)', zh: '咨询提示词（咨询模式）' },
-  skillsDuringConsult: { en: 'Skills during consultation', zh: '咨询期间可用工具' },
-  skillsHint: { en: 'Comma-separated skill names. Empty = allow all.', zh: '逗号分隔的工具名称。留空 = 全部允许。' },
 } as const
 
 function useL() {
@@ -130,6 +122,7 @@ export default function LiveChatDetailPage() {
   const [customerId, setCustomerId] = useState('')
   const [activeTab, setActiveTab] = useState<string>('connection')
   const [selectedView, setSelectedView] = useState('')
+  const [groups, setGroups] = useState<LiveChatGroup[]>([])
   const [copied, setCopied] = useState(false)
   const widgetRef = useRef<HTMLIFrameElement>(null)
   const connState = getConnectionState(config, saveStatus)
@@ -143,6 +136,9 @@ export default function LiveChatDetailPage() {
     setLoading(true)
     fetch(chatApiUrl(`/api/livechat/config?customerId=${encodeURIComponent(customerId)}`))
       .then(r => r.json()).then((data: LiveChatConfig) => { setConfig(data); setOrigConfig(data) }).catch(() => {}).finally(() => setLoading(false))
+    // Fetch available groups for escalation tab
+    fetch(chatApiUrl(`/api/livechat/groups?customerId=${encodeURIComponent(customerId)}`))
+      .then(r => r.json()).then((d: { groups?: LiveChatGroup[] }) => { if (d.groups) setGroups(d.groups) }).catch(() => {})
   }, [customerId])
 
   const handleSave = async () => {
@@ -279,35 +275,15 @@ export default function LiveChatDetailPage() {
         </div>
       )}
 
-      {/* ── Routing Tab ── */}
-      {activeTab === 'routing' && (
-        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4 max-w-2xl">
-          <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{l('caseTypeRouting')}</p>
-          <div className="flex items-center justify-between p-4 bg-white border border-black/[0.06] rounded-xl">
-            <div>
-              <p className="text-[13px] font-semibold text-[var(--mist)]">{l('autoTransfer')}</p>
-              <p className="text-[11px] text-[var(--fog)] mt-0.5">{l('autoTransferDesc')}</p>
-            </div>
-            <button className="relative w-10 h-6 rounded-full bg-black/[0.08] flex-shrink-0">
-              <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm" />
-            </button>
-          </div>
-          <div className="p-4 bg-amber/[0.04] border border-amber/15 rounded-xl text-[12px] text-[var(--fog)]">
-            {l('routingNote')}{' '}
-            <Link href="/admin/case-types" className="text-indigo hover:text-indigo/80 underline">{l('caseTypeRouting')}</Link>
-          </div>
-        </div>
-      )}
-
-      {/* ── Rendering Tab ── */}
+{/* ── Rendering Tab ── */}
       {activeTab === 'rendering' && (
         <div className="grid md:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4">
             <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{l('skillOverrides')}</p>
             <p className="text-[12px] text-[var(--fog)]">{l('skillOverridesDesc')}</p>
-            <Link href="/admin/tools" className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80 mt-1">
+            <a href="/admin/tools" className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80 mt-1">
               <ExternalLink className="w-3.5 h-3.5" /> {l('openTools')}
-            </Link>
+            </a>
             <div className="border-t border-black/[0.05] pt-4 mt-2">
               <p className="text-[11px] font-semibold text-[var(--mist)] mb-2">{l('channelDefaults')}</p>
               <div className="grid grid-cols-3 gap-2">
@@ -340,28 +316,34 @@ export default function LiveChatDetailPage() {
         </div>
       )}
 
-      {/* ── Human Ops Tab ── */}
-      {activeTab === 'humanOps' && (
+      {/* ── Escalation Tab ── */}
+      {activeTab === 'escalation' && (
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4 max-w-2xl">
           <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{l('escalationStrategy')}</p>
-          <div><label className={labelCls}>{l('whenEscalation')}</label>
-            <select className={inputCls} defaultValue="transfer_chat">
-              <option value="transfer_chat">{l('transferChat')}</option>
-              <option value="consult">{l('consultLlm')}</option>
-              <option value="silent_task">{l('silentTask')}</option>
+          <p className="text-[12px] text-[var(--fog)]">{l('escalationDesc')}</p>
+          <div>
+            <label className={labelCls}>{l('transferGroup')}</label>
+            <select
+              className={inputCls}
+              value={config.transferGroupId ?? ''}
+              onChange={e => setConfig({ ...config, transferGroupId: e.target.value ? Number(e.target.value) : undefined })}
+            >
+              <option value="">{groups.length === 0 ? l('loadingGroups') : l('defaultQueue')}</option>
+              {groups.map(g => (
+                <option key={g.id} value={g.id}>{g.name}{g.agents_count > 0 ? ` (${g.agents_count} agents)` : ''}</option>
+              ))}
             </select>
+            <p className="text-[10px] text-[var(--fog)] mt-1">{l('transferGroupHint')}</p>
           </div>
-          <div><label className={labelCls}>{l('transferTarget')}</label>
-            <select className={inputCls} defaultValue="queue">
-              <option value="queue">{l('defaultQueue')}</option>
-              <option value="group">{l('specificGroup')}</option>
-            </select>
-          </div>
-          <div><label className={labelCls}>{l('consultationPrompt')}</label>
-            <textarea className={inputCls} rows={4} placeholder="You are consulting on a LiveChat case. The customer is waiting..." /></div>
-          <div><label className={labelCls}>{l('skillsDuringConsult')}</label>
-            <input className={inputCls} placeholder="read_case_history, kb_search_General" defaultValue="read_case_history" />
-            <p className="text-[10px] text-[var(--fog)] mt-1">{l('skillsHint')}</p>
+          <div>
+            <label className={labelCls}>{l('transferMessage')}</label>
+            <textarea
+              className={inputCls} rows={3}
+              value={config.transferMessage ?? ''}
+              onChange={e => setConfig({ ...config, transferMessage: e.target.value || undefined })}
+              placeholder={isZh ? '正在为您转接人工客服，请稍候...' : 'Transferring you to a human agent, please wait...'}
+            />
+            <p className="text-[10px] text-[var(--fog)] mt-1">{l('transferMessageHint')}</p>
           </div>
         </div>
       )}

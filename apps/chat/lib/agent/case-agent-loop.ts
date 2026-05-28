@@ -613,6 +613,13 @@ export class CaseAgentLoop {
           timestamp: new Date().toISOString(),
         })
 
+        // Also emit escalated so the bridge triggers transfer_chat for LiveChat channels
+        sendEvent({
+          type: 'escalated',
+          data: { reason: 'human_task_created', taskId: task.id, queue },
+          timestamp: new Date().toISOString(),
+        })
+
         break // success
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

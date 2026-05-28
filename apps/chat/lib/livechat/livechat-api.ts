@@ -22,7 +22,7 @@ async function lcPost(
   body: unknown,
   botAccessToken: string,
   licenseId: string,
-): Promise<void> {
+): Promise<unknown> {
   const res = await fetch(`${LC_API_BASE}/${action}`, {
     method: 'POST',
     headers: {
@@ -39,6 +39,7 @@ async function lcPost(
     if (res.status === 429) err.code = 'RATE_LIMITED'
     throw err
   }
+  return res.json()
 }
 
 export async function sendTextMessage(
@@ -174,6 +175,13 @@ export async function transferChat(
   licenseId: string,
 ): Promise<void> {
   await lcPost('transfer_chat', { id: chatId, target }, botAccessToken, licenseId)
+}
+
+export async function listGroups(
+  botAccessToken: string, licenseId: string,
+): Promise<Array<{ id: number; name: string; agents_count: number }>> {
+  const res = (await lcPost('list_groups', {}, botAccessToken, licenseId)) as { groups?: Array<{ id: number; name: string; agents_count: number }> }
+  return res.groups ?? []
 }
 
 export async function updateChatProperties(

@@ -392,6 +392,8 @@ model LiveChatConfig {
   webhookSecret   String?
   showSkillStatus Boolean  @default(true)
   enabled         Boolean  @default(false)
+  transferGroupId Int?
+  transferMessage String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
