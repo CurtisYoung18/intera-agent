@@ -16,6 +16,17 @@ import { downloadAndEncode } from './image-utils'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent } from '@intera/shared/types'
 
+/** Extract optional LiveChat API params from config for transparent pass-through. */
+function lcParams(config: LiveChatConfig): {
+  region?: string; authType?: string; accountId?: string
+} {
+  return {
+    region: config.region,
+    authType: config.authType,
+    accountId: config.accountId,
+  }
+}
+
 function getInternalMessagesUrl(): string {
   const base = process.env.INTERNAL_CHAT_API_URL ?? 'http://localhost:3000'
   return `${base}/api/messages`
@@ -63,12 +74,22 @@ function buildMessagesBody(
         ...base,
         message: `[用户上传文件] ${event.attachment.filename} (${event.attachment.contentType})`,
       }
-    case 'postback':
-      return { ...base, message: `[用户点击] ${event.postbackId}` }
+    case 'postback': {
+      const colonIdx = event.postbackId.indexOf(':')
+      const optionId = colonIdx > 0 ? event.postbackId.slice(0, colonIdx) : event.postbackId
+      const input = colonIdx > 0 ? event.postbackId.slice(colonIdx + 1) : undefined
+      return { ...base, interactionResult: { caseId: session.caseId, optionId, input } }
+    }
     case 'chat_archived':
       return { ...base, message: '[会话已归档]' }
-    default:
-      return { ...base, message: event.text ?? '' }
+    default: {
+      const text = (event.text ?? '').trim()
+      if (!text) {
+        // empty message (e.g. incoming_chat) → don't feed to agent loop
+        return { ...base, skip: true }
+      }
+      return { ...base, message: text }
+    }
   }
 }
 
@@ -80,7 +101,7 @@ async function sendFailureNotice(
     stream_truncated: '抱歉，回复中断。请重新发送您的问题。',
     action_failed: '抱歉，出现技术问题，已记录。如长时间无响应可联系人工。',
   }[reason]
-  await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId).catch(() => {})
+  await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
 }
 
 export async function handleIncomingEvent(
@@ -96,6 +117,8 @@ export async function handleIncomingEvent(
   if (!session) {
     session = { chatId, customerId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
     await upsertSession(session)
+    // Claim ownership on first touch (§2.2)
+    updateChatProperties(chatId, { owner: 'intera' }, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
   }
 
   if (event.type === 'form_submit' && event.form?.caseId) {
@@ -107,12 +130,26 @@ export async function handleIncomingEvent(
     await upsertSession(session)
   }
 
+  // If session was transferred to human, don't re-enter agent loop (§3)
+  if (session.state === 'transferred') {
+    console.log('[Bridge] Session transferred, skipping agent loop for chat:', chatId)
+    return
+  }
+
   await updateSessionState(chatId, 'thinking')
 
+  const p = lcParams(config)
+
   // Typing indicator on
-  setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId).catch(() => {})
+  setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
 
   const body = buildMessagesBody(event, session)
+
+  // Empty message from non-action events (e.g. incoming_chat) → skip agent loop
+  if (body.skip) {
+    await updateSessionState(chatId, 'idle')
+    return
+  }
 
   // For attachment events, download and encode image for multimodal
   let contentBlocks: ContentBlock[] | undefined
@@ -144,7 +181,7 @@ export async function handleIncomingEvent(
     await sendFailureNotice(chatId, config, 'engine_unreachable')
     await enqueueRetry(chatId, customerId, userId, event, String(err))
     await updateSessionState(chatId, 'idle')
-    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
+    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return
   }
 
@@ -152,7 +189,7 @@ export async function handleIncomingEvent(
     console.error('[Bridge] /api/messages returned', response.status)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
     await updateSessionState(chatId, 'idle')
-    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
+    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return
   }
 
@@ -175,7 +212,7 @@ export async function handleIncomingEvent(
       // Stop typing on first text content
       if (!typingStopped && (sseEvent.type === 'text_delta' || sseEvent.type === 'message_stop')) {
         typingStopped = true
-        setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
+        setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
       }
 
       const actions = livechatRenderer.render(sseEvent, renderCtx)
@@ -184,28 +221,28 @@ export async function handleIncomingEvent(
         try {
           switch (action.type) {
             case 'send_widget_payload':
-              await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId)
+              await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_text':
-              await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId)
+              await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_quick_replies':
-              await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId)
+              await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_card':
-              await sendCard(chatId, action.card, config.botAccessToken, config.licenseId)
+              await sendCard(chatId, action.card, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_carousel':
-              await sendCarousel(chatId, action.cards, config.botAccessToken, config.licenseId)
+              await sendCarousel(chatId, action.cards, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_image':
-              await sendImage(chatId, action.url, action.caption, config.botAccessToken, config.licenseId)
+              await sendImage(chatId, action.url, action.caption, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_system_message':
-              await sendSystemMessage(chatId, action.text, config.botAccessToken, config.licenseId)
+              await sendSystemMessage(chatId, action.text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'set_typing':
-              await setTypingIndicator(chatId, action.isTyping, config.botAccessToken, config.licenseId)
+              await setTypingIndicator(chatId, action.isTyping, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'transfer_chat': {
               const target = action.group
@@ -213,13 +250,13 @@ export async function handleIncomingEvent(
                 : config.transferGroupId != null
                   ? { type: 'group' as const, ids: [config.transferGroupId] }
                   : { type: 'queue' as const }
-              await transferChat(chatId, target, config.botAccessToken, config.licenseId)
-              await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId)
+              await transferChat(chatId, target, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               await updateSessionState(chatId, 'transferred')
               break
             }
             case 'update_chat_properties':
-              await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId)
+              await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'buffer_text':
               await appendTextBuffer(chatId, action.delta)
@@ -227,7 +264,7 @@ export async function handleIncomingEvent(
             case 'flush_text': {
               const text = await flushTextBuffer(chatId)
               if (text.trim()) {
-                await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId)
+                await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               }
               break
             }
@@ -238,6 +275,8 @@ export async function handleIncomingEvent(
         } catch (err) {
           const code = (err as { code?: string })?.code
           if (code === 'TOKEN_EXPIRED') {
+            await markChannelUnhealthy(customerId, 'livechat', 'token_expired', String(err))
+          } else if (code === 'NOT_IN_CHAT') {
             await markChannelUnhealthy(customerId, 'livechat', 'token_expired', String(err))
           } else if (code === 'RATE_LIMITED') {
             await markChannelUnhealthy(customerId, 'livechat', 'rate_limited', String(err))
@@ -254,7 +293,7 @@ export async function handleIncomingEvent(
   } finally {
     // Ensure typing is off
     if (!typingStopped) {
-      setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId).catch(() => {})
+      setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     }
     await updateSessionState(chatId, 'idle')
   }

@@ -843,6 +843,7 @@ export class SkillRouter {
           timeoutMs: s.timeoutMs,
           mockFixture: s.mockFixture ? JSON.parse(s.mockFixture) : undefined,
           displayVerb: s.displayVerb ? JSON.parse(s.displayVerb) : undefined,
+          renderHints: s.renderHints ? JSON.parse(s.renderHints) : undefined,
           isConcurrencySafe: s.isConcurrencySafe,
           enabled: s.enabled,
         })
@@ -877,6 +878,18 @@ export class SkillRouter {
           isConcurrencySafe: true,
           enabled: true,
           displayVerb: { text: `Searching ${ks.name}`, icon: 'dots' },
+          renderHints: {
+            livechat: {
+              kind: 'carousel',
+              itemsField: '$.matches',
+              idField: '$.id',
+              itemTemplate: {
+                titleField: '$.title',
+                subtitleField: '$.snippet',
+                buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open', type: 'url', url: '$.url' }],
+              },
+            },
+          },
         })
       }
     } catch (err) {

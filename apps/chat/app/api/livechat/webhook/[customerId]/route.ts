@@ -1,12 +1,24 @@
 // apps/chat/app/api/livechat/webhook/[customerId]/route.ts
-// Per-customer webhook endpoint with isolated secrets (L4.3 multi-tenant).
+// Per-customer webhook endpoint with isolated secrets (multi-tenant).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
+import { upsertSession } from '@/lib/livechat/session-store'
+import { sendTextMessage } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
+import { generateCaseId } from '@/lib/utils'
 import type { InteraInteractionSubmit, InteraFormSubmit, AttachmentData } from '@/lib/livechat/types'
+
+function getChatPresence(body: Record<string, unknown>): string[] {
+  const additional = body.additional_data as Record<string, unknown> | undefined
+  const payload = body.payload as Record<string, unknown> | undefined
+  const ids = additional?.chat_presence_user_ids
+    ?? payload?.chat_presence_user_ids
+    ?? []
+  return ids as string[]
+}
 
 export async function POST(
   request: NextRequest,
@@ -26,11 +38,11 @@ export async function POST(
   // Per-customer secret verification
   const config = await getLiveChatConfig(customerId)
   if (!config?.enabled) {
+    console.warn('[Webhook] config missing or disabled', { customerId, action: body.action, chatId: body.chat_id })
     return NextResponse.json({ error: 'Customer not configured' }, { status: 404 })
   }
 
-  const secret = ((config as unknown as Record<string, unknown>).webhookSecret as string | undefined)
-    ?? process.env.LIVECHAT_WEBHOOK_SECRET
+  const secret = config.webhookSecret ?? process.env.LIVECHAT_WEBHOOK_SECRET
 
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
@@ -67,6 +79,17 @@ export async function POST(
   const eventId = `livechat:${(event.id ?? body.webhook_id ?? rawBody.slice(0, 64)) as string}`
   if (await isDuplicateWebhook(eventId)) {
     return NextResponse.json({ ok: true, deduped: true })
+  }
+
+  // RC4: author self-filter — skip events authored by our own agent
+  if (config.agentAccountId && userId === config.agentAccountId) {
+    return NextResponse.json({ ok: true, skipped: 'self_authored' })
+  }
+
+  // RC0/F: chat_presence_user_ids filter — only respond to chats assigned to our agent
+  const presentIds = getChatPresence(body)
+  if (config.agentAccountId && presentIds.length > 0 && !presentIds.includes(config.agentAccountId)) {
+    return NextResponse.json({ ok: true, skipped: 'not_my_chat' })
   }
 
   if (action === 'incoming_event') {
@@ -112,9 +135,18 @@ export async function POST(
     }
   }
 
+  // RC5: incoming_chat — create session + optional welcome; don't feed empty message to loop
   if (action === 'incoming_chat') {
-    handleIncomingEvent(chatId, customerId, userId, { type: 'message', text: '' }, config)
-      .catch(err => console.error('[Webhook] incoming_chat error:', err))
+    const p = { region: config.region, authType: config.authType, accountId: config.accountId }
+    upsertSession({ chatId, customerId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
+      .then(() => {
+        sendTextMessage(
+          chatId, '您好，我是智能客服，请描述您遇到的问题～',
+          config.botAccessToken, config.licenseId,
+          p.region, p.authType, p.accountId,
+        ).catch(() => {})
+      })
+      .catch(err => console.error('[Webhook] incoming_chat session error:', err))
   }
 
   if (action === 'chat_archived') {

@@ -7,7 +7,7 @@ import type { WidgetPayload, StatusTrackStep, InteractionOption, FormField } fro
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input'
+type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input' | 'skill_render'
 
 interface AppState {
   view: ViewKind
@@ -15,6 +15,8 @@ interface AppState {
   steps: StatusTrackStep[]
   options: InteractionOption[]
   fields: FormField[]
+  template: string
+  renderData: unknown
 }
 
 const INITIAL_STATE: AppState = {
@@ -23,6 +25,8 @@ const INITIAL_STATE: AppState = {
   steps: [],
   options: [],
   fields: [],
+  template: '',
+  renderData: null,
 }
 
 // ── LiveChat SDK bridge ───────────────────────────────────────────────────────
@@ -245,6 +249,129 @@ function FormCard({
   )
 }
 
+// ── SkillRender View ─────────────────────────────────────────────────────────
+
+function SkillRender({
+  template,
+  data,
+  caseId,
+  onSubmit,
+}: {
+  template: string
+  data: unknown
+  caseId: string
+  onSubmit: () => void
+}) {
+  const handleAction = (id: string) => {
+    sendToLiveChat('intera_interaction_submit', { caseId, optionId: id })
+    onSubmit()
+  }
+
+  switch (template) {
+    case 'order_timeline':
+      return <OrderTimeline data={data} onAction={handleAction} />
+    case 'kyc_status':
+      return <KycStatus data={data} onAction={handleAction} />
+    case 'game_list':
+      return <GameList data={data} caseId={caseId} onSelect={(gameId: string) => {
+        sendToLiveChat('intera_interaction_submit', { caseId, optionId: `pick_game:${gameId}` })
+        onSubmit()
+      }} />
+    default:
+      return (
+        <div className="p-3">
+          <pre className="text-[11px] p-3 bg-black/[0.03] rounded-lg border border-[var(--border-subtle)] overflow-auto max-h-[300px] whitespace-pre-wrap">
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </div>
+      )
+  }
+}
+
+function OrderTimeline({ data, onAction }: { data: unknown; onAction: (id: string) => void }) {
+  const steps = Array.isArray(data) ? data : (data as Record<string, unknown>)?.steps as unknown[]
+  if (!Array.isArray(steps)) {
+    return <pre className="text-[11px] p-3">{JSON.stringify(data, null, 2)}</pre>
+  }
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-[10px] uppercase tracking-widest text-indigo-400 font-semibold mb-3">Order Timeline</p>
+      {steps.map((step: unknown, i: number) => {
+        const s = step as Record<string, unknown>
+        return (
+          <div key={i} className="flex items-start gap-3 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+            <div className="w-2 h-2 mt-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-semibold text-gray-800">{String(s.label ?? s.status ?? `Step ${i + 1}`)}</p>
+              <p className="text-[10px] text-gray-400">{String(s.timestamp ?? s.time ?? '')}</p>
+            </div>
+            {(s.actionId as string | undefined) && (
+              <button onClick={() => onAction(String(s.actionId))} className="text-[10px] text-indigo-500 font-medium flex-shrink-0">
+                Detail
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function KycStatus({ data, onAction }: { data: unknown; onAction: (id: string) => void }) {
+  const d = data as Record<string, unknown> | undefined
+  return (
+    <div className="p-4 space-y-3">
+      <p className="text-[10px] uppercase tracking-widest text-indigo-400 font-semibold">KYC Status</p>
+      <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-[12px] text-gray-500">Status</span>
+          <span className={`text-[12px] font-semibold ${d?.status === 'verified' ? 'text-emerald-500' : d?.status === 'rejected' ? 'text-red-500' : 'text-amber-500'}`}>
+            {String(d?.status ?? 'pending')}
+          </span>
+        </div>
+        {(d?.level as string | undefined) && (
+          <div className="flex justify-between items-center">
+            <span className="text-[12px] text-gray-500">Level</span>
+            <span className="text-[12px] font-semibold text-gray-700">{String(d?.level)}</span>
+          </div>
+        )}
+        {(d?.actionId as string | undefined) && (
+          <button onClick={() => onAction(String(d?.actionId))} className="w-full py-2 text-[12px] font-semibold text-white bg-indigo-500 rounded-xl">
+            Retry Verification
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function GameList({ data, caseId, onSelect }: { data: unknown; caseId: string; onSelect: (id: string) => void }) {
+  const items = Array.isArray(data) ? data : (data as Record<string, unknown>)?.items as unknown[]
+  if (!Array.isArray(items)) {
+    return <pre className="text-[11px] p-3">{JSON.stringify(data, null, 2)}</pre>
+  }
+  return (
+    <div className="p-3 space-y-2">
+      <p className="text-[10px] uppercase tracking-widest text-indigo-400 font-semibold mb-3">Select Game</p>
+      {items.map((item: unknown, i: number) => {
+        const g = item as Record<string, unknown>
+        const id = String(g.id ?? i)
+        return (
+          <button key={i} onClick={() => onSelect(id)} className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-3 shadow-sm hover:bg-gray-50 transition-colors text-left">
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-gray-800 truncate">{String(g.name ?? g.title ?? id)}</p>
+              {(g.description as string | undefined) && <p className="text-[11px] text-gray-400 truncate">{String(g.description)}</p>}
+            </div>
+            <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main App ─────────────────────────────────────────────────────────────────
 
 export default function LiveChatWidget() {
@@ -301,6 +428,8 @@ export default function LiveChatWidget() {
           return { ...prev, view: 'propose_interaction', caseId: payload.caseId, options: payload.options ?? [], steps: [] }
         case 'request_user_input':
           return { ...prev, view: 'request_user_input', caseId: payload.caseId, fields: payload.fields ?? [], steps: [] }
+        case 'skill_render':
+          return { ...prev, view: 'skill_render', caseId: payload.caseId, template: payload.template ?? '', renderData: payload.data }
         default:
           return prev
       }
@@ -344,6 +473,11 @@ export default function LiveChatWidget() {
         {state.view === 'request_user_input' && (
           <motion.div key="form" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <FormCard caseId={state.caseId} fields={state.fields} onSubmit={handleViewComplete} />
+          </motion.div>
+        )}
+        {state.view === 'skill_render' && (
+          <motion.div key="skill" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <SkillRender template={state.template} data={state.renderData} caseId={state.caseId} onSubmit={handleViewComplete} />
           </motion.div>
         )}
       </AnimatePresence>

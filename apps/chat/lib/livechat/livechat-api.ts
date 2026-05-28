@@ -4,15 +4,19 @@
 //
 // Supports both auth methods:
 // - Bot Access Token  → Authorization: Bearer <token>
-// - Personal Access Token (PAT) → Authorization: Basic <base64token>
-// Auto-detected: if token looks like base64 (long, = padding) → Basic, else → Bearer
+// - Personal Access Token (PAT) → Authorization: Basic base64(accountId:token)
+// Auto-detected unless authType is explicitly set.
 
 import type { WidgetPayload, CardSpec } from './types'
 
 const LC_API_BASE = 'https://api.livechatinc.com/v3.5/agent/action'
 
-function detectAuth(token: string): string {
-  // PAT tokens are base64-encoded "accountId:token" — long strings with = padding
+function buildAuthHeader(token: string, authType?: string, accountId?: string): string {
+  if (authType === 'basic' && accountId) {
+    return `Basic ${Buffer.from(`${accountId}:${token}`).toString('base64')}`
+  }
+  if (authType === 'bearer') return `Bearer ${token}`
+  // auto-detect: long base64-like strings are likely PAT Basic
   if (token.length > 60 && /^[A-Za-z0-9+/=]+$/.test(token)) return `Basic ${token}`
   return `Bearer ${token}`
 }
@@ -22,20 +26,31 @@ async function lcPost(
   body: unknown,
   botAccessToken: string,
   licenseId: string,
+  region: string = process.env.LIVECHAT_REGION ?? 'dal',
+  authType?: string,
+  accountId?: string,
 ): Promise<unknown> {
+  const bodyObj: Record<string, unknown> = { ...(body as Record<string, unknown>), license_id: licenseId }
+
+  // Auto-inject ignore_requester_presence for actions that require agent to be chat member
+  if (action === 'send_event' || action === 'send_typing_indicator') {
+    bodyObj.ignore_requester_presence = true
+  }
+
   const res = await fetch(`${LC_API_BASE}/${action}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: detectAuth(botAccessToken),
-      'X-Region': 'fra',
+      Authorization: buildAuthHeader(botAccessToken, authType, accountId),
+      'X-Region': region,
     },
-    body: JSON.stringify({ ...(body as Record<string, unknown>), license_id: licenseId }),
+    body: JSON.stringify(bodyObj),
   })
   if (!res.ok) {
     const text = await res.text()
     const err = new Error(`LiveChat API ${action} failed (${res.status}): ${text}`) as Error & { code?: string }
     if (res.status === 401) err.code = 'TOKEN_EXPIRED'
+    if (res.status === 403) err.code = 'NOT_IN_CHAT'
     if (res.status === 429) err.code = 'RATE_LIMITED'
     throw err
   }
@@ -44,15 +59,17 @@ async function lcPost(
 
 export async function sendTextMessage(
   chatId: string, text: string, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   await lcPost('send_event', {
     chat_id: chatId,
     event: { type: 'message', text, visibility: 'all' },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function sendWidgetPayload(
   chatId: string, payload: WidgetPayload, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   await lcPost('send_event', {
     chat_id: chatId,
@@ -61,12 +78,13 @@ export async function sendWidgetPayload(
       content: { type: 'intera_widget_payload', ...payload },
       visibility: 'all',
     },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function sendQuickReplies(
   chatId: string, text: string, options: Array<{ id: string; label: string }>,
   botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   await lcPost('send_event', {
     chat_id: chatId,
@@ -84,11 +102,12 @@ export async function sendQuickReplies(
       }],
       visibility: 'all',
     },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function sendCard(
   chatId: string, card: CardSpec, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   const buttons = card.buttons.slice(0, 10).map(b => {
     const base: Record<string, unknown> = { text: b.label, postback_id: b.id, user_ids: [] }
@@ -110,11 +129,12 @@ export async function sendCard(
       }],
       visibility: 'all',
     },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function sendCarousel(
   chatId: string, cards: CardSpec[], botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   const elements = cards.slice(0, 10).map(c => ({
     title: c.title,
@@ -131,12 +151,13 @@ export async function sendCarousel(
   await lcPost('send_event', {
     chat_id: chatId,
     event: { type: 'rich_message', template_id: 'cards', elements, visibility: 'all' },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function sendImage(
   chatId: string, imageUrl: string, caption: string | undefined,
   botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   await lcPost('send_event', {
     chat_id: chatId,
@@ -146,26 +167,28 @@ export async function sendImage(
       ...(caption ? { alternative_text: caption } : {}),
       visibility: 'all',
     },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function sendSystemMessage(
   chatId: string, text: string, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   await lcPost('send_event', {
     chat_id: chatId,
     event: { type: 'system_message', text, system_message_type: 'manual_message', visibility: 'all' },
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function setTypingIndicator(
   chatId: string, isTyping: boolean, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   await lcPost('send_typing_indicator', {
     chat_id: chatId,
     is_typing: isTyping,
     recipients: 'all',
-  }, botAccessToken, licenseId)
+  }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function transferChat(
@@ -173,23 +196,26 @@ export async function transferChat(
   target: { type: 'group'; ids: number[] } | { type: 'agent'; ids: string[] } | { type: 'queue' },
   botAccessToken: string,
   licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
-  await lcPost('transfer_chat', { id: chatId, target }, botAccessToken, licenseId)
+  await lcPost('transfer_chat', { id: chatId, target }, botAccessToken, licenseId, region, authType, accountId)
 }
 
 export async function listGroups(
   botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<Array<{ id: number; name: string; agents_count: number }>> {
-  const res = (await lcPost('list_groups', {}, botAccessToken, licenseId)) as { groups?: Array<{ id: number; name: string; agents_count: number }> }
+  const res = (await lcPost('list_groups', {}, botAccessToken, licenseId, region, authType, accountId)) as { groups?: Array<{ id: number; name: string; agents_count: number }> }
   return res.groups ?? []
 }
 
 export async function updateChatProperties(
   chatId: string, props: Record<string, string>, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
   const properties: Record<string, Record<string, string>> = {}
   for (const [k, v] of Object.entries(props)) {
     properties[`intera.${k}`] = { value: v }
   }
-  await lcPost('update_chat_properties', { id: chatId, properties }, botAccessToken, licenseId)
+  await lcPost('update_chat_properties', { id: chatId, properties }, botAccessToken, licenseId, region, authType, accountId)
 }

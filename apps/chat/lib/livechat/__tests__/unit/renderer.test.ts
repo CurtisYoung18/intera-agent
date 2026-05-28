@@ -63,6 +63,77 @@ describe('LiveChatRenderer', () => {
       const step = (a as { payload: { step: { state: string } } }).payload.step!
       expect(step.state).toBe('done')
     })
+
+    it('returns send_card when renderHints.livechat has card hint', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('skill_result', {
+        name: 'query_order',
+        status: 'completed',
+        result: { order: { id: 'TX123', status: 'pending' } },
+        renderHints: {
+          livechat: {
+            kind: 'card',
+            titleField: '$.order.id',
+            subtitleField: '$.order.status',
+          },
+        },
+      }), makeCtx())
+      expect(actions[0]!.type).toBe('send_card')
+    })
+
+    it('returns send_carousel when renderHints.livechat has carousel hint', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('skill_result', {
+        name: 'kb_search',
+        status: 'completed',
+        result: { results: [{ id: '1', title: 'Doc 1' }] },
+        renderHints: {
+          livechat: {
+            kind: 'carousel',
+            itemsField: '$.results',
+            itemTemplate: { titleField: '$.title' },
+          },
+        },
+      }), makeCtx())
+      expect(actions[0]!.type).toBe('send_carousel')
+    })
+
+    it('returns skill_render widget for iframe hint', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('skill_result', {
+        name: 'query_order',
+        status: 'completed',
+        result: { steps: [{ label: 'Order placed', timestamp: '2024-01-01' }] },
+        renderHints: {
+          livechat: { kind: 'iframe', template: 'order_timeline' },
+        },
+      }), makeCtx())
+      const a = actions[0]!
+      expect(a.type).toBe('send_widget_payload')
+      const payload = (a as { payload: { kind: string; template: string; data: unknown } }).payload
+      expect(payload.kind).toBe('skill_render')
+      expect(payload.template).toBe('order_timeline')
+    })
+
+    it('returns skill_render with dataField subset when specified', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('skill_result', {
+        name: 'query_order',
+        status: 'completed',
+        result: { timeline: { steps: [{ label: 'Step 1' }] } },
+        renderHints: {
+          livechat: { kind: 'iframe', template: 'order_timeline', dataField: '$.timeline.steps' },
+        },
+      }), makeCtx())
+      const payload = (actions[0] as { payload: { data: unknown } }).payload
+      expect(payload.data).toEqual([{ label: 'Step 1' }])
+    })
+
+    it('returns noop for skill_result without renderHints when showSkillStatus=false', () => {
+      const r = new LiveChatRenderer(false)
+      const actions = r.render(makeEvent('skill_result', { name: 'x', status: 'completed', result: {} }), makeCtx())
+      expect(actions[0]!.type).toBe('noop')
+    })
   })
 
   describe('interaction_proposed', () => {

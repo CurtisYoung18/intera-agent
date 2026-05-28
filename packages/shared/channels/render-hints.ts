@@ -45,6 +45,7 @@ export type LivechatRenderHint =
   | LivechatCarouselHint
   | LivechatQuickRepliesHint
   | LivechatPlainHint
+  | LivechatIframeHint
 
 export interface LivechatCardHint {
   kind: 'card'
@@ -90,4 +91,10 @@ export interface LivechatQuickRepliesHint {
 
 export interface LivechatPlainHint {
   kind: 'plain'
+}
+
+export interface LivechatIframeHint {
+  kind: 'iframe'
+  template: string
+  dataField?: string
 }

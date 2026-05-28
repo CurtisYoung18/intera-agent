@@ -86,4 +86,45 @@ describe('renderSkillByHint', () => {
       expect((actions[0] as { text: string }).text).toBe('simple result')
     })
   })
+
+  describe('iframe kind', () => {
+    it('returns noop since iframe is handled by renderer before renderSkillByHint', () => {
+      const hint: LivechatRenderHint = { kind: 'iframe', template: 'order_timeline' }
+      const actions = renderSkillByHint({ steps: [] }, hint)
+      expect(actions[0]!.type).toBe('noop')
+    })
+  })
+
+  describe('carousel with idField splicing', () => {
+    it('splices item id into button postback', () => {
+      const output = { results: [{ id: 'doc-1', title: 'Doc 1' }, { id: 'doc-2', title: 'Doc 2' }] }
+      const hint: LivechatRenderHint = {
+        kind: 'carousel',
+        itemsField: '$.results',
+        idField: '$.id',
+        itemTemplate: {
+          titleField: '$.title',
+          buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open' }],
+        },
+      }
+      const actions = renderSkillByHint(output, hint)
+      const cards = (actions[0] as { cards: Array<{ buttons: Array<{ id: string }> }> }).cards
+      expect(cards[0]!.buttons[0]!.id).toBe('open_doc:doc-1')
+      expect(cards[1]!.buttons[0]!.id).toBe('open_doc:doc-2')
+    })
+  })
+
+  describe('card with labelField dynamic label', () => {
+    it('resolves label from output via labelField', () => {
+      const output = { item: { name: 'Dynamic Label' } }
+      const hint: LivechatRenderHint = {
+        kind: 'card',
+        titleField: '$.item.name',
+        buttons: [{ id: 'btn', postback: 'action', labelField: '$.item.name' }],
+      }
+      const actions = renderSkillByHint(output, hint)
+      const card = (actions[0] as { card: { buttons: Array<{ label: string }> } }).card
+      expect(card.buttons[0]!.label).toBe('Dynamic Label')
+    })
+  })
 })

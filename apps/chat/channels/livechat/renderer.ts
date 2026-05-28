@@ -8,7 +8,7 @@ import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
 import type { BridgeAction, StatusTrackStep, FormField } from '@/lib/livechat/types'
-import { renderSkillByHint } from './render-skill-by-hint'
+import { renderSkillByHint, readPath } from './render-skill-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
 function skillLabel(name: string, displayVerb?: { text: string; icon: string }): string {
@@ -55,6 +55,15 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           renderHints?: Record<string, unknown>
         }
         const livechatHint = d.renderHints?.livechat as LivechatRenderHint | undefined
+
+        // If iframe hint, emit skill_render widget payload for interactive iframe rendering
+        if (livechatHint?.kind === 'iframe' && d.result !== undefined) {
+          const data = livechatHint.dataField ? readPath(d.result, livechatHint.dataField) : d.result
+          return {
+            type: 'send_widget_payload',
+            payload: { kind: 'skill_render', caseId, template: livechatHint.template, data, skill: d.name },
+          }
+        }
 
         // If renderHints.livechat is configured, use it for rich message rendering
         if (livechatHint && d.result !== undefined) {

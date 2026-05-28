@@ -65,7 +65,7 @@ export function renderSkillByHint(
   }
 }
 
-function readPath(obj: unknown, path?: string): unknown {
+export function readPath(obj: unknown, path?: string): unknown {
   if (!path) return undefined
   try {
     const cleaned = path.startsWith('$.') ? path.slice(2) : path

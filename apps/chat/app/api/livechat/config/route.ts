@@ -35,8 +35,10 @@ export async function PUT(request: NextRequest) {
   let body: Record<string, unknown>
   try { body = await request.json() } catch { return json({ error: 'Invalid JSON' }, { status: 400 }) }
 
-  const { customerId, botAccessToken, licenseId, webhookSecret, showSkillStatus, enabled, transferGroupId, transferMessage } = body as {
-    customerId: string; botAccessToken: string; licenseId: string; webhookSecret?: string; showSkillStatus: boolean; enabled: boolean
+  const { customerId, botAccessToken, licenseId, webhookSecret, region, authType, accountId, agentAccountId, showSkillStatus, enabled, transferGroupId, transferMessage } = body as {
+    customerId: string; botAccessToken: string; licenseId: string; webhookSecret?: string
+    region?: string; authType?: string; accountId?: string; agentAccountId?: string
+    showSkillStatus: boolean; enabled: boolean
     transferGroupId?: number; transferMessage?: string
   }
 
@@ -55,6 +57,10 @@ export async function PUT(request: NextRequest) {
   await upsertLiveChatConfig(customerId, {
     botAccessToken: tokenToSave, licenseId: licenseId ?? '',
     webhookSecret: secretToSave,
+    region: region ?? undefined,
+    authType: (authType as 'bearer' | 'basic' | 'auto' | undefined) ?? undefined,
+    accountId: accountId ?? undefined,
+    agentAccountId: agentAccountId ?? undefined,
     showSkillStatus: showSkillStatus ?? true, enabled: enabled ?? false,
     transferGroupId: transferGroupId ?? undefined,
     transferMessage: transferMessage ?? undefined,

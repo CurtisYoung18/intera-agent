@@ -10,12 +10,14 @@ import TiltCard from '@/components/ui/tilt-card'
 import { chatApiUrl } from '@/lib/chat-api'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
+import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
+import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
 interface SkillItem {
   id: string; name: string; description: string; mode: string
   endpoint?: string; httpMethod?: string; timeoutMs?: number
   inputSchema?: string; outputSchema?: string; headers?: string
-  mockFixture?: string; guardPhase?: string
+  mockFixture?: string; renderHints?: string; guardPhase?: string
   isConcurrencySafe: boolean; enabled: boolean
   isSystem?: boolean
   isChannel?: boolean
@@ -587,6 +589,31 @@ export default function SkillsPage() {
                 </div>
               </details>
             )}
+
+            {/* LiveChat Render Hints */}
+            <details className="rounded-xl border border-indigo/15 bg-indigo/[0.02] px-4 py-3">
+              <summary className="text-[11px] font-semibold text-indigo cursor-pointer list-none flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5" /> LiveChat Rich Rendering
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-indigo/60 group-open:rotate-180 transition-transform" />
+              </summary>
+              <div className="mt-3">
+                <SkillRenderHintsEditor
+                  value={(() => {
+                    try { return editing.renderHints ? (JSON.parse(editing.renderHints)?.livechat as LivechatRenderHint) : undefined }
+                    catch { return undefined }
+                  })()}
+                  onChange={(hint) => {
+                    const current = (() => { try { return JSON.parse(editing.renderHints || '{}') } catch { return {} } })()
+                    const updated = { ...current, livechat: hint }
+                    setEditing({ ...editing, renderHints: JSON.stringify(updated) })
+                  }}
+                  mockFixture={(() => { try { return JSON.parse(editing.mockFixture || '') } catch { return undefined } })()}
+                />
+              </div>
+            </details>
+
             <div className={`space-y-3 ${editing.mode === 'static' ? 'opacity-40 pointer-events-none' : ''}`}>
               <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('skills.httpConfig')}</span></div>
               <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('skills.endpoint')}</span>

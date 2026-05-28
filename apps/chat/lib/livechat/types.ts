@@ -21,6 +21,10 @@ export interface LiveChatConfig {
   botAccessToken: string
   licenseId: string
   webhookSecret?: string
+  region?: string
+  authType?: 'bearer' | 'basic' | 'auto'
+  accountId?: string
+  agentAccountId?: string
   showSkillStatus: boolean
   enabled: boolean
   transferGroupId?: number
@@ -32,6 +36,7 @@ export type WidgetPayloadKind =
   | 'status_track'
   | 'propose_interaction'
   | 'request_user_input'
+  | 'skill_render'
 
 export interface StatusTrackStep {
   id: string
@@ -63,6 +68,9 @@ export interface WidgetPayload {
   step?: StatusTrackStep
   options?: InteractionOption[]
   fields?: FormField[]
+  template?: string
+  data?: unknown
+  skill?: string
 }
 
 // Events sent from In-Chat App back to Bridge via LiveChat send_event

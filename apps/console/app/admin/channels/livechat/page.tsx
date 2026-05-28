@@ -10,6 +10,7 @@ import { useConsoleLocale } from '@/components/locale-provider'
 interface LiveChatConfig {
   botAccessToken: string; licenseId: string; showSkillStatus: boolean
   enabled: boolean; webhookSecret?: string
+  region?: string; authType?: string; accountId?: string; agentAccountId?: string
   transferGroupId?: number; transferMessage?: string
 }
 interface LiveChatGroup { id: number; name: string; agents_count: number }
@@ -58,6 +59,14 @@ const L = {
   webhookSecret: { en: 'Webhook Secret', zh: 'Webhook 密钥' },
   webhookSecretHint: { en: 'Used to verify incoming webhook requests', zh: '用于验证传入 Webhook 请求' },
   webhookUrl: { en: 'Webhook URL', zh: 'Webhook 地址' },
+  authType: { en: 'Auth Type', zh: '认证类型' },
+  authTypeHint: { en: 'PAT → Basic; Bot token → Bearer; auto detects from token format', zh: 'PAT → Basic；Bot 令牌 → Bearer；auto 自动检测' },
+  accountId: { en: 'Account ID (PAT)', zh: 'Account ID (PAT)' },
+  accountIdHint: { en: 'LiveChat Account ID from Developer Console. Required for PAT Basic auth.', zh: 'LiveChat 开发者后台的 Account ID。PAT Basic 认证必填。' },
+  agentAccountId: { en: 'Agent ID / Email', zh: 'Agent ID / 邮箱' },
+  agentAccountIdHint: { en: 'The agent whose identity Intera takes over. Used for self-filtering and presence detection.', zh: '被 Intera 接管的人工 agent。用于自过滤和在场检测。' },
+  region: { en: 'Data Region', zh: '数据区域' },
+  regionHint: { en: 'Match your LiveChat account region (dal=default US, fra=Europe). Token prefix dal:/fra: is also a hint.', zh: '需与 LiveChat 账号数据区一致（dal=默认美国，fra=欧洲）。Token 前缀 dal:/fra: 可作为参考。' },
   copied: { en: 'Copied!', zh: '已复制！' },
   settings: { en: 'Settings', zh: '设置' },
   showSkillStatus: { en: 'Show Skill Status', zh: '显示工具状态' },
@@ -113,7 +122,7 @@ export default function LiveChatDetailPage() {
   const l = useL()
   const isZh = locale === 'zh'
 
-  const [config, setConfig] = useState<LiveChatConfig>({ botAccessToken: '', licenseId: '', showSkillStatus: true, enabled: false, webhookSecret: '' })
+  const [config, setConfig] = useState<LiveChatConfig>({ botAccessToken: '', licenseId: '', showSkillStatus: true, enabled: false, webhookSecret: '', region: 'dal', authType: 'auto', accountId: '', agentAccountId: '' })
   const [origConfig, setOrigConfig] = useState<LiveChatConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -240,6 +249,41 @@ export default function LiveChatDetailPage() {
               <label className={labelCls}>{l('webhookSecret')} <span className="text-vermillion">*</span></label>
               <input type="password" value={config.webhookSecret ?? ''} onChange={e => setConfig(c => ({ ...c, webhookSecret: e.target.value }))} className={inputCls} />
               <p className="text-[10px] text-[var(--fog)] mt-1">{l('webhookSecretHint')}</p>
+            </div>
+
+            {/* Region */}
+            <div>
+              <label className={labelCls}>{l('region')}</label>
+              <select value={config.region ?? 'dal'} onChange={e => setConfig(c => ({ ...c, region: e.target.value }))} className={inputCls}>
+                <option value="dal">dal (US — default)</option>
+                <option value="fra">fra (Europe)</option>
+              </select>
+              <p className="text-[10px] text-[var(--fog)] mt-1">{l('regionHint')}</p>
+            </div>
+
+            {/* Auth Type */}
+            <div>
+              <label className={labelCls}>{l('authType')}</label>
+              <select value={config.authType ?? 'auto'} onChange={e => setConfig(c => ({ ...c, authType: e.target.value }))} className={inputCls}>
+                <option value="auto">auto</option>
+                <option value="basic">basic (PAT)</option>
+                <option value="bearer">bearer (Bot)</option>
+              </select>
+              <p className="text-[10px] text-[var(--fog)] mt-1">{l('authTypeHint')}</p>
+            </div>
+
+            {/* Account ID (PAT) */}
+            <div>
+              <label className={labelCls}>{l('accountId')}</label>
+              <input type="text" value={config.accountId ?? ''} onChange={e => setConfig(c => ({ ...c, accountId: e.target.value }))} className={inputCls} placeholder="28e53566-..." />
+              <p className="text-[10px] text-[var(--fog)] mt-1">{l('accountIdHint')}</p>
+            </div>
+
+            {/* Agent ID / Email */}
+            <div>
+              <label className={labelCls}>{l('agentAccountId')}</label>
+              <input type="text" value={config.agentAccountId ?? ''} onChange={e => setConfig(c => ({ ...c, agentAccountId: e.target.value }))} className={inputCls} placeholder="agent@email.com" />
+              <p className="text-[10px] text-[var(--fog)] mt-1">{l('agentAccountIdHint')}</p>
             </div>
 
             {/* Webhook URL with copy */}

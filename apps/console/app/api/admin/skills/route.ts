@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
         mockFixture: body.mockFixture ? (typeof body.mockFixture === 'string' ? body.mockFixture : JSON.stringify(body.mockFixture)) : null,
         guardPhase: body.guardPhase || 'post',
         displayVerb: body.displayVerb ? (typeof body.displayVerb === 'string' ? body.displayVerb : JSON.stringify(body.displayVerb)) : null,
+        renderHints: body.renderHints ? (typeof body.renderHints === 'string' ? body.renderHints : JSON.stringify(body.renderHints)) : null,
         isConcurrencySafe: body.isConcurrencySafe ?? true,
         enabled: body.enabled ?? true,
       },

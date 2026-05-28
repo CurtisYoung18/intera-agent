@@ -55,7 +55,7 @@ export async function PUT(
     if (body.timeoutMs !== undefined) data.timeoutMs = body.timeoutMs
     if (body.isConcurrencySafe !== undefined) data.isConcurrencySafe = body.isConcurrencySafe
     if (body.enabled !== undefined) data.enabled = body.enabled
-    for (const f of ['inputSchema', 'outputSchema', 'headers', 'mockFixture']) {
+    for (const f of ['inputSchema', 'outputSchema', 'headers', 'mockFixture', 'displayVerb', 'renderHints']) {
       if (body[f] !== undefined) data[f] = typeof body[f] === 'string' ? body[f] : JSON.stringify(body[f])
     }
 

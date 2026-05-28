@@ -104,7 +104,11 @@ export interface SkillDefinition {
   // Pattern from Claude Code: tool.inputSchema.safeParse(input)
   zodSchema?: import('zod').ZodType
   /** Per-channel render hints for tool results (S5 — set by operator, consumed by ChannelRenderer). */
-  renderHints?: Partial<Record<string, import('../channels/render-hints').RenderHint>>
+  renderHints?: {
+    livechat?: import('../channels/render-hints').LivechatRenderHint
+    'web-chat'?: import('../channels/render-hints').RenderHint
+    [channel: string]: import('../channels/render-hints').RenderHint | import('../channels/render-hints').LivechatRenderHint | undefined
+  }
 }
 
 // ============================================

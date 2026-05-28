@@ -143,6 +143,7 @@ model Skill {
 
   mockFixture String? // JSON — [MOCK] mock 默认样本
   displayVerb String? // JSON {"text":"...","icon":"..."} — customer-visible spinner label
+  renderHints String? // JSON: { livechat?: LivechatRenderHint, "web-chat"?: RenderHint }
 
   guardPhase        String  @default("post") // "pre" | "post"
   isConcurrencySafe Boolean @default(true)
@@ -390,6 +391,10 @@ model LiveChatConfig {
   botAccessToken  String
   licenseId       String
   webhookSecret   String?
+  region          String   @default("dal")
+  authType        String   @default("auto")
+  accountId       String?
+  agentAccountId  String?
   showSkillStatus Boolean  @default(true)
   enabled         Boolean  @default(false)
   transferGroupId Int?

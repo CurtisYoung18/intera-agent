@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ groups: [] })
     }
 
-    const groups = await listGroups(config.botAccessToken, config.licenseId)
+    const groups = await listGroups(config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId)
     return NextResponse.json({ groups })
   } catch (err) {
     console.error('[LiveChat] Failed to list groups:', err)
