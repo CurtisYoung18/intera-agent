@@ -112,6 +112,11 @@ export async function POST(
     }
   }
 
+  if (action === 'incoming_chat') {
+    handleIncomingEvent(chatId, customerId, userId, { type: 'message', text: '' }, config)
+      .catch(err => console.error('[Webhook] incoming_chat error:', err))
+  }
+
   if (action === 'chat_archived') {
     handleIncomingEvent(chatId, customerId, userId, { type: 'chat_archived' }, config)
       .catch(err => console.error('[Webhook] chat_archived error:', err))

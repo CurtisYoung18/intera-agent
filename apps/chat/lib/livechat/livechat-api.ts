@@ -1,10 +1,21 @@
 // apps/chat/lib/livechat/livechat-api.ts
-// Wraps LiveChat Bot Agent REST API calls.
+// Wraps LiveChat Agent Chat REST API calls.
 // Docs: https://developers.livechat.com/docs/messaging/agent-chat-api/
+//
+// Supports both auth methods:
+// - Bot Access Token  → Authorization: Bearer <token>
+// - Personal Access Token (PAT) → Authorization: Basic <base64token>
+// Auto-detected: if token looks like base64 (long, = padding) → Basic, else → Bearer
 
 import type { WidgetPayload, CardSpec } from './types'
 
 const LC_API_BASE = 'https://api.livechatinc.com/v3.5/agent/action'
+
+function detectAuth(token: string): string {
+  // PAT tokens are base64-encoded "accountId:token" — long strings with = padding
+  if (token.length > 60 && /^[A-Za-z0-9+/=]+$/.test(token)) return `Basic ${token}`
+  return `Bearer ${token}`
+}
 
 async function lcPost(
   action: string,
@@ -16,7 +27,7 @@ async function lcPost(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${botAccessToken}`,
+      Authorization: detectAuth(botAccessToken),
       'X-Region': 'fra',
     },
     body: JSON.stringify({ ...(body as Record<string, unknown>), license_id: licenseId }),

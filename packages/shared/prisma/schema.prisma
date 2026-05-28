@@ -389,6 +389,7 @@ model LiveChatConfig {
   customerId      String   @unique
   botAccessToken  String
   licenseId       String
+  webhookSecret   String?
   showSkillStatus Boolean  @default(true)
   enabled         Boolean  @default(false)
   createdAt       DateTime @default(now())

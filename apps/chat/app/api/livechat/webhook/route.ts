@@ -111,6 +111,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // incoming_chat — new conversation started, optional welcome message
+  if (action === 'incoming_chat') {
+    // Chat session init — bridge will handle session creation
+    // Optional: send welcome card here
+    handleIncomingEvent(chatId, customerId, userId, { type: 'message', text: '' }, config)
+      .catch(err => console.error('[Webhook] incoming_chat error:', err))
+  }
+
   if (action === 'chat_archived') {
     handleIncomingEvent(chatId, customerId, userId, { type: 'chat_archived' }, config)
       .catch(err => console.error('[Webhook] chat_archived error:', err))
