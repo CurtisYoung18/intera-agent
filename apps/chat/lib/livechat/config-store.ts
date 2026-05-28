@@ -28,6 +28,7 @@ export async function getLiveChatConfig(customerId: string): Promise<LiveChatCon
       customerId: row.customerId,
       botAccessToken: row.botAccessToken,
       licenseId: row.licenseId,
+      webhookSecret: row.webhookSecret ?? undefined,
       showSkillStatus: row.showSkillStatus,
       enabled: row.enabled,
     }

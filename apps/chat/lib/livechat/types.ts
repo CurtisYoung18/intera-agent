@@ -20,6 +20,7 @@ export interface LiveChatConfig {
   customerId: string
   botAccessToken: string
   licenseId: string
+  webhookSecret?: string
   showSkillStatus: boolean
   enabled: boolean
 }
