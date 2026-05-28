@@ -2,48 +2,33 @@
 
 import { Plug, MessageCircle, ArrowRight, Send, Headset, Globe } from 'lucide-react'
 import Link from 'next/link'
-import { useConsoleLocale } from '@/components/locale-provider'
 
 interface ChannelInfo {
-  id: string
-  label: string
-  description: string
-  icon: typeof Plug
-  href: string
-  active: boolean
-  comingSoon: boolean
+  id: string; label: string; description: string; icon: typeof Plug; href: string
+  active: boolean; comingSoon: boolean
 }
 
 const CHANNELS: ChannelInfo[] = [
-  {
-    id: 'livechat', label: 'LiveChat',
-    description: 'Connection · Routing · Rendering · Human Ops',
-    icon: MessageCircle, href: '/admin/channels/livechat',
-    active: true, comingSoon: false,
-  },
-  {
-    id: 'web-chat', label: 'Web Chat',
-    description: 'Embedded widget · Human Tasks queue',
-    icon: Globe, href: '/admin/channels/web-chat',
-    active: true, comingSoon: false,
-  },
-  {
-    id: 'telegram', label: 'Telegram',
-    description: 'Connect Intera to Telegram chats',
-    icon: Send, href: '/admin/channels/telegram',
-    active: false, comingSoon: true,
-  },
-  {
-    id: 'livedesk', label: 'LiveDesk',
-    description: 'Customer service platform integration',
-    icon: Headset, href: '/admin/channels/livedesk',
-    active: false, comingSoon: true,
-  },
+  { id: 'livechat', label: 'LiveChat', description: 'Connection · Routing · Rendering · Human Ops',
+    icon: MessageCircle, href: '/admin/channels/livechat', active: true, comingSoon: false },
+  { id: 'web-chat', label: 'Web Chat', description: 'Embedded widget · Human Tasks queue',
+    icon: Globe, href: '/admin/channels/web-chat', active: true, comingSoon: false },
+  { id: 'telegram', label: 'Telegram', description: 'Connect Intera to Telegram chats',
+    icon: Send, href: '', active: false, comingSoon: true },
+  { id: 'livedesk', label: 'LiveDesk', description: 'Customer service platform integration',
+    icon: Headset, href: '', active: false, comingSoon: true },
 ]
 
-export default function ChannelsPage() {
-  const { t } = useConsoleLocale()
+const cardCls = (ch: ChannelInfo) =>
+  `relative text-left rounded-2xl p-6 transition-all duration-200 group block ${
+    ch.comingSoon
+      ? 'bg-white/30 border border-black/[0.03] opacity-50 cursor-not-allowed'
+      : ch.active
+        ? 'bg-white/80 backdrop-blur-xl border border-black/[0.06] hover:border-indigo/20 hover:shadow-sm hover:-translate-y-0.5'
+        : 'bg-white/60 backdrop-blur-xl border border-black/[0.05] hover:border-black/[0.1]'
+  }`
 
+export default function ChannelsPage() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="flex items-center gap-3 mb-8">
@@ -52,30 +37,24 @@ export default function ChannelsPage() {
         </div>
         <div>
           <h1 className="text-[18px] font-bold text-[var(--mist)]">Channels</h1>
-          <p className="text-[12px] text-[var(--fog)]">Manage customer entry points. Click a channel to configure connection, routing, rendering, and human escalation.</p>
+          <p className="text-[12px] text-[var(--fog)]">Manage customer entry points. Click a channel to configure.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {CHANNELS.map((ch) => {
           const Icon = ch.icon
-          return (
-            <Link
-              key={ch.id}
-              href={ch.href}
-              className={`relative text-left rounded-2xl p-6 transition-all duration-200 group ${
-                ch.comingSoon
-                  ? 'bg-white/30 border border-black/[0.03] opacity-50 cursor-not-allowed pointer-events-none'
-                  : ch.active
-                    ? 'bg-white/80 backdrop-blur-xl border border-black/[0.06] hover:border-indigo/20 hover:shadow-sm hover:-translate-y-0.5'
-                    : 'bg-white/60 backdrop-blur-xl border border-black/[0.05] hover:border-black/[0.1]'
-              }`}
-            >
+          const badge = ch.active
+            ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-malachite/10 text-malachite border border-malachite/20"><span className="w-1.5 h-1.5 rounded-full bg-malachite" />Active</span>
+            : ch.comingSoon
+              ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/[0.04] text-[var(--fog)] border border-black/[0.06]">Coming soon</span>
+              : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber/10 text-amber border border-amber/20">Inactive</span>
+
+          const inner = (
+            <>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    ch.active ? 'bg-indigo/[0.08]' : 'bg-black/[0.03]'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ch.active ? 'bg-indigo/[0.08]' : 'bg-black/[0.03]'}`}>
                     <Icon className={`w-5 h-5 ${ch.active ? 'text-indigo' : 'text-[var(--fog)]'}`} />
                   </div>
                   <div>
@@ -83,28 +62,14 @@ export default function ChannelsPage() {
                     <p className="text-[11px] text-[var(--fog)] mt-0.5">{ch.description}</p>
                   </div>
                 </div>
-                {ch.active && (
-                  <ArrowRight className="w-4 h-4 text-[var(--fog)]/30 group-hover:text-indigo group-hover:translate-x-0.5 transition-all" />
-                )}
+                {ch.active && <ArrowRight className="w-4 h-4 text-[var(--fog)]/30 group-hover:text-indigo group-hover:translate-x-0.5 transition-all" />}
               </div>
-
-              <div className="mt-3">
-                {ch.active ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-malachite/10 text-malachite border border-malachite/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-malachite" />Active
-                  </span>
-                ) : ch.comingSoon ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/[0.04] text-[var(--fog)] border border-black/[0.06]">
-                    Coming soon
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber/10 text-amber border border-amber/20">
-                    Inactive
-                  </span>
-                )}
-              </div>
-            </Link>
+              <div className="mt-3">{badge}</div>
+            </>
           )
+
+          if (ch.comingSoon) return <div key={ch.id} className={cardCls(ch)}>{inner}</div>
+          return <Link key={ch.id} href={ch.href} className={cardCls(ch)}>{inner}</Link>
         })}
       </div>
     </div>

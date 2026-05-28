@@ -308,21 +308,19 @@ export default function OpsGuidePage() {
           {/* ═══════════════════════════════════════════════════════════════ */}
           {/* 1. REST API REFERENCE — pinned to top for Postman testing      */}
           {/* ═══════════════════════════════════════════════════════════════ */}
-          <DocSection id="guide-api" eyebrow="REST API · Postman-ready" title="API Reference">
-            <DocParagraph text="All Intera HTTP endpoints in one place. Click cURL to copy a ready-to-paste Postman command. Group 1 (Chat API) is what integrators use; Group 2 (Console Admin API) is what the Console UI itself calls." />
+          <DocSection id="guide-api" eyebrow={t('guide.doc.api.eyebrow')} title={t('guide.doc.api.title')}>
+            <DocParagraph text={t('guide.doc.api.lead')} />
 
             <DocCallout>
-              <p className="text-[11px]">
-                <strong>Hosts</strong>:&nbsp;
-                <code className="rounded bg-black/[0.04] px-1 py-0.5 text-[10px]">{CHAT_HOST}</code> (engine, public) ·&nbsp;
-                <code className="rounded bg-black/[0.04] px-1 py-0.5 text-[10px]">{CONSOLE_HOST}</code> (admin, session-auth).
-                <br />
-                <strong>Auth</strong>: currently no auth on Chat API; Console API uses session cookies set by <code>/api/auth/login</code>. A <code>customerId</code> must be passed in every request — defaults to <code>&quot;default&quot;</code>.
-              </p>
+              <p className="text-[11px]" dangerouslySetInnerHTML={{
+                __html: t('guide.doc.api.hostsCallout')
+                  .replace('{chatHost}', `<code className="rounded bg-black/[0.04] px-1 py-0.5 text-[10px]">${CHAT_HOST}</code>`)
+                  .replace('{consoleHost}', `<code className="rounded bg-black/[0.04] px-1 py-0.5 text-[10px]">${CONSOLE_HOST}</code>`)
+              }} />
             </DocCallout>
 
             {/* ── Group 1: Chat API (integrator-facing) ───────────────────── */}
-            <ApiGroupLabel>Group 1 · Chat API (integrator-facing)</ApiGroupLabel>
+            <ApiGroupLabel>{t('guide.doc.api.group1Label')}</ApiGroupLabel>
 
             <SectionHeading>1.1 Send a user message (main entry, SSE)</SectionHeading>
             <Endpoint
@@ -547,8 +545,8 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
 }`}
             />
 
-            <SectionHeading>1.13 SSE Event Catalog (consume on /api/messages or /api/cases/[id]/stream)</SectionHeading>
-            <p className="text-[11px] text-[var(--fog)]">All 27 event types currently emitted by the engine. Use the <code>type</code> field for switch-case routing.</p>
+            <SectionHeading>1.13 {t('guide.doc.api.sseCatalogTitle')} (consume on /api/messages or /api/cases/[id]/stream)</SectionHeading>
+            <p className="text-[11px] text-[var(--fog)]" dangerouslySetInnerHTML={{ __html: t('guide.doc.api.sseCatalogNote') }} />
             <div className="!mt-3 overflow-hidden rounded-xl border border-black/[0.06]">
               <table className="w-full text-[11px]">
                 <thead>
@@ -569,8 +567,8 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
             </div>
 
             {/* ── Group 2: Console Admin API ─────────────────────────────── */}
-            <ApiGroupLabel>Group 2 · Console Admin API (session-auth)</ApiGroupLabel>
-            <p className="text-[11px] text-[var(--fog)]">These power the Console UI. Authenticated via session cookie (POST /api/auth/login first). External integrators normally don&rsquo;t need to call these — but they are useful for Postman testing config changes.</p>
+            <ApiGroupLabel>{t('guide.doc.api.group2Label')}</ApiGroupLabel>
+            <p className="text-[11px] text-[var(--fog)]">{t('guide.doc.api.group2Note')}</p>
 
             <SectionHeading>2.1 Auth</SectionHeading>
             <Endpoint
@@ -739,22 +737,15 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
             />
 
             {/* ── Postman quick-start ────────────────────────────────────── */}
-            <ApiGroupLabel>Postman quick-start</ApiGroupLabel>
+            <ApiGroupLabel>{t('guide.doc.api.postmanTitle')}</ApiGroupLabel>
             <ol className="space-y-1.5 pl-5 text-[11px] text-[var(--fog)] list-decimal">
-              <li>
-                Create a new Postman Collection &ldquo;Intera&rdquo;. Add a variable <code>{`{{chat}}`}</code> = <code>{CHAT_HOST}</code>, <code>{`{{console}}`}</code> = <code>{CONSOLE_HOST}</code>.
-              </li>
-              <li>For Chat API: most endpoints need no auth. Just paste the cURL from any endpoint above (click the <strong>cURL command</strong> bar to expand and copy).</li>
-              <li>For Console API: first call <code>POST {`{{console}}`}/api/auth/login</code> to get the session cookie. Postman auto-stores it for subsequent calls.</li>
-              <li>
-                For SSE (e.g. POST /api/messages): Postman has a &ldquo;Stream&rdquo; toggle. Or use the cURL with <code>--no-buffer</code> in your terminal to watch events arrive incrementally.
-              </li>
-              <li>
-                To test against the in-browser Chat UI directly:&nbsp;
-                <a className="text-teal-700 underline hover:text-teal-800" href={CHAT_UI_URL} target="_blank" rel="noopener noreferrer">
-                  {CHAT_UI_URL} <ExternalLink className="inline h-3 w-3" />
-                </a>
-              </li>
+              <li dangerouslySetInnerHTML={{ __html: t('guide.doc.api.postmanP1').replace('{chatHost}', `<code>${CHAT_HOST}</code>`).replace('{consoleHost}', `<code>${CONSOLE_HOST}</code>`) }} />
+              <li dangerouslySetInnerHTML={{ __html: t('guide.doc.api.postmanP2') }} />
+              <li dangerouslySetInnerHTML={{ __html: t('guide.doc.api.postmanP3') }} />
+              <li dangerouslySetInnerHTML={{ __html: t('guide.doc.api.postmanP4') }} />
+              <li dangerouslySetInnerHTML={{
+                __html: t('guide.doc.api.postmanP5').replace('{chatUiUrl}', `<a class="text-teal-700 underline hover:text-teal-800" href="${CHAT_UI_URL}" target="_blank" rel="noopener noreferrer">${CHAT_UI_URL} <svg class="inline h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`)
+              }} />
             </ol>
           </DocSection>
 

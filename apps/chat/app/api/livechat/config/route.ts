@@ -4,61 +4,49 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
 import { prisma } from '@intera/shared/prisma'
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+function json(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, { ...init, headers: { ...(init?.headers as Record<string, string> ?? {}), ...CORS } })
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS })
+}
+
 export async function GET(request: NextRequest) {
   const customerId = request.nextUrl.searchParams.get('customerId') ?? 'default'
   const config = await getLiveChatConfig(customerId)
   if (!config) {
-    return NextResponse.json({
-      customerId,
-      botAccessToken: '',
-      licenseId: '',
-      showSkillStatus: true,
-      enabled: false,
-    })
+    return json({ customerId, botAccessToken: '', licenseId: '', showSkillStatus: true, enabled: false })
   }
-  // Mask the token in GET response — Console only needs to know it's set
-  return NextResponse.json({
-    ...config,
-    botAccessToken: config.botAccessToken ? '••••••••' : '',
-  })
+  return json({ ...config, botAccessToken: config.botAccessToken ? '••••••••' : '' })
 }
 
 export async function PUT(request: NextRequest) {
   let body: Record<string, unknown>
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
+  try { body = await request.json() } catch { return json({ error: 'Invalid JSON' }, { status: 400 }) }
 
   const { customerId, botAccessToken, licenseId, showSkillStatus, enabled } = body as {
-    customerId: string
-    botAccessToken: string
-    licenseId: string
-    showSkillStatus: boolean
-    enabled: boolean
+    customerId: string; botAccessToken: string; licenseId: string; showSkillStatus: boolean; enabled: boolean
   }
 
-  if (!customerId) return NextResponse.json({ error: 'customerId required' }, { status: 400 })
+  if (!customerId) return json({ error: 'customerId required' }, { status: 400 })
 
-  // If botAccessToken is the mask string, preserve the existing token.
-  // Use prisma directly (not getLiveChatConfig) so we read the raw DB record
-  // even when enabled=false — getLiveChatConfig returns null for disabled configs.
   let tokenToSave = botAccessToken
   if (botAccessToken === '••••••••') {
-    const existing = await prisma.liveChatConfig.findUnique({
-      where: { customerId },
-      select: { botAccessToken: true },
-    })
+    const existing = await prisma.liveChatConfig.findUnique({ where: { customerId }, select: { botAccessToken: true } })
     tokenToSave = existing?.botAccessToken ?? ''
   }
 
   await upsertLiveChatConfig(customerId, {
-    botAccessToken: tokenToSave,
-    licenseId: licenseId ?? '',
-    showSkillStatus: showSkillStatus ?? true,
-    enabled: enabled ?? false,
+    botAccessToken: tokenToSave, licenseId: licenseId ?? '',
+    showSkillStatus: showSkillStatus ?? true, enabled: enabled ?? false,
   })
 
-  return NextResponse.json({ ok: true })
+  return json({ ok: true })
 }
