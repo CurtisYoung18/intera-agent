@@ -49,7 +49,7 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const {
       model, temperature, thinkingBudget, maxIterations, maxOutputTokens,
-      systemPrompt, showThinking, memoryStrategy, policyHooks,
+      systemPrompt, coreSystemPrompt, showThinking, memoryStrategy, policyHooks,
       resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
       debugMode, evaluationModel, enableLlmSanitization,
       prefixContinuationEnabled,
@@ -68,6 +68,7 @@ export async function PUT(req: NextRequest) {
     if (maxIterations !== undefined) data.maxIterations = maxIterations
     if (maxOutputTokens !== undefined) data.maxOutputTokens = maxOutputTokens
     if (systemPrompt !== undefined) data.systemPrompt = systemPrompt
+    if (coreSystemPrompt !== undefined) data.coreSystemPrompt = coreSystemPrompt
     if (showThinking !== undefined) data.showThinking = showThinking
     if (memoryStrategy !== undefined) data.memoryStrategy = typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy)
     if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
@@ -96,6 +97,7 @@ export async function PUT(req: NextRequest) {
       create: {
         vendorId: VENDOR_ID,
         systemPrompt: systemPrompt || '',
+        coreSystemPrompt: coreSystemPrompt ?? null,
         model: model || 'MiniMax-M2.7-highspeed',
         temperature: temperature ?? 0.5,
         thinkingBudget: thinkingBudget ?? 4096,

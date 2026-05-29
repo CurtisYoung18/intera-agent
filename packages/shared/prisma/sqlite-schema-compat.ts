@@ -28,6 +28,7 @@ export async function ensureSqliteSchemaCompat(prisma: PrismaClient): Promise<vo
 
   try {
     await add('agent_configs', 'maxOutputTokens', 'INTEGER')
+    await add('agent_configs', 'coreSystemPrompt', 'TEXT')
     await add('agent_configs', 'resumePrompt', 'TEXT')
     await add('agent_configs', 'formResponseTemplate', 'TEXT')
     await add('agent_configs', 'evaluationModel', 'TEXT')

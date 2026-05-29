@@ -38,7 +38,8 @@ model AgentConfig {
   temperature    Float   @default(0.5)
   thinkingBudget Int     @default(4096)
   maxIterations  Int     @default(20)
-  systemPrompt   String
+  systemPrompt   String  // Case base prompt (active-case mode)
+  coreSystemPrompt String? // Core/discovery prompt (no active case); falls back to CORE_SYSTEM_PROMPT default when empty
   showThinking   Boolean @default(false)
 
   maxOutputTokens       Int? // default 4096
@@ -215,7 +216,8 @@ model Case {
 }
 
 // ============================================
-// Chat Memory — accumulated per-chat agent memory (compact summaries, facts, tool history)
+// Chat Memory — per-case working memory (facts, skill results, todos, compact summary).
+// Cross-session accumulation lives in UserProfile (user_profiles table).
 // ============================================
 model ChatMemory {
   id     String @id @default(cuid())

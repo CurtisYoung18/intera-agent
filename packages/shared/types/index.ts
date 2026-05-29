@@ -257,6 +257,8 @@ export interface AgentConfigData {
   maxIterations: number
   maxOutputTokens?: number
   systemPrompt: string
+  /** Core/discovery prompt (no active case). Falls back to CORE_SYSTEM_PROMPT default when empty. */
+  coreSystemPrompt?: string
   showThinking: boolean
   memoryStrategy: MemoryStrategy
   policyHooks: PolicyHooks

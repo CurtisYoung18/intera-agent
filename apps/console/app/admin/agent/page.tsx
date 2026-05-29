@@ -18,7 +18,7 @@ import {
 import { chatApiUrl } from '@/lib/chat-api'
 import type { AgentConfigData, KnowledgeRetrievalConfig, MemoryStrategy, ModelInfo } from './types'
 import { DEFAULT_KNOWLEDGE_RETRIEVAL, DEFAULT_MEMORY } from './types'
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT, CORE_SYSTEM_PROMPT } from '@intera/shared/defaults'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -166,6 +166,9 @@ export default function AgentConfigPage() {
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
           systemPrompt: raw.systemPrompt || '',
+          coreSystemPrompt: (raw as Record<string, unknown>).coreSystemPrompt
+            ? String((raw as Record<string, unknown>).coreSystemPrompt)
+            : CORE_SYSTEM_PROMPT,
           showThinking: raw.showThinking ?? false,
           memoryStrategy,
           policyHooks,
@@ -444,7 +447,7 @@ export default function AgentConfigPage() {
                 <DrawerSection
                   accent="#8b6ff5"
                   eyebrow={t('agent.promptEyebrow')}
-                  title={t('agent.brain.subPrompt')}
+                  title={t('agent.casePromptTitle')}
                   lead={t('agent.promptHelp')}
                   actions={
                     <button
@@ -509,6 +512,76 @@ export default function AgentConfigPage() {
                       <span>{t('agent.promptAutosaveHint')}</span>
                       <span className="font-mono tabular-nums opacity-95">
                         {t('agent.promptCharCount', { n: config.systemPrompt?.length ?? 0 })}
+                      </span>
+                    </div>
+                  </div>
+                </DrawerSection>
+
+                {/* ── Core / Discovery Prompt sub-section ── */}
+                <DrawerSection
+                  accent="#5b8af7"
+                  eyebrow={t('agent.corePromptEyebrow')}
+                  title={t('agent.corePromptTitle')}
+                  lead={t('agent.corePromptHelp')}
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(t('agent.promptResetConfirm')))
+                          update('coreSystemPrompt', CORE_SYSTEM_PROMPT)
+                      }}
+                      className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
+                    >
+                      {t('agent.promptResetDefault')}
+                    </button>
+                  }
+                >
+                  <div className="flex flex-col gap-3">
+                    <HighlightedTextarea
+                      id="core-system-prompt-textarea"
+                      value={config.coreSystemPrompt}
+                      onChange={(v) => update('coreSystemPrompt', v)}
+                      spellCheck={false}
+                      className={`w-full ${drawerFieldClass(true)}`}
+                      highlights={[
+                        { pattern: /\{\{available_tools\}\}/g, color: '#7c5ce7' },
+                        { pattern: /\{\{case_types\}\}/g, color: '#2ea04a' },
+                        { pattern: /\{\{session_binding\}\}/g, color: '#5b8af7' },
+                      ]}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5 text-[10px] text-[var(--fog)]/60">
+                      <span className="mr-1 font-medium text-[var(--fog)]/80">{t('agent.promptPlaceholders')}</span>
+                      {[
+                        { key: '{{available_tools}}', desc: t('agent.plhAvailableTools') },
+                        { key: '{{case_types}}', desc: t('agent.plhCaseTypes') },
+                        { key: '{{session_binding}}', desc: t('agent.plhSessionBinding') },
+                      ].map((ph) => (
+                        <button
+                          key={ph.key}
+                          type="button"
+                          title={ph.desc}
+                          onClick={() => {
+                            const ta = document.getElementById('core-system-prompt-textarea') as HTMLTextAreaElement | null
+                            if (!ta) { update('coreSystemPrompt', (config.coreSystemPrompt + '\n' + ph.key).trimStart()); return }
+                            const start = ta.selectionStart ?? ta.value.length
+                            const end = ta.selectionEnd ?? start
+                            const next = ta.value.slice(0, start) + ph.key + ta.value.slice(end)
+                            update('coreSystemPrompt', next)
+                            requestAnimationFrame(() => {
+                              const el = document.getElementById('core-system-prompt-textarea') as HTMLTextAreaElement | null
+                              if (el) { el.selectionStart = el.selectionEnd = start + ph.key.length; el.focus() }
+                            })
+                          }}
+                          className="rounded-full border border-black/[0.06] bg-white/70 px-2 py-0.5 font-mono text-[10px] leading-relaxed hover:bg-lavender/15 hover:border-lavender/30 transition-colors"
+                        >
+                          {ph.key}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
+                      <span>{t('agent.promptAutosaveHint')}</span>
+                      <span className="font-mono tabular-nums opacity-95">
+                        {t('agent.promptCharCount', { n: config.coreSystemPrompt?.length ?? 0 })}
                       </span>
                     </div>
                   </div>

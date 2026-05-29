@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client'
 
 import {
   DEFAULT_SYSTEM_PROMPT,
+  CORE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
   DEFAULT_POLICY_HOOKS,
   DEFAULT_SKILLS,
@@ -67,6 +68,7 @@ async function seedVendorConfig(
   // AgentConfig
   const agentPayload = {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    coreSystemPrompt: CORE_SYSTEM_PROMPT,
     model: opts.model,
     temperature: opts.temperature,
     thinkingBudget: 4096,

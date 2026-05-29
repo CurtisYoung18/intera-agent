@@ -1,7 +1,16 @@
 # Chat Memory 重设计 Plan
 
 > 日期: 2026-05-29
-> 状态: Plan 确认，待实施
+> 状态: ✅ 已实施（详见实现修订记录）
+
+## 实现修订记录（C1 方向 b）
+
+最终实现采用**两层职责分离**：
+- **ChatMemory** (表 `chat_memories`, 键 `caseId`): per-case 工作记忆（confirmedFacts/skillResults/todos/compactSummary）。代码/表名已从 CaseMemory 全局重命名，不再二次迁移。
+- **UserProfile** (表 `user_profiles`, 键 `profileKey`): 跨会话累积层。通过 `profileKey(userId, chatId)` 做身份隔离（真实ID→`user:` 前缀，匿名→`chat:` 前缀，无身份→不累积）。
+- 自动写入：Agent Loop compact 后 + finalize_case/escalted 退出时。
+- 手动写入：Console Compact Now 按钮（使用 vendor 配置 + mergeProfile 合并）。
+- `read_chat_memory`：per-case 工作记忆。`read_user_profile`：跨会话画像+统计。
 
 ---
 

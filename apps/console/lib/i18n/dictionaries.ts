@@ -563,6 +563,12 @@ export const en: Record<string, string> = {
   'agent.promptHelp':
     'How Intera behaves in the Harness: Case-led goals, staged skills/intent routing, guardrails before/after tools, humans + synthetic resumes, form intake, compaction blocks, multilingual replies.',
   'agent.promptEyebrow': 'Persona blueprint',
+  'agent.casePromptTitle': 'Case Prompt (active case)',
+  'agent.corePromptEyebrow': 'Discovery blueprint',
+  'agent.corePromptTitle': 'Core / Discovery Prompt (no active case)',
+  'agent.corePromptHelp':
+    'How Intera behaves before any case is open: casual chat, direct tool calls, member_id handling, and case creation. Used in the discovery flow (e.g. LiveChat first messages).',
+  'agent.plhAvailableTools': 'Enabled tools & knowledge bases from Console',
   'agent.promptResetDefault': 'Reload default prompt',
   'agent.promptResetConfirm':
     'Replace the current prompt with the latest Intera Harness default?\n(Unsaved tweaks in this textarea will be lost.)',
@@ -1688,6 +1694,12 @@ export const zh: Record<string, string> = {
   'agent.promptHelp':
     '描述 Intera 在 Harness 中的一致性行为：案例驱动目标、意图与阶段路由、工具前后护栏、人机与合成回补、表单收集、上下文压缩块、多语言对等回复等。',
   'agent.promptEyebrow': '人设蓝图',
+  'agent.casePromptTitle': 'Case 提示词（工单激活时）',
+  'agent.corePromptEyebrow': '接待蓝图',
+  'agent.corePromptTitle': 'Core / 接待提示词（无工单时）',
+  'agent.corePromptHelp':
+    '描述 Intera 在尚未开立工单时的行为：闲聊、直接调用工具、member_id 处理、以及创建工单。用于接待/发现流程（如 LiveChat 的首条消息）。',
+  'agent.plhAvailableTools': 'Console 中启用的工具与知识库',
   'agent.promptResetDefault': '恢复最新默认模版',
   'agent.promptResetConfirm':
     '用当前版本的 Intera 内置默认提示词替换当前内容？（未保存的手工修改将丢失）',

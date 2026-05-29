@@ -4,6 +4,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 import { compactConversation } from '@/../chat/lib/agent/compact'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import { mergeProfile } from '@intera/shared/memory/mergeProfile'
+import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
+import { profileKey } from '@/../chat/lib/agent/identity'
+
+function parseMemoryStrategy(raw: unknown) {
+  try {
+    if (typeof raw === 'string') return JSON.parse(raw)
+    if (raw && typeof raw === 'object') return raw
+  } catch { /* ignore */ }
+  return null
+}
 
 export async function POST(
   _req: NextRequest,
@@ -12,7 +23,6 @@ export async function POST(
   const { chatId } = await params
 
   try {
-    // Load all messages for this chat
     const caseIds = await prisma.case.findMany({
       where: { chatId },
       select: { id: true },
@@ -27,6 +37,15 @@ export async function POST(
       return NextResponse.json({ error: 'No messages to compact' }, { status: 400 })
     }
 
+    // M2: load vendor-specific memoryStrategy
+    const sampleCase = await prisma.case.findFirst({
+      where: { chatId },
+      select: { userId: true, vendorId: true },
+    })
+    const vendorId = sampleCase?.vendorId ?? 'default'
+    const agentCfg = await prisma.agentConfig.findUnique({ where: { vendorId } }).catch(() => null)
+    const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
+
     const apiMessages = messages
       .filter(m => typeof m.content === 'string' && m.content.trim().length > 0)
       .map(m => ({
@@ -34,46 +53,31 @@ export async function POST(
         content: m.content,
       }))
 
-    const beforeTokens = apiMessages.reduce((sum, m) => sum + m.content.length, 0)
-
-    const result = await compactConversation(
-      apiMessages as any,
-      DEFAULT_MEMORY_STRATEGY as any,
-    )
-
+    const result = await compactConversation(apiMessages as any, strategy)
     const summary = result.summary || 'Compaction produced no summary.'
 
-    // Find userId from this chat's cases
-    const sampleCase = await prisma.case.findFirst({
-      where: { chatId },
-      select: { userId: true },
-    })
-    const userId = sampleCase?.userId
-
-    // Upsert UserProfile
-    if (userId) {
+    // H1 + C2: merge profile (not overwrite) with identity isolation
+    const key = profileKey(sampleCase?.userId, chatId)
+    if (key) {
+      const existing = await prisma.userProfile.findUnique({ where: { userId: key }, select: { profile: true } }).catch(() => null)
+      const maxTokens = strategy.chatMemoryMaxTokens ?? 4000
+      const merged = mergeProfile(existing?.profile ?? '', summary, maxTokens)
+      const stats = await recomputeProfileStats(prisma, key)
       await prisma.userProfile.upsert({
-        where: { userId },
-        create: {
-          userId,
-          profile: `## Chat Memory (compacted ${new Date().toISOString()})\n\n${summary}`,
-          totalCases: caseIds.length,
-          lastSeenAt: new Date(),
-        },
-        update: {
-          profile: summary,
-          totalCases: caseIds.length,
-          lastSeenAt: new Date(),
-        },
+        where: { userId: key },
+        create: { userId: key, profile: merged, ...stats },
+        update: { profile: merged, ...stats },
       })
     }
 
+    // M3: use char length for now (token estimation would need the model)
+    const beforeTokens = apiMessages.reduce((sum, m) => sum + m.content.length, 0)
     const afterTokens = summary.length
 
     return NextResponse.json({
       summary,
-      beforeTokens,
-      afterTokens,
+      beforeChars: beforeTokens,
+      afterChars: afterTokens,
       compactModel: result.model,
       compactedAt: new Date().toISOString(),
     })

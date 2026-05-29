@@ -92,9 +92,8 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
   {
     name: 'read_chat_memory',
     description:
-      'Read the accumulated memory for the current conversation. This contains the user\'s history, past issues, preferences, ' +
-      'and patterns learned from previous conversations. Use this at the start of a new case or when you need deeper context ' +
-      'about who you are talking to. Returns a structured summary of what is known about this user.',
+      'Read the per-case working memory for the current investigation. Returns confirmed facts, skills called so far, ' +
+      'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
     inputSchema: {
       type: 'object',
       properties: {},

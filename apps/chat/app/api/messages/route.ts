@@ -63,6 +63,9 @@ async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
         maxIterations: dbConfig.maxIterations,
         maxOutputTokens: (dbConfig as any).maxOutputTokens ?? 4096,
         systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+        coreSystemPrompt: (dbConfig as Record<string, unknown>).coreSystemPrompt
+          ? String((dbConfig as Record<string, unknown>).coreSystemPrompt)
+          : undefined,
         showThinking: dbConfig.showThinking,
         memoryStrategy: (parseNonEmptyJson(dbConfig.memoryStrategy) as unknown as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
         policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
@@ -687,6 +690,12 @@ export async function POST(request: NextRequest) {
         // Use DB-custom systemPrompt as Case prompt base if configured
         if (agentConfig.systemPrompt && agentConfig.systemPrompt !== DEFAULT_SYSTEM_PROMPT) {
           systemPrompt = agentConfig.systemPrompt
+        }
+
+        // Use DB-custom coreSystemPrompt as Core/discovery prompt if configured
+        // (editable in Console; falls back to the CORE_SYSTEM_PROMPT default when empty).
+        if (agentConfig.coreSystemPrompt && agentConfig.coreSystemPrompt.trim()) {
+          coreSystemPrompt = agentConfig.coreSystemPrompt
         }
 
         // Load tool summaries for {{available_tools}} template var

@@ -30,6 +30,9 @@ import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './d
 import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
+import { profileKey } from './identity'
+import { mergeProfile } from '@intera/shared/memory/mergeProfile'
+import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 
 // ---------------------------------------------------------------------------
 // StreamingTextSanitizer
@@ -1365,10 +1368,9 @@ export class AgentLoop {
         (r) => r.name === 'read_chat_memory',
       )
       if (readMemResult) {
-        const dbProfile = await prisma.userProfile.findUnique({
-          where: { userId: this.deps.userId },
-        }).catch(() => null)
         const memSummary = this.chatMemory.getSummary() as unknown as Record<string, unknown>
+        const key = profileKey(this.deps.userId, this.deps.chatId)
+        const dbProfile = key ? await prisma.userProfile.findUnique({ where: { userId: key } }).catch(() => null) : null
         for (let i = this.messages.length - 1; i >= 0; i--) {
           const m = this.messages[i]
           if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_chat_memory result:')) {
@@ -1377,12 +1379,6 @@ export class AgentLoop {
               skillsCalled: memSummary.skillsCalled ?? [],
               keyEvents: (memSummary.keyEvents as any[])?.slice(-10) ?? [],
               summary: this.chatMemory.hasSummary() ? (memSummary as any).summary : null,
-              profile: dbProfile?.profile || null,
-              stats: {
-                totalCases: dbProfile?.totalCases ?? 0,
-                resolvedCases: dbProfile?.resolvedCases ?? 0,
-                lastCaseType: dbProfile?.lastCaseType ?? null,
-              },
             })}`
             break
           }
@@ -1394,23 +1390,22 @@ export class AgentLoop {
         (r) => r.name === 'read_user_profile',
       )
       if (readProfileResult) {
-        const dbProfile = await prisma.userProfile.findUnique({
-          where: { userId: this.deps.userId },
-        }).catch(() => null)
+        const key = profileKey(this.deps.userId, this.deps.chatId)
+        const dbProfile = key ? await prisma.userProfile.findUnique({ where: { userId: key } }).catch(() => null) : null
         for (let i = this.messages.length - 1; i >= 0; i--) {
           const m = this.messages[i]
           if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_user_profile result:')) {
             m.content = `Tool read_user_profile result: ${JSON.stringify({
               profile: dbProfile?.profile || null,
-              stats: {
-                totalChats: dbProfile?.totalChats ?? 0,
-                totalCases: dbProfile?.totalCases ?? 0,
-                resolvedCases: dbProfile?.resolvedCases ?? 0,
-                escalatedCases: dbProfile?.escalatedCases ?? 0,
-                lastCaseType: dbProfile?.lastCaseType ?? null,
-                firstSeenAt: dbProfile?.firstSeenAt?.toISOString() ?? null,
-                lastSeenAt: dbProfile?.lastSeenAt?.toISOString() ?? null,
-              },
+              stats: dbProfile ? {
+                totalChats: dbProfile.totalChats,
+                totalCases: dbProfile.totalCases,
+                resolvedCases: dbProfile.resolvedCases,
+                escalatedCases: dbProfile.escalatedCases,
+                lastCaseType: dbProfile.lastCaseType,
+                firstSeenAt: dbProfile.firstSeenAt?.toISOString() ?? null,
+                lastSeenAt: dbProfile.lastSeenAt?.toISOString() ?? null,
+              } : { totalChats: 0, totalCases: 0, resolvedCases: 0, escalatedCases: 0, lastCaseType: null, firstSeenAt: null, lastSeenAt: null },
             })}`
             break
           }
@@ -1508,7 +1503,14 @@ export class AgentLoop {
           sendEvent,
         )
         this.nudgeCount = nudgeBox.value
-        if (caseToolResult.type === 'terminal') return caseToolResult.result
+        if (caseToolResult.type === 'terminal') {
+          // Append final summary to UserProfile on case resolution
+          const finalSummary = this.chatMemory.hasSummary()
+            ? (this.chatMemory.getSummary() as any).summary
+            : this.chatMemory.buildCompactionSummary()
+          if (finalSummary) this.appendToUserProfile(finalSummary).catch(() => {})
+          return caseToolResult.result
+        }
         if (caseToolResult.type === 'continue') continue
       }
 
@@ -1521,6 +1523,10 @@ export class AgentLoop {
       // Post-tool auto-escalation: human task was created during this iteration.
       // The LLM has had a chance to respond naturally — now exit to waiting_human.
       if (this.pendingEscalation) {
+        const escSummary = this.chatMemory.hasSummary()
+          ? (this.chatMemory.getSummary() as any).summary
+          : this.chatMemory.buildCompactionSummary()
+        if (escSummary) this.appendToUserProfile(escSummary).catch(() => {})
         await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
@@ -1868,6 +1874,29 @@ export class AgentLoop {
   }
 
   /** Run LLM-driven compaction with fallback to programmatic summary. */
+  private async appendToUserProfile(summary: string): Promise<void> {
+    if (!this.deps.config.memoryStrategy.enableChatMemory) return
+    const key = profileKey(this.deps.userId, this.deps.chatId)
+    if (!key) return
+    try {
+      const existing = await prisma.userProfile.findUnique({
+        where: { userId: key },
+        select: { profile: true },
+      })
+      const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
+      const merged = mergeProfile(existing?.profile ?? '', summary, maxTokens)
+      const stats = await recomputeProfileStats(prisma, key)
+
+      await prisma.userProfile.upsert({
+        where: { userId: key },
+        create: { userId: key, profile: merged, ...stats },
+        update: { profile: merged, ...stats },
+      })
+    } catch (err) {
+      console.warn('[AgentLoop] Failed to append to UserProfile:', err)
+    }
+  }
+
   private async performCompaction(): Promise<void> {
     this.profiler.incrementCompaction()
     const strategy = this.deps.config.memoryStrategy
@@ -1876,6 +1905,7 @@ export class AgentLoop {
       const result = await compactConversation(this.messages, strategy)
       if (result.summary) {
         this.chatMemory.setSummary(result.summary)
+        await this.appendToUserProfile(result.summary)
         await this.traceWriter.write('loop_decision', 'LLM Compact', {
           model: result.model,
           provider: result.provider,
@@ -1889,7 +1919,8 @@ export class AgentLoop {
     }
 
     // Fallback: programmatic XML summary
-    this.chatMemory.recordCompaction()
+    const progSummary = this.chatMemory.recordCompaction()
+    this.appendToUserProfile(progSummary).catch(() => {})
   }
 
   // -----------------------------------------------------------------------

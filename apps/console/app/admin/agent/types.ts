@@ -85,6 +85,7 @@ export interface AgentConfigData {
   maxIterations: number
   maxOutputTokens: number
   systemPrompt: string
+  coreSystemPrompt: string
   showThinking: boolean
   memoryStrategy: MemoryStrategy
   policyHooks: string
