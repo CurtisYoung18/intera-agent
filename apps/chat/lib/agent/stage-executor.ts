@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
+import { createAgentClient } from './api/provider-config'
 import type {
   CaseSchemaConfig,
   StageConfig,
@@ -415,10 +416,7 @@ export class StageExecutor {
           ],
         }),
         { querySource: 'policy_eval', model },
-        () => new Anthropic({
-          apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-          baseURL: process.env.ANTHROPIC_BASE_URL,
-        }),
+        () => createAgentClient(model),
       )
     } catch (err) {
       if (err instanceof CannotRetryError) {

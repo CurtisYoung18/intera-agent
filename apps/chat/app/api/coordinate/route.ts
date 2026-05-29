@@ -2,6 +2,7 @@
 
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createAgentClient } from '@/lib/agent/api/provider-config'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
 import {
@@ -26,12 +27,12 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   prefixContinuationEnabled: false,
 }
 
-async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
-  const cached = getCachedConfig(customerId)
+async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
+  const cached = getCachedConfig(vendorId)
   if (cached) return cached
 
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { vendorId } })
     if (dbConfig) {
       const config: AgentConfigData = {
         model: dbConfig.model,
@@ -52,7 +53,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         resumePrompt: String((dbConfig as Record<string, unknown>).resumePrompt || ''),
         formResponseTemplate: String((dbConfig as Record<string, unknown>).formResponseTemplate || ''),
       }
-      setCachedConfig(customerId, config)
+      setCachedConfig(vendorId, config)
       return config
     }
   } catch {
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const customerId = String(body.customerId || 'default')
+        const vendorId = String(body.vendorId || 'default')
         const userUtterance = String(body.userUtterance || '').slice(0, 8000)
         const preferZh = Boolean(body.preferZh)
         const rawIds: unknown[] = Array.isArray(body.caseIds) ? body.caseIds : []
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
         }
 
         const rows = await prisma.case.findMany({
-          where: { customerId, id: { in: caseIds } },
+          where: { vendorId, id: { in: caseIds } },
           include: { memory: true },
         })
 
@@ -175,12 +176,9 @@ export async function POST(request: NextRequest) {
         const userBlockEn = `Original customer message (context):\n"""${userUtterance || '(not provided)'}"""\n\n--- CASE DOSSIERS ---\n${dossierBlock}`
         const userBlockZh = `顾客原话（上下文）：\n"""${userUtterance || '（未提供）'}"""\n\n--- 各案摘要 ---\n${dossierBlock}`
 
-        const agentConfig = await loadAgentConfig(customerId)
+        const agentConfig = await loadAgentConfig(vendorId)
 
-        const client = new Anthropic({
-          apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-          baseURL: process.env.ANTHROPIC_BASE_URL,
-        })
+        const client = createAgentClient(agentConfig.model)
 
         sendEvent({
           type: 'stream_request_start',

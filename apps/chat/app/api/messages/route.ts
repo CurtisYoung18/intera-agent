@@ -49,12 +49,12 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
 // Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.
 import { getCachedConfig, setCachedConfig } from '@/lib/agent/config-cache'
 
-async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
-  const cached = getCachedConfig(customerId)
+async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
+  const cached = getCachedConfig(vendorId)
   if (cached) return cached
 
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { vendorId } })
     if (dbConfig) {
       const config: AgentConfigData = {
         model: dbConfig.model,
@@ -89,7 +89,7 @@ async function loadAgentConfig(customerId: string): Promise<AgentConfigData> {
         debugMode: Boolean((dbConfig as Record<string, unknown>).debugMode),
         enableLlmSanitization: Boolean((dbConfig as Record<string, unknown>).enableLlmSanitization),
       }
-      setCachedConfig(customerId, config)
+      setCachedConfig(vendorId, config)
       return config
     }
   } catch (err) {
@@ -192,11 +192,8 @@ async function resolveCaseByIntent(
   ].join('\n')
 
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
+    const { createAgentClient } = await import('@/lib/agent/api/provider-config')
+    const client = createAgentClient(model)
     const resp = await client.messages.create({
       model,
       max_tokens: 32,
@@ -243,7 +240,7 @@ export async function POST(request: NextRequest) {
           formResult,
           interactionResult,
           caseId,
-          customerId,
+          vendorId,
           userId,
           userLabel,
           chatId,
@@ -253,9 +250,9 @@ export async function POST(request: NextRequest) {
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
-        // Validate customerId format
-        if (customerId && (typeof customerId !== 'string' || customerId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(customerId))) {
-          sendEvent({ type: 'error', data: 'Invalid customerId format', timestamp: new Date().toISOString() })
+        // Validate vendorId format
+        if (vendorId && (typeof vendorId !== 'string' || vendorId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(vendorId))) {
+          sendEvent({ type: 'error', data: 'Invalid vendorId format', timestamp: new Date().toISOString() })
           controller.close()
           return
         }
@@ -293,7 +290,7 @@ export async function POST(request: NextRequest) {
 
         let userMessage = message
         let resolvedCaseId = caseId || generateCaseId()
-        let resolvedCustomerId = customerId || 'default'
+        let resolvedCustomerId = vendorId || 'default'
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
@@ -359,7 +356,7 @@ export async function POST(request: NextRequest) {
 
           if (task && task.status === 'resolved') {
             resolvedCaseId = task.caseId
-            resolvedCustomerId = task.case.customerId
+            resolvedCustomerId = task.case.vendorId
             resolvedUserId = task.case.userId
 
             const resumeTmpl =
@@ -428,7 +425,7 @@ export async function POST(request: NextRequest) {
           try {
             const activeCases = await prisma.case.findMany({
               where: {
-                customerId: resolvedCustomerId,
+                vendorId: resolvedCustomerId,
                 userId: resolvedUserId,
                 status: { notIn: ['resolved'] },
               },
@@ -471,11 +468,11 @@ export async function POST(request: NextRequest) {
         ) {
           try {
             const ctRow = await prisma.caseType.findUnique({
-              where: { customerId_type: { customerId: resolvedCustomerId, type: bodyCaseType } },
+              where: { vendorId_type: { vendorId: resolvedCustomerId, type: bodyCaseType } },
             })
             const newCase = await prisma.case.create({
               data: {
-                customerId: resolvedCustomerId,
+                vendorId: resolvedCustomerId,
                 userId: resolvedUserId,
                 type: bodyCaseType,
                 status: 'created',
@@ -530,8 +527,8 @@ export async function POST(request: NextRequest) {
             try {
               const ctRow = await prisma.caseType.findUnique({
                 where: {
-                  customerId_type: {
-                    customerId: resolvedCustomerId,
+                  vendorId_type: {
+                    vendorId: resolvedCustomerId,
                     type: inferredType,
                   },
                 },
@@ -566,7 +563,7 @@ export async function POST(request: NextRequest) {
             // Load case type schema if available
             try {
               const caseType = await prisma.caseType.findUnique({
-                where: { customerId_type: { customerId: resolvedCustomerId, type: existingCase.type } },
+                where: { vendorId_type: { vendorId: resolvedCustomerId, type: existingCase.type } },
               })
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
@@ -626,7 +623,7 @@ export async function POST(request: NextRequest) {
           'general'
 
         try {
-          await prisma.customer.upsert({
+          await prisma.vendor.upsert({
             where: { id: resolvedCustomerId },
             update: {},
             create: { id: resolvedCustomerId, name: resolvedCustomerId },
@@ -636,10 +633,11 @@ export async function POST(request: NextRequest) {
             update: {},
             create: {
               id: resolvedCaseId,
-              customerId: resolvedCustomerId,
+              vendorId: resolvedCustomerId,
               userId: resolvedUserId,
               type: inferredCaseTypeForRecord,
               status: 'created',
+              chatId: chatId ?? null,
             },
           })
         } catch (err) {
@@ -651,8 +649,8 @@ export async function POST(request: NextRequest) {
           try {
             const ctRow = await prisma.caseType.findUnique({
               where: {
-                customerId_type: {
-                  customerId: resolvedCustomerId,
+                vendorId_type: {
+                  vendorId: resolvedCustomerId,
                   type: inferredCaseTypeForRecord,
                 },
               },
@@ -691,9 +689,41 @@ export async function POST(request: NextRequest) {
           systemPrompt = agentConfig.systemPrompt
         }
 
+        // Load tool summaries for {{available_tools}} template var
+        const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
+        try {
+          const dbSkills = await prisma.skill.findMany({
+            where: { vendorId: resolvedCustomerId, enabled: true },
+            select: { name: true, description: true, inputSchema: true, mode: true },
+          })
+          for (const s of dbSkills) {
+            const schema = s.inputSchema ? JSON.parse(s.inputSchema) : {}
+            const needsMemberId = !!schema.properties?.member_id
+            toolSummaries.push({ name: s.name, description: s.description, needsMemberId })
+          }
+          const kbSources = await prisma.knowledgeSource.findMany({
+            where: { vendorId: resolvedCustomerId, enabled: true },
+            select: { name: true, description: true },
+          })
+          for (const ks of kbSources) {
+            toolSummaries.push({
+              name: `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+              description: ks.description || `Search the ${ks.name} knowledge base`,
+              needsMemberId: false,
+            })
+          }
+          // Include built-in skills not in DB
+          const { BUILT_IN_SKILLS } = await import('@/lib/agent/skills')
+          for (const s of BUILT_IN_SKILLS) {
+            if (!toolSummaries.find(t => t.name === s.name)) {
+              toolSummaries.push({ name: s.name, description: s.description, needsMemberId: false })
+            }
+          }
+        } catch { /* DB unavailable, prompt just won't list tools */ }
+
         // Build shared prompt context
         const promptCtx = await buildPromptContext({
-          customerId: resolvedCustomerId,
+          vendorId: resolvedCustomerId,
           caseSchema: caseSchema ? {
             displayName: caseSchema.displayName,
             goal: caseSchema.defaultGoal,
@@ -703,6 +733,7 @@ export async function POST(request: NextRequest) {
           } : undefined,
           caseState: resolvedCaseState,
           sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
+          available_tools: toolSummaries,
         })
 
         // Resolve both prompts — Core (discovery) and Case (execution)
@@ -729,11 +760,14 @@ export async function POST(request: NextRequest) {
 
         // Register the session so subsequent requests for this caseId are queued.
         const activeSession = getOrCreateSession(resolvedCaseId)
+        activeSession.resolved = false
+        activeSession.aborted = false
+        activeSession.lastActiveAt = Date.now()
 
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
           caseId: resolvedCaseId,
-          customerId: resolvedCustomerId,
+          vendorId: resolvedCustomerId,
           userId: resolvedUserId,
           systemPrompt,
           coreSystemPrompt,
@@ -766,6 +800,7 @@ export async function POST(request: NextRequest) {
                 id: m.id,
                 role: m.role as 'user' | 'assistant',
                 content: m.content,
+                contentBlocks: (m as any).contentBlocks ?? undefined,
                 createdAt: m.createdAt,
               })),
             )
@@ -773,6 +808,42 @@ export async function POST(request: NextRequest) {
         } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
 
         const result = await agentLoop.run(userMessage, sendEvent, formAnswers, contentBlocks)
+
+        // P0-2: Drain queued messages that arrived during the run but after the last iteration's drain.
+        while (activeSession.queue.pendingCount > 0) {
+          const next = activeSession.queue.dequeueNonBlocking()
+          if (!next || next.content === '__SESSION_CLOSED__') break
+          const followup = await AgentLoop.create({
+            config: agentConfig,
+            caseId: resolvedCaseId,
+            vendorId: resolvedCustomerId,
+            userId: resolvedUserId,
+            systemPrompt,
+            coreSystemPrompt,
+            caseSchema,
+            chatId: chatId ?? null,
+            bootstrapNewCase: false,
+          })
+          // Re-load prior-turn messages for the follow-up loop
+          try {
+            const priorMsgs = await prisma.message.findMany({
+              where: { caseId: resolvedCaseId },
+              orderBy: { createdAt: 'asc' },
+              take: 50,
+            })
+            if (priorMsgs.length > 0) {
+              followup.loadMessages(priorMsgs.map((m) => ({
+                id: m.id, role: m.role as 'user' | 'assistant',
+                content: m.content,
+                contentBlocks: (m as any).contentBlocks ?? undefined,
+                createdAt: m.createdAt,
+              })))
+            }
+          } catch (_) { /* non-critical */ }
+          // Re-load memory from the master loop
+          followup.loadMemory(agentLoop.getMemorySummary())
+          await followup.run(next.content, sendEvent, next.formAnswers, next.contentBlocks)
+        }
 
         // Mark session as resolved so subsequent messages create a new loop.
         activeSession.resolved = true
@@ -793,10 +864,11 @@ export async function POST(request: NextRequest) {
               update: { status: result.caseStatus },
               create: {
                 id: resolvedCaseId,
-                customerId: resolvedCustomerId,
+                vendorId: resolvedCustomerId,
                 userId: resolvedUserId,
                 type: caseTypeForUpsert,
                 status: result.caseStatus,
+                chatId: chatId ?? null,
               },
             })
             await prisma.caseMemory.upsert({
@@ -834,12 +906,13 @@ export async function POST(request: NextRequest) {
         // ── Persist messages to DB (always, even for casual chat) ──
         try {
           const messagesToPersist = result.messages
-            .filter((m) => m.content?.trim() || m.role === 'user')
+            .filter((m) => m.content?.trim() || m.role === 'user' || m.contentBlocks?.length)
             .map((m) => ({
               id: m.id,
               caseId: resolvedCaseId,
               role: m.role,
               content: m.content || '',
+              contentBlocks: m.contentBlocks ?? undefined,
               isStreaming: false,
             }))
 
@@ -848,7 +921,7 @@ export async function POST(request: NextRequest) {
               messagesToPersist.map((msg) =>
                 prisma.message.upsert({
                   where: { id: msg.id },
-                  update: { content: msg.content, isStreaming: false },
+                  update: { content: msg.content, contentBlocks: msg.contentBlocks ?? undefined, isStreaming: false },
                   create: msg,
                 }),
               ),

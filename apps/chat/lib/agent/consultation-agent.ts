@@ -10,6 +10,7 @@
 //   • Streams text_delta events in real-time; returns ConsultationResult on exit.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { createAgentClient } from './api/provider-config'
 import type { SSEEvent } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
@@ -29,7 +30,7 @@ export interface ConsultationAgentConfig {
   /** Max ReAct iterations before giving up (default 8). Consultation rarely needs many turns. */
   maxIterations?: number
   caseId: string
-  customerId: string
+  vendorId: string
 }
 
 export interface ConsultationResult {
@@ -44,16 +45,13 @@ export class ConsultationAgent {
   private skillRouter!: SkillRouter
 
   private constructor(private config: ConsultationAgentConfig) {
-    this.anthropicClient = new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
+    this.anthropicClient = createAgentClient(config.model)
   }
 
   /** Create and initialize — loads skills from DB. */
   static async create(config: ConsultationAgentConfig): Promise<ConsultationAgent> {
     const agent = new ConsultationAgent(config)
-    agent.skillRouter = await SkillRouter.create(config.customerId)
+    agent.skillRouter = await SkillRouter.create(config.vendorId)
     return agent
   }
 

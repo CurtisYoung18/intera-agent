@@ -9,21 +9,14 @@ import GlassInput from '@intera/shared/ui/glass-input'
 import type { KeyboardEvent as ReactKb } from 'react'
 
 interface VoiceInputBarProps {
-  onSubmit: (text: string) => void
+  onSubmit: (text: string, contentBlocks?: { type: string; text?: string; source?: { type: string; media_type: string; data: string } }[]) => void
   queuedCount: number
   onClearQueue: () => void
   isResponding?: boolean
-  /**
-   * Off when case is split to the left — user can send in parallel with /api/messages
-   * and we do not show queue-style copy.
-   */
   allowQueueWhileBusy?: boolean
-  /** When true, server offers draft continuations for the composer only */
   composerAssistEnabled?: boolean
-  customerId?: string
-  /** Console switch on — show env hint when Chat lacks DEEPSEEK_API_KEY */
+  vendorId?: string
   assistMissingDeepseekKey?: boolean
-  /** From Console / feature API (aligned with server-side suggest) */
   composerMinDraftChars?: number
 }
 
@@ -55,13 +48,15 @@ export default function VoiceInputBar({
   isResponding = false,
   allowQueueWhileBusy = true,
   composerAssistEnabled = false,
-  customerId = 'default',
+  vendorId = 'default',
   assistMissingDeepseekKey = false,
   composerMinDraftChars = 4,
 }: VoiceInputBarProps) {
   const [value, setValue] = useState('')
   const [suggestion, setSuggestion] = useState('')
   const [assistLoading, setAssistLoading] = useState(false)
+  const [images, setImages] = useState<{ data: string; mediaType: string; name: string }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const suggestionAbortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -95,7 +90,7 @@ export default function VoiceInputBar({
         const res = await fetch('/api/composer-assist/suggest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ draft: value, customerId }),
+          body: JSON.stringify({ draft: value, vendorId }),
           signal: ac.signal,
         })
         if (!res.ok || ac.signal.aborted) {
@@ -121,24 +116,62 @@ export default function VoiceInputBar({
       }
       ac.abort()
     }
-  }, [value, composerAssistEnabled, customerId, composerMinDraftChars])
+  }, [value, composerAssistEnabled, vendorId, composerMinDraftChars])
 
   const handleChange = useCallback((newValue: string) => {
     setValue(newValue)
   }, [])
 
-  const handleSubmit = useCallback(() => {
-    if (!value.trim()) return
-    setSuggestion('')
-    onSubmit(value.trim())
-    setValue('')
-  }, [value, onSubmit])
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue
+      const reader = new FileReader()
+      reader.onload = () => {
+        const data = (reader.result as string).split(',')[1]
+        if (data) {
+          setImages((prev) => [...prev, { data, mediaType: file.type, name: file.name }])
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [])
 
-  const canSend = value.trim().length > 0
+  const removeImage = useCallback((idx: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== idx))
+  }, [])
+
+  const handleSubmit = useCallback(() => {
+    const hasText = value.trim().length > 0
+    const hasImages = images.length > 0
+    if (!hasText && !hasImages) return
+    setSuggestion('')
+
+    let contentBlocks: { type: string; text?: string; source?: { type: string; media_type: string; data: string } }[] | undefined
+    if (hasImages) {
+      contentBlocks = images.map((img) => ({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mediaType, data: img.data },
+      }))
+      if (hasText) {
+        contentBlocks.unshift({ type: 'text', text: value.trim() })
+      }
+    }
+
+    const text = hasText ? value.trim() : (hasImages ? `[用户上传了 ${images.length} 张图片]` : '')
+    onSubmit(text, contentBlocks)
+    setValue('')
+    setImages([])
+  }, [value, images, onSubmit])
+
+  const canSend = value.trim().length > 0 || images.length > 0
 
   const handleClear = useCallback(() => {
     setValue('')
     setSuggestion('')
+    setImages([])
     if (queuedCount > 0) onClearQueue()
   }, [queuedCount, onClearQueue])
 
@@ -189,7 +222,54 @@ export default function VoiceInputBar({
         </div>
       )}
 
+      {/* Image previews */}
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2 pb-2">
+          {images.map((img, idx) => (
+            <div key={idx} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-[var(--border-subtle)]">
+              <img
+                src={`data:${img.mediaType};base64,${img.data}`}
+                alt={img.name}
+                className="w-full h-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => removeImage(idx)}
+                className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label={`Remove ${img.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-end gap-2">
+        {/* Image upload button */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleFileChange}
+          className="hidden"
+          aria-label="Upload images"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex-shrink-0 mb-3 h-8 w-8 flex items-center justify-center rounded-full text-fog/50 hover:text-fog/80 hover:bg-[var(--surface)] transition-colors"
+          aria-label="Attach image"
+          title="Attach image"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+        </button>
+
         <div className="glass-input-composer min-w-0 flex-1">
           <GlassInput
             variant="composerInner"

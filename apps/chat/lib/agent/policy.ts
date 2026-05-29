@@ -5,6 +5,7 @@
 // Non-pass results are fed back to the agent as [POLICY] messages in the conversation stream.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { createAgentClient } from './api/provider-config'
 import type {
   PolicyHook,
   PolicyResult,
@@ -48,24 +49,21 @@ export class PolicyEngine {
   private policyModel: string
   private llmClient: Anthropic
 
-  constructor(private customerId: string, _policyHooks?: PolicyHooks) {
+  constructor(private vendorId: string, _policyHooks?: PolicyHooks) {
     this.policyModel = process.env.POLICY_EVAL_MODEL || 'MiniMax-M2.7-highspeed'
-    this.llmClient = new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
+    this.llmClient = createAgentClient(this.policyModel)
     this.loadBuiltInPolicies()
   }
 
   /** Create and initialize a PolicyEngine — loads built-ins + DB policies. */
-  static async create(customerId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
-    const engine = new PolicyEngine(customerId, policyHooks)
+  static async create(vendorId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
+    const engine = new PolicyEngine(vendorId, policyHooks)
 
     // Load DB policies into the rules Map
     try {
       const { prisma } = await import('@intera/shared/prisma')
       const dbPolicies = await prisma.policy.findMany({
-        where: { customerId, enabled: true },
+        where: { vendorId, enabled: true },
       })
 
       for (const p of dbPolicies) {
@@ -87,7 +85,7 @@ export class PolicyEngine {
       try {
         const { prisma } = await import('@intera/shared/prisma')
         const dbPolicies = await prisma.policy.findMany({
-          where: { customerId, enabled: true },
+          where: { vendorId, enabled: true },
         })
 
         for (const p of dbPolicies) {

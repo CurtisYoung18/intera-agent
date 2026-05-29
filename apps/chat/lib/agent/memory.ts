@@ -7,6 +7,7 @@
 import type { KeyEvent, CaseMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import Anthropic from '@anthropic-ai/sdk'
+import { createAgentClient } from './api/provider-config'
 import { withRetry } from './api/with-retry'
 
 /** Persisted in skillResults — avoids duplicate background sub-agent dispatch across HTTP turns. */
@@ -132,10 +133,8 @@ export class CaseMemoryManager {
   }
 
   private getExtractionClient(): Anthropic {
-    return new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
+    const model = process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed'
+    return createAgentClient(model)
   }
 
   /**

@@ -88,7 +88,7 @@ export default function AgentConfigPage() {
   const [error, setError] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const [kbSourceCount, setKbSourceCount] = useState(0)
-  const [mainModels, setMainModels] = useState<string[]>([])
+  const [mainModels, setMainModels] = useState<ModelInfo[]>([])
   const [activeSection, setActiveSection] = useState<Section | null>(null)
   const [memoryTier, setMemoryTier] = useState<MemoryTier>('balanced')
   const [showMemoryAdvanced, setShowMemoryAdvanced] = useState(false)
@@ -194,7 +194,7 @@ export default function AgentConfigPage() {
           knowledgeRetrieval,
         })
         setMemoryTier(detectMemoryTier(memoryStrategy))
-        setMainModels((modelsData.models || []).map((m: ModelInfo) => m.id))
+        setMainModels(modelsData.models || [])
         setError(null)
       })
       .catch((err: Error) => setError(err.message || t('agent.loadError')))
@@ -221,7 +221,7 @@ export default function AgentConfigPage() {
           }),
         })
         if (!res.ok) throw new Error(`Save: ${res.status}`)
-        const cacheBody = JSON.stringify({ customerId: 'default' })
+        const cacheBody = JSON.stringify({ vendorId: 'default' })
         Promise.allSettled([
           fetch('/api/admin/config-changed', {
             method: 'POST',
@@ -325,6 +325,20 @@ export default function AgentConfigPage() {
     ['enableContextCollapse', 'agent.ms.toggleContextCollapse', 'agent.ms.hintContextCollapse'],
     ['enableSnip', 'agent.ms.toggleSnip', 'agent.ms.hintSnip'],
   ]
+
+  function renderModelOptions(models: ModelInfo[]) {
+    const groups = new Map<string, ModelInfo[]>()
+    for (const m of models) {
+      const g = groups.get(m.provider) || []
+      g.push(m)
+      groups.set(m.provider, g)
+    }
+    return Array.from(groups.entries()).map(([provider, ms]) => (
+      <optgroup key={provider} label={ms[0]?.providerLabel || provider}>
+        {ms.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </optgroup>
+    ))
+  }
 
   return (
     <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
@@ -512,11 +526,7 @@ export default function AgentConfigPage() {
                       onChange={(e) => update('model', e.target.value)}
                       className={`glass-input-console ${drawerFieldClass(true)} w-full`}
                     >
-                      {mainModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
+                      {renderModelOptions(mainModels)}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.modelMainHint')}</span>
                   </label>
@@ -528,11 +538,7 @@ export default function AgentConfigPage() {
                       className={`glass-input-console ${drawerFieldClass(true)} w-full`}
                     >
                       <option value="">-- None --</option>
-                      {mainModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
+                      {renderModelOptions(mainModels)}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">Switches to this model after 3 consecutive 529 (overloaded) errors from the main model.</span>
                   </label>
@@ -544,11 +550,7 @@ export default function AgentConfigPage() {
                       className={`glass-input-console ${drawerFieldClass(true)} w-full`}
                     >
                       <option value="">-- Default (haiku) --</option>
-                      {mainModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
+                      {renderModelOptions(mainModels)}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/55 leading-snug block">
                       {t('agent.evaluationModelHint')}
@@ -738,11 +740,7 @@ export default function AgentConfigPage() {
                           onChange={(e) => updateMem('compactModel', e.target.value)}
                           className={`glass-input-console ${drawerFieldClass(true)} w-full`}
                         >
-                          {mainModels.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
+                          {renderModelOptions(mainModels)}
                         </select>
                         <span className="block text-[10px] leading-snug text-[var(--smoke)]">{t('agent.mem.hint.compactModel')}</span>
                       </label>

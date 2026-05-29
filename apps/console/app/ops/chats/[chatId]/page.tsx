@@ -235,7 +235,15 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {session?.cases.map((c) => <CasePill key={c.id} caseItem={c} />)}
+          {session?.cases.map((c) => (
+            <div key={c.id} className="flex items-center gap-1">
+              <CasePill caseItem={c} />
+              <Link href={`/ops/cases/${encodeURIComponent(c.id)}`}
+                className="console-btn-icon-square h-6 w-6" title="View case details">
+                <BarChart3 className="h-3 w-3" />
+              </Link>
+            </div>
+          ))}
           {!loading && session && (
             <>
               <ExportButton filename={`chat-${decodedChatId.slice(0, 8)}`} label="Export"
@@ -376,15 +384,16 @@ function matchFilter(actionType: string, activeFilters: Set<string>): boolean {
   return false
 }
 
-function parseIteration(payload: string | null): number | null {
-  if (!payload) return null
-  try {
-    const p = JSON.parse(payload)
-    if (typeof p.iteration === 'number') return p.iteration as number
-    return null
-  } catch {
-    return null
+function parseIteration(trace: TraceItem): number | null {
+  // Check payload first, then detail as fallback
+  for (const raw of [trace.payload, trace.detail]) {
+    if (!raw) continue
+    try {
+      const p = JSON.parse(raw)
+      if (typeof p.iteration === 'number') return p.iteration as number
+    } catch { /* skip */ }
   }
+  return null
 }
 
 function TraceList({ traces }: { traces: TraceItem[] }) {
@@ -424,7 +433,7 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
     const u: TraceItem[] = []
 
     for (const t of filtered) {
-      const iter = parseIteration(t.payload)
+      const iter = parseIteration(t)
       if (iter != null) {
         if (!g.has(iter)) g.set(iter, [])
         g.get(iter)!.push(t)
@@ -496,7 +505,7 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
           </button>
           {expandedIterations.has('Initial') && (
             <div className="border-t border-black/[0.04]">
-              {unassigned.slice().reverse().map((t) => (
+              {unassigned.map((t) => (
                 <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
                   <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
                     style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
@@ -530,7 +539,7 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
             </button>
             {expandedIterations.has(key) && (
               <div className="border-t border-indigo/[0.06]">
-                {group.slice().reverse().map((t) => (
+                {group.map((t) => (
                   <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
                     <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
                       style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />

@@ -10,7 +10,7 @@
  * session entry so the message is buffered and picked up when SSE connects.
  *
  * Payload (same shape as /api/messages for compatibility):
- *   { message?, formResult?, interactionResult?, resumeTrigger?, customerId, userId }
+ *   { message?, formResult?, interactionResult?, resumeTrigger?, vendorId, userId }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -45,13 +45,15 @@ export async function POST(
     formResult,
     interactionResult,
     resumeTrigger,
+    contentBlocks,
   } = body as {
     message?: string
     formResult?: { caseId?: string; answers: Record<string, string> }
     interactionResult?: { caseId?: string; optionId: string; input?: string }
     resumeTrigger?: string
-    customerId?: string
+    vendorId?: string
     userId?: string
+    contentBlocks?: { type: string; text?: string; source?: { type: string; media_type: string; data: string } }[]
   }
 
   // ── Build content string from whichever trigger fired ──────────────────────
@@ -92,7 +94,7 @@ export async function POST(
   }
 
   // ── Enqueue (creates session entry if needed) ──────────────────────────────
-  enqueueMessageOrCreate(caseId, { content, formAnswers })
+  enqueueMessageOrCreate(caseId, { content, formAnswers, contentBlocks: contentBlocks as any })
 
   return NextResponse.json({ ok: true, caseId, queued: true })
 }

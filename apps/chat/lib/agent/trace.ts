@@ -177,11 +177,13 @@ export class TraceWriter {
     iteration?: number,
     textContent?: string,
     toolNames?: string[],
+    model?: string,
   ): Promise<void> {
     await this.write('llm_response', `LLM response: ${stopReason || 'complete'}`, {
       stopReason,
       iteration,
       usage,
+      model,
       textPreview: textContent ? textContent.slice(0, 3000) : undefined,
       toolCalls: toolNames?.length ? toolNames : undefined,
     })

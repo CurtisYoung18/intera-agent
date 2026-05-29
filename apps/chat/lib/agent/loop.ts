@@ -8,6 +8,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
+import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
@@ -121,7 +122,7 @@ export class StreamingTextSanitizer {
 export interface AgentLoopDeps {
   config: AgentConfigData
   caseId: string
-  customerId: string
+  vendorId: string
   userId: string
   /** Case-execution prompt (used when case is active). Resolved from CASE_SYSTEM_PROMPT or DB custom prompt. */
   systemPrompt: string
@@ -138,7 +139,7 @@ export interface AgentLoopDeps {
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification' | 'awaiting_interaction' | 'connection_lost'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification' | 'awaiting_interaction' | 'connection_lost' | 'machine_error'
   currentStage?: string
   reason?: string
   pendingSubAgents?: string[]
@@ -173,14 +174,11 @@ export class AgentLoop {
 
   constructor(private deps: AgentLoopDeps) {
     this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
-    this.skillRouter = new SkillRouter(deps.customerId)
+    this.skillRouter = new SkillRouter(deps.vendorId)
     this.traceWriter = new TraceWriter(deps.caseId)
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.abortController = new AbortController()
-    this.anthropicClient = new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
+    this.anthropicClient = createAgentClient(deps.config.model)
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
     this.conversationLoop = new ConversationLoop({
@@ -203,7 +201,7 @@ export class AgentLoop {
   private makeCaseLoopServices(): CaseLoopServices {
     return {
       caseId: this.deps.caseId,
-      customerId: this.deps.customerId,
+      vendorId: this.deps.vendorId,
       userId: this.deps.userId,
       chatId: this.deps.chatId,
       config: this.deps.config,
@@ -221,8 +219,8 @@ export class AgentLoop {
   /** Create and initialize an AgentLoop — loads skills/policies from DB. */
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
-    loop.skillRouter = await SkillRouter.create(deps.customerId)
-    loop.policyEngine = await PolicyEngine.create(deps.customerId, deps.config.policyHooks)
+    loop.skillRouter = await SkillRouter.create(deps.vendorId)
+    loop.policyEngine = await PolicyEngine.create(deps.vendorId, deps.config.policyHooks)
     return loop
   }
 
@@ -314,10 +312,12 @@ export class AgentLoop {
           let pending
           while ((pending = session.queue.dequeueNonBlocking())) {
             if (pending.content === '__SESSION_CLOSED__') continue
+            const hasImages = pending.contentBlocks?.some((b: any) => b.type === 'image')
             this.messages.push({
               id: crypto.randomUUID(),
               role: 'user' as const,
-              content: `[SYSTEM] 用户补充了新信息：${pending.content}`,
+              content: hasImages ? pending.content : `[SYSTEM] 用户补充了新信息：${pending.content}`,
+              contentBlocks: pending.contentBlocks,
               createdAt: new Date(),
             })
             this.caseMemory.bumpDashboardVersion()
@@ -486,6 +486,12 @@ export class AgentLoop {
 
       const apiMessages = this.buildApiMessages()
 
+      if (this.deps.config.debugMode) {
+        console.log('[DebugMode] stagePrompt:', stagePrompt.slice(0, 3000))
+        console.log('[DebugMode] stageTools:', stageTools.map(t => t.name).join(', '))
+        console.log('[DebugMode] isCaseActive:', isCaseActive, 'stage:', this.currentStage)
+      }
+
       // ── S2: Stream creation with classified retry ──
       let stream: ReturnType<typeof this.anthropicClient.messages.stream>
       try {
@@ -518,10 +524,11 @@ export class AgentLoop {
           () => this.anthropicClient,
         )
       } catch (err) {
+        // P1-4: Transient LLM API errors should NOT trigger escalated/transfer.
+        // Only intentional handoffs (policy escalation, max_nudges) should escalate.
         if (err instanceof FallbackTriggeredError) {
           sendEvent({ type: 'error', data: `Model fallback exhausted: ${err.originalModel}`, timestamp: new Date().toISOString() })
-          sendEvent({ type: 'escalated', data: { reason: `LLM API error: ${err.reason}` }, timestamp: new Date().toISOString() })
-          return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
+          return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: 'llm_fallback_exhausted' }
         }
         if (err instanceof CannotRetryError && err.errorClass === 'context_overflow') {
           this.messages = reactiveCompact(this.messages)
@@ -535,8 +542,7 @@ export class AgentLoop {
         }
         const classified = err instanceof CannotRetryError ? err.errorClass : classifyError(err)
         sendEvent({ type: 'error', data: `LLM API error (${classified})`, timestamp: new Date().toISOString() })
-        sendEvent({ type: 'escalated', data: { reason: `LLM API error: ${classified}` }, timestamp: new Date().toISOString() })
-        return { messages: this.messages, transition: 'waiting_human' as const, caseStatus: 'escalated' as const }
+        return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: `llm_error:${classified}` }
       }
 
       // Debug: full API request
@@ -678,7 +684,7 @@ export class AgentLoop {
             text: fullText.slice(0, 100000),
           })
         }
-        await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames)
+        await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames, this.deps.config.model)
         this.profiler.addTokens(
           Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
           Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
@@ -913,7 +919,7 @@ export class AgentLoop {
                   update: { status: 'escalated', blocker: `Agent stuck in stage "${this.currentStage}"` },
                   create: {
                     id: this.deps.caseId,
-                    customerId: this.deps.customerId,
+                    vendorId: this.deps.vendorId,
                     userId: this.deps.userId,
                     type: resolvedCaseType,
                     status: 'escalated',
@@ -1040,7 +1046,7 @@ export class AgentLoop {
         await this.traceWriter.write(
           'skill_result',
           `Skill: ${result.name}`,
-          { output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, skillName: result.name },
+          { output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, skillName: result.name, input: result.toolUse?.input },
         )
       }
 
@@ -1098,7 +1104,7 @@ export class AgentLoop {
               update: { status: 'escalated', blocker: `Policy escalation: ${escalatedReasons}` },
               create: {
                 id: this.deps.caseId,
-                customerId: this.deps.customerId,
+                vendorId: this.deps.vendorId,
                 userId: this.deps.userId,
                 type: resolvedCaseType,
                 status: 'escalated',
@@ -1236,7 +1242,7 @@ export class AgentLoop {
           try {
             // Load case type from DB to build schema
             const ctRow = await prisma.caseType.findUnique({
-              where: { customerId_type: { customerId: this.deps.customerId, type: caseType } },
+              where: { vendorId_type: { vendorId: this.deps.vendorId, type: caseType } },
             })
             if (ctRow) {
               const stages = (() => { try { return JSON.parse(ctRow.stages) } catch { return [] } })() as string[]
@@ -1266,7 +1272,7 @@ export class AgentLoop {
                 update: { type: caseType, status: 'created' },
                 create: {
                   id: this.deps.caseId,
-                  customerId: this.deps.customerId,
+                  vendorId: this.deps.vendorId,
                   userId: this.deps.userId,
                   type: caseType,
                   status: 'created',

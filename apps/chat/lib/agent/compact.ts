@@ -10,9 +10,9 @@
 //   - Chain-of-thought stripping: <analysis> discarded, <summary> kept
 //   - Falls back to programmatic buildCompactionSummary on error
 
-import Anthropic from '@anthropic-ai/sdk'
 import type { Message, MemoryStrategy } from '@intera/shared/types'
 import { withRetry, CannotRetryError } from './api/with-retry'
+import { getProviderConfig, createAgentClient } from './api/provider-config'
 
 // 9-section prompt adapted from Claude Code's summarization prompt,
 // tailored for customer service rather than code.
@@ -87,30 +87,6 @@ export interface CompactConversationResult {
   error?: string
 }
 
-// Provider → API key + base URL mapping for Anthropic-compatible endpoints
-function getProviderConfig(model: string): { apiKey: string | undefined; baseURL: string | undefined; provider: string } {
-  if (model.startsWith('deepseek-')) {
-    return {
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/anthropic',
-      provider: 'deepseek',
-    }
-  }
-  if (model.startsWith('MiniMax-')) {
-    return {
-      apiKey: process.env.MINIMAX_API_KEY,
-      baseURL: process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/anthropic',
-      provider: 'minimax',
-    }
-  }
-  // Fallback: use default Anthropic config
-  return {
-    apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-    baseURL: process.env.ANTHROPIC_BASE_URL,
-    provider: 'anthropic',
-  }
-}
-
 /**
  * Call a lightweight model to generate a structured conversation summary.
  * Both MiniMax and DeepSeek support Anthropic-compatible API endpoints, so
@@ -140,7 +116,7 @@ export async function compactConversation(
     .slice(-(strategy.compactMaxMessages || 20))
 
   try {
-    const client = new Anthropic({ apiKey, baseURL })
+    const client = createAgentClient(model)
 
     const response = await withRetry(
       (retryClient, ctx) => retryClient.messages.create({
@@ -152,7 +128,7 @@ export async function compactConversation(
         thinking: { type: 'disabled' as const },
       }),
       { querySource: 'compact', model },
-      () => new Anthropic({ apiKey, baseURL }),
+      () => createAgentClient(model),
     )
 
     const rawText = response.content

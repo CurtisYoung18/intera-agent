@@ -30,7 +30,7 @@ The case schema, current stage, required evidence, and available tools are shown
 
 Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings for context — do not re-run tools they already called.
 
-**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (query_order_status, query_payment_channel_status, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
+**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (get_latest_deposit, get_withdraw_conditions, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
 
 ## Policies
 
@@ -38,7 +38,7 @@ Some investigation stages dispatch parallel sub-agents. Their findings appear as
 
 ## Human handoff
 
-Call create_human_task **only after** investigation tools (query_order_status, query_payment_channel_status, get_account_status, get_kyc_status, etc.) have returned data that conflicts with the customer's report. Do not escalate based on preliminary lookups (e.g. get_latest_deposit) or your own inference alone — always complete the required investigation for the current stage first.
+Call create_human_task **only after** investigation tools (get_latest_deposit, get_withdraw_conditions, get_account_status, get_kyc_status, etc.) have returned data that conflicts with the customer's report. Do not escalate based on preliminary lookups (e.g. get_latest_deposit) or your own inference alone — always complete the required investigation for the current stage first.
 
 After the human resolves the task, translate their verdict into plain, friendly language for the customer.
 
@@ -52,54 +52,24 @@ Facts extracted from previous turns are in confirmedFacts — trust them. Summar
 /** Lightweight prompt for Core (discovery) mode — no case active.
  *  Focused on conversation routing, direct tool calls, and case creation.
  *  Does NOT include stage requirements, sub-agents, policies, or human handoff. */
-export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
+export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant. Respond in the customer's language. Be concise. Don't describe what you'll do — just do it. Call the tool, don't narrate.
 
-## How you work
+**For date/time questions: you MUST call get_current_time.** Do not guess. Do not say you can't. Just call the tool — it will give you the answer. Your training cutoff date is wrong.
 
-- Respond in the same language the customer uses. If they write in Chinese, respond in Chinese. Never mix languages.
-- Be concise. Prefer action over explanation.
-- If you say you will check or verify something, call the corresponding tool in that same turn.
-- **Never tell the customer to contact customer service themselves.** If an issue requires human intervention, call create_case — that IS how you help them. Saying "请联系客服" or "contact customer service" without creating a case is a failed response.
+**Never fabricate data.** If a tool returns success:false or an error, report the error to the customer. Never invent results, numbers, dates, or records. If data is not returned by a tool, it does not exist.
 
-## When to create a Case
+**Always use request_user_input to collect information.** When you need member_id, date range, order ID, amount, or any other details: call request_user_input. Never ask in plain text — use the form tool. A text question like "请提供您的会员ID" without calling request_user_input is a failed response.
 
-If the customer is reporting a **problem** — something not working, stuck, missing, or wrong — call **create_case** before calling any investigation tools for that problem. The case system provides forms, human escalation, and structured workflows that are only available after case creation.
+## member_id
 
-Problem signals (→ create_case first):
-- "取不了款" / "提现失败" / "不到账" / "被冻结" / "登录不了" / "被封号"
-- "can't withdraw" / "deposit didn't arrive" / "account locked" / "stuck"
-- Any complaint where the customer expects something to happen but it isn't
+The conversation userId is NOT a member_id. Before calling any tool that needs member_id, call request_user_input first. If a tool fails with "member id is invalid", immediately call request_user_input — don't apologize, just ask.
 
-Simple inquiry signals (→ just answer with lookup tools, no case needed):
-- "我余额多少" / "有什么优惠" / "推荐什么游戏" / "提现规则是什么"
-- "what's my balance" / "any promotions" / "game recommendations" / "withdrawal rules"
-
-**When in doubt, create a case.** A case can be resolved quickly if the issue turns out to be simple, but skipping case creation when it IS needed cripples the investigation.
+{{available_tools}}
 
 {{case_types}}
 
-**Call propose_cases ONLY when the customer explicitly mentions two or more separate problems in a single message** (e.g. "I can't log in AND my deposit didn't arrive"). Do NOT call propose_cases because you are "unsure" — pick the best-matching case type and call create_case directly.
-
-## Tools you can use for simple inquiries (no case needed)
-
-- **kb_search_<name>** — search specific knowledge bases. Each available knowledge source has its own tool with a description of what it covers. Read the descriptions to pick the right one(s) — you can call multiple in parallel.
-- **get_account_status** — check account state, balance, or verification status
-- **get_kyc_status** — check identity verification progress
-- **get_latest_deposit** / **get_latest_withdrawal** — check recent transaction status
-- **get_transaction_history** — query past transaction records
-- **get_bet_history** — query betting/game records
-- **get_active_promotions** / **get_eligible_promotions** — check available promotions
-- **get_recommended_games** — get game recommendations
-- **get_withdraw_conditions** — check withdrawal rules and limits
-- **read_case_history** — review the customer's past cases for context
-
-Use these freely for simple questions. But if the customer is reporting a problem with any of these areas, call create_case first — do not use these tools as a substitute for creating a case.
-
-## When NOT to create a Case
-
-For greetings ("hi", "hello"), FAQ questions, general information requests, or simple lookups — just answer naturally. Use tools if they help, but don't open a case.
-
 {{session_binding}}
+
 `;
 
 /** Case-execution prompt — used when a case is active and past the "created" stage.
@@ -123,7 +93,7 @@ The case schema, current stage, required evidence, and available tools are shown
 
 Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings for context — do not re-run tools they already called.
 
-**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (query_order_status, query_payment_channel_status, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
+**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (get_latest_deposit, get_withdraw_conditions, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
 
 ## Policies
 
@@ -131,7 +101,7 @@ Some investigation stages dispatch parallel sub-agents. Their findings appear as
 
 ## Human handoff
 
-Call create_human_task **only after** investigation tools (query_order_status, query_payment_channel_status, get_account_status, get_kyc_status, etc.) have returned data that conflicts with the customer's report. Do not escalate based on preliminary lookups (e.g. get_latest_deposit) or your own inference alone — always complete the required investigation for the current stage first.
+Call create_human_task **only after** investigation tools (get_latest_deposit, get_withdraw_conditions, get_account_status, get_kyc_status, etc.) have returned data that conflicts with the customer's report. Do not escalate based on preliminary lookups (e.g. get_latest_deposit) or your own inference alone — always complete the required investigation for the current stage first.
 
 After the human resolves the task, translate their verdict into plain, friendly language for the customer.
 
@@ -175,12 +145,11 @@ export const DEFAULT_MEMORY_STRATEGY = {
   compactionKeepMin: 6,
   compactionKeepRatio: 0.65,
   compactableTools: [
-    'query_order_status',
-    'query_payment_channel_status',
-    'search_delay_notice',
+    'get_latest_deposit',
+    'get_withdraw_conditions',
+    'get_active_promotions',
     'read_case_history',
     // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
-    'ocr_receipt',
   ],
 
   // Fact extraction (LLM-based, replaces regex/keyword patterns)
@@ -242,7 +211,7 @@ You are the CASE OWNER. Tell the operator:
 # Tools
 
 - get_account_status / get_kyc_status / get_transaction_history — lookup account info
-- query_order_status(txnId) / query_payment_channel_status(txnId) / search_delay_notice(channel)
+- get_latest_deposit(txnId) / get_withdraw_conditions(txnId) / get_active_promotions(channel)
 - read_case_history — check prior cases for this customer
 - finalize_consultation(summary, resolution) — END consultation
   - summary: customer-facing message about what was resolved
@@ -296,7 +265,7 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'create_case',
     displayVerb: { text: 'Creating your case', icon: 'dots' },
-    description: 'Create a new Case when the customer reports an issue that needs investigation. IMPORTANT: Call create_case BEFORE any lookup tools (get_latest_deposit, get_transaction_history, query_order_status, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
+    description: 'Create a new Case when the customer reports an issue that needs investigation. IMPORTANT: Call create_case BEFORE any lookup tools (get_latest_deposit, get_transaction_history, get_latest_deposit, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
     inputSchema:
       '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -310,42 +279,6 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture:
       '{"cases":[{"id":"C2024-0892","type":"deposit_issue","status":"resolved","summary":"User deposited 500 CNY via WeChat Pay, funds credited after 2-hour delay","resolvedAt":"2024-11-15T10:30:00Z"},{"id":"C2024-1034","type":"account_issue","status":"resolved","summary":"Account temporarily restricted due to suspicious login from new device; verified identity and lifted restriction","resolvedAt":"2024-12-03T16:45:00Z"},{"id":"C2025-0017","type":"deposit_issue","status":"resolved","summary":"User reported 200 CNY missing from balance after Alipay top-up; traced to pending batch settlement, resolved within 24h","resolvedAt":"2025-01-22T09:15:00Z"}],"total":3}',
-  },
-  {
-    name: 'query_order_status',
-    displayVerb: { text: 'Checking order status', icon: 'scan' },
-    description: 'Query the platform order system for transaction status',
-    inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture:
-      '{"txnId":"TX2026051412345678","status":"completed","amount":1000.00,"currency":"CNY","time":"2026-05-14T08:05:00.000Z","channel":"wechat_pay","paymentMethod":"WeChat Pay","merchantRef":"MCH20260514001"}',
-  },
-  {
-    name: 'query_payment_channel_status',
-    displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
-    description: 'Query the payment channel for current status and delays',
-    inputSchema: '{"type":"object","properties":{"txnId":{"type":"string","description":"Transaction ID"}},"required":["txnId"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture:
-      '{"delayed_batch":false,"channel":"wechat_pay","channelStatus":"normal","lastSettlementAt":"2026-05-14T07:55:00.000Z","currentLoad":"low","reason":null}',
-  },
-  {
-    name: 'search_delay_notice',
-    displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
-    description: 'Search for any delay notices or announcements',
-    inputSchema: '{"type":"object","properties":{"channel":{"type":"string","description":"Payment channel to search"}},"required":["channel"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture:
-      '{"notices":[{"id":"NOT20260514-001","title":"WeChat Pay Scheduled Maintenance","channel":"wechat_pay","severity":"info","content":"WeChat Pay will undergo scheduled maintenance on 2026-05-20 02:00-04:00 UTC. Deposits may be delayed during this window.","publishedAt":"2026-05-10T00:00:00Z","affectsDeposit":false}]}',
-  },
-  {
-    name: 'ocr_receipt',
-    displayVerb: { text: 'Reading your receipt', icon: 'spin' },
-    description: 'Extract information from uploaded receipt screenshots',
-    inputSchema: '{"type":"object","properties":{"attachmentId":{"type":"string","description":"Attachment ID from file upload"}},"required":["attachmentId"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture:
-      '{"success":true,"extracted":{"amount":1000.00,"currency":"CNY","time":"2026-05-14T08:05:00.000Z","channel":"wechat_pay","merchantRef":"MCH20260514001","txnId":"TX2026051412345678"}}',
   },
   {
     name: 'create_human_task',
@@ -378,30 +311,6 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     inputSchema: '{"type":"object","properties":{"title":{"type":"string","description":"Form title"},"fields":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"label":{"type":"string"},"type":{"type":"string","enum":["text","number","select","textarea","file"]},"required":{"type":"boolean"},"placeholder":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["key","label","type"]}}},"required":["title","fields"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"form_displayed"}',
-  },
-  {
-    name: 'refund_money',
-    displayVerb: { text: 'Processing refund', icon: 'spin' },
-    description: 'Process a refund to the customer (high-risk — blocked by no_high_risk_account_change policy until admin review)',
-    inputSchema: '{"type":"object","properties":{"txnId":{"type":"string"},"amount":{"type":"number"},"reason":{"type":"string"}},"required":["txnId","amount","reason"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
-    mockFixture: '{"status":"refunded"}',
-  },
-  {
-    name: 'change_ban_status',
-    displayVerb: { text: 'Updating account status', icon: 'pulse' },
-    description: 'Modify a user account restriction status (high-risk — blocked by no_high_risk_account_change policy until admin review)',
-    inputSchema: '{"type":"object","properties":{"userId":{"type":"string"},"action":{"type":"string","enum":["ban","unban","restrict"]},"reason":{"type":"string"}},"required":["userId","action","reason"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
-    mockFixture: '{"status":"updated"}',
-  },
-  {
-    name: 'delete_account',
-    displayVerb: { text: 'Processing account deletion', icon: 'spin' },
-    description: 'Permanently delete a user account (high-risk — blocked by no_high_risk_account_change policy until admin review)',
-    inputSchema: '{"type":"object","properties":{"userId":{"type":"string"},"reason":{"type":"string"}},"required":["userId","reason"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'pre', outputSchema: '{}',
-    mockFixture: '{"status":"deleted"}',
   },
   {
     name: 'finalize_consultation',
@@ -555,14 +464,14 @@ export interface DefaultPolicySeed {
 }
 
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
-  { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":["refund_money","change_ban_status","delete_account"]}' },
-  { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"hook_skills":["create_human_task"],"require_skills_any":["query_order_status","query_payment_channel_status","get_account_status","get_kyc_status"]}' },
+  { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":[]}' },
+  { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"hook_skills":["create_human_task"],"require_skills_any":["get_latest_deposit","get_withdraw_conditions","get_account_status","get_kyc_status"]}' },
   {
     name: 'conflict_requires_human',
     description: 'Detect conflict between system result and user report',
     hook: 'postTool',
     rule: JSON.stringify({
-      hook_skills: ['query_order_status', 'query_payment_channel_status', 'get_account_status', 'get_kyc_status'],
+      hook_skills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_account_status', 'get_kyc_status'],
       evaluationPrompt: [
         'Check whether the skill outputs contradict what the customer reported.',
         '',
@@ -583,7 +492,7 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
     name: 'evidence_required_before_resolution',
     description: 'Require order or account verification skill before resolution',
     hook: 'preFinalize',
-    rule: '{"require_skills_any":["query_order_status","get_account_status","get_kyc_status"]}',
+    rule: '{"require_skills_any":["get_latest_deposit","get_account_status","get_kyc_status"]}',
   },
   {
     name: 'no_compensation_promise',
@@ -615,7 +524,7 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
         'Skills called: {{skills_called}}',
         '',
         'The conclusion must cite at least one of:',
-        '(1) a specific skill result (e.g. query_order_status showed status=completed),',
+        '(1) a specific skill result (e.g. get_latest_deposit showed status=completed),',
         '(2) confirmed facts collected from the user,',
         '(3) a knowledge base article or policy reference.',
         '',
@@ -745,34 +654,34 @@ Respond with JSON ONLY:
       description: `使用 confirmedFacts 中的 txnId 调用订单与渠道技能核对平台记录。
 
 **CRITICAL — which txnId to use:**
-query_order_status 和 query_payment_channel_status 的 txnId 参数必须使用 **confirmedFacts.txnId**（客户提供的流水号）。子代理 findings 中出现的 txnId 是反查参考数据，不是客户的交易号——严禁将子代理返回的 txnId 传入查询工具。客户报 TX101 就查 TX101，不要被子代理的 TX2026... 格式带偏。
+get_latest_deposit 和 get_withdraw_conditions 的 txnId 参数必须使用 **confirmedFacts.txnId**（客户提供的流水号）。子代理 findings 中出现的 txnId 是反查参考数据，不是客户的交易号——严禁将子代理返回的 txnId 传入查询工具。客户报 TX101 就查 TX101，不要被子代理的 TX2026... 格式带偏。
 
 **调查顺序：**
-1. 调用 query_order_status（传入 confirmedFacts.txnId）和 query_payment_channel_status — 必须同一轮完成，不要分两轮调用。
-2. 如有必要可调用 read_case_history 查历史工单、search_delay_notice 查公告、kb_search_<name> 查对应知识库。
+1. 调用 get_latest_deposit（传入 confirmedFacts.txnId）和 get_withdraw_conditions — 必须同一轮完成，不要分两轮调用。
+2. 如有必要可调用 read_case_history 查历史工单、get_active_promotions 查公告、kb_search_<name> 查对应知识库。
 
 **结果判断：**
-- query_order_status 返回的 txnId 与 confirmedFacts.txnId 不符（订单未找到或记录属于别的交易）→ 视为"订单查无此号"，直接调用 create_human_task，不要再问用户确认 txnId。
+- get_latest_deposit 返回的 txnId 与 confirmedFacts.txnId 不符（订单未找到或记录属于别的交易）→ 视为"订单查无此号"，直接调用 create_human_task，不要再问用户确认 txnId。
 - 订单状态、金额或渠道与用户报告冲突 → 直接调用 create_human_task。
 - 渠道有延迟批处理（delayed_batch: true）→ 告知预计到账时间，走 resolved。
 - 数据一致且订单已处理 → 走 resolved。
 
 若发现需要客户补充信息（截图等），必须用 request_user_input 表单收集，禁止纯文本提问。`,
-      requiredSkills: ['query_order_status', 'query_payment_channel_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'request_user_input'],
+      requiredSkills: ['get_latest_deposit', 'get_withdraw_conditions'],
+      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'read_case_history', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'status',
-          description: 'query_order_status 返回的订单/流水状态（mock 字段 `status`）',
+          description: 'get_latest_deposit 返回的订单/流水状态（mock 字段 `status`）',
           source: 'skill_output',
-          skillName: 'query_order_status',
+          skillName: 'get_latest_deposit',
           required: true,
         },
         {
           factKey: 'channel',
-          description: 'query_payment_channel_status 返回的渠道标识（mock 字段 `channel`）',
+          description: 'get_withdraw_conditions 返回的渠道标识（mock 字段 `channel`）',
           source: 'skill_output',
-          skillName: 'query_payment_channel_status',
+          skillName: 'get_withdraw_conditions',
           required: true,
         },
       ],
@@ -781,8 +690,8 @@ query_order_status 和 query_payment_channel_status 的 txnId 参数必须使用
         evaluationModel: 'MiniMax-M2.7-highspeed',
         evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
 
-- If query_order_status returned a record whose txnId differs from confirmedFacts.txnId, OR returned "not found" → treat as unresolvable conflict, nextStage stays investigating (agent should call create_human_task).
-- If query_order_status / query_payment_channel_status outputs conflict with the customer's deposit narrative (amount, channel, status mismatch) → agent should call create_human_task; stay in investigating.
+- If get_latest_deposit returned a record whose txnId differs from confirmedFacts.txnId, OR returned "not found" → treat as unresolvable conflict, nextStage stays investigating (agent should call create_human_task).
+- If get_latest_deposit / get_withdraw_conditions outputs conflict with the customer's deposit narrative (amount, channel, status mismatch) → agent should call create_human_task; stay in investigating.
 - If **txnId**, **amount**, or **paymentMethod** are missing from confirmedFacts → **collecting**.
 - If evidence supports closure (order confirmed, no conflict) → **resolved**.
 
@@ -806,8 +715,8 @@ Respond JSON ONLY:
     verifying: {
       name: 'verifying',
       description: 'Verify order details and collect missing information',
-      requiredSkills: ['query_order_status'],
-      availableSkills: ['query_order_status', 'request_user_input', 'read_case_history'],
+      requiredSkills: ['get_latest_deposit'],
+      availableSkills: ['get_latest_deposit', 'request_user_input', 'read_case_history'],
       evidenceRequirements: [
         { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
         { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
@@ -815,7 +724,7 @@ Respond JSON ONLY:
           factKey: 'status',
           description: '订单系统返回的状态（skill 字段 `status`）',
           source: 'skill_output',
-          skillName: 'query_order_status',
+          skillName: 'get_latest_deposit',
           required: true,
         },
       ],
@@ -824,14 +733,14 @@ Respond JSON ONLY:
     investigating: {
       name: 'investigating',
       description: 'Investigate order issue',
-      requiredSkills: ['query_payment_channel_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history'],
+      requiredSkills: ['get_withdraw_conditions'],
+      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'read_case_history'],
       subAgents: [
         {
           name: 'order_verifier',
           model: 'MiniMax-M2.7-highspeed',
           systemPrompt: 'You are an order verification specialist. Verify the order status and check for any platform notices or delays.',
-          skills: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice'],
+          skills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions'],
           taskTemplate: 'Verify order for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Check order status, payment channel, and any delay notices.',
           maxIterations: 3,
           parallel: true,
@@ -972,8 +881,8 @@ JSON ONLY:
     reviewing: {
       name: 'reviewing',
       description: 'Review refund eligibility',
-      requiredSkills: ['query_order_status'],
-      availableSkills: ['query_order_status', 'query_payment_channel_status', 'read_case_history', 'request_user_input'],
+      requiredSkills: ['get_latest_deposit'],
+      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'read_case_history', 'request_user_input'],
       evidenceRequirements: [
         { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
         { factKey: 'amount', description: 'Refund amount', source: 'user_input', required: true },
@@ -982,7 +891,7 @@ JSON ONLY:
           factKey: 'status',
           description: '订单查询返回的状态（skill 字段 `status`）',
           source: 'skill_output',
-          skillName: 'query_order_status',
+          skillName: 'get_latest_deposit',
           required: true,
         },
       ],
@@ -1145,7 +1054,7 @@ export interface DefaultRoutingSeed {
 export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
   {
     queue: 'payment_ops', description: 'Payment operations — handles deposit, order, and refund issues',
-    skillsAllowed: '["query_order_status","query_payment_channel_status","search_delay_notice"]',
+    skillsAllowed: '["get_latest_deposit","get_withdraw_conditions","get_active_promotions"]',
     priority: 0,
   },
   {
@@ -1185,9 +1094,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'Deposit methods, limits, delays, and troubleshooting',
     groupIds: '["6777d7a2df784b1af215324d"]',
     embeddingRate: 0.9,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     caseTypeTag: 'deposit_issue',
     enabled: true,
   },
@@ -1196,9 +1105,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'Withdrawal methods, PIN, conditions, and status',
     groupIds: '["6777d7976526a22a241862c4"]',
     embeddingRate: 0.9,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     caseTypeTag: 'withdraw_issue',
     enabled: true,
   },
@@ -1207,9 +1116,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'Account login, security, verification, and settings',
     groupIds: '["6777d77b6526a22a24186282"]',
     embeddingRate: 0.9,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     caseTypeTag: 'account_issue',
     enabled: true,
   },
@@ -1218,9 +1127,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'Game rules, gameplay issues, and troubleshooting',
     groupIds: '["6777d76fdf784b1af21531e7"]',
     embeddingRate: 0.9,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     enabled: true,
   },
   {
@@ -1228,9 +1137,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'Active promotions, bonus terms, eligibility, and claiming',
     groupIds: '["6777d7adaa45953ded935004"]',
     embeddingRate: 0.7,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     enabled: true,
   },
   {
@@ -1238,9 +1147,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'General platform questions and miscellaneous help',
     groupIds: '["6777d78adf784b1af2153213"]',
     embeddingRate: 0.9,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     enabled: true,
   },
   {
@@ -1248,9 +1157,9 @@ export const DEFAULT_KNOWLEDGE_SOURCES: DefaultKnowledgeSourceSeed[] = [
     description: 'Customer service scenarios and standard operating procedures',
     groupIds: '["696763795a9460010f69a8d7"]',
     embeddingRate: 0.9,
-    topK: 5,
-    rerankVersion: 'Jina-reranker-v2-base-multilingual',
-    docCorrelation: 0.5,
+    topK: 15,
+    rerankVersion: 'BGE-Rerank',
+    docCorrelation: 0.3,
     enabled: true,
   },
 ]

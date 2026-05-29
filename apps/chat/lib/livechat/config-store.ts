@@ -12,20 +12,20 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 const TTL_MS = 30_000
 
-export function invalidateLiveChatConfig(customerId: string): void {
-  cache.delete(customerId)
+export function invalidateLiveChatConfig(vendorId: string): void {
+  cache.delete(vendorId)
 }
 
-export async function getLiveChatConfig(customerId: string): Promise<LiveChatConfig | null> {
-  const cached = cache.get(customerId)
+export async function getLiveChatConfig(vendorId: string): Promise<LiveChatConfig | null> {
+  const cached = cache.get(vendorId)
   if (cached && cached.expiresAt > Date.now()) return cached.config
 
   try {
-    const row = await prisma.liveChatConfig.findUnique({ where: { customerId } })
+    const row = await prisma.liveChatConfig.findUnique({ where: { vendorId } })
     if (!row || !row.enabled) return null
 
     const config: LiveChatConfig = {
-      customerId: row.customerId,
+      vendorId: vendorId,
       botAccessToken: row.botAccessToken,
       licenseId: row.licenseId,
       webhookSecret: row.webhookSecret ?? undefined,
@@ -36,7 +36,7 @@ export async function getLiveChatConfig(customerId: string): Promise<LiveChatCon
       showSkillStatus: row.showSkillStatus,
       enabled: row.enabled,
     }
-    cache.set(customerId, { config, expiresAt: Date.now() + TTL_MS })
+    cache.set(vendorId, { config, expiresAt: Date.now() + TTL_MS })
     return config
   } catch (err) {
     console.error('[LiveChat] Failed to load config:', err)
@@ -45,13 +45,13 @@ export async function getLiveChatConfig(customerId: string): Promise<LiveChatCon
 }
 
 export async function upsertLiveChatConfig(
-  customerId: string,
-  data: Omit<LiveChatConfig, 'customerId'>,
+  vendorId: string,
+  data: Omit<LiveChatConfig, 'vendorId'>,
 ): Promise<void> {
   await prisma.liveChatConfig.upsert({
-    where: { customerId },
+    where: { vendorId },
     update: data,
-    create: { customerId, ...data },
+    create: { vendorId, ...data },
   })
-  invalidateLiveChatConfig(customerId)
+  invalidateLiveChatConfig(vendorId)
 }

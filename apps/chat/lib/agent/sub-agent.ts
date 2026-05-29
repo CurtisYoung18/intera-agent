@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
+import { createAgentClient } from './api/provider-config'
 import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, AgentContext, SSEEvent } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { ChecklistStrategy } from './strategies/checklist-strategy'
@@ -60,10 +61,7 @@ export class SubAgent {
     private config: SubAgentConfig,
     private skillDefinitions: SkillDefinition[] = [],
   ) {
-    this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-      baseURL: process.env.ANTHROPIC_BASE_URL,
-    })
+    this.client = createAgentClient(config.model)
   }
 
   /**

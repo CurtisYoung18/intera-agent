@@ -31,7 +31,7 @@ export async function GET(
     const [traces, total] = await Promise.all([
       prisma.actionTrace.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'asc' },
         take: limit,
         skip: parseInt(searchParams.get('offset') || '0'),
       }),

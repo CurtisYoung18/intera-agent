@@ -42,5 +42,13 @@ export async function GET() {
     }
   }
 
+  // OpenRouter models (multi-provider gateway)
+  if (process.env.OPENROUTER_API_KEY) {
+    models.push(
+      { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'openrouter', providerLabel: 'OpenRouter' },
+      { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openrouter', providerLabel: 'OpenRouter' },
+    )
+  }
+
   return NextResponse.json({ models })
 }

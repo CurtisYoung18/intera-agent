@@ -78,6 +78,7 @@ export class StreamingToolExecutor {
           latencyMs: 0,
         },
         latencyMs: 0,
+        toolUse,
       })
       return
     }
@@ -194,7 +195,7 @@ export class StreamingToolExecutor {
             'error',
             tool.definition.renderHints,
           )
-          this.results.push({ name: tool.name, output: tool.result, latencyMs: 0 })
+          this.results.push({ name: tool.name, output: tool.result, latencyMs: 0, toolUse: { id: tool.id, name: tool.name, input: tool.input, status: 'error' as const } })
           return
         }
         // Use the parsed (and potentially default-filled) input
@@ -257,6 +258,21 @@ export class StreamingToolExecutor {
   // [MOCK] Returns mockFixture or built-in fallback. Simulates network latency.
   private async executeMock(definition: SkillDefinition): Promise<unknown> {
     await this.sleep(100 + Math.random() * 200)
+
+    // Dynamic mock for get_current_time
+    if (definition.name === 'get_current_time') {
+      const now = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      const gmt8 = new Date(now.getTime() + 8 * 3600000)
+      return {
+        today: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()),
+        day_of_week: days[now.getUTCDay()],
+        utc_time: now.toISOString(),
+        gmt8_time: gmt8.toISOString(),
+        gmt8_date: gmt8.getFullYear() + '-' + pad(gmt8.getMonth() + 1) + '-' + pad(gmt8.getDate()),
+      }
+    }
 
     if (definition.mockFixture) {
       return definition.mockFixture
@@ -346,15 +362,15 @@ export class StreamingToolExecutor {
 
         if (sources.length > 0) {
           const allGroupIds: string[] = []
-          let maxTopK = 5
-          let avgEmbeddingRate = 0.9
+          let maxTopK = 15
+          let embeddingRateSum = 0
           let minDocCorrelation: number | undefined
 
           for (const s of sources) {
             const ids = JSON.parse(s.groupIds) as string[]
             allGroupIds.push(...ids)
             if (s.topK > maxTopK) maxTopK = s.topK
-            avgEmbeddingRate = s.embeddingRate
+            embeddingRateSum += s.embeddingRate
             if (s.docCorrelation != null) {
               if (minDocCorrelation == null || s.docCorrelation < minDocCorrelation) {
                 minDocCorrelation = s.docCorrelation
@@ -362,6 +378,7 @@ export class StreamingToolExecutor {
             }
           }
 
+          const avgEmbeddingRate = embeddingRateSum / sources.length
           body = {
             prompt: input.query,
             top_k: (input.topK as number) ?? maxTopK,
@@ -373,32 +390,50 @@ export class StreamingToolExecutor {
         } else {
           body = {
             prompt: input.query,
-            top_k: (input.topK as number) ?? 5,
+            top_k: (input.topK as number) ?? 15,
           }
         }
       } catch {
         body = {
           prompt: input.query,
-          top_k: (input.topK as number) ?? 5,
+          top_k: (input.topK as number) ?? 15,
         }
       }
     }
 
-    const response = await fetch(resolvedEndpoint, {
-      method: definition.httpMethod || 'POST',
+    const method = definition.httpMethod || 'POST'
+    const fetchInit: RequestInit = {
+      method,
       headers: {
         'Content-Type': 'application/json',
         ...resolvedHeaders,
       },
-      body: JSON.stringify(body),
       signal: AbortSignal.timeout(definition.timeoutMs || 10000),
-    })
+    }
+    // GET requests cannot have a body
+    if (method !== 'GET') {
+      fetchInit.body = JSON.stringify(body)
+    }
+
+    const response = await fetch(resolvedEndpoint, fetchInit)
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
-    return response.json()
+    const data = await response.json()
+
+    // GPTBots vector/match returns list NOT sorted by score when rerank is on.
+    // We must sort descending by score so the most relevant chunks surface first.
+    // This is idempotent when the list is already sorted (no-rerank path).
+    if (
+      (definition.name === 'kb_hybrid_retrieve' || definition.name.startsWith('kb_search_')) &&
+      data && Array.isArray((data as Record<string, unknown>).list)
+    ) {
+      const list = (data as Record<string, unknown>).list as Array<{ score?: number }>
+      list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    }
+    return data
   }
 
   private sleep(ms: number): Promise<void> {

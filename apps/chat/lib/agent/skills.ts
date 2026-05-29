@@ -731,6 +731,17 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     }),
     mockFixture: { status: 'dispatched', message: 'Sub-agent task dispatched' },
   },
+  {
+    name: 'get_current_time',
+    description: 'Get current date/time. Returns today date in YYYY-MM-DD format with day of week and UTC/GMT+8 times.',
+    inputSchema: { type: 'object', properties: {} },
+    outputSchema: { type: 'object', properties: { today: { type: 'string' }, day_of_week: { type: 'string' }, utc_time: { type: 'string' }, gmt8_time: { type: 'string' } } },
+    mode: 'static',
+    isConcurrencySafe: true,
+    enabled: true,
+    displayVerb: { text: 'Getting current time', icon: 'dots' },
+    mockFixture: {},
+  },
 ]
 
 /**
@@ -802,7 +813,7 @@ export function isBuiltInSkill(name: string): boolean {
 export class SkillRouter {
   private skills: Map<string, SkillDefinition> = new Map()
 
-  constructor(_customerId: string) {
+  constructor(_vendorId: string) {
     // Load built-in skills synchronously (fallback).
     // Call SkillRouter.create() for DB-loaded skills.
     for (const skill of BUILT_IN_SKILLS) {
@@ -817,8 +828,8 @@ export class SkillRouter {
   }
 
   /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources. */
-  static async create(customerId: string): Promise<SkillRouter> {
-    const router = new SkillRouter(customerId)
+  static async create(vendorId: string): Promise<SkillRouter> {
+    const router = new SkillRouter(vendorId)
 
     // Load DB skills (overlay on top of built-ins already loaded in constructor)
     try {
@@ -827,7 +838,7 @@ export class SkillRouter {
       // properly shadow their built-in counterparts. Filtering only enabled:true
       // would leave built-ins (always enabled:true) unaffected by console toggles.
       const dbSkills = await prisma.skill.findMany({
-        where: { customerId },
+        where: { vendorId },
       })
 
       for (const s of dbSkills) {
@@ -854,8 +865,26 @@ export class SkillRouter {
       // allowing it to decide which source(s) to query — including calling
       // multiple in parallel (isConcurrencySafe: true).
       const knowledgeSources = await prisma.knowledgeSource.findMany({
-        where: { customerId, enabled: true },
+        where: { vendorId, enabled: true },
       })
+
+      // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
+      // Seed already has new defaults; this handles rows created before this deploy.
+      const healOps: Promise<unknown>[] = []
+      for (const ks of knowledgeSources) {
+        const patches: Record<string, unknown> = {}
+        if (!ks.rerankVersion || ks.rerankVersion === 'Jina-reranker-v2-base-multilingual') {
+          patches.rerankVersion = 'BGE-Rerank'
+        }
+        if (ks.topK < 15) patches.topK = 15
+        if (ks.docCorrelation === 0.5) patches.docCorrelation = 0.3
+        if (Object.keys(patches).length > 0) {
+          healOps.push(prisma.knowledgeSource.update({ where: { id: ks.id }, data: patches }))
+        }
+      }
+      if (healOps.length > 0) {
+        Promise.allSettled(healOps).catch(() => {})
+      }
 
       for (const ks of knowledgeSources) {
         const toolName = `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
@@ -866,7 +895,7 @@ export class SkillRouter {
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Search query in the user\'s language' },
-              topK: { type: 'number', description: 'Number of results to return (1-50)', default: 5 },
+              topK: { type: 'number', description: 'Number of results to return (1-50)', default: 15 },
             },
             required: ['query'],
           },

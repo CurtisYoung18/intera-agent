@@ -194,7 +194,7 @@ export default function KnowledgePage() {
         body: JSON.stringify({
           query: testQuery,
           sourceId: testSourceId || undefined,
-          topK: 5,
+          topK: 15,
         }),
       })
       const data = await res.json()
@@ -296,8 +296,8 @@ export default function KnowledgePage() {
             <button
               onClick={() => setEditingSource({
                 name: '', description: '', groupIds: '[]',
-                embeddingRate: 0.9, topK: 5, rerankVersion: 'Jina-reranker-v2-base-multilingual',
-                docCorrelation: 0.5, caseTypeTag: '', enabled: true,
+                embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank',
+                docCorrelation: 0.3, caseTypeTag: '', enabled: true,
               })}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-teal-500/25 bg-teal-500/[0.06] text-[12px] font-semibold text-teal-600 hover:bg-teal-500/[0.12] transition-colors"
             >
@@ -553,8 +553,8 @@ export default function KnowledgePage() {
                   <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Top-K</label>
                   <input
                     type="number" min={1} max={50}
-                    value={editingSource.topK ?? 5}
-                    onChange={(e) => setEditingSource({ ...editingSource, topK: parseInt(e.target.value) || 5 })}
+                    value={editingSource.topK ?? 15}
+                    onChange={(e) => setEditingSource({ ...editingSource, topK: parseInt(e.target.value) || 15 })}
                     className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] text-[var(--mist)] outline-none focus:border-teal-500/30"
                   />
                 </div>
