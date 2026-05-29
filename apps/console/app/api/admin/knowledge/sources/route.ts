@@ -8,10 +8,34 @@ import { getActiveVendorId } from '@/lib/auth'
 export async function GET() {
   try {
     const VENDOR_ID = await getActiveVendorId()
+
+    // Auto-heal: migrate existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
     const sources = await prisma.knowledgeSource.findMany({
       where: { vendorId: VENDOR_ID },
       orderBy: { name: 'asc' },
     })
+    const healOps: Promise<unknown>[] = []
+    for (const ks of sources) {
+      const patches: Record<string, unknown> = {}
+      if (!ks.rerankVersion || ks.rerankVersion === 'Jina-reranker-v2-base-multilingual') {
+        patches.rerankVersion = 'BGE-Rerank'
+      }
+      if (ks.topK < 15) patches.topK = 15
+      if (ks.docCorrelation === 0.5) patches.docCorrelation = 0.3
+      if (Object.keys(patches).length > 0) {
+        healOps.push(prisma.knowledgeSource.update({ where: { id: ks.id }, data: patches }))
+      }
+    }
+    if (healOps.length > 0) {
+      await Promise.allSettled(healOps)
+      // Re-fetch with updated values
+      const updated = await prisma.knowledgeSource.findMany({
+        where: { vendorId: VENDOR_ID },
+        orderBy: { name: 'asc' },
+      })
+      return NextResponse.json({ sources: updated })
+    }
+
     return NextResponse.json({ sources })
   } catch (err) {
     console.error('[Admin] GET knowledge sources:', err)
@@ -33,9 +57,9 @@ export async function POST(req: NextRequest) {
         groupIds: typeof body.groupIds === 'string' ? body.groupIds : JSON.stringify(body.groupIds || []),
         dataIds: body.dataIds ? (typeof body.dataIds === 'string' ? body.dataIds : JSON.stringify(body.dataIds)) : null,
         embeddingRate: body.embeddingRate ?? 0.9,
-        topK: body.topK ?? 5,
-        rerankVersion: body.rerankVersion ?? null,
-        docCorrelation: body.docCorrelation ?? null,
+        topK: body.topK ?? 15,
+        rerankVersion: body.rerankVersion ?? 'BGE-Rerank',
+        docCorrelation: body.docCorrelation ?? 0.3,
         caseTypeTag: body.caseTypeTag ?? null,
         enabled: body.enabled ?? true,
       },

@@ -90,7 +90,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
   // ── Metrics from traces ──
   const metrics = useMemo(() => {
-    let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0, maxCacheRead = 0
+    let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0
     let llmCalls = 0, totalWallMs = 0
     let firstTs: number | null = null, lastTs: number | null = null
     const toolCalls: ToolCall[] = []
@@ -104,16 +104,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       const p = (() => { try { return t.payload ? JSON.parse(t.payload) : null } catch { return null } })()
 
       // Token metrics from llm_response
-      if (t.actionType === 'llm_response' && p?.usage) {
+      if (t.actionType === 'llm_response' && p?.usage && typeof p.iteration === 'number') {
         const u = p.usage as Record<string, number>
         inputTokens += u.input_tokens ?? 0
         outputTokens += u.output_tokens ?? 0
         cacheReadTokens += u.cache_read_input_tokens ?? 0
         cacheWriteTokens += u.cache_creation_input_tokens ?? 0
-        if ((u.cache_read_input_tokens ?? 0) > maxCacheRead) maxCacheRead = u.cache_read_input_tokens ?? 0
         llmCalls++
 
-        const iter = typeof p.iteration === 'number' ? p.iteration : 0
+        const iter = p.iteration as number
         const im = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, skillCount: 0, model: undefined as string | undefined }
         im.inputTokens += u.input_tokens ?? 0
         im.outputTokens += u.output_tokens ?? 0
@@ -122,7 +121,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         iterMetrics.set(iter, im)
       }
 
-      // Track tool calls from skill_called + skill_result pairs
+      // Track tool calls from skill_result traces
       if (t.actionType === 'skill_result' && p) {
         const input = (() => { try { return t.detail ? JSON.parse(t.detail) : null } catch { return null } })()
         toolCalls.push({
@@ -133,7 +132,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           createdAt: t.createdAt,
         })
 
-        const iter = typeof p.iteration === 'number' ? p.iteration : 0
+        // Only attach to per-iteration metrics when iteration is known.
+        // Trace payloads from background sub-agent dispatch may lack the field.
+        if (typeof p.iteration !== 'number') continue
+
+        const iter = p.iteration as number
         const im2 = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, skillCount: 0, model: undefined as string | undefined }
         im2.skillCount++
         if (typeof p.latencyMs === 'number') im2.toolsWallMs += p.latencyMs
@@ -141,8 +144,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       }
 
       // Loop decision snapshots with timing
-      if (t.actionType === 'loop_decision' && p) {
-        const iter = typeof p.iteration === 'number' ? p.iteration : 0
+      // Skip traces without iteration field (e.g. Profiler Snapshot) —
+      // they have no iteration-level data and would create a ghost iter=0 row.
+      if (t.actionType === 'loop_decision' && p && typeof p.iteration === 'number') {
+        const iter = p.iteration as number
         const im3 = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, skillCount: 0, model: undefined as string | undefined }
         im3.llmWallMs = (p.llmWallMs as number) || im3.llmWallMs
         iterMetrics.set(iter, im3)
@@ -153,7 +158,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     return {
       inputTokens, outputTokens, cacheWriteTokens,
       llmCalls, totalWallMs, toolCalls,
-      totalTokens: inputTokens + outputTokens, cacheReadTokens: maxCacheRead,
+      totalTokens: inputTokens + outputTokens,
+      cacheReadTokens,
       iterMetrics: Array.from(iterMetrics.values()).sort((a, b) => a.iteration - b.iteration),
     }
   }, [traces])
@@ -227,7 +233,22 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label={t('caseDetail.inputTokens')} value={metrics.inputTokens.toLocaleString()} />
             <Stat label={t('caseDetail.outputTokens')} value={metrics.outputTokens.toLocaleString()} />
-            <Stat label={t('caseDetail.cacheRead')} value={metrics.cacheReadTokens.toLocaleString()} sub={metrics.cacheReadTokens > 0 ? t('caseDetail.cacheHitRate', { rate: ((metrics.cacheReadTokens / Math.max(metrics.inputTokens + metrics.cacheReadTokens, 1)) * 100).toFixed(0) }) : undefined} />
+            <Stat label={t('caseDetail.cacheRead')} value={metrics.cacheReadTokens.toLocaleString()} sub={metrics.cacheReadTokens > 0 ? (
+  (() => {
+    // Warm rate: exclude cold-start iterations (cacheRead === 0) to show steady-state performance.
+    // The per-iteration table shows full detail for each iteration.
+    const warmInput = metrics.iterMetrics
+      .filter(im => im.inputTokens > 0 && im.cacheReadTokens > 0)
+      .reduce((s, im) => s + im.inputTokens + im.cacheReadTokens, 0)
+    const warmCache = metrics.iterMetrics
+      .filter(im => im.inputTokens > 0 && im.cacheReadTokens > 0)
+      .reduce((s, im) => s + im.cacheReadTokens, 0)
+    if (warmInput > 0 && warmCache > 0) {
+      const warmRate = ((warmCache / warmInput) * 100).toFixed(0)
+      return t('caseDetail.cacheHitRateWarm', { rate: warmRate })
+    }
+    return t('caseDetail.cacheHitRate', { rate: ((metrics.cacheReadTokens / Math.max(metrics.inputTokens + metrics.cacheReadTokens, 1)) * 100).toFixed(0) })
+  })()) : undefined} />
             <Stat label={t('caseDetail.cacheWrite')} value={metrics.cacheWriteTokens.toLocaleString()} />
             <Stat label={t('caseDetail.avgTokensPerCall')} value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
             <Stat label={t('caseDetail.avgOutputPerCall')} value={metrics.llmCalls > 0 ? (metrics.outputTokens / metrics.llmCalls).toFixed(0) : '0'} />
@@ -249,6 +270,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.inputCol')}</th>
                   <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.outputCol')}</th>
                   <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.cacheCol')}</th>
+                  <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.cacheRateCol')}</th>
                   <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.llmTimeCol')}</th>
                   <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.toolsTimeCol')}</th>
                   <th className="pb-2 pr-3 font-medium text-right">{t('caseDetail.skillsCol')}</th>
@@ -257,11 +279,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
               <tbody>
                 {metrics.iterMetrics.map((im) => (
                   <tr key={im.iteration} className="border-b border-black/[0.03] hover:bg-black/[0.01]">
-                    <td className="py-2 pr-3 font-mono text-indigo">{im.iteration === 0 ? 'Init' : `#${im.iteration}`}</td>
+                    <td className="py-2 pr-3 font-mono text-indigo">{`#${im.iteration}`}</td>
                     <td className="py-2 pr-3 text-[var(--fog)]/70 max-w-[120px] truncate">{im.model || '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.inputTokens.toLocaleString()}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.outputTokens.toLocaleString()}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.cacheReadTokens > 0 ? im.cacheReadTokens.toLocaleString() : '-'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{im.cacheReadTokens > 0 ? `${((im.cacheReadTokens / Math.max(im.inputTokens + im.cacheReadTokens, 1)) * 100).toFixed(0)}%` : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.llmWallMs > 0 ? fmtMs(im.llmWallMs) : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.toolsWallMs > 0 ? fmtMs(im.toolsWallMs) : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.skillCount}</td>

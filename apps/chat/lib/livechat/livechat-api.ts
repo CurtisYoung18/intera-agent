@@ -247,8 +247,10 @@ export async function listGroups(
   botAccessToken: string, licenseId: string,
   region?: string, authType?: string, accountId?: string,
 ): Promise<Array<{ id: number; name: string; agents_count: number }>> {
-  const res = (await lcConfigPost('list_groups', {}, botAccessToken, licenseId, region, authType, accountId)) as { groups?: Array<{ id: number; name: string; agents_count: number }> }
-  return res.groups ?? []
+  const res = await lcConfigPost('list_groups', {}, botAccessToken, licenseId, region, authType, accountId)
+  // LiveChat config API returns array directly, or { groups: [...] }
+  if (Array.isArray(res)) return res as Array<{ id: number; name: string; agents_count: number }>
+  return (res as { groups?: Array<{ id: number; name: string; agents_count: number }> }).groups ?? []
 }
 
 export async function updateChatProperties(
