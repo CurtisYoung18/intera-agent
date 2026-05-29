@@ -145,6 +145,10 @@ export const DEFAULT_MEMORY_STRATEGY = {
   enableContextCollapse: true,
   enableAutocompact: true,
 
+  // Chat Memory
+  enableChatMemory: true,
+  chatMemoryMaxTokens: 4000,
+
   // Compaction fine-tuning
   compactMaxMessages: 40,
   compactTemperature: 0.3,

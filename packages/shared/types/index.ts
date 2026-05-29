@@ -316,6 +316,10 @@ export interface MemoryStrategy {
   enableContextCollapse?: boolean
   enableAutocompact?: boolean
 
+  // ── Chat Memory ──
+  enableChatMemory?: boolean
+  chatMemoryMaxTokens?: number
+
   // ── Compaction fine-tuning ──
   compactMaxMessages: number
   compactTemperature: number

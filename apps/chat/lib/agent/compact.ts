@@ -64,7 +64,15 @@ Here's an example of how your output should be structured:
 
 CRITICAL: Respond with TEXT ONLY. Do NOT call any tools. Tool calls will be REJECTED and will waste your only turn — you will fail the task.
 
-When summarizing, focus on customer service case details and remember any mistakes made and how they were fixed. Include facts and transaction data verbatim where possible.`
+When summarizing, focus on customer service case details and remember any mistakes made and how they were fixed. Include facts and transaction data verbatim where possible.
+
+TOOL RESULT COMPRESSION RULES (for merging with existing Chat Memory):
+- Tool results older than 7 days: keep only the conclusion (one line summary), discard raw JSON output.
+- Tool results older than 30 days: keep only the skill name, discard both output and conclusion.
+- Merge repeated calls of the same tool: "query_order_status was called 5 times in the past 3 months. Latest result: ..."
+- User message summaries (Section 6) MUST NEVER be compressed — every customer utterance matters.
+- Facts deduplication: for the same fact key, keep the most recent value and discard older ones.
+- Keep the total output under the configured token budget. Prioritize recent over old.`
 
 /**
  * Strip <analysis> tags from the summary output, keeping only <summary> content.

@@ -324,6 +324,7 @@ export default function AgentConfigPage() {
     ['enableMicrocompact', 'agent.ms.toggleMicrocompact', 'agent.ms.hintMicrocompact'],
     ['enableContextCollapse', 'agent.ms.toggleContextCollapse', 'agent.ms.hintContextCollapse'],
     ['enableSnip', 'agent.ms.toggleSnip', 'agent.ms.hintSnip'],
+    ['enableChatMemory', 'agent.ms.toggleChatMemory', 'agent.ms.hintChatMemory'],
   ]
 
   function renderModelOptions(models: ModelInfo[]) {
@@ -817,6 +818,13 @@ export default function AgentConfigPage() {
                         value={ms.microcompactMinAgeMs ?? 300000}
                         onChange={(v) => updateMem('microcompactMinAgeMs', v)}
                         unit={u.ms}
+                      />
+                      <NumField
+                        label={t('agent.mem.chatMemoryMaxTokens')}
+                        hint={t('agent.mem.hint.chatMemoryMaxTokens')}
+                        value={ms.chatMemoryMaxTokens ?? 4000}
+                        onChange={(v) => updateMem('chatMemoryMaxTokens', v)}
+                        unit={u.tokens}
                       />
                     </DrawerSection>
                   </>

@@ -15,6 +15,8 @@ export interface MemoryStrategy {
   microcompactMinAgeMs: number
   enableContextCollapse: boolean
   enableSnip: boolean
+  enableChatMemory: boolean
+  chatMemoryMaxTokens: number
   compactMaxMessages: number
   compactTemperature: number
   compactMaxTokensCap: number
@@ -124,10 +126,12 @@ export const DEFAULT_MEMORY: MemoryStrategy = {
   blockingThresholdTokens: 15000,
   compactModel: 'MiniMax-M2.5-highspeed',
   enableAutocompact: true,
-  enableMicrocompact: true,
-  microcompactMinAgeMs: 60000,
+  enableMicrocompact: false,
+  microcompactMinAgeMs: 300000,
   enableContextCollapse: true,
   enableSnip: true,
+  enableChatMemory: true,
+  chatMemoryMaxTokens: 4000,
   compactMaxMessages: 40,
   compactTemperature: 0.3,
   compactMaxTokensCap: 4096,
