@@ -3,12 +3,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 const GPTBOTS_API = 'https://api-sg.gptbots.ai/v1/vector/match'
 
-async function getApiKey(customerId: string): Promise<string | null> {
+async function getApiKey(vendorId: string): Promise<string | null> {
   try {
-    const config = await prisma.agentConfig.findUnique({ where: { customerId }, select: { gptbotsApiKey: true } })
+    const config = await prisma.agentConfig.findUnique({ where: { vendorId }, select: { gptbotsApiKey: true } })
     if (config?.gptbotsApiKey) return config.gptbotsApiKey
   } catch { /* DB not ready */ }
   return process.env.GPTBOTS_API_KEY ?? null
@@ -16,7 +16,7 @@ async function getApiKey(customerId: string): Promise<string | null> {
 
 export async function POST(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const body = await req.json()
     const { query, sourceId } = body
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'query is required' }, { status: 400 })
     }
 
-    const apiKey = await getApiKey(CUSTOMER_ID)
+    const apiKey = await getApiKey(VENDOR_ID)
     if (!apiKey) {
       return NextResponse.json({ error: 'GPTBOTS_API_KEY not configured' }, { status: 503 })
     }
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     // If a specific source is selected, use its config
     if (sourceId) {
       const source = await prisma.knowledgeSource.findFirst({
-        where: { id: sourceId, customerId: CUSTOMER_ID },
+        where: { id: sourceId, vendorId: VENDOR_ID },
       })
       if (!source) {
         return NextResponse.json({ error: 'Source not found' }, { status: 404 })
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Merge all enabled sources
       const sources = await prisma.knowledgeSource.findMany({
-        where: { customerId: CUSTOMER_ID, enabled: true },
+        where: { vendorId: VENDOR_ID, enabled: true },
       })
       if (sources.length > 0) {
         const allGroupIds: string[] = []

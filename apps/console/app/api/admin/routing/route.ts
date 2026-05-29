@@ -1,16 +1,16 @@
 // GET + POST /api/admin/routing
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
+import { prisma, ensureDefaultVendor } from '@intera/shared/prisma'
 import { DEFAULT_ROUTING } from '@intera/shared/defaults'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     let routes = await prisma.routing.findMany({
-      where: { customerId: CUSTOMER_ID },
+      where: { vendorId: VENDOR_ID },
       orderBy: { priority: 'asc' },
     })
 
@@ -19,11 +19,11 @@ export async function GET() {
     const missing = DEFAULT_ROUTING.filter((r) => !existingQueues.has(r.queue))
 
     if (missing.length > 0) {
-      await ensureDefaultCustomer(CUSTOMER_ID)
+      await ensureDefaultVendor(VENDOR_ID)
       for (const r of missing) {
         await prisma.routing.create({
           data: {
-            customerId: CUSTOMER_ID,
+            vendorId: VENDOR_ID,
             queue: r.queue,
             description: r.description,
             skillsAllowed: r.skillsAllowed,
@@ -32,7 +32,7 @@ export async function GET() {
         })
       }
       routes = await prisma.routing.findMany({
-        where: { customerId: CUSTOMER_ID },
+        where: { vendorId: VENDOR_ID },
         orderBy: { priority: 'asc' },
       })
     }
@@ -45,12 +45,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
-    await ensureDefaultCustomer(CUSTOMER_ID)
+    const VENDOR_ID = await getActiveVendorId()
+    await ensureDefaultVendor(VENDOR_ID)
     const body = await req.json()
     const route = await prisma.routing.create({
       data: {
-        customerId: CUSTOMER_ID,
+        vendorId: VENDOR_ID,
         queue: body.queue,
         description: body.description || null,
         skillsAllowed: typeof body.skillsAllowed === 'string' ? body.skillsAllowed : JSON.stringify(body.skillsAllowed || []),

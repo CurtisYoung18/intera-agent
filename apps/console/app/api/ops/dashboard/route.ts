@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const [
@@ -16,25 +16,25 @@ export async function GET() {
       recentCases,
     ] = await Promise.all([
       prisma.message.count({
-        where: { case: { customerId: CUSTOMER_ID }, createdAt: { gte: yesterday } },
+        where: { case: { vendorId: VENDOR_ID }, createdAt: { gte: yesterday } },
       }).catch(() => 0),
       prisma.case.count({
-        where: { customerId: CUSTOMER_ID, status: { notIn: ['resolved', 'escalated'] } },
+        where: { vendorId: VENDOR_ID, status: { notIn: ['resolved', 'escalated'] } },
       }).catch(() => 0),
       prisma.case.findMany({
-        where: { customerId: CUSTOMER_ID, resolvedAt: { not: null }, createdAt: { gte: yesterday } },
+        where: { vendorId: VENDOR_ID, resolvedAt: { not: null }, createdAt: { gte: yesterday } },
         select: { createdAt: true, resolvedAt: true },
       }).catch(() => []),
       prisma.actionTrace.findMany({
-        where: { case: { customerId: CUSTOMER_ID }, actionType: 'policy_hit', createdAt: { gte: yesterday } },
+        where: { case: { vendorId: VENDOR_ID }, actionType: 'policy_hit', createdAt: { gte: yesterday } },
         select: { title: true },
         take: 50,
       }).catch(() => []),
       prisma.channelHealth.findMany({
-        where: { customerId: CUSTOMER_ID },
+        where: { vendorId: VENDOR_ID },
       }).catch(() => []),
       prisma.case.findMany({
-        where: { customerId: CUSTOMER_ID },
+        where: { vendorId: VENDOR_ID },
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: { id: true, type: true, status: true, createdAt: true },

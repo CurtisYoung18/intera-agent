@@ -31,6 +31,7 @@ export class ConversationLoop {
     'get_active_promotions', 'get_eligible_promotions', 'get_recommended_games',
     'get_bet_history', 'get_withdraw_conditions', 'read_case_history',
     'create_case', 'propose_cases',
+    'request_user_input',  // needed for asking member_id before creating a case
   ])
 
   private static isAllowedTool(name: string): boolean {

@@ -33,9 +33,9 @@ const DEFAULT_CONFIG: HumanChatConfig = {
   maxIterations: 8,
 }
 
-async function loadHumanChatConfig(customerId: string): Promise<HumanChatConfig> {
+async function loadHumanChatConfig(vendorId: string): Promise<HumanChatConfig> {
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { customerId } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { vendorId } })
     if (dbConfig) {
       const consultationPrompt = (dbConfig as Record<string, unknown>).consultationPrompt as string | null
       const humanSkillsRaw = (dbConfig as Record<string, unknown>).humanSkills as string | null
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         const memory = caseData.memory
 
         // Build system prompt: base consultation prompt + injected case context
-        const agentCfg = await loadHumanChatConfig(caseData.customerId)
+        const agentCfg = await loadHumanChatConfig(caseData.vendorId)
         let systemPrompt = agentCfg.systemPrompt
         if (memory) {
           systemPrompt +=
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
           model: agentCfg.model,
           maxIterations: agentCfg.maxIterations,
           caseId: caseData.id,
-          customerId: caseData.customerId,
+          vendorId: caseData.vendorId,
         })
 
         // Capture agent response text for chatLog persistence
@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
                   body: JSON.stringify({
                     message: customerMessage,
                     caseId: caseData.id,
-                    customerId: caseData.customerId,
+                    vendorId: caseData.vendorId,
                     userId: caseData.userId,
                   }),
                 },

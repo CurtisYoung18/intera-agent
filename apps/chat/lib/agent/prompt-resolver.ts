@@ -2,6 +2,12 @@
 // Replaces {{placeholder}} tokens in the system prompt with live data
 // from DB/config, so the prompt always reflects Console configuration.
 
+export interface ToolSummary {
+  name: string
+  description: string
+  needsMemberId: boolean
+}
+
 export interface PromptContext {
   case_types?: Array<{ type: string; displayName: string; description?: string }>
   active_policies?: Array<{ name: string; hook: string; description?: string }>
@@ -18,6 +24,7 @@ export interface PromptContext {
     missingFacts: string[]
   } | null
   session_binding?: { userId: string; userLabel?: string } | null
+  available_tools?: ToolSummary[]
 }
 
 function renderCaseTypes(types: PromptContext['case_types']): string {
@@ -59,6 +66,28 @@ function renderCaseState(state: PromptContext['case_state']): string {
   ].join('\n')
 }
 
+function renderTools(tools: PromptContext['available_tools']): string {
+  if (!tools?.length) return ''
+  const kbTools = tools.filter(t => t.name.startsWith('kb_search_'))
+  const lookupTools = tools.filter(t => !t.name.startsWith('kb_search_') && t.needsMemberId)
+  const otherTools = tools.filter(t => !t.name.startsWith('kb_search_') && !t.needsMemberId)
+
+  const lines: string[] = ['## Available Tools']
+  if (kbTools.length) {
+    lines.push('\n**Knowledge Bases** (call for any factual question — FAQs, policies, contact info, how-to):')
+    for (const t of kbTools) lines.push(`- ${t.name}: ${t.description}`)
+  }
+  if (lookupTools.length) {
+    lines.push('\n**Account Lookups** (all require member_id — call request_user_input first):')
+    for (const t of lookupTools) lines.push(`- ${t.name}: ${t.description}`)
+  }
+  if (otherTools.length) {
+    lines.push('\n**Actions**:')
+    for (const t of otherTools) lines.push(`- ${t.name}: ${t.description}`)
+  }
+  return lines.join('\n')
+}
+
 function renderSessionBinding(binding: PromptContext['session_binding']): string {
   if (!binding) return ''
   const u = binding.userId.trim() || 'anonymous'
@@ -85,6 +114,7 @@ export function resolvePrompt(prompt: string, ctx: PromptContext): string {
     '{{case_schema}}': renderCaseSchema(ctx.case_schema ?? null),
     '{{case_state}}': renderCaseState(ctx.case_state ?? null),
     '{{session_binding}}': renderSessionBinding(ctx.session_binding ?? null),
+    '{{available_tools}}': renderTools(ctx.available_tools),
   }
 
   for (const [placeholder, content] of Object.entries(blocks)) {
@@ -104,20 +134,21 @@ export function resolvePrompt(prompt: string, ctx: PromptContext): string {
 
 /** Build a PromptContext from DB data for a given customer. */
 export async function buildPromptContext(params: {
-  customerId: string
+  vendorId: string
   caseSchema?: PromptContext['case_schema']
   caseState?: PromptContext['case_state']
   sessionBinding?: PromptContext['session_binding']
+  available_tools?: PromptContext['available_tools']
 }): Promise<PromptContext> {
   const { prisma } = await import('@intera/shared/prisma')
 
   const [caseTypes, policies] = await Promise.all([
     prisma.caseType.findMany({
-      where: { customerId: params.customerId, enabled: true },
+      where: { vendorId: params.vendorId, enabled: true },
       select: { type: true, displayName: true, description: true },
     }),
     prisma.policy.findMany({
-      where: { customerId: params.customerId, enabled: true },
+      where: { vendorId: params.vendorId, enabled: true },
       select: { name: true, hook: true, description: true },
     }),
   ])
@@ -128,5 +159,6 @@ export async function buildPromptContext(params: {
     case_schema: params.caseSchema ?? null,
     case_state: params.caseState ?? null,
     session_binding: params.sessionBinding ?? null,
+    available_tools: params.available_tools ?? [],
   }
 }

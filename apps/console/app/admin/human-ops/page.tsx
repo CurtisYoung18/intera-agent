@@ -86,7 +86,7 @@ export default function HumanOpsPage() {
       })
       if (!res.ok) throw new Error(`Save: ${res.status}`)
 
-      const cacheBody = JSON.stringify({ customerId: 'default' })
+      const cacheBody = JSON.stringify({ vendorId: 'default' })
       Promise.allSettled([
         fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
         fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),

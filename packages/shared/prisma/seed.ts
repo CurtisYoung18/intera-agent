@@ -44,17 +44,17 @@ loadEnv()
 
 const prisma = new PrismaClient()
 
-// ── Customer definitions ────────────────────────────────────────────
+// ── Vendor definitions ────────────────────────────────────────────
 
-const CUSTOMERS = [
+const VENDORS = [
   { id: 'default', name: 'Demo Vendor', password: null },
   { id: 'api', name: 'API Vendor', password: hashSync('0000', 10) },
 ]
 
 // ── Seed helpers ────────────────────────────────────────────────────
 
-async function seedCustomerConfig(
-  customerId: string,
+async function seedVendorConfig(
+  vendorId: string,
   opts: {
     model: string
     temperature: number
@@ -92,19 +92,19 @@ async function seedCustomerConfig(
   }
 
   await prisma.agentConfig.upsert({
-    where: { customerId },
+    where: { vendorId },
     update: agentPayload,
-    create: { customerId, ...agentPayload },
+    create: { vendorId, ...agentPayload },
   })
-  console.log(`  ✓ AgentConfig (${customerId})`)
+  console.log(`  ✓ AgentConfig (${vendorId})`)
 
   // Skills
   for (const s of DEFAULT_SKILLS) {
-    // For API customer, force HTTP mode; for demo, keep original mode
+    // For API vendor, force HTTP mode; for demo, keep original mode
     const mode = opts.skillsMode === 'http' && s.endpoint ? 'http' : s.mode
 
     await prisma.skill.upsert({
-      where: { customerId_name: { customerId, name: s.name } },
+      where: { vendorId_name: { vendorId, name: s.name } },
       update: {
         description: s.description,
         inputSchema: s.inputSchema,
@@ -121,7 +121,7 @@ async function seedCustomerConfig(
         displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
       },
       create: {
-        customerId,
+        vendorId,
         name: s.name,
         description: s.description,
         inputSchema: s.inputSchema,
@@ -139,17 +139,17 @@ async function seedCustomerConfig(
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills (${customerId})`)
+  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills (${vendorId})`)
 
   // Policies
   for (const p of DEFAULT_POLICIES) {
     await prisma.policy.upsert({
-      where: { customerId_name: { customerId, name: p.name } },
+      where: { vendorId_name: { vendorId, name: p.name } },
       update: { description: p.description, hook: p.hook, rule: p.rule, enabled: true },
-      create: { customerId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true },
+      create: { vendorId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true },
     })
   }
-  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${customerId})`)
+  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${vendorId})`)
 
   const orch = JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG)
 
@@ -157,7 +157,7 @@ async function seedCustomerConfig(
   for (const ct of DEFAULT_CASE_TYPES) {
     const stageMap = DEFAULT_STAGE_CONFIGS[ct.type] as Record<string, unknown> | undefined
     await prisma.caseType.upsert({
-      where: { customerId_type: { customerId, type: ct.type } },
+      where: { vendorId_type: { vendorId, type: ct.type } },
       update: {
         displayName: ct.displayName, description: ct.description, icon: ct.icon,
         requiredFacts: ct.requiredFacts, stages: ct.stages,
@@ -166,7 +166,7 @@ async function seedCustomerConfig(
         escalateOn: ct.escalateOn, enabled: true,
       },
       create: {
-        customerId, type: ct.type, displayName: ct.displayName,
+        vendorId, type: ct.type, displayName: ct.displayName,
         description: ct.description, icon: ct.icon,
         requiredFacts: ct.requiredFacts, stages: ct.stages,
         stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
@@ -175,22 +175,22 @@ async function seedCustomerConfig(
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types (${customerId})`)
+  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types (${vendorId})`)
 
   // Routing
   for (const r of DEFAULT_ROUTING) {
     await prisma.routing.upsert({
-      where: { customerId_queue: { customerId, queue: r.queue } },
+      where: { vendorId_queue: { vendorId, queue: r.queue } },
       update: { description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
-      create: { customerId, queue: r.queue, description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
+      create: { vendorId, queue: r.queue, description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
     })
   }
-  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues (${customerId})`)
+  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues (${vendorId})`)
 
   // Knowledge Sources
   for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
     await prisma.knowledgeSource.upsert({
-      where: { customerId_name: { customerId, name: ks.name } },
+      where: { vendorId_name: { vendorId, name: ks.name } },
       update: {
         description: ks.description ?? null, groupIds: ks.groupIds,
         embeddingRate: ks.embeddingRate, topK: ks.topK,
@@ -198,14 +198,14 @@ async function seedCustomerConfig(
         caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
       },
       create: {
-        customerId, name: ks.name, description: ks.description ?? null,
+        vendorId, name: ks.name, description: ks.description ?? null,
         groupIds: ks.groupIds, embeddingRate: ks.embeddingRate, topK: ks.topK,
         rerankVersion: ks.rerankVersion ?? null, docCorrelation: ks.docCorrelation ?? null,
         caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources (${customerId})`)
+  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources (${vendorId})`)
 }
 
 // ── Main seed ────────────────────────────────────────────────────────
@@ -220,19 +220,19 @@ async function seed() {
   await prisma.caseMemory.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.case.deleteMany({ where: { id: 'seed-case-1' } })
 
-  // ── Create customers ──
-  for (const c of CUSTOMERS) {
-    await prisma.customer.upsert({
+  // ── Create vendors ──
+  for (const c of VENDORS) {
+    await prisma.vendor.upsert({
       where: { id: c.id },
       update: { name: c.name, password: c.password },
       create: { id: c.id, name: c.name, password: c.password },
     })
   }
-  console.log(`  ✓ ${CUSTOMERS.length} Customers`)
+  console.log(`  ✓ ${VENDORS.length} Vendors`)
 
   // ── Demo Vendor config ──
   console.log('\n── Demo Vendor ──')
-  await seedCustomerConfig('default', {
+  await seedVendorConfig('default', {
     model: 'MiniMax-M2.7-highspeed',
     temperature: 0.5,
     maxIterations: 20,
@@ -243,7 +243,7 @@ async function seed() {
 
   // ── API Vendor config ──
   console.log('\n── API Vendor ──')
-  await seedCustomerConfig('api', {
+  await seedVendorConfig('api', {
     model: 'MiniMax-M2.7-highspeed',
     temperature: 0.7,
     maxIterations: 10,
@@ -256,7 +256,7 @@ async function seed() {
   const c = await prisma.case.create({
     data: {
       id: 'seed-case-1',
-      customerId: 'default',
+      vendorId: 'default',
       userId: 'u_try_1',
       type: 'deposit_issue',
       status: 'waiting_human',

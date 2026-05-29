@@ -33,7 +33,7 @@ export const createCaseTool: Tool<Input, Output> = {
     await prisma.case.create({
       data: {
         id: caseId,
-        customerId: ctx.customerId,
+        vendorId: ctx.vendorId,
         userId: 'system',
         type: input.caseType,
         status: 'created',

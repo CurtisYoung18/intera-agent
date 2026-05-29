@@ -4,18 +4,26 @@
 import type { BridgeAction, CardSpec } from '@/lib/livechat/types'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
+function parseIfString(v: unknown): unknown {
+  if (typeof v === 'string') {
+    try { return JSON.parse(v) } catch { return v }
+  }
+  return v
+}
+
 export function renderSkillByHint(
   output: unknown,
   hint: LivechatRenderHint,
 ): BridgeAction[] {
+  const data = parseIfString(output)
   switch (hint.kind) {
     case 'card': {
-      const title = String(readPath(output, hint.titleField) ?? '')
-      const subtitle = hint.subtitleField ? String(readPath(output, hint.subtitleField) ?? '') : undefined
-      const imageUrl = hint.imageUrlField ? String(readPath(output, hint.imageUrlField) ?? '') : undefined
+      const title = String(readPath(data, hint.titleField) ?? '')
+      const subtitle = hint.subtitleField ? String(readPath(data, hint.subtitleField) ?? '') : undefined
+      const imageUrl = hint.imageUrlField ? String(readPath(data, hint.imageUrlField) ?? '') : undefined
       const buttons: CardSpec['buttons'] = (hint.buttons ?? []).map(b => ({
         id: b.postback,
-        label: String(b.labelField ? (readPath(output, b.labelField) ?? '') : (b.labelStatic ?? b.id)),
+        label: String(b.labelField ? (readPath(data, b.labelField) ?? '') : (b.labelStatic ?? b.id)),
         type: b.type as 'message' | 'url' | 'webview' | undefined,
         url: b.url,
       }))
@@ -23,7 +31,7 @@ export function renderSkillByHint(
     }
 
     case 'carousel': {
-      const items = readPath(output, hint.itemsField)
+      const items = readPath(data, hint.itemsField)
       if (!Array.isArray(items) || items.length === 0) {
         return [{ type: 'send_text', text: '(no results)' }]
       }
@@ -43,7 +51,7 @@ export function renderSkillByHint(
     }
 
     case 'quick_replies': {
-      const options = readPath(output, hint.optionsField)
+      const options = readPath(data, hint.optionsField)
       if (!Array.isArray(options)) return [{ type: 'noop' }]
       return [{
         type: 'send_quick_replies',

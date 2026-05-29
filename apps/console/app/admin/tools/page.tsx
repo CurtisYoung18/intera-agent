@@ -101,7 +101,7 @@ export default function SkillsPage() {
     const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
     if (!res.ok) return alert(t('common.failedSave', { status: res.status }))
-    const cacheBody = JSON.stringify({ customerId: 'default' })
+    const cacheBody = JSON.stringify({ vendorId: 'default' })
     Promise.allSettled([
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
       fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
@@ -226,6 +226,9 @@ export default function SkillsPage() {
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            {(() => { try { return s.renderHints && JSON.parse(s.renderHints)?.livechat } catch { return false } })() && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-indigo/[0.06] text-indigo flex items-center gap-1"><Plug className="w-2.5 h-2.5" />LiveChat</span>
+                            )}
                           </div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
@@ -399,6 +402,9 @@ export default function SkillsPage() {
                           <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            {(() => { try { return s.renderHints && JSON.parse(s.renderHints)?.livechat } catch { return false } })() && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-indigo/[0.06] text-indigo flex items-center gap-1"><Plug className="w-2.5 h-2.5" />LiveChat</span>
+                            )}
                           </div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">

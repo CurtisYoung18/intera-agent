@@ -1,4 +1,4 @@
-// S5 — Channel binding config per (customerId, channel).
+// S5 — Channel binding config per (vendorId, channel).
 // Operators configure which channels are active and per-tool overrides.
 
 import type { RenderHint } from './render-hints'

@@ -10,6 +10,7 @@
 import type { WidgetPayload, CardSpec } from './types'
 
 const LC_API_BASE = 'https://api.livechatinc.com/v3.5/agent/action'
+const LC_CONFIG_BASE = 'https://api.livechatinc.com/v3.5/configuration/action'
 
 function buildAuthHeader(token: string, authType?: string, accountId?: string): string {
   if (authType === 'basic' && accountId) {
@@ -51,6 +52,37 @@ async function lcPost(
     const err = new Error(`LiveChat API ${action} failed (${res.status}): ${text}`) as Error & { code?: string }
     if (res.status === 401) err.code = 'TOKEN_EXPIRED'
     if (res.status === 403) err.code = 'NOT_IN_CHAT'
+    if (res.status === 429) err.code = 'RATE_LIMITED'
+    throw err
+  }
+  return res.json()
+}
+
+/** Configuration API call (different base URL from Agent Chat API). */
+async function lcConfigPost(
+  action: string,
+  body: unknown,
+  botAccessToken: string,
+  licenseId: string,
+  region: string = process.env.LIVECHAT_REGION ?? 'dal',
+  authType?: string,
+  accountId?: string,
+): Promise<unknown> {
+  const bodyObj: Record<string, unknown> = { ...(body as Record<string, unknown>), license_id: licenseId }
+
+  const res = await fetch(`${LC_CONFIG_BASE}/${action}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: buildAuthHeader(botAccessToken, authType, accountId),
+      'X-Region': region,
+    },
+    body: JSON.stringify(bodyObj),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    const err = new Error(`LiveChat Config API ${action} failed (${res.status}): ${text}`) as Error & { code?: string }
+    if (res.status === 401) err.code = 'TOKEN_EXPIRED'
     if (res.status === 429) err.code = 'RATE_LIMITED'
     throw err
   }
@@ -201,11 +233,21 @@ export async function transferChat(
   await lcPost('transfer_chat', { id: chatId, target }, botAccessToken, licenseId, region, authType, accountId)
 }
 
+/** Deactivate (close) a chat. No further messages can be sent to this thread. */
+export async function deactivateChat(
+  chatId: string,
+  botAccessToken: string,
+  licenseId: string,
+  region?: string, authType?: string, accountId?: string,
+): Promise<void> {
+  await lcPost('deactivate_chat', { id: chatId }, botAccessToken, licenseId, region, authType, accountId)
+}
+
 export async function listGroups(
   botAccessToken: string, licenseId: string,
   region?: string, authType?: string, accountId?: string,
 ): Promise<Array<{ id: number; name: string; agents_count: number }>> {
-  const res = (await lcPost('list_groups', {}, botAccessToken, licenseId, region, authType, accountId)) as { groups?: Array<{ id: number; name: string; agents_count: number }> }
+  const res = (await lcConfigPost('list_groups', {}, botAccessToken, licenseId, region, authType, accountId)) as { groups?: Array<{ id: number; name: string; agents_count: number }> }
   return res.groups ?? []
 }
 

@@ -1,13 +1,36 @@
 // apps/chat/app/livechat-widget/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import type { WidgetPayload, StatusTrackStep, InteractionOption, FormField } from '@/lib/livechat/types'
+
+// ── Moments SDK types ─────────────────────────────────────────────────────────
+
+interface MomentsSDK {
+  sendMessage: (opts: { text: string }) => Promise<void>
+  sendSystemMessage: (opts: { text: string; recipients?: string }) => Promise<void>
+  close: () => void
+  setAttributes: (attrs: Record<string, unknown>) => Promise<void>
+}
+
+declare global {
+  interface Window {
+    LiveChatWidget?: {
+      on: (event: string, cb: (data: unknown) => void) => void
+      call: (action: string, payload?: unknown) => void
+    }
+    onMomentAsyncInit?: (createMomentsSDK: (opts: { title: string; icon?: string }) => Promise<MomentsSDK>) => void
+  }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input' | 'skill_render'
+
+interface FormFieldSpec {
+  id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string
+}
 
 interface AppState {
   view: ViewKind
@@ -37,10 +60,61 @@ declare global {
       on: (event: string, cb: (data: unknown) => void) => void
       call: (action: string, payload?: unknown) => void
     }
+    createMomentsSDK?: (opts: { title?: string }) => Promise<{
+      sendMessage: (msg: { text: string }) => Promise<void>
+      close: () => void
+      getLauncherData: () => { chatId: string; licenseId: number }
+    }>
   }
 }
 
-function sendToLiveChat(type: string, properties: Record<string, unknown>) {
+let momentsSDK: Awaited<ReturnType<NonNullable<Window['createMomentsSDK']>>> | null = null
+
+async function getMomentsSDK() {
+  if (momentsSDK) return momentsSDK
+  if (!window.createMomentsSDK) {
+    // Load Moments SDK script
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdn.livechat-static.com/moments-sdk/moments-sdk-1.9.0.umd.min.js'
+      script.onload = () => resolve()
+      script.onerror = () => reject(new Error('Failed to load Moments SDK'))
+      document.head.appendChild(script)
+    })
+    // Wait for the SDK to be available
+    await new Promise<void>(resolve => {
+      if (window.createMomentsSDK) { resolve(); return }
+      const check = setInterval(() => {
+        if (window.createMomentsSDK) { clearInterval(check); resolve() }
+      }, 100)
+    })
+  }
+  momentsSDK = await window.createMomentsSDK!({ title: 'Intera' })
+  return momentsSDK
+}
+
+function isMomentsIframe(): boolean {
+  if (typeof window === 'undefined') return false
+  return new URLSearchParams(window.location.search).has('view')
+}
+
+async function sendToLiveChat(type: string, properties: Record<string, unknown>) {
+  if (isMomentsIframe()) {
+    try {
+      const sdk = await getMomentsSDK()
+      if (type === 'intera_form_submit') {
+        const answers = properties.answers as Record<string, string> ?? {}
+        const lines = Object.entries(answers).map(([k, v]) => `${k}: ${v}`).join(', ')
+        await sdk.sendMessage({ text: `[表单提交] ${lines}` })
+      } else if (type === 'intera_interaction_submit') {
+        await sdk.sendMessage({ text: `[选择] ${properties.optionId as string}` })
+      }
+      sdk.close()
+    } catch (e) {
+      console.error('Moments SDK send failed:', e)
+    }
+    return
+  }
   window.LiveChatWidget?.call('send_event', { type, properties })
 }
 
@@ -157,10 +231,12 @@ function FormCard({
   caseId,
   fields,
   onSubmit,
+  onSubmitWithForm,
 }: {
   caseId: string
   fields: FormField[]
   onSubmit: () => void
+  onSubmitWithForm?: (answers: Record<string, string>) => void
 }) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [flipped, setFlipped] = useState(false)
@@ -172,7 +248,11 @@ function FormCard({
     setSubmitting(true)
     setFlipped(true)
     await new Promise(r => setTimeout(r, 350)) // wait for flip animation
-    sendToLiveChat('intera_form_submit', { caseId, answers: values })
+    if (onSubmitWithForm) {
+      onSubmitWithForm(values)
+    } else {
+      sendToLiveChat('intera_form_submit', { caseId, answers: values })
+    }
     onSubmit()
   }
 
@@ -378,6 +458,7 @@ export default function LiveChatWidget() {
   const [state, setState] = useState<AppState>(INITIAL_STATE)
   const [isOnline, setIsOnline] = useState(true)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [momentsSDK, setMomentsSDK] = useState<MomentsSDK | null>(null)
   const isPreview = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview')
 
   // Online/offline detection
@@ -390,6 +471,42 @@ export default function LiveChatWidget() {
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
     }
+  }, [])
+
+  // Moments SDK init — when loaded inside a LiveChat Moment iframe
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    // UMD script tag mode (cdn.livechat-static.com/moments-sdk)
+    window.onMomentAsyncInit = function (createMomentsSDK) {
+      createMomentsSDK({ title: 'Intera Form' }).then((sdk) => {
+        setMomentsSDK(sdk)
+      }).catch(() => {})
+    }
+
+    return () => { window.onMomentAsyncInit = undefined }
+  }, [])
+
+  // URL-param form mode — when opened as Moments webview from a form_request card
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') !== 'form') return
+    try {
+      const fieldsJson = params.get('fields')
+      const fields = fieldsJson ? JSON.parse(fieldsJson) as FormFieldSpec[] : []
+      const caseId = params.get('caseId') ?? ''
+      const title = params.get('title') ?? 'Form'
+      setState({
+        view: 'request_user_input',
+        caseId,
+        steps: [],
+        options: [],
+        fields: fields.map(f => ({ id: f.id, type: f.type as FormField['type'], label: f.label, required: f.required, options: f.options, placeholder: f.placeholder })),
+        template: title,
+        renderData: null,
+      })
+    } catch { /* invalid params */ }
   }, [])
 
   useEffect(() => {
@@ -436,7 +553,28 @@ export default function LiveChatWidget() {
     })
   }
 
-  const handleViewComplete = () => setState(INITIAL_STATE)
+  const handleViewComplete = useCallback(() => {
+    if (momentsSDK) {
+      // In Moment mode: close the iframe after a short delay
+      setTimeout(() => momentsSDK.close(), 300)
+    }
+    setState(INITIAL_STATE)
+  }, [momentsSDK])
+
+  // Submit form data via Moments SDK as structured text message
+  const handleMomentFormSubmit = useCallback((answers: Record<string, string>) => {
+    if (momentsSDK) {
+      const lines = Object.entries(answers)
+        .filter(([, v]) => v.trim())
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n')
+      if (lines) {
+        momentsSDK.sendMessage({ text: lines }).catch(() => {})
+      }
+      setTimeout(() => momentsSDK.close(), 500)
+    }
+    setState(INITIAL_STATE)
+  }, [momentsSDK])
 
   if (state.view === 'idle') {
     return (
@@ -472,7 +610,7 @@ export default function LiveChatWidget() {
         )}
         {state.view === 'request_user_input' && (
           <motion.div key="form" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <FormCard caseId={state.caseId} fields={state.fields} onSubmit={handleViewComplete} />
+            <FormCard caseId={state.caseId} fields={state.fields} onSubmit={handleViewComplete} onSubmitWithForm={momentsSDK ? handleMomentFormSubmit : undefined} />
           </motion.div>
         )}
         {state.view === 'skill_render' && (

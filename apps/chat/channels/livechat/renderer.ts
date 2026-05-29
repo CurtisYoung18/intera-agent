@@ -7,7 +7,7 @@ import type { ChannelRenderer, RenderContext } from '@intera/shared/channels/ren
 import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
-import type { BridgeAction, StatusTrackStep, FormField } from '@/lib/livechat/types'
+import type { BridgeAction, FormField } from '@/lib/livechat/types'
 import { renderSkillByHint, readPath } from './render-skill-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
@@ -34,19 +34,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
 
     switch (event.type) {
       // ── tool_executing: { name, status: 'executing', displayVerb? } ──
-      case 'tool_executing': {
-        if (!this.showSkillStatus) return { type: 'noop' }
-        const d = event.data as { name: string; status: string; displayVerb?: { text: string; icon: string } }
-        const step: StatusTrackStep = {
-          id: d.name,
-          label: skillLabel(d.name, d.displayVerb),
-          state: 'running',
-        }
-        return {
-          type: 'send_widget_payload',
-          payload: { kind: 'status_track', caseId, step },
-        }
-      }
+      // Typing indicator provides the animation — no message sent.
+      case 'tool_executing':
+        return { type: 'noop' }
 
       // ── skill_result: { name, status: 'completed', result, renderHints? } ──
       case 'skill_result': {
@@ -54,32 +44,26 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           name: string; status: string; result?: unknown
           renderHints?: Record<string, unknown>
         }
-        const livechatHint = d.renderHints?.livechat as LivechatRenderHint | undefined
-
-        // If iframe hint, emit skill_render widget payload for interactive iframe rendering
-        if (livechatHint?.kind === 'iframe' && d.result !== undefined) {
-          const data = livechatHint.dataField ? readPath(d.result, livechatHint.dataField) : d.result
-          return {
-            type: 'send_widget_payload',
-            payload: { kind: 'skill_render', caseId, template: livechatHint.template, data, skill: d.name },
-          }
-        }
+        const rawHint = d.renderHints?.livechat as Record<string, unknown> | undefined
+        const validKinds = new Set(['card', 'carousel', 'quick_replies', 'plain'])
+        const livechatHint = rawHint && validKinds.has(rawHint.kind as string)
+          ? rawHint as unknown as LivechatRenderHint
+          : undefined
 
         // If renderHints.livechat is configured, use it for rich message rendering
         if (livechatHint && d.result !== undefined) {
           return renderSkillByHint(d.result, livechatHint)
         }
 
-        // Fallback: status_track widget
+        // Fallback: compact "done" card
         if (!this.showSkillStatus) return { type: 'noop' }
-        const step: StatusTrackStep = {
-          id: d.name,
-          label: skillLabel(d.name),
-          state: 'done',
-        }
         return {
-          type: 'send_widget_payload',
-          payload: { kind: 'status_track', caseId, step },
+          type: 'send_card',
+          card: {
+            title: skillLabel(d.name),
+            subtitle: '✅ 完成',
+            buttons: [],
+          },
         }
       }
 
@@ -93,16 +77,14 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           multiSelect?: boolean
         }
         return {
-          type: 'send_widget_payload',
-          payload: {
-            kind: 'propose_interaction',
-            caseId: d.caseId ?? caseId,
-            options: d.options ?? [],
-          },
+          type: 'send_quick_replies',
+          text: d.title ?? d.description ?? '请选择：',
+          options: (d.options ?? []).map(o => ({ id: o.id, label: o.label })),
         }
       }
 
       // ── form_request: { caseId, title, description, fields } ──
+      // Renders as a card with webview button → Moments iframe form.
       case 'form_request': {
         const d = event.data as {
           caseId?: string
@@ -110,12 +92,26 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           description?: string
           fields?: Array<{ id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string }>
         }
+        const formCaseId = d.caseId ?? caseId
+        const fields = d.fields ?? []
+        const baseUrl = process.env.LIVECHAT_WIDGET_URL ?? 'https://intera-chat.up.railway.app/livechat-widget'
+        const params = new URLSearchParams({
+          view: 'form',
+          caseId: formCaseId,
+          title: d.title ?? 'Please fill in the following',
+          fields: JSON.stringify(fields),
+        })
         return {
-          type: 'send_widget_payload',
-          payload: {
-            kind: 'request_user_input',
-            caseId: d.caseId ?? caseId,
-            fields: (d.fields ?? []) as FormField[],
+          type: 'send_card',
+          card: {
+            title: d.title ?? 'Information Required',
+            subtitle: d.description ?? `${fields.length} field${fields.length !== 1 ? 's' : ''} to fill`,
+            buttons: [{
+              id: 'open_form',
+              label: d.title ?? 'Fill Form',
+              type: 'webview',
+              url: `${baseUrl}?${params.toString()}`,
+            }],
           },
         }
       }

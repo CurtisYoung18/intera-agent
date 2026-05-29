@@ -40,7 +40,7 @@ export async function GET(
   }
 
   const agentConfig = await prisma.agentConfig.findUnique({
-    where: { customerId: caseData.customerId },
+    where: { vendorId: caseData.vendorId },
   })
 
   const sections: string[] = []

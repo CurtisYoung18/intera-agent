@@ -211,7 +211,7 @@ export function closeSession(caseId: string): void {
 /** Check whether a live session exists for this caseId. */
 export function hasSession(caseId: string): boolean {
   const s = sessions.get(caseId)
-  return !!s && !s.aborted
+  return !!s && !s.aborted && !s.resolved
 }
 
 // ─── TTL cleanup ──────────────────────────────────────────────────────────────

@@ -5,19 +5,33 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { listGroups } from '@/lib/livechat/livechat-api'
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+function json(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, { ...init, headers: { ...(init?.headers as Record<string, string> ?? {}), ...CORS } })
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS })
+}
+
 export async function GET(request: NextRequest) {
-  const customerId = request.nextUrl.searchParams.get('customerId') ?? 'default'
+  const vendorId = request.nextUrl.searchParams.get('vendorId') ?? 'default'
 
   try {
-    const config = await getLiveChatConfig(customerId)
+    const config = await getLiveChatConfig(vendorId)
     if (!config) {
-      return NextResponse.json({ groups: [] })
+      return json({ groups: [] })
     }
 
     const groups = await listGroups(config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId)
-    return NextResponse.json({ groups })
+    return json({ groups })
   } catch (err) {
     console.error('[LiveChat] Failed to list groups:', err)
-    return NextResponse.json({ groups: [], error: 'Failed to fetch groups' }, { status: 502 })
+    return json({ groups: [], error: 'Failed to fetch groups' }, { status: 502 })
   }
 }

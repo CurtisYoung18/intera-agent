@@ -4,14 +4,14 @@ import { prisma } from '@intera/shared/prisma'
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const userId = url.searchParams.get('userId') || 'anonymous'
-  const customerId = url.searchParams.get('customerId') || 'default'
+  const vendorId = url.searchParams.get('vendorId') || 'default'
   const chatId = url.searchParams.get('chatId') || null
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 50)
 
   try {
     const cases = await prisma.case.findMany({
       where: {
-        customerId,
+        vendorId,
         userId,
         ...(chatId ? { OR: [{ chatId }, { chatId: null }] } : {}),
       },

@@ -1,16 +1,16 @@
 // GET + POST /api/admin/policies
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
+import { prisma, ensureDefaultVendor } from '@intera/shared/prisma'
 import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     let policies = await prisma.policy.findMany({
-      where: { customerId: CUSTOMER_ID },
+      where: { vendorId: VENDOR_ID },
       orderBy: { name: 'asc' },
     })
 
@@ -19,11 +19,11 @@ export async function GET() {
     const missing = DEFAULT_POLICIES.filter((p) => !existingNames.has(p.name))
 
     if (missing.length > 0) {
-      await ensureDefaultCustomer(CUSTOMER_ID)
+      await ensureDefaultVendor(VENDOR_ID)
       for (const p of missing) {
         await prisma.policy.create({
           data: {
-            customerId: CUSTOMER_ID,
+            vendorId: VENDOR_ID,
             name: p.name,
             description: p.description,
             hook: p.hook,
@@ -33,7 +33,7 @@ export async function GET() {
         })
       }
       policies = await prisma.policy.findMany({
-        where: { customerId: CUSTOMER_ID },
+        where: { vendorId: VENDOR_ID },
         orderBy: { name: 'asc' },
       })
     }
@@ -46,12 +46,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
-    await ensureDefaultCustomer(CUSTOMER_ID)
+    const VENDOR_ID = await getActiveVendorId()
+    await ensureDefaultVendor(VENDOR_ID)
     const body = await req.json()
     const policy = await prisma.policy.create({
       data: {
-        customerId: CUSTOMER_ID,
+        vendorId: VENDOR_ID,
         name: body.name,
         description: body.description || null,
         hook: body.hook || 'preTool',

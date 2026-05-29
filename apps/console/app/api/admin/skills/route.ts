@@ -1,17 +1,17 @@
 // GET + POST /api/admin/skills — List and create skills
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
+import { prisma, ensureDefaultVendor } from '@intera/shared/prisma'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     let skills = await prisma.skill.findMany({
-      where: { customerId: CUSTOMER_ID },
+      where: { vendorId: VENDOR_ID },
       orderBy: { name: 'asc' },
     })
 
@@ -24,11 +24,11 @@ export async function GET() {
     const toUpsert = DEFAULT_SKILLS.filter((s) => requiredNames.has(s.name) && !existingNames.has(s.name))
 
     if (skills.length === 0 || toUpsert.length > 0) {
-      await ensureDefaultCustomer(CUSTOMER_ID)
+      await ensureDefaultVendor(VENDOR_ID)
       const namesToSeed = skills.length === 0 ? DEFAULT_SKILLS : toUpsert
       for (const s of namesToSeed) {
         await prisma.skill.upsert({
-          where: { customerId_name: { customerId: CUSTOMER_ID, name: s.name } },
+          where: { vendorId_name: { vendorId: VENDOR_ID, name: s.name } },
           update: {
             description: s.description, inputSchema: s.inputSchema, outputSchema: s.outputSchema,
             mode: s.mode, isConcurrencySafe: s.isConcurrencySafe, enabled: s.enabled,
@@ -38,7 +38,7 @@ export async function GET() {
             displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
           },
           create: {
-            customerId: CUSTOMER_ID, name: s.name, description: s.description,
+            vendorId: VENDOR_ID, name: s.name, description: s.description,
             inputSchema: s.inputSchema, outputSchema: s.outputSchema, mode: s.mode,
             isConcurrencySafe: s.isConcurrencySafe, enabled: s.enabled, guardPhase: s.guardPhase,
             endpoint: s.endpoint ?? null, httpMethod: s.httpMethod ?? 'POST',
@@ -49,7 +49,7 @@ export async function GET() {
         })
       }
       skills = await prisma.skill.findMany({
-        where: { customerId: CUSTOMER_ID },
+        where: { vendorId: VENDOR_ID },
         orderBy: { name: 'asc' },
       })
     }
@@ -70,12 +70,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
-    await ensureDefaultCustomer(CUSTOMER_ID)
+    const VENDOR_ID = await getActiveVendorId()
+    await ensureDefaultVendor(VENDOR_ID)
     const body = await req.json()
     const skill = await prisma.skill.create({
       data: {
-        customerId: CUSTOMER_ID,
+        vendorId: VENDOR_ID,
         name: body.name,
         description: body.description || '',
         inputSchema: typeof body.inputSchema === 'string' ? body.inputSchema : JSON.stringify(body.inputSchema || {}),

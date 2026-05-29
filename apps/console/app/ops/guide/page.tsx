@@ -332,7 +332,7 @@ export default function OpsGuidePage() {
               headers={{ Accept: 'text/event-stream' }}
               bodyFields={[
                 { name: 'message', type: 'string', desc: 'The user’s message.', required: true },
-                { name: 'customerId', type: 'string', desc: 'Customer slug. Defaults to "default".' },
+                { name: 'vendorId', type: 'string', desc: 'Customer slug. Defaults to "default".' },
                 { name: 'userId', type: 'string', desc: 'End-user identifier (groups cases per user).' },
                 { name: 'userLabel', type: 'string', desc: 'Optional display name for the user.' },
                 { name: 'chatId', type: 'string', desc: 'Conversation session id. Omit for first turn — engine generates one.' },
@@ -346,7 +346,7 @@ export default function OpsGuidePage() {
               ]}
               body={`{
   "message": "我充值了 500 元但余额没显示",
-  "customerId": "default",
+  "vendorId": "default",
   "userId": "player_123",
   "chatId": ""
 }`}
@@ -370,7 +370,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               responseNote="SSE stream (truncated). Consume with EventSource or a fetch-stream reader."
               notes={[
                 'Body must be < 100 KB.',
-                'customerId must match /^[a-zA-Z0-9_-]+$/ and be ≤ 64 chars.',
+                'vendorId must match /^[a-zA-Z0-9_-]+$/ and be ≤ 64 chars.',
                 'Response is `text/event-stream`. Each event is `event: <type>\\ndata: <json>\\n\\n`.',
                 'For Postman: enable "Stream" mode or use the cURL --no-buffer flag to see events arrive incrementally.',
               ]}
@@ -398,7 +398,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               host={CHAT_HOST}
               summary="List recent cases for a (customer, user) combination."
               query={[
-                { name: 'customerId', desc: 'Customer slug. Defaults to "default".' },
+                { name: 'vendorId', desc: 'Customer slug. Defaults to "default".' },
                 { name: 'userId', desc: 'End-user id. Defaults to "anonymous".' },
                 { name: 'chatId', desc: 'Filter by chat session id.' },
                 { name: 'limit', desc: 'Max rows. Default 20, max 50.' },
@@ -491,7 +491,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               path="/api/composer-assist/feature"
               host={CHAT_HOST}
               summary="Returns whether composer assist is enabled for the customer."
-              query={[{ name: 'customerId', desc: 'Customer slug.' }]}
+              query={[{ name: 'vendorId', desc: 'Customer slug.' }]}
               response={`{ "enabled": true, "minDraftChars": 4 }`}
             />
 
@@ -506,7 +506,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
             <SectionHeading>1.12 LiveChat integration</SectionHeading>
             <Endpoint
               method="POST"
-              path="/api/livechat/webhook/{customerId}"
+              path="/api/livechat/webhook/{vendorId}"
               host={CHAT_HOST}
               summary="LiveChat platform webhook (per-customer). Required for LiveChat integration."
               headers={{ 'X-LiveChat-Webhook-Signature': '<HMAC-SHA256 of body>' }}
@@ -514,7 +514,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
                 'HMAC verified against LIVECHAT_WEBHOOK_SECRET (or per-customer secret).',
                 'Returns 200 quickly; processing is fire-and-forget.',
                 'Idempotency: same event.id is processed once (webhook_events dedup table).',
-                'Legacy URL /api/livechat/webhook (no customerId) still accepted for back-compat.',
+                'Legacy URL /api/livechat/webhook (no vendorId) still accepted for back-compat.',
               ]}
             />
             <Endpoint
@@ -522,9 +522,9 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               path="/api/livechat/config"
               host={CHAT_HOST}
               summary="Read LiveChat config for a customer."
-              query={[{ name: 'customerId', desc: 'Customer slug.', required: true }]}
+              query={[{ name: 'vendorId', desc: 'Customer slug.', required: true }]}
               response={`{
-  "customerId": "default",
+  "vendorId": "default",
   "botAccessToken": "…",
   "licenseId": "12345678",
   "showSkillStatus": true,
@@ -537,7 +537,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               host={CHAT_HOST}
               summary="Update LiveChat config (called by Console)."
               body={`{
-  "customerId": "default",
+  "vendorId": "default",
   "botAccessToken": "Bearer-xxx",
   "licenseId": "12345678",
   "showSkillStatus": true,
@@ -577,14 +577,14 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               host={CONSOLE_HOST}
               summary="Log in as a customer. Sets a session cookie used by all admin endpoints."
               bodyFields={[
-                { name: 'customerId', type: 'string', desc: 'Customer slug.', required: true },
+                { name: 'vendorId', type: 'string', desc: 'Customer slug.', required: true },
                 { name: 'password', type: 'string', desc: 'Password if the customer has one set. Empty for no-password.' },
               ]}
-              body={`{ "customerId": "default", "password": "" }`}
-              response={`{ "ok": true, "customerId": "default", "customerName": "Default Tenant" }`}
+              body={`{ "vendorId": "default", "password": "" }`}
+              response={`{ "ok": true, "vendorId": "default", "customerName": "Default Tenant" }`}
             />
             <Endpoint method="POST" path="/api/auth/logout" host={CONSOLE_HOST} summary="Clear session cookie." />
-            <Endpoint method="GET" path="/api/auth/session" host={CONSOLE_HOST} summary="Inspect current session." response={`{ "customerId": "default", "customerName": "Default Tenant" }`} />
+            <Endpoint method="GET" path="/api/auth/session" host={CONSOLE_HOST} summary="Inspect current session." response={`{ "vendorId": "default", "customerName": "Default Tenant" }`} />
             <Endpoint method="GET" path="/api/admin/customers" host={CONSOLE_HOST} summary="List available customers (for the switcher in sidebar)." />
 
             <SectionHeading>2.2 Agent profile</SectionHeading>
@@ -708,7 +708,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
             />
 
             <SectionHeading>2.8 Cases & traces (read-only, ops)</SectionHeading>
-            <Endpoint method="GET" path="/api/cases" host={CONSOLE_HOST} summary="List recent cases (admin view, all users)." query={[{ name: 'customerId', desc: 'Customer slug.' }, { name: 'limit', desc: 'Max rows.' }]} />
+            <Endpoint method="GET" path="/api/cases" host={CONSOLE_HOST} summary="List recent cases (admin view, all users)." query={[{ name: 'vendorId', desc: 'Customer slug.' }, { name: 'limit', desc: 'Max rows.' }]} />
             <Endpoint method="GET" path="/api/cases/{id}" host={CONSOLE_HOST} summary="Read case detail." />
             <Endpoint method="GET" path="/api/cases/{id}/messages" host={CONSOLE_HOST} summary="Read message log of a case (admin)." />
             <Endpoint method="GET" path="/api/cases/{id}/traces" host={CONSOLE_HOST} summary="Read engine trace events for a case (iteration-grouped)." />
@@ -729,7 +729,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               path="/api/admin/config-changed"
               host={CHAT_HOST}
               summary="Notify the chat engine that AgentConfig / Skills / Policies changed — invalidates in-process cache."
-              body={`{ "customerId": "default" }`}
+              body={`{ "vendorId": "default" }`}
               notes={[
                 'Also exists at the same path on the Console host; both invalidate their own process caches.',
                 'Console PUT endpoints already call this internally — external callers normally don&rsquo;t need to.',

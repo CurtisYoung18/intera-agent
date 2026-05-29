@@ -2,18 +2,18 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const CUSTOMER_ID = await getActiveCustomerId()
+  const VENDOR_ID = await getActiveVendorId()
   const { id } = await params
 
   try {
     const c = await prisma.case.findFirst({
-      where: { id, customerId: CUSTOMER_ID },
+      where: { id, vendorId: VENDOR_ID },
       include: {
         memory: true,
         humanTasks: { orderBy: { createdAt: 'desc' } },
@@ -37,12 +37,12 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const CUSTOMER_ID = await getActiveCustomerId()
+  const VENDOR_ID = await getActiveVendorId()
   const { id } = await params
 
   try {
     const existing = await prisma.case.findFirst({
-      where: { id, customerId: CUSTOMER_ID },
+      where: { id, vendorId: VENDOR_ID },
       select: { id: true },
     })
     if (!existing) {

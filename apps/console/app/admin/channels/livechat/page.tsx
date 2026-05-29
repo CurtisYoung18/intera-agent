@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { MessageCircle, Eye, EyeOff, Save, CheckCircle2, ExternalLink, Globe, Monitor, UserCheck, Copy, RotateCcw } from 'lucide-react'
 import { chatApiUrl } from '@/lib/chat-api'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -14,19 +14,41 @@ interface LiveChatConfig {
   transferGroupId?: number; transferMessage?: string
 }
 interface LiveChatGroup { id: number; name: string; agents_count: number }
-interface WidgetPayload {
-  kind: 'status_track' | 'propose_interaction' | 'request_user_input'; caseId: string
-  step?: { id: string; label: string; state: 'running' | 'done'; durationMs?: number }
-  options?: Array<{ id: string; label: string; description?: string; inputType?: 'none' | 'text'; inputPlaceholder?: string }>
-  fields?: Array<{ id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string }>
-}
+// ── Moment Presets ─────────────────────────────────────────────────────
 
-// ── Constants ──────────────────────────────────────────────────────────
+interface MomentPreset { label: string; fields: Array<{ id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string }>; title: string }
 
-const WIDGET_VIEWS: Array<{ label: string; payload: WidgetPayload }> = [
-  { label: 'Status Track', payload: { kind: 'status_track', caseId: 'demo-1', step: { id: 'verify', label: 'Verifying', state: 'running' } } },
-  { label: 'Propose', payload: { kind: 'propose_interaction', caseId: 'demo-2', options: [{ id: '1', label: 'Check order' }, { id: '2', label: 'Report issue' }] } },
-  { label: 'Form', payload: { kind: 'request_user_input', caseId: 'demo-3', fields: [{ id: 'name', type: 'text', label: 'Name', required: true }] } },
+const MOMENT_PRESETS: MomentPreset[] = [
+  {
+    label: 'Deposit Issue',
+    title: 'Deposit Information',
+    fields: [
+      { id: 'txnId', type: 'text', label: 'Transaction ID', required: true, placeholder: 'e.g. TX20260514001' },
+      { id: 'amount', type: 'number', label: 'Deposit Amount', required: true },
+      { id: 'paymentMethod', type: 'select', label: 'Payment Method', required: true, options: ['WeChat Pay', 'Alipay', 'Bank Transfer', 'bKash', 'Nagad'] },
+      { id: 'date', type: 'date', label: 'Deposit Date' },
+      { id: 'notes', type: 'textarea', label: 'Additional Notes', placeholder: 'Any error messages or screenshots...' },
+    ],
+  },
+  {
+    label: 'Account Issue',
+    title: 'Account Information',
+    fields: [
+      { id: 'memberId', type: 'text', label: 'Member ID', required: true, placeholder: 'e.g. JAYA113C88F' },
+      { id: 'issueType', type: 'select', label: 'Issue Type', required: true, options: ['Login Failed', 'Account Locked', 'Balance Discrepancy', 'Profile Update', 'Other'] },
+      { id: 'symptoms', type: 'textarea', label: 'Describe the Issue', required: true, placeholder: 'What happened? When did it start?' },
+    ],
+  },
+  {
+    label: 'KYC Form',
+    title: 'KYC Verification',
+    fields: [
+      { id: 'fullName', type: 'text', label: 'Full Name', required: true },
+      { id: 'idType', type: 'select', label: 'ID Type', required: true, options: ['NID', 'Passport', 'Driving License'] },
+      { id: 'idNumber', type: 'text', label: 'ID Number', required: true },
+      { id: 'document', type: 'file', label: 'Upload ID Document', required: true },
+    ],
+  },
 ]
 
 const TABS = [
@@ -87,14 +109,8 @@ const L = {
   transferMessageHint: { en: 'Sent to the customer before transferring. Leave empty for default system message.', zh: '转接前发送给客户的消息。留空则使用系统默认消息。' },
   // Rendering tab
   skillOverrides: { en: 'Skill Render Overrides', zh: '工具渲染覆盖' },
-  skillOverridesDesc: { en: 'Configure how each skill result appears in LiveChat. Open the Tools page and use the LiveChat Rendering tab per skill.', zh: '配置每个工具结果在 LiveChat 中的呈现方式。打开工具页面，每个工具可独立配置。' },
+  skillOverridesDesc: { en: 'Configure render hints per skill on the Tools page. Each tool can set card, carousel, quick_replies, or plain rendering for LiveChat.', zh: '在工具页面为每个工具配置 LiveChat 渲染方式（卡片、轮播、快捷回复、纯文本）。' },
   openTools: { en: 'Open Tools page', zh: '打开工具页面' },
-  channelDefaults: { en: 'Channel Defaults', zh: '渠道默认值' },
-  defaultRenderHint: { en: 'Default render style when a skill has no explicit renderHints.', zh: '工具未配置 renderHints 时的默认渲染样式。' },
-  card: { en: 'Card', zh: '卡片' },
-  quickReplies: { en: 'Quick Replies', zh: '快捷回复' },
-  plain: { en: 'Plain', zh: '纯文本' },
-  widgetPreview: { en: 'Widget Preview', zh: '组件预览' },
 } as const
 
 function useL() {
@@ -107,8 +123,7 @@ function useL() {
 function getConnectionState(config: LiveChatConfig, saveStatus: string): ConnectionState {
   if (!config.licenseId && !config.botAccessToken) return 'unconfigured'
   if (!config.enabled) return 'disabled'
-  if (saveStatus === 'saved') return 'connected'
-  return 'disabled'
+  return 'connected'
 }
 
 function stateColor(s: ConnectionState) {
@@ -128,32 +143,32 @@ export default function LiveChatDetailPage() {
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [showToken, setShowToken] = useState(false)
-  const [customerId, setCustomerId] = useState('')
+  const [vendorId, setCustomerId] = useState('')
   const [activeTab, setActiveTab] = useState<string>('connection')
-  const [selectedView, setSelectedView] = useState('')
+  const [selectedMomentLabel, setSelectedMomentLabel] = useState('')
+  const [momentPreviewUrl, setMomentPreviewUrl] = useState('')
   const [groups, setGroups] = useState<LiveChatGroup[]>([])
   const [copied, setCopied] = useState(false)
-  const widgetRef = useRef<HTMLIFrameElement>(null)
   const connState = getConnectionState(config, saveStatus)
 
   useEffect(() => {
-    fetch('/api/auth/session').then(r => r.json()).then((d: { customerId?: string }) => { if (d.customerId) setCustomerId(d.customerId) }).catch(() => {})
+    fetch('/api/auth/session').then(r => r.json()).then((d: { vendorId?: string }) => { if (d.vendorId) setCustomerId(d.vendorId) }).catch(() => {})
   }, [])
 
   useEffect(() => {
-    if (!customerId) return
+    if (!vendorId) return
     setLoading(true)
-    fetch(chatApiUrl(`/api/livechat/config?customerId=${encodeURIComponent(customerId)}`))
+    fetch(chatApiUrl(`/api/livechat/config?vendorId=${encodeURIComponent(vendorId)}`))
       .then(r => r.json()).then((data: LiveChatConfig) => { setConfig(data); setOrigConfig(data) }).catch(() => {}).finally(() => setLoading(false))
     // Fetch available groups for escalation tab
-    fetch(chatApiUrl(`/api/livechat/groups?customerId=${encodeURIComponent(customerId)}`))
+    fetch(chatApiUrl(`/api/livechat/groups?vendorId=${encodeURIComponent(vendorId)}`))
       .then(r => r.json()).then((d: { groups?: LiveChatGroup[] }) => { if (d.groups) setGroups(d.groups) }).catch(() => {})
-  }, [customerId])
+  }, [vendorId])
 
   const handleSave = async () => {
     setSaving(true); setSaveStatus('idle')
     try {
-      const res = await fetch(chatApiUrl('/api/livechat/config'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, customerId }) })
+      const res = await fetch(chatApiUrl('/api/livechat/config'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, vendorId }) })
       if (!res.ok) throw new Error('save failed')
       setSaveStatus('saved'); setOrigConfig({ ...config })
       setTimeout(() => setSaveStatus('idle'), 3000)
@@ -167,10 +182,16 @@ export default function LiveChatDetailPage() {
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
-  const previewWidget = (viewName: string) => {
-    setSelectedView(viewName)
-    const payload = WIDGET_VIEWS.find(v => v.label === viewName)?.payload
-    if (payload && widgetRef.current) widgetRef.current.contentWindow?.postMessage({ type: 'intera_widget_preview', payload }, '*')
+  const loadMomentPreset = (preset: MomentPreset) => {
+    setSelectedMomentLabel(preset.label)
+    const baseUrl = chatApiUrl('/livechat-widget')
+    const params = new URLSearchParams({
+      view: 'form',
+      caseId: 'demo',
+      title: preset.title,
+      fields: JSON.stringify(preset.fields),
+    })
+    setMomentPreviewUrl(`${baseUrl}?${params.toString()}`)
   }
 
   const hasChanges = JSON.stringify(config) !== JSON.stringify(origConfig)
@@ -179,7 +200,7 @@ export default function LiveChatDetailPage() {
 
   const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
-  const webhookUrl = `${process.env.NEXT_PUBLIC_CHAT_API_URL ?? ''}/api/livechat/webhook/${customerId}`
+  const webhookUrl = `${process.env.NEXT_PUBLIC_CHAT_API_URL ?? ''}/api/livechat/webhook/${vendorId}`
 
   return (
     <div className="p-8 max-w-5xl">
@@ -321,39 +342,36 @@ export default function LiveChatDetailPage() {
 
 {/* ── Rendering Tab ── */}
       {activeTab === 'rendering' && (
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 space-y-4">
+        <div className="space-y-6">
+          {/* Skill Render Hints */}
+          <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5">
             <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{l('skillOverrides')}</p>
-            <p className="text-[12px] text-[var(--fog)]">{l('skillOverridesDesc')}</p>
-            <a href="/admin/tools" className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80 mt-1">
+            <p className="text-[12px] text-[var(--fog)] mt-1">{l('skillOverridesDesc')}</p>
+            <a href="/admin/tools" className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80 mt-2">
               <ExternalLink className="w-3.5 h-3.5" /> {l('openTools')}
             </a>
-            <div className="border-t border-black/[0.05] pt-4 mt-2">
-              <p className="text-[11px] font-semibold text-[var(--mist)] mb-2">{l('channelDefaults')}</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(['card', 'quick_replies', 'plain'] as const).map(kind => (
-                  <label key={kind} className="flex items-center gap-2 p-2 rounded-lg border border-black/[0.06] text-[11px] text-[var(--mist)] cursor-pointer hover:border-indigo/20">
-                    <input type="radio" name="defaultKind" defaultChecked={kind === 'quick_replies'} className="accent-indigo" />
-                    {kind === 'card' ? l('card') : kind === 'quick_replies' ? l('quickReplies') : l('plain')}
-                  </label>
-                ))}
-              </div>
-              <p className="text-[10px] text-[var(--fog)] mt-1.5">{l('defaultRenderHint')}</p>
-            </div>
           </div>
+
+          {/* Moment Preview */}
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-black/[0.05]">
-              <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{l('widgetPreview')}</p>
+            <div className="px-5 py-3 border-b border-black/[0.05] flex items-center justify-between">
+              <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">Moment Preview</p>
+              <span className="text-[10px] text-[var(--fog)]/60">Form fields via URL params — same as webview button opens</span>
             </div>
             <div className="p-4">
-              <div className="flex gap-2 mb-3">
-                {WIDGET_VIEWS.map(v => (
-                  <button key={v.label} onClick={() => previewWidget(v.label)}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${selectedView === v.label ? 'border-indigo/30 bg-indigo/[0.06] text-indigo' : 'border-black/[0.06] text-[var(--fog)] hover:border-black/[0.1]'}`}>{v.label}</button>
+              <p className="text-[11px] text-[var(--fog)] mb-3">Click a preset to load the form Moment. Fields are passed as URL query params, matching how the renderer builds the webview button URL.</p>
+              <div className="flex gap-2 mb-3 flex-wrap">
+                {MOMENT_PRESETS.map(p => (
+                  <button key={p.label} onClick={() => loadMomentPreset(p)}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${selectedMomentLabel === p.label ? 'border-indigo/30 bg-indigo/[0.06] text-indigo' : 'border-black/[0.06] text-[var(--fog)] hover:border-black/[0.1]'}`}>{p.label}</button>
                 ))}
               </div>
-              <div className="bg-gray-50 border border-black/[0.06] rounded-xl overflow-hidden" style={{ height: 320 }}>
-                <iframe ref={widgetRef} src={chatApiUrl('/livechat-widget?preview=1')} className="w-full h-full border-0" title="Widget Preview" />
+              <div className="bg-gray-50 border border-black/[0.06] rounded-xl overflow-hidden" style={{ height: 420 }}>
+                {momentPreviewUrl ? (
+                  <iframe key={momentPreviewUrl} src={momentPreviewUrl} className="w-full h-full border-0" title="Moment Preview" />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-[12px] text-[var(--fog)]">Select a preset above to preview the form Moment</div>
+                )}
               </div>
             </div>
           </div>

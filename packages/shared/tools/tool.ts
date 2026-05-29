@@ -38,7 +38,7 @@ export interface SecretResolver {
 
 export interface ToolContext {
   caseId: string
-  customerId: string
+  vendorId: string
   signal: AbortSignal
   caseMemory?: CaseMemoryReader
   orchestrator?: OrchestratorRef

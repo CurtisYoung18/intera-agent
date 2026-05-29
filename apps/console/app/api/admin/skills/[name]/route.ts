@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 function isProtected(name: string): boolean {
@@ -23,8 +23,8 @@ export async function GET(
 ) {
   const { name } = await params
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
-    const skill = await prisma.skill.findUnique({ where: { customerId_name: { customerId: CUSTOMER_ID, name } } })
+    const VENDOR_ID = await getActiveVendorId()
+    const skill = await prisma.skill.findUnique({ where: { vendorId_name: { vendorId: VENDOR_ID, name } } })
     if (!skill) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ skill })
   } catch (err) {
@@ -38,7 +38,7 @@ export async function PUT(
 ) {
   const { name } = await params
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const body = await req.json()
 
     // Protected (System/Special) skills: reject all mutations except enabled toggle
@@ -59,7 +59,7 @@ export async function PUT(
       if (body[f] !== undefined) data[f] = typeof body[f] === 'string' ? body[f] : JSON.stringify(body[f])
     }
 
-    const skill = await prisma.skill.update({ where: { customerId_name: { customerId: CUSTOMER_ID, name } }, data })
+    const skill = await prisma.skill.update({ where: { vendorId_name: { vendorId: VENDOR_ID, name } }, data })
     return NextResponse.json({ skill })
   } catch (err) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
@@ -72,14 +72,14 @@ export async function DELETE(
 ) {
   const { name } = await params
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     if (isProtected(name)) {
       return NextResponse.json(
         { error: `Cannot delete protected skill "${name}"` },
         { status: 403 },
       )
     }
-    await prisma.skill.delete({ where: { customerId_name: { customerId: CUSTOMER_ID, name } } })
+    await prisma.skill.delete({ where: { vendorId_name: { vendorId: VENDOR_ID, name } } })
     return NextResponse.json({ success: true })
   } catch (err) {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

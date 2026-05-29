@@ -51,7 +51,7 @@ describe('DB integration tests (Railway PostgreSQL)', () => {
     it('upsertSession + getSession round-trip', async () => {
       const chatId = `${TEST_CHAT_ID}-session`
       await upsertSession({
-        chatId, customerId: TEST_CUSTOMER, userId: 'user-1',
+        chatId, vendorId: TEST_CUSTOMER, userId: 'user-1',
         caseId: 'case-1', state: 'idle', textBuffer: '',
       })
       const session = await getSession(chatId)
@@ -63,7 +63,7 @@ describe('DB integration tests (Railway PostgreSQL)', () => {
     it('updateSessionState changes bridgeState', async () => {
       const chatId = `${TEST_CHAT_ID}-state`
       await upsertSession({
-        chatId, customerId: TEST_CUSTOMER, userId: 'user-1',
+        chatId, vendorId: TEST_CUSTOMER, userId: 'user-1',
         caseId: 'case-2', state: 'idle', textBuffer: '',
       })
       await updateSessionState(chatId, 'thinking')
@@ -78,7 +78,7 @@ describe('DB integration tests (Railway PostgreSQL)', () => {
     it('closeSession archives the conversation', async () => {
       const chatId = `${TEST_CHAT_ID}-close`
       await upsertSession({
-        chatId, customerId: TEST_CUSTOMER, userId: 'user-1',
+        chatId, vendorId: TEST_CUSTOMER, userId: 'user-1',
         caseId: 'case-3', state: 'idle', textBuffer: '',
       })
       await closeSession(chatId, 'archived_by_agent')

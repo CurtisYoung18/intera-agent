@@ -19,10 +19,10 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const customerId = request.nextUrl.searchParams.get('customerId') ?? 'default'
-  const config = await getLiveChatConfig(customerId)
+  const vendorId = request.nextUrl.searchParams.get('vendorId') ?? 'default'
+  const config = await getLiveChatConfig(vendorId)
   if (!config) {
-    return json({ customerId, botAccessToken: '', licenseId: '', webhookSecret: '', showSkillStatus: true, enabled: false })
+    return json({ vendorId, botAccessToken: '', licenseId: '', webhookSecret: '', showSkillStatus: true, enabled: false })
   }
   return json({
     ...config,
@@ -35,26 +35,26 @@ export async function PUT(request: NextRequest) {
   let body: Record<string, unknown>
   try { body = await request.json() } catch { return json({ error: 'Invalid JSON' }, { status: 400 }) }
 
-  const { customerId, botAccessToken, licenseId, webhookSecret, region, authType, accountId, agentAccountId, showSkillStatus, enabled, transferGroupId, transferMessage } = body as {
-    customerId: string; botAccessToken: string; licenseId: string; webhookSecret?: string
+  const { vendorId, botAccessToken, licenseId, webhookSecret, region, authType, accountId, agentAccountId, showSkillStatus, enabled, transferGroupId, transferMessage } = body as {
+    vendorId: string; botAccessToken: string; licenseId: string; webhookSecret?: string
     region?: string; authType?: string; accountId?: string; agentAccountId?: string
     showSkillStatus: boolean; enabled: boolean
     transferGroupId?: number; transferMessage?: string
   }
 
-  if (!customerId) return json({ error: 'customerId required' }, { status: 400 })
+  if (!vendorId) return json({ error: 'vendorId required' }, { status: 400 })
 
   let tokenToSave = botAccessToken
   let secretToSave = webhookSecret ?? ''
   if (botAccessToken === '••••••••' || webhookSecret === '••••••••') {
     const existing = await prisma.liveChatConfig.findUnique({
-      where: { customerId }, select: { botAccessToken: true, webhookSecret: true },
+      where: { vendorId }, select: { botAccessToken: true, webhookSecret: true },
     })
     if (botAccessToken === '••••••••') tokenToSave = existing?.botAccessToken ?? ''
     if (webhookSecret === '••••••••') secretToSave = existing?.webhookSecret ?? ''
   }
 
-  await upsertLiveChatConfig(customerId, {
+  await upsertLiveChatConfig(vendorId, {
     botAccessToken: tokenToSave, licenseId: licenseId ?? '',
     webhookSecret: secretToSave,
     region: region ?? undefined,

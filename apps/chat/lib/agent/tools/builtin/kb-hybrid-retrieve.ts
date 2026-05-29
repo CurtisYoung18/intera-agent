@@ -58,7 +58,7 @@ export const kbHybridRetrieveTool: Tool<Input, unknown> = {
       // If a specific sourceName is requested, filter to that source only;
       // otherwise fetch all enabled sources for the default customer.
       const where: Record<string, unknown> = {
-        customerId: 'default',
+        vendorId: 'default',
         enabled: true,
       }
       if (input.sourceName) {
@@ -70,14 +70,14 @@ export const kbHybridRetrieveTool: Tool<Input, unknown> = {
       if (sources.length > 0) {
         const allGroupIds: string[] = []
         let maxTopK = 5
-        let avgEmbeddingRate = 0.9
+        let embeddingRateSum = 0
         let minDocCorrelation: number | undefined
 
         for (const s of sources) {
           const ids = JSON.parse(s.groupIds) as string[]
           allGroupIds.push(...ids)
           if (s.topK > maxTopK) maxTopK = s.topK
-          avgEmbeddingRate = s.embeddingRate
+          embeddingRateSum += s.embeddingRate
           if (s.docCorrelation != null) {
             if (minDocCorrelation == null || s.docCorrelation < minDocCorrelation) {
               minDocCorrelation = s.docCorrelation
@@ -85,6 +85,7 @@ export const kbHybridRetrieveTool: Tool<Input, unknown> = {
           }
         }
 
+        const avgEmbeddingRate = embeddingRateSum / sources.length
         body = {
           prompt: input.query,
           top_k: (input.topK as number) ?? maxTopK,

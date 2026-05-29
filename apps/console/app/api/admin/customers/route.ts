@@ -14,14 +14,14 @@ export async function GET() {
   try {
     // Auto-seed/update built-in customers
     for (const c of BUILT_IN_CUSTOMERS) {
-      await prisma.customer.upsert({
+      await prisma.vendor.upsert({
         where: { id: c.id },
         update: { name: c.name, password: c.password },
         create: c,
       })
     }
 
-    const customers = await prisma.customer.findMany({
+    const customers = await prisma.vendor.findMany({
       select: {
         id: true,
         name: true,

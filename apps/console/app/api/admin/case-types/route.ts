@@ -1,17 +1,17 @@
 // GET + POST /api/admin/case-types
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat, ensureDefaultCustomer } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat, ensureDefaultVendor } from '@intera/shared/prisma'
 import { DEFAULT_CASE_TYPES } from '@intera/shared/defaults'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     await ensureSqliteSchemaCompat(prisma)
     let types = await prisma.caseType.findMany({
-      where: { customerId: CUSTOMER_ID },
+      where: { vendorId: VENDOR_ID },
       orderBy: { type: 'asc' },
     })
 
@@ -20,13 +20,13 @@ export async function GET() {
     const missing = DEFAULT_CASE_TYPES.filter((ct) => !existingTypes.has(ct.type))
 
     if (missing.length > 0) {
-      await ensureDefaultCustomer(CUSTOMER_ID)
+      await ensureDefaultVendor(VENDOR_ID)
       const { DEFAULT_STAGE_CONFIGS, DEFAULT_ORCHESTRATOR_CONFIG } = await import('@intera/shared/defaults')
       for (const ct of missing) {
         const stageConfigs = (DEFAULT_STAGE_CONFIGS as Record<string, unknown>)[ct.type] || null
         await prisma.caseType.create({
           data: {
-            customerId: CUSTOMER_ID,
+            vendorId: VENDOR_ID,
             type: ct.type,
             displayName: ct.displayName,
             description: ct.description,
@@ -43,7 +43,7 @@ export async function GET() {
         })
       }
       types = await prisma.caseType.findMany({
-        where: { customerId: CUSTOMER_ID },
+        where: { vendorId: VENDOR_ID },
         orderBy: { type: 'asc' },
       })
     }
@@ -56,13 +56,13 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     await ensureSqliteSchemaCompat(prisma)
-    await ensureDefaultCustomer(CUSTOMER_ID)
+    await ensureDefaultVendor(VENDOR_ID)
     const body = await req.json()
     const ct = await prisma.caseType.create({
       data: {
-        customerId: CUSTOMER_ID,
+        vendorId: VENDOR_ID,
         type: body.type,
         displayName: body.displayName || body.type,
         description: body.description || null,

@@ -1,24 +1,24 @@
 // GET + PUT /api/admin/agent — Agent config CRUD (upsert)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat, ensureDefaultCustomer } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat, ensureDefaultVendor } from '@intera/shared/prisma'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     await ensureSqliteSchemaCompat(prisma)
-    let config = await prisma.agentConfig.findUnique({ where: { customerId: CUSTOMER_ID } })
+    let config = await prisma.agentConfig.findUnique({ where: { vendorId: VENDOR_ID } })
 
     // Lazy init: create from defaults if DB is empty
     if (!config) {
-      await ensureDefaultCustomer(CUSTOMER_ID)
+      await ensureDefaultVendor(VENDOR_ID)
       config = await prisma.agentConfig.create({
         data: {
-          customerId: CUSTOMER_ID,
+          vendorId: VENDOR_ID,
           systemPrompt: DEFAULT_SYSTEM_PROMPT,
           model: 'MiniMax-M2.7-highspeed',
           temperature: 0.5,
@@ -44,7 +44,7 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     await ensureSqliteSchemaCompat(prisma)
     const body = await req.json()
     const {
@@ -89,12 +89,12 @@ export async function PUT(req: NextRequest) {
     }
     if (knowledgeRetrieval !== undefined) data.knowledgeRetrieval = typeof knowledgeRetrieval === 'string' ? knowledgeRetrieval : JSON.stringify(knowledgeRetrieval)
 
-    await ensureDefaultCustomer(CUSTOMER_ID)
+    await ensureDefaultVendor(VENDOR_ID)
     const config = await prisma.agentConfig.upsert({
-      where: { customerId: CUSTOMER_ID },
+      where: { vendorId: VENDOR_ID },
       update: data,
       create: {
-        customerId: CUSTOMER_ID,
+        vendorId: VENDOR_ID,
         systemPrompt: systemPrompt || '',
         model: model || 'MiniMax-M2.7-highspeed',
         temperature: temperature ?? 0.5,

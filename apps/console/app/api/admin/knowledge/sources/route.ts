@@ -1,15 +1,15 @@
 // GET + POST /api/admin/knowledge/sources — List and create knowledge sources
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultCustomer } from '@intera/shared/prisma'
+import { prisma, ensureDefaultVendor } from '@intera/shared/prisma'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const sources = await prisma.knowledgeSource.findMany({
-      where: { customerId: CUSTOMER_ID },
+      where: { vendorId: VENDOR_ID },
       orderBy: { name: 'asc' },
     })
     return NextResponse.json({ sources })
@@ -21,13 +21,13 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
-    await ensureDefaultCustomer(CUSTOMER_ID)
+    const VENDOR_ID = await getActiveVendorId()
+    await ensureDefaultVendor(VENDOR_ID)
     const body = await req.json()
 
     const source = await prisma.knowledgeSource.create({
       data: {
-        customerId: CUSTOMER_ID,
+        vendorId: VENDOR_ID,
         name: body.name,
         description: body.description ?? null,
         groupIds: typeof body.groupIds === 'string' ? body.groupIds : JSON.stringify(body.groupIds || []),

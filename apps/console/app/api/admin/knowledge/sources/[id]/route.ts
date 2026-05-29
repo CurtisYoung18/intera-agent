@@ -3,17 +3,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-import { getActiveCustomerId } from '@/lib/auth'
+import { getActiveVendorId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const { id } = await params
     const source = await prisma.knowledgeSource.findFirst({
-      where: { id, customerId: CUSTOMER_ID },
+      where: { id, vendorId: VENDOR_ID },
     })
     if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ source })
@@ -28,7 +28,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const { id } = await params
     const body = await req.json()
 
@@ -49,7 +49,7 @@ export async function PUT(
     if (body.enabled !== undefined) updateData.enabled = body.enabled
 
     const source = await prisma.knowledgeSource.updateMany({
-      where: { id, customerId: CUSTOMER_ID },
+      where: { id, vendorId: VENDOR_ID },
       data: updateData,
     })
 
@@ -70,10 +70,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const CUSTOMER_ID = await getActiveCustomerId()
+    const VENDOR_ID = await getActiveVendorId()
     const { id } = await params
     const result = await prisma.knowledgeSource.deleteMany({
-      where: { id, customerId: CUSTOMER_ID },
+      where: { id, vendorId: VENDOR_ID },
     })
     if (result.count === 0) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })

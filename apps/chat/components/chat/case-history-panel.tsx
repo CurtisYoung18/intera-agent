@@ -34,13 +34,13 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function CaseHistoryPanel({
-  customerId,
+  vendorId,
   userId,
   chatId,
   onSelectCase,
   activeCaseId,
 }: {
-  customerId: string
+  vendorId: string
   userId: string
   chatId: string
   onSelectCase: (caseId: string) => void
@@ -55,7 +55,7 @@ export default function CaseHistoryPanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/cases?userId=${encodeURIComponent(userId)}&customerId=${encodeURIComponent(customerId)}&chatId=${encodeURIComponent(chatId)}&limit=20`)
+      const res = await fetch(`/api/cases?userId=${encodeURIComponent(userId)}&vendorId=${encodeURIComponent(vendorId)}&chatId=${encodeURIComponent(chatId)}&limit=20`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setCases(data.cases || [])
@@ -64,7 +64,7 @@ export default function CaseHistoryPanel({
     } finally {
       setLoading(false)
     }
-  }, [customerId, userId, chatId])
+  }, [vendorId, userId, chatId])
 
   useEffect(() => {
     if (open) fetchCases()

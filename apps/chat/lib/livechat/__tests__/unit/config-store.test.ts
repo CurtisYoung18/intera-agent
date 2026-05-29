@@ -26,7 +26,7 @@ describe('config-store', () => {
 
     it('returns config when found', async () => {
       mockFindUnique.mockResolvedValue({
-        customerId: 'cust-b',
+        vendorId: 'cust-b',
         botAccessToken: 'tok123',
         licenseId: 'lic456',
         showSkillStatus: true,
@@ -34,7 +34,7 @@ describe('config-store', () => {
       })
       const config = await getLiveChatConfig('cust-b')
       expect(config).toEqual({
-        customerId: 'cust-b',
+        vendorId: 'cust-b',
         botAccessToken: 'tok123',
         licenseId: 'lic456',
         showSkillStatus: true,

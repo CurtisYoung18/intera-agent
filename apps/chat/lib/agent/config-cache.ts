@@ -8,24 +8,24 @@ const TTL_MS = 30_000
 
 const cache = new Map<string, { config: AgentConfigData; timestamp: number }>()
 
-export function getCachedConfig(customerId: string): AgentConfigData | null {
-  const entry = cache.get(customerId)
+export function getCachedConfig(vendorId: string): AgentConfigData | null {
+  const entry = cache.get(vendorId)
   if (!entry) return null
   if (Date.now() - entry.timestamp > TTL_MS) {
-    cache.delete(customerId)
+    cache.delete(vendorId)
     return null
   }
   return entry.config
 }
 
-export function setCachedConfig(customerId: string, config: AgentConfigData): void {
-  cache.set(customerId, { config, timestamp: Date.now() })
+export function setCachedConfig(vendorId: string, config: AgentConfigData): void {
+  cache.set(vendorId, { config, timestamp: Date.now() })
 }
 
-export function clearConfigCache(customerId?: string): void {
-  if (customerId) {
-    cache.delete(customerId)
-    clearCaseTypeCache(customerId)
+export function clearConfigCache(vendorId?: string): void {
+  if (vendorId) {
+    cache.delete(vendorId)
+    clearCaseTypeCache(vendorId)
   } else {
     cache.clear()
     clearCaseTypeCache()
@@ -45,23 +45,23 @@ export interface CachedCaseType {
 
 const caseTypeCache = new Map<string, { types: CachedCaseType[]; timestamp: number }>()
 
-export function getCachedCaseTypes(customerId: string): CachedCaseType[] | null {
-  const entry = caseTypeCache.get(customerId)
+export function getCachedCaseTypes(vendorId: string): CachedCaseType[] | null {
+  const entry = caseTypeCache.get(vendorId)
   if (!entry) return null
   if (Date.now() - entry.timestamp > TTL_MS) {
-    caseTypeCache.delete(customerId)
+    caseTypeCache.delete(vendorId)
     return null
   }
   return entry.types
 }
 
-export function setCachedCaseTypes(customerId: string, types: CachedCaseType[]): void {
-  caseTypeCache.set(customerId, { types, timestamp: Date.now() })
+export function setCachedCaseTypes(vendorId: string, types: CachedCaseType[]): void {
+  caseTypeCache.set(vendorId, { types, timestamp: Date.now() })
 }
 
-export function clearCaseTypeCache(customerId?: string): void {
-  if (customerId) {
-    caseTypeCache.delete(customerId)
+export function clearCaseTypeCache(vendorId?: string): void {
+  if (vendorId) {
+    caseTypeCache.delete(vendorId)
   } else {
     caseTypeCache.clear()
   }

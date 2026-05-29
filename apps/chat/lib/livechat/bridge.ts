@@ -9,6 +9,7 @@ import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 import {
   sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
   sendImage, sendSystemMessage, setTypingIndicator, transferChat, updateChatProperties,
+  deactivateChat,
 } from './livechat-api'
 import { enqueueRetry } from './retry-queue'
 import { markChannelUnhealthy, markChannelHealthy } from './channel-health'
@@ -39,8 +40,20 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator
 
   try {
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+      let done = false
+      let value: Uint8Array | undefined
+      try {
+        const result = await reader.read()
+        done = result.done ?? false
+        value = result.value
+      } catch (e) {
+        // Stream cancelled/terminated after server finished writing — normal end
+        if ((e as Error).name === 'TypeError' && (e as Error).message === 'terminated') {
+          break
+        }
+        throw e
+      }
+      if (done || !value) break
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
@@ -62,7 +75,7 @@ function buildMessagesBody(
   event: IncomingEvent,
   session: BridgeSessionRow,
 ): Record<string, unknown> {
-  const base = { customerId: session.customerId, userId: session.userId, chatId: session.chatId }
+  const base = { vendorId: session.vendorId, userId: session.userId, chatId: session.chatId, caseId: session.caseId }
 
   switch (event.type) {
     case 'form_submit':
@@ -105,17 +118,33 @@ async function sendFailureNotice(
 }
 
 export async function handleIncomingEvent(
-  chatId: string, customerId: string, userId: string,
+  chatId: string, vendorId: string, userId: string,
   event: IncomingEvent, config: LiveChatConfig,
 ): Promise<void> {
+  // Skip system-generated messages that would waste agent tokens
+  if (event.type === 'message' && (event as { text?: string }).text) {
+    const text = (event as { text?: string }).text ?? ''
+    if (/chat is idle|chat has been|chat closed|chat archived|archived the chat|deactivated/i.test(text)) {
+      console.log('[Bridge] Skipping system message, deactivating:', chatId)
+      deactivateChat(chatId, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId)
+        .catch(e => console.error('[Bridge] deactivateChat failed:', e))
+      await closeSession(chatId, 'idle_timeout')
+      // Reset session for fresh start on reopen
+      await upsertSession({ chatId, vendorId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
+      return
+    }
+  }
+
   if (event.type === 'chat_archived') {
     await closeSession(chatId, 'archived_by_agent')
+    // Reset session so reopen starts fresh (no old case context)
+    await upsertSession({ chatId, vendorId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
     return
   }
 
   let session = await getSession(chatId)
   if (!session) {
-    session = { chatId, customerId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
+    session = { chatId, vendorId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
     await upsertSession(session)
     // Claim ownership on first touch (§2.2)
     updateChatProperties(chatId, { owner: 'intera' }, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
@@ -141,7 +170,7 @@ export async function handleIncomingEvent(
   const p = lcParams(config)
 
   // Typing indicator on
-  setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
+  setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(e => console.error('[Bridge] setTyping on failed:', e))
 
   const body = buildMessagesBody(event, session)
 
@@ -179,22 +208,25 @@ export async function handleIncomingEvent(
   } catch (err) {
     console.error('[Bridge] Failed to call /api/messages:', err)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
-    await enqueueRetry(chatId, customerId, userId, event, String(err))
+    await enqueueRetry(chatId, vendorId, userId, event, String(err))
     await updateSessionState(chatId, 'idle')
     setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return
   }
 
   if (!response.ok || !response.body) {
+    if (response.status === 202) {
+      // Message queued — an existing agent loop will pick it up
+      console.log('[Bridge] Message queued for active loop:', chatId)
+      await updateSessionState(chatId, 'idle')
+      return
+    }
     console.error('[Bridge] /api/messages returned', response.status)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
     await updateSessionState(chatId, 'idle')
     setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return
   }
-
-  // Typing indicator off when first text_delta arrives (handled in SSE loop)
-  let typingStopped = false
 
   const livechatRenderer = new LiveChatRenderer(config.showSkillStatus)
   const binding: ChannelBindingConfig = {
@@ -203,18 +235,12 @@ export async function handleIncomingEvent(
     credentials: { botAccessToken: config.botAccessToken, licenseId: config.licenseId },
   }
   const renderCtx: RenderContext = {
-    caseId: session.caseId, customerId, sessionId: chatId, binding,
+    caseId: session.caseId, vendorId, sessionId: chatId, binding,
   }
 
   let streamTruncated = true
   try {
     for await (const sseEvent of parseSSEStream(response.body)) {
-      // Stop typing on first text content
-      if (!typingStopped && (sseEvent.type === 'text_delta' || sseEvent.type === 'message_stop')) {
-        typingStopped = true
-        setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
-      }
-
       const actions = livechatRenderer.render(sseEvent, renderCtx)
 
       for (const action of actions) {
@@ -264,7 +290,7 @@ export async function handleIncomingEvent(
             case 'flush_text': {
               const text = await flushTextBuffer(chatId)
               if (text.trim()) {
-                await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+                await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(e => console.error('[Bridge] sendText failed:', e))
               }
               break
             }
@@ -273,13 +299,19 @@ export async function handleIncomingEvent(
               break
           }
         } catch (err) {
-          const code = (err as { code?: string })?.code
-          if (code === 'TOKEN_EXPIRED') {
-            await markChannelUnhealthy(customerId, 'livechat', 'token_expired', String(err))
-          } else if (code === 'NOT_IN_CHAT') {
-            await markChannelUnhealthy(customerId, 'livechat', 'token_expired', String(err))
-          } else if (code === 'RATE_LIMITED') {
-            await markChannelUnhealthy(customerId, 'livechat', 'rate_limited', String(err))
+          const e = err as Error & { code?: string }
+          const msg = e.message ?? ''
+          if (e.code === 'TOKEN_EXPIRED') {
+            await markChannelUnhealthy(vendorId, 'livechat', 'token_expired', String(err))
+          } else if (e.code === 'NOT_IN_CHAT') {
+            await markChannelUnhealthy(vendorId, 'livechat', 'token_expired', String(err))
+          } else if (e.code === 'RATE_LIMITED') {
+            await markChannelUnhealthy(vendorId, 'livechat', 'rate_limited', String(err))
+          } else if (msg.includes('Chat not active')) {
+            // Chat has been archived — don't retry, just close the session
+            await closeSession(chatId, 'archived_externally')
+            console.warn('[Bridge] Chat archived externally:', chatId)
+            return // breaks out of the SSE loop
           }
           console.error('[Bridge] action failed:', action.type, err)
         }
@@ -288,17 +320,23 @@ export async function handleIncomingEvent(
     streamTruncated = false
   } catch (err) {
     console.error('[Bridge] SSE stream error:', err)
-    await sendFailureNotice(chatId, config, 'stream_truncated')
-    await enqueueRetry(chatId, customerId, userId, event, String(err))
-  } finally {
-    // Ensure typing is off
-    if (!typingStopped) {
-      setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
+    // Flush any buffered text first — the agent may have produced a (partial) response
+    const buffered = await flushTextBuffer(chatId)
+    if (buffered.trim()) {
+      await sendTextMessage(chatId, buffered, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
+      // Response was sent — don't retry; the "terminated" was just the stream closing after message_stop
+      streamTruncated = false
+    } else {
+      await sendFailureNotice(chatId, config, 'stream_truncated')
+      await enqueueRetry(chatId, vendorId, userId, event, String(err))
     }
+  } finally {
+    // Ensure typing indicator is off
+    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     await updateSessionState(chatId, 'idle')
   }
 
   if (!streamTruncated) {
-    await markChannelHealthy(customerId, 'livechat').catch(() => {})
+    await markChannelHealthy(vendorId, 'livechat').catch(() => {})
   }
 }

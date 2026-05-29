@@ -8,7 +8,7 @@ import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 function makeCtx(overrides?: Partial<RenderContext>): RenderContext {
   return {
     caseId: 'case-1',
-    customerId: 'cust-1',
+    vendorId: 'cust-1',
     sessionId: 'chat-1',
     binding: { channel: 'livechat', enabled: true, credentials: {} } as ChannelBindingConfig,
     ...overrides,
@@ -39,12 +39,10 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('tool_executing', () => {
-    it('returns widget payload when showSkillStatus=true', () => {
+    it('returns noop (typing indicator provides animation)', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('tool_executing', { name: 'query_order', status: 'executing' }), makeCtx())
-      const a = actions[0]!
-      expect(a.type).toBe('send_widget_payload')
-      expect((a as { payload: { kind: string } }).payload.kind).toBe('status_track')
+      expect(actions[0]!.type).toBe('noop')
     })
 
     it('returns noop when showSkillStatus=false', () => {
@@ -55,13 +53,12 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('skill_result', () => {
-    it('returns widget payload for done skill', () => {
+    it('returns send_card for done skill', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('skill_result', { name: 'query_order', status: 'completed', result: {} }), makeCtx())
       const a = actions[0]!
-      expect(a.type).toBe('send_widget_payload')
-      const step = (a as { payload: { step: { state: string } } }).payload.step!
-      expect(step.state).toBe('done')
+      expect(a.type).toBe('send_card')
+      expect((a as { type: 'send_card'; card: { title: string } }).card.title).toContain('query order')
     })
 
     it('returns send_card when renderHints.livechat has card hint', () => {
@@ -98,35 +95,18 @@ describe('LiveChatRenderer', () => {
       expect(actions[0]!.type).toBe('send_carousel')
     })
 
-    it('returns skill_render widget for iframe hint', () => {
+    it('falls back to send_card for unknown hint kind', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('skill_result', {
         name: 'query_order',
         status: 'completed',
-        result: { steps: [{ label: 'Order placed', timestamp: '2024-01-01' }] },
+        result: { steps: [{ label: 'Order placed' }] },
         renderHints: {
           livechat: { kind: 'iframe', template: 'order_timeline' },
         },
       }), makeCtx())
-      const a = actions[0]!
-      expect(a.type).toBe('send_widget_payload')
-      const payload = (a as { payload: { kind: string; template: string; data: unknown } }).payload
-      expect(payload.kind).toBe('skill_render')
-      expect(payload.template).toBe('order_timeline')
-    })
-
-    it('returns skill_render with dataField subset when specified', () => {
-      const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('skill_result', {
-        name: 'query_order',
-        status: 'completed',
-        result: { timeline: { steps: [{ label: 'Step 1' }] } },
-        renderHints: {
-          livechat: { kind: 'iframe', template: 'order_timeline', dataField: '$.timeline.steps' },
-        },
-      }), makeCtx())
-      const payload = (actions[0] as { payload: { data: unknown } }).payload
-      expect(payload.data).toEqual([{ label: 'Step 1' }])
+      // iframe hint kind is not a LivechatRenderHint, falls back to card
+      expect(actions[0]!.type).toBe('send_card')
     })
 
     it('returns noop for skill_result without renderHints when showSkillStatus=false', () => {
@@ -137,22 +117,25 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('interaction_proposed', () => {
-    it('returns propose_interaction widget', () => {
+    it('returns send_quick_replies', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('interaction_proposed', { options: [{ id: 'a', label: 'A' }] }), makeCtx())
       const a = actions[0]!
-      expect(a.type).toBe('send_widget_payload')
-      expect((a as { payload: { kind: string } }).payload.kind).toBe('propose_interaction')
+      expect(a.type).toBe('send_quick_replies')
+      expect((a as { type: 'send_quick_replies'; options: Array<{ id: string }> }).options[0]!.id).toBe('a')
     })
   })
 
   describe('form_request', () => {
-    it('returns request_user_input widget', () => {
+    it('returns send_card with webview button for Moments', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('form_request', { fields: [{ id: 'name', type: 'text', label: 'Name' }] }), makeCtx())
       const a = actions[0]!
-      expect(a.type).toBe('send_widget_payload')
-      expect((a as { payload: { kind: string } }).payload.kind).toBe('request_user_input')
+      expect(a.type).toBe('send_card')
+      const card = (a as { type: 'send_card'; card: { title: string; buttons: Array<{ type: string; url: string }> } }).card
+      expect(card.title).toBe('Information Required')
+      expect(card.buttons[0]!.type).toBe('webview')
+      expect(card.buttons[0]!.url).toContain('view=form')
     })
   })
 

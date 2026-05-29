@@ -149,12 +149,12 @@ export default function ConsoleSidebar() {
     }
   }
 
-  const doSwitch = async (customerId: string, pwd?: string) => {
+  const doSwitch = async (vendorId: string, pwd?: string) => {
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, password: pwd || '' }),
+        body: JSON.stringify({ vendorId, password: pwd || '' }),
       })
       const data = await res.json()
       if (!res.ok) {
