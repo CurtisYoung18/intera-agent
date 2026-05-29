@@ -13,7 +13,7 @@ import {
 } from './livechat-api'
 import { enqueueRetry } from './retry-queue'
 import { markChannelUnhealthy, markChannelHealthy } from './channel-health'
-import { downloadAndEncode } from './image-utils'
+import { downloadAndEncode, isSupportedImageType } from './image-utils'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent } from '@intera/shared/types'
 
@@ -85,7 +85,7 @@ function buildMessagesBody(
     case 'attachment':
       return {
         ...base,
-        message: `[用户上传文件] ${event.attachment.filename} (${event.attachment.contentType})`,
+        message: `[File upload] ${event.attachment.filename} (${event.attachment.contentType})`,
       }
     case 'postback': {
       const colonIdx = event.postbackId.indexOf(':')
@@ -94,7 +94,7 @@ function buildMessagesBody(
       return { ...base, interactionResult: { caseId: session.caseId, optionId, input } }
     }
     case 'chat_archived':
-      return { ...base, message: '[会话已归档]' }
+      return { ...base, message: '[Chat archived]' }
     default: {
       const text = (event.text ?? '').trim()
       if (!text) {
@@ -110,9 +110,9 @@ async function sendFailureNotice(
   chatId: string, config: LiveChatConfig, reason: 'engine_unreachable' | 'stream_truncated' | 'action_failed',
 ): Promise<void> {
   const msg = {
-    engine_unreachable: '抱歉，系统暂时无法处理您的请求。我们正在恢复中，请稍后再试。',
-    stream_truncated: '抱歉，回复中断。请重新发送您的问题。',
-    action_failed: '抱歉，出现技术问题，已记录。如长时间无响应可联系人工。',
+    engine_unreachable: 'Service is temporarily unavailable. Our systems are recovering — please try again shortly.',
+    stream_truncated: 'Sorry, the response was interrupted. Please resend your message.',
+    action_failed: 'A technical issue occurred and has been logged. If you do not receive a response soon, please contact support.',
   }[reason]
   await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
 }
@@ -180,17 +180,27 @@ export async function handleIncomingEvent(
     return
   }
 
-  // For attachment events, download and encode image for multimodal
+  // For attachment events, download and encode image for multimodal.
+  // BUG-A: Only supported image types are sent as image blocks; non-image
+  // attachments get a text-only fallback so the multimodal API doesn't reject.
   let contentBlocks: ContentBlock[] | undefined
   if (event.type === 'attachment') {
-    try {
-      const imageData = await downloadAndEncode(event.attachment.url)
-      contentBlocks = [
-        { type: 'text', text: `用户上传了图片: ${event.attachment.filename}` },
-        { type: 'image', source: { type: 'base64', media_type: event.attachment.contentType, data: imageData } },
-      ]
-    } catch (err) {
-      console.error('[Bridge] Failed to download attachment:', err)
+    const attachContentType = event.attachment.contentType
+    if (isSupportedImageType(attachContentType)) {
+      try {
+        const result = await downloadAndEncode(event.attachment.url)
+        contentBlocks = [
+          { type: 'text', text: `Customer uploaded image: ${event.attachment.filename}` },
+          { type: 'image', source: { type: 'base64', media_type: result.contentType, data: result.data } },
+        ]
+      } catch (err) {
+        console.error('[Bridge] Failed to download image attachment:', err)
+        ;(body as Record<string, unknown>).message = `[Image download failed] ${event.attachment.filename}`
+      }
+    } else {
+      // Non-image file: don't try to construct an image block
+      const typeLabel = attachContentType || 'unknown type'
+      ;(body as Record<string, unknown>).message = `[File upload] ${event.attachment.filename} (${typeLabel})`
     }
   }
 
@@ -214,13 +224,9 @@ export async function handleIncomingEvent(
     return
   }
 
+  // BUG-D: /api/messages never returns 202 — queued messages flow through SSE
+  // with message_stop{reason:'queued'}. Dead branch removed.
   if (!response.ok || !response.body) {
-    if (response.status === 202) {
-      // Message queued — an existing agent loop will pick it up
-      console.log('[Bridge] Message queued for active loop:', chatId)
-      await updateSessionState(chatId, 'idle')
-      return
-    }
     console.error('[Bridge] /api/messages returned', response.status)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
     await updateSessionState(chatId, 'idle')

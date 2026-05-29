@@ -105,9 +105,9 @@ async function sendToLiveChat(type: string, properties: Record<string, unknown>)
       if (type === 'intera_form_submit') {
         const answers = properties.answers as Record<string, string> ?? {}
         const lines = Object.entries(answers).map(([k, v]) => `${k}: ${v}`).join(', ')
-        await sdk.sendMessage({ text: `[表单提交] ${lines}` })
+        await sdk.sendMessage({ text: `[Form submitted] ${lines}` })
       } else if (type === 'intera_interaction_submit') {
-        await sdk.sendMessage({ text: `[选择] ${properties.optionId as string}` })
+        await sdk.sendMessage({ text: `[Selected] ${properties.optionId as string}` })
       }
       sdk.close()
     } catch (e) {
@@ -124,7 +124,7 @@ function StatusTrack({ steps }: { steps: StatusTrackStep[] }) {
   return (
     <div className="p-3 space-y-2">
       <p className="text-[10px] uppercase tracking-widest text-indigo-400 font-semibold mb-3">
-        Intera 处理中
+        Intera Processing
       </p>
       <AnimatePresence initial={false}>
         {steps.map((step) => (
@@ -155,7 +155,7 @@ function StatusTrack({ steps }: { steps: StatusTrackStep[] }) {
               </span>
             )}
             {step.state === 'running' && (
-              <span className="text-[10px] text-indigo-400 flex-shrink-0">进行中</span>
+              <span className="text-[10px] text-indigo-400 flex-shrink-0">Running</span>
             )}
           </motion.div>
         ))}
@@ -205,7 +205,7 @@ function OptionList({
             <div className="px-3 pb-2.5 space-y-2 border-t border-gray-50">
               <input
                 type="text"
-                placeholder={opt.inputPlaceholder ?? '请输入…'}
+                placeholder={opt.inputPlaceholder ?? 'Enter...'}
                 value={textInputs[opt.id] ?? ''}
                 onChange={(e) => setTextInputs(prev => ({ ...prev, [opt.id]: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg outline-none focus:border-indigo-300"
@@ -215,7 +215,7 @@ function OptionList({
                 disabled={!(textInputs[opt.id] ?? '').trim()}
                 className="w-full py-1.5 text-[12px] font-semibold text-white bg-indigo-500 rounded-lg disabled:opacity-40"
               >
-                提交
+                Submit
               </button>
             </div>
           )}
@@ -269,7 +269,7 @@ function FormCard({
           className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 space-y-3"
           style={{ backfaceVisibility: 'hidden' } as React.CSSProperties}
         >
-          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">请填写信息</p>
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Please fill in</p>
           {fields.map((field) => (
             <div key={field.id} className="space-y-1">
               <label className="block text-[12px] font-medium text-gray-700">
@@ -281,7 +281,7 @@ function FormCard({
                   onChange={(e) => set(field.id, e.target.value)}
                   className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg bg-white"
                 >
-                  <option value="">请选择…</option>
+                  <option value="">Select...</option>
                   {(field.options ?? []).map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
@@ -310,7 +310,7 @@ function FormCard({
             disabled={!isValid || submitting}
             className="w-full py-2 text-[13px] font-semibold text-white bg-indigo-500 rounded-xl disabled:opacity-40"
           >
-            提交
+            Submit
           </button>
         </div>
 
@@ -322,7 +322,7 @@ function FormCard({
           <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-[13px] font-semibold">已提交，请稍候…</p>
+          <p className="text-[13px] font-semibold">Submitted, please wait...</p>
         </div>
       </div>
     </div>

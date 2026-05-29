@@ -150,14 +150,39 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // RC5: incoming_chat — send welcome; session is created by first message's bridge
+  // BUG-E: incoming_chat carries the customer's first message in thread.events.
   if (action === 'incoming_chat') {
     const p = { region: config.region, authType: config.authType, accountId: config.accountId }
-    sendTextMessage(
-      chatId, '您好，我是智能客服，请描述您遇到的问题～',
-      config.botAccessToken, config.licenseId,
-      p.region, p.authType, p.accountId,
-    ).catch(err => console.error('[Webhook] incoming_chat welcome error:', err))
+
+    const chat = (payload.chat ?? {}) as Record<string, unknown>
+    const thread = (chat.thread ?? {}) as Record<string, unknown>
+    const threadEvents = (thread.events ?? []) as Array<Record<string, unknown>>
+
+    const customerMessages = threadEvents.filter((e) => {
+      if (e.type !== 'message') return false
+      const text = (e.text as string) || ''
+      if (!text.trim()) return false
+      if (config.agentAccountId && e.author_id === config.agentAccountId) return false
+      return true
+    })
+
+    if (customerMessages.length === 0) {
+      sendTextMessage(
+        chatId, 'Hello! I\'m an AI assistant. How can I help you today?',
+        config.botAccessToken, config.licenseId,
+        p.region, p.authType, p.accountId,
+      ).catch(err => console.error('[Webhook] incoming_chat welcome error:', err))
+    } else {
+      for (const e of customerMessages) {
+        const evUserId = (e.author_id ?? userId) as string
+        const eventId = `livechat:${e.id as string}`
+        const dup = await isDuplicateWebhook(eventId).catch(() => true)
+        if (!dup) {
+          handleIncomingEvent(chatId, vendorId, evUserId, { type: 'message', text: e.text as string }, config)
+            .catch(err => console.error('[Webhook] incoming_chat first-msg error:', err))
+        }
+      }
+    }
   }
 
   if (action === 'chat_archived') {

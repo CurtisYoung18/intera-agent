@@ -807,9 +807,10 @@ export async function POST(request: NextRequest) {
           }
         } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
 
-        const result = await agentLoop.run(userMessage, sendEvent, formAnswers, contentBlocks)
+        let result = await agentLoop.run(userMessage, sendEvent, formAnswers, contentBlocks)
 
         // P0-2: Drain queued messages that arrived during the run but after the last iteration's drain.
+        // BUG-C: followup results must be persisted — capture the last run's result for DB writes.
         while (activeSession.queue.pendingCount > 0) {
           const next = activeSession.queue.dequeueNonBlocking()
           if (!next || next.content === '__SESSION_CLOSED__') break
@@ -842,7 +843,69 @@ export async function POST(request: NextRequest) {
           } catch (_) { /* non-critical */ }
           // Re-load memory from the master loop
           followup.loadMemory(agentLoop.getMemorySummary())
-          await followup.run(next.content, sendEvent, next.formAnswers, next.contentBlocks)
+          result = await followup.run(next.content, sendEvent, next.formAnswers, next.contentBlocks)
+          // Persist followup messages immediately so the next drain iteration sees them
+          const followupMem = followup.getMemorySummary()
+          if (result.messages.length > 0) {
+            try {
+              const caseTypeForUpsert = followup.getCaseType()
+              await prisma.case.upsert({
+                where: { id: resolvedCaseId },
+                update: { status: result.caseStatus },
+                create: {
+                  id: resolvedCaseId, vendorId: resolvedCustomerId, userId: resolvedUserId,
+                  type: caseTypeForUpsert, status: result.caseStatus, chatId: chatId ?? null,
+                },
+              })
+              await prisma.caseMemory.upsert({
+                where: { caseId: resolvedCaseId },
+                update: {
+                  confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
+                  missingFacts: JSON.stringify(followupMem.missingFacts),
+                  skillsCalled: JSON.stringify(followupMem.skillsCalled),
+                  skillResults: JSON.stringify(followupMem.skillResults),
+                  keyEvents: JSON.stringify(followupMem.keyEvents),
+                  summary: followupMem.summary || undefined,
+                  todos: followupMem.todos ? JSON.stringify(followupMem.todos) : null,
+                  agentTodos: followupMem.agentTodos ? JSON.stringify(followupMem.agentTodos) : null,
+                  dashboardVersion: followupMem.dashboardVersion ?? 0,
+                },
+                create: {
+                  caseId: resolvedCaseId,
+                  confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
+                  missingFacts: JSON.stringify(followupMem.missingFacts),
+                  skillsCalled: JSON.stringify(followupMem.skillsCalled),
+                  skillResults: JSON.stringify(followupMem.skillResults),
+                  keyEvents: JSON.stringify(followupMem.keyEvents),
+                  summary: followupMem.summary || undefined,
+                  todos: followupMem.todos ? JSON.stringify(followupMem.todos) : null,
+                  agentTodos: followupMem.agentTodos ? JSON.stringify(followupMem.agentTodos) : null,
+                  dashboardVersion: followupMem.dashboardVersion ?? 0,
+                },
+              })
+              const msgsToPersist = result.messages
+                .filter((m) => m.content?.trim() || m.role === 'user' || m.contentBlocks?.length)
+                .map((m) => ({
+                  id: m.id, caseId: resolvedCaseId, role: m.role,
+                  content: m.content || '', contentBlocks: m.contentBlocks ?? undefined, isStreaming: false,
+                }))
+              if (msgsToPersist.length > 0) {
+                await prisma.$transaction(
+                  msgsToPersist.map((msg) =>
+                    prisma.message.upsert({
+                      where: { id: msg.id },
+                      update: { content: msg.content, contentBlocks: msg.contentBlocks ?? undefined, isStreaming: false },
+                      create: msg,
+                    }),
+                  ),
+                )
+              }
+            } catch (e) {
+              console.error('[Intera] Failed to persist followup result:', e)
+            }
+          }
+          // Transfer memory back to master loop for subsequent drain iterations
+          agentLoop.loadMemory(followupMem)
         }
 
         // Mark session as resolved so subsequent messages create a new loop.

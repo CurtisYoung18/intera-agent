@@ -61,7 +61,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           type: 'send_card',
           card: {
             title: skillLabel(d.name),
-            subtitle: '✅ 完成',
+            subtitle: 'Done',
             buttons: [],
           },
         }
@@ -78,7 +78,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         }
         return {
           type: 'send_quick_replies',
-          text: d.title ?? d.description ?? '请选择：',
+          text: d.title ?? d.description ?? 'Please select:',
           options: (d.options ?? []).map(o => ({ id: o.id, label: o.label })),
         }
       }
@@ -122,7 +122,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         if (!d.cases?.length) return { type: 'noop' }
         return {
           type: 'send_quick_replies',
-          text: '请选择您的问题类型：',
+          text: 'Please select your issue type:',
           options: d.cases.map((c) => ({ id: c.caseType, label: c.summary })),
         }
       }
@@ -163,6 +163,13 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           ? `Your case has been escalated to a specialist. Question: ${d.question}`
           : 'Your case has been escalated to a specialist. A human operator will respond shortly.'
         return { type: 'send_text', text: msg }
+      }
+
+      // ── error: { message?, reason? } ──
+      // BUG-B: LLM errors during streaming must produce a user-visible message.
+      case 'error': {
+        const d = event.data as { message?: string; reason?: string } | undefined
+        return { type: 'send_text', text: 'Service is temporarily unavailable. Please try again. If the issue persists, resend your message.' }
       }
 
       default:

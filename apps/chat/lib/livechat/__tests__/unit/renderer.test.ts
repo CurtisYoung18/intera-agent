@@ -182,10 +182,20 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('unknown event', () => {
-    it('returns noop', () => {
+    it('returns noop for unrecognized event type', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('error', { message: 'x' }), makeCtx())
+      const actions = r.render(makeEvent('unknown_type' as SSEEvent['type'], { x: 1 }), makeCtx())
       expect(actions[0]!.type).toBe('noop')
+    })
+  })
+
+  describe('error event', () => {
+    it('returns send_text with retry message', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('error', { message: 'LLM API error' }), makeCtx())
+      const a = actions[0]!
+      expect(a.type).toBe('send_text')
+      expect((a as { text: string }).text).toContain('temporarily unavailable')
     })
   })
 })
