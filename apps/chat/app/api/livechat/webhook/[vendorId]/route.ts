@@ -76,14 +76,16 @@ export async function POST(
   console.log('[Webhook] msg', `action=${action} chatId=${chatId} type=${eventType} author=${event.author_id} text=${((event.text || event.system_message_text || '') as string).slice(0, 60)}`)
   const userId = (event.author_id ?? 'anonymous') as string
 
-  // Dedup — include chatId for incoming_chat (LiveChat reuses webhook_id across chats)
-  const dedupId = action === 'incoming_chat'
-    ? `${body.webhook_id ?? 'unknown'}:${chatId}`
-    : (event.id ?? body.webhook_id ?? rawBody.slice(0, 64)) as string
-  const eventId = `livechat:${dedupId}`
-  if (await isDuplicateWebhook(eventId)) {
-    console.log('[Webhook] deduped', { eventId })
-    return NextResponse.json({ ok: true, deduped: true })
+  // Dedup — skip incoming_chat (LiveChat reuses webhook_id across sessions,
+  // so webhook_id:chatId would false-positive on close→reopen). The thread
+  // events inside incoming_chat are individually deduped in the handler below.
+  if (action !== 'incoming_chat') {
+    const dedupId = (event.id ?? body.webhook_id ?? rawBody.slice(0, 64)) as string
+    const eventId = `livechat:${dedupId}`
+    if (await isDuplicateWebhook(eventId)) {
+      console.log('[Webhook] deduped', { eventId })
+      return NextResponse.json({ ok: true, deduped: true })
+    }
   }
 
   // RC4: author self-filter — skip events authored by our own agent

@@ -75,13 +75,14 @@ export async function POST(request: NextRequest) {
   const userId = (event.author_id ?? 'anonymous') as string
   const vendorId = (payload.license_id ?? process.env.DEFAULT_VENDOR_ID ?? 'default') as string
 
-  // Dedup — include chatId for incoming_chat (LiveChat reuses webhook_id across chats)
-  const dedupId = action === 'incoming_chat'
-    ? `${body.webhook_id ?? 'unknown'}:${chatId}`
-    : (event.id ?? body.webhook_id ?? rawBody.slice(0, 64)) as string
-  const eventId = `livechat:${dedupId}`
-  if (await isDuplicateWebhook(eventId)) {
-    return NextResponse.json({ ok: true, deduped: true })
+  // Dedup — skip incoming_chat (LiveChat reuses webhook_id across sessions).
+  // Thread events inside incoming_chat are individually deduped in the handler below.
+  if (action !== 'incoming_chat') {
+    const dedupId = (event.id ?? body.webhook_id ?? rawBody.slice(0, 64)) as string
+    const eventId = `livechat:${dedupId}`
+    if (await isDuplicateWebhook(eventId)) {
+      return NextResponse.json({ ok: true, deduped: true })
+    }
   }
 
   const config = await getLiveChatConfig(vendorId)

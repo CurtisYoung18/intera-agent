@@ -94,11 +94,23 @@ function renderSessionBinding(binding: PromptContext['session_binding']): string
   const label = binding.userLabel?.trim()
   const lines = ['## Current User']
   if (label) lines.push(`- Label: ${label}`)
-  lines.push(`- Member ID: \`${u}\``)
-  lines.push('')
-  lines.push('When calling tools that require a `member_id` argument, always use this Member ID.')
-  lines.push('When calling tools that require a `userId` argument, also use this Member ID.')
-  lines.push('Do not ask the user for their ID — it is already known.')
+
+  // BUG-G: LiveChat's author_id is a random UUID, not a business member_id.
+  // Only inject Member ID instructions when we have a verified platform member_id
+  // (non-UUID pattern like JAYA11327F2), not a session/visitor UUID.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u)
+  if (isUuid) {
+    lines.push(`- Session ID: \`${u}\` (this is a session identifier, NOT a member_id)`)
+    lines.push('')
+    lines.push('The member_id is NOT yet known. When calling tools that require `member_id`,')
+    lines.push('you MUST first collect it from the user via request_user_input.')
+  } else {
+    lines.push(`- Member ID: \`${u}\``)
+    lines.push('')
+    lines.push('When calling tools that require a `member_id` argument, always use this Member ID.')
+    lines.push('When calling tools that require a `userId` argument, also use this Member ID.')
+    lines.push('Do not ask the user for their ID — it is already known.')
+  }
   return lines.join('\n')
 }
 

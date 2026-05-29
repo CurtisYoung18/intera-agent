@@ -141,9 +141,63 @@ if (action === 'incoming_chat') {
 
 ---
 
+## BUG-F（高）— 表单（request_user_input）提交后卡在 "Intera preparing..."，结构化结果丢失
+
+**现象**：顾客在表单 webview 填完会员ID 点 Submit 后，页面卡在 "Intera preparing..." 不动；agent 也收不到表单结果、不再继续。实测复现于 chat `daf4f4b8-…`（`general#case_202`，最后一条 trace 停在 `Tool request_user_input result: {"ok":true,"handled":"channel"}`）。
+
+**根因（两个叠加）**：
+
+**① 表单结果根本没有有效回传通道（webview 内无可用 SDK）**
+- 表单 webview 由 `form_request` 渲染的 `type:'webview'` 卡片按钮打开（[renderer.ts:104-116](apps/chat/channels/livechat/renderer.ts:104)），是个**普通 iframe**，URL 形如 `?view=form&caseId=…&fields=…`。
+- widget 的 layout **不加载任何 Moments SDK 脚本**（[livechat-widget/layout.tsx](apps/chat/app/livechat-widget/layout.tsx)），普通 webview 也不会被 LiveChat 注入 SDK → `window.onMomentAsyncInit` 不触发 → React state `momentsSDK` 一直为 `null`（[page.tsx:477-488](apps/chat/app/livechat-widget/page.tsx:477)）。
+- 于是 `FormCard` 的 `onSubmitWithForm` 为 undefined（[page.tsx:613](apps/chat/app/livechat-widget/page.tsx:613)）→ 回退到 `sendToLiveChat('intera_form_submit', …)`。
+- `sendToLiveChat` 在 iframe 模式（URL 有 `view` 参数 → `isMomentsIframe()` 为 true）会调 `getMomentsSDK()`（[page.tsx:101-119](apps/chat/app/livechat-widget/page.tsx:101)）。
+- **`getMomentsSDK()` 的 SDK API 用错了**：它轮询/调用全局 `window.createMomentsSDK`（[page.tsx:75-92](apps/chat/app/livechat-widget/page.tsx:75)），但官方 Moments SDK 是通过 `window.onMomentAsyncInit(createMomentsSDK => …)` **回调参数**下发的，从不挂成全局 `window.createMomentsSDK` → 第 87 行的 `setInterval` 轮询**永久空转** → `getMomentsSDK()` 永不 resolve → `sendToLiveChat` 挂起 → **既不发消息也不 `sdk.close()`**。
+- 而 `handleSubmit` 已经先 `setState(INITIAL_STATE)`（经 `onSubmit`）把视图切回 `idle`，idle 视图正是 "Intera preparing..."（[page.tsx:579-584](apps/chat/app/livechat-widget/page.tsx:579)）→ 于是永久停在该画面。
+- iframe 里 `window.LiveChatWidget` 也不可用，`sendToLiveChat` 的非 iframe 分支（[page.tsx:118](apps/chat/app/livechat-widget/page.tsx:118)）是 no-op → **没有任何可用回传通道**。
+
+**② 即便发出去，也是纯文本而非后端期望的 `intera_form_submit` 自定义事件**
+- 后端把表单结果设计成 `custom` 事件 `intera_form_submit` → `formResult: { answers }` → 合并进 `confirmedFacts`（webhook [route.ts:135](apps/chat/app/api/livechat/webhook/[vendorId]/route.ts:135) + messages [route.ts](apps/chat/app/api/messages/route.ts) formResult 分支）。
+- 但 widget 在 iframe 模式把 `intera_form_submit` **降级成一条普通文本消息** `sdk.sendMessage({ text: '[Form submitted] 会员ID: …' })`（[page.tsx:106-108](apps/chat/app/livechat-widget/page.tsx:106)）；`handleMomentFormSubmit` 同样是纯文本（[page.tsx:565-573](apps/chat/app/livechat-widget/page.tsx:565)）。
+- 结果：后端的 `intera_form_submit` / `formResult` / `confirmedFacts` 这条结构化链路对该 widget **实际是死代码**；表单数据最好情况下只能作为自由文本被重新解析，最坏情况（①挂起）完全发不出去。
+
+**建议修复**：
+- **优先**：表单回传不要依赖 Moments SDK。普通 webview iframe 用 `window.parent.postMessage` 把 `intera_form_submit` + answers 发给父页（LiveChat widget 宿主），或改用 LiveChat 官方支持的 webview→chat 回传机制；父页再以 `custom` 事件 `intera_form_submit` 落到 webhook，走回 `formResult` 结构化链路。
+- 修正 `getMomentsSDK()` 的 SDK 获取方式：统一用 `window.onMomentAsyncInit` 回调拿 `createMomentsSDK`，删除对全局 `window.createMomentsSDK` 的轮询（当前会无限挂起）。给 `getMomentsSDK` 加超时与失败兜底，**任何分支都要保证最终 `close()` + 给出可见反馈**，避免停在 "Intera preparing..."。
+- 兜底 UI：submit 后若 N 秒内未成功回传，显示"提交失败，请重试 / 请直接在聊天里发送会员ID"，不要无限停在 idle 文案。
+- 确认表单到底应以"真 Moment"还是"普通 webview"承载；二者的回传 API 不同，当前代码把两套混用是卡死的根源。
+
+**验收**：表单填完提交 → webview 关闭（或给出明确结果）→ agent 收到**结构化** answers 并继续（confirmedFacts 里出现 member_id）；SDK 不可用时也有可见兜底，不卡 "Intera preparing..."。
+
+---
+
+## BUG-G（高）— LiveChat 的 author_id（UUID）被当作 member_id 注入 prompt，导致工具用错 ID 且与表单流程自相矛盾
+
+**现象**：顾客问"帮我查存款"，agent 回"系统显示您的会员ID是 `daf4f4b8-74db-48a4-8038-c9dfcbc09e49`"（这其实是 **chat/会话 UUID**，不是会员ID），`get_latest_deposit` 随即返回 `member id is invalid`。这也是它后来弹表单要 ID、整个流程跑偏的源头。
+
+**根因**：
+- prompt 注入会话绑定时，把 `userId` 直接当成 Member ID 写进系统提示，并强令"总是用它、**不要问用户 ID**"（[prompt-resolver.ts:91-102](apps/chat/lib/agent/prompt-resolver.ts:91)）：
+  ```
+  - Member ID: `<userId>`
+  When calling tools that require a `member_id` argument, always use this Member ID.
+  Do not ask the user for their ID — it is already known.
+  ```
+- 但在 LiveChat 链路里，`userId` = webhook 的 `event.author_id`（[webhook/[vendorId]/route.ts:77](apps/chat/app/api/livechat/webhook/[vendorId]/route.ts:77)），是 LiveChat 的**访客 UUID**，并非业务平台的 member_id（如 `JAYA11327F2`）。
+- 双重恶果：① agent 拿 UUID 当 member_id 调用账务工具 → 必然 `member id is invalid`；② prompt 又说"不要问用户 ID" → 与"需要时弹表单要 member_id"自相矛盾，模型行为漂移（先用错 ID、再尴尬地弹表单）。
+
+**建议修复**：
+- 仅当存在**可信的真实 member 映射**时才注入 Member ID（例如已认证会话、或 chat properties 里绑定过 member_id）；LiveChat 访客 UUID **不可**作为 member_id。
+- 未知 member_id 时：不要注入"Member ID"段，也不要写"不要问用户 ID"；让 agent 走正常的 `request_user_input` 收集 member_id（与 BUG-F 修好后的表单链路配合）。
+- 区分两个概念：会话身份（chat/visitor id，用于路由/绑定）与业务身份（member_id，用于账务工具入参），不要混用同一个 `userId`。
+
+**验收**：LiveChat 新会话未提供会员ID 时，agent **不**编造 UUID 当 member_id、不直接调账务工具失败，而是请用户提供；提供后用真实 member_id 调用成功。
+
+---
+
 ## 备注
 
 - 本次核对未实跑端到端（需 LiveChat 真实 webhook + 平台账号）；BUG-A/B/D 为代码层确定性问题，BUG-C 为并发时序问题，建议补**并发集成测试**固化（对同一 caseId 极短间隔连发 2~3 条，断言每条都有回复且都持久化）。
+- BUG-F/G 来自一条真实卡死会话（chat `daf4f4b8-…`）：BUG-G（member_id 误注入）是流程跑偏的源头，BUG-F（表单回传通道挂死）是最终卡 "Intera preparing..." 的直接原因；两者建议一起修。BUG-F 的 SDK 部分依赖 LiveChat 平台行为，落地前需在真实 webview 里确认回传机制。
 - KB 检索质量相关另见 `doc/to-do/kb-retrieval-tuning.md`。
 
 ---
