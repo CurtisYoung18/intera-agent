@@ -44,6 +44,8 @@ declare global {
       call: (action: string, payload?: unknown) => void
     }
     onMomentAsyncInit?: (createMomentsSDK: (opts: { title?: string; icon?: string }) => Promise<MomentsSdkInstance>) => void
+    /** SDK instance promise, set by layout.tsx <head> onMomentAsyncInit. */
+    __interaMomentsSDK?: Promise<MomentsSdkInstance | null>
   }
 }
 
@@ -56,39 +58,34 @@ interface MomentsSdkInstance {
 
 let momentsSdkPromise: Promise<MomentsSdkInstance | null> | null = null
 
-/** Get Moments SDK instance. Returns null if SDK is not available (not in a Moment context). */
+/**
+ * Get Moments SDK instance. Returns null if not in a Moment context.
+ * The SDK is loaded + initialized in layout.tsx <head> (canonical static
+ * integration); here we just await the promise it parks on window, polling
+ * briefly in case the async SDK script hasn't fired onMomentAsyncInit yet.
+ */
 function getMomentsSDK(): Promise<MomentsSdkInstance | null> {
   if (momentsSdkPromise) return momentsSdkPromise
 
   momentsSdkPromise = new Promise<MomentsSdkInstance | null>((resolve) => {
-    const done = (sdk: MomentsSdkInstance | null) => { resolve(sdk) }
-
-    // Timeout: if SDK doesn't init within 8s, we're not in a Moment
-    const timeout = setTimeout(() => {
-      console.warn('[Widget] Moments SDK init timed out — not in Moment context')
-      done(null)
-    }, 8000)
-
-    // BUG-F fix: use the official onMomentAsyncInit callback (not polling window.createMomentsSDK)
-    window.onMomentAsyncInit = function (createMomentsSDK) {
-      clearTimeout(timeout)
-      createMomentsSDK({ title: 'Intera' }).then((sdk) => {
-        console.log('[Widget] Moments SDK initialized')
-        done(sdk)
-      }).catch((e) => {
-        console.error('[Widget] Moments SDK init failed:', e)
-        done(null)
-      })
+    const start = Date.now()
+    const tryResolve = (): boolean => {
+      const ready = window.__interaMomentsSDK
+      if (!ready) return false
+      Promise.resolve(ready)
+        .then((sdk) => resolve(sdk ?? null))
+        .catch(() => resolve(null))
+      return true
     }
-
-    // Also try loading the UMD script (sets up onMomentAsyncInit if not already present)
-    const script = document.createElement('script')
-    script.src = 'https://cdn.livechat-static.com/moments-sdk/moments-sdk-1.9.0.umd.min.js'
-    script.onerror = () => {
-      console.warn('[Widget] Moments SDK script failed to load')
-      // Don't resolve yet — the timeout will handle it
-    }
-    document.head.appendChild(script)
+    if (tryResolve()) return
+    const iv = setInterval(() => {
+      if (tryResolve()) { clearInterval(iv); return }
+      if (Date.now() - start > 8000) {
+        clearInterval(iv)
+        console.warn('[Widget] Moments SDK not available — not in a Moment context')
+        resolve(null)
+      }
+    }, 150)
   })
 
   return momentsSdkPromise

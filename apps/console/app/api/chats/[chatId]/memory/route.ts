@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { profileKey } from '@/../chat/lib/agent/identity'
 
 export async function GET(
   _req: NextRequest,
@@ -10,26 +11,26 @@ export async function GET(
   const { chatId } = await params
 
   try {
-    // Find the userId for this chat from cases
-    const sampleCase = await prisma.case.findFirst({
-      where: { chatId },
-      select: { userId: true },
+    // The [chatId] param is either a real Case.chatId OR a standalone case.id
+    // (chats are keyed by `chatId ?? id` in /api/chats). Resolve both so the
+    // Memory tab works for cases that never got a chatId persisted.
+    const chatCases = await prisma.case.findMany({
+      where: { OR: [{ chatId }, { id: chatId }] },
+      select: { id: true, userId: true },
     })
-    const userId = sampleCase?.userId
+    const userId = chatCases[0]?.userId
+    const caseIds = chatCases.map(c => c.id)
 
-    // Get ChatMemory for cases in this chat
-    const caseIds = await prisma.case.findMany({
-      where: { chatId },
-      select: { id: true },
-    })
     const memories = await prisma.chatMemory.findMany({
-      where: { caseId: { in: caseIds.map(c => c.id) } },
+      where: { caseId: { in: caseIds } },
       orderBy: { updatedAt: 'desc' },
     })
 
-    // Get UserProfile
-    const profile = userId
-      ? await prisma.userProfile.findUnique({ where: { userId } }).catch(() => null)
+    // UserProfile is keyed by a stable profileKey (user:<id> / chat:<chatId>),
+    // not the raw userId — match how the agent loop & compact write it (C2).
+    const key = profileKey(userId ?? undefined, chatId)
+    const profile = key
+      ? await prisma.userProfile.findUnique({ where: { userId: key } }).catch(() => null)
       : null
 
     return NextResponse.json({

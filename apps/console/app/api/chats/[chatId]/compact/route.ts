@@ -23,8 +23,11 @@ export async function POST(
   const { chatId } = await params
 
   try {
+    // The [chatId] param is either a real Case.chatId OR a standalone case.id
+    // (chats are keyed by `chatId ?? id` in /api/chats). Resolve both, else
+    // cases without a persisted chatId never match and compact finds nothing.
     const caseIds = await prisma.case.findMany({
-      where: { chatId },
+      where: { OR: [{ chatId }, { id: chatId }] },
       select: { id: true },
     })
     const messages = await prisma.message.findMany({
@@ -39,7 +42,7 @@ export async function POST(
 
     // M2: load vendor-specific memoryStrategy
     const sampleCase = await prisma.case.findFirst({
-      where: { chatId },
+      where: { OR: [{ chatId }, { id: chatId }] },
       select: { userId: true, vendorId: true },
     })
     const vendorId = sampleCase?.vendorId ?? 'default'

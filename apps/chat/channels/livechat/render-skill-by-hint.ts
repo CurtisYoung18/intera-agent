@@ -33,7 +33,10 @@ export function renderSkillByHint(
     case 'carousel': {
       const items = readPath(data, hint.itemsField)
       if (!Array.isArray(items) || items.length === 0) {
-        return [{ type: 'send_text', text: '(no results)' }]
+        // Empty result → render nothing. The agent's own text reply already
+        // tells the customer there are no results; a literal "(no results)"
+        // card on top is redundant + jarring (and untranslated).
+        return [{ type: 'noop' }]
       }
       const tpl = hint.itemTemplate!
       const cards: CardSpec[] = (items as unknown[]).slice(0, 10).map((item, i) => ({

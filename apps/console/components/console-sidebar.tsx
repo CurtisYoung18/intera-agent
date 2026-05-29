@@ -20,7 +20,7 @@ import {
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 
-type NavSlug = 'humanTasks' | 'chats' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'humanOps' | 'caseTypes' | 'knowledge' | 'channels' | 'subAgents'
+type NavSlug = 'humanTasks' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'humanOps' | 'caseTypes' | 'knowledge' | 'channels' | 'subAgents'
 
 interface NavItem {
   href: string
@@ -63,6 +63,7 @@ interface CustomerInfo {
 
 const OPS_ITEMS: NavItem[] = [
   { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
+  { href: '/ops/users', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/ops/users' },
   { href: '/ops/dashboards', slug: 'dashboards', icon: BarChart3, color: '#14b8a6', matchPattern: '/ops/dashboards' },
   // { href: '/ops/human-tasks', slug: 'humanTasks', icon: ClipboardList, color: '#f0b050' }, // moved to Channels → Web Chat
   { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },

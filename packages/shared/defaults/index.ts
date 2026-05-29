@@ -50,6 +50,10 @@ Facts extracted from previous turns are in confirmedFacts — trust them. Summar
 
 The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
 
+## Knowledge base vs account tools
+
+For general / catalog / how-to questions (what promotions, games, or payment methods exist; how to do something; policies, bonus terms, contact info) → ALWAYS use the knowledge base (kb_search_*). It holds the catalog and the rules. Account/status tools (get_active_promotions, get_latest_deposit, get_account_status, etc.) return ONLY this member's live data. If an account/status tool returns empty or negative, do NOT conclude "there is none" — check the knowledge base before answering.
+
 {{session_binding}}
 `;
 
@@ -62,11 +66,15 @@ export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
 
 **Never fabricate data.** If a tool returns success:false or an error, report the error to the customer. Never invent results, numbers, dates, or records. If data is not returned by a tool, it does not exist.
 
-**Always use request_user_input to collect information.** When you need member_id, date range, order ID, amount, or any other details: call request_user_input. Never ask in plain text — use the form tool. A text question like "请提供您的会员ID" without calling request_user_input is a failed response.
+**Always use request_user_input to collect information.** When you need member_id, date range, order ID, amount, or any other details: call request_user_input. Never ask in plain text — use the form tool. A text question like "Please provide your member ID" without calling request_user_input is a failed response.
 
 ## member_id
 
 The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately — don't apologize, just ask.
+
+## Knowledge base vs account tools
+
+For general / catalog / how-to questions (what promotions, games, or payment methods exist; how to do something; policies, bonus terms, contact info) → ALWAYS use the knowledge base (kb_search_*). It holds the catalog and the rules. Account/status tools (get_active_promotions, get_latest_deposit, get_account_status, etc.) return ONLY this member's live data. If an account/status tool returns empty or negative, do NOT conclude "there is none" — check the knowledge base before answering.
 
 {{available_tools}}
 
@@ -116,6 +124,10 @@ Facts extracted from previous turns are in confirmedFacts — trust them. Summar
 ## member_id
 
 The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
+
+## Knowledge base vs account tools
+
+For general / catalog / how-to questions (what promotions, games, or payment methods exist; how to do something; policies, bonus terms, contact info) → ALWAYS use the knowledge base (kb_search_*). It holds the catalog and the rules. Account/status tools (get_active_promotions, get_latest_deposit, get_account_status, etc.) return ONLY this member's live data. If an account/status tool returns empty or negative, do NOT conclude "there is none" — check the knowledge base before answering.
 
 {{session_binding}}
 `;
@@ -335,8 +347,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_account_status',
     displayVerb: { text: 'Checking account status', icon: 'scan' },
-    description: '查询账户状态（登录失败、账户锁定等）。当用户无法登录、账户被锁、登录失败时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    description: 'Check account status (login failure, account locked, etc.). Call when the customer cannot log in, is locked out, or reports a login failure.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/account-status',
     httpMethod: 'POST',
@@ -346,8 +358,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_kyc_status',
     displayVerb: { text: 'Verifying identity status', icon: 'scan' },
-    description: '查询KYC身份验证状态及当前卡住的阶段。当用户询问KYC进度、身份验证状态时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    description: 'Check KYC verification status and which step it is stuck at. Call when the customer asks about KYC progress or identity-verification status.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/user-kyc-status',
     httpMethod: 'POST',
@@ -357,8 +369,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_active_promotions',
     displayVerb: { text: 'Checking active promotions', icon: 'dots' },
-    description: '查询当前生效的流水优惠活动。当用户询问有哪些优惠活动、当前流水优惠时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    description: "Check THIS member's currently-active turnover promotions (member-specific, requires member_id). Do NOT use this to answer general \"what promotions do you have / what bonuses are available\" questions — use kb_search_* (the Promotion knowledge base) for the promotion catalog, terms, and eligibility. An empty result only means this member has no active turnover promo; still consult the knowledge base before telling the customer there are none.",
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/promotion-active-status',
     httpMethod: 'POST',
@@ -368,8 +380,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_withdraw_conditions',
     displayVerb: { text: 'Checking withdrawal conditions', icon: 'scan' },
-    description: '查询打码量提现条件。当用户询问打码量是否足够、提现需要多少流水时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -4:00","default":"-4:00"}},"required":["member_id"]}',
+    description: 'Check turnover (wagering) requirements for withdrawal. Call when the customer asks whether their turnover is enough or how much wagering is needed to withdraw.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"},"gmt":{"type":"string","description":"Timezone, default -4:00","default":"-4:00"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/withdraw-condition',
     httpMethod: 'POST',
@@ -379,8 +391,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_eligible_promotions',
     displayVerb: { text: 'Checking eligible promotions', icon: 'dots' },
-    description: '查询用户可参与的优惠活动。当用户询问如何参与活动、领取优惠时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"language":{"type":"string","description":"语言，默认 en-bd","default":"en-bd"}},"required":["member_id"]}',
+    description: 'Check the promotions THIS member is eligible to join. Call when the customer asks how to join a promotion or claim a bonus.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"},"language":{"type":"string","description":"Language, default en-bd","default":"en-bd"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/promotion-eligible-status',
     httpMethod: 'POST',
@@ -390,8 +402,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_latest_withdrawal',
     displayVerb: { text: 'Checking withdrawal status', icon: 'scan' },
-    description: '查询最新取款状态及已过时间。当用户询问取款进度、是否到账时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -04:00","default":"-04:00"}},"required":["member_id"]}',
+    description: 'Check the latest withdrawal status and elapsed time. Call when the customer asks about withdrawal progress or whether it has arrived.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"},"gmt":{"type":"string","description":"Timezone, default -04:00","default":"-04:00"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/get-latest-withdraw-status',
     httpMethod: 'POST',
@@ -401,8 +413,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_latest_deposit',
     displayVerb: { text: 'Checking deposit status', icon: 'scan' },
-    description: '查询最新存款到账状态。当用户询问存款是否到账、充值进度时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"gmt":{"type":"string","description":"时区，默认 -4:00","default":"-4:00"}},"required":["member_id"]}',
+    description: 'Check the latest deposit status. Call when the customer asks whether a deposit has arrived or about top-up progress.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"},"gmt":{"type":"string","description":"Timezone, default -4:00","default":"-4:00"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/get-latest-deposit-status',
     httpMethod: 'POST',
@@ -412,8 +424,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_transaction_history',
     displayVerb: { text: 'Loading transaction history', icon: 'scan' },
-    description: '查询最近5条存取款交易记录。当用户询问交易记录、充值/提现记录时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"method":{"type":"string","description":"deposit 或 withdraw","enum":["deposit","withdraw"]}},"required":["member_id","method"]}',
+    description: 'Get the last 5 deposit/withdrawal transactions. Call when the customer asks about transaction records or deposit/withdrawal history.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"},"method":{"type":"string","description":"deposit or withdraw","enum":["deposit","withdraw"]}},"required":["member_id","method"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/deposit-withdrawal-history',
     httpMethod: 'POST',
@@ -423,8 +435,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_recommended_games',
     displayVerb: { text: 'Loading game recommendations', icon: 'dots' },
-    description: '获取推荐/热门游戏列表。当用户询问有什么推荐游戏、热门游戏时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"}},"required":["member_id"]}',
+    description: 'Get the recommended / hot games list. Call when the customer asks for game recommendations or popular games.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"}},"required":["member_id"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/top-hot-game-list',
     httpMethod: 'POST',
@@ -434,8 +446,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'get_bet_history',
     displayVerb: { text: 'Loading bet history', icon: 'scan' },
-    description: '查询游戏下注历史。当用户询问投注记录、下注历史、游戏记录时调用。',
-    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"用户的 member ID（从会话上下文中获取当前用户ID）"},"from_date":{"type":"string","description":"开始日期，格式 YYYY-MM-DD HH:mm:ss"},"to_date":{"type":"string","description":"结束日期，格式 YYYY-MM-DD HH:mm:ss"}},"required":["member_id","from_date","to_date"]}',
+    description: 'Check game bet history. Call when the customer asks about betting records, bet history, or game records.',
+    inputSchema: '{"type":"object","properties":{"member_id":{"type":"string","description":"The member ID (from the current session context)"},"from_date":{"type":"string","description":"Start date, format YYYY-MM-DD HH:mm:ss"},"to_date":{"type":"string","description":"End date, format YYYY-MM-DD HH:mm:ss"}},"required":["member_id","from_date","to_date"]}',
     mode: 'http', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
     endpoint: 'https://jayabaji.ai-chat.life/v2/chatbot/user-bet-history-summary',
     httpMethod: 'POST',
@@ -461,8 +473,8 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'finalize_sub_agent',
     displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
-    description: '子代理完成任务后调用，将调查结果返回给主 Agent。调用后子代理循环终止。',
-    inputSchema: '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"value":{}}},"description":"调查发现的事实列表"},"evidence":{"type":"array","items":{"type":"string"},"description":"支持结论的证据引用"},"recommendation":{"type":"string","description":"建议的后续行动"}},"required":["findings","recommendation"]}',
+    description: 'Called by a sub-agent when it finishes, to return its findings to the main agent. The sub-agent loop ends after this call.',
+    inputSchema: '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"value":{}}},"description":"List of facts discovered during investigation"},"evidence":{"type":"array","items":{"type":"string"},"description":"Evidence references supporting the conclusion"},"recommendation":{"type":"string","description":"Recommended next action"}},"required":["findings","recommendation"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"finalized"}',
   },
@@ -563,64 +575,64 @@ export interface DefaultCaseTypeSeed {
 export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
   {
     type: 'deposit_issue',
-    displayName: '存款未到账',
+    displayName: 'Deposit not credited',
     description:
-      '用户反映已向平台充值或划转资金（银行卡、支付宝、微信、USDT 等），但账户余额未增加或未看到到账确认；包含「扣款成功但余额没变」「流水有、游戏/钱包里没点数」「长时间未到账」等说法。',
+      'The customer says they topped up or transferred funds to the platform (bank card, e-wallet, USDT, etc.) but their balance did not increase or they see no confirmation of arrival. Includes "charged but balance unchanged", "transaction shows but no credits in game/wallet", and "still not credited after a long time".',
     icon: '💰',
     requiredFacts: '["txnId","amount","paymentMethod","date"]',
     stages: '["created","collecting","investigating","resolved"]',
-    defaultGoal: '核实订单与支付渠道状态，判断是否延迟、失败或需补单；系统与客户说法冲突时升级人工核查。',
+    defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
     requireHumanReview: true,
   },
   {
-    type: 'order_issue', displayName: '订单问题', description: 'Customer reports an order status issue',
+    type: 'order_issue', displayName: 'Order issue', description: 'Customer reports an order status issue',
     icon: '📦',
     requiredFacts: '["orderId","issueType"]',
     stages: '["created","collecting","investigating","resolved"]',
-    defaultGoal: '确认订单状态并解决客户问题',
+    defaultGoal: 'Confirm the order status and resolve the customer issue',
     escalateOn: '["conflict","refund_request"]',
   },
   {
     type: 'account_issue',
-    displayName: '账号问题',
+    displayName: 'Account issue',
     description:
-      '用户反馈无法正常登录、账号被封禁或冻结、风控/实名提示异常、疑似被盗号、验证码或二次验证异常、设备与环境绑定争议等——核心是「账户主体与安全策略下的状态」，不含单笔充值未到账（属存款未到账）。',
+      'The customer reports being unable to log in, account banned/frozen, risk-control or KYC anomalies, suspected account theft, OTP/2FA issues, or device-binding disputes — i.e. issues about the account identity and security policy. Does NOT include a single deposit not arriving (that is "Deposit not credited").',
     icon: '🔒',
     requiredFacts: '["userId","issueType"]',
     stages: '["created","collecting","investigating","resolved"]',
     defaultGoal:
-      '拉取账号侧记录与知识库依据，判断是否限制/封禁/误拦；与客户自述冲突或高风险场景升级账号运营人工复核，并给出可执行的下一步。',
+      'Pull account-side records and knowledge-base references to determine whether the account is restricted/banned/falsely flagged. Escalate to account-ops human review on conflict or high-risk cases, and give actionable next steps.',
     escalateOn: '["high_risk","conflict"]',
   },
   {
-    type: 'refund_request', displayName: '退款申请', description: 'Customer requests a refund',
+    type: 'refund_request', displayName: 'Refund request', description: 'Customer requests a refund',
     icon: '↩️',
     requiredFacts: '["orderId","amount","reason"]',
     stages: '["created","collecting","reviewing","resolved"]',
-    defaultGoal: '审核退款申请并给出结论',
+    defaultGoal: 'Review the refund request and give a conclusion',
     escalateOn: '["large_amount","policy_violation"]',
     requireHumanReview: true,
   },
   {
     type: 'withdrawal_issue',
-    displayName: '提现问题',
-    description: '用户反映提现未到账、提现进度不明、打码量不足无法提现等问题',
+    displayName: 'Withdrawal issue',
+    description: 'The customer reports withdrawal not arriving, unclear withdrawal progress, or being unable to withdraw due to insufficient turnover.',
     icon: '💸',
     requiredFacts: '["member_id","issueType"]',
     stages: '["created","collecting","investigating","resolved"]',
-    defaultGoal: '查询取款状态与打码量条件，判断是否延迟、不足或被拒；与客户说法冲突时升级人工',
+    defaultGoal: 'Check withdrawal status and turnover requirements; determine whether it is delayed, insufficient, or rejected. Escalate to a human when it conflicts with the customer report.',
     escalateOn: '["conflict"]',
     requireHumanReview: true,
   },
   {
     type: 'promotion_inquiry',
-    displayName: '优惠咨询',
-    description: '用户询问优惠活动、参与条件、打码量要求、流水进度等',
+    displayName: 'Promotion inquiry',
+    description: 'The customer asks about promotions, eligibility, turnover requirements, or wagering progress.',
     icon: '🎁',
     requiredFacts: '["member_id"]',
     stages: '["created","investigating","resolved"]',
-    defaultGoal: '查询用户优惠状态与参与条件，告知可参与的活动与提现流水要求',
+    defaultGoal: 'Check the promotion status and eligibility for this member; tell them which promotions they can join and the withdrawal turnover requirements.',
     escalateOn: '["conflict"]',
   },
 ]
@@ -631,7 +643,7 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
     created: {
       name: 'created',
       description:
-        '工单刚开立，先简短安抚客户。如客户已提供完整信息（流水号、金额、渠道），评估器可直接进入 investigating；否则进入 collecting 用 request_user_input 收集。',
+        'Case just opened — briefly reassure the customer first. If they already provided complete info (txnId, amount, channel), the evaluator may go straight to investigating; otherwise go to collecting and use request_user_input to gather it.',
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
@@ -650,48 +662,48 @@ Respond with JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: '向用户收集流水号、金额、渠道、时间等；用 request_user_input 表单一次收齐。表单字段 key 必须使用: txnId, amount, paymentMethod, date（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.\n\nIMPORTANT: After the form is submitted and all facts are confirmed, do NOT call create_human_task or any investigation tool yet. The system will automatically advance to the investigating stage — wait for that transition before querying order or channel status.',
+      description: 'Collect txnId, amount, channel, time, etc. from the customer; gather them all at once with a request_user_input form. The form field keys MUST be: txnId, amount, paymentMethod, date (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.\n\nIMPORTANT: After the form is submitted and all facts are confirmed, do NOT call create_human_task or any investigation tool yet. The system will automatically advance to the investigating stage — wait for that transition before querying order or channel status.',
       requiredSkills: ['request_user_input'],
       availableSkills: ['request_user_input'],
       evidenceRequirements: [
-        { factKey: 'txnId', description: '交易流水号 / 充值单号', source: 'user_input', required: true },
-        { factKey: 'amount', description: '充值金额', source: 'user_input', required: true },
-        { factKey: 'paymentMethod', description: '支付方式', source: 'user_input', required: true },
-        { factKey: 'date', description: '到账或发起时间（如有）', source: 'user_input', required: false },
+        { factKey: 'txnId', description: 'Transaction / top-up reference number', source: 'user_input', required: true },
+        { factKey: 'amount', description: 'Top-up amount', source: 'user_input', required: true },
+        { factKey: 'paymentMethod', description: 'Payment method', source: 'user_input', required: true },
+        { factKey: 'date', description: 'Arrival or initiation time (if any)', source: 'user_input', required: false },
       ],
       transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
     },
     investigating: {
       name: 'investigating',
-      description: `使用 confirmedFacts 中的 txnId 调用订单与渠道技能核对平台记录。
+      description: `Use the txnId from confirmedFacts to call the order and channel tools and verify the platform records.
 
 **CRITICAL — which txnId to use:**
-get_latest_deposit 和 get_withdraw_conditions 的 txnId 参数必须使用 **confirmedFacts.txnId**（客户提供的流水号）。子代理 findings 中出现的 txnId 是反查参考数据，不是客户的交易号——严禁将子代理返回的 txnId 传入查询工具。客户报 TX101 就查 TX101，不要被子代理的 TX2026... 格式带偏。
+The txnId argument for get_latest_deposit and get_withdraw_conditions MUST be **confirmedFacts.txnId** (the customer-provided reference). A txnId in sub-agent findings is reverse-lookup reference data, NOT the customer's transaction number — never pass a sub-agent txnId into the query tools. If the customer reported TX101, query TX101; do not get pulled toward the sub-agent's TX2026... format.
 
-**调查顺序：**
-1. 调用 get_latest_deposit（传入 confirmedFacts.txnId）和 get_withdraw_conditions — 必须同一轮完成，不要分两轮调用。
-2. 如有必要可调用 read_case_history 查历史工单、get_active_promotions 查公告、kb_search_<name> 查对应知识库。
+**Investigation order:**
+1. Call get_latest_deposit (passing confirmedFacts.txnId) and get_withdraw_conditions — both in the SAME turn, do not split across turns.
+2. If needed, call read_case_history for past cases, get_active_promotions for notices, and kb_search_<name> for the relevant knowledge base.
 
-**结果判断：**
-- get_latest_deposit 返回的 txnId 与 confirmedFacts.txnId 不符（订单未找到或记录属于别的交易）→ 视为"订单查无此号"，直接调用 create_human_task，不要再问用户确认 txnId。
-- 订单状态、金额或渠道与用户报告冲突 → 直接调用 create_human_task。
-- 渠道有延迟批处理（delayed_batch: true）→ 告知预计到账时间，走 resolved。
-- 数据一致且订单已处理 → 走 resolved。
+**Interpreting results:**
+- If the txnId returned by get_latest_deposit does not match confirmedFacts.txnId (order not found, or the record belongs to a different transaction) then treat it as "order not found", call create_human_task directly, and do NOT ask the customer to re-confirm the txnId.
+- If order status, amount, or channel conflicts with the customer report, call create_human_task directly.
+- If the channel has a delayed batch (delayed_batch: true), tell the customer the expected arrival time and go to resolved.
+- If data is consistent and the order is processed, go to resolved.
 
-若发现需要客户补充信息（截图等），必须用 request_user_input 表单收集，禁止纯文本提问。`,
+If you need more info from the customer (screenshots, etc.), you MUST collect it with a request_user_input form — never ask in plain text.`,
       requiredSkills: ['get_latest_deposit', 'get_withdraw_conditions'],
       availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'read_case_history', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'status',
-          description: 'get_latest_deposit 返回的订单/流水状态（mock 字段 `status`）',
+          description: 'Order/transaction status returned by get_latest_deposit (field `status`)',
           source: 'skill_output',
           skillName: 'get_latest_deposit',
           required: true,
         },
         {
           factKey: 'channel',
-          description: 'get_withdraw_conditions 返回的渠道标识（mock 字段 `channel`）',
+          description: 'Channel identifier returned by get_withdraw_conditions (field `channel`)',
           source: 'skill_output',
           skillName: 'get_withdraw_conditions',
           required: true,
@@ -734,7 +746,7 @@ Respond JSON ONLY:
         { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
         {
           factKey: 'status',
-          description: '订单系统返回的状态（skill 字段 `status`）',
+          description: 'Status returned by the order system (field `status`)',
           source: 'skill_output',
           skillName: 'get_latest_deposit',
           required: true,
@@ -771,7 +783,7 @@ Respond JSON ONLY:
     created: {
       name: 'created',
       description:
-        '工单刚开立，先简短安抚客户。如客户已提供 userId 和问题类型，评估器可直接进入 investigating；否则进入 collecting 用 request_user_input 收集。',
+        'Case just opened — briefly reassure the customer first. If they already provided userId and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use request_user_input to gather it.',
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
@@ -791,20 +803,20 @@ JSON ONLY:
     collecting: {
       name: 'collecting',
       description:
-        '收集用户标识、问题类型与现象描述；用 request_user_input 一次性收集。表单字段 key 必须使用: userId, issueType, symptoms（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
+        'Collect the user identifier, issue type, and symptom description; gather them at once with request_user_input. The form field keys MUST be: userId, issueType, symptoms (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
       requiredSkills: ['request_user_input'],
       availableSkills: ['request_user_input'],
       evidenceRequirements: [
-        { factKey: 'userId', description: '平台用户 ID / UID', source: 'user_input', required: true },
+        { factKey: 'userId', description: 'Platform user ID / UID', source: 'user_input', required: true },
         {
           factKey: 'issueType',
-          description: '问题类型（登录失败 / 封号 / 风控提示 / 疑似盗号 / 验证异常等）',
+          description: 'Issue type (login failure / ban / risk-control flag / suspected theft / verification anomaly, etc.)',
           source: 'user_input',
           required: true,
         },
         {
           factKey: 'symptoms',
-          description: '现象简述（报错码、页面提示、大概起始时间）',
+          description: 'Brief symptom description (error code, on-screen message, approximate start time)',
           source: 'user_input',
           required: false,
         },
@@ -814,7 +826,7 @@ JSON ONLY:
     investigating: {
       name: 'investigating',
       description:
-        '并行核对账号侧快照与历史工单/政策条目；若 records 与用户说法冲突，准备人工复核话术。',
+        'In parallel, verify the account-side snapshot against past cases / policy entries; if records conflict with the customer report, prepare human-review wording.',
       requiredSkills: ['get_account_status', 'get_kyc_status', 'read_case_history'],
       availableSkills: [
         'get_account_status',
@@ -826,21 +838,21 @@ JSON ONLY:
       evidenceRequirements: [
         {
           factKey: 'accountStatus',
-          description: 'get_account_status 返回的账户状态（字段 `data.status`）',
+          description: 'Account status returned by get_account_status (field `data.status`)',
           source: 'skill_output',
           skillName: 'get_account_status',
           required: true,
         },
         {
           factKey: 'kycStatus',
-          description: 'get_kyc_status 返回的KYC状态（字段 `data.kyc_status`）',
+          description: 'KYC status returned by get_kyc_status (field `data.kyc_status`)',
           source: 'skill_output',
           skillName: 'get_kyc_status',
           required: true,
         },
         {
           factKey: 'total',
-          description: 'read_case_history 已执行且返回历史工单计数（字段 `total`）',
+          description: 'read_case_history has run and returned a past-case count (field `total`)',
           source: 'skill_output',
           skillName: 'read_case_history',
           required: true,
@@ -879,7 +891,7 @@ JSON ONLY:
     },
     resolved: {
       name: 'resolved',
-      description: '结案并向客户说明依据与下一步',
+      description: 'Close the case and explain the basis and next steps to the customer',
       requiredSkills: ['finalize_case'],
       transition: { type: 'manual' },
     },
@@ -901,7 +913,7 @@ JSON ONLY:
         { factKey: 'reason', description: 'Refund reason', source: 'user_input', required: true },
         {
           factKey: 'status',
-          description: '订单查询返回的状态（skill 字段 `status`）',
+          description: 'Status returned by the order lookup (field `status`)',
           source: 'skill_output',
           skillName: 'get_latest_deposit',
           required: true,
@@ -925,7 +937,7 @@ JSON ONLY:
   withdrawal_issue: {
     created: {
       name: 'created',
-      description: '工单刚开立，先简短安抚客户。如客户已提供 member_id 和问题类型，评估器可直接进入 investigating；否则进入 collecting 用 request_user_input 收集。',
+      description: 'Case just opened — briefly reassure the customer first. If they already provided member_id and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use request_user_input to gather it.',
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
@@ -944,32 +956,32 @@ JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: '收集用户 member_id 与提现问题详情；用 request_user_input 一次性收集。表单字段 key 必须使用: member_id, issueType, amount（与证据系统对齐）。\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response.',
+      description: 'Collect the customer member_id and withdrawal issue details; gather them at once with request_user_input. The form field keys MUST be: member_id, issueType, amount (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response.',
       requiredSkills: ['request_user_input'],
       availableSkills: ['request_user_input'],
       evidenceRequirements: [
-        { factKey: 'member_id', description: '用户 member ID', source: 'user_input', required: true },
-        { factKey: 'issueType', description: '问题类型（未到账 / 打码量不足 / 被拒等）', source: 'user_input', required: true },
-        { factKey: 'amount', description: '提现金额（如有）', source: 'user_input', required: false },
+        { factKey: 'member_id', description: 'Customer member ID', source: 'user_input', required: true },
+        { factKey: 'issueType', description: 'Issue type (not arrived / insufficient turnover / rejected, etc.)', source: 'user_input', required: true },
+        { factKey: 'amount', description: 'Withdrawal amount (if any)', source: 'user_input', required: false },
       ],
       transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
     },
     investigating: {
       name: 'investigating',
-      description: '调用取款状态与打码量条件接口核对平台记录。若发现数据矛盾需要客户补充信息，使用 request_user_input 表单收集。',
+      description: 'Call the withdrawal-status and turnover-condition tools to verify platform records. If you find conflicts requiring more info from the customer, collect it with a request_user_input form.',
       requiredSkills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
       availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'withdrawalStatus',
-          description: 'get_latest_withdrawal 返回的取款状态（字段 `status`）',
+          description: 'Withdrawal status returned by get_latest_withdrawal (field `status`)',
           source: 'skill_output',
           skillName: 'get_latest_withdrawal',
           required: true,
         },
         {
           factKey: 'withdrawConditions',
-          description: 'get_withdraw_conditions 返回的打码量条件（字段 `data`）',
+          description: 'Turnover conditions returned by get_withdraw_conditions (field `data`)',
           source: 'skill_output',
           skillName: 'get_withdraw_conditions',
           required: true,
@@ -1003,7 +1015,7 @@ JSON ONLY:
     },
     resolved: {
       name: 'resolved',
-      description: '结案并向客户说明提现状态与依据',
+      description: 'Close the case and explain the withdrawal status and basis to the customer',
       requiredSkills: ['finalize_case'],
       transition: { type: 'manual' },
     },
@@ -1011,24 +1023,24 @@ JSON ONLY:
   promotion_inquiry: {
     created: {
       name: 'created',
-      description: '优惠咨询工单开立，直接进入查询阶段。',
+      description: 'Promotion-inquiry case opened — go straight to the lookup stage.',
       transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
     },
     investigating: {
       name: 'investigating',
-      description: '查询用户优惠活动状态、可参与活动和打码量条件。一次性提供完整信息给客户。',
+      description: 'Check the promotion status, eligible promotions, and turnover conditions for this member. Give the customer the complete information in one go.',
       availableSkills: ['get_active_promotions', 'get_eligible_promotions', 'get_withdraw_conditions', 'request_user_input'],
       evidenceRequirements: [
         {
           factKey: 'activePromotions',
-          description: 'get_active_promotions 返回的当前优惠（字段 `data`）',
+          description: 'Current promotions returned by get_active_promotions (field `data`)',
           source: 'skill_output',
           skillName: 'get_active_promotions',
           required: false,
         },
         {
           factKey: 'eligiblePromotions',
-          description: 'get_eligible_promotions 返回的可参与优惠（字段 `data`）',
+          description: 'Eligible promotions returned by get_eligible_promotions (field `data`)',
           source: 'skill_output',
           skillName: 'get_eligible_promotions',
           required: false,
@@ -1042,7 +1054,7 @@ JSON ONLY:
     },
     resolved: {
       name: 'resolved',
-      description: '结案并向客户说明优惠信息',
+      description: 'Close the case and explain the promotion information to the customer',
       requiredSkills: ['finalize_case'],
       transition: { type: 'manual' },
     },

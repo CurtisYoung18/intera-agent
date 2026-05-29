@@ -276,6 +276,21 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           ))}
           {!loading && session && (
             <>
+              {session.userId && (() => {
+                // UserProfile is keyed by a stable profileKey (user:<id> / chat:<chatId>),
+                // matching how the agent loop & compact write it. Link to that key.
+                const u = session.userId.trim()
+                const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u)
+                const pkey = (u && u !== 'anonymous' && !isUuid) ? `user:${u}` : `chat:${decodedChatId}`
+                return (
+                <Link href={`/ops/users/${encodeURIComponent(pkey)}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo/20 bg-indigo/[0.06] hover:bg-indigo/[0.12] transition-colors text-indigo"
+                  title="Open this user's profile (cross-chat history & preferences)">
+                  <User className="w-3.5 h-3.5" />
+                  Profile
+                </Link>
+                )
+              })()}
               <ExportButton filename={`chat-${decodedChatId.slice(0, 8)}`} label="Export"
                 getData={() => ({ session, messages, traces, exportedAt: new Date().toISOString() })} />
               <button type="button" onClick={handleDelete} disabled={deleting}

@@ -51,11 +51,10 @@ describe('renderSkillByHint', () => {
       expect(cards[1]!.title).toBe('B')
     })
 
-    it('returns text when array is empty', () => {
+    it('renders nothing (noop) when array is empty — the agent reply covers it', () => {
       const hint: LivechatRenderHint = { kind: 'carousel', itemsField: '$.empty', itemTemplate: { titleField: '$.title' } }
       const actions = renderSkillByHint({ empty: [] }, hint)
-      expect(actions[0]!.type).toBe('send_text')
-      expect((actions[0] as { text: string }).text).toBe('(no results)')
+      expect(actions[0]!.type).toBe('noop')
     })
   })
 
