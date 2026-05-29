@@ -161,6 +161,8 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [compactResult, setCompactResult] = useState<any>(null)
   const [compacting, setCompacting] = useState(false)
+  const [profileResult, setProfileResult] = useState<any>(null)
+  const [updatingProfile, setUpdatingProfile] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const loadMemory = async () => {
@@ -184,8 +186,18 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
       const d = await r.json()
       setCompactResult(d)
       loadMemory()
-    } catch (e) { setCompactResult({ error: 'Compact failed' }) }
+    } catch { setCompactResult({ error: 'Compact failed' }) }
     finally { setCompacting(false) }
+  }
+  const handleUpdateProfile = async () => {
+    setUpdatingProfile(true)
+    setProfileResult(null)
+    try {
+      const r = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/update-profile`, { method: 'POST' })
+      const d = await r.json()
+      setProfileResult(d)
+    } catch { setProfileResult({ error: 'Update failed' }) }
+    finally { setUpdatingProfile(false) }
   }
 
   const metrics = useMemo(() => computeMetrics(traces), [traces])
@@ -375,21 +387,53 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
       {/* Memory panel */}
       {showMemory && (
         <div className="mb-4 rounded-2xl border border-teal/[0.08] bg-white/70 p-5 space-y-4">
-          <div className="flex items-center justify-between">
+          {/* Header + action buttons */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <h3 className="text-[13px] font-bold text-[var(--mist)]">Chat Memory</h3>
-            <div className="flex gap-2">
-              {memoryData?.userId && (
-                <Link href={`/ops/users/${encodeURIComponent(memoryData.userId)}`}
-                  className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-indigo/20 bg-indigo/[0.04] text-indigo hover:bg-indigo/[0.08]">
-                  <User className="w-3 h-3" /> User Profile
-                </Link>
-              )}
+            <div className="flex gap-2 flex-wrap">
+              {/* Compact Chat — saves summary to ChatMemory.summary per case */}
               <button onClick={handleCompact} disabled={compacting}
                 className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-teal/20 bg-teal/[0.06] text-teal hover:bg-teal/[0.12] disabled:opacity-50">
-                <Zap className="w-3 h-3" /> {compacting ? 'Compacting...' : 'Compact Now'}
+                <Zap className="w-3 h-3" />
+                {compacting ? 'Compacting…' : 'Compact Chat'}
               </button>
+              {/* Update User Profile — merges chat summaries into the cross-chat UserProfile */}
+              <button onClick={handleUpdateProfile} disabled={updatingProfile}
+                className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-indigo/20 bg-indigo/[0.04] text-indigo hover:bg-indigo/[0.08] disabled:opacity-50"
+                title="Merge this chat's summaries into the user's cross-chat profile">
+                <User className="w-3 h-3" />
+                {updatingProfile ? 'Updating…' : 'Update User Profile'}
+              </button>
+              {/* Link to full User Profile page */}
+              {memoryData?.profile && (
+                <Link href={`/ops/users/${encodeURIComponent(memoryData.profile.userId)}`}
+                  className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-black/[0.06] text-[var(--fog)] hover:text-[var(--mist)] hover:border-black/10">
+                  <User className="w-3 h-3" /> View Profile →
+                </Link>
+              )}
             </div>
           </div>
+
+          {/* Compact Chat result banner */}
+          {compactResult && !compactResult.error && (
+            <div className="rounded-xl border border-teal/10 bg-teal/[0.04] p-3 text-[11px] text-[var(--mist)]">
+              ✓ Compact complete · Model: {compactResult.compactModel} · {compactResult.beforeTokens?.toLocaleString()} → {compactResult.afterTokens?.toLocaleString()} chars
+              {!compactResult.summary && <span className="ml-2 text-amber">(no summary generated — conversation may be too short)</span>}
+            </div>
+          )}
+          {compactResult?.error && (
+            <div className="rounded-xl border border-vermillion/10 bg-vermillion/[0.04] p-3 text-[11px] text-vermillion">{compactResult.error}</div>
+          )}
+
+          {/* Update User Profile result banner */}
+          {profileResult && !profileResult.error && (
+            <div className="rounded-xl border border-indigo/10 bg-indigo/[0.04] p-3 text-[11px] text-[var(--mist)]">
+              ✓ User Profile updated · {profileResult.memoriesMerged} summaries merged · Profile key: <code className="font-mono text-indigo/80">{profileResult.profileKey}</code>
+            </div>
+          )}
+          {profileResult?.error && (
+            <div className="rounded-xl border border-vermillion/10 bg-vermillion/[0.04] p-3 text-[11px] text-vermillion">{profileResult.error}</div>
+          )}
 
           {memoryLoading ? (
             <div className="flex h-24 items-center justify-center">
@@ -397,23 +441,16 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
             </div>
           ) : memoryData ? (
             <>
-              {compactResult && !compactResult.error && (
-                <div className="rounded-xl border border-teal/10 bg-teal/[0.04] p-3 text-[11px] text-[var(--mist)]">
-                  Compact complete · Model: {compactResult.compactModel} · Tokens: {compactResult.beforeTokens} → {compactResult.afterTokens}
-                </div>
-              )}
-              {compactResult?.error && (
-                <div className="rounded-xl border border-vermillion/10 bg-vermillion/[0.04] p-3 text-[11px] text-vermillion">{compactResult.error}</div>
-              )}
+              {/* Per-case working memory */}
               {memoryData.memories?.map((mem: any) => (
                 <div key={mem.caseId} className="rounded-xl border border-black/[0.04] bg-white/40 p-3">
-                  <p className="text-[10px] text-[var(--fog)]/50 mb-1">Case {mem.caseId.slice(0, 8)} · v{mem.dashboardVersion}</p>
+                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">Case {mem.caseId.slice(0, 8)} · v{mem.dashboardVersion}</p>
                   {mem.summary ? (
-                    <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[200px] overflow-auto">
-                      <ReactMarkdown>{mem.summary.slice(0, 2000)}</ReactMarkdown>
+                    <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[240px] overflow-auto">
+                      <ReactMarkdown>{mem.summary.slice(0, 3000)}</ReactMarkdown>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-[var(--fog)]/50 italic">No summary yet</p>
+                    <p className="text-[11px] text-[var(--fog)]/50 italic">No summary yet — click "Compact Chat" to generate one.</p>
                   )}
                   <div className="mt-2 flex gap-3 text-[10px] text-[var(--fog)]/50">
                     <span>{(mem.skillsCalled?.length ?? 0)} skills</span>
@@ -423,6 +460,16 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
               ))}
               {(!memoryData.memories || memoryData.memories.length === 0) && (
                 <p className="text-[12px] text-[var(--fog)]/50 py-4 text-center">No memory data for this chat yet.</p>
+              )}
+
+              {/* User Profile preview (cross-chat accumulation) */}
+              {memoryData.profile?.profile && (
+                <div className="rounded-xl border border-indigo/[0.08] bg-indigo/[0.03] p-3">
+                  <p className="text-[10px] font-medium text-indigo/70 mb-2">User Profile (cross-chat)</p>
+                  <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[160px] overflow-auto">
+                    <ReactMarkdown>{memoryData.profile.profile.slice(0, 1500)}</ReactMarkdown>
+                  </div>
+                </div>
               )}
             </>
           ) : null}

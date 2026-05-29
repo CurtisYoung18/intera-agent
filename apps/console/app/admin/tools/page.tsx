@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Bot, Eye, ChevronDown, Plug } from 'lucide-react'
+import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Eye, ChevronDown, Plug, BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
@@ -61,16 +61,48 @@ function mockFixtureChips(raw?: string | null): string[] | null {
   return [JSON.stringify(v).slice(0, 120)]
 }
 
+interface KnowledgeSourceRow {
+  id: string
+  name: string
+  description: string | null
+  enabled: boolean
+  topK: number
+  rerankVersion: string | null
+}
+
 export default function SkillsPage() {
   const { t } = useConsoleLocale()
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<SkillItem | null>(null)
+  const [viewSkill, setViewSkill] = useState<SkillItem | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [originalName, setOriginalName] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; status: number; body: unknown } | null>(null)
+  const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSourceRow[]>([])
+  const [kbLoading, setKbLoading] = useState(true)
+
+  const loadKnowledgeSources = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/knowledge/sources')
+      const data = await res.json()
+      setKnowledgeSources(data.sources || [])
+    } catch { /* ignore */ }
+    finally { setKbLoading(false) }
+  }, [])
+
+  const toggleKnowledgeSource = useCallback(async (src: KnowledgeSourceRow) => {
+    const updated = { ...src, enabled: !src.enabled }
+    await fetch(`/api/admin/knowledge/sources/${encodeURIComponent(src.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: updated.enabled }),
+    })
+    loadKnowledgeSources()
+  }, [loadKnowledgeSources])
+
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/skills')
     const data = await res.json()
@@ -78,12 +110,11 @@ export default function SkillsPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(); loadKnowledgeSources() }, [load, loadKnowledgeSources])
 
   const toggleEnabled = useCallback(async (skill: SkillItem) => {
-    const updated = { ...skill, enabled: !skill.enabled }
     const url = `/api/admin/skills/${encodeURIComponent(skill.name)}`
-    await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) })
+    await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !skill.enabled }) })
     load()
   }, [load])
 
@@ -183,21 +214,6 @@ export default function SkillsPage() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('skills.searchPh')} className="glass-input-console pl-10 text-[13px]" />
       </div>
 
-      {/* Knowledge search tools notice */}
-      <div className="mb-6 p-4 rounded-xl border border-teal-500/15 bg-teal-500/[0.04] flex items-start gap-3">
-        <div className="w-8 h-8 rounded-lg bg-teal-500/[0.08] flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Search className="w-4 h-4 text-teal-600" />
-        </div>
-        <div>
-          <p className="text-[13px] font-semibold text-[var(--mist)]">Knowledge search tools are auto-generated</p>
-          <p className="text-[12px] text-[var(--fog)] mt-0.5">
-            Each{' '}
-            <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline">Knowledge Source</Link>
-            {' '}creates a <code className="text-[11px] bg-teal-500/[0.08] px-1 rounded">kb_search_&lt;name&gt;</code> tool automatically.
-            Enable or disable sources on the Knowledge page — no manual skill setup needed.
-          </p>
-        </div>
-      </div>
 
       {filtered.length === 0 ? (
         <EmptyState icon={Puzzle} title={t('skills.noSkills')} description={search ? t('common.noMatches') : t('skills.noSkillsDesc')} />
@@ -212,9 +228,9 @@ export default function SkillsPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {systemSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => setViewSkill(s)}>
                     <div className="p-5">
-                      {/* Top row: icon + info + toggle */}
+                      {/* Top row: icon + name + lock (no toggle for system tools) */}
                       <div className="flex items-start gap-3 mb-3">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${s.mode === 'http' ? 'bg-sky/[0.08]' : s.mode === 'engine_managed' ? 'bg-amber/[0.08]' : s.mode === 'channel' ? 'bg-purple/[0.08]' : 'bg-lavender/[0.08]'}`}>
                           {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : s.mode === 'channel' ? <Plug className="w-5 h-5 text-purple" /> : <Box className="w-5 h-5 text-lavender" />}
@@ -222,77 +238,30 @@ export default function SkillsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</span>
-                            {s.isSystem && <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />}
+                            <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
-                            {(() => { try { return s.renderHints && JSON.parse(s.renderHints)?.livechat } catch { return false } })() && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-indigo/[0.06] text-indigo flex items-center gap-1"><Plug className="w-2.5 h-2.5" />LiveChat</span>
-                            )}
                           </div>
                         </div>
-                        <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0 transition-colors">
-                          {s.enabled
-                            ? <ToggleRight className="w-7 h-7 text-malachite" />
-                            : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />
-                          }
-                        </button>
                       </div>
 
                       {/* Description */}
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
 
                       {/* Special skill configure links */}
-                      {s.name === 'kb_hybrid_retrieve' && (
-                        <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-sky hover:text-sky/80 mb-2 transition-colors">
-                          <ExternalLink className="w-3 h-3" />
-                          {t('skills.configureInKnowledge')}
-                        </Link>
-                      )}
                       {s.name === 'create_human_task' && (
-                        <Link href="/admin/human-ops" className="inline-flex items-center gap-1 text-[11px] text-amber hover:text-amber/80 mb-2 transition-colors">
+                        <Link href="/admin/human-ops" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 text-[11px] text-amber hover:text-amber/80 mb-2 transition-colors">
                           <ExternalLink className="w-3 h-3" />
                           Configure in Human Ops
                         </Link>
                       )}
 
-                      {s.mode === 'static' && (
-                        <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
-                          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
-                          {(() => {
-                            const chips = mockFixtureChips(s.mockFixture)
-                            if (!s.mockFixture?.trim()) {
-                              return <p className="text-[11px] text-[var(--smoke)] italic">{t('skills.noMockYet')}</p>
-                            }
-                            if (chips === null) {
-                              return <p className="text-[11px] text-vermillion/80">{t('skills.mockMalformedCard')}</p>
-                            }
-                            if (chips.length === 0) {
-                              return <span className="text-[11px] font-mono text-[var(--fog)]">{'{}'}</span>
-                            }
-                            return (
-                              <div className="flex flex-wrap gap-1">
-                                {chips.map((c, i) => (
-                                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-md bg-lavender/[0.08] text-lavender/90 font-mono max-w-full truncate border border-lavender/15" title={c}>{c}</span>
-                                ))}
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      )}
-                      {/* Bottom actions — slide up on hover */}
-                      <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
-                        <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
-                        <div className="flex gap-1">
-                          <button onClick={e => { e.stopPropagation(); openEdit(s) }}
-                            className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" title={t('common.edit')}>
-                            <Pencil className="w-3.5 h-3.5 text-[var(--fog)]" />
-                          </button>
-                          <button onClick={e => { e.stopPropagation(); handleDelete(s.name) }}
-                            className="p-1.5 rounded-lg hover:bg-vermillion/5 transition-colors" title={t('common.delete')}>
-                            <Trash2 className="w-3.5 h-3.5 text-vermillion/60" />
-                          </button>
-                        </div>
+                      {/* Bottom: read-only hint slides up on hover */}
+                      <div className="flex items-center justify-end translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
+                        <span className="flex items-center gap-1 text-[10px] text-[var(--fog)]/60">
+                          <Eye className="w-3 h-3" /> View details
+                        </span>
                       </div>
                     </div>
                   </TiltCard>
@@ -311,38 +280,88 @@ export default function SkillsPage() {
               <p className="text-[12px] text-[var(--fog)] mb-4">Behavior varies per channel — configured in each Channel&apos;s detail page.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {channelSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor="#7c3aed" onClick={() => {}}>
-                    <div className="p-5">
-                      <div className="flex items-start gap-3 mb-3">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple/[0.08]">
-                          <Plug className="w-5 h-5 text-purple" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</span>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple/[0.08] text-purple">Channel</span>
-                          </div>
-                        </div>
-                        <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0">
-                          {s.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
-                        </button>
+                  <div key={s.id || s.name} className="rounded-2xl border border-purple/[0.12] bg-white/60 p-5">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple/[0.08]">
+                        <Plug className="w-5 h-5 text-purple" />
                       </div>
-                      {s.description ? <p className="text-[12px] text-[var(--fog)] line-clamp-3">{s.description}</p> : null}
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[13px] font-semibold text-[var(--mist)] truncate block">{s.name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple/[0.08] text-purple">Channel</span>
+                        </div>
+                      </div>
+                      {/* Functional toggle for channel tools */}
+                      <button
+                        onClick={() => toggleEnabled(s)}
+                        className="flex-shrink-0 transition-opacity hover:opacity-80"
+                        title={s.enabled ? 'Click to disable' : 'Click to enable'}
+                      >
+                        {s.enabled
+                          ? <ToggleRight className="w-7 h-7 text-malachite" />
+                          : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
+                      </button>
                     </div>
-                  </TiltCard>
+                    {s.description ? <p className="text-[12px] text-[var(--fog)] line-clamp-3">{s.description}</p> : null}
+                  </div>
                 ))}
               </div>
             </section>
           )}
 
-          {/* ── Knowledge Sources (auto-generated kb_search_* tools) ── */}
+          {/* ── Knowledge Search Tools (auto-generated kb_search_* per source) ── */}
           <section className="mb-8">
-            <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-1">Knowledge Search Tools</h2>
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="text-[15px] font-semibold text-[var(--mist)]">Knowledge Search Tools</h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-teal-500/[0.08] text-teal-600 border border-teal-500/20">Auto-generated</span>
+            </div>
             <p className="text-[12px] text-[var(--fog)] mb-4">
-              kb_search_* tools are auto-generated from{' '}
-              <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline">Knowledge Sources</Link>.
-              Enable or disable sources there — each enabled source becomes a tool.
+              Each source below auto-generates a <code className="text-[11px] bg-teal-500/[0.08] px-1 rounded">kb_search_&lt;name&gt;</code> tool.
+              Toggle here or configure details on the{' '}
+              <Link href="/admin/knowledge" className="text-teal-600 hover:text-teal-700 underline">Knowledge page</Link>.
             </p>
+            {kbLoading ? (
+              <div className="text-[12px] text-[var(--fog)]">Loading knowledge sources…</div>
+            ) : knowledgeSources.length === 0 ? (
+              <div className="rounded-xl border border-teal-500/15 bg-teal-500/[0.04] p-4 text-[12px] text-[var(--fog)]">
+                No knowledge sources configured.{' '}
+                <Link href="/admin/knowledge" className="text-teal-600 underline">Add one →</Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {knowledgeSources.map(src => (
+                  <div key={src.id} className="rounded-2xl border border-teal-500/[0.12] bg-white/60 p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-teal-500/[0.08]">
+                        <BookOpen className="w-5 h-5 text-teal-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13px] font-semibold text-[var(--mist)] truncate">kb_search_{src.name.replace(/[^a-zA-Z0-9_-]/g, '_')}</span>
+                        </div>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-teal-500/[0.08] text-teal-600 mt-0.5 inline-block">KB source</span>
+                      </div>
+                      <button
+                        onClick={() => toggleKnowledgeSource(src)}
+                        className="flex-shrink-0 transition-opacity hover:opacity-80"
+                        title={src.enabled ? 'Click to disable' : 'Click to enable'}
+                      >
+                        {src.enabled
+                          ? <ToggleRight className="w-7 h-7 text-malachite" />
+                          : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
+                      </button>
+                    </div>
+                    {src.description && (
+                      <p className="mt-2 text-[12px] text-[var(--fog)] line-clamp-2">{src.description}</p>
+                    )}
+                    <div className="mt-2 flex gap-2 text-[10px] text-[var(--smoke)]">
+                      {src.rerankVersion && <span className="px-1.5 py-0.5 rounded bg-teal-500/[0.06]">{src.rerankVersion.split('-')[0]}</span>}
+                      <span className="px-1.5 py-0.5 rounded bg-black/[0.04]">topK {src.topK}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* ── Special Skills ── */}
@@ -366,12 +385,6 @@ export default function SkillsPage() {
                         </button>
                       </div>
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
-                      {s.name === 'kb_hybrid_retrieve' && (
-                        <Link href="/admin/knowledge" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
-                          <ExternalLink className="w-3 h-3" />
-                          {t('skills.configureInKnowledge')}
-                        </Link>
-                      )}
                       {s.name === 'create_human_task' && (
                         <Link href="/admin/human-ops" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
                           <ExternalLink className="w-3 h-3" />
@@ -465,6 +478,50 @@ export default function SkillsPage() {
         </div>
       )}
 
+
+      {/* Read-only detail panel for system tools */}
+      <ImmersiveModal open={!!viewSkill} onClose={() => setViewSkill(null)} title={viewSkill?.name ?? ''}>
+        {viewSkill && (
+          <div className="space-y-4">
+            {/* Mode + locked badge */}
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${viewSkill.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : viewSkill.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>
+                {viewSkill.mode === 'engine_managed' ? 'Engine' : viewSkill.mode === 'channel' ? 'Channel' : viewSkill.mode}
+              </span>
+              <span className="flex items-center gap-1 text-[11px] text-amber/80 bg-amber/[0.06] px-2 py-0.5 rounded-full">
+                <Lock className="w-3 h-3" /> Read-only — managed by the engine
+              </span>
+            </div>
+            {/* Description */}
+            <div>
+              <p className="text-[11px] font-medium text-[var(--fog)] mb-1">{t('common.description')}</p>
+              <p className="text-[13px] text-[var(--mist)] leading-relaxed">{viewSkill.description || t('common.noDescription')}</p>
+            </div>
+            {/* LLM model view */}
+            <div>
+              <p className="text-[11px] font-medium text-[var(--fog)] mb-1 flex items-center gap-1"><Eye className="w-3 h-3" /> Model sees</p>
+              <pre className="text-[10px] font-mono text-[var(--mist)] p-3 rounded-xl bg-black/[0.04] border border-[var(--border-subtle)] overflow-auto max-h-[260px] whitespace-pre-wrap">
+{JSON.stringify({
+  name: viewSkill.name,
+  description: viewSkill.description || '',
+  input_schema: (() => { try { return JSON.parse(viewSkill.inputSchema || '{}') } catch { return {} } })(),
+}, null, 2)}
+              </pre>
+            </div>
+            {/* Special configure links */}
+            {viewSkill.name === 'create_human_task' && (
+              <Link href="/admin/human-ops" onClick={() => setViewSkill(null)} className="inline-flex items-center gap-1.5 text-[12px] text-amber hover:text-amber/80 transition-colors">
+                <ExternalLink className="w-3.5 h-3.5" /> Configure escalation queues in Human Ops
+              </Link>
+            )}
+            <div className="pt-4 border-t border-[var(--border-subtle)]">
+              <button type="button" onClick={() => setViewSkill(null)} className="w-full py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </ImmersiveModal>
 
       {/* Slide Panel Editor — same logic as before */}
       <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('skills.newSkill') : t('skills.editSkill')}>

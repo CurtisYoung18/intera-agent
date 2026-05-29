@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, User, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Save, User, MessageSquare, Trash2 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ReactMarkdown from 'react-markdown'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -30,6 +30,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -68,6 +69,20 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
     finally { setSaving(false) }
   }
 
+  const handleDelete = async () => {
+    if (!confirm(`Delete ALL data for user ${userId}? This cannot be undone.`)) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(userId)}/profile`, { method: 'DELETE' })
+      if (res.ok) {
+        router.push('/ops/users')
+      } else {
+        alert('Delete failed')
+      }
+    } catch (e) { console.error('Delete failed:', e) }
+    finally { setDeleting(false) }
+  }
+
   if (loading) {
     return <div className="flex h-screen items-center justify-center"><OrganicLoader icon="spin" size={28} className="text-indigo/60" /></div>
   }
@@ -89,6 +104,14 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
             </p>
           )}
         </div>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-red-500 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-40 transition-colors flex-shrink-0"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          {deleting ? 'Deleting...' : 'Delete'}
+        </button>
       </header>
 
       {profile && (

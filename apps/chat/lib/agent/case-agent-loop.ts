@@ -645,10 +645,7 @@ export class CaseAgentLoop {
       return { type: 'continue' }
     }
 
-    // Exit: case now waiting for human
-    const waitMsg =
-      'A specialist from our team is now reviewing your case. You can continue to send messages here — I will relay any updates as soon as the review is complete.'
-    sendEvent({ type: 'text_delta', data: waitMsg, timestamp: new Date().toISOString() })
+    // Exit: case now waiting for human. Agent already told the customer — no extra hardcoded message.
     sendEvent({
       type: 'message_stop',
       data: { reason: 'waiting_human', stage: this._currentStage },

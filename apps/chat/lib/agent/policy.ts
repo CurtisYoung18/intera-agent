@@ -25,7 +25,7 @@ export interface PolicyContext {
   skillsCalled?: string[]
   /** Skill names executed this iteration (postTool filtering). */
   executedSkills?: string[]
-  /** Full skill results including sub-agent outputs (for investigate_before_escalation check). */
+  /** Full skill results including sub-agent outputs. */
   skillResults?: Record<string, unknown>
 }
 
@@ -170,7 +170,7 @@ export class PolicyEngine {
 
   /** Apply default hook assignments (used only when no DB data and no AgentConfig config). */
   private applyBuiltInHookDefaults(): void {
-    this.hooks.preTool = ['no_high_risk_account_change', 'investigate_before_escalation']
+    this.hooks.preTool = ['no_high_risk_account_change']
     this.hooks.postTool = ['conflict_requires_human']
     this.hooks.preFinalize = [
       'evidence_required_before_resolution',

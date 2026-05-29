@@ -257,9 +257,10 @@ export async function updateChatProperties(
   chatId: string, props: Record<string, string>, botAccessToken: string, licenseId: string,
   region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
-  const properties: Record<string, Record<string, string>> = {}
+  // LiveChat namespaced properties: { intera: { case_id: "xxx", ... } }
+  const interaProps: Record<string, string> = {}
   for (const [k, v] of Object.entries(props)) {
-    properties[`intera.${k}`] = { value: v }
+    interaProps[k] = v
   }
-  await lcPost('update_chat_properties', { id: chatId, properties }, botAccessToken, licenseId, region, authType, accountId)
+  await lcPost('update_chat_properties', { id: chatId, properties: { intera: interaProps } }, botAccessToken, licenseId, region, authType, accountId)
 }

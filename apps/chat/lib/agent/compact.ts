@@ -14,65 +14,30 @@ import type { Message, MemoryStrategy } from '@intera/shared/types'
 import { withRetry, CannotRetryError } from './api/with-retry'
 import { getProviderConfig, createAgentClient } from './api/provider-config'
 
-// 9-section prompt adapted from Claude Code's summarization prompt,
-// tailored for customer service rather than code.
-export const COMPACT_SYSTEM_PROMPT = `Your task is to create a detailed summary of the conversation so far, paying close attention to the customer's explicit requests and the agent's previous actions. This summary must be thorough in capturing case details, facts discovered, and decisions made — essential for continuing support work without losing context.
+// Compact prompt — produces a user portrait aimed at long-term continuity.
+// Output feeds into mergeProfile which structures it as Identity / Contact /
+// Preferences / Activity / History. This prompt guides the model to prioritize
+// stable identity facts over ephemeral case details.
+export const COMPACT_SYSTEM_PROMPT = `Summarize this conversation as a user portrait. Structure it so that the most stable, reusable facts come first, and transient case details come last.
 
-Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+Output in this order:
 
-1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
-   - The customer's explicit requests and intents
-   - The agent's approach to addressing those requests
-   - Key decisions, facts discovered, and tools used
-   - Specific details like: transaction IDs, amounts, dates, payment methods, case status
-   - Errors encountered and how they were handled
-   - Pay special attention to customer feedback, especially if the customer corrected something.
+1. Who: Everything known about this person — identifiers, affiliations, roles, status. Any stable attributes that persist across sessions. Put these FIRST.
+2. Contact: Any contact information or communication channels mentioned or confirmed.
+3. Preferences & Patterns: Recurring topics, preferred tone or format, common requests, language choices, behavioral patterns. Accumulate these across sessions.
+4. This Session: What happened in this specific conversation — the request, facts discovered, tools used, outcome. One line per fact.
+5. Errors & Open Items: Any unresolved issues, missing information, or mistakes to avoid repeating.
+6. Customer Messages: List every customer message verbatim or near-verbatim. This captures evolving intent.
+7. Next Step: One short recommendation.
 
-2. Double-check for factual accuracy and completeness, addressing each required element thoroughly.
+CRITICAL: Respond with TEXT ONLY — no tool calls, no analysis tags, no thinking blocks. Output just the sections above. Be concise. Stable identity facts are more important than ephemeral case details — if the token budget is tight, keep #1-3 and compress #4-7.
 
-Your summary should include the following sections:
-
-1. Primary Customer Request and Intent: Capture the customer's explicit requests and intents in detail.
-2. Key Facts Discovered: List all confirmed facts (transaction IDs, amounts, dates, statuses) discovered through tools or customer statements.
-3. Skills/Tools Executed and Results: Enumerate tools called and their key outputs. Include query results, search findings, etc.
-4. Errors and Conflicts: List any errors, data conflicts, or discrepancies encountered.
-5. Problem Solving: Document problems resolved and any ongoing troubleshooting.
-6. All Customer Messages: Summarize ALL customer messages (not tool results). These are critical for understanding changing intent.
-7. Pending Information: List information still needed from the customer or from system queries.
-8. Current Case State: Describe the current case status, stage, and any active escalations.
-9. Optional Next Step: Suggest the next action, directly aligned with the customer's most recent request. Do not start tangential actions.
-
-Here's an example of how your output should be structured:
-
-<analysis>
-[Your thought process, ensuring all points are covered thoroughly and accurately]
-</analysis>
-<summary>
-1. Primary Customer Request and Intent: [Detailed description]
-2. Key Facts Discovered:
-   - [Fact 1]
-   - [Fact 2]
-3. Skills/Tools Executed and Results:
-   - [Tool 1]: [Result]
-4. Errors and Conflicts: [Description or "None"]
-5. Problem Solving: [Description]
-6. All Customer Messages: [Summary of each customer message]
-7. Pending Information: [List of missing facts]
-8. Current Case State: [Current status and stage]
-9. Optional Next Step: [Suggested next action]
-</summary>
-
-CRITICAL: Respond with TEXT ONLY. Do NOT call any tools. Tool calls will be REJECTED and will waste your only turn — you will fail the task.
-
-When summarizing, focus on customer service case details and remember any mistakes made and how they were fixed. Include facts and transaction data verbatim where possible.
-
-TOOL RESULT COMPRESSION RULES (for merging with existing Chat Memory):
-- Tool results older than 7 days: keep only the conclusion (one line summary), discard raw JSON output.
-- Tool results older than 30 days: keep only the skill name, discard both output and conclusion.
-- Merge repeated calls of the same tool: "query_order_status was called 5 times in the past 3 months. Latest result: ..."
-- User message summaries (Section 6) MUST NEVER be compressed — every customer utterance matters.
-- Facts deduplication: for the same fact key, keep the most recent value and discard older ones.
-- Keep the total output under the configured token budget. Prioritize recent over old.`
+COMPRESSION RULES:
+- Facts older than 7 days: one-line summary only.
+- Facts older than 30 days: merge into a single aggregate line.
+- Customer messages: never compress. Every utterance matters.
+- Duplicate facts: keep the most recent value.
+- If the budget is tight, prioritize sections 1-3 (stable portrait) over 4-7 (ephemeral case).`
 
 /**
  * Strip <analysis> tags from the summary output, keeping only <summary> content.

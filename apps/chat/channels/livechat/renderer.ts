@@ -160,12 +160,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       }
 
       // ── human_task_created: { taskId, caseId, question? } ──
+      // Agent already tells the customer about escalation in its own words.
       case 'human_task_created': {
-        const d = event.data as { taskId?: string; question?: string } | undefined
-        const msg = d?.question
-          ? `Your case has been escalated to a specialist. Question: ${d.question}`
-          : 'Your case has been escalated to a specialist. A human operator will respond shortly.'
-        return { type: 'send_text', text: msg }
+        return { type: 'noop' }
       }
 
       // ── error: { message?, reason? } ──

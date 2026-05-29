@@ -485,7 +485,7 @@ export const en: Record<string, string> = {
   'sidebar.switchToEn': 'English',
   'shell.adminUser': 'Admin User',
   'shell.demoVendor': 'Demo Vendor',
-  'shell.version': 'v0.1',
+  'shell.version': 'v1.0',
   'shell.backToTop': 'Back to top',
   'shell.backToTopAria': 'Scroll to top',
 
@@ -1620,7 +1620,7 @@ export const zh: Record<string, string> = {
   'sidebar.switchToEn': 'English',
   'shell.adminUser': '管理员',
   'shell.demoVendor': '演示商户',
-  'shell.version': 'v0.1',
+  'shell.version': 'v1.0',
   'shell.backToTop': '回到顶部',
   'shell.backToTopAria': '滚动到页面顶部',
 

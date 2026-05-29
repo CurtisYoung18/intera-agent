@@ -299,7 +299,6 @@ export class StreamingToolExecutor {
         status: 'resolved',
         resolvedAt: new Date().toISOString(),
       },
-      kb_hybrid_retrieve: { results: [], sources: [] },
     }
 
     return defaultResponses[definition.name] || { success: true }
@@ -335,9 +334,8 @@ export class StreamingToolExecutor {
 
     // For kb_search_* tools: each knowledge source is a separate skill with its
     // groupIds baked into the endpoint or resolved from DB at execution time.
-    // The old kb_hybrid_retrieve fallback remains for backwards compatibility.
     let body = input
-    if (definition.name === 'kb_hybrid_retrieve' || definition.name.startsWith('kb_search_')) {
+    if (definition.name.startsWith('kb_search_')) {
       try {
         const { prisma } = await import('@intera/shared/prisma')
 
@@ -353,11 +351,6 @@ export class StreamingToolExecutor {
             where: { name: sourceName, enabled: true },
           })
           if (source) sources = [source]
-        } else {
-          // kb_hybrid_retrieve: load all enabled (backwards compat)
-          sources = await prisma.knowledgeSource.findMany({
-            where: { enabled: true },
-          })
         }
 
         if (sources.length > 0) {
@@ -427,7 +420,7 @@ export class StreamingToolExecutor {
     // We must sort descending by score so the most relevant chunks surface first.
     // This is idempotent when the list is already sorted (no-rerank path).
     if (
-      (definition.name === 'kb_hybrid_retrieve' || definition.name.startsWith('kb_search_')) &&
+      definition.name.startsWith('kb_search_') &&
       data && Array.isArray((data as Record<string, unknown>).list)
     ) {
       const list = (data as Record<string, unknown>).list as Array<{ score?: number }>

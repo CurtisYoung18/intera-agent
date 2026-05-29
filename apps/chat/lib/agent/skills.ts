@@ -945,7 +945,7 @@ export class SkillRouter {
           renderHints: {
             livechat: {
               kind: 'carousel',
-              itemsField: '$.matches',
+              itemsField: '$.list',
               idField: '$.id',
               itemTemplate: {
                 titleField: '$.title',

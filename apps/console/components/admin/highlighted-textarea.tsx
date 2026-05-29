@@ -45,10 +45,18 @@ function highlightTokens(
 }
 
 /**
- * Textarea with syntax-highlighted backdrop for placeholders.
- * Uses a transparent textarea stacked above a styled div so the caret,
- * selection, and resize handle remain native while placeholder tokens
- * render in colour on the backdrop layer.
+ * Textarea with a coloured backdrop layer for {{placeholder}} tokens.
+ *
+ * Cursor-alignment fix
+ * --------------------
+ * Browsers render text metrics differently in <div> vs <textarea> with the
+ * same font-family, causing the backdrop text and the transparent textarea
+ * text to drift apart — the caret then appears mid-word.
+ *
+ * Fix: use `system-ui` (most consistent cross-element), explicit
+ * `box-sizing: border-box` on both layers, and identical computed styles
+ * (padding, border-width, line-height) so both layers occupy the same
+ * pixel rectangle before antialiasing.
  */
 export default function HighlightedTextarea({
   id,
@@ -70,48 +78,76 @@ export default function HighlightedTextarea({
 
   const segments = highlightTokens(value, highlights)
 
-  // Shared typography so text layers align pixel-perfectly.
-  const typography = {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: '13px',
-    lineHeight: '1.625',
-    whiteSpace: 'pre-wrap' as const,
-    overflowWrap: 'break-word' as const,
+  /**
+   * Typography tokens shared verbatim by both layers.
+   * Using system-ui instead of a monospace stack:
+   *   - prose prompts are more readable in a proportional font
+   *   - system-ui renders identically in <div> and <textarea> in all
+   *     major browsers (the monospace stack can differ by 0.5–1 px)
+   */
+  const typography: React.CSSProperties = {
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: '13.5px',
+    lineHeight: '1.75',
+    letterSpacing: '0px',         // explicit 0 prevents browser kerning drift
+    fontKerning: 'none',          // ditto for kerning tables
+    fontFeatureSettings: '"kern" 0, "liga" 0', // disable ligatures in both
     wordBreak: 'break-word' as const,
+    overflowWrap: 'break-word' as const,
+    whiteSpace: 'pre-wrap' as const,
+    boxSizing: 'border-box' as const,
   }
 
+  // Shared box model — must be identical byte-for-byte on both layers.
+  const PAD = '0.75rem 1rem'
+  const BORDER = '1.5px'
+  const RADIUS = '0.875rem'
+
   return (
-    <div className={className} style={{ position: 'relative' }}>
-      {/* Backdrop — renders coloured placeholder tokens behind the textarea */}
+    <div className={className} style={{ position: 'relative', boxSizing: 'border-box' }}>
+      {/* ── Backdrop: renders coloured placeholder spans ── */}
       <div
         ref={backdropRef}
         aria-hidden="true"
         style={{
           ...typography,
           position: 'absolute',
-          inset: 0,
-          padding: '0.75rem 0.875rem',
+          top: 0, left: 0, right: 0, bottom: 0,
+          padding: PAD,
+          border: `${BORDER} solid transparent`,
+          borderRadius: RADIUS,
+          background: 'var(--console-surface, #ffffff)',
+          color: 'var(--mist, #1a1a2e)',
           overflow: 'hidden',
           pointerEvents: 'none',
-          color: '#1a1a2e',
-          background: '#fff',
-          borderRadius: '0.75rem',
-          border: '1px solid transparent',
-        }}
+          // Subpixel: match textarea rendering hints
+          WebkitFontSmoothing: 'antialiased',
+          MozOsxFontSmoothing: 'grayscale',
+        } as React.CSSProperties}
       >
         {segments.map((seg, i) =>
           seg.color ? (
-            <span key={i} style={{ color: seg.color, fontWeight: 600 }}>
+            <mark
+              key={i}
+              style={{
+                background: `${seg.color}22`,
+                color: seg.color,
+                fontWeight: 700,
+                borderRadius: 3,
+                padding: '0 1px',
+              }}
+            >
               {seg.text}
-            </span>
+            </mark>
           ) : (
             <span key={i}>{seg.text}</span>
           ),
         )}
-        {value.endsWith('\n') && '\n'}
+        {/* Ensure backdrop height matches when text ends in newline */}
+        {value.endsWith('\n') && ' '}
       </div>
 
-      {/* Transparent textarea — handles all input, caret, selection, resize */}
+      {/* ── Textarea: handles all input; transparent so backdrop shows ── */}
       <textarea
         ref={textareaRef}
         id={id}
@@ -124,18 +160,25 @@ export default function HighlightedTextarea({
           position: 'relative',
           display: 'block',
           width: '100%',
-          minHeight: 'min(340px, 40vh)',
+          minHeight: 'min(400px, 50vh)',
           resize: 'vertical',
-          padding: '0.75rem 0.875rem',
+          padding: PAD,
+          border: `${BORDER} solid rgba(0,0,0,0.12)`,
+          borderRadius: RADIUS,
+          // Transparent text + visible caret — the backdrop shows through
           background: 'transparent',
           color: 'transparent',
-          caretColor: '#1a1a2e',
-          border: '1px solid #e2e2e8',
-          borderRadius: '0.75rem',
-          outline: 'none',
+          caretColor: 'var(--mist, #1a1a2e)',
           WebkitTextFillColor: 'transparent',
+          // Prevent any browser-specific textarea chrome from shifting layout
+          WebkitAppearance: 'none',
+          appearance: 'none',
+          outline: 'none',
           margin: 0,
-        }}
+          // Match backdrop rendering hints
+          WebkitFontSmoothing: 'antialiased',
+          MozOsxFontSmoothing: 'grayscale',
+        } as React.CSSProperties}
       />
     </div>
   )

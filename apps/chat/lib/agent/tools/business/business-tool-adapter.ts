@@ -43,7 +43,6 @@ const DEFAULT_MOCK_RESPONSES: Record<string, unknown> = {
   finalize_sub_agent: { findings: [], recommendation: 'completed' },
   todo_write: { status: 'ok' },
   todo_read: { todos: [] },
-  kb_hybrid_retrieve: { results: [], total: 0 },
   query_order_status: { txnId: '', status: 'pending' },
   query_payment_channel_status: { channelStatus: 'normal' },
   get_account_status: { status: 'active' },
@@ -67,16 +66,7 @@ async function executeHttp(
   const resolvedEndpoint = resolveEnvVars(def.endpoint, ctx)
   const headers = resolveHeaders(def.headers as Record<string, string> | undefined, ctx)
 
-  // kb_hybrid_retrieve special case — merge KnowledgeSource config
   let body = input
-  if (def.name === 'kb_hybrid_retrieve' && input && typeof input === 'object') {
-    const inp = input as { query?: string; topK?: number }
-    body = {
-      prompt: inp.query ?? '',
-      top_k: inp.topK ?? 5,
-      embedding_rate: 0.9,
-    }
-  }
 
   const response = await fetch(resolvedEndpoint, {
     method: def.httpMethod || 'POST',
