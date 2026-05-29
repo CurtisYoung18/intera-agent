@@ -17,11 +17,11 @@ export async function DELETE(
 
     const caseId = task.caseId
 
-    // Delete in order: humanTasks → actionTraces → messages → caseMemory → case
+    // Delete in order: humanTasks → actionTraces → messages → chatMemory → case
     await prisma.humanTask.deleteMany({ where: { caseId } })
     await prisma.actionTrace.deleteMany({ where: { caseId } })
     await prisma.message.deleteMany({ where: { caseId } })
-    await prisma.caseMemory.deleteMany({ where: { caseId } })
+    await prisma.chatMemory.deleteMany({ where: { caseId } })
     await prisma.case.deleteMany({ where: { id: caseId } })
 
     return new Response(JSON.stringify({ ok: true, deletedCaseId: caseId }), { status: 200 })

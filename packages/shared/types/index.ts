@@ -115,7 +115,7 @@ export interface SkillDefinition {
 // Case Memory (四层上下文)
 // ============================================
 
-export interface CaseMemoryData {
+export interface ChatMemoryData {
   caseId: string
   confirmedFacts: Record<string, unknown>
   missingFacts: string[]
@@ -532,7 +532,7 @@ export interface SubAgentTask {
   taskPrompt: string
   context: {
     caseId: string
-    caseMemory: CaseMemoryData
+    chatMemory: ChatMemoryData
     stageGoal: string
   }
   /** Fork cache context — shared across same-type parallel sub-agents for prompt prefix reuse. */

@@ -46,6 +46,10 @@ After the human resolves the task, translate their verdict into plain, friendly 
 
 Facts extracted from previous turns are in confirmedFacts — trust them. Summaries from earlier context appear as [Case context].
 
+## member_id
+
+The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
+
 {{session_binding}}
 `;
 
@@ -62,7 +66,7 @@ export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
 
 ## member_id
 
-The conversation userId is NOT a member_id. Before calling any tool that needs member_id, call request_user_input first. If a tool fails with "member id is invalid", immediately call request_user_input — don't apologize, just ask.
+The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately — don't apologize, just ask.
 
 {{available_tools}}
 
@@ -109,6 +113,10 @@ After the human resolves the task, translate their verdict into plain, friendly 
 
 Facts extracted from previous turns are in confirmedFacts — trust them. Summaries from earlier context appear as [Case context].
 
+## member_id
+
+The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
+
 {{session_binding}}
 `;
 
@@ -132,8 +140,8 @@ export const DEFAULT_MEMORY_STRATEGY = {
   // Features
   compactModel: 'MiniMax-M2.5-highspeed',
   enableSnip: true,
-  enableMicrocompact: true,
-  microcompactMinAgeMs: 60000,
+  enableMicrocompact: false,
+  microcompactMinAgeMs: 300000,
   enableContextCollapse: true,
   enableAutocompact: true,
 

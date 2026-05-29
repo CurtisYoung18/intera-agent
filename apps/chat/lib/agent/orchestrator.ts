@@ -7,13 +7,13 @@ import type {
   SubAgentConfig,
   SubAgentTask,
   SubAgentResult,
-  CaseMemoryData,
+  ChatMemoryData,
   SSEEvent,
   SkillDefinition,
   AgentContext,
   MessageBus,
 } from '@intera/shared/types'
-import type { CaseMemoryManager } from './memory'
+import type { ChatMemoryManager } from './memory'
 import { SubAgent } from './sub-agent'
 import { DEFAULT_ORCHESTRATOR_CONFIG } from '@intera/shared/defaults'
 import { prisma } from '@intera/shared/prisma'
@@ -27,7 +27,7 @@ export class OrchestratorAgent {
     private skillDefinitions: SkillDefinition[] = [],
     private platformUserId: string = 'anonymous',
     /** Live memory manager for shared dashboard polling by sub-agents. */
-    private memoryManager?: CaseMemoryManager,
+    private memoryManager?: ChatMemoryManager,
     /** Message bus for sub-agent communication (AgentContext). */
     private messageBus?: MessageBus,
   ) {}
@@ -49,7 +49,7 @@ export class OrchestratorAgent {
   async planInvestigation(
     stage: string,
     subAgentConfigs: SubAgentConfig[],
-    caseMemory: CaseMemoryData,
+    chatMemory: ChatMemoryData,
     stageGoal: string,
   ): Promise<SubAgentTask[]> {
     if (!subAgentConfigs.length) return []
@@ -58,11 +58,11 @@ export class OrchestratorAgent {
 
     for (const config of subAgentConfigs) {
       let taskPrompt = config.taskTemplate
-        .replace(/\{\{caseId\}\}/g, caseMemory.caseId)
+        .replace(/\{\{caseId\}\}/g, chatMemory.caseId)
         .replace(/\{\{stage\}\}/g, stage)
         .replace(/\{\{stageGoal\}\}/g, stageGoal)
-        .replace(/\{\{confirmedFacts\}\}/g, JSON.stringify(caseMemory.confirmedFacts))
-        .replace(/\{\{missingFacts\}\}/g, JSON.stringify(caseMemory.missingFacts))
+        .replace(/\{\{confirmedFacts\}\}/g, JSON.stringify(chatMemory.confirmedFacts))
+        .replace(/\{\{missingFacts\}\}/g, JSON.stringify(chatMemory.missingFacts))
 
       // ── Build task checklist for structured execution ──
       const skillNames = config.skills?.length
@@ -82,7 +82,7 @@ Rules:
 
       // Surface key facts explicitly so sub-agents don't miss them (e.g. txnId
       // is critical for query_order_status to return correct results).
-      const facts = caseMemory.confirmedFacts as Record<string, unknown>
+      const facts = chatMemory.confirmedFacts as Record<string, unknown>
       const txnId = facts?.txnId
       const paymentMethod = facts?.paymentMethod
       const extraHints: string[] = []
@@ -101,8 +101,8 @@ Rules:
         agentConfig: config,
         taskPrompt,
         context: {
-          caseId: caseMemory.caseId,
-          caseMemory,
+          caseId: chatMemory.caseId,
+          chatMemory,
           stageGoal,
         },
       })
@@ -345,7 +345,7 @@ Rules:
     // Persist sub-agent results to DB so they survive across HTTP requests.
     const persistResult = async (result: SubAgentResult) => {
       try {
-        const record = await prisma.caseMemory.findUnique({ where: { caseId: result.caseId } })
+        const record = await prisma.chatMemory.findUnique({ where: { caseId: result.caseId } })
         const prevResults: Record<string, unknown> = record?.skillResults
           ? (() => { try { return JSON.parse(record.skillResults) } catch { return {} } })()
           : {}
@@ -372,7 +372,7 @@ Rules:
               agentTodos: memSnap.agentTodos ? JSON.stringify(memSnap.agentTodos) : null,
             }
           : {}
-        await prisma.caseMemory.upsert({
+        await prisma.chatMemory.upsert({
           where: { caseId: result.caseId },
           update: {
             skillResults: JSON.stringify(prevResults),
@@ -416,7 +416,7 @@ Rules:
         // Phase 3: Flag case for continuation — the worker will pick it up.
         if (caseId) {
           try {
-            await prisma.caseMemory.update({
+            await prisma.chatMemory.update({
               where: { caseId },
               data: { needsContinuation: true },
             })
@@ -457,7 +457,7 @@ Rules:
   /** Merge a single sub-agent result into case memory (incremental). */
   mergeSingleResult(
     result: SubAgentResult,
-    caseMemory: CaseMemoryData,
+    chatMemory: ChatMemoryData,
   ): void {
     // Filter findings: only merge keys that don't pollute confirmedFacts.
     // - Skip sub-agent-internal metadata keys (results, cases, total, etc.)
@@ -469,7 +469,7 @@ Rules:
         dropped.push(key)
         continue
       }
-      const existing = caseMemory.confirmedFacts[key]
+      const existing = chatMemory.confirmedFacts[key]
       if (existing !== undefined && existing !== null && existing !== '') {
         // Existing fact looks intentional — don't let sub-agent overwrite it
         if (JSON.stringify(existing) !== JSON.stringify(value)) {
@@ -492,11 +492,11 @@ Rules:
         this.memoryManager.setConfirmedFactsBulk(safeFindings)
       } else {
         // No live manager (legacy / test path) — update the snapshot directly.
-        Object.assign(caseMemory.confirmedFacts, safeFindings)
+        Object.assign(chatMemory.confirmedFacts, safeFindings)
       }
     }
 
-    caseMemory.skillResults[`subagent:${result.agentName}`] = {
+    chatMemory.skillResults[`subagent:${result.agentName}`] = {
       findings: result.findings,
       evidence: result.evidence,
       recommendation: result.recommendation,
@@ -504,7 +504,7 @@ Rules:
       durationMs: result.durationMs,
     }
 
-    caseMemory.keyEvents.push({
+    chatMemory.keyEvents.push({
       at: new Date().toISOString(),
       text: `Sub-agent ${result.agentName} completed: ${result.recommendation || 'no recommendation'}`,
       source: 'llm',
@@ -534,7 +534,7 @@ Rules:
     keyEvents: Array<{ at: string; text: string; source: string }>,
   ): void {
     for (const result of results) {
-      this.mergeSingleResult(result, { confirmedFacts, skillResults, keyEvents } as CaseMemoryData)
+      this.mergeSingleResult(result, { confirmedFacts, skillResults, keyEvents } as ChatMemoryData)
     }
   }
 

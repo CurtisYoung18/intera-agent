@@ -12,7 +12,7 @@ import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
-import { CaseMemoryManager } from './memory'
+import { ChatMemoryManager } from './memory'
 import { PolicyEngine } from './policy'
 import { SkillRouter, SOP_INTERNAL_SKILLS } from './skills'
 import { TraceWriter } from './trace'
@@ -151,7 +151,7 @@ export interface LoopResult {
 
 export class AgentLoop {
   private messages: Message[] = []
-  private caseMemory: CaseMemoryManager
+  private chatMemory: ChatMemoryManager
   private policyEngine!: PolicyEngine
   private skillRouter: SkillRouter
   /** Case-specific execution engine — null in Core (discovery) mode. */
@@ -173,7 +173,7 @@ export class AgentLoop {
   }
 
   constructor(private deps: AgentLoopDeps) {
-    this.caseMemory = new CaseMemoryManager(deps.caseId, deps.config.memoryStrategy)
+    this.chatMemory = new ChatMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.skillRouter = new SkillRouter(deps.vendorId)
     this.traceWriter = new TraceWriter(deps.caseId)
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
@@ -205,7 +205,7 @@ export class AgentLoop {
       userId: this.deps.userId,
       chatId: this.deps.chatId,
       config: this.deps.config,
-      caseMemory: this.caseMemory,
+      chatMemory: this.chatMemory,
       getPolicyEngine: () => this.policyEngine,
       traceWriter: this.traceWriter,
       skillRouter: this.skillRouter,
@@ -274,18 +274,18 @@ export class AgentLoop {
 
     // 2. Ingest facts into Case Memory (LLM-based extraction)
     const requiredFacts = this.deps.caseSchema?.requiredFacts
-    await this.caseMemory.ingestUserMessageFacts(userMessage, requiredFacts)
+    await this.chatMemory.ingestUserMessageFacts(userMessage, requiredFacts)
 
     // Re-apply structured form answers so they always beat LLM-extracted facts.
     // LLM extraction may miss fields or overwrite structured data with guesses
     // (e.g. date: "yesterday" instead of date: "昨天上午10点").
     if (preIngestedFacts) {
-      this.caseMemory.ingestFormAnswers(preIngestedFacts)
+      this.chatMemory.ingestFormAnswers(preIngestedFacts)
     }
 
     sendEvent({
       type: 'memory_update',
-      data: this.caseMemory.getSummary(),
+      data: this.chatMemory.getSummary(),
       timestamp: new Date().toISOString(),
     })
 
@@ -320,7 +320,7 @@ export class AgentLoop {
               contentBlocks: pending.contentBlocks,
               createdAt: new Date(),
             })
-            this.caseMemory.bumpDashboardVersion()
+            this.chatMemory.bumpDashboardVersion()
             sendEvent({
               type: 'withheld',
               data: 'Processing additional user input...',
@@ -335,7 +335,7 @@ export class AgentLoop {
       const buildHitCounts = (): Map<string, number> => {
         const m = new Map<string, number>()
         for (const name of this.policyEngine.getPolicyNames()) {
-          const c = this.caseMemory.getPolicyHitCount(name)
+          const c = this.chatMemory.getPolicyHitCount(name)
           if (c > 0) m.set(name, c)
         }
         return m
@@ -372,7 +372,7 @@ export class AgentLoop {
       const isCaseActive = this.caseLoop?.isStageActive() ?? false
       // Consultation mode: human operator is reviewing the case via the same chat UI.
       // Restrict the agent to pure conversation + finalize_consultation only.
-      const isConsultation = this.caseMemory.getSummary().caseStatus === 'waiting_human'
+      const isConsultation = this.chatMemory.getSummary().caseStatus === 'waiting_human'
 
       // Emit core_agent_progress and merge background sub-agent results (case mode only).
       if (isCaseActive) {
@@ -380,7 +380,7 @@ export class AgentLoop {
         if (this.caseLoop!.mergeNewSubAgentResults()) {
           sendEvent({
             type: 'memory_update',
-            data: this.caseMemory.getSummary(),
+            data: this.chatMemory.getSummary(),
             timestamp: new Date().toISOString(),
           })
         }
@@ -461,8 +461,8 @@ export class AgentLoop {
       } else if (this.deps.caseSchema?.executionMode === 'cc') {
         stagePrompt = this.caseLoop!.buildSopPrompt(
           this.deps.systemPrompt,
-          this.caseMemory.getTodos(),
-          this.caseMemory.getConfirmedFacts(),
+          this.chatMemory.getTodos(),
+          this.chatMemory.getConfirmedFacts(),
         )
         stageTools = this.caseLoop!.filterSopTools(allTools)
       } else {
@@ -577,9 +577,9 @@ export class AgentLoop {
             const preToolEval = await this.policyEngine.evaluate('preTool', {
               skillName: toolUse.name,
               skillInput: toolUse.input,
-              confirmedFacts: this.caseMemory.getConfirmedFacts(),
-              skillsCalled: this.caseMemory.getSkillsCalled(),
-              skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
+              confirmedFacts: this.chatMemory.getConfirmedFacts(),
+              skillsCalled: this.chatMemory.getSkillsCalled(),
+              skillResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
             }, buildHitCounts())
 
             if (preToolEval.summary === 'blocked') {
@@ -587,7 +587,7 @@ export class AgentLoop {
               const blockingPolicies: string[] = []
               for (const r of preToolEval.results) {
                 if (r.result !== 'pass') {
-                  this.caseMemory.recordPolicyHit(r.policyName)
+                  this.chatMemory.recordPolicyHit(r.policyName)
                   if (r.result === 'blocked') blockingPolicies.push(r.policyName)
                 }
               }
@@ -804,11 +804,11 @@ export class AgentLoop {
             .map((r) => r.name),
         )
         if (succeededTools.size > 0) {
-          const pendingTodos = this.caseMemory.getTodos().filter((t) => t.status === 'pending')
+          const pendingTodos = this.chatMemory.getTodos().filter((t) => t.status === 'pending')
           for (const todo of pendingTodos) {
             for (const toolName of succeededTools) {
               if (todo.text.includes(toolName)) {
-                this.caseMemory.applyTodoAction({
+                this.chatMemory.applyTodoAction({
                   action: 'complete',
                   id: todo.id,
                   notes: `${toolName} completed successfully`,
@@ -930,7 +930,7 @@ export class AgentLoop {
                   data: {
                     caseId: this.deps.caseId,
                     queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-                    question: `Agent stuck in stage "${this.currentStage}" after 3 nudges. Case type: ${resolvedCaseType}. Skills called: ${this.caseMemory.getSkillsCalled().join(', ')}.`,
+                    question: `Agent stuck in stage "${this.currentStage}" after 3 nudges. Case type: ${resolvedCaseType}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
                     status: 'pending',
                   },
                 })
@@ -1042,7 +1042,7 @@ export class AgentLoop {
       // ── Apply tool results to Case Memory ────────────────────
       for (const result of toolResults) {
         const payload = unwrapToolExecutionPayload(result.output)
-        await this.caseMemory.applySkillResult(result.name, payload)
+        await this.chatMemory.applySkillResult(result.name, payload)
         await this.traceWriter.write(
           'skill_result',
           `Skill: ${result.name}`,
@@ -1061,15 +1061,15 @@ export class AgentLoop {
         const executedSkills = toolResults.map((r) => r.name)
         const postToolEval = await this.policyEngine.evaluate('postTool', {
           skillOutput: ctxSummary,
-          confirmedFacts: this.caseMemory.getConfirmedFacts(),
+          confirmedFacts: this.chatMemory.getConfirmedFacts(),
           executedSkills,
-          skillsCalled: this.caseMemory.getSkillsCalled(),
-          skillResults: this.caseMemory.getSummary().skillResults as Record<string, unknown>,
+          skillsCalled: this.chatMemory.getSkillsCalled(),
+          skillResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
         }, buildHitCounts())
 
         for (const r of postToolEval.results) {
           if (r.result !== 'pass') {
-            this.caseMemory.recordPolicyHit(r.policyName)
+            this.chatMemory.recordPolicyHit(r.policyName)
             await this.traceWriter.write(
               'policy_hit',
               `${r.result === 'escalated' ? 'Escalated' : 'Blocked'}: ${r.policyName}`,
@@ -1115,7 +1115,7 @@ export class AgentLoop {
               data: {
                 caseId: this.deps.caseId,
                 queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-                question: `Auto-escalated by policy conflict_requires_human. ${escalatedReasons}. Skills called: ${this.caseMemory.getSkillsCalled().join(', ')}.`,
+                question: `Auto-escalated by policy conflict_requires_human. ${escalatedReasons}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
                 status: 'pending',
               },
             })
@@ -1156,7 +1156,8 @@ export class AgentLoop {
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
         const nonSopTools = new Set(['todo_write', 'todo_read', 'create_case', 'request_user_input',
-          'propose_cases', 'finalize_case', 'create_human_task', 'propose_interaction', 'finalize_consultation'])
+          'propose_cases', 'finalize_case', 'create_human_task', 'propose_interaction', 'finalize_consultation',
+          'read_chat_memory', 'read_user_profile'])
         const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
         if (todoFailed && investigationRan) {
           this.nudgeCount++
@@ -1339,7 +1340,7 @@ export class AgentLoop {
         // result so the LLM doesn't see a fake case_mock_001 ID.
         if (this.caseLoop) {
           const key = 'dupCreateCaseCount'
-          const dupCount = (this.caseMemory.getConfirmedFacts()[key] as number) || 0
+          const dupCount = (this.chatMemory.getConfirmedFacts()[key] as number) || 0
           const nextCount = dupCount + 1
 
           for (let i = this.messages.length - 1; i >= 0; i--) {
@@ -1355,7 +1356,64 @@ export class AgentLoop {
               break
             }
           }
-          this.caseMemory.getConfirmedFacts()[key] = nextCount
+          this.chatMemory.getConfirmedFacts()[key] = nextCount
+        }
+      }
+
+      // ── Data tool: read_chat_memory ──────────────────────
+      const readMemResult = toolResults.find(
+        (r) => r.name === 'read_chat_memory',
+      )
+      if (readMemResult) {
+        const dbProfile = await prisma.userProfile.findUnique({
+          where: { userId: this.deps.userId },
+        }).catch(() => null)
+        const memSummary = this.chatMemory.getSummary() as unknown as Record<string, unknown>
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          const m = this.messages[i]
+          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_chat_memory result:')) {
+            m.content = `Tool read_chat_memory result: ${JSON.stringify({
+              confirmedFacts: memSummary.confirmedFacts ?? {},
+              skillsCalled: memSummary.skillsCalled ?? [],
+              keyEvents: (memSummary.keyEvents as any[])?.slice(-10) ?? [],
+              summary: this.chatMemory.hasSummary() ? (memSummary as any).summary : null,
+              profile: dbProfile?.profile || null,
+              stats: {
+                totalCases: dbProfile?.totalCases ?? 0,
+                resolvedCases: dbProfile?.resolvedCases ?? 0,
+                lastCaseType: dbProfile?.lastCaseType ?? null,
+              },
+            })}`
+            break
+          }
+        }
+      }
+
+      // ── Data tool: read_user_profile ─────────────────────
+      const readProfileResult = toolResults.find(
+        (r) => r.name === 'read_user_profile',
+      )
+      if (readProfileResult) {
+        const dbProfile = await prisma.userProfile.findUnique({
+          where: { userId: this.deps.userId },
+        }).catch(() => null)
+        for (let i = this.messages.length - 1; i >= 0; i--) {
+          const m = this.messages[i]
+          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_user_profile result:')) {
+            m.content = `Tool read_user_profile result: ${JSON.stringify({
+              profile: dbProfile?.profile || null,
+              stats: {
+                totalChats: dbProfile?.totalChats ?? 0,
+                totalCases: dbProfile?.totalCases ?? 0,
+                resolvedCases: dbProfile?.resolvedCases ?? 0,
+                escalatedCases: dbProfile?.escalatedCases ?? 0,
+                lastCaseType: dbProfile?.lastCaseType ?? null,
+                firstSeenAt: dbProfile?.firstSeenAt?.toISOString() ?? null,
+                lastSeenAt: dbProfile?.lastSeenAt?.toISOString() ?? null,
+              },
+            })}`
+            break
+          }
         }
       }
 
@@ -1520,8 +1578,8 @@ export class AgentLoop {
           ...result,
           output: {
             ok: true,
-            todos: this.caseMemory.getTodos(),
-            dashboardVersion: this.caseMemory.getDashboardVersion(),
+            todos: this.chatMemory.getTodos(),
+            dashboardVersion: this.chatMemory.getDashboardVersion(),
           },
         }
       }
@@ -1547,8 +1605,8 @@ export class AgentLoop {
               output: {
                 ok: false,
                 error: `todo_write input invalid: ${existingError}`,
-                todos: this.caseMemory.getTodos(),
-                dashboardVersion: this.caseMemory.getDashboardVersion(),
+                todos: this.chatMemory.getTodos(),
+                dashboardVersion: this.chatMemory.getDashboardVersion(),
               },
             }
           }
@@ -1557,8 +1615,8 @@ export class AgentLoop {
             output: {
               ok: false,
               error: 'todo_write requires action ("add"|"update"|"complete"|"cancel") and relevant fields. Current todos returned so you can proceed.',
-              todos: this.caseMemory.getTodos(),
-              dashboardVersion: this.caseMemory.getDashboardVersion(),
+              todos: this.chatMemory.getTodos(),
+              dashboardVersion: this.chatMemory.getDashboardVersion(),
             },
           }
         }
@@ -1567,16 +1625,16 @@ export class AgentLoop {
           if (Array.isArray((raw as any)?.todos)) {
             // Model tried to send a batch: add each as a separate todo
             const batchItems = (raw as any).todos as Array<{ text?: string; notes?: string }>
-            let lastTodos: ReturnType<typeof this.caseMemory.getTodos> = this.caseMemory.getTodos()
+            let lastTodos: ReturnType<typeof this.chatMemory.getTodos> = this.chatMemory.getTodos()
             for (const item of batchItems) {
               if (item?.text) {
-                const out = this.caseMemory.applyTodoAction({ action: 'add', text: item.text, notes: item.notes })
+                const out = this.chatMemory.applyTodoAction({ action: 'add', text: item.text, notes: item.notes })
                 lastTodos = out.todos
               }
             }
             return {
               ...result,
-              output: { ok: true, todos: lastTodos, dashboardVersion: this.caseMemory.getDashboardVersion() },
+              output: { ok: true, todos: lastTodos, dashboardVersion: this.chatMemory.getDashboardVersion() },
             }
           } else if (input.id) {
             input = { ...input, action: 'complete' }
@@ -1589,24 +1647,24 @@ export class AgentLoop {
               output: {
                 ok: false,
                 error: 'todo_write requires action ("add"|"update"|"complete"|"cancel"). Current todos returned so you can proceed.',
-                todos: this.caseMemory.getTodos(),
-                dashboardVersion: this.caseMemory.getDashboardVersion(),
+                todos: this.chatMemory.getTodos(),
+                dashboardVersion: this.chatMemory.getDashboardVersion(),
               },
             }
           }
         }
 
         if (!input?.action) {
-          return { ...result, output: { ok: false, error: 'Missing required field: action', todos: this.caseMemory.getTodos() } }
+          return { ...result, output: { ok: false, error: 'Missing required field: action', todos: this.chatMemory.getTodos() } }
         }
 
-        const outcome = this.caseMemory.applyTodoAction(input as any)
+        const outcome = this.chatMemory.applyTodoAction(input as any)
         return {
           ...result,
           output: {
             ok: true,
             todos: outcome.todos,
-            dashboardVersion: this.caseMemory.getDashboardVersion(),
+            dashboardVersion: this.chatMemory.getDashboardVersion(),
           },
         }
       }
@@ -1673,9 +1731,9 @@ export class AgentLoop {
       return { role: msg.role, content: msg.content }
     }
 
-    if (this.caseMemory.hasSummary()) {
+    if (this.chatMemory.hasSummary()) {
       const maxSummaryChars = this.deps.config.memoryStrategy.l2SummaryMaxTokens * 3
-      let summaryText = this.caseMemory.getSummary().summary || ''
+      let summaryText = this.chatMemory.getSummary().summary || ''
       if (summaryText.length > maxSummaryChars) {
         summaryText = summaryText.slice(0, maxSummaryChars) + '...'
       }
@@ -1735,10 +1793,10 @@ export class AgentLoop {
     }
 
     // Session Memory Compact: reuse existing persisted summary if recent enough
-    if (this.caseMemory.hasSummary()) {
+    if (this.chatMemory.hasSummary()) {
       const smResult = trySessionMemoryCompact(
-        this.caseMemory.getSummary().summary,
-        this.caseMemory.getLastCompactedAt(),
+        this.chatMemory.getSummary().summary,
+        this.chatMemory.getLastCompactedAt(),
         this.deps.config.memoryStrategy.sessionMemoryMaxAgeMs ?? 1800000,
       )
       if (smResult.used) {
@@ -1747,17 +1805,17 @@ export class AgentLoop {
     }
 
     const messageContents = this.messages.map((m) => typeof m.content === 'string' ? m.content : '')
-    const estimatedTokens = this.caseMemory.estimateTokens(messageContents)
+    const estimatedTokens = this.chatMemory.estimateTokens(messageContents)
 
-    const assessment = this.caseMemory.assessCompaction(estimatedTokens, this.messages.length)
+    const assessment = this.chatMemory.assessCompaction(estimatedTokens, this.messages.length)
 
     if (assessment.isBlocking) {
-      if (this.caseMemory.isCompactCircuitBroken()) {
+      if (this.chatMemory.isCompactCircuitBroken()) {
         return { shouldCompact: false, reason: 'circuit_breaker' }
       }
       try {
         await this.performCompaction()
-        const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
+        const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
           this.messages = this.messages.slice(-keepCount)
         }
@@ -1766,18 +1824,18 @@ export class AgentLoop {
         })
         return { shouldCompact: true, reason: 'blocking' }
       } catch {
-        this.caseMemory.recordCompactionFailure()
+        this.chatMemory.recordCompactionFailure()
         return { shouldCompact: false, reason: 'failed' }
       }
     }
 
     if (assessment.shouldCompact) {
-      if (this.caseMemory.isCompactCircuitBroken()) {
+      if (this.chatMemory.isCompactCircuitBroken()) {
         return { shouldCompact: false, reason: 'circuit_breaker' }
       }
       try {
         await this.performCompaction()
-        const keepCount = this.caseMemory.compactionKeepCount(this.messages.length)
+        const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
           this.messages = this.messages.slice(-keepCount)
         }
@@ -1786,7 +1844,7 @@ export class AgentLoop {
         })
         return { shouldCompact: true, reason: 'auto' }
       } catch {
-        this.caseMemory.recordCompactionFailure()
+        this.chatMemory.recordCompactionFailure()
         return { shouldCompact: false, reason: 'failed' }
       }
     }
@@ -1817,7 +1875,7 @@ export class AgentLoop {
     try {
       const result = await compactConversation(this.messages, strategy)
       if (result.summary) {
-        this.caseMemory.setSummary(result.summary)
+        this.chatMemory.setSummary(result.summary)
         await this.traceWriter.write('loop_decision', 'LLM Compact', {
           model: result.model,
           provider: result.provider,
@@ -1831,7 +1889,7 @@ export class AgentLoop {
     }
 
     // Fallback: programmatic XML summary
-    this.caseMemory.recordCompaction()
+    this.chatMemory.recordCompaction()
   }
 
   // -----------------------------------------------------------------------
@@ -2096,15 +2154,15 @@ export class AgentLoop {
    *  Follows CC's pattern: the model keyed the fields, the user filled them —
    *  no second LLM call needed. */
   ingestFormAnswers(answers: Record<string, string>): void {
-    this.caseMemory.ingestFormAnswers(answers)
+    this.chatMemory.ingestFormAnswers(answers)
   }
 
   getMemorySummary() {
-    return this.caseMemory.getSummary()
+    return this.chatMemory.getSummary()
   }
 
-  loadMemory(data: Parameters<CaseMemoryManager['loadFromDb']>[0]) {
-    this.caseMemory.loadFromDb(data)
+  loadMemory(data: Parameters<ChatMemoryManager['loadFromDb']>[0]) {
+    this.chatMemory.loadFromDb(data)
     this.caseLoop?.syncStage()
   }
 }

@@ -857,7 +857,7 @@ export async function POST(request: NextRequest) {
                   type: caseTypeForUpsert, status: result.caseStatus, chatId: chatId ?? null,
                 },
               })
-              await prisma.caseMemory.upsert({
+              await prisma.chatMemory.upsert({
                 where: { caseId: resolvedCaseId },
                 update: {
                   confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
@@ -934,7 +934,7 @@ export async function POST(request: NextRequest) {
                 chatId: chatId ?? null,
               },
             })
-            await prisma.caseMemory.upsert({
+            await prisma.chatMemory.upsert({
               where: { caseId: resolvedCaseId },
               update: {
                 confirmedFacts: JSON.stringify(mem.confirmedFacts),

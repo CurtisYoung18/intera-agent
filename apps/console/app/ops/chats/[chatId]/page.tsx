@@ -156,7 +156,37 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   const [loading, setLoading] = useState(true)
   const [showTraces, setShowTraces] = useState(false)
   const [showAnalysis, setShowAnalysis] = useState(false)
+  const [showMemory, setShowMemory] = useState(false)
+  const [memoryData, setMemoryData] = useState<any>(null)
+  const [memoryLoading, setMemoryLoading] = useState(false)
+  const [compactResult, setCompactResult] = useState<any>(null)
+  const [compacting, setCompacting] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const loadMemory = async () => {
+    setMemoryLoading(true)
+    try {
+      const r = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/memory`)
+      if (r.ok) setMemoryData(await r.json())
+    } catch { /* ignore */ }
+    finally { setMemoryLoading(false) }
+  }
+  const toggleMemory = () => {
+    const next = !showMemory
+    setShowMemory(next)
+    if (next && !memoryData) loadMemory()
+  }
+  const handleCompact = async () => {
+    setCompacting(true)
+    setCompactResult(null)
+    try {
+      const r = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/compact`, { method: 'POST' })
+      const d = await r.json()
+      setCompactResult(d)
+      loadMemory()
+    } catch (e) { setCompactResult({ error: 'Compact failed' }) }
+    finally { setCompacting(false) }
+  }
 
   const metrics = useMemo(() => computeMetrics(traces), [traces])
 
@@ -268,6 +298,11 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           </div>
         )}
         <div className="flex justify-end gap-2">
+          <button onClick={toggleMemory}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-teal/20 bg-teal/[0.04] hover:bg-teal/[0.08] transition-colors text-teal">
+            <MessageSquare className="w-3.5 h-3.5" />
+            {showMemory ? 'Hide Memory' : 'Memory'}
+          </button>
           {traces.length > 0 && (
             <button onClick={() => setShowTraces(!showTraces)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-black/[0.06] bg-white/60 hover:bg-white transition-colors">
@@ -319,6 +354,63 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Memory panel */}
+      {showMemory && (
+        <div className="mb-4 rounded-2xl border border-teal/[0.08] bg-white/70 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[13px] font-bold text-[var(--mist)]">Chat Memory</h3>
+            <div className="flex gap-2">
+              {memoryData?.userId && (
+                <Link href={`/ops/users/${encodeURIComponent(memoryData.userId)}`}
+                  className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-indigo/20 bg-indigo/[0.04] text-indigo hover:bg-indigo/[0.08]">
+                  <User className="w-3 h-3" /> User Profile
+                </Link>
+              )}
+              <button onClick={handleCompact} disabled={compacting}
+                className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-teal/20 bg-teal/[0.06] text-teal hover:bg-teal/[0.12] disabled:opacity-50">
+                <Zap className="w-3 h-3" /> {compacting ? 'Compacting...' : 'Compact Now'}
+              </button>
+            </div>
+          </div>
+
+          {memoryLoading ? (
+            <div className="flex h-24 items-center justify-center">
+              <OrganicLoader icon="spin" size={20} className="text-indigo/60" />
+            </div>
+          ) : memoryData ? (
+            <>
+              {compactResult && !compactResult.error && (
+                <div className="rounded-xl border border-teal/10 bg-teal/[0.04] p-3 text-[11px] text-[var(--mist)]">
+                  Compact complete · Model: {compactResult.compactModel} · Tokens: {compactResult.beforeTokens} → {compactResult.afterTokens}
+                </div>
+              )}
+              {compactResult?.error && (
+                <div className="rounded-xl border border-vermillion/10 bg-vermillion/[0.04] p-3 text-[11px] text-vermillion">{compactResult.error}</div>
+              )}
+              {memoryData.memories?.map((mem: any) => (
+                <div key={mem.caseId} className="rounded-xl border border-black/[0.04] bg-white/40 p-3">
+                  <p className="text-[10px] text-[var(--fog)]/50 mb-1">Case {mem.caseId.slice(0, 8)} · v{mem.dashboardVersion}</p>
+                  {mem.summary ? (
+                    <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[200px] overflow-auto">
+                      <ReactMarkdown>{mem.summary.slice(0, 2000)}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-[var(--fog)]/50 italic">No summary yet</p>
+                  )}
+                  <div className="mt-2 flex gap-3 text-[10px] text-[var(--fog)]/50">
+                    <span>{(mem.skillsCalled?.length ?? 0)} skills</span>
+                    <span>{Object.keys(mem.confirmedFacts ?? {}).length} facts</span>
+                  </div>
+                </div>
+              ))}
+              {(!memoryData.memories || memoryData.memories.length === 0) && (
+                <p className="text-[12px] text-[var(--fog)]/50 py-4 text-center">No memory data for this chat yet.</p>
+              )}
+            </>
+          ) : null}
         </div>
       )}
 

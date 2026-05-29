@@ -12,11 +12,11 @@ import type {
   StageGuardrail,
   EvidenceRequirement,
   AgentConfigData,
-  CaseMemoryData,
+  ChatMemoryData,
 } from '@intera/shared/types'
 import { withRetry, CannotRetryError } from './api/with-retry'
 import { DEFAULT_STAGE_CONFIGS } from '@intera/shared/defaults'
-import type { CaseMemoryManager } from './memory'
+import type { ChatMemoryManager } from './memory'
 
 /** Extract a JSON object from LLM output that may be wrapped in markdown code fences. */
 function extractJsonFromLlmOutput(text: string): Record<string, unknown> | null {
@@ -76,7 +76,7 @@ export class StageExecutor {
   constructor(
     private caseSchema: CaseSchemaConfig,
     private agentConfig: AgentConfigData,
-    private caseMemory: CaseMemoryManager,
+    private chatMemory: ChatMemoryManager,
     bootstrapNewCase?: boolean,
   ) {
     this.bootstrapNewCase = bootstrapNewCase ?? false
@@ -90,7 +90,7 @@ export class StageExecutor {
 
   /** Map case status to the current stage name from the schema. */
   getCurrentStage(): string {
-    const mem = this.caseMemory.getSummary()
+    const mem = this.chatMemory.getSummary()
     const status = mem.caseStatus
 
     if (status && this.caseSchema.stages.includes(status)) {
@@ -228,7 +228,7 @@ export class StageExecutor {
       return { met: true, missing: [], details: [] }
     }
 
-    const mem = this.caseMemory.getSummary()
+    const mem = this.chatMemory.getSummary()
     const facts = (mem.confirmedFacts || {}) as Record<string, unknown>
     const skillResults = (mem.skillResults || {}) as Record<string, unknown>
 
@@ -271,7 +271,7 @@ export class StageExecutor {
       return { met: true, missing: [], details: [] }
     }
 
-    const mem = this.caseMemory.getSummary()
+    const mem = this.chatMemory.getSummary()
     const called = new Set((mem.skillsCalled || []) as string[])
 
     const missing: string[] = []
@@ -365,7 +365,7 @@ export class StageExecutor {
     evalPrompt?: string,
     evalModel?: string,
   ): Promise<TransitionEval> {
-    const mem = this.caseMemory.getSummary()
+    const mem = this.chatMemory.getSummary()
     const model = evalModel || this.agentConfig.model
     const nextStage = this.getNextStageName(stage)
     const stages = this.caseSchema.stages

@@ -15,7 +15,7 @@ import type { Message, SSEEvent, CaseSchemaConfig, TodoItem } from '@intera/shar
 import { prisma } from '@intera/shared/prisma'
 import { StageExecutor, type TransitionEval } from './stage-executor'
 import { OrchestratorAgent } from './orchestrator'
-import type { CaseMemoryManager } from './memory'
+import type { ChatMemoryManager } from './memory'
 import type { PolicyEngine } from './policy'
 import type { TraceWriter } from './trace'
 import type { SkillRouter } from './skills'
@@ -35,7 +35,7 @@ export interface CaseLoopServices {
   userId: string
   chatId?: string | null
   config: AgentConfigData
-  caseMemory: CaseMemoryManager
+  chatMemory: ChatMemoryManager
   /** Live accessor — called at usage time, never captured at construction. */
   getPolicyEngine: () => PolicyEngine
   traceWriter: TraceWriter
@@ -76,7 +76,7 @@ export class CaseAgentLoop {
     this.stageExecutor = new StageExecutor(
       caseSchema,
       services.config,
-      services.caseMemory,
+      services.chatMemory,
       bootstrapNewCase,
     )
     this._currentStage = this.stageExecutor.getCurrentStage()
@@ -84,7 +84,7 @@ export class CaseAgentLoop {
       caseSchema,
       services.skillRouter.getToolDefinitions(),
       services.userId,
-      services.caseMemory,
+      services.chatMemory,
     )
   }
 
@@ -319,7 +319,7 @@ export class CaseAgentLoop {
   mergeNewSubAgentResults(): boolean {
     if (!this.orchestrator?.hasNewResults()) return false
     const newResults = this.orchestrator.drainNewResults()
-    const mem = this.services.caseMemory.getSummary()
+    const mem = this.services.chatMemory.getSummary()
     this.orchestrator.mergeResults(
       newResults,
       mem.confirmedFacts as Record<string, unknown>,
@@ -360,9 +360,9 @@ export class CaseAgentLoop {
     if (!stageCfg?.subAgents?.length) return
 
     const agentNames = stageCfg.subAgents.map((c) => c.name)
-    if (this.services.caseMemory.hasDispatchedSubAgentsFor(this._currentStage, agentNames)) return
+    if (this.services.chatMemory.hasDispatchedSubAgentsFor(this._currentStage, agentNames)) return
 
-    const mem = this.services.caseMemory.getSummary()
+    const mem = this.services.chatMemory.getSummary()
     try {
       const tasks = await this.orchestrator.planInvestigation(
         this._currentStage,
@@ -387,7 +387,7 @@ export class CaseAgentLoop {
         }
 
         this.orchestrator.dispatchInBackground(tasks, sendEvent)
-        this.services.caseMemory.recordSubAgentsDispatched(
+        this.services.chatMemory.recordSubAgentsDispatched(
           this._currentStage,
           tasks.map((t) => t.agentConfig.name),
         )
@@ -443,7 +443,7 @@ export class CaseAgentLoop {
       taskPrompt,
       context: {
         caseId: this.services.caseId,
-        caseMemory: this.services.caseMemory.getSummary(),
+        chatMemory: this.services.chatMemory.getSummary(),
         stageGoal: this._currentStage,
       },
     }
@@ -521,7 +521,7 @@ export class CaseAgentLoop {
     const m = new Map<string, number>()
     const policyEngine = this.services.getPolicyEngine()
     for (const name of policyEngine.getPolicyNames()) {
-      const c = this.services.caseMemory.getPolicyHitCount(name)
+      const c = this.services.chatMemory.getPolicyHitCount(name)
       if (c > 0) m.set(name, c)
     }
     return m
@@ -539,7 +539,7 @@ export class CaseAgentLoop {
 
     const { caseId, vendorId, userId, chatId } = this.services
     const resolvedCaseType = this.caseSchema.type || 'general'
-    const caseMemory = this.services.caseMemory
+    const chatMemory = this.services.chatMemory
 
     let taskId: string | null = null
     const MAX_HT_RETRIES = 3
@@ -566,8 +566,8 @@ export class CaseAgentLoop {
           },
         })
 
-        const dbFields = caseMemory.getDbFields()
-        await prisma.caseMemory.upsert({
+        const dbFields = chatMemory.getDbFields()
+        await prisma.chatMemory.upsert({
           where: { caseId },
           update: {
             ...dbFields,
@@ -674,7 +674,7 @@ export class CaseAgentLoop {
     // Mandatory human review check
     if (
       this.caseSchema.requireHumanReview &&
-      !this.services.caseMemory.getSkillsCalled().includes('create_human_task')
+      !this.services.chatMemory.getSkillsCalled().includes('create_human_task')
     ) {
       const blockedMsg =
         '[POLICY] This case type requires human review before finalizing. ' +
@@ -696,16 +696,16 @@ export class CaseAgentLoop {
       {
         skillName: 'finalize_case',
         skillOutput: finalizedPayload,
-        confirmedFacts: this.services.caseMemory.getConfirmedFacts(),
-        skillsCalled: this.services.caseMemory.getSkillsCalled(),
-        skillResults: this.services.caseMemory.getSummary().skillResults as Record<string, unknown>,
+        confirmedFacts: this.services.chatMemory.getConfirmedFacts(),
+        skillsCalled: this.services.chatMemory.getSkillsCalled(),
+        skillResults: this.services.chatMemory.getSummary().skillResults as Record<string, unknown>,
       },
       this.buildHitCounts(),
     )
 
     if (preFinalizeEval.summary === 'blocked' || preFinalizeEval.summary === 'escalated') {
       for (const r of preFinalizeEval.results) {
-        if (r.result !== 'pass') this.services.caseMemory.recordPolicyHit(r.policyName)
+        if (r.result !== 'pass') this.services.chatMemory.recordPolicyHit(r.policyName)
       }
       await this.services.traceWriter.write(
         'policy_hit',
@@ -819,9 +819,9 @@ export class CaseAgentLoop {
     if (next === prevStage) return false
 
     this._currentStage = next
-    this.services.caseMemory.setCaseStatus(next)
+    this.services.chatMemory.setCaseStatus(next)
     nudgeCount.value = 0
-    this.services.caseMemory.resetPolicyHits()
+    this.services.chatMemory.resetPolicyHits()
     this.stageExecutor.resetEvalParseFailures()
 
     await this.services.traceWriter.write('loop_decision', 'Stage transition', {
@@ -851,7 +851,7 @@ export class CaseAgentLoop {
       const stageCfg = this.stageExecutor.getStageConfig(this._currentStage)
       if (stageCfg?.subAgents?.length) {
         try {
-          const mem = this.services.caseMemory.getSummary()
+          const mem = this.services.chatMemory.getSummary()
           const tasks = await this.orchestrator.planInvestigation(
             this._currentStage,
             stageCfg.subAgents,

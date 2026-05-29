@@ -637,6 +637,8 @@ export const en: Record<string, string> = {
   'agent.ms.toggleSnip': 'Snip',
   'agent.ms.hintAutocompact': 'Turn on scheduled compactions when thresholds are crossed.',
   'agent.ms.hintMicrocompact': 'Lightweight passes between full compactions for marginal savings.',
+  'agent.mem.microcompactMinAge': 'MicroCompact Min Age',
+  'agent.mem.hint.microcompactMinAge': 'Tool results younger than this are preserved (align with prompt cache TTL). Default 300000ms = 5min.',
   'agent.ms.hintContextCollapse': 'Aggressively fold duplicate or low-value context under pressure.',
   'agent.ms.hintSnip': 'Replace huge blobs with shortened placeholders instead of verbatim text.',
   'agent.policyLead':
@@ -1753,6 +1755,8 @@ export const zh: Record<string, string> = {
   'agent.ms.toggleSnip': '截断片段',
   'agent.ms.hintAutocompact': '超过阈值时按计划自动跑压缩。',
   'agent.ms.hintMicrocompact': '在完整压缩之间做轻量修剪，省一点是一点。',
+  'agent.mem.microcompactMinAge': 'MicroCompact 最小保留时长',
+  'agent.mem.hint.microcompactMinAge': '早于此时间的 tool 结果才会被清理（对齐 prompt cache TTL）。默认 300000ms = 5 分钟。',
   'agent.ms.hintContextCollapse': '吃紧时更强地合并/去掉重复与低价值上下文。',
   'agent.ms.hintSnip': '对过长片段用截断占位替代全文，减小体积。',
   'agent.policyLead': '用卡片式列表挂接全局检查点。每一列是已在策略库中登记的名称，按从上到下顺序执行。',

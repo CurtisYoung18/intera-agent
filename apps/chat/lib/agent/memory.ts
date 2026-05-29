@@ -4,7 +4,7 @@
 //   - Session memory: running summary maintained across turns
 //   - Structured compaction with <analysis>/<summary> format
 
-import type { KeyEvent, CaseMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
+import type { KeyEvent, ChatMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
@@ -52,7 +52,7 @@ export interface CompactionResult {
   messagesToKeep: number
 }
 
-export class CaseMemoryManager {
+export class ChatMemoryManager {
   private confirmedFacts: Record<string, unknown> = {}
   private missingFacts: string[] = []
   private skillsCalled: string[] = []
@@ -490,7 +490,7 @@ export class CaseMemoryManager {
     if (JSON.stringify(oldValue) !== JSON.stringify(value)) {
       this.bumpDashboardVersion()
       this.factChangelog.push({ atVersion: this.dashboardVersion, keys: [key] })
-      if (this.factChangelog.length > CaseMemoryManager.MAX_CHANGELOG_SIZE) {
+      if (this.factChangelog.length > ChatMemoryManager.MAX_CHANGELOG_SIZE) {
         this.factChangelog.splice(0, 50)
       }
       this.keyEvents.push({
@@ -518,7 +518,7 @@ export class CaseMemoryManager {
     if (changedKeys.length > 0) {
       this.bumpDashboardVersion()
       this.factChangelog.push({ atVersion: this.dashboardVersion, keys: changedKeys })
-      if (this.factChangelog.length > CaseMemoryManager.MAX_CHANGELOG_SIZE) {
+      if (this.factChangelog.length > ChatMemoryManager.MAX_CHANGELOG_SIZE) {
         this.factChangelog.splice(0, 50)
       }
       this.keyEvents.push({
@@ -751,7 +751,7 @@ export class CaseMemoryManager {
     return { todos: [...this.todos], changed }
   }
 
-  getSummary(): CaseMemoryData {
+  getSummary(): ChatMemoryData {
     return {
       caseId: this.caseId,
       confirmedFacts: this.confirmedFacts,
@@ -787,7 +787,7 @@ export class CaseMemoryManager {
   }
 
   /**
-   * Return all fields needed for prisma.caseMemory.upsert().
+   * Return all fields needed for prisma.chatMemory.upsert().
    * Keeps DB write paths consistent across the codebase.
    */
   getDbFields(): {

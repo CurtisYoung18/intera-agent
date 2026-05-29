@@ -17,7 +17,7 @@ export interface RenderHint {
 
 // ── Context ───────────────────────────────────────────────────
 
-export interface CaseMemoryReader {
+export interface ChatMemoryReader {
   caseId: string
   getSummary(): unknown
   getConfirmedFacts(): Record<string, unknown>
@@ -40,7 +40,7 @@ export interface ToolContext {
   caseId: string
   vendorId: string
   signal: AbortSignal
-  caseMemory?: CaseMemoryReader
+  chatMemory?: ChatMemoryReader
   orchestrator?: OrchestratorRef
   secrets?: SecretResolver
 }

@@ -111,7 +111,7 @@ export async function POST(
     // Ingest structured answers as confirmedFacts (if fields were provided)
     if (answers && typeof answers === 'object' && Object.keys(answers).length > 0) {
       try {
-        const mem = await prisma.caseMemory.findUnique({ where: { caseId: task.caseId } })
+        const mem = await prisma.chatMemory.findUnique({ where: { caseId: task.caseId } })
         if (mem) {
           const facts = JSON.parse(mem.confirmedFacts || '{}')
           for (const [key, value] of Object.entries(answers)) {
@@ -119,7 +119,7 @@ export async function POST(
               facts[key] = String(value).trim()
             }
           }
-          await prisma.caseMemory.update({
+          await prisma.chatMemory.update({
             where: { caseId: task.caseId },
             data: { confirmedFacts: JSON.stringify(facts) },
           })

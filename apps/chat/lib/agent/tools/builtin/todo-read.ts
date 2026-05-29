@@ -23,11 +23,11 @@ export const todoReadTool: Tool<Input, Output> = {
   isReadOnly(_input: Input) { return true },
 
   async call(_input: Input, ctx: ToolContext): Promise<Output> {
-    if (!ctx.caseMemory) {
+    if (!ctx.chatMemory) {
       return { todos: [] }
     }
 
-    const todos = (ctx.caseMemory as any).getTodos?.() ?? []
+    const todos = (ctx.chatMemory as any).getTodos?.() ?? []
 
     return {
       todos: todos.map((t: any) => ({

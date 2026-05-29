@@ -7,7 +7,7 @@ import type { WidgetPayload, StatusTrackStep, InteractionOption, FormField } fro
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input' | 'skill_render'
+type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input' | 'skill_render' | 'submitted'
 
 interface FormFieldSpec {
   id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string
@@ -16,6 +16,7 @@ interface FormFieldSpec {
 interface AppState {
   view: ViewKind
   caseId: string
+  chatId: string
   steps: StatusTrackStep[]
   options: InteractionOption[]
   fields: FormField[]
@@ -26,6 +27,7 @@ interface AppState {
 const INITIAL_STATE: AppState = {
   view: 'idle',
   caseId: '',
+  chatId: '',
   steps: [],
   options: [],
   fields: [],
@@ -259,11 +261,12 @@ function FormCard({
     setFlipped(true)
     await new Promise(r => setTimeout(r, 350)) // wait for flip animation
     if (onSubmitWithForm) {
+      // Parent manages the post-submit UI (success / error / retry).
       onSubmitWithForm(values)
     } else {
       sendToLiveChat('intera_form_submit', { caseId, answers: values })
+      onSubmit()
     }
-    onSubmit()
   }
 
   const isValid = fields.every(f => !f.required || (values[f.id] ?? '').trim())
@@ -468,6 +471,7 @@ export default function LiveChatWidget() {
   const [state, setState] = useState<AppState>(INITIAL_STATE)
   const [isOnline, setIsOnline] = useState(true)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [formAttempt, setFormAttempt] = useState(0)
   const isPreview = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview')
 
   // Online/offline detection
@@ -482,6 +486,16 @@ export default function LiveChatWidget() {
     }
   }, [])
 
+  // Eagerly initialize the Moments SDK as soon as the webview mounts.
+  // The Moment host fires window.onMomentAsyncInit at page load, so the handler
+  // MUST be registered before submit — otherwise a lazy (on-submit) init can miss
+  // the callback and the Moment won't auto-close. Memoized, so submit reuses it.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!isWidgetIframe()) return
+    void getMomentsSDK()
+  }, [])
+
   // URL-param form mode — when opened as Moments webview from a form_request card
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -491,10 +505,12 @@ export default function LiveChatWidget() {
       const fieldsJson = params.get('fields')
       const fields = fieldsJson ? JSON.parse(fieldsJson) as FormFieldSpec[] : []
       const caseId = params.get('caseId') ?? ''
+      const chatId = params.get('chatId') ?? ''
       const title = params.get('title') ?? 'Form'
       setState({
         view: 'request_user_input',
         caseId,
+        chatId,
         steps: [],
         options: [],
         fields: fields.map(f => ({ id: f.id, type: f.type as FormField['type'], label: f.label, required: f.required, options: f.options, placeholder: f.placeholder })),
@@ -558,23 +574,46 @@ export default function LiveChatWidget() {
     setState(INITIAL_STATE)
   }, [])
 
-  // Submit form data via Moments SDK. Falls back gracefully if SDK unavailable.
-  const handleMomentFormSubmit = useCallback((answers: Record<string, string>) => {
-    const lines = Object.entries(answers)
-      .filter(([, v]) => v.trim())
-      .map(([k, v]) => `${k}: ${v}`)
-      .join(', ')
-    if (isWidgetIframe() && lines) {
-      getMomentsSDK().then((sdk) => {
-        if (sdk) {
-          sdk.sendMessage({ text: lines }).catch(() => {})
-          setTimeout(() => sdk.close(), 500)
-        }
-        // If no SDK, we still transition to INITIAL_STATE below (no hang)
-      })
+  // BUG-F fix: deliver form answers via our own backend (SDK-independent).
+  // The webview is served from our domain, so it can POST straight to
+  // /api/livechat/form-submit, which drives the bridge → agent → LiveChat reply.
+  // The Moments SDK (only present in real Moments, NOT plain webview buttons)
+  // is used best-effort just to auto-close the webview.
+  const handleFormSubmit = useCallback((answers: Record<string, string>) => {
+    const cleaned: Record<string, string> = {}
+    for (const [k, v] of Object.entries(answers)) {
+      if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim()
     }
-    setState(INITIAL_STATE)
-  }, [])
+    const params = new URLSearchParams(window.location.search)
+    const chatId = params.get('chatId') ?? state.chatId
+    const caseId = params.get('caseId') ?? state.caseId
+
+    if (!chatId || Object.keys(cleaned).length === 0) {
+      // No delivery channel (e.g. Console preview) — just acknowledge locally.
+      setState(prev => ({ ...prev, view: 'submitted' }))
+      return
+    }
+
+    setSubmitError(null)
+    fetch('/api/livechat/form-submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, caseId, answers: cleaned }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`form-submit HTTP ${res.status}`)
+        setState(prev => ({ ...prev, view: 'submitted' }))
+        // Auto-close the Moment for a smooth UX (SDK was pre-initialized on mount).
+        // Falls back to the 'submitted' screen if not in a Moment (no SDK).
+        getMomentsSDK().then((sdk) => { if (sdk) setTimeout(() => sdk.close(), 300) })
+      })
+      .catch((err) => {
+        console.error('[Widget] form submit failed:', err)
+        setSubmitError('提交失败，请重试，或直接在聊天里发送该信息。')
+        // Remount the form (fresh, un-flipped) so the user can retry.
+        setFormAttempt((n) => n + 1)
+      })
+  }, [state.chatId, state.caseId])
 
   if (state.view === 'idle') {
     return (
@@ -593,7 +632,7 @@ export default function LiveChatWidget() {
       )}
       {submitError && (
         <div className="bg-amber-500 text-white text-[10px] text-center py-1 px-2 flex justify-between items-center">
-          <span>Submit failed. Please try again.</span>
+          <span>{submitError}</span>
           <button onClick={() => setSubmitError(null)} className="text-white ml-2">&times;</button>
         </div>
       )}
@@ -610,7 +649,20 @@ export default function LiveChatWidget() {
         )}
         {state.view === 'request_user_input' && (
           <motion.div key="form" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <FormCard caseId={state.caseId} fields={state.fields} onSubmit={handleViewComplete} onSubmitWithForm={isWidgetIframe() ? handleMomentFormSubmit : undefined} />
+            <FormCard key={`form-${formAttempt}`} caseId={state.caseId} fields={state.fields} onSubmit={handleViewComplete} onSubmitWithForm={isWidgetIframe() ? handleFormSubmit : undefined} />
+          </motion.div>
+        )}
+        {state.view === 'submitted' && (
+          <motion.div key="submitted" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <div className="p-3">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 flex flex-col items-center justify-center gap-2 text-emerald-600">
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-[13px] font-semibold">已提交</p>
+                <p className="text-[11px] text-emerald-500/80 text-center">请返回聊天窗口查看回复，可关闭此页面。</p>
+              </div>
+            </div>
           </motion.div>
         )}
         {state.view === 'skill_render' && (

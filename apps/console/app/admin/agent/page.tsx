@@ -811,6 +811,13 @@ export default function AgentConfigPage() {
                           </label>
                         ))}
                       </DrawerCheckboxRail>
+                      <NumField
+                        label={t('agent.mem.microcompactMinAge')}
+                        hint={t('agent.mem.hint.microcompactMinAge')}
+                        value={ms.microcompactMinAgeMs ?? 300000}
+                        onChange={(v) => updateMem('microcompactMinAgeMs', v)}
+                        unit={u.ms}
+                      />
                     </DrawerSection>
                   </>
                 )}

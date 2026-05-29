@@ -33,11 +33,11 @@ export const todoWriteTool: Tool<Input, Output> = {
   isReadOnly(_input: Input) { return false },
 
   async call(input: Input, ctx: ToolContext): Promise<Output> {
-    if (!ctx.caseMemory) {
+    if (!ctx.chatMemory) {
       return { ok: false, todos: [] }
     }
 
-    const result = ((ctx.caseMemory as any).applyTodoAction?.({ action: input.action, id: input.id, text: input.text, notes: input.notes }) ?? { changed: false, todos: [] })
+    const result = ((ctx.chatMemory as any).applyTodoAction?.({ action: input.action, id: input.id, text: input.text, notes: input.notes }) ?? { changed: false, todos: [] })
 
     return {
       ok: result?.changed ?? false,

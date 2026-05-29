@@ -90,6 +90,42 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
   },
   {
+    name: 'read_chat_memory',
+    description:
+      'Read the accumulated memory for the current conversation. This contains the user\'s history, past issues, preferences, ' +
+      'and patterns learned from previous conversations. Use this at the start of a new case or when you need deeper context ' +
+      'about who you are talking to. Returns a structured summary of what is known about this user.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    isConcurrencySafe: true,
+    mode: 'static',
+    enabled: true,
+    displayVerb: { text: 'Loading user memory', icon: 'scan' },
+    mockFixture: { summary: '', confirmedFacts: {}, stats: {} },
+    zodSchema: z.object({}),
+  },
+  {
+    name: 'read_user_profile',
+    description:
+      'Read the user profile for the current customer. This contains the user\'s attributes, preferences, tags, ' +
+      'and cross-chat statistics accumulated over time. Use this when you need to understand the customer\'s ' +
+      'identity, preferences, and long-term behavior patterns.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    isConcurrencySafe: true,
+    mode: 'static',
+    enabled: true,
+    displayVerb: { text: 'Loading user profile', icon: 'scan' },
+    mockFixture: { profile: '', stats: {} },
+    zodSchema: z.object({}),
+  },
+  {
     name: 'query_order_status',
     description: 'Query the platform order system for transaction status',
     inputSchema: {

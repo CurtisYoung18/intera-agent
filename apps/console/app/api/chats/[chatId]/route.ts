@@ -40,7 +40,7 @@ export async function DELETE(
     await prisma.humanTask.deleteMany({ where: { caseId: { in: caseIds } } })
     await prisma.actionTrace.deleteMany({ where: { caseId: { in: caseIds } } })
     await prisma.message.deleteMany({ where: { caseId: { in: caseIds } } })
-    await prisma.caseMemory.deleteMany({ where: { caseId: { in: caseIds } } })
+    await prisma.chatMemory.deleteMany({ where: { caseId: { in: caseIds } } })
     await prisma.case.deleteMany({ where: { id: { in: caseIds } } })
 
     return NextResponse.json({ ok: true, deleted: caseIds.length })

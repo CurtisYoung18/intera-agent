@@ -217,7 +217,7 @@ async function seed() {
   await prisma.humanTask.deleteMany({ where: { id: 'seed-task-1' } })
   await prisma.actionTrace.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.message.deleteMany({ where: { caseId: 'seed-case-1' } })
-  await prisma.caseMemory.deleteMany({ where: { caseId: 'seed-case-1' } })
+  await prisma.chatMemory.deleteMany({ where: { caseId: 'seed-case-1' } })
   await prisma.case.deleteMany({ where: { id: 'seed-case-1' } })
 
   // ── Create vendors ──
@@ -265,7 +265,7 @@ async function seed() {
     },
   })
 
-  await prisma.caseMemory.create({
+  await prisma.chatMemory.create({
     data: {
       caseId: c.id,
       confirmedFacts: JSON.stringify({ txnId: 'TXU1_12345', amount: 500, userReportedNotReceived: true, orderStatus: 'pending', channelDelayedBatch: true }),

@@ -143,11 +143,11 @@ export async function POST(request: NextRequest) {
         // No separate memory persist needed — consultation doesn't modify investigation memory.
         // We only update the chatLog below.
         {
-          // Placeholder upsert to satisfy callers that still read caseMemory after consultation.
+          // Placeholder upsert to satisfy callers that still read chatMemory after consultation.
           // Uses the existing memory snapshot if present — no overwrite.
-          const existingMem = await prisma.caseMemory.findUnique({ where: { caseId: caseData.id } })
+          const existingMem = await prisma.chatMemory.findUnique({ where: { caseId: caseData.id } })
           if (!existingMem && memory) {
-            await prisma.caseMemory.create({
+            await prisma.chatMemory.create({
               data: {
                 caseId: caseData.id,
                 confirmedFacts: memory.confirmedFacts || '{}',

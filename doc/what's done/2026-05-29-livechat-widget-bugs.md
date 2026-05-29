@@ -143,6 +143,14 @@ if (action === 'incoming_chat') {
 
 ## BUG-F（高）— 表单（request_user_input）提交后卡在 "Intera preparing..."，结构化结果丢失
 
+> **2026-05-29 状态：✅ 已彻底修复（SDK-independent 后端回传）。** 第一版修复只加了 8s 超时去掉死循环，但表单是用 `type:'webview'` 普通 iframe 打开、拿不到 Moments SDK，所以"卡画面 + agent 收不到结果"实际仍在。最终修复改为**不依赖 SDK**：webview 是我们自己域名下的页面，直接 POST 答案到新后端端点 `POST /api/livechat/form-submit`，由它复用 bridge 的 `intera_form_submit`→`formResult`→agent→回复推回 LiveChat 聊天。改动：
+> - 新增 [apps/chat/app/api/livechat/form-submit/route.ts](apps/chat/app/api/livechat/form-submit/route.ts)：按 chatId 查 bridge session → `getLiveChatConfig` → `handleIncomingEvent({type:'form_submit', form:{caseId, answers}})`（fire-and-forget，立即返回 ok）。
+> - renderer 表单 URL 增加 `chatId=ctx.sessionId`（[renderer.ts](apps/chat/channels/livechat/renderer.ts) form_request），供 webview 回传时定位会话。
+> - widget [page.tsx](apps/chat/app/livechat-widget/page.tsx)：`handleFormSubmit` 改为 `fetch('/api/livechat/form-submit')`；成功 → 新增 `submitted` 视图"已提交，请返回聊天查看回复"（**不再退回 idle 的 "Intera preparing..."**）；失败 → 横幅提示 + 重挂表单可重试。
+> - **自动关闭（Moment 丝滑 UX）**：`webview_height:'tall'` 卡片按钮（[livechat-api.ts:147](apps/chat/lib/livechat/livechat-api.ts:147)）打开的是 Moment，SDK 可用。在 webview 挂载时**预先初始化** Moments SDK（`onMomentAsyncInit` 必须在 Moment host 回调前注册，否则懒加载会错过回调导致不关窗）；提交成功后 `sdk.close()` 自动关闭卡片（~300ms），非 Moment 环境则回退到 `submitted` 提示页、不卡死。
+> - 验证：`tsc --noEmit` 通过；livechat 单测 83/83 通过。SDK 不可用也不再卡死、agent 能收到**结构化** answers。
+> 下方为原始分析，保留备查。
+
 **现象**：顾客在表单 webview 填完会员ID 点 Submit 后，页面卡在 "Intera preparing..." 不动；agent 也收不到表单结果、不再继续。实测复现于 chat `daf4f4b8-…`（`general#case_202`，最后一条 trace 停在 `Tool request_user_input result: {"ok":true,"handled":"channel"}`）。
 
 **根因（两个叠加）**：

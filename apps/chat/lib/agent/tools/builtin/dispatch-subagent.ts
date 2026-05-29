@@ -56,9 +56,9 @@ export const dispatchSubagentTool: Tool<Input, unknown> = {
       )
     }
 
-    const caseId = ctx.caseMemory?.caseId
+    const caseId = ctx.chatMemory?.caseId
     if (!caseId) {
-      throw new Error('dispatch_subagent requires an active case (caseMemory.caseId is missing).')
+      throw new Error('dispatch_subagent requires an active case (chatMemory.caseId is missing).')
     }
 
     return ctx.orchestrator.dispatch(input.agentName, {

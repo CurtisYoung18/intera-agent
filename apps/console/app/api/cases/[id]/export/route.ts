@@ -32,7 +32,7 @@ export async function GET(
     prisma.message.findMany({ where: { caseId: id }, orderBy: { createdAt: 'asc' } }),
     prisma.actionTrace.findMany({ where: { caseId: id }, orderBy: { createdAt: 'asc' } }),
     prisma.humanTask.findMany({ where: { caseId: id }, orderBy: { createdAt: 'asc' } }),
-    prisma.caseMemory.findUnique({ where: { caseId: id } }),
+    prisma.chatMemory.findUnique({ where: { caseId: id } }),
   ])
 
   if (!caseData) {

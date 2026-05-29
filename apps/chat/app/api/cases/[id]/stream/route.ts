@@ -301,7 +301,7 @@ async function persistTurn(
         update: { status: result.caseStatus },
         create: { id: caseId, vendorId, userId, type: caseTypeForUpsert, status: result.caseStatus },
       })
-      await prisma.caseMemory.upsert({
+      await prisma.chatMemory.upsert({
         where: { caseId },
         update: {
           confirmedFacts: JSON.stringify(mem.confirmedFacts),

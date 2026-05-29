@@ -98,6 +98,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         const params = new URLSearchParams({
           view: 'form',
           caseId: formCaseId,
+          // chatId lets the form webview deliver answers via /api/livechat/form-submit
+          // (SDK-independent path — see BUG-F fix).
+          chatId: ctx.sessionId,
           title: d.title ?? 'Please fill in the following',
           fields: JSON.stringify(fields),
         })

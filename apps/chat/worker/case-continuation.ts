@@ -13,7 +13,7 @@ const LOCK_TIMEOUT_MS = 120_000 // 2 minutes — stale lock expiry
 
 async function poll(): Promise<void> {
   try {
-    const pending = await prisma.caseMemory.findMany({
+    const pending = await prisma.chatMemory.findMany({
       where: {
         needsContinuation: true,
         case: {
@@ -31,7 +31,7 @@ async function poll(): Promise<void> {
       console.log(`[Worker] Resuming case ${mem.caseId} (type: ${mem.case.type}, status: ${mem.case.status})`)
 
       // Acquire lock
-      await prisma.caseMemory.update({
+      await prisma.chatMemory.update({
         where: { caseId: mem.caseId },
         data: { continuationLock: new Date() },
       })
@@ -55,7 +55,7 @@ async function poll(): Promise<void> {
         if (!res.ok) {
           console.error(`[Worker] Resume failed for case ${mem.caseId}: HTTP ${res.status}`)
           // Unlock so it can be retried
-          await prisma.caseMemory.update({
+          await prisma.chatMemory.update({
             where: { caseId: mem.caseId },
             data: { continuationLock: null },
           })
@@ -72,7 +72,7 @@ async function poll(): Promise<void> {
         }
 
         // Success — clear flag and lock
-        await prisma.caseMemory.update({
+        await prisma.chatMemory.update({
           where: { caseId: mem.caseId },
           data: { needsContinuation: false, continuationLock: null },
         })
@@ -80,7 +80,7 @@ async function poll(): Promise<void> {
       } catch (err) {
         console.error(`[Worker] Resume error for case ${mem.caseId}:`, err)
         // Unlock on failure, will retry next poll
-        await prisma.caseMemory.update({
+        await prisma.chatMemory.update({
           where: { caseId: mem.caseId },
           data: { continuationLock: null },
         }).catch(() => { /* ignore unlock failure */ })

@@ -24,7 +24,7 @@ import { useConsoleLocale } from '@/components/locale-provider'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface CaseMemory {
+interface ChatMemoryData {
   confirmedFacts: string
   missingFacts: string
   skillsCalled: string
@@ -61,7 +61,7 @@ interface TaskDetail {
     userId: string
     vendorId: string
     goal: string | null
-    memory: CaseMemory | null
+    memory: ChatMemoryData | null
   }
 }
 

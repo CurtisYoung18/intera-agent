@@ -205,7 +205,7 @@ model Case {
   updatedAt  DateTime  @updatedAt
   resolvedAt DateTime?
 
-  memory     CaseMemory?
+  memory     ChatMemory?
   messages   Message[]
   traces     ActionTrace[]
   humanTasks HumanTask[]
@@ -215,9 +215,9 @@ model Case {
 }
 
 // ============================================
-// Case Memory
+// Chat Memory — accumulated per-chat agent memory (compact summaries, facts, tool history)
 // ============================================
-model CaseMemory {
+model ChatMemory {
   id     String @id @default(cuid())
   caseId String @unique
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
@@ -241,7 +241,32 @@ model CaseMemory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("case_memories")
+  @@map("chat_memories")
+}
+
+// ============================================
+// User Profile — AI-maintained Markdown user portrait (per userId, cross-chat)
+// ============================================
+model UserProfile {
+  id       String @id @default(cuid())
+  userId   String @unique
+  vendorId String @default("default")
+
+  /// Free-form Markdown maintained by the compact engine and operators
+  profile  String @default("")
+
+  totalChats     Int @default(0)
+  totalCases     Int @default(0)
+  resolvedCases  Int @default(0)
+  escalatedCases Int @default(0)
+  lastCaseType   String?
+  firstSeenAt    DateTime?
+  lastSeenAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_profiles")
 }
 
 // ============================================

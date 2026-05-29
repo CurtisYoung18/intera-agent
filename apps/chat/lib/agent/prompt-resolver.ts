@@ -95,21 +95,17 @@ function renderSessionBinding(binding: PromptContext['session_binding']): string
   const lines = ['## Current User']
   if (label) lines.push(`- Label: ${label}`)
 
-  // BUG-G: LiveChat's author_id is a random UUID, not a business member_id.
-  // Only inject Member ID instructions when we have a verified platform member_id
-  // (non-UUID pattern like JAYA11327F2), not a session/visitor UUID.
+  // Emit ONLY the dynamic facts here. The behavioral instruction (use the
+  // Member ID vs. collect it via request_user_input) lives in the editable
+  // System Prompt (`## member_id` section), so it can be hot-updated in Console.
+  // BUG-G: LiveChat's author_id is a random UUID, not a business member_id —
+  // surface that distinction as a fact, not a hardcoded instruction.
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u)
   if (isUuid) {
-    lines.push(`- Session ID: \`${u}\` (this is a session identifier, NOT a member_id)`)
-    lines.push('')
-    lines.push('The member_id is NOT yet known. When calling tools that require `member_id`,')
-    lines.push('you MUST first collect it from the user via request_user_input.')
+    lines.push(`- Session ID: \`${u}\``)
+    lines.push('- member_id: 未知 / unknown (not yet provided by the customer)')
   } else {
-    lines.push(`- Member ID: \`${u}\``)
-    lines.push('')
-    lines.push('When calling tools that require a `member_id` argument, always use this Member ID.')
-    lines.push('When calling tools that require a `userId` argument, also use this Member ID.')
-    lines.push('Do not ask the user for their ID — it is already known.')
+    lines.push(`- Member ID: \`${u}\` (verified)`)
   }
   return lines.join('\n')
 }

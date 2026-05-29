@@ -19,7 +19,7 @@ export interface SessionMemoryCompactResult {
  *   2. Generated within maxAgeMs (default 30 minutes)
  *
  * If conditions are met, the caller skips message trimming and LLM summary
- * generation — the existing summary is already in CaseMemoryManager and
+ * generation — the existing summary is already in ChatMemoryManager and
  * will be prepended by buildApiMessages().
  */
 export function trySessionMemoryCompact(
