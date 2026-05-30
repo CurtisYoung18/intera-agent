@@ -12,8 +12,8 @@ export async function getActiveOrgId(): Promise<string> {
     const orgId = cookieStore.get(COOKIE_ORG_ID)?.value
     if (!orgId) return 'default'
 
-    const vendor = await prisma.organization.findUnique({ where: { id: orgId } })
-    return vendor ? orgId : 'default'
+    const org = await prisma.organization.findUnique({ where: { id: orgId } })
+    return org ? orgId : 'default'
   } catch {
     return 'default'
   }
@@ -34,15 +34,15 @@ export async function getActiveVendor(): Promise<{
       return { id: 'default', name: 'Demo Org', hasPassword: false, isAuthed: false }
     }
 
-    const vendor = await prisma.organization.findUnique({ where: { id: orgId } })
-    if (!vendor) {
+    const org = await prisma.organization.findUnique({ where: { id: orgId } })
+    if (!org) {
       return { id: 'default', name: 'Demo Org', hasPassword: false, isAuthed: false }
     }
 
     return {
-      id: vendor.id,
-      name: vendor.name,
-      hasPassword: vendor.password != null,
+      id: org.id,
+      name: org.name,
+      hasPassword: org.password != null,
       isAuthed: authed,
     }
   } catch {

@@ -102,7 +102,7 @@ async function seedVendorConfig(
 
   // Skills
   for (const s of DEFAULT_SKILLS) {
-    // For API vendor, force HTTP mode; for demo, keep original mode
+    // For API org, force HTTP mode; for demo, keep original mode
     const mode = opts.skillsMode === 'http' && s.endpoint ? 'http' : s.mode
 
     await prisma.skill.upsert({

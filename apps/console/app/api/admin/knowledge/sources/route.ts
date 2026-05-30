@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, ensureDefaultOrg } from '@intera/shared/prisma'
+import { DEFAULT_KNOWLEDGE_SOURCES } from '@intera/shared/defaults'
 
 import { getActiveOrgId } from '@/lib/auth'
 
@@ -9,11 +10,34 @@ export async function GET() {
   try {
     const ORG_ID = await getActiveOrgId()
 
-    // Auto-heal: migrate existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
+    // Auto-seed: create default knowledge sources if missing
     const sources = await prisma.knowledgeSource.findMany({
       where: { orgId: ORG_ID },
       orderBy: { name: 'asc' },
     })
+    if (sources.length === 0) {
+      await ensureDefaultOrg(ORG_ID)
+      for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
+        await prisma.knowledgeSource.create({
+          data: {
+            orgId: ORG_ID,
+            name: ks.name,
+            description: ks.description,
+            groupIds: ks.groupIds,
+            embeddingRate: ks.embeddingRate,
+            topK: ks.topK,
+            rerankVersion: ks.rerankVersion,
+            docCorrelation: ks.docCorrelation,
+            enabled: true,
+          },
+        })
+      }
+      const seeded = await prisma.knowledgeSource.findMany({
+        where: { orgId: ORG_ID },
+        orderBy: { name: 'asc' },
+      })
+      return NextResponse.json({ sources: seeded })
+    }
     const healOps: Promise<unknown>[] = []
     for (const ks of sources) {
       const patches: Record<string, unknown> = {}

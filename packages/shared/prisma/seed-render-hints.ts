@@ -20,7 +20,7 @@ const RENDER_HINTS: Record<string, string> = {
 
 async function main() {
   const orgId = process.argv[2] || 'api'
-  console.log(`Updating renderHints for vendor: ${orgId}`)
+  console.log(`Updating renderHints for org: ${orgId}`)
 
   for (const [name, renderHints] of Object.entries(RENDER_HINTS)) {
     try {
