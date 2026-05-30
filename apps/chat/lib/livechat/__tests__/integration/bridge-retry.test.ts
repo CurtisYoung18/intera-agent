@@ -31,7 +31,7 @@ describe('bridge-retry integration', () => {
       expect(mockCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
           chatId: 'chat-1',
-          vendorId: 'cust-1',
+          orgId: 'cust-1',
           payload: { userId: 'user-1', event: { type: 'message', text: 'hello' } },
           attempt: 0,
           lastError: 'Network error',
@@ -55,7 +55,7 @@ describe('bridge-retry integration', () => {
 
     it('deletes items for disabled customers', async () => {
       mockFindMany.mockResolvedValue([{
-        id: 'evt-1', chatId: 'chat-1', vendorId: 'cust-1',
+        id: 'evt-1', chatId: 'chat-1', orgId: 'cust-1',
         payload: { userId: 'user-1', event: { type: 'message', text: 'hello' } },
         attempt: 0, lastError: null,
       }])

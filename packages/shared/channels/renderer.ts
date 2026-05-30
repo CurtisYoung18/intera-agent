@@ -9,7 +9,7 @@ import type { RenderHint } from './render-hints'
 
 export interface RenderContext {
   caseId: string
-  vendorId: string
+  orgId: string
   sessionId: string
   binding: ChannelBindingConfig
 }

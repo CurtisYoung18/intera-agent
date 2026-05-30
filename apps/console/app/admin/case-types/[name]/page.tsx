@@ -110,7 +110,7 @@ export default function CaseTypeDetailPage() {
   }, [])
 
   const notifyConfigChanged = useCallback(() => {
-    const body = JSON.stringify({ vendorId: 'default' })
+    const body = JSON.stringify({ orgId: 'default' })
     Promise.allSettled([
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
       fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),

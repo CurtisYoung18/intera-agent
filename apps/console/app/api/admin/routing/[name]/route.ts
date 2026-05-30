@@ -3,13 +3,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params
   try {
-    const VENDOR_ID = await getActiveVendorId()
-    const route = await prisma.routing.findUnique({ where: { vendorId_queue: { vendorId: VENDOR_ID, queue: name } } })
+    const ORG_ID = await getActiveOrgId()
+    const route = await prisma.routing.findUnique({ where: { orgId_queue: { orgId: ORG_ID, queue: name } } })
     if (!route) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ route })
   } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ nam
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     const body = await req.json()
     const data: Record<string, unknown> = {}
     if (body.queue !== undefined) data.queue = body.queue
@@ -27,7 +27,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ name
     if (body.autoAssign !== undefined) data.autoAssign = body.autoAssign
     if (body.maxWaitingTime !== undefined) data.maxWaitingTime = body.maxWaitingTime
     if (body.skillsAllowed !== undefined) data.skillsAllowed = typeof body.skillsAllowed === 'string' ? body.skillsAllowed : JSON.stringify(body.skillsAllowed)
-    const route = await prisma.routing.update({ where: { vendorId_queue: { vendorId: VENDOR_ID, queue: name } }, data })
+    const route = await prisma.routing.update({ where: { orgId_queue: { orgId: ORG_ID, queue: name } }, data })
     return NextResponse.json({ route })
   } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
 }
@@ -35,8 +35,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ name
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params
   try {
-    const VENDOR_ID = await getActiveVendorId()
-    await prisma.routing.delete({ where: { vendorId_queue: { vendorId: VENDOR_ID, queue: name } } })
+    const ORG_ID = await getActiveOrgId()
+    await prisma.routing.delete({ where: { orgId_queue: { orgId: ORG_ID, queue: name } } })
     return NextResponse.json({ success: true })
   } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
 }

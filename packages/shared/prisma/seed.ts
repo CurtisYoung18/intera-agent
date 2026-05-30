@@ -45,17 +45,17 @@ loadEnv()
 
 const prisma = new PrismaClient()
 
-// ── Vendor definitions ────────────────────────────────────────────
+// ── Organization definitions ────────────────────────────────────────────
 
 const VENDORS = [
-  { id: 'default', name: 'Demo Vendor', password: null },
-  { id: 'api', name: 'API Vendor', password: hashSync('0000', 10) },
+  { id: 'default', name: 'Demo Org', password: null },
+  { id: 'api', name: 'API Org', password: hashSync('0000', 10) },
 ]
 
 // ── Seed helpers ────────────────────────────────────────────────────
 
 async function seedVendorConfig(
-  vendorId: string,
+  orgId: string,
   opts: {
     model: string
     temperature: number
@@ -94,11 +94,11 @@ async function seedVendorConfig(
   }
 
   await prisma.agentConfig.upsert({
-    where: { vendorId },
+    where: { orgId },
     update: agentPayload,
-    create: { vendorId, ...agentPayload },
+    create: { orgId, ...agentPayload },
   })
-  console.log(`  ✓ AgentConfig (${vendorId})`)
+  console.log(`  ✓ AgentConfig (${orgId})`)
 
   // Skills
   for (const s of DEFAULT_SKILLS) {
@@ -106,7 +106,7 @@ async function seedVendorConfig(
     const mode = opts.skillsMode === 'http' && s.endpoint ? 'http' : s.mode
 
     await prisma.skill.upsert({
-      where: { vendorId_name: { vendorId, name: s.name } },
+      where: { orgId_name: { orgId, name: s.name } },
       update: {
         description: s.description,
         inputSchema: s.inputSchema,
@@ -123,7 +123,7 @@ async function seedVendorConfig(
         displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
       },
       create: {
-        vendorId,
+        orgId,
         name: s.name,
         description: s.description,
         inputSchema: s.inputSchema,
@@ -141,17 +141,17 @@ async function seedVendorConfig(
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills (${vendorId})`)
+  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills (${orgId})`)
 
   // Policies
   for (const p of DEFAULT_POLICIES) {
     await prisma.policy.upsert({
-      where: { vendorId_name: { vendorId, name: p.name } },
+      where: { orgId_name: { orgId, name: p.name } },
       update: { description: p.description, hook: p.hook, rule: p.rule, enabled: true },
-      create: { vendorId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true },
+      create: { orgId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true },
     })
   }
-  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${vendorId})`)
+  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${orgId})`)
 
   const orch = JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG)
 
@@ -159,7 +159,7 @@ async function seedVendorConfig(
   for (const ct of DEFAULT_CASE_TYPES) {
     const stageMap = DEFAULT_STAGE_CONFIGS[ct.type] as Record<string, unknown> | undefined
     await prisma.caseType.upsert({
-      where: { vendorId_type: { vendorId, type: ct.type } },
+      where: { orgId_type: { orgId, type: ct.type } },
       update: {
         displayName: ct.displayName, description: ct.description, icon: ct.icon,
         requiredFacts: ct.requiredFacts, stages: ct.stages,
@@ -168,7 +168,7 @@ async function seedVendorConfig(
         escalateOn: ct.escalateOn, enabled: true,
       },
       create: {
-        vendorId, type: ct.type, displayName: ct.displayName,
+        orgId, type: ct.type, displayName: ct.displayName,
         description: ct.description, icon: ct.icon,
         requiredFacts: ct.requiredFacts, stages: ct.stages,
         stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
@@ -177,22 +177,22 @@ async function seedVendorConfig(
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types (${vendorId})`)
+  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types (${orgId})`)
 
   // Routing
   for (const r of DEFAULT_ROUTING) {
     await prisma.routing.upsert({
-      where: { vendorId_queue: { vendorId, queue: r.queue } },
+      where: { orgId_queue: { orgId, queue: r.queue } },
       update: { description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
-      create: { vendorId, queue: r.queue, description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
+      create: { orgId, queue: r.queue, description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
     })
   }
-  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues (${vendorId})`)
+  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues (${orgId})`)
 
   // Knowledge Sources
   for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
     await prisma.knowledgeSource.upsert({
-      where: { vendorId_name: { vendorId, name: ks.name } },
+      where: { orgId_name: { orgId, name: ks.name } },
       update: {
         description: ks.description ?? null, groupIds: ks.groupIds,
         embeddingRate: ks.embeddingRate, topK: ks.topK,
@@ -200,14 +200,14 @@ async function seedVendorConfig(
         caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
       },
       create: {
-        vendorId, name: ks.name, description: ks.description ?? null,
+        orgId, name: ks.name, description: ks.description ?? null,
         groupIds: ks.groupIds, embeddingRate: ks.embeddingRate, topK: ks.topK,
         rerankVersion: ks.rerankVersion ?? null, docCorrelation: ks.docCorrelation ?? null,
         caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources (${vendorId})`)
+  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources (${orgId})`)
 }
 
 // ── Main seed ────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ async function seed() {
 
   // ── Create vendors ──
   for (const c of VENDORS) {
-    await prisma.vendor.upsert({
+    await prisma.organization.upsert({
       where: { id: c.id },
       update: { name: c.name, password: c.password },
       create: { id: c.id, name: c.name, password: c.password },
@@ -232,8 +232,8 @@ async function seed() {
   }
   console.log(`  ✓ ${VENDORS.length} Vendors`)
 
-  // ── Demo Vendor config ──
-  console.log('\n── Demo Vendor ──')
+  // ── Demo Org config ──
+  console.log('\n── Demo Org ──')
   await seedVendorConfig('default', {
     model: 'MiniMax-M2.7-highspeed',
     temperature: 0.5,
@@ -243,8 +243,8 @@ async function seed() {
     skillsMode: 'mock',
   })
 
-  // ── API Vendor config ──
-  console.log('\n── API Vendor ──')
+  // ── API Org config ──
+  console.log('\n── API Org ──')
   await seedVendorConfig('api', {
     model: 'MiniMax-M2.7-highspeed',
     temperature: 0.7,
@@ -258,7 +258,7 @@ async function seed() {
   const c = await prisma.case.create({
     data: {
       id: 'seed-case-1',
-      vendorId: 'default',
+      orgId: 'default',
       userId: 'u_try_1',
       type: 'deposit_issue',
       status: 'waiting_human',

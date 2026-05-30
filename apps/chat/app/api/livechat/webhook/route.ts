@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   const payload = (body.payload ?? {}) as Record<string, unknown>
   const event = (payload.event ?? {}) as Record<string, unknown>
   const userId = (event.author_id ?? 'anonymous') as string
-  const vendorId = (payload.license_id ?? process.env.DEFAULT_VENDOR_ID ?? 'default') as string
+  const orgId = (payload.license_id ?? process.env.DEFAULT_ORG_ID ?? 'default') as string
 
   // Dedup — skip incoming_chat (LiveChat reuses webhook_id across sessions).
   // Thread events inside incoming_chat are individually deduped in the handler below.
@@ -85,9 +85,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const config = await getLiveChatConfig(vendorId)
+  const config = await getLiveChatConfig(orgId)
   if (!config?.enabled) {
-    console.warn('[Webhook] config missing or disabled', { vendorId, action, chatId })
+    console.warn('[Webhook] config missing or disabled', { orgId, action, chatId })
     return NextResponse.json({ ok: true, skipped: 'config_disabled' })
   }
 
@@ -108,12 +108,12 @@ export async function POST(request: NextRequest) {
     if (eventType === 'message' || eventType === 'system_message') {
       const text = (event.text as string) || (event.system_message_text as string) || ''
       if (!text.trim()) return NextResponse.json({ ok: true, skipped: 'empty' })
-      handleIncomingEvent(chatId, vendorId, userId, { type: 'message', text }, config)
+      handleIncomingEvent(chatId, orgId, userId, { type: 'message', text }, config)
         .catch(err => console.error('[Webhook] handleIncomingEvent error:', err))
     }
 
     if (eventType === 'file') {
-      handleIncomingEvent(chatId, vendorId, userId, {
+      handleIncomingEvent(chatId, orgId, userId, {
         type: 'attachment',
         attachment: {
           url: event.url as string,
@@ -129,13 +129,13 @@ export async function POST(request: NextRequest) {
 
       if (contentType === 'intera_form_submit') {
         const form = content as unknown as InteraFormSubmit
-        handleIncomingEvent(chatId, vendorId, userId, { type: 'form_submit', form }, config)
+        handleIncomingEvent(chatId, orgId, userId, { type: 'form_submit', form }, config)
           .catch(err => console.error('[Webhook] form_submit error:', err))
       }
 
       if (contentType === 'intera_interaction_submit') {
         const interaction = content as unknown as InteraInteractionSubmit
-        handleIncomingEvent(chatId, vendorId, userId, { type: 'interaction_submit', interaction }, config)
+        handleIncomingEvent(chatId, orgId, userId, { type: 'interaction_submit', interaction }, config)
           .catch(err => console.error('[Webhook] interaction_submit error:', err))
       }
     }
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
     if (eventType === 'rich_message_postback') {
       const postbackId = (event.postback as Record<string, unknown>)?.id as string
       if (postbackId) {
-        handleIncomingEvent(chatId, vendorId, userId, {
+        handleIncomingEvent(chatId, orgId, userId, {
           type: 'postback',
           postbackId,
         }, config).catch(err => console.error('[Webhook] postback error:', err))
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
         const eventId = `livechat:${e.id as string}`
         const dup = await isDuplicateWebhook(eventId).catch(() => true)
         if (!dup) {
-          handleIncomingEvent(chatId, vendorId, evUserId, { type: 'message', text: e.text as string }, config)
+          handleIncomingEvent(chatId, orgId, evUserId, { type: 'message', text: e.text as string }, config)
             .catch(err => console.error('[Webhook] incoming_chat first-msg error:', err))
         }
       }
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'chat_archived') {
-    handleIncomingEvent(chatId, vendorId, userId, { type: 'chat_archived' }, config)
+    handleIncomingEvent(chatId, orgId, userId, { type: 'chat_archived' }, config)
       .catch(err => console.error('[Webhook] chat_archived error:', err))
   }
 

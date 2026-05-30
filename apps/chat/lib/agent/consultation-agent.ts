@@ -30,7 +30,7 @@ export interface ConsultationAgentConfig {
   /** Max ReAct iterations before giving up (default 8). Consultation rarely needs many turns. */
   maxIterations?: number
   caseId: string
-  vendorId: string
+  orgId: string
 }
 
 export interface ConsultationResult {
@@ -51,7 +51,7 @@ export class ConsultationAgent {
   /** Create and initialize — loads skills from DB. */
   static async create(config: ConsultationAgentConfig): Promise<ConsultationAgent> {
     const agent = new ConsultationAgent(config)
-    agent.skillRouter = await SkillRouter.create(config.vendorId)
+    agent.skillRouter = await SkillRouter.create(config.orgId)
     return agent
   }
 

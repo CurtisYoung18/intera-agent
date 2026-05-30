@@ -36,7 +36,7 @@ export function makeAgentLoopDeps(overrides?: Partial<AgentLoopDeps>): AgentLoop
   return {
     config,
     caseId: 'test-case-001',
-    vendorId: 'test-customer',
+    orgId: 'test-customer',
     userId: 'test-user',
     systemPrompt: 'You are a helpful assistant for testing.',
     coreSystemPrompt: 'You are a helpful assistant.',

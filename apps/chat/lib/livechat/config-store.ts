@@ -12,20 +12,20 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 const TTL_MS = 30_000
 
-export function invalidateLiveChatConfig(vendorId: string): void {
-  cache.delete(vendorId)
+export function invalidateLiveChatConfig(orgId: string): void {
+  cache.delete(orgId)
 }
 
-export async function getLiveChatConfig(vendorId: string): Promise<LiveChatConfig | null> {
-  const cached = cache.get(vendorId)
+export async function getLiveChatConfig(orgId: string): Promise<LiveChatConfig | null> {
+  const cached = cache.get(orgId)
   if (cached && cached.expiresAt > Date.now()) return cached.config
 
   try {
-    const row = await prisma.liveChatConfig.findUnique({ where: { vendorId } })
+    const row = await prisma.liveChatConfig.findUnique({ where: { orgId } })
     if (!row || !row.enabled) return null
 
     const config: LiveChatConfig = {
-      vendorId: vendorId,
+      orgId: orgId,
       botAccessToken: row.botAccessToken,
       licenseId: row.licenseId,
       webhookSecret: row.webhookSecret ?? undefined,
@@ -36,7 +36,7 @@ export async function getLiveChatConfig(vendorId: string): Promise<LiveChatConfi
       showSkillStatus: row.showSkillStatus,
       enabled: row.enabled,
     }
-    cache.set(vendorId, { config, expiresAt: Date.now() + TTL_MS })
+    cache.set(orgId, { config, expiresAt: Date.now() + TTL_MS })
     return config
   } catch (err) {
     console.error('[LiveChat] Failed to load config:', err)
@@ -45,13 +45,13 @@ export async function getLiveChatConfig(vendorId: string): Promise<LiveChatConfi
 }
 
 export async function upsertLiveChatConfig(
-  vendorId: string,
-  data: Omit<LiveChatConfig, 'vendorId'>,
+  orgId: string,
+  data: Omit<LiveChatConfig, 'orgId'>,
 ): Promise<void> {
   await prisma.liveChatConfig.upsert({
-    where: { vendorId },
+    where: { orgId },
     update: data,
-    create: { vendorId, ...data },
+    create: { orgId, ...data },
   })
-  invalidateLiveChatConfig(vendorId)
+  invalidateLiveChatConfig(orgId)
 }

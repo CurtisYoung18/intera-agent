@@ -142,7 +142,7 @@ export function resolvePrompt(prompt: string, ctx: PromptContext): string {
 
 /** Build a PromptContext from DB data for a given customer. */
 export async function buildPromptContext(params: {
-  vendorId: string
+  orgId: string
   caseSchema?: PromptContext['case_schema']
   caseState?: PromptContext['case_state']
   sessionBinding?: PromptContext['session_binding']
@@ -152,11 +152,11 @@ export async function buildPromptContext(params: {
 
   const [caseTypes, policies] = await Promise.all([
     prisma.caseType.findMany({
-      where: { vendorId: params.vendorId, enabled: true },
+      where: { orgId: params.orgId, enabled: true },
       select: { type: true, displayName: true, description: true },
     }),
     prisma.policy.findMany({
-      where: { vendorId: params.vendorId, enabled: true },
+      where: { orgId: params.orgId, enabled: true },
       select: { name: true, hook: true, description: true },
     }),
   ])

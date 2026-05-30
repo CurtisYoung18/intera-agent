@@ -3,14 +3,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 const GPTBOTS_KB_API = 'https://api-sg.gptbots.ai/v1/bot/knowledge/base/page'
 
-async function getApiKey(vendorId: string): Promise<string | null> {
+async function getApiKey(orgId: string): Promise<string | null> {
   // Try per-customer key first, fall back to env var
   try {
-    const config = await prisma.agentConfig.findUnique({ where: { vendorId }, select: { gptbotsApiKey: true } })
+    const config = await prisma.agentConfig.findUnique({ where: { orgId }, select: { gptbotsApiKey: true } })
     if (config?.gptbotsApiKey) return config.gptbotsApiKey
   } catch { /* DB may not be ready */ }
   return process.env.GPTBOTS_API_KEY ?? null
@@ -18,8 +18,8 @@ async function getApiKey(vendorId: string): Promise<string | null> {
 
 export async function GET() {
   try {
-    const vendorId = await getActiveVendorId()
-    const apiKey = await getApiKey(vendorId)
+    const orgId = await getActiveOrgId()
+    const apiKey = await getApiKey(orgId)
 
     if (!apiKey) {
       return NextResponse.json({ error: 'GPTBOTS_API_KEY not configured' }, { status: 503 })
@@ -47,12 +47,12 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const vendorId = await getActiveVendorId()
+    const orgId = await getActiveOrgId()
     const { apiKey } = await req.json()
     await prisma.agentConfig.upsert({
-      where: { vendorId },
+      where: { orgId },
       update: { gptbotsApiKey: apiKey || null },
-      create: { vendorId, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+      create: { orgId, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
     })
     return NextResponse.json({ ok: true })
   } catch (err) {

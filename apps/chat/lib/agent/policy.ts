@@ -49,21 +49,21 @@ export class PolicyEngine {
   private policyModel: string
   private llmClient: Anthropic
 
-  constructor(private vendorId: string, _policyHooks?: PolicyHooks) {
+  constructor(private orgId: string, _policyHooks?: PolicyHooks) {
     this.policyModel = process.env.POLICY_EVAL_MODEL || 'MiniMax-M2.7-highspeed'
     this.llmClient = createAgentClient(this.policyModel)
     this.loadBuiltInPolicies()
   }
 
   /** Create and initialize a PolicyEngine — loads built-ins + DB policies. */
-  static async create(vendorId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
-    const engine = new PolicyEngine(vendorId, policyHooks)
+  static async create(orgId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
+    const engine = new PolicyEngine(orgId, policyHooks)
 
     // Load DB policies into the rules Map
     try {
       const { prisma } = await import('@intera/shared/prisma')
       const dbPolicies = await prisma.policy.findMany({
-        where: { vendorId, enabled: true },
+        where: { orgId, enabled: true },
       })
 
       for (const p of dbPolicies) {
@@ -85,7 +85,7 @@ export class PolicyEngine {
       try {
         const { prisma } = await import('@intera/shared/prisma')
         const dbPolicies = await prisma.policy.findMany({
-          where: { vendorId, enabled: true },
+          where: { orgId, enabled: true },
         })
 
         for (const p of dbPolicies) {

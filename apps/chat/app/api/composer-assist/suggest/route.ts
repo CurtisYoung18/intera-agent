@@ -31,21 +31,21 @@ function normalizeContinuation(draft: string, raw: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  let body: { draft?: string; vendorId?: string }
+  let body: { draft?: string; orgId?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const vendorId = typeof body.vendorId === 'string' && body.vendorId.trim() ? body.vendorId.trim() : 'default'
+  const orgId = typeof body.orgId === 'string' && body.orgId.trim() ? body.orgId.trim() : 'default'
   const draftRaw = typeof body.draft === 'string' ? body.draft : ''
   if (draftRaw.length > DRAFT_MAX) {
     return NextResponse.json({ error: 'Draft too long' }, { status: 400 })
   }
   const draft = draftRaw
 
-  const cfgEarly = await loadComposerAssistSettings(vendorId)
+  const cfgEarly = await loadComposerAssistSettings(orgId)
   const minDraft = cfgEarly.minDraftChars
   if (draft.trim().length < minDraft) {
     return NextResponse.json({ continuation: '' })

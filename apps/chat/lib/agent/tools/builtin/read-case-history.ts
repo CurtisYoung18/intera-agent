@@ -31,7 +31,7 @@ export const readCaseHistoryTool: Tool<Input, Output> = {
 
     const cases = await prisma.case.findMany({
       where: {
-        vendorId: ctx.vendorId,
+        orgId: ctx.orgId,
         userId: input.userId,
       },
       orderBy: { createdAt: 'desc' },

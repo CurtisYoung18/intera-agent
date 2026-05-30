@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const vendorId = await getActiveVendorId()
+    const orgId = await getActiveOrgId()
 
     const traces = await prisma.actionTrace.findMany({
       where: {
-        case: { vendorId },
+        case: { orgId },
         actionType: 'policy_hit',
         createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       },

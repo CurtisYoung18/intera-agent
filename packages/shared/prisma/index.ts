@@ -45,14 +45,14 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 export { ensureSqliteSchemaCompat } from './sqlite-schema-compat'
 
-// Lazy-init safety net for dev: ensures the parent Vendor row exists before
-// any admin route inserts a Vendor-FK child (AgentConfig, CaseType, Skill,
+// Lazy-init safety net for dev: ensures the parent Organization row exists before
+// any admin route inserts a Organization-FK child (AgentConfig, CaseType, Skill,
 // Policy, Routing). `npm run db:seed` covers this normally; this guards the
 // "db:push but skipped seed" path so admin routes don't 500 with P2003.
-export async function ensureDefaultVendor(vendorId = 'default'): Promise<void> {
-  await prisma.vendor.upsert({
-    where: { id: vendorId },
+export async function ensureDefaultOrg(orgId = 'default'): Promise<void> {
+  await prisma.organization.upsert({
+    where: { id: orgId },
     update: {},
-    create: { id: vendorId, name: 'Demo Vendor' },
+    create: { id: orgId, name: 'Demo Org' },
   })
 }

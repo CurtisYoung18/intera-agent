@@ -10,7 +10,7 @@
  * session entry so the message is buffered and picked up when SSE connects.
  *
  * Payload (same shape as /api/messages for compatibility):
- *   { message?, formResult?, interactionResult?, resumeTrigger?, vendorId, userId }
+ *   { message?, formResult?, interactionResult?, resumeTrigger?, orgId, userId }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -51,7 +51,7 @@ export async function POST(
     formResult?: { caseId?: string; answers: Record<string, string> }
     interactionResult?: { caseId?: string; optionId: string; input?: string }
     resumeTrigger?: string
-    vendorId?: string
+    orgId?: string
     userId?: string
     contentBlocks?: { type: string; text?: string; source?: { type: string; media_type: string; data: string } }[]
   }

@@ -2,17 +2,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const VENDOR_ID = await getActiveVendorId()
+  const ORG_ID = await getActiveOrgId()
   const { id } = await params
 
   const task = await prisma.humanTask.findFirst({
-    where: { id, case: { vendorId: VENDOR_ID } },
+    where: { id, case: { orgId: ORG_ID } },
     include: {
       case: {
         include: {

@@ -1,17 +1,17 @@
 // GET + POST /api/admin/knowledge/sources — List and create knowledge sources
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultVendor } from '@intera/shared/prisma'
+import { prisma, ensureDefaultOrg } from '@intera/shared/prisma'
 
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
 
     // Auto-heal: migrate existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
     const sources = await prisma.knowledgeSource.findMany({
-      where: { vendorId: VENDOR_ID },
+      where: { orgId: ORG_ID },
       orderBy: { name: 'asc' },
     })
     const healOps: Promise<unknown>[] = []
@@ -30,7 +30,7 @@ export async function GET() {
       await Promise.allSettled(healOps)
       // Re-fetch with updated values
       const updated = await prisma.knowledgeSource.findMany({
-        where: { vendorId: VENDOR_ID },
+        where: { orgId: ORG_ID },
         orderBy: { name: 'asc' },
       })
       return NextResponse.json({ sources: updated })
@@ -45,13 +45,13 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const VENDOR_ID = await getActiveVendorId()
-    await ensureDefaultVendor(VENDOR_ID)
+    const ORG_ID = await getActiveOrgId()
+    await ensureDefaultOrg(ORG_ID)
     const body = await req.json()
 
     const source = await prisma.knowledgeSource.create({
       data: {
-        vendorId: VENDOR_ID,
+        orgId: ORG_ID,
         name: body.name,
         description: body.description ?? null,
         groupIds: typeof body.groupIds === 'string' ? body.groupIds : JSON.stringify(body.groupIds || []),

@@ -37,7 +37,7 @@ export default function ChatPage() {
     onIntentConfirm,
     onInteractionSelect,
     userId,
-    vendorId,
+    orgId,
     chatId,
     activeCaseId,
     loadHistoricalCase,
@@ -84,7 +84,7 @@ export default function ChatPage() {
               isResponding={isLoading}
               allowQueueWhileBusy={!splitMode}
               composerAssistEnabled={composerAssistEnabled}
-              vendorId={vendorId}
+              orgId={orgId}
               assistMissingDeepseekKey={composerAssistMissingDeepseekKey}
               composerMinDraftChars={composerMinDraftChars}
             />
@@ -112,7 +112,7 @@ export default function ChatPage() {
             isResponding={isLoading}
             allowQueueWhileBusy={!splitMode}
             composerAssistEnabled={composerAssistEnabled}
-            vendorId={vendorId}
+            orgId={orgId}
             assistMissingDeepseekKey={composerAssistMissingDeepseekKey}
             composerMinDraftChars={composerMinDraftChars}
           />
@@ -158,7 +158,7 @@ export default function ChatPage() {
           <DebugExportButton
             chatId={chatId}
             userId={userId}
-            vendorId={vendorId}
+            orgId={orgId}
             messages={messages}
             cases={cases}
             dedicatedAgents={dedicatedAgents}
@@ -166,7 +166,7 @@ export default function ChatPage() {
             agentStatus={agentStatus}
           />
           <CaseHistoryPanel
-            vendorId={vendorId}
+            orgId={orgId}
             userId={userId}
             chatId={chatId}
             onSelectCase={loadHistoricalCase}

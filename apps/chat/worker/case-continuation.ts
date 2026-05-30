@@ -47,7 +47,7 @@ async function poll(): Promise<void> {
               'Review the findings in CaseMemory, advance the stage if conditions are met, ' +
               'and inform the customer of any updates.',
             caseId: mem.caseId,
-            vendorId: mem.case.vendorId,
+            orgId: mem.case.orgId,
             userId: mem.case.userId,
           }),
         })

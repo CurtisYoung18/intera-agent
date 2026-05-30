@@ -35,7 +35,7 @@ describe('session-store', () => {
     it('returns session row when found', async () => {
       mockFindUnique.mockResolvedValue({
         externalChatId: 'chat-1',
-        vendorId: 'cust-1',
+        orgId: 'cust-1',
         internalCaseId: 'case-1',
         bridgeState: 'idle',
         textBuffer: '',
@@ -44,7 +44,7 @@ describe('session-store', () => {
       const session = await getSession('chat-1')
       expect(session).toEqual({
         chatId: 'chat-1',
-        vendorId: 'cust-1',
+        orgId: 'cust-1',
         userId: 'user-1',
         caseId: 'case-1',
         state: 'idle',
@@ -62,7 +62,7 @@ describe('session-store', () => {
   describe('upsertSession', () => {
     it('upserts with correct data', async () => {
       mockUpsert.mockResolvedValue({})
-      await upsertSession({ chatId: 'chat-1', vendorId: 'cust-1', userId: 'user-1', caseId: 'case-1', state: 'idle', textBuffer: '' })
+      await upsertSession({ chatId: 'chat-1', orgId: 'cust-1', userId: 'user-1', caseId: 'case-1', state: 'idle', textBuffer: '' })
       expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({
         where: { platform_externalChatId: { platform: 'livechat', externalChatId: 'chat-1' } },
       }))

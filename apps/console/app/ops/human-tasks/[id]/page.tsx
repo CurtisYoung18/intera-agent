@@ -59,7 +59,7 @@ interface TaskDetail {
     type: string
     status: string
     userId: string
-    vendorId: string
+    orgId: string
     goal: string | null
     memory: ChatMemoryData | null
   }
@@ -314,7 +314,7 @@ function ResolutionForm({
 
 // ── Composer-assist hook ───────────────────────────────────────────────────
 
-function useComposerAssist(vendorId: string | undefined) {
+function useComposerAssist(orgId: string | undefined) {
   const [suggestion, setSuggestion] = useState('')
   const [loading, setLoading] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -323,7 +323,7 @@ function useComposerAssist(vendorId: string | undefined) {
   const request = useCallback((draft: string) => {
     if (timerRef.current) clearTimeout(timerRef.current)
     abortRef.current?.abort()
-    if (!vendorId || draft.trim().length < 4) { setSuggestion(''); return }
+    if (!orgId || draft.trim().length < 4) { setSuggestion(''); return }
 
     const ac = new AbortController()
     abortRef.current = ac
@@ -333,7 +333,7 @@ function useComposerAssist(vendorId: string | undefined) {
         const res = await fetch('/api/composer-assist/suggest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ draft, vendorId }),
+          body: JSON.stringify({ draft, orgId }),
           signal: ac.signal,
         })
         if (!res.ok || ac.signal.aborted) { if (!ac.signal.aborted) setSuggestion(''); return }
@@ -345,7 +345,7 @@ function useComposerAssist(vendorId: string | undefined) {
         if (!ac.signal.aborted) setLoading(false)
       }
     }, 520)
-  }, [vendorId])
+  }, [orgId])
 
   const dismiss = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
@@ -388,7 +388,7 @@ export default function HumanTaskDetailPage({ params }: { params: Promise<{ id: 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const copyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
-  const { suggestion, loading: assistLoading, request: requestSuggestion, dismiss: dismissSuggestion } = useComposerAssist(task?.case.vendorId)
+  const { suggestion, loading: assistLoading, request: requestSuggestion, dismiss: dismissSuggestion } = useComposerAssist(task?.case.orgId)
 
   // Load task data
   useEffect(() => {

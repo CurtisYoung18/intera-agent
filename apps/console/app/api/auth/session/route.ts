@@ -7,15 +7,15 @@ export async function GET() {
   try {
     const customer = await getActiveVendor()
     if (!customer) {
-      return NextResponse.json({ vendorId: 'default', customerName: 'Demo Vendor', isAuthenticated: false })
+      return NextResponse.json({ orgId: 'default', customerName: 'Demo Org', isAuthenticated: false })
     }
     return NextResponse.json({
-      vendorId: customer.id,
+      orgId: customer.id,
       customerName: customer.name,
       isAuthenticated: customer.isAuthed,
     })
   } catch (err) {
     console.error('[Auth] session error:', err)
-    return NextResponse.json({ vendorId: 'default', customerName: 'Demo Vendor', isAuthenticated: false })
+    return NextResponse.json({ orgId: 'default', customerName: 'Demo Org', isAuthenticated: false })
   }
 }

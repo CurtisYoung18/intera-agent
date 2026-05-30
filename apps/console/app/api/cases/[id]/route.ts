@@ -2,18 +2,18 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const VENDOR_ID = await getActiveVendorId()
+  const ORG_ID = await getActiveOrgId()
   const { id } = await params
 
   try {
     const c = await prisma.case.findFirst({
-      where: { id, vendorId: VENDOR_ID },
+      where: { id, orgId: ORG_ID },
       include: {
         memory: true,
         humanTasks: { orderBy: { createdAt: 'desc' } },
@@ -37,12 +37,12 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const VENDOR_ID = await getActiveVendorId()
+  const ORG_ID = await getActiveOrgId()
   const { id } = await params
 
   try {
     const existing = await prisma.case.findFirst({
-      where: { id, vendorId: VENDOR_ID },
+      where: { id, orgId: ORG_ID },
       select: { id: true },
     })
     if (!existing) {

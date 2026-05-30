@@ -1,17 +1,17 @@
 // GET + POST /api/admin/case-types
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat, ensureDefaultVendor } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat, ensureDefaultOrg } from '@intera/shared/prisma'
 import { DEFAULT_CASE_TYPES } from '@intera/shared/defaults'
 
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     await ensureSqliteSchemaCompat(prisma)
     let types = await prisma.caseType.findMany({
-      where: { vendorId: VENDOR_ID },
+      where: { orgId: ORG_ID },
       orderBy: { type: 'asc' },
     })
 
@@ -20,13 +20,13 @@ export async function GET() {
     const missing = DEFAULT_CASE_TYPES.filter((ct) => !existingTypes.has(ct.type))
 
     if (missing.length > 0) {
-      await ensureDefaultVendor(VENDOR_ID)
+      await ensureDefaultOrg(ORG_ID)
       const { DEFAULT_STAGE_CONFIGS, DEFAULT_ORCHESTRATOR_CONFIG } = await import('@intera/shared/defaults')
       for (const ct of missing) {
         const stageConfigs = (DEFAULT_STAGE_CONFIGS as Record<string, unknown>)[ct.type] || null
         await prisma.caseType.create({
           data: {
-            vendorId: VENDOR_ID,
+            orgId: ORG_ID,
             type: ct.type,
             displayName: ct.displayName,
             description: ct.description,
@@ -43,7 +43,7 @@ export async function GET() {
         })
       }
       types = await prisma.caseType.findMany({
-        where: { vendorId: VENDOR_ID },
+        where: { orgId: ORG_ID },
         orderBy: { type: 'asc' },
       })
     }
@@ -56,13 +56,13 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     await ensureSqliteSchemaCompat(prisma)
-    await ensureDefaultVendor(VENDOR_ID)
+    await ensureDefaultOrg(ORG_ID)
     const body = await req.json()
     const ct = await prisma.caseType.create({
       data: {
-        vendorId: VENDOR_ID,
+        orgId: ORG_ID,
         type: body.type,
         displayName: body.displayName || body.type,
         description: body.description || null,

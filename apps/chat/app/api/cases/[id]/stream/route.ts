@@ -66,12 +66,12 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
   try { return JSON.parse(raw) } catch { return {} }
 }
 
-async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
-  const cached = getCachedConfig(vendorId)
+async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
+  const cached = getCachedConfig(orgId)
   if (cached) return cached
 
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { vendorId } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { orgId } })
     if (dbConfig) {
       const config: AgentConfigData = {
         model: dbConfig.model,
@@ -93,7 +93,7 @@ async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
         prefixContinuationStop: (dbConfig as Record<string, unknown>).prefixContinuationStop as string | undefined,
         debugMode: Boolean((dbConfig as Record<string, unknown>).debugMode),
       }
-      setCachedConfig(vendorId, config)
+      setCachedConfig(orgId, config)
       return config
     }
   } catch (err) {
@@ -152,12 +152,12 @@ function isTerminalVerdict(v: string | null | undefined): boolean {
 
 async function initAgentLoop(
   caseId: string,
-  vendorId: string,
+  orgId: string,
   userId: string,
   userLabel: string | undefined,
   chatId: string | null,
 ): Promise<AgentLoop> {
-  const agentConfig = await loadAgentConfig(vendorId)
+  const agentConfig = await loadAgentConfig(orgId)
   let systemPrompt = CASE_SYSTEM_PROMPT
   let coreSystemPrompt = CORE_SYSTEM_PROMPT
   let caseSchema: CaseSchemaConfig | null = null
@@ -168,15 +168,15 @@ async function initAgentLoop(
   }
 
   // Ensure customer + case rows exist
-  await prisma.vendor.upsert({
-    where: { id: vendorId },
+  await prisma.organization.upsert({
+    where: { id: orgId },
     update: {},
-    create: { id: vendorId, name: vendorId },
+    create: { id: orgId, name: orgId },
   })
   await prisma.case.upsert({
     where: { id: caseId },
     update: {},
-    create: { id: caseId, vendorId, userId, type: 'general', status: 'created', chatId },
+    create: { id: caseId, orgId, userId, type: 'general', status: 'created', chatId },
   })
 
   // Load case + memory from DB
@@ -190,7 +190,7 @@ async function initAgentLoop(
       // Load case type schema
       try {
         const ct = await prisma.caseType.findUnique({
-          where: { vendorId_type: { vendorId, type: existingCase.type } },
+          where: { orgId_type: { orgId, type: existingCase.type } },
         })
         if (ct) caseSchema = schemaFromCaseTypeRow(ct)
       } catch { /* noop */ }
@@ -214,7 +214,7 @@ async function initAgentLoop(
   } : undefined
 
   const promptCtx = await buildPromptContext({
-    vendorId,
+    orgId,
     caseSchema: caseSchema ? {
       displayName: caseSchema.displayName,
       goal: caseSchema.defaultGoal,
@@ -232,7 +232,7 @@ async function initAgentLoop(
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
     caseId,
-    vendorId,
+    orgId,
     userId,
     systemPrompt,
     coreSystemPrompt,
@@ -280,7 +280,7 @@ async function initAgentLoop(
 
 async function persistTurn(
   caseId: string,
-  vendorId: string,
+  orgId: string,
   userId: string,
   loop: AgentLoop,
   result: Awaited<ReturnType<AgentLoop['run']>>,
@@ -299,7 +299,7 @@ async function persistTurn(
       await prisma.case.upsert({
         where: { id: caseId },
         update: { status: result.caseStatus },
-        create: { id: caseId, vendorId, userId, type: caseTypeForUpsert, status: result.caseStatus },
+        create: { id: caseId, orgId, userId, type: caseTypeForUpsert, status: result.caseStatus },
       })
       await prisma.chatMemory.upsert({
         where: { caseId },
@@ -379,7 +379,7 @@ export async function GET(
 ) {
   const { id: caseId } = await params
   const q = request.nextUrl.searchParams
-  const vendorId = q.get('vendorId') || 'default'
+  const orgId = q.get('orgId') || 'default'
   const userId = q.get('userId') || 'anonymous'
   const userLabel = q.get('userLabel') || undefined
   const chatId = q.get('chatId') || null
@@ -413,12 +413,12 @@ export async function GET(
       if (!session.initialized) {
         session.initialized = true
         try {
-          const loop = await initAgentLoop(caseId, vendorId, userId, userLabel, chatId)
+          const loop = await initAgentLoop(caseId, orgId, userId, userLabel, chatId)
           session.loop = loop
           // Pre-load SOP max turns from case type config (avoids DB query per turn)
           try {
             const ct = await prisma.caseType.findUnique({
-              where: { vendorId_type: { vendorId, type: loop.getCaseType() } },
+              where: { orgId_type: { orgId, type: loop.getCaseType() } },
               select: { executionMode: true, sopMaxAutoTurns: true },
             })
             if ((ct?.executionMode === 'cc') && ct.sopMaxAutoTurns) {
@@ -453,7 +453,7 @@ export async function GET(
           // Check for human task auto-resume (same logic as /api/messages)
           let messageContent = queued.content
           if (session.loop) {
-            messageContent = await maybeInjectHumanTaskResume(caseId, vendorId, messageContent, session.loop)
+            messageContent = await maybeInjectHumanTaskResume(caseId, orgId, messageContent, session.loop)
           }
 
           // Run one agent turn
@@ -463,7 +463,7 @@ export async function GET(
             const result = await session.loop!.run(messageContent, sendEvent, queued.formAnswers, queued.contentBlocks)
 
             // Persist turn to DB asynchronously (don't block the next message wait)
-            persistTurn(caseId, vendorId, userId, session.loop!, result).catch((err) =>
+            persistTurn(caseId, orgId, userId, session.loop!, result).catch((err) =>
               console.error('[Stream] Persist error:', err),
             )
 
@@ -528,7 +528,7 @@ export async function GET(
 
 async function maybeInjectHumanTaskResume(
   caseId: string,
-  vendorId: string,
+  orgId: string,
   message: string,
   _loop: AgentLoop,
 ): Promise<string> {
@@ -542,7 +542,7 @@ async function maybeInjectHumanTaskResume(
     })
     if (!resolvedTask) return message
 
-    const config = await loadAgentConfig(vendorId)
+    const config = await loadAgentConfig(orgId)
     const resumeTmpl = config.resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
     const parts = ['[Human task resolved — operator reviewed your case]']
     if (resolvedTask.verdict) parts.push(`Operator verdict: ${resolvedTask.verdict.replace(/_/g, ' ')}`)

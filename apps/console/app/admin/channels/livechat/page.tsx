@@ -143,7 +143,7 @@ export default function LiveChatDetailPage() {
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [showToken, setShowToken] = useState(false)
-  const [vendorId, setCustomerId] = useState('')
+  const [orgId, setCustomerId] = useState('')
   const [activeTab, setActiveTab] = useState<string>('connection')
   const [selectedMomentLabel, setSelectedMomentLabel] = useState('')
   const [momentPreviewUrl, setMomentPreviewUrl] = useState('')
@@ -152,23 +152,23 @@ export default function LiveChatDetailPage() {
   const connState = getConnectionState(config, saveStatus)
 
   useEffect(() => {
-    fetch('/api/auth/session').then(r => r.json()).then((d: { vendorId?: string }) => { if (d.vendorId) setCustomerId(d.vendorId) }).catch(() => {})
+    fetch('/api/auth/session').then(r => r.json()).then((d: { orgId?: string }) => { if (d.orgId) setCustomerId(d.orgId) }).catch(() => {})
   }, [])
 
   useEffect(() => {
-    if (!vendorId) return
+    if (!orgId) return
     setLoading(true)
-    fetch(chatApiUrl(`/api/livechat/config?vendorId=${encodeURIComponent(vendorId)}`))
+    fetch(chatApiUrl(`/api/livechat/config?orgId=${encodeURIComponent(orgId)}`))
       .then(r => r.json()).then((data: LiveChatConfig) => { setConfig(data); setOrigConfig(data) }).catch(() => {}).finally(() => setLoading(false))
     // Fetch available groups for escalation tab
-    fetch(chatApiUrl(`/api/livechat/groups?vendorId=${encodeURIComponent(vendorId)}`))
+    fetch(chatApiUrl(`/api/livechat/groups?orgId=${encodeURIComponent(orgId)}`))
       .then(r => r.json()).then((d: { groups?: LiveChatGroup[] }) => { if (d.groups) setGroups(d.groups) }).catch(() => {})
-  }, [vendorId])
+  }, [orgId])
 
   const handleSave = async () => {
     setSaving(true); setSaveStatus('idle')
     try {
-      const res = await fetch(chatApiUrl('/api/livechat/config'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, vendorId }) })
+      const res = await fetch(chatApiUrl('/api/livechat/config'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, orgId }) })
       if (!res.ok) throw new Error('save failed')
       setSaveStatus('saved'); setOrigConfig({ ...config })
       setTimeout(() => setSaveStatus('idle'), 3000)
@@ -200,7 +200,7 @@ export default function LiveChatDetailPage() {
 
   const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
-  const webhookUrl = `${process.env.NEXT_PUBLIC_CHAT_API_URL ?? ''}/api/livechat/webhook/${vendorId}`
+  const webhookUrl = `${process.env.NEXT_PUBLIC_CHAT_API_URL ?? ''}/api/livechat/webhook/${orgId}`
 
   return (
     <div className="p-8 max-w-5xl">

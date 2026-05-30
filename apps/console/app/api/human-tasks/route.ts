@@ -2,12 +2,12 @@
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
-  const VENDOR_ID = await getActiveVendorId()
+  const ORG_ID = await getActiveOrgId()
   const tasks = await prisma.humanTask.findMany({
-    where: { case: { vendorId: VENDOR_ID } },
+    where: { case: { orgId: ORG_ID } },
     orderBy: { createdAt: 'desc' },
     include: { case: true },
   })

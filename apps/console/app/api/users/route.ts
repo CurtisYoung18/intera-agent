@@ -1,6 +1,6 @@
 // GET /api/users — List users that have an accumulated UserProfile.
 // UserProfile.userId stores a profileKey ("user:<id>" or "chat:<id>"); we strip
-// the prefix for display. (vendorId is not reliably set on UserProfile yet, so
+// the prefix for display. (orgId is not reliably set on UserProfile yet, so
 // this lists all profiles — an ops-wide view.)
 
 import { NextResponse } from 'next/server'

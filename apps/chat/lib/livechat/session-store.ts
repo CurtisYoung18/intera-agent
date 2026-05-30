@@ -9,7 +9,7 @@ import type { BridgeState } from './types'
 
 export interface BridgeSessionRow {
   chatId: string
-  vendorId: string
+  orgId: string
   userId: string
   caseId: string
   state: BridgeState
@@ -18,8 +18,8 @@ export interface BridgeSessionRow {
 
 const PLATFORM = 'livechat'
 
-function toRow(chatId: string, vendorId: string, userId: string, caseId: string, state: BridgeState, textBuffer: string): BridgeSessionRow {
-  return { chatId, vendorId, userId, caseId, state, textBuffer }
+function toRow(chatId: string, orgId: string, userId: string, caseId: string, state: BridgeState, textBuffer: string): BridgeSessionRow {
+  return { chatId, orgId, userId, caseId, state, textBuffer }
 }
 
 export async function getSession(chatId: string): Promise<BridgeSessionRow | null> {
@@ -30,7 +30,7 @@ export async function getSession(chatId: string): Promise<BridgeSessionRow | nul
     if (!row) return null
     return toRow(
       row.externalChatId,
-      row.vendorId,
+      row.orgId,
       (row.metadata as Record<string, unknown> | null)?.userId as string ?? 'anonymous',
       row.internalCaseId ?? '',
       (row.bridgeState as BridgeState) ?? 'idle',
@@ -46,7 +46,7 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
   await prisma.externalConversation.upsert({
     where: { platform_externalChatId: { platform: PLATFORM, externalChatId: session.chatId } },
     update: {
-      vendorId: session.vendorId,
+      orgId: session.orgId,
       internalCaseId: session.caseId,
       bridgeState: session.state,
       textBuffer: session.textBuffer,
@@ -55,7 +55,7 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
     create: {
       platform: PLATFORM,
       externalChatId: session.chatId,
-      vendorId: session.vendorId,
+      orgId: session.orgId,
       internalCaseId: session.caseId,
       bridgeState: session.state,
       textBuffer: session.textBuffer,

@@ -75,7 +75,7 @@ function buildMessagesBody(
   event: IncomingEvent,
   session: BridgeSessionRow,
 ): Record<string, unknown> {
-  const base = { vendorId: session.vendorId, userId: session.userId, chatId: session.chatId, caseId: session.caseId }
+  const base = { orgId: session.orgId, userId: session.userId, chatId: session.chatId, caseId: session.caseId }
 
   switch (event.type) {
     case 'form_submit':
@@ -118,7 +118,7 @@ async function sendFailureNotice(
 }
 
 export async function handleIncomingEvent(
-  chatId: string, vendorId: string, userId: string,
+  chatId: string, orgId: string, userId: string,
   event: IncomingEvent, config: LiveChatConfig,
 ): Promise<void> {
   // Skip system-generated messages that would waste agent tokens
@@ -130,7 +130,7 @@ export async function handleIncomingEvent(
         .catch(e => console.error('[Bridge] deactivateChat failed:', e))
       await closeSession(chatId, 'idle_timeout')
       // Reset session for fresh start on reopen
-      await upsertSession({ chatId, vendorId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
+      await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
       return
     }
   }
@@ -138,13 +138,13 @@ export async function handleIncomingEvent(
   if (event.type === 'chat_archived') {
     await closeSession(chatId, 'archived_by_agent')
     // Reset session so reopen starts fresh (no old case context)
-    await upsertSession({ chatId, vendorId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
+    await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
     return
   }
 
   let session = await getSession(chatId)
   if (!session) {
-    session = { chatId, vendorId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
+    session = { chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
     await upsertSession(session)
     // Claim ownership on first touch (§2.2)
     updateChatProperties(chatId, { owner: 'intera' }, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
@@ -218,7 +218,7 @@ export async function handleIncomingEvent(
   } catch (err) {
     console.error('[Bridge] Failed to call /api/messages:', err)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
-    await enqueueRetry(chatId, vendorId, userId, event, String(err))
+    await enqueueRetry(chatId, orgId, userId, event, String(err))
     await updateSessionState(chatId, 'idle')
     setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return
@@ -241,7 +241,7 @@ export async function handleIncomingEvent(
     credentials: { botAccessToken: config.botAccessToken, licenseId: config.licenseId },
   }
   const renderCtx: RenderContext = {
-    caseId: session.caseId, vendorId, sessionId: chatId, binding,
+    caseId: session.caseId, orgId, sessionId: chatId, binding,
   }
 
   let streamTruncated = true
@@ -308,11 +308,11 @@ export async function handleIncomingEvent(
           const e = err as Error & { code?: string }
           const msg = e.message ?? ''
           if (e.code === 'TOKEN_EXPIRED') {
-            await markChannelUnhealthy(vendorId, 'livechat', 'token_expired', String(err))
+            await markChannelUnhealthy(orgId, 'livechat', 'token_expired', String(err))
           } else if (e.code === 'NOT_IN_CHAT') {
-            await markChannelUnhealthy(vendorId, 'livechat', 'token_expired', String(err))
+            await markChannelUnhealthy(orgId, 'livechat', 'token_expired', String(err))
           } else if (e.code === 'RATE_LIMITED') {
-            await markChannelUnhealthy(vendorId, 'livechat', 'rate_limited', String(err))
+            await markChannelUnhealthy(orgId, 'livechat', 'rate_limited', String(err))
           } else if (msg.includes('Chat not active')) {
             // Chat has been archived — don't retry, just close the session
             await closeSession(chatId, 'archived_externally')
@@ -334,7 +334,7 @@ export async function handleIncomingEvent(
       streamTruncated = false
     } else {
       await sendFailureNotice(chatId, config, 'stream_truncated')
-      await enqueueRetry(chatId, vendorId, userId, event, String(err))
+      await enqueueRetry(chatId, orgId, userId, event, String(err))
     }
   } finally {
     // Ensure typing indicator is off
@@ -343,6 +343,6 @@ export async function handleIncomingEvent(
   }
 
   if (!streamTruncated) {
-    await markChannelHealthy(vendorId, 'livechat').catch(() => {})
+    await markChannelHealthy(orgId, 'livechat').catch(() => {})
   }
 }

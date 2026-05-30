@@ -4,7 +4,7 @@
  * DebugExportButton — downloads a full JSON snapshot of the current chat session.
  *
  * Captures: messages, cases, dedicated agents, core agent progress, session
- * metadata (chatId, userId, vendorId), and a brief summary. Useful for
+ * metadata (chatId, userId, orgId), and a brief summary. Useful for
  * reproducing agent bugs without needing server-side logs.
  *
  * Hidden when no messages are present. Shown as a small icon button in the
@@ -18,7 +18,7 @@ import type { ChatMessage, ActiveCase, DedicatedAgentState } from '@/app/chat/us
 interface DebugExportButtonProps {
   chatId: string
   userId: string
-  vendorId: string
+  orgId: string
   messages: ChatMessage[]
   cases: ActiveCase[]
   dedicatedAgents: DedicatedAgentState[]
@@ -29,7 +29,7 @@ interface DebugExportButtonProps {
 export default function DebugExportButton({
   chatId,
   userId,
-  vendorId,
+  orgId,
   messages,
   cases,
   dedicatedAgents,
@@ -47,7 +47,7 @@ export default function DebugExportButton({
       session: {
         chatId,
         userId,
-        vendorId,
+        orgId,
       },
       summary: {
         messageCount: messages.length,
@@ -81,7 +81,7 @@ export default function DebugExportButton({
     // Brief "done" flash
     setDone(true)
     setTimeout(() => setDone(false), 1800)
-  }, [chatId, userId, vendorId, messages, cases, dedicatedAgents, coreAgentProgress, agentStatus])
+  }, [chatId, userId, orgId, messages, cases, dedicatedAgents, coreAgentProgress, agentStatus])
 
   if (messages.length === 0) return null
 

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const [
@@ -16,25 +16,25 @@ export async function GET() {
       recentCases,
     ] = await Promise.all([
       prisma.message.count({
-        where: { case: { vendorId: VENDOR_ID }, createdAt: { gte: yesterday } },
+        where: { case: { orgId: ORG_ID }, createdAt: { gte: yesterday } },
       }).catch(() => 0),
       prisma.case.count({
-        where: { vendorId: VENDOR_ID, status: { notIn: ['resolved', 'escalated'] } },
+        where: { orgId: ORG_ID, status: { notIn: ['resolved', 'escalated'] } },
       }).catch(() => 0),
       prisma.case.findMany({
-        where: { vendorId: VENDOR_ID, resolvedAt: { not: null }, createdAt: { gte: yesterday } },
+        where: { orgId: ORG_ID, resolvedAt: { not: null }, createdAt: { gte: yesterday } },
         select: { createdAt: true, resolvedAt: true },
       }).catch(() => []),
       prisma.actionTrace.findMany({
-        where: { case: { vendorId: VENDOR_ID }, actionType: 'policy_hit', createdAt: { gte: yesterday } },
+        where: { case: { orgId: ORG_ID }, actionType: 'policy_hit', createdAt: { gte: yesterday } },
         select: { title: true },
         take: 50,
       }).catch(() => []),
       prisma.channelHealth.findMany({
-        where: { vendorId: VENDOR_ID },
+        where: { orgId: ORG_ID },
       }).catch(() => []),
       prisma.case.findMany({
-        where: { vendorId: VENDOR_ID },
+        where: { orgId: ORG_ID },
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: { id: true, type: true, status: true, createdAt: true },

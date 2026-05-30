@@ -6,13 +6,13 @@ import { prisma } from '@intera/shared/prisma'
 
 export async function POST(req: NextRequest) {
   try {
-    const { vendorId, password } = await req.json()
+    const { orgId, password } = await req.json()
 
-    if (!vendorId) {
-      return NextResponse.json({ error: 'vendorId is required' }, { status: 400 })
+    if (!orgId) {
+      return NextResponse.json({ error: 'orgId is required' }, { status: 400 })
     }
 
-    const customer = await prisma.vendor.findUnique({ where: { id: vendorId } })
+    const customer = await prisma.organization.findUnique({ where: { id: orgId } })
     if (!customer) {
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
     }
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
         ok: true,
         customer: { id: customer.id, name: customer.name },
       })
-      res.cookies.set('intera_vendor_id', customer.id, {
+      res.cookies.set('intera_org_id', customer.id, {
         path: '/', httpOnly: true, sameSite: 'lax', maxAge: 60 * 60 * 24 * 30,
       })
       res.cookies.set('intera_auth', '1', {
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       customer: { id: customer.id, name: customer.name },
     })
-    res.cookies.set('intera_vendor_id', customer.id, {
+    res.cookies.set('intera_org_id', customer.id, {
       path: '/', httpOnly: true, sameSite: 'lax', maxAge: 60 * 60 * 24 * 30,
     })
     res.cookies.set('intera_auth', '1', {

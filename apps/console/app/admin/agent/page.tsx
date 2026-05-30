@@ -224,7 +224,7 @@ export default function AgentConfigPage() {
           }),
         })
         if (!res.ok) throw new Error(`Save: ${res.status}`)
-        const cacheBody = JSON.stringify({ vendorId: 'default' })
+        const cacheBody = JSON.stringify({ orgId: 'default' })
         Promise.allSettled([
           fetch('/api/admin/config-changed', {
             method: 'POST',
@@ -899,6 +899,18 @@ export default function AgentConfigPage() {
                         onChange={(v) => updateMem('chatMemoryMaxTokens', v)}
                         unit={u.tokens}
                       />
+                      <label className="block space-y-1.5">
+                        <span className="text-[11px] font-medium text-[var(--fog)]">Compact Prompt</span>
+                        <textarea
+                          value={ms.compactPrompt ?? ''}
+                          onChange={(e) => updateMem('compactPrompt', e.target.value)}
+                          rows={6}
+                          spellCheck={false}
+                          className="w-full px-3 py-2 text-[12px] font-mono border border-black/[0.08] rounded-xl bg-white outline-none focus:border-amber/30 resize-y"
+                          placeholder="Custom prompt for conversation compaction (leave empty for default)"
+                        />
+                        <span className="block text-[10px] leading-snug text-[var(--smoke)]">Custom system prompt used during conversation compaction. Leave empty to use the built-in default.</span>
+                      </label>
                     </DrawerSection>
                   </>
                 )}

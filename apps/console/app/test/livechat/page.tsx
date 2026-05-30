@@ -23,7 +23,7 @@ export default function LiveChatTestPage() {
       <div style={{ maxWidth: 600, margin: '60px auto', padding: '0 24px', fontFamily: 'system-ui, sans-serif' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1a1a2e' }}>LiveChat Widget Test</h1>
         <p style={{ color: '#666', marginTop: 8, lineHeight: 1.6 }}>
-          License <strong>18578946</strong> · API Vendor<br />
+          License <strong>18578946</strong> · API Org<br />
           Webhook → <code style={{ background: '#f0f0f0', padding: '2px 6px', borderRadius: 4, fontSize: 13 }}>
             intera-chat.up.railway.app/api/livechat/webhook/api
           </code>

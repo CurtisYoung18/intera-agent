@@ -26,7 +26,7 @@ export async function POST(
   try {
     const sampleCase = await prisma.case.findFirst({
       where: { OR: [{ chatId }, { id: chatId }] },
-      select: { userId: true, vendorId: true },
+      select: { userId: true, orgId: true },
     })
 
     const key = profileKey(sampleCase?.userId, chatId)
@@ -53,8 +53,8 @@ export async function POST(
       .map(m => m.summary!)
       .join('\n\n---\n\n')
 
-    const vendorId = sampleCase?.vendorId ?? 'default'
-    const agentCfg = await prisma.agentConfig.findUnique({ where: { vendorId } }).catch(() => null)
+    const orgId = sampleCase?.orgId ?? 'default'
+    const agentCfg = await prisma.agentConfig.findUnique({ where: { orgId } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 

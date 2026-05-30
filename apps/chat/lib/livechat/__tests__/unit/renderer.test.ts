@@ -8,7 +8,7 @@ import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 function makeCtx(overrides?: Partial<RenderContext>): RenderContext {
   return {
     caseId: 'case-1',
-    vendorId: 'cust-1',
+    orgId: 'cust-1',
     sessionId: 'chat-1',
     binding: { channel: 'livechat', enabled: true, credentials: {} } as ChannelBindingConfig,
     ...overrides,

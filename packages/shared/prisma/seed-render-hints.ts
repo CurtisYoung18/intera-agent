@@ -19,13 +19,13 @@ const RENDER_HINTS: Record<string, string> = {
 }
 
 async function main() {
-  const vendorId = process.argv[2] || 'api'
-  console.log(`Updating renderHints for vendor: ${vendorId}`)
+  const orgId = process.argv[2] || 'api'
+  console.log(`Updating renderHints for vendor: ${orgId}`)
 
   for (const [name, renderHints] of Object.entries(RENDER_HINTS)) {
     try {
       const skill = await prisma.skill.findUnique({
-        where: { vendorId_name: { vendorId, name } },
+        where: { orgId_name: { orgId, name } },
         select: { id: true, renderHints: true },
       })
       if (!skill) {
@@ -33,7 +33,7 @@ async function main() {
         continue
       }
       await prisma.skill.update({
-        where: { vendorId_name: { vendorId, name } },
+        where: { orgId_name: { orgId, name } },
         data: { renderHints },
       })
       console.log(`  OK   ${name}`)

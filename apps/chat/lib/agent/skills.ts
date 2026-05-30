@@ -848,7 +848,7 @@ export function isBuiltInSkill(name: string): boolean {
 export class SkillRouter {
   private skills: Map<string, SkillDefinition> = new Map()
 
-  constructor(_vendorId: string) {
+  constructor(_orgId: string) {
     // Load built-in skills synchronously (fallback).
     // Call SkillRouter.create() for DB-loaded skills.
     for (const skill of BUILT_IN_SKILLS) {
@@ -863,8 +863,8 @@ export class SkillRouter {
   }
 
   /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources. */
-  static async create(vendorId: string): Promise<SkillRouter> {
-    const router = new SkillRouter(vendorId)
+  static async create(orgId: string): Promise<SkillRouter> {
+    const router = new SkillRouter(orgId)
 
     // Load DB skills (overlay on top of built-ins already loaded in constructor)
     try {
@@ -873,7 +873,7 @@ export class SkillRouter {
       // properly shadow their built-in counterparts. Filtering only enabled:true
       // would leave built-ins (always enabled:true) unaffected by console toggles.
       const dbSkills = await prisma.skill.findMany({
-        where: { vendorId },
+        where: { orgId },
       })
 
       for (const s of dbSkills) {
@@ -900,7 +900,7 @@ export class SkillRouter {
       // allowing it to decide which source(s) to query — including calling
       // multiple in parallel (isConcurrencySafe: true).
       const knowledgeSources = await prisma.knowledgeSource.findMany({
-        where: { vendorId, enabled: true },
+        where: { orgId, enabled: true },
       })
 
       // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3

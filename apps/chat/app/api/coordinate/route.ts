@@ -27,12 +27,12 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   prefixContinuationEnabled: false,
 }
 
-async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
-  const cached = getCachedConfig(vendorId)
+async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
+  const cached = getCachedConfig(orgId)
   if (cached) return cached
 
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { vendorId } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { orgId } })
     if (dbConfig) {
       const config: AgentConfigData = {
         model: dbConfig.model,
@@ -53,7 +53,7 @@ async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
         resumePrompt: String((dbConfig as Record<string, unknown>).resumePrompt || ''),
         formResponseTemplate: String((dbConfig as Record<string, unknown>).formResponseTemplate || ''),
       }
-      setCachedConfig(vendorId, config)
+      setCachedConfig(orgId, config)
       return config
     }
   } catch {
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const vendorId = String(body.vendorId || 'default')
+        const orgId = String(body.orgId || 'default')
         const userUtterance = String(body.userUtterance || '').slice(0, 8000)
         const preferZh = Boolean(body.preferZh)
         const rawIds: unknown[] = Array.isArray(body.caseIds) ? body.caseIds : []
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         }
 
         const rows = await prisma.case.findMany({
-          where: { vendorId, id: { in: caseIds } },
+          where: { orgId, id: { in: caseIds } },
           include: { memory: true },
         })
 
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
         const userBlockEn = `Original customer message (context):\n"""${userUtterance || '(not provided)'}"""\n\n--- CASE DOSSIERS ---\n${dossierBlock}`
         const userBlockZh = `顾客原话（上下文）：\n"""${userUtterance || '（未提供）'}"""\n\n--- 各案摘要 ---\n${dossierBlock}`
 
-        const agentConfig = await loadAgentConfig(vendorId)
+        const agentConfig = await loadAgentConfig(orgId)
 
         const client = createAgentClient(agentConfig.model)
 

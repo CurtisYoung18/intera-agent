@@ -1,16 +1,16 @@
 // GET + POST /api/admin/policies
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultVendor } from '@intera/shared/prisma'
+import { prisma, ensureDefaultOrg } from '@intera/shared/prisma'
 import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     let policies = await prisma.policy.findMany({
-      where: { vendorId: VENDOR_ID },
+      where: { orgId: ORG_ID },
       orderBy: { name: 'asc' },
     })
 
@@ -19,11 +19,11 @@ export async function GET() {
     const missing = DEFAULT_POLICIES.filter((p) => !existingNames.has(p.name))
 
     if (missing.length > 0) {
-      await ensureDefaultVendor(VENDOR_ID)
+      await ensureDefaultOrg(ORG_ID)
       for (const p of missing) {
         await prisma.policy.create({
           data: {
-            vendorId: VENDOR_ID,
+            orgId: ORG_ID,
             name: p.name,
             description: p.description,
             hook: p.hook,
@@ -33,7 +33,7 @@ export async function GET() {
         })
       }
       policies = await prisma.policy.findMany({
-        where: { vendorId: VENDOR_ID },
+        where: { orgId: ORG_ID },
         orderBy: { name: 'asc' },
       })
     }
@@ -46,12 +46,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const VENDOR_ID = await getActiveVendorId()
-    await ensureDefaultVendor(VENDOR_ID)
+    const ORG_ID = await getActiveOrgId()
+    await ensureDefaultOrg(ORG_ID)
     const body = await req.json()
     const policy = await prisma.policy.create({
       data: {
-        vendorId: VENDOR_ID,
+        orgId: ORG_ID,
         name: body.name,
         description: body.description || null,
         hook: body.hook || 'preTool',

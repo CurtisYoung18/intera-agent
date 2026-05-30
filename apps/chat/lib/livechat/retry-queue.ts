@@ -15,7 +15,7 @@ setInterval(() => {
 
 export async function enqueueRetry(
   chatId: string,
-  vendorId: string,
+  orgId: string,
   userId: string,
   event: IncomingEvent,
   error: string,
@@ -24,7 +24,7 @@ export async function enqueueRetry(
     await prisma.liveChatPendingEvent.create({
       data: {
         chatId,
-        vendorId,
+        orgId,
         payload: { userId, event } as never,
         attempt: 0,
         lastError: error,
@@ -47,7 +47,7 @@ export async function processRetryQueue(): Promise<number> {
   let processed = 0
   for (const item of items) {
     try {
-      const config = await getLiveChatConfig(item.vendorId)
+      const config = await getLiveChatConfig(item.orgId)
       if (!config?.enabled) {
         await prisma.liveChatPendingEvent.delete({ where: { id: item.id } })
         continue
@@ -57,7 +57,7 @@ export async function processRetryQueue(): Promise<number> {
       const userId = payload.userId as string
       const event = payload.event as IncomingEvent
 
-      await handleIncomingEvent(item.chatId, item.vendorId, userId, event, config)
+      await handleIncomingEvent(item.chatId, item.orgId, userId, event, config)
       await prisma.liveChatPendingEvent.delete({ where: { id: item.id } })
       processed++
     } catch (err) {

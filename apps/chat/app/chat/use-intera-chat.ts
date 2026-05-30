@@ -162,7 +162,7 @@ export interface UseInteraChatReturn {
   onIntentConfirm: (msgId: string, selectedTypes: string[]) => Promise<void>
   onInteractionSelect: (msgId: string, optionId: string, input?: string) => Promise<void>
   userId: string
-  vendorId: string
+  orgId: string
   selectedUser: TestUser | 'anonymous' | null
   setSelectedUser: (user: TestUser | 'anonymous' | null) => void
   /** True once localStorage has been read — gates the login/chat render to avoid flash. */
@@ -183,13 +183,13 @@ function makeMsg(partial: Partial<ChatMessage> & { id: string; role: 'user' | 'a
   return { content: '', timestamp: new Date().toISOString(), ...partial }
 }
 
-function readSessionFromUrl(): { vendorId: string; userId: string; caseType: string } {
+function readSessionFromUrl(): { orgId: string; userId: string; caseType: string } {
   if (typeof window === 'undefined') {
-    return { vendorId: 'default', userId: 'anonymous', caseType: 'general' }
+    return { orgId: 'default', userId: 'anonymous', caseType: 'general' }
   }
   const q = new URLSearchParams(window.location.search)
   return {
-    vendorId: q.get('customer') || q.get('tenant') || 'default',
+    orgId: q.get('customer') || q.get('tenant') || 'default',
     userId: q.get('user') || 'anonymous',
     caseType: (q.get('caseType') || q.get('type') || 'general').replace(/_/g, ' '),
   }
@@ -367,9 +367,9 @@ export function useInteraChat(): UseInteraChatReturn {
     if (!selectedUser || selectedUser === 'anonymous') return
 
     const uid = (selectedUser as TestUser).memberId
-    const cid = session.vendorId
+    const cid = session.orgId
 
-    fetch(`/api/cases?userId=${encodeURIComponent(uid)}&vendorId=${encodeURIComponent(cid)}&chatId=${encodeURIComponent(chatIdRef.current)}&limit=1`)
+    fetch(`/api/cases?userId=${encodeURIComponent(uid)}&orgId=${encodeURIComponent(cid)}&chatId=${encodeURIComponent(chatIdRef.current)}&limit=1`)
       .then((r) => r.json())
       .catch(() => null)
       .then(async (data) => {
@@ -418,7 +418,7 @@ export function useInteraChat(): UseInteraChatReturn {
 
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/composer-assist/feature?vendorId=${encodeURIComponent(session.vendorId)}`)
+    fetch(`/api/composer-assist/feature?orgId=${encodeURIComponent(session.orgId)}`)
       .then((r) => r.json())
       .then((d: { enabled?: unknown; missingDeepseekKey?: unknown; minDraftChars?: unknown }) => {
         if (cancelled) return
@@ -436,7 +436,7 @@ export function useInteraChat(): UseInteraChatReturn {
     return () => {
       cancelled = true
     }
-  }, [session.vendorId])
+  }, [session.orgId])
 
   // Poll for resolved human tasks — triggers auto-resume when operator completes review
   useEffect(() => {
@@ -466,7 +466,7 @@ export function useInteraChat(): UseInteraChatReturn {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  vendorId: session.vendorId,
+                  orgId: session.orgId,
                   userId: effectiveUserId,
             userLabel: selectedUserLabel,
                   resumeTrigger: resolved.id,
@@ -1155,7 +1155,7 @@ export function useInteraChat(): UseInteraChatReturn {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          vendorId: session.vendorId,
+          orgId: session.orgId,
           userId: effectiveUserId,
             userLabel: selectedUserLabel,
           caseIds,
@@ -1216,7 +1216,7 @@ export function useInteraChat(): UseInteraChatReturn {
 
       const url =
         `/api/cases/${encodeURIComponent(caseId)}/stream` +
-        `?vendorId=${encodeURIComponent(session.vendorId)}` +
+        `?orgId=${encodeURIComponent(session.orgId)}` +
         `&userId=${encodeURIComponent(effectiveUserId)}` +
         (selectedUserLabel ? `&userLabel=${encodeURIComponent(selectedUserLabel)}` : '') +
         `&chatId=${encodeURIComponent(chatIdRef.current)}`
@@ -1248,7 +1248,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       })()
     },
-    [session.vendorId, effectiveUserId, selectedUserLabel],
+    [session.orgId, effectiveUserId, selectedUserLabel],
   )
 
   /**
@@ -1263,7 +1263,7 @@ export function useInteraChat(): UseInteraChatReturn {
       formAnswers?: Record<string, string>,
       contentBlocks?: { type: string; text?: string; source?: { type: string; media_type: string; data: string } }[],
     ): Promise<boolean> => {
-      const body: Record<string, unknown> = { vendorId: session.vendorId, userId: effectiveUserId }
+      const body: Record<string, unknown> = { orgId: session.orgId, userId: effectiveUserId }
       if (selectedUserLabel) body.userLabel = selectedUserLabel
 
       if (formAnswers) {
@@ -1284,7 +1284,7 @@ export function useInteraChat(): UseInteraChatReturn {
         return false
       }
     },
-    [session.vendorId, effectiveUserId, selectedUserLabel],
+    [session.orgId, effectiveUserId, selectedUserLabel],
   )
 
   const submitCaseForm = useCallback(
@@ -1344,7 +1344,7 @@ export function useInteraChat(): UseInteraChatReturn {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            vendorId: session.vendorId,
+            orgId: session.orgId,
             userId: effectiveUserId,
             userLabel: selectedUserLabel,
             formResult: { caseId, answers },
@@ -1375,7 +1375,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [promoteNextFormInteraction, postMessageToCase, session.vendorId, session.userId],
+    [promoteNextFormInteraction, postMessageToCase, session.orgId, session.userId],
   )
 
   const submitMessage = useCallback(
@@ -1461,7 +1461,7 @@ export function useInteraChat(): UseInteraChatReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: text,
-            vendorId: session.vendorId,
+            orgId: session.orgId,
             userId: effectiveUserId,
             userLabel: selectedUserLabel,
             chatId: chatIdRef.current,
@@ -1523,7 +1523,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [session.vendorId, effectiveUserId, postMessageToCase],
+    [session.orgId, effectiveUserId, postMessageToCase],
   )
 
   const runParallelBootstrap = useCallback(
@@ -1566,7 +1566,7 @@ export function useInteraChat(): UseInteraChatReturn {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   message: userText,
-                  vendorId: session.vendorId,
+                  orgId: session.orgId,
                   userId: effectiveUserId,
                   userLabel: selectedUserLabel,
                   chatId: chatIdRef.current,
@@ -1615,7 +1615,7 @@ export function useInteraChat(): UseInteraChatReturn {
         }
       }
     },
-    [session.vendorId, effectiveUserId],
+    [session.orgId, effectiveUserId],
   )
 
   const onIntentConfirm = useCallback(
@@ -1823,7 +1823,7 @@ export function useInteraChat(): UseInteraChatReturn {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            vendorId: session.vendorId,
+            orgId: session.orgId,
             userId: effectiveUserId,
             userLabel: selectedUserLabel,
             interactionResult: { caseId: cid, optionId, input },
@@ -1844,7 +1844,7 @@ export function useInteraChat(): UseInteraChatReturn {
         if (activeStreamsRef.current <= 0) setStreamingToolName(null)
       }
     },
-    [session.vendorId, effectiveUserId, postMessageToCase],
+    [session.orgId, effectiveUserId, postMessageToCase],
   )
 
   const newChat = useCallback(() => {
@@ -1900,7 +1900,7 @@ export function useInteraChat(): UseInteraChatReturn {
     onIntentConfirm,
     onInteractionSelect,
     userId: effectiveUserId,
-    vendorId: session.vendorId,
+    orgId: session.orgId,
     selectedUser,
     setSelectedUser,
     isHydrated,

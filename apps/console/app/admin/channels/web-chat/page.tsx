@@ -76,7 +76,7 @@ export default function WebChatDetailPage() {
     js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];
     js.id=o;js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
   }(window,document,'script','iw','https://intera-chat.up.railway.app/widget.js'));
-  iw('init', { vendorId: 'default' });
+  iw('init', { orgId: 'default' });
 </script>`}
               </pre>
             </div>

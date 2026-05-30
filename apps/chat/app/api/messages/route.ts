@@ -49,12 +49,12 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
 // Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.
 import { getCachedConfig, setCachedConfig } from '@/lib/agent/config-cache'
 
-async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
-  const cached = getCachedConfig(vendorId)
+async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
+  const cached = getCachedConfig(orgId)
   if (cached) return cached
 
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { vendorId } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { orgId } })
     if (dbConfig) {
       const config: AgentConfigData = {
         model: dbConfig.model,
@@ -92,7 +92,7 @@ async function loadAgentConfig(vendorId: string): Promise<AgentConfigData> {
         debugMode: Boolean((dbConfig as Record<string, unknown>).debugMode),
         enableLlmSanitization: Boolean((dbConfig as Record<string, unknown>).enableLlmSanitization),
       }
-      setCachedConfig(vendorId, config)
+      setCachedConfig(orgId, config)
       return config
     }
   } catch (err) {
@@ -243,7 +243,7 @@ export async function POST(request: NextRequest) {
           formResult,
           interactionResult,
           caseId,
-          vendorId,
+          orgId,
           userId,
           userLabel,
           chatId,
@@ -253,9 +253,9 @@ export async function POST(request: NextRequest) {
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
-        // Validate vendorId format
-        if (vendorId && (typeof vendorId !== 'string' || vendorId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(vendorId))) {
-          sendEvent({ type: 'error', data: 'Invalid vendorId format', timestamp: new Date().toISOString() })
+        // Validate orgId format
+        if (orgId && (typeof orgId !== 'string' || orgId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(orgId))) {
+          sendEvent({ type: 'error', data: 'Invalid orgId format', timestamp: new Date().toISOString() })
           controller.close()
           return
         }
@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
 
         let userMessage = message
         let resolvedCaseId = caseId || generateCaseId()
-        let resolvedCustomerId = vendorId || 'default'
+        let resolvedCustomerId = orgId || 'default'
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
@@ -359,7 +359,7 @@ export async function POST(request: NextRequest) {
 
           if (task && task.status === 'resolved') {
             resolvedCaseId = task.caseId
-            resolvedCustomerId = task.case.vendorId
+            resolvedCustomerId = task.case.orgId
             resolvedUserId = task.case.userId
 
             const resumeTmpl =
@@ -428,7 +428,7 @@ export async function POST(request: NextRequest) {
           try {
             const activeCases = await prisma.case.findMany({
               where: {
-                vendorId: resolvedCustomerId,
+                orgId: resolvedCustomerId,
                 userId: resolvedUserId,
                 status: { notIn: ['resolved'] },
               },
@@ -471,11 +471,11 @@ export async function POST(request: NextRequest) {
         ) {
           try {
             const ctRow = await prisma.caseType.findUnique({
-              where: { vendorId_type: { vendorId: resolvedCustomerId, type: bodyCaseType } },
+              where: { orgId_type: { orgId: resolvedCustomerId, type: bodyCaseType } },
             })
             const newCase = await prisma.case.create({
               data: {
-                vendorId: resolvedCustomerId,
+                orgId: resolvedCustomerId,
                 userId: resolvedUserId,
                 type: bodyCaseType,
                 status: 'created',
@@ -530,8 +530,8 @@ export async function POST(request: NextRequest) {
             try {
               const ctRow = await prisma.caseType.findUnique({
                 where: {
-                  vendorId_type: {
-                    vendorId: resolvedCustomerId,
+                  orgId_type: {
+                    orgId: resolvedCustomerId,
                     type: inferredType,
                   },
                 },
@@ -566,7 +566,7 @@ export async function POST(request: NextRequest) {
             // Load case type schema if available
             try {
               const caseType = await prisma.caseType.findUnique({
-                where: { vendorId_type: { vendorId: resolvedCustomerId, type: existingCase.type } },
+                where: { orgId_type: { orgId: resolvedCustomerId, type: existingCase.type } },
               })
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
@@ -626,7 +626,7 @@ export async function POST(request: NextRequest) {
           'general'
 
         try {
-          await prisma.vendor.upsert({
+          await prisma.organization.upsert({
             where: { id: resolvedCustomerId },
             update: {},
             create: { id: resolvedCustomerId, name: resolvedCustomerId },
@@ -636,7 +636,7 @@ export async function POST(request: NextRequest) {
             update: {},
             create: {
               id: resolvedCaseId,
-              vendorId: resolvedCustomerId,
+              orgId: resolvedCustomerId,
               userId: resolvedUserId,
               type: inferredCaseTypeForRecord,
               status: 'created',
@@ -652,8 +652,8 @@ export async function POST(request: NextRequest) {
           try {
             const ctRow = await prisma.caseType.findUnique({
               where: {
-                vendorId_type: {
-                  vendorId: resolvedCustomerId,
+                orgId_type: {
+                  orgId: resolvedCustomerId,
                   type: inferredCaseTypeForRecord,
                 },
               },
@@ -702,7 +702,7 @@ export async function POST(request: NextRequest) {
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
         try {
           const dbSkills = await prisma.skill.findMany({
-            where: { vendorId: resolvedCustomerId, enabled: true },
+            where: { orgId: resolvedCustomerId, enabled: true },
             select: { name: true, description: true, inputSchema: true, mode: true },
           })
           for (const s of dbSkills) {
@@ -711,7 +711,7 @@ export async function POST(request: NextRequest) {
             toolSummaries.push({ name: s.name, description: s.description, needsMemberId })
           }
           const kbSources = await prisma.knowledgeSource.findMany({
-            where: { vendorId: resolvedCustomerId, enabled: true },
+            where: { orgId: resolvedCustomerId, enabled: true },
             select: { name: true, description: true },
           })
           for (const ks of kbSources) {
@@ -732,7 +732,7 @@ export async function POST(request: NextRequest) {
 
         // Build shared prompt context
         const promptCtx = await buildPromptContext({
-          vendorId: resolvedCustomerId,
+          orgId: resolvedCustomerId,
           caseSchema: caseSchema ? {
             displayName: caseSchema.displayName,
             goal: caseSchema.defaultGoal,
@@ -776,7 +776,7 @@ export async function POST(request: NextRequest) {
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
           caseId: resolvedCaseId,
-          vendorId: resolvedCustomerId,
+          orgId: resolvedCustomerId,
           userId: resolvedUserId,
           systemPrompt,
           coreSystemPrompt,
@@ -826,7 +826,7 @@ export async function POST(request: NextRequest) {
           const followup = await AgentLoop.create({
             config: agentConfig,
             caseId: resolvedCaseId,
-            vendorId: resolvedCustomerId,
+            orgId: resolvedCustomerId,
             userId: resolvedUserId,
             systemPrompt,
             coreSystemPrompt,
@@ -862,7 +862,7 @@ export async function POST(request: NextRequest) {
                 where: { id: resolvedCaseId },
                 update: { status: result.caseStatus },
                 create: {
-                  id: resolvedCaseId, vendorId: resolvedCustomerId, userId: resolvedUserId,
+                  id: resolvedCaseId, orgId: resolvedCustomerId, userId: resolvedUserId,
                   type: caseTypeForUpsert, status: result.caseStatus, chatId: chatId ?? null,
                 },
               })
@@ -936,7 +936,7 @@ export async function POST(request: NextRequest) {
               update: { status: result.caseStatus },
               create: {
                 id: resolvedCaseId,
-                vendorId: resolvedCustomerId,
+                orgId: resolvedCustomerId,
                 userId: resolvedUserId,
                 type: caseTypeForUpsert,
                 status: result.caseStatus,

@@ -3,17 +3,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
-  const VENDOR_ID = await getActiveVendorId()
+  const ORG_ID = await getActiveOrgId()
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
   const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
   const offset = parseInt(searchParams.get('offset') || '0')
 
   try {
-    const where: Record<string, unknown> = { vendorId: VENDOR_ID }
+    const where: Record<string, unknown> = { orgId: ORG_ID }
     if (status) where.status = status
     const [cases, total] = await Promise.all([
       prisma.case.findMany({

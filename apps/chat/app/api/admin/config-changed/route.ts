@@ -7,8 +7,8 @@ import { clearConfigCache } from '@/lib/agent/config-cache'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
-    const vendorId = body.vendorId || undefined
-    clearConfigCache(vendorId)
+    const orgId = body.orgId || undefined
+    clearConfigCache(orgId)
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

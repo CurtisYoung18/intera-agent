@@ -15,7 +15,7 @@ interface VoiceInputBarProps {
   isResponding?: boolean
   allowQueueWhileBusy?: boolean
   composerAssistEnabled?: boolean
-  vendorId?: string
+  orgId?: string
   assistMissingDeepseekKey?: boolean
   composerMinDraftChars?: number
 }
@@ -48,7 +48,7 @@ export default function VoiceInputBar({
   isResponding = false,
   allowQueueWhileBusy = true,
   composerAssistEnabled = false,
-  vendorId = 'default',
+  orgId = 'default',
   assistMissingDeepseekKey = false,
   composerMinDraftChars = 4,
 }: VoiceInputBarProps) {
@@ -90,7 +90,7 @@ export default function VoiceInputBar({
         const res = await fetch('/api/composer-assist/suggest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ draft: value, vendorId }),
+          body: JSON.stringify({ draft: value, orgId }),
           signal: ac.signal,
         })
         if (!res.ok || ac.signal.aborted) {
@@ -116,7 +116,7 @@ export default function VoiceInputBar({
       }
       ac.abort()
     }
-  }, [value, composerAssistEnabled, vendorId, composerMinDraftChars])
+  }, [value, composerAssistEnabled, orgId, composerMinDraftChars])
 
   const handleChange = useCallback((newValue: string) => {
     setValue(newValue)

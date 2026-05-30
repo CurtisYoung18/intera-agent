@@ -20,10 +20,10 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const vendorId = request.nextUrl.searchParams.get('vendorId') ?? 'default'
+  const orgId = request.nextUrl.searchParams.get('orgId') ?? 'default'
 
   try {
-    const config = await getLiveChatConfig(vendorId)
+    const config = await getLiveChatConfig(orgId)
     if (!config) {
       return json({ groups: [] })
     }

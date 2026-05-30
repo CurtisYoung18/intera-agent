@@ -6,22 +6,22 @@ import { hashSync } from 'bcryptjs'
 import { prisma } from '@intera/shared/prisma'
 
 const BUILT_IN_CUSTOMERS = [
-  { id: 'default', name: 'Demo Vendor', password: null },
-  { id: 'api', name: 'API Vendor', password: hashSync('0000', 10) },
+  { id: 'default', name: 'Demo Org', password: null },
+  { id: 'api', name: 'API Org', password: hashSync('0000', 10) },
 ]
 
 export async function GET() {
   try {
     // Auto-seed/update built-in customers
     for (const c of BUILT_IN_CUSTOMERS) {
-      await prisma.vendor.upsert({
+      await prisma.organization.upsert({
         where: { id: c.id },
         update: { name: c.name, password: c.password },
         create: c,
       })
     }
 
-    const customers = await prisma.vendor.findMany({
+    const customers = await prisma.organization.findMany({
       select: {
         id: true,
         name: true,

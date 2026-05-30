@@ -98,7 +98,7 @@ export default function ConsoleSidebar() {
   const { t, toggleLocale, locale } = useConsoleLocale()
 
   // Session state
-  const [customerName, setCustomerName] = useState('Demo Vendor')
+  const [customerName, setCustomerName] = useState('Demo Org')
   const [customers, setCustomers] = useState<CustomerInfo[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
 
@@ -150,12 +150,12 @@ export default function ConsoleSidebar() {
     }
   }
 
-  const doSwitch = async (vendorId: string, pwd?: string) => {
+  const doSwitch = async (orgId: string, pwd?: string) => {
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vendorId, password: pwd || '' }),
+        body: JSON.stringify({ orgId, password: pwd || '' }),
       })
       const data = await res.json()
       if (!res.ok) {

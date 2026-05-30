@@ -9,7 +9,7 @@ export type BridgeState =
 
 export interface BridgeSession {
   chatId: string
-  vendorId: string
+  orgId: string
   userId: string
   caseId: string
   state: BridgeState
@@ -17,7 +17,7 @@ export interface BridgeSession {
 }
 
 export interface LiveChatConfig {
-  vendorId: string
+  orgId: string
   botAccessToken: string
   licenseId: string
   webhookSecret?: string

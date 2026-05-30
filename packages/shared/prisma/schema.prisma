@@ -16,7 +16,7 @@ datasource db {
 // ============================================
 // B 端商户（游戏供应商 / 商户）
 // ============================================
-model Vendor {
+model Organization {
   id        String   @id @default(cuid())
   name      String
   apiKey    String?
@@ -24,7 +24,7 @@ model Vendor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("vendors")
+  @@map("organizations")
 }
 
 // ============================================
@@ -32,7 +32,7 @@ model Vendor {
 // ============================================
 model AgentConfig {
   id         String   @id @default(cuid())
-  vendorId String?  @map("customerId") @unique
+  orgId String?  @map("org_id") @unique
 
   model          String  @default("claude-sonnet-4-20250514")
   temperature    Float   @default(0.5)
@@ -64,7 +64,7 @@ model AgentConfig {
   memoryStrategy     String  // MemoryStrategy
   policyHooks        String  // PolicyHooks
   knowledgeRetrieval String?  // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
-  gptbotsApiKey      String?  // per-vendor GPTBots API key (overrides GPTBOTS_API_KEY env var)
+  gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
   invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
 
   createdAt DateTime @default(now())
@@ -78,7 +78,7 @@ model AgentConfig {
 // ============================================
 model CaseType {
   id         String   @id @default(cuid())
-  vendorId String  @map("customerId") @default("default")
+  orgId String  @map("org_id") @default("default")
 
   type        String
   displayName String
@@ -107,7 +107,7 @@ model CaseType {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([vendorId, type])
+  @@unique([orgId, type])
   @@map("case_types")
 }
 
@@ -116,7 +116,7 @@ model CaseType {
 // ============================================
 model Skill {
   id         String   @id @default(cuid())
-  vendorId String  @map("customerId") @default("default")
+  orgId String  @map("org_id") @default("default")
 
   name        String
   description String
@@ -141,7 +141,7 @@ model Skill {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([vendorId, name])
+  @@unique([orgId, name])
   @@map("skills")
 }
 
@@ -150,7 +150,7 @@ model Skill {
 // ============================================
 model Policy {
   id         String   @id @default(cuid())
-  vendorId String  @map("customerId") @default("default")
+  orgId String  @map("org_id") @default("default")
 
   name        String
   description String?
@@ -161,7 +161,7 @@ model Policy {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([vendorId, name])
+  @@unique([orgId, name])
   @@map("policies")
 }
 
@@ -170,7 +170,7 @@ model Policy {
 // ============================================
 model Routing {
   id         String   @id @default(cuid())
-  vendorId String  @map("customerId") @default("default")
+  orgId String  @map("org_id") @default("default")
 
   queue          String
   description    String?
@@ -182,7 +182,7 @@ model Routing {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([vendorId, queue])
+  @@unique([orgId, queue])
   @@map("routings")
 }
 
@@ -191,7 +191,7 @@ model Routing {
 // ============================================
 model Case {
   id         String   @id @default(cuid())
-  vendorId String  @map("customerId") @default("default")
+  orgId String  @map("org_id") @default("default")
   userId     String
   /// Groups all cases that belong to the same chat session.
   /// Generated once per page-load by the frontend and forwarded with every message.
@@ -252,7 +252,7 @@ model ChatMemory {
 model UserProfile {
   id       String @id @default(cuid())
   userId   String @unique
-  vendorId String @default("default")
+  orgId String @default("default")
 
   /// Free-form Markdown maintained by the compact engine and operators
   profile  String @default("")
@@ -317,7 +317,7 @@ model ActionTrace {
 // ============================================
 model KnowledgeSource {
   id         String   @id @default(cuid())
-  vendorId String  @map("customerId") @default("default")
+  orgId String  @map("org_id") @default("default")
 
   name        String // 显示名称
   description String?
@@ -338,8 +338,8 @@ model KnowledgeSource {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([vendorId, name])
-  @@index([vendorId, enabled])
+  @@unique([orgId, name])
+  @@index([orgId, enabled])
   @@map("knowledge_sources")
 }
 
@@ -348,7 +348,7 @@ model KnowledgeSource {
 // ============================================
 model ExternalConversation {
   id             String   @id @default(cuid())
-  vendorId     String   @map("customerId") @default("default")
+  orgId     String   @map("org_id") @default("default")
   platform       String   // 'livechat' | 'intercom' | 'tawk'
   externalChatId String
   internalCaseId String?
@@ -360,7 +360,7 @@ model ExternalConversation {
   updatedAt      DateTime @updatedAt
 
   @@unique([platform, externalChatId])
-  @@index([vendorId, platform, status])
+  @@index([orgId, platform, status])
   @@map("external_conversations")
 }
 
@@ -397,7 +397,7 @@ model HumanTask {
 // ============================================
 model LiveChatConfig {
   id              String   @id @default(cuid())
-  vendorId      String?  @map("customerId") @unique
+  orgId      String?  @map("org_id") @unique
   botAccessToken  String
   licenseId       String
   webhookSecret   String?
@@ -433,7 +433,7 @@ model WebhookEvent {
 model LiveChatPendingEvent {
   id          String   @id @default(cuid())
   chatId      String
-  vendorId  String   @map("customerId") @default("default")
+  orgId  String   @map("org_id") @default("default")
   payload     Json
   attempt     Int      @default(0)
   lastError   String?
@@ -445,27 +445,27 @@ model LiveChatPendingEvent {
 }
 
 // ============================================
-// Channel Health — per-vendor channel status monitoring
+// Channel Health — per-org channel status monitoring
 // ============================================
 model ChannelHealth {
   id          String   @id @default(cuid())
-  vendorId  String   @map("customerId") @default("default")
+  orgId  String   @map("org_id") @default("default")
   channel     String
   status      String   @default("healthy")
   lastChecked DateTime @default(now())
   lastError   String?
   metadata    Json?
 
-  @@unique([vendorId, channel])
+  @@unique([orgId, channel])
   @@map("channel_health")
 }
 
 // ============================================
-// S5 — Channel Binding — per-vendor channel config
+// S5 — Channel Binding — per-org channel config
 // ============================================
 model ChannelBinding {
   id                  String   @id @default(cuid())
-  vendorId          String @map("customerId") @default("default")
+  orgId          String @map("org_id") @default("default")
   channel             String   // 'web-chat' | 'livechat' | 'slack' | 'discord' | 'whatsapp'
   enabled             Boolean  @default(false)
   credentials         String   @default("{}") // JSON
@@ -480,6 +480,6 @@ model ChannelBinding {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  @@unique([vendorId, channel])
+  @@unique([orgId, channel])
   @@map("channel_bindings")
 }

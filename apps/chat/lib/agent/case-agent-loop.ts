@@ -31,7 +31,7 @@ import type { LoopResult } from './loop'
 
 export interface CaseLoopServices {
   caseId: string
-  vendorId: string
+  orgId: string
   userId: string
   chatId?: string | null
   config: AgentConfigData
@@ -537,7 +537,7 @@ export class CaseAgentLoop {
     const question = String(toolInput.question || 'Human task requested')
     const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
-    const { caseId, vendorId, userId, chatId } = this.services
+    const { caseId, orgId, userId, chatId } = this.services
     const resolvedCaseType = this.caseSchema.type || 'general'
     const chatMemory = this.services.chatMemory
 
@@ -546,10 +546,10 @@ export class CaseAgentLoop {
 
     for (let attempt = 1; attempt <= MAX_HT_RETRIES; attempt++) {
       try {
-        await prisma.vendor.upsert({
-          where: { id: vendorId },
+        await prisma.organization.upsert({
+          where: { id: orgId },
           update: {},
-          create: { id: vendorId, name: vendorId },
+          create: { id: orgId, name: orgId },
         })
 
         await prisma.case.upsert({
@@ -557,7 +557,7 @@ export class CaseAgentLoop {
           update: { status: 'waiting_human', blocker: `Waiting for ${queue}` },
           create: {
             id: caseId,
-            vendorId,
+            orgId,
             userId,
             type: resolvedCaseType,
             status: 'waiting_human',

@@ -24,7 +24,7 @@ describe('channel-health', () => {
       mockUpsert.mockResolvedValue({})
       await markChannelUnhealthy('cust-1', 'livechat', 'token_expired', '401 Unauthorized')
       expect(mockUpsert).toHaveBeenCalledWith({
-        where: { vendorId_channel: { vendorId: 'cust-1', channel: 'livechat' } },
+        where: { orgId_channel: { orgId: 'cust-1', channel: 'livechat' } },
         update: { status: 'token_expired', lastError: '401 Unauthorized', lastChecked: expect.any(Date) },
         create: expect.objectContaining({ status: 'token_expired' }),
       })
@@ -36,7 +36,7 @@ describe('channel-health', () => {
       mockUpsert.mockResolvedValue({})
       await markChannelHealthy('cust-1', 'livechat')
       expect(mockUpsert).toHaveBeenCalledWith({
-        where: { vendorId_channel: { vendorId: 'cust-1', channel: 'livechat' } },
+        where: { orgId_channel: { orgId: 'cust-1', channel: 'livechat' } },
         update: { status: 'healthy', lastError: null, lastChecked: expect.any(Date) },
         create: expect.objectContaining({ status: 'healthy' }),
       })

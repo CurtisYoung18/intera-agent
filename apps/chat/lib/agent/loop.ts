@@ -125,7 +125,7 @@ export class StreamingTextSanitizer {
 export interface AgentLoopDeps {
   config: AgentConfigData
   caseId: string
-  vendorId: string
+  orgId: string
   userId: string
   /** Case-execution prompt (used when case is active). Resolved from CASE_SYSTEM_PROMPT or DB custom prompt. */
   systemPrompt: string
@@ -177,7 +177,7 @@ export class AgentLoop {
 
   constructor(private deps: AgentLoopDeps) {
     this.chatMemory = new ChatMemoryManager(deps.caseId, deps.config.memoryStrategy)
-    this.skillRouter = new SkillRouter(deps.vendorId)
+    this.skillRouter = new SkillRouter(deps.orgId)
     this.traceWriter = new TraceWriter(deps.caseId)
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.abortController = new AbortController()
@@ -204,7 +204,7 @@ export class AgentLoop {
   private makeCaseLoopServices(): CaseLoopServices {
     return {
       caseId: this.deps.caseId,
-      vendorId: this.deps.vendorId,
+      orgId: this.deps.orgId,
       userId: this.deps.userId,
       chatId: this.deps.chatId,
       config: this.deps.config,
@@ -222,8 +222,8 @@ export class AgentLoop {
   /** Create and initialize an AgentLoop — loads skills/policies from DB. */
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
-    loop.skillRouter = await SkillRouter.create(deps.vendorId)
-    loop.policyEngine = await PolicyEngine.create(deps.vendorId, deps.config.policyHooks)
+    loop.skillRouter = await SkillRouter.create(deps.orgId)
+    loop.policyEngine = await PolicyEngine.create(deps.orgId, deps.config.policyHooks)
     return loop
   }
 
@@ -922,7 +922,7 @@ export class AgentLoop {
                   update: { status: 'escalated', blocker: `Agent stuck in stage "${this.currentStage}"` },
                   create: {
                     id: this.deps.caseId,
-                    vendorId: this.deps.vendorId,
+                    orgId: this.deps.orgId,
                     userId: this.deps.userId,
                     type: resolvedCaseType,
                     status: 'escalated',
@@ -1107,7 +1107,7 @@ export class AgentLoop {
               update: { status: 'escalated', blocker: `Policy escalation: ${escalatedReasons}` },
               create: {
                 id: this.deps.caseId,
-                vendorId: this.deps.vendorId,
+                orgId: this.deps.orgId,
                 userId: this.deps.userId,
                 type: resolvedCaseType,
                 status: 'escalated',
@@ -1246,7 +1246,7 @@ export class AgentLoop {
           try {
             // Load case type from DB to build schema
             const ctRow = await prisma.caseType.findUnique({
-              where: { vendorId_type: { vendorId: this.deps.vendorId, type: caseType } },
+              where: { orgId_type: { orgId: this.deps.orgId, type: caseType } },
             })
             if (ctRow) {
               const stages = (() => { try { return JSON.parse(ctRow.stages) } catch { return [] } })() as string[]
@@ -1276,7 +1276,7 @@ export class AgentLoop {
                 update: { type: caseType, status: 'created' },
                 create: {
                   id: this.deps.caseId,
-                  vendorId: this.deps.vendorId,
+                  orgId: this.deps.orgId,
                   userId: this.deps.userId,
                   type: caseType,
                   status: 'created',
@@ -1504,11 +1504,7 @@ export class AgentLoop {
         )
         this.nudgeCount = nudgeBox.value
         if (caseToolResult.type === 'terminal') {
-          // Append final summary to UserProfile on case resolution
-          const finalSummary = this.chatMemory.hasSummary()
-            ? (this.chatMemory.getSummary() as any).summary
-            : this.chatMemory.buildCompactionSummary()
-          if (finalSummary) this.appendToUserProfile(finalSummary).catch(() => {})
+          this.compactUserProfile().catch(() => {})
           return caseToolResult.result
         }
         if (caseToolResult.type === 'continue') continue
@@ -1523,10 +1519,7 @@ export class AgentLoop {
       // Post-tool auto-escalation: human task was created during this iteration.
       // The LLM has had a chance to respond naturally — now exit to waiting_human.
       if (this.pendingEscalation) {
-        const escSummary = this.chatMemory.hasSummary()
-          ? (this.chatMemory.getSummary() as any).summary
-          : this.chatMemory.buildCompactionSummary()
-        if (escSummary) this.appendToUserProfile(escSummary).catch(() => {})
+        this.compactUserProfile().catch(() => {})
         await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
@@ -1874,15 +1867,21 @@ export class AgentLoop {
   }
 
   /** Run LLM-driven compaction with fallback to programmatic summary. */
-  private async appendToUserProfile(summary: string): Promise<void> {
+  /** Standalone compact for UserProfile — takes recent messages, produces a user portrait. */
+  private async compactUserProfile(): Promise<void> {
     if (!this.deps.config.memoryStrategy.enableChatMemory) return
     const key = profileKey(this.deps.userId, this.deps.chatId)
     if (!key) return
     try {
+      const recentMessages = this.messages.slice(-50)
+      const result = await compactConversation(recentMessages, this.deps.config.memoryStrategy)
+      const summary = result.summary
+      if (!summary) return
+
       const existing = await prisma.userProfile.findUnique({
         where: { userId: key },
         select: { profile: true },
-      })
+      }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const merged = mergeProfile(existing?.profile ?? '', summary, maxTokens)
       const stats = await recomputeProfileStats(prisma, key)
@@ -1893,7 +1892,7 @@ export class AgentLoop {
         update: { profile: merged, ...stats },
       })
     } catch (err) {
-      console.warn('[AgentLoop] Failed to append to UserProfile:', err)
+      console.warn('[AgentLoop] compactUserProfile failed:', err)
     }
   }
 
@@ -1905,7 +1904,6 @@ export class AgentLoop {
       const result = await compactConversation(this.messages, strategy)
       if (result.summary) {
         this.chatMemory.setSummary(result.summary)
-        await this.appendToUserProfile(result.summary)
         await this.traceWriter.write('loop_decision', 'LLM Compact', {
           model: result.model,
           provider: result.provider,
@@ -1919,8 +1917,7 @@ export class AgentLoop {
     }
 
     // Fallback: programmatic XML summary
-    const progSummary = this.chatMemory.recordCompaction()
-    this.appendToUserProfile(progSummary).catch(() => {})
+    this.chatMemory.recordCompaction()
   }
 
   // -----------------------------------------------------------------------

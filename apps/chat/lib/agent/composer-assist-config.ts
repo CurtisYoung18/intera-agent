@@ -13,8 +13,8 @@ export type ComposerAssistSettings = {
 
 const DEFAULT_BASE = 'https://api.deepseek.com/beta'
 
-export async function loadComposerAssistSettings(vendorId: string): Promise<ComposerAssistSettings> {
-  const row = await prisma.agentConfig.findUnique({ where: { vendorId } })
+export async function loadComposerAssistSettings(orgId: string): Promise<ComposerAssistSettings> {
+  const row = await prisma.agentConfig.findUnique({ where: { orgId } })
   if (!row) {
     return {
       enabled: false,

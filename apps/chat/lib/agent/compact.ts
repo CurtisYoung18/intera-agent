@@ -39,17 +39,14 @@ COMPRESSION RULES:
 - Duplicate facts: keep the most recent value.
 - If the budget is tight, prioritize sections 1-3 (stable portrait) over 4-7 (ephemeral case).`
 
-/**
- * Strip <analysis> tags from the summary output, keeping only <summary> content.
- */
+/** Clean up compact output — strip any leftover tags, trim whitespace. */
 export function formatCompactSummary(raw: string): string {
-  let formatted = raw
-  formatted = formatted.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
-  const summaryMatch = formatted.match(/<summary>([\s\S]*?)<\/summary>/i)
-  if (summaryMatch) {
-    formatted = `Summary:\n${summaryMatch[1]?.trim()}`
-  }
-  return formatted.trim()
+  return raw
+    .replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/?summary>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 export interface CompactConversationResult {
@@ -114,7 +111,7 @@ export async function compactConversation(
     }
 
     const summary = formatCompactSummary(rawText)
-    if (!summary || summary.length < strategy.compactMinSummaryLength) {
+    if (!summary || summary.length < Math.min(strategy.compactMinSummaryLength, 10)) {
       return { summary: null, model, provider, error: 'Summary too short' }
     }
 

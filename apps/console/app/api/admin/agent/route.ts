@@ -1,24 +1,24 @@
 // GET + PUT /api/admin/agent — Agent config CRUD (upsert)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat, ensureDefaultVendor } from '@intera/shared/prisma'
+import { prisma, ensureSqliteSchemaCompat, ensureDefaultOrg } from '@intera/shared/prisma'
 import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
-import { getActiveVendorId } from '@/lib/auth'
+import { getActiveOrgId } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     await ensureSqliteSchemaCompat(prisma)
-    let config = await prisma.agentConfig.findUnique({ where: { vendorId: VENDOR_ID } })
+    let config = await prisma.agentConfig.findUnique({ where: { orgId: ORG_ID } })
 
     // Lazy init: create from defaults if DB is empty
     if (!config) {
-      await ensureDefaultVendor(VENDOR_ID)
+      await ensureDefaultOrg(ORG_ID)
       config = await prisma.agentConfig.create({
         data: {
-          vendorId: VENDOR_ID,
+          orgId: ORG_ID,
           systemPrompt: DEFAULT_SYSTEM_PROMPT,
           model: 'MiniMax-M2.7-highspeed',
           temperature: 0.5,
@@ -44,7 +44,7 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const VENDOR_ID = await getActiveVendorId()
+    const ORG_ID = await getActiveOrgId()
     await ensureSqliteSchemaCompat(prisma)
     const body = await req.json()
     const {
@@ -90,12 +90,12 @@ export async function PUT(req: NextRequest) {
     }
     if (knowledgeRetrieval !== undefined) data.knowledgeRetrieval = typeof knowledgeRetrieval === 'string' ? knowledgeRetrieval : JSON.stringify(knowledgeRetrieval)
 
-    await ensureDefaultVendor(VENDOR_ID)
+    await ensureDefaultOrg(ORG_ID)
     const config = await prisma.agentConfig.upsert({
-      where: { vendorId: VENDOR_ID },
+      where: { orgId: ORG_ID },
       update: data,
       create: {
-        vendorId: VENDOR_ID,
+        orgId: ORG_ID,
         systemPrompt: systemPrompt || '',
         coreSystemPrompt: coreSystemPrompt ?? null,
         model: model || 'MiniMax-M2.7-highspeed',

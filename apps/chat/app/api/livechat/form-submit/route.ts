@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Session not found for chatId' }, { status: 404 })
   }
 
-  const config = await getLiveChatConfig(session.vendorId)
+  const config = await getLiveChatConfig(session.orgId)
   if (!config?.enabled) {
     return NextResponse.json({ error: 'LiveChat channel not configured' }, { status: 404 })
   }
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   // We return as soon as delivery is accepted so the webview can close promptly.
   handleIncomingEvent(
     chatId,
-    session.vendorId,
+    session.orgId,
     session.userId,
     { type: 'form_submit', form: { caseId: caseId || session.caseId, answers: normalized } },
     config,

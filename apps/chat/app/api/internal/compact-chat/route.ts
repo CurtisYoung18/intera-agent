@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     // [chatId] is either a real Case.chatId OR a standalone case.id.
     const cases = await prisma.case.findMany({
       where: { OR: [{ chatId }, { id: chatId }] },
-      select: { id: true, userId: true, vendorId: true },
+      select: { id: true, userId: true, orgId: true },
     })
     if (cases.length === 0) {
       return NextResponse.json({ error: 'No cases found for this chat' }, { status: 404 })
@@ -46,8 +46,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No messages to compact' }, { status: 400 })
     }
 
-    const vendorId = cases[0]?.vendorId ?? 'default'
-    const agentCfg = await prisma.agentConfig.findUnique({ where: { vendorId } }).catch(() => null)
+    const orgId = cases[0]?.orgId ?? 'default'
+    const agentCfg = await prisma.agentConfig.findUnique({ where: { orgId } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
 
     const apiMessages = messages

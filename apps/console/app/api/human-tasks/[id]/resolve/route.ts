@@ -9,7 +9,7 @@ import { chatApiUrl } from '@/lib/chat-api'
 async function notifyAgentResume(payload: {
   message: string
   caseId: string
-  vendorId: string
+  orgId: string
   userId: string
 }): Promise<void> {
   const maxRetries = 3
@@ -98,7 +98,7 @@ export async function POST(
     await notifyAgentResume({
       message,
       caseId: task.caseId,
-      vendorId: task.case.vendorId,
+      orgId: task.case.orgId,
       userId: task.case.userId,
     })
   } else {
@@ -165,7 +165,7 @@ export async function POST(
     await notifyAgentResume({
       message,
       caseId: task.caseId,
-      vendorId: task.case.vendorId,
+      orgId: task.case.orgId,
       userId: task.case.userId,
     })
   }

@@ -12,7 +12,7 @@
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
-const VENDOR_ID = 'default'
+const ORG_ID = 'default'
 
 // ─── SOP documents ───────────────────────────────────────────────────────────
 
@@ -234,7 +234,7 @@ async function main() {
 
   for (const [caseType, sop] of Object.entries(SOP_BY_TYPE)) {
     const existing = await prisma.caseType.findUnique({
-      where: { vendorId_type: { vendorId: VENDOR_ID, type: caseType } },
+      where: { orgId_type: { orgId: ORG_ID, type: caseType } },
     })
 
     if (!existing) {
@@ -243,7 +243,7 @@ async function main() {
     }
 
     await prisma.caseType.update({
-      where: { vendorId_type: { vendorId: VENDOR_ID, type: caseType } },
+      where: { orgId_type: { orgId: ORG_ID, type: caseType } },
       data: { sop },
     })
 

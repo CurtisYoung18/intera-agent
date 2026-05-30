@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 async function main() {
   const p = new PrismaClient()
   const rows = await p.caseType.findMany({
-    where: { vendorId: 'default' },
+    where: { orgId: 'default' },
     select: { type: true, executionMode: true, sop: true },
   })
   for (const r of rows) {

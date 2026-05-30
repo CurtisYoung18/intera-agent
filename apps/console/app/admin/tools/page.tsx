@@ -132,7 +132,7 @@ export default function SkillsPage() {
     const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
     if (!res.ok) return alert(t('common.failedSave', { status: res.status }))
-    const cacheBody = JSON.stringify({ vendorId: 'default' })
+    const cacheBody = JSON.stringify({ orgId: 'default' })
     Promise.allSettled([
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
       fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
