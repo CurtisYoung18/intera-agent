@@ -7,7 +7,7 @@ import {
   ChevronDown, Plus, ArrowLeft, Settings2, Bot,
   Wand2, Save, Loader2,
 } from 'lucide-react'
-import { chatApiUrl } from '@/lib/chat-api'
+
 import StageConfigEditor from '@/components/admin/stage-config-editor'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ export default function CaseTypeDetailPage() {
     const body = JSON.stringify({ orgId: 'default' })
     Promise.allSettled([
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
-      fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
+      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
     ]).catch(() => {})
   }, [])
 

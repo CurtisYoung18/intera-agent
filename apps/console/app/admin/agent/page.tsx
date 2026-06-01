@@ -15,7 +15,7 @@ import {
   DrawerShell,
   drawerFieldClass,
 } from '@/components/admin/agent-config-drawer-ui'
-import { chatApiUrl } from '@/lib/chat-api'
+
 import type { AgentConfigData, KnowledgeRetrievalConfig, MemoryStrategy, ModelInfo } from './types'
 import { DEFAULT_KNOWLEDGE_RETRIEVAL, DEFAULT_MEMORY } from './types'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT, CORE_SYSTEM_PROMPT } from '@intera/shared/defaults'
@@ -230,7 +230,7 @@ export default function AgentConfigPage() {
             headers: { 'Content-Type': 'application/json' },
             body: cacheBody,
           }),
-          fetch(chatApiUrl('/api/admin/config-changed'), {
+          fetch('/api/admin/config-changed', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: cacheBody,

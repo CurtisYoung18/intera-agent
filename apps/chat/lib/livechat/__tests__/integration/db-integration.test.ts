@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 
 // These tests hit the real Railway PostgreSQL database.
 // Set DATABASE_URL env var before running.
+// Skipped in CI without DB access; set RAILWAY_DB=1 to enable in Railway CI.
 
-const TEST_CHAT_ID = `test-chat-${Date.now()}`
-const TEST_CUSTOMER = 'default'
+const RUN_DB_TESTS = !!process.env.DATABASE_URL && !!process.env.RAILWAY_DB
 
-describe('DB integration tests (Railway PostgreSQL)', () => {
+describe.skipIf(!RUN_DB_TESTS)('DB integration tests (Railway PostgreSQL)', () => {
   // Lazy imports to ensure env is loaded
   let getSession: typeof import('../../session-store').getSession
   let upsertSession: typeof import('../../session-store').upsertSession

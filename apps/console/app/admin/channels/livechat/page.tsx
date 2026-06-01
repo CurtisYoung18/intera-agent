@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { MessageCircle, Eye, EyeOff, Save, CheckCircle2, ExternalLink, Globe, Monitor, UserCheck, Copy, RotateCcw } from 'lucide-react'
-import { chatApiUrl } from '@/lib/chat-api'
+
 import { useConsoleLocale } from '@/components/locale-provider'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -158,17 +158,17 @@ export default function LiveChatDetailPage() {
   useEffect(() => {
     if (!orgId) return
     setLoading(true)
-    fetch(chatApiUrl(`/api/livechat/config?orgId=${encodeURIComponent(orgId)}`))
+    fetch(`/api/livechat/config?orgId=${encodeURIComponent(orgId)}`)
       .then(r => r.json()).then((data: LiveChatConfig) => { setConfig(data); setOrigConfig(data) }).catch(() => {}).finally(() => setLoading(false))
     // Fetch available groups for escalation tab
-    fetch(chatApiUrl(`/api/livechat/groups?orgId=${encodeURIComponent(orgId)}`))
+    fetch(`/api/livechat/groups?orgId=${encodeURIComponent(orgId)}`)
       .then(r => r.json()).then((d: { groups?: LiveChatGroup[] }) => { if (d.groups) setGroups(d.groups) }).catch(() => {})
   }, [orgId])
 
   const handleSave = async () => {
     setSaving(true); setSaveStatus('idle')
     try {
-      const res = await fetch(chatApiUrl('/api/livechat/config'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, orgId }) })
+      const res = await fetch('/api/livechat/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, orgId }) })
       if (!res.ok) throw new Error('save failed')
       setSaveStatus('saved'); setOrigConfig({ ...config })
       setTimeout(() => setSaveStatus('idle'), 3000)
@@ -184,7 +184,7 @@ export default function LiveChatDetailPage() {
 
   const loadMomentPreset = (preset: MomentPreset) => {
     setSelectedMomentLabel(preset.label)
-    const baseUrl = chatApiUrl('/livechat-widget')
+    const baseUrl = ''
     const params = new URLSearchParams({
       view: 'form',
       caseId: 'demo',
@@ -200,7 +200,7 @@ export default function LiveChatDetailPage() {
 
   const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
-  const webhookUrl = `${process.env.NEXT_PUBLIC_CHAT_API_URL ?? ''}/api/livechat/webhook/${orgId}`
+  const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/livechat/webhook/${orgId}` : `/api/livechat/webhook/${orgId}`
 
   return (
     <div className="p-8 max-w-5xl">

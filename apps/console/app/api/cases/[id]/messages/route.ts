@@ -1,4 +1,5 @@
 // GET /api/cases/[id]/messages — Case conversation history
+// Merged: case metadata (from Chat) + pagination (from Console)
 // Query: ?limit=100&offset=0
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -14,7 +15,11 @@ export async function GET(
   const offset = parseInt(searchParams.get('offset') || '0')
 
   try {
-    const [messages, total] = await Promise.all([
+    const [caseData, messages, total] = await Promise.all([
+      prisma.case.findUnique({
+        where: { id },
+        select: { type: true, status: true, createdAt: true },
+      }),
       prisma.message.findMany({
         where: { caseId: id },
         orderBy: { createdAt: 'asc' },
@@ -24,7 +29,17 @@ export async function GET(
       prisma.message.count({ where: { caseId: id } }),
     ])
 
-    return NextResponse.json({ messages, total })
+    if (!caseData) {
+      return NextResponse.json({ error: 'Case not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      caseType: caseData.type,
+      status: caseData.status,
+      createdAt: caseData.createdAt,
+      messages,
+      total,
+    })
   } catch (err) {
     console.error('[API] Failed to get messages:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

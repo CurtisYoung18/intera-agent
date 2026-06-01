@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { chatApiUrl } from '@/lib/chat-api'
+
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ async function notifyAgentResume(payload: {
   let delay = 500
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const res = await fetch(chatApiUrl('/api/messages'), {
+      const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

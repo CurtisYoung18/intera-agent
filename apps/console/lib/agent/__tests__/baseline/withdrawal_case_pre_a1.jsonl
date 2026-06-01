@@ -1,0 +1,58 @@
+data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:26:27.098Z"}
+
+data: {"type":"memory_update","data":{"caseId":"case_20260527_032627_57b7c08a","confirmedFacts":{"userReportedNotReceived":true},"missingFacts":[],"skillsCalled":[],"skillResults":{},"keyEvents":[{"at":"2026-05-27T03:26:43.591Z","text":"Fact updated: userReportedNotReceived=true","source":"dashboard"},{"at":"2026-05-27T03:26:43.591Z","text":"User: 我的提现还没到账","source":"heuristic"}],"summary":"","dashboardVersion":1},"timestamp":"2026-05-27T03:26:43.591Z"}
+
+data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:26:43.592Z"}
+
+data: {"type":"case_created","data":{"caseId":"case_20260527_032627_57b7c08a","caseType":"withdrawal_issue","displayName":"提现问题","icon":"💸"},"timestamp":"2026-05-27T03:26:47.461Z"}
+
+data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:26:47.463Z"}
+
+data: {"type":"tool_executing","data":{"name":"get_latest_withdrawal","status":"executing","displayVerb":{"text":"Checking withdrawal status","icon":"scan"}},"timestamp":"2026-05-27T03:26:49.029Z"}
+
+data: {"type":"text_delta","data":"已为您创建提现问题工单，正在查询您的提现状态...\n","timestamp":"2026-05-27T03:26:49.033Z"}
+
+data: {"type":"skill_result","data":{"name":"get_latest_withdrawal","status":"completed","result":{"ok":true,"output":{"is_v3":true,"ver":"1.0.0","success":false,"message":"The selected member id is invalid.","errors":{"member_id":["The selected member id is invalid."]}},"latencyMs":250}},"timestamp":"2026-05-27T03:26:49.279Z"}
+
+data: {"type":"message_stop","data":{"reason":"next_turn","stage":"created"},"timestamp":"2026-05-27T03:26:53.435Z"}
+
+data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:26:53.436Z"}
+
+data: {"type":"text_delta","data":"您好！我已为您创建了提现问题工单（编号：case_2","timestamp":"2026-05-27T03:26:56.519Z"}
+
+data: {"type":"text_delta","data":"0260527_032627_57b7c08a）。\n\n但在查询您","timestamp":"2026-05-27T03:26:56.932Z"}
+
+data: {"type":"text_delta","data":"的最新提现记录时，系统提示账户信息异常。这可能是因为当前会话未关联到您的正式账","timestamp":"2026-05-27T03:26:57.550Z"}
+
+data: {"type":"text_delta","data":"户。\n\n**为了帮您尽快查询提现进度，请您提供以下信息：**\n","timestamp":"2026-05-27T03:26:57.958Z"}
+
+data: {"type":"text_delta","data":"- 您的会员ID或登录账号\n- 大概的提现时间\n- 提现金额\n\n您也可以尝试重新登录后再发起咨询，我会继续为您跟进处理。","timestamp":"2026-05-27T03:26:57.959Z"}
+
+data: {"type":"case_status","data":{"stage":"collecting","previousStage":"created","reason":"Fallback advance from created after first assistant turn (evaluator returned no transition)."},"timestamp":"2026-05-27T03:27:03.075Z"}
+
+data: {"type":"message_stop","data":{"reason":"stage_transition","stage":"collecting"},"timestamp":"2026-05-27T03:27:03.075Z"}
+
+data: {"type":"core_agent_progress","data":{"stage":"collecting","iteration":4,"task":"collecting · iter 4","pendingSubAgents":[]},"timestamp":"2026-05-27T03:27:03.076Z"}
+
+data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:27:03.076Z"}
+
+data: {"type":"text_delta","data":"**目前工单状态：** 已创建，","timestamp":"2026-05-27T03:27:07.068Z"}
+
+data: {"type":"text_delta","data":"待补充信息\n\n**您可以：**\n1. 重","timestamp":"2026-05-27T03:27:07.471Z"}
+
+data: {"type":"text_delta","data":"新登录后重新发起咨询，我帮您查询最新提现状态\n2. 提供会员ID，我帮您手动查询\n\n请问您方便重新登录或提供会员ID吗？","timestamp":"2026-05-27T03:27:07.479Z"}
+
+data: {"type":"message_stop","data":{"reason":"nudge","stage":"collecting"},"timestamp":"2026-05-27T03:27:07.483Z"}
+
+data: {"type":"core_agent_progress","data":{"stage":"collecting","iteration":5,"task":"collecting · iter 5","pendingSubAgents":[]},"timestamp":"2026-05-27T03:27:07.483Z"}
+
+data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:27:07.484Z"}
+
+data: {"type":"tool_executing","data":{"name":"request_user_input","status":"executing","displayVerb":{"text":"Preparing your information form","icon":"pulse"}},"timestamp":"2026-05-27T03:27:10.642Z"}
+
+data: {"type":"skill_result","data":{"name":"request_user_input","status":"completed","result":{"ok":true,"output":{"status":"form_displayed"},"latencyMs":150}},"timestamp":"2026-05-27T03:27:10.792Z"}
+
+data: {"type":"form_request","data":{"caseId":"case_20260527_032627_57b7c08a","skillCallId":"call_function_wlx88oz4zjg8_1","title":"提现问题咨询","description":"","fields":[{"key":"member_id","label":"会员ID / 登录账号","type":"text","required":true,"placeholder":"请输入您的会员ID或登录账号"},{"key":"issueType","label":"问题类型","type":"select","required":true,"options":["未到账","打码量不足","申请被拒","金额有误","其他"]},{"key":"amount","label":"提现金额（选填）","type":"number","required":false,"placeholder":"如有请填写"}]},"timestamp":"2026-05-27T03:27:10.795Z"}
+
+data: {"type":"message_stop","data":{"transition":"waiting_form"},"timestamp":"2026-05-27T03:27:15.231Z"}
+

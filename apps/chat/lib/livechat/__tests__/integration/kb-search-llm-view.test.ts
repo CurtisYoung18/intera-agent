@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-describe('kb_search_* — LLM perspective verification', () => {
+describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective verification', () => {
   it('LLM sees 7 independent kb_search tools, each with its own description', async () => {
     const { SkillRouter } = await import('../../../agent/skills')
     const router = await SkillRouter.create('api')

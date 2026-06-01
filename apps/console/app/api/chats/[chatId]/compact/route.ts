@@ -5,7 +5,7 @@
 // MiniMax/DeepSeek keys, so it must NOT run compaction locally.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { chatApiUrl } from '@/lib/chat-api'
+
 
 export async function POST(
   _req: NextRequest,
@@ -13,7 +13,7 @@ export async function POST(
 ) {
   const { chatId } = await params
   try {
-    const res = await fetch(chatApiUrl('/api/internal/compact-chat'), {
+    const res = await fetch('/api/internal/compact-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chatId }),

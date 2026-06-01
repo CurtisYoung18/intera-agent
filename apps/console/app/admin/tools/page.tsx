@@ -7,7 +7,7 @@ import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
 import TiltCard from '@/components/ui/tilt-card'
-import { chatApiUrl } from '@/lib/chat-api'
+
 import { useConsoleLocale } from '@/components/locale-provider'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
@@ -136,7 +136,7 @@ export default function SkillsPage() {
     const cacheBody = JSON.stringify({ orgId: 'default' })
     Promise.allSettled([
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
-      fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
+      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
     ]).catch(() => {})
     setEditing(null); load()
   }, [editing, isNew, load, originalName, t])

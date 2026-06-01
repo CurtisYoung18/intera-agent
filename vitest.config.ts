@@ -4,7 +4,7 @@ import path from 'node:path'
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'apps/chat'),
+      '@': path.resolve(__dirname, 'apps/console'),
     },
   },
   test: {
@@ -19,8 +19,8 @@ export default defineConfig({
       functions: 80,
       statements: 80,
       include: [
-        'apps/chat/lib/livechat/**/*.ts',
-        'apps/chat/channels/livechat/**/*.ts',
+        'apps/console/lib/livechat/**/*.ts',
+        'apps/console/channels/livechat/**/*.ts',
       ],
     },
   },

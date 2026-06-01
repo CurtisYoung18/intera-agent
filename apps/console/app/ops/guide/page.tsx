@@ -24,9 +24,9 @@ import {
 // Hosts (single source of truth; if Railway URLs change, update here)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CHAT_HOST = process.env.NEXT_PUBLIC_CHAT_API_URL || 'https://intera-chat.up.railway.app'
+const CHAT_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://intera-console.up.railway.app'
 const CONSOLE_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://intera-console.up.railway.app'
-const CHAT_UI_URL = `${CHAT_HOST}/chat`
+const CHAT_UI_URL = '#'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inline helpers — kept in this file so the guide page is self-contained

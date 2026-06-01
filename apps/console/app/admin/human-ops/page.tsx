@@ -6,7 +6,7 @@ import AgentHumanInteractionPanel from '@/components/admin/agent-human-interacti
 import ImmersiveModal from '@/components/ui/immersive-modal'
 import { DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { chatApiUrl } from '@/lib/chat-api'
+
 
 interface AgentConfig {
   consultationPrompt: string
@@ -89,7 +89,7 @@ export default function HumanOpsPage() {
       const cacheBody = JSON.stringify({ orgId: 'default' })
       Promise.allSettled([
         fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
-        fetch(chatApiUrl('/api/admin/config-changed'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
+        fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
       ]).catch(() => {})
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2500)

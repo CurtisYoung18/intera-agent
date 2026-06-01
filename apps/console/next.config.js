@@ -10,8 +10,6 @@ if (fs.existsSync(rootEnv)) {
   }
 }
 
-const CHAT_API_BASE = process.env.NEXT_PUBLIC_CHAT_API_URL || 'http://localhost:3000'
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -21,19 +19,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
-  },
-  async rewrites() {
-    return [
-      {
-        source: '/api/admin/config-changed',
-        destination: `${CHAT_API_BASE}/api/admin/config-changed`,
-      },
-      // Proxy composer-assist (DeepSeek prefix completion) to the chat app
-      {
-        source: '/api/composer-assist/:path*',
-        destination: `${CHAT_API_BASE}/api/composer-assist/:path*`,
-      },
-    ]
   },
 }
 

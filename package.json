@@ -2,13 +2,11 @@
   "name": "intera-agent",
   "private": true,
   "workspaces": [
-    "apps/*",
+    "apps/console",
     "packages/*"
   ],
   "scripts": {
-    "dev:chat": "npm run dev -w apps/chat",
     "dev:console": "npm run dev -w apps/console",
-    "build:chat": "npm run build -w apps/chat",
     "build:console": "npm run build -w apps/console",
     "db:generate": "npm run db:generate -w packages/shared",
     "db:push": "npm run db:push -w packages/shared",
