@@ -492,20 +492,28 @@ export class CaseAgentLoop {
     }
 
     // ── Stage transition eval (non-terminal) ──────────────────
-    // Rule-based: check required skills + evidence requirements
+    // Rule-based first, then optional LLM eval gate
     if (this.stageExecutor.hasStageConfigs()) {
-      const skillCheck = this.stageExecutor.checkRequiredSkills(this._currentStage)
-      const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(this._currentStage)
-      const nextStage = this.stageExecutor.getNextStageName(this._currentStage)
-
-      if (skillCheck.met && evidenceCheck.met && nextStage) {
-        const transitionEval: TransitionEval = {
-          shouldTransition: true,
-          nextStage,
-          reason: `Rule-based: all skills and evidence met for ${this._currentStage}.`,
-        }
-        await this.applyStageTransitionFromEval(transitionEval, nudgeCount, sendEvent)
+      let transitionEval: TransitionEval
+      try {
+        transitionEval = await this.stageExecutor.evaluateTransition(this._currentStage, iterationCount)
+      } catch (err) {
+        console.error('[CaseAgentLoop] Stage evaluation (post-tools) failed:', err)
+        transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
       }
+      if (transitionEval.modelUsed) {
+        await this.services.traceWriter.write(
+          'stage_eval',
+          `Stage eval (post-tools): ${this._currentStage} → ${transitionEval.nextStage || 'stay'}`,
+          {
+            model: transitionEval.modelUsed,
+            stage: this._currentStage,
+            shouldTransition: transitionEval.shouldTransition,
+            reason: transitionEval.reason,
+          },
+        )
+      }
+      await this.applyStageTransitionFromEval(transitionEval, nudgeCount, sendEvent)
     }
 
     return { type: 'none' }

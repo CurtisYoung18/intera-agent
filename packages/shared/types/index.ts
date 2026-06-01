@@ -474,6 +474,7 @@ export interface EvidenceRequirement {
 export interface StageTransitionRule {
   type: 'auto' | 'evaluation' | 'manual'
   conditions?: StageTransitionCondition[]
+  evaluationModel?: string
   evaluationPrompt?: string
 }
 
