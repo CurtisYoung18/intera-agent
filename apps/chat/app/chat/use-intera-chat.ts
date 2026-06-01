@@ -20,7 +20,6 @@ export type MsgType =
   | 'form_submitted'
   | 'intent_clarification'
   | 'intent_resolved'
-  | 'interaction_proposed'
   | 'interaction_resolved'
   | 'todo_plan'
 
@@ -58,7 +57,6 @@ export interface ChatMessage {
     labelsByType: Record<string, string>
     locale: 'zh' | 'en'
   }
-  interactionOptions?: any
   /** Full todo list snapshot — carried by todo_plan messages. */
   todos?: TodoItem[]
   timestamp: string
@@ -635,72 +633,6 @@ export function useInteraChat(): UseInteraChatReturn {
           // CC-aligned: open a persistent SSE for this case so subsequent
           // turns don't need to re-initialise AgentLoop from DB each time.
           openPersistentStream(cc.caseId)
-          break
-        }
-
-        case 'interaction_proposed': {
-          const idata = event.data as {
-            caseId: string
-            skillCallId: string
-            title: string
-            description: string
-            options: Array<{ id: string; label: string; description?: string; inputType?: string; inputPlaceholder?: string }>
-            multiSelect?: boolean
-          }
-          if (idata.options?.length > 0) {
-            setMessages((prev) => [
-              ...prev,
-              makeMsg({
-                id: `interaction_${crypto.randomUUID()}`,
-                role: 'assistant',
-                msgType: 'interaction_proposed',
-                relatedCaseId: idata.caseId,
-                content: '',
-                interactionOptions: {
-                  title: idata.title,
-                  description: idata.description,
-                  multiSelect: !!idata.multiSelect,
-                  ...idata.options,
-                } as any,
-              }),
-            ])
-          }
-          break
-        }
-
-        case 'clarification': {
-          const cd = event.data as { cases: Array<{ caseType: string; summary: string }> }
-          if (cd.cases?.length > 0) {
-            // Build a synthetic IntentClassification for the card + onIntentConfirm
-            const syntheticClf: IntentClassification = {
-              intent: 'case',
-              needsClarification: true,
-              reasoning: 'Core Agent detected multiple intents via propose_cases',
-              extractedFacts: {},
-              matchedCaseTypes: cd.cases.map((c, i) => ({
-                type: c.caseType,
-                displayName: c.caseType,
-                icon: '📋',
-                confidence: 1 - i * 0.05,
-              })),
-              modelUsed: 'core_agent',
-            }
-            setMessages((prev) => [
-              ...prev,
-              makeMsg({
-                id: `clarify_${crypto.randomUUID()}`,
-                role: 'assistant',
-                msgType: 'intent_clarification',
-                relatedCaseId: undefined,
-                content: '',
-                intentOptions: {
-                  caseTypes: syntheticClf.matchedCaseTypes,
-                  classification: syntheticClf,
-                },
-              }),
-            ])
-            setSplitMode(true)
-          }
           break
         }
 
@@ -1786,7 +1718,7 @@ export function useInteraChat(): UseInteraChatReturn {
         setStreamingToolName(null)
         const payload: Record<string, unknown> = { optionId }
         if (input) payload.input = input
-        const content = `Tool propose_interaction result: ${JSON.stringify(payload)}`
+        const content = `Tool request_user_input result: ${JSON.stringify(payload)}`
         const ok = await postMessageToCase(cid, content)
         if (!ok) {
           setAgentStatus('offline')

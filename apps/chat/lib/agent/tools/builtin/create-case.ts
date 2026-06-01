@@ -19,7 +19,7 @@ export const dispatchCaseAgentTool: Tool<Input, Output> = {
   async prompt(_ctx: ToolContext) {
     return 'Create a tracked Case for a single clear customer issue. ' +
       'Use when the customer reports one distinct problem. ' +
-      'For multiple issues or ambiguous intent, use propose_cases instead.'
+      'For multiple issues, call dispatch_case_agent once per issue.'
   },
 
   isEnabled() { return true },

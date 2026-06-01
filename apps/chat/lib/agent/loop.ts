@@ -136,15 +136,14 @@ export interface AgentLoopDeps {
   caseSchema?: CaseSchemaConfig | null
   /** Groups all cases in the same chat session — stored on Case.chatId. */
   chatId?: string | null
-  /** When true, the case was created from an intent selection card.
-   *  propose_cases is removed from available tools to prevent re-triggering. */
+  /** When true, the case was created from an intent selection card. */
   bootstrapNewCase?: boolean
 }
 
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'awaiting_clarification' | 'awaiting_interaction' | 'connection_lost' | 'machine_error'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'connection_lost' | 'machine_error'
   currentStage?: string
   reason?: string
   pendingSubAgents?: string[]
@@ -1161,7 +1160,7 @@ export class AgentLoop {
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
         const nonSopTools = new Set(['todo_write', 'todo_read', 'dispatch_case_agent', 'request_user_input',
-          'propose_cases', 'finalize_case', 'create_human_task', 'finalize_consultation',
+          'finalize_case', 'create_human_task', 'finalize_consultation',
           'read_chat_memory', 'read_user_profile'])
         const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
         if (todoFailed && investigationRan) {
@@ -1177,63 +1176,6 @@ export class AgentLoop {
             nudgeCount: this.nudgeCount, iteration: this.iterationCount,
           })
         }
-      }
-
-      // ── Terminal tool: propose_cases (multi-intent clarification) ──
-      // Works both with and without an active case — when a case already exists,
-      // propose_cases lets the user add additional case types alongside it.
-      const proposeResult = toolResults.find(
-        (r) => r.name === 'propose_cases',
-      )
-      if (proposeResult) {
-        const toolInput = proposeResult.toolUse?.input || {}
-        const proposedCases = (toolInput.cases as Array<{ caseType: string; summary: string }>) || []
-
-        if (proposedCases.length > 0) {
-          sendEvent({
-            type: 'clarification',
-            data: {
-              cases: proposedCases.map((c) => ({
-                caseType: c.caseType,
-                summary: c.summary,
-              })),
-            },
-            timestamp: new Date().toISOString(),
-          })
-
-          await this.traceWriter.write('loop_decision', 'Clarification: multiple intents proposed', {
-            proposedCases: proposedCases.map((c) => c.caseType),
-          })
-
-          // Replace mock result with meaningful feedback for the model
-          for (let i = this.messages.length - 1; i >= 0; i--) {
-            const m = this.messages[i]
-            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool propose_cases result:')) {
-              m.content = `Tool propose_cases result: ${JSON.stringify({ status: 'presented', message: 'The customer will select which cases to open. Wait for their selection before proceeding.' })}`
-              break
-            }
-          }
-
-          await this.writeProfilerSnapshot()
-          return {
-            messages: this.messages,
-            caseStatus: this.currentStage as CaseStatus,
-            transition: 'awaiting_clarification',
-            currentStage: this.currentStage,
-            reason: 'multi_intent_clarification',
-          }
-        }
-
-        // Empty cases array: replace mock result with feedback so the model doesn't retry
-        for (let i = this.messages.length - 1; i >= 0; i--) {
-          const m = this.messages[i]
-          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool propose_cases result:')) {
-            m.content = `Tool propose_cases result: ${JSON.stringify({ status: 'rejected', message: 'No matching case types found. Respond to the customer with plain text — do NOT call propose_cases again.' })}`
-            break
-          }
-        }
-        // Continue loop so the model can respond with plain text
-        continue
       }
 
       // ── Terminal tool: dispatch_case_agent ─────────────────────────

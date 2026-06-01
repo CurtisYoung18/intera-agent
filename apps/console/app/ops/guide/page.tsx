@@ -257,8 +257,6 @@ const SSE_EVENTS: Array<{ type: string; desc: string }> = [
   { type: 'case_created', desc: 'A new case was just created from this user turn.' },
   { type: 'human_task_created', desc: 'Agent created a human task (escalation). Payload: { taskId, question }.' },
   { type: 'form_request', desc: 'Agent wants structured input. Payload: { title, fields[] }. Renders as a form.' },
-  { type: 'interaction_proposed', desc: 'Agent proposes choices. Payload: { title, options[], multiSelect? }.' },
-  { type: 'clarification', desc: 'propose_cases output — multi-issue clarification. Payload: { cases[] }.' },
   { type: 'finalized', desc: 'Case finalized (resolved or escalated terminal state).' },
   { type: 'message_stop', desc: 'Loop iteration ended. Emitted once per LLM round-trip.' },
   { type: 'withheld', desc: 'Internal status — agent is processing additional queued input.' },
@@ -337,11 +335,11 @@ export default function OpsGuidePage() {
                 { name: 'userLabel', type: 'string', desc: 'Optional display name for the user.' },
                 { name: 'chatId', type: 'string', desc: 'Conversation session id. Omit for first turn — engine generates one.' },
                 { name: 'caseId', type: 'string', desc: 'Existing case id (for resume / continuation).' },
-                { name: 'caseType', type: 'string', desc: 'Hint for case classifier (skip propose_cases if set).' },
-                { name: 'bootstrapNewCase', type: 'boolean', desc: 'If true, propose_cases is removed from tool set (intent already selected).' },
+                { name: 'caseType', type: 'string', desc: 'Hint for the case type to create.' },
+                { name: 'bootstrapNewCase', type: 'boolean', desc: 'If true, the case was created from an intent selection card.' },
                 { name: 'resumeTrigger', type: 'object', desc: 'For human task resolution callback.' },
                 { name: 'formResult', type: 'object', desc: '{ caseId, answers }. Submit a form opened by form_request.' },
-                { name: 'interactionResult', type: 'object', desc: '{ caseId, optionId, input? }. Submit a choice opened by interaction_proposed.' },
+                { name: 'interactionResult', type: 'object', desc: '{ caseId, optionId, input? }. Submit a choice for an interactive card (deprecated — use formResult instead).' },
                 { name: 'contentBlocks', type: 'array', desc: 'Multimodal input (text + image blocks, Anthropic SDK shape).' },
               ]}
               body={`{

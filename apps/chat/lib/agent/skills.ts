@@ -22,8 +22,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     description:
       'Dispatch a background case investigation agent for a single clear customer issue. ' +
       'The case agent runs autonomously through all investigation stages while you continue the conversation. ' +
-      'Use when the customer reports one distinct problem. ' +
-      'For multiple issues or ambiguous intent, use propose_cases instead.',
+      'For multiple issues, call dispatch_case_agent once per issue.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -37,39 +36,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     toolCategory: 'operational',
     displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
     zodSchema: z.object({ caseType: z.string() }),
-  },
-  {
-    name: 'propose_cases',
-    description:
-      'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. ' +
-      'The customer will see a multi-select card to choose which cases to open. ' +
-      'Use this INSTEAD of dispatch_case_agent when there are 2+ issues or you are unsure which type fits.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        cases: {
-          type: 'array',
-          description: 'Proposed case types with a brief summary of the detected issue',
-          items: {
-            type: 'object',
-            properties: {
-              caseType: { type: 'string', description: 'Case type slug, e.g. deposit_issue' },
-              summary: { type: 'string', description: 'One-line description of what the customer reported for this issue' },
-            },
-            required: ['caseType', 'summary'],
-          },
-        },
-      },
-      required: ['cases'],
-    },
-    isConcurrencySafe: false,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Analyzing your issue', icon: 'dots' },
-    zodSchema: z.object({
-      cases: z.array(z.object({ caseType: z.string(), summary: z.string() })),
-    }),
   },
   {
     name: 'read_case_history',
@@ -930,7 +896,7 @@ export class SkillRouter {
       // which has already been loaded above. Only fill in if no DB override exists.
       const hasDbOverride = (name: string) => dbSkills.some((s) => s.name === name)
 
-      if (!hasDbOverride('dispatch_case_agent') || !hasDbOverride('propose_cases')) {
+      if (!hasDbOverride('dispatch_case_agent')) {
         try {
           const caseTypes = await prisma.caseType.findMany({
             where: { orgId, enabled: true },
@@ -949,18 +915,7 @@ export class SkillRouter {
                   'Dispatch a background case investigation agent. The agent runs autonomously through all investigation stages while you continue the conversation.\n\n' +
                   '## Available Case Types\n' +
                   caseTypeList +
-                  '\n\nUse when the customer reports a single distinct issue. For multiple issues, use propose_cases instead.'
-              }
-            }
-
-            if (!hasDbOverride('propose_cases')) {
-              const existingProposeSkill = router.skills.get('propose_cases')
-              if (existingProposeSkill) {
-                existingProposeSkill.description =
-                  'Propose multiple case types when the customer has two or more distinct issues.\n\n' +
-                  '## Available Case Types\n' +
-                  caseTypeList +
-                  '\n\nUse this INSTEAD of dispatch_case_agent when there are 2+ issues.'
+                  '\n\nUse when the customer reports a single distinct issue. For multiple issues, call dispatch_case_agent once per issue.'
               }
             }
           }

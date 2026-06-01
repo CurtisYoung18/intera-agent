@@ -141,7 +141,6 @@ export class StageExecutor {
         forced.add('create_human_task')
         forced.add('finalize_case')
         forced.add('request_user_input')
-        forced.add('propose_cases')
         forced.add('finalize_consultation')
         return allTools.filter((t) => forced.has(t.name))
       }
@@ -152,7 +151,6 @@ export class StageExecutor {
     allowed.add('create_human_task')
     allowed.add('finalize_case')
     allowed.add('request_user_input')
-    allowed.add('propose_cases')
     // finalize_consultation is the terminal tool for human-chat consultation mode.
     // Adding it here is safe: customer-facing chat won't call it because it has no
     // reason to (no human task context), and the human-chat agent MUST be able to
@@ -160,17 +158,9 @@ export class StageExecutor {
     allowed.add('finalize_consultation')
 
     // Prevent duplicate case creation — when a case is already active (past "created"
-    // stage), remove dispatch_case_agent so the agent doesn't call it again. propose_cases
-    // stays available for multi-intent situations at any stage.
+    // stage), remove dispatch_case_agent so the agent doesn't call it again.
     if (stage !== 'created') {
       allowed.delete('dispatch_case_agent')
-    }
-
-    // When the case was created from an intent selection card, remove propose_cases
-    // entirely — the user already made their choice. Prompt-based guards are not
-    // reliable enough for this critical path.
-    if (this.bootstrapNewCase) {
-      allowed.delete('propose_cases')
     }
 
     return allTools.filter((t) => allowed.has(t.name))

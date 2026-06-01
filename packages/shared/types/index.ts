@@ -378,7 +378,6 @@ export type SSEEventType =
   | 'case_status'
   | 'human_task_created'
   | 'form_request'
-  | 'interaction_proposed'
   | 'finalized'
   | 'message_stop'
   | 'withheld'
@@ -389,13 +388,12 @@ export type SSEEventType =
   | 'sub_agent_complete'
   | 'sub_agent_error'
   | 'core_agent_progress'
-  | 'clarification'
   | 'policy_blocked'
   | 'retry_pending'
   | 'escalated'
   | 'error'
 
-/** Option presented in a propose_interaction card. */
+/** Option presented in an interaction card. */
 export interface InteractionOption {
   id: string
   label: string

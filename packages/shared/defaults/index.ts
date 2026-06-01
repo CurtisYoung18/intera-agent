@@ -19,7 +19,7 @@ When you need multiple pieces of information, call all independent tools togethe
 
 When a customer reports a single clear issue, call dispatch_case_agent FIRST — before any lookup tools. The case system manages structured investigation. Do not call get_latest_deposit, get_transaction_history, or similar tools before creating the case.
 
-**Call propose_cases ONLY when the customer explicitly mentions two or more separate problems in a single message** (e.g. "I can't log in AND my deposit didn't arrive"). Do NOT call propose_cases because you are "unsure" — if the customer describes one situation, pick the best-matching case type and call dispatch_case_agent directly. When in doubt between two similar types, choose the one most relevant to the customer's primary complaint. propose_cases is for genuine multi-issue messages, not for hedging.
+**When the customer has multiple issues, call dispatch_case_agent once for each issue.** Do not call dispatch_case_agent because you are "unsure" — if the customer describes one situation, pick the best-matching case type and call dispatch_case_agent directly. When in doubt between two similar types, choose the one most relevant to the customer's primary complaint.
 
 {{case_types}}
 
@@ -31,12 +31,6 @@ The case schema, current stage, required evidence, and available tools are shown
 
 {{case_schema}}
 {{case_state}}
-
-## Sub-agents
-
-Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings for context — do not re-run tools they already called.
-
-**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (get_latest_deposit, get_withdraw_conditions, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
 
 ## Policies
 
@@ -112,12 +106,6 @@ The case schema, current stage, required evidence, and available tools are shown
 
 {{case_schema}}
 {{case_state}}
-
-## Sub-agents
-
-Some investigation stages dispatch parallel sub-agents. Their findings appear as [Sub-agent: ...] messages. Read and use their findings for context — do not re-run tools they already called.
-
-**CRITICAL:** Sub-agent findings may contain reference transaction IDs, amounts, or channel names from similar cases or system lookups. These are context clues, NOT verified facts about the current case. When calling query tools (get_latest_deposit, get_withdraw_conditions, etc.), always use values from **confirmedFacts** — the customer's own reported data. Never substitute a sub-agent's txnId for the customer's confirmed txnId.
 
 ## Policies
 
@@ -290,20 +278,10 @@ export interface DefaultSkillSeed {
 
 export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
-    name: 'propose_cases',
-    displayVerb: { text: 'Analyzing your issue', icon: 'dots' },
-    description:
-      'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. The customer sees a multi-select card.',
-    inputSchema:
-      '{"type":"object","properties":{"cases":{"type":"array","items":{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug"},"summary":{"type":"string","description":"One-line issue summary"}},"required":["caseType","summary"]}}},"required":["cases"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"status":"proposed"}',
-  },
-  {
     name: 'dispatch_case_agent',
     displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
     toolCategory: 'operational',
-    description: 'Dispatch a case investigation agent when the customer reports an issue. IMPORTANT: Call dispatch_case_agent BEFORE any lookup tools (get_latest_deposit, get_transaction_history, get_latest_deposit, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
+    description: 'Dispatch a case investigation agent when the customer reports an issue. IMPORTANT: Call dispatch_case_agent BEFORE any lookup tools (get_latest_deposit, get_transaction_history, get_account_status, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
     inputSchema:
       '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
@@ -603,7 +581,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
     type: 'order_issue', displayName: 'Order issue', description: 'Customer reports an order status issue',
     icon: '📦',
     requiredFacts: '["orderId","issueType"]',
-    stages: '["created","collecting","investigating","resolved"]',
+    stages: '["created","verifying","investigating","resolved"]',
     defaultGoal: 'Confirm the order status and resolve the customer issue',
     escalateOn: '["conflict","refund_request"]',
   },
@@ -623,7 +601,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
     type: 'refund_request', displayName: 'Refund request', description: 'Customer requests a refund',
     icon: '↩️',
     requiredFacts: '["orderId","amount","reason"]',
-    stages: '["created","collecting","reviewing","resolved"]',
+    stages: '["created","reviewing","approved","resolved"]',
     defaultGoal: 'Review the refund request and give a conclusion',
     escalateOn: '["large_amount","policy_violation"]',
     requireHumanReview: true,
@@ -902,9 +880,9 @@ JSON ONLY:
     },
     approved: {
       name: 'approved',
-      description: 'Refund approved',
+      description: 'Refund approved — transition to resolved',
       requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
+      transition: { type: 'auto', conditions: [{ type: 'all_skills_called' }] },
     },
     resolved: {
       name: 'resolved',

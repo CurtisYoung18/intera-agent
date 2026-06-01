@@ -7,7 +7,6 @@ import type { AssistantMessage, LoopResult, Message } from '@intera/shared/types
 /** Tools allowed in discovery mode (no active case). */
 const CORE_ALLOWED_TOOLS = new Set([
   'dispatch_case_agent',
-  'propose_cases',
 ])
 
 function isCoreAllowed(name: string): boolean {
@@ -79,17 +78,6 @@ export class DiscoveryStrategy implements ExecutionStrategy {
             caseStatus: 'created',
             transition: 'next_turn',
             reason: 'Case created, transitioning to case mode',
-          } satisfies LoopResult,
-        }
-
-      case 'propose_cases':
-        return {
-          type: 'handled',
-          result: {
-            messages: [],
-            caseStatus: 'created',
-            transition: 'next_turn',
-            reason: 'Proposed case types for user clarification',
           } satisfies LoopResult,
         }
 

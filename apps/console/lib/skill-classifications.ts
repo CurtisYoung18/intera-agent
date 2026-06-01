@@ -5,7 +5,6 @@
 /** System Tools — engine-managed, READ-ONLY. The agent loop handles these directly. */
 export const SYSTEM_SKILL_NAMES = new Set([
   'dispatch_case_agent',
-  'propose_cases',
   'finalize_case',
   'finalize_sub_agent',
   'create_human_task',

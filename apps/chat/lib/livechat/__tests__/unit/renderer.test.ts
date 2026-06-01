@@ -115,16 +115,6 @@ describe('LiveChatRenderer', () => {
     })
   })
 
-  describe('interaction_proposed', () => {
-    it('returns send_quick_replies', () => {
-      const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('interaction_proposed', { options: [{ id: 'a', label: 'A' }] }), makeCtx())
-      const a = actions[0]!
-      expect(a.type).toBe('send_quick_replies')
-      expect((a as { type: 'send_quick_replies'; options: Array<{ id: string }> }).options[0]!.id).toBe('a')
-    })
-  })
-
   describe('form_request', () => {
     it('returns send_card with webview button for Moments', () => {
       const r = new LiveChatRenderer(true)
@@ -135,22 +125,6 @@ describe('LiveChatRenderer', () => {
       expect(card.title).toBe('Information Required')
       expect(card.buttons[0]!.type).toBe('webview')
       expect(card.buttons[0]!.url).toContain('view=form')
-    })
-  })
-
-  describe('clarification', () => {
-    it('returns quick_replies for case selection', () => {
-      const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('clarification', { cases: [{ caseType: 'deposit', summary: 'Deposit Issue' }] }), makeCtx())
-      const a = actions[0]!
-      expect(a.type).toBe('send_quick_replies')
-      expect((a as { options: Array<{ label: string }> }).options[0]!.label).toBe('Deposit Issue')
-    })
-
-    it('returns noop for empty cases', () => {
-      const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('clarification', { cases: [] }), makeCtx())
-      expect(actions[0]!.type).toBe('noop')
     })
   })
 

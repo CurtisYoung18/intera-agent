@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
           }
           const payload: Record<string, unknown> = { optionId }
           if (input) payload.input = input
-          userMessage = `Tool propose_interaction result: ${JSON.stringify(payload)}`
+          userMessage = `Tool request_user_input result: ${JSON.stringify(payload)}`
           console.log(`[Intera] Interaction resolved for case ${resolvedCaseId}: option=${optionId}`)
         }
 
@@ -482,13 +482,12 @@ export async function POST(request: NextRequest) {
             resolvedCaseId = newCase.id
             createdCaseForIntent = true
 
-            // Rewrite userMessage so the agent doesn't re-trigger propose_cases
-            // on the original multi-intent text. The agent sees the selected case
-            // type and the original details, but is scoped to a single case.
+            // Rewrite userMessage to scope the agent to the single selected case type.
+            // The agent sees the selected case type and the original details.
             userMessage =
               `[Intent selected: ${bodyCaseType}] ` +
               `The customer already chose "${bodyCaseType}" from the intent card. ` +
-              `Handle ONLY this case type. Do NOT call propose_cases. ` +
+              `Handle ONLY this case type. ` +
               `Original message: "${userMessage}"`
 
             sendEvent({
@@ -516,7 +515,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (bodyCaseType) {
-          systemPrompt += `\n\n[Manual Case Type]: The user has already selected case type "${bodyCaseType}" from the intent clarification card. Do NOT call propose_cases — the user already made their choice. Proceed directly with this case type. If the original message mentions other issues, ignore them unless the customer brings them up again.`
+          systemPrompt += `\n\n[Manual Case Type]: The user has already selected case type "${bodyCaseType}" from the intent clarification card. The user already made their choice. Proceed directly with this case type. If the original message mentions other issues, ignore them unless the customer brings them up again.`
         }
 
         // Chat UI binds SSE events to lane.caseId via case_created.

@@ -15,7 +15,6 @@ const TERMINAL_TOOLS = new Set([
   'create_human_task',
   'finalize_case',
   'request_user_input',
-  'propose_cases',
   'finalize_consultation',
 ])
 

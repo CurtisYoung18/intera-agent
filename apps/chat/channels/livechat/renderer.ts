@@ -63,22 +63,6 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         }
       }
 
-      // ── interaction_proposed: { caseId, title, description, options, multiSelect } ──
-      case 'interaction_proposed': {
-        const d = event.data as {
-          caseId?: string
-          title?: string
-          description?: string
-          options?: Array<{ id: string; label: string; description?: string; inputType?: 'none' | 'text'; inputPlaceholder?: string }>
-          multiSelect?: boolean
-        }
-        return {
-          type: 'send_quick_replies',
-          text: d.title ?? d.description ?? 'Please select:',
-          options: (d.options ?? []).map(o => ({ id: o.id, label: o.label })),
-        }
-      }
-
       // ── form_request: { caseId, title, description, fields } ──
       // Renders as a card with webview button → Moments iframe form.
       case 'form_request': {
@@ -112,17 +96,6 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
               url: `${baseUrl}?${params.toString()}`,
             }],
           },
-        }
-      }
-
-      // ── clarification: { cases: Array<{ caseType, summary }> } ──
-      case 'clarification': {
-        const d = event.data as { cases?: Array<{ caseType: string; summary: string }> }
-        if (!d.cases?.length) return { type: 'noop' }
-        return {
-          type: 'send_quick_replies',
-          text: 'Please select your issue type:',
-          options: d.cases.map((c) => ({ id: c.caseType, label: c.summary })),
         }
       }
 

@@ -77,7 +77,7 @@ export async function POST(
     }
     const payload: Record<string, unknown> = { optionId }
     if (input) payload.input = input
-    content = `Tool propose_interaction result: ${JSON.stringify(payload)}`
+    content = `Tool request_user_input result: ${JSON.stringify(payload)}`
   } else if (resumeTrigger && !message) {
     // Human task resume — resolve via DB then inject
     // (Actual DB lookup happens inside the stream route's maybeInjectHumanTaskResume)

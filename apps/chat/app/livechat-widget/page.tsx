@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import type { WidgetPayload, StatusTrackStep, InteractionOption, FormField } from '@/lib/livechat/types'
+import type { WidgetPayload, StatusTrackStep, FormField } from '@/lib/livechat/types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +18,6 @@ interface AppState {
   caseId: string
   chatId: string
   steps: StatusTrackStep[]
-  options: InteractionOption[]
   fields: FormField[]
   template: string
   renderData: unknown
@@ -29,7 +28,6 @@ const INITIAL_STATE: AppState = {
   caseId: '',
   chatId: '',
   steps: [],
-  options: [],
   fields: [],
   template: '',
   renderData: null,
@@ -169,67 +167,6 @@ function StatusTrack({ steps }: { steps: StatusTrackStep[] }) {
           </motion.div>
         ))}
       </AnimatePresence>
-    </div>
-  )
-}
-
-// ── OptionList View ──────────────────────────────────────────────────────────
-
-function OptionList({
-  caseId,
-  options,
-  onSubmit,
-}: {
-  caseId: string
-  options: InteractionOption[]
-  onSubmit: () => void
-}) {
-  const [textInputs, setTextInputs] = useState<Record<string, string>>({})
-
-  const handleSelect = (opt: InteractionOption) => {
-    const input = opt.inputType === 'text' ? (textInputs[opt.id] ?? '') : undefined
-    sendToLiveChat('intera_interaction_submit', { caseId, optionId: opt.id, input })
-    onSubmit()
-  }
-
-  return (
-    <div className="p-3 space-y-2">
-      {options.map((opt) => (
-        <div key={opt.id} className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
-          <button
-            onClick={() => opt.inputType !== 'text' && handleSelect(opt)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-gray-800 truncate">{opt.label}</p>
-              {opt.description && (
-                <p className="text-[11px] text-gray-400 truncate">{opt.description}</p>
-              )}
-            </div>
-            <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-          {opt.inputType === 'text' && (
-            <div className="px-3 pb-2.5 space-y-2 border-t border-gray-50">
-              <input
-                type="text"
-                placeholder={opt.inputPlaceholder ?? 'Enter...'}
-                value={textInputs[opt.id] ?? ''}
-                onChange={(e) => setTextInputs(prev => ({ ...prev, [opt.id]: e.target.value }))}
-                className="w-full px-2.5 py-1.5 text-[12px] border border-gray-200 rounded-lg outline-none focus:border-indigo-300"
-              />
-              <button
-                onClick={() => handleSelect(opt)}
-                disabled={!(textInputs[opt.id] ?? '').trim()}
-                className="w-full py-1.5 text-[12px] font-semibold text-white bg-indigo-500 rounded-lg disabled:opacity-40"
-              >
-                Submit
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
     </div>
   )
 }
@@ -509,7 +446,6 @@ export default function LiveChatWidget() {
         caseId,
         chatId,
         steps: [],
-        options: [],
         fields: fields.map(f => ({ id: f.id, type: f.type as FormField['type'], label: f.label, required: f.required, options: f.options, placeholder: f.placeholder })),
         template: title,
         renderData: null,

@@ -194,7 +194,7 @@ export const en: Record<string, string> = {
 		'**Single clear issue → dispatch_case_agent** — when the LLM detects one unambiguous problem (e.g. "充值500元没到账，单号TX123"), it calls `dispatch_case_agent(caseType, summary)`. A Case row is created, the state machine begins, and sub-agents are dispatched per the stage config.',
 
 	'guide.doc.intent.li3':
-		'**Multiple issues → propose_cases** — when the user mentions several distinct problems, the LLM calls `propose_cases(cases[])` with candidate CaseTypes. The frontend renders a multi-select card. After the user picks, each selected type spawns its own Case in parallel Split mode.',
+		'**Multiple issues → dispatch_case_agent per issue** — when the user mentions several distinct problems, call dispatch_case_agent once for each issue. Each call spawns its own Case with independent investigation.',
 
 	'guide.doc.intent.li4':
 		'**Hand-off hygiene** — shoppers keep talking to Core while deputies churn; deputies cannot be cancelled mid-flight but chatter continues uninterrupted. Sub-agent results flow back into CaseMemory for the Core to synthesize.',
@@ -211,7 +211,7 @@ export const en: Record<string, string> = {
     'Use this appendix when onboarding engineers or auditors: concrete paths, verbs, durations, parsers. Narrative explanations above purposely avoided file names.',
 
   'guide.doc.codes.httpTitle': 'Primary HTTP boundaries',
-  'guide.doc.codes.h1': '`POST …/messages — Core Agent routes conversation via built-in `propose_cases` (multi-intent clarification card) and `dispatch_case_agent` (case creation + sub-agent dispatch) tools. No separate intent classifier endpoint.',
+  'guide.doc.codes.h1': '`POST …/messages — Core Agent routes conversation via built-in `dispatch_case_agent` (case creation + sub-agent dispatch) tool. No separate intent classifier endpoint.',
 
   'guide.doc.codes.h2': '`POST …/messages` — core streaming orchestration; emits `case_created`, tool stream, dossier churn.',
 
@@ -234,13 +234,13 @@ export const en: Record<string, string> = {
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* — investigator UX & timeline readers',
   'guide.doc.codes.p10': 'packages/shared/types & defaults — schemas shared chat ↔ console',
 
-	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 propose_cases（多意图澄清卡片）和 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
+	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
 
 	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
 	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per customer; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
 
-	'guide.doc.codes.ir2': 'propose_cases tool: presents multi-select card when multiple intents detected. dispatch_case_agent tool: creates case row, dispatches sub-agents per stage config, transitions state machine.',
+	'guide.doc.codes.ir2': 'dispatch_case_agent tool: creates case row, dispatches sub-agents per stage config, transitions state machine. For multiple issues, call once per issue.',
 
 	'guide.doc.codes.ir3': 'QA/FAQ mode: Agent returns plain text without calling any case tool — no case created, light dialogue continues.',
 
@@ -262,7 +262,7 @@ export const en: Record<string, string> = {
 	'guide.intentDiag.qa.body': 'LLM returns plain text — no tool_use. No Case created. Perfect for hellos, FAQs, and exploratory chatter.',
 	'guide.intentDiag.caseBranch.title': 'Create Case (operational)',
 	'guide.intentDiag.caseBranch.body': 'LLM calls built-in routing tools based on intent clarity.',
-	'guide.intentDiag.caseBranch.grey': 'Multiple intents → `propose_cases(cases[])` — multi-select card shown to user for confirmation.',
+	'guide.intentDiag.caseBranch.grey': 'Multiple issues → call `dispatch_case_agent` once per issue — one Case per problem.',
 	'guide.intentDiag.caseBranch.green': 'Single clear issue → `dispatch_case_agent(caseType, summary)` — Case row created, state machine starts, sub-agents dispatched.',
 	'guide.intentDiag.s3.title': 'Sub-agents pick up the work',
 	'guide.intentDiag.s3.body':
@@ -1332,7 +1332,7 @@ export const zh: Record<string, string> = {
 		'**单一明确问题 → dispatch_case_agent** —— 当 LLM 识别到一个明确的问题（如"充值500元没到账，单号TX123"），调用 `dispatch_case_agent(caseType, summary)`。Case 行创建，状态机启动，子Agent 按阶段配置派遣。',
 
 	'guide.doc.intent.li3':
-		'**多个独立问题 → propose_cases** —— 用户提到多个独立问题，LLM 调用 `propose_cases(cases[])` 列出候选 CaseType。前端渲染多选卡片。用户选择后，每个选中类型独立建 Case，进入并行 Split 模式。',
+		'**多个独立问题 → 逐个调用 dispatch_case_agent** —— 用户提到多个独立问题时，对每个问题分别调用 dispatch_case_agent。每次调用独立建 Case 进行调查。',
 
 	'guide.doc.intent.li4':
 		'**并行不中断** —— 顾客与 Core 对话的同时子Agent 在后台执行；子Agent 不可中途取消但对话不受影响。子Agent 结果回流到 CaseMemory 供 Core 综合决策。',
@@ -1347,7 +1347,7 @@ export const zh: Record<string, string> = {
   'guide.doc.codes.lead':
     '需要对接或审计时查阅：精确的模块路径、HTTP 动词、阈值、降级策略都在这里，正文刻意避免堆栈。',
   'guide.doc.codes.httpTitle': 'HTTP 边界',
-  'guide.doc.codes.h1': '`POST …/messages —— Core Agent 通过内置 propose_cases（多意图澄清卡片）和 dispatch_case_agent（建案+派遣子Agent）工具自主路由，无需独立意图分类端点。',
+  'guide.doc.codes.h1': '`POST …/messages —— Core Agent 通过内置 dispatch_case_agent（建案+派遣子Agent）工具自主路由，无需独立意图分类端点。',
   'guide.doc.codes.h2': '`POST …/messages` —— 主 SSE 管道，可发 `case_created` 与工具流水。',
   'guide.doc.codes.h3': '`POST …/human-tasks/[id]/resolve` —— 人工结构化回执 → resume。',
   'guide.doc.codes.h4': '`POST …/human-chat` —— 坐席 harness，可与顾客端共用核心循环。',
@@ -1366,13 +1366,13 @@ export const zh: Record<string, string> = {
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* —— 案件运营 UI',
   'guide.doc.codes.p10': 'packages/shared/types & defaults',
 
-	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 propose_cases（多意图澄清卡片）和 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
+	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
 
 	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
 	'guide.doc.codes.ir1': 'CaseType catalogue loaded from DB with 30s TTL per customer; invalidated via config-changed API. Agent decides route dynamically via tool-use — no pre-classification step.',
 
-	'guide.doc.codes.ir2': 'propose_cases tool: presents multi-select card when multiple intents detected. dispatch_case_agent tool: creates case row, dispatches sub-agents per stage config, transitions state machine.',
+	'guide.doc.codes.ir2': 'dispatch_case_agent tool: creates case row, dispatches sub-agents per stage config, transitions state machine. For multiple issues, call once per issue.',
 
 	'guide.doc.codes.ir3': 'QA/FAQ mode: Agent returns plain text without calling any case tool — no case created, light dialogue continues.',
 
@@ -1393,7 +1393,7 @@ export const zh: Record<string, string> = {
 	'guide.intentDiag.qa.body': 'LLM 返回纯文本 —— 无 tool_use。不建 Case。适合问候、FAQ、闲聊。',
 	'guide.intentDiag.caseBranch.title': '创建 Case（运营型）',
 	'guide.intentDiag.caseBranch.body': 'LLM 根据意图清晰度调用不同内置路由工具。',
-	'guide.intentDiag.caseBranch.grey': '多意图模糊 → `propose_cases(cases[])` —— 推送多选卡片请用户确认。',
+	'guide.intentDiag.caseBranch.grey': '多个问题 → 逐个调用 `dispatch_case_agent` —— 每个问题独立建 Case。',
 	'guide.intentDiag.caseBranch.green': '单一明确问题 → `dispatch_case_agent(caseType, summary)` —— 建 Case、启动状态机、派遣子Agent。',
 	'guide.intentDiag.s3.title': '子Agent 接棒执行',
 	'guide.intentDiag.s3.body':

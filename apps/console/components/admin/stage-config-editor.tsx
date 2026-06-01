@@ -32,16 +32,6 @@ interface TransitionRule {
   evaluationPrompt?: string
 }
 
-interface SubAgentCfg {
-  name: string
-  model: string
-  systemPrompt: string
-  skills: string[]
-  taskTemplate: string
-  maxIterations?: number
-  parallel: boolean
-}
-
 interface StageCfg {
   name: string
   description?: string
@@ -54,7 +44,6 @@ interface StageCfg {
   guardrails?: StageGuardrail[]
   evidenceRequirements?: EvidenceReq[]
   transition?: TransitionRule
-  subAgents?: SubAgentCfg[]
 }
 
 interface Props {
@@ -199,7 +188,6 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
     evidence: false,
     guardrails: false,
     transition: false,
-    subagents: false,
   })
 
   const toggleSection = (key: string) =>
@@ -677,149 +665,6 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                       </label>
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* ── Sub-Agents ─────────────────────────────────── */}
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 overflow-hidden">
-              <div className="px-4">
-                <SectionHeader
-                  icon={Bot}
-                  title="Sub-Agents"
-                  badge={cfg.subAgents?.length ? `${cfg.subAgents.length} agents` : undefined}
-                  expanded={expandedSections.subagents}
-                  onToggle={() => toggleSection('subagents')}
-                  colorClass="text-gold"
-                />
-              </div>
-              {expandedSections.subagents && (
-                <div className="px-4 pb-4 space-y-3 border-t border-[var(--border-subtle)]/50 pt-3">
-                  {(cfg.subAgents || []).map((sa, i) => (
-                    <div
-                      key={i}
-                      className="p-3 rounded-lg bg-white/40 border border-[var(--border-subtle)] space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Bot className="w-3.5 h-3.5 text-gold" />
-                          <span className="text-[12px] font-medium text-[var(--mist)]">{sa.name || 'Unnamed Agent'}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-1.5 text-[11px] text-[var(--fog)]">
-                            <input
-                              type="checkbox"
-                              checked={sa.parallel}
-                              onChange={(e) => {
-                                const next = [...(cfg.subAgents || [])]
-                                next[i] = { ...next[i], parallel: e.target.checked }
-                                updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                              }}
-                              className="w-3 h-3 rounded accent-indigo"
-                            />
-                            Parallel
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = (cfg.subAgents || []).filter((_, j) => j !== i)
-                              updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                            }}
-                            className="p-1 text-[var(--smoke)] hover:text-vermillion transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="space-y-0.5">
-                          <span className="text-[10px] text-[var(--fog)]">Name</span>
-                          <MiniInput
-                            value={sa.name}
-                            onChange={(v) => {
-                              const next = [...(cfg.subAgents || [])]
-                              next[i] = { ...next[i], name: v }
-                              updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                            }}
-                            placeholder="order_investigator"
-                          />
-                        </label>
-                        <label className="space-y-0.5">
-                          <span className="text-[10px] text-[var(--fog)]">Model</span>
-                          <select
-                            value={sa.model}
-                            onChange={(e) => {
-                              const next = [...(cfg.subAgents || [])]
-                              next[i] = { ...next[i], model: e.target.value }
-                              updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                            }}
-                            className="glass-input-console text-[12px] py-1.5"
-                          >
-                            {availableModels.map((m) => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      <label className="space-y-0.5 block">
-                        <span className="text-[10px] text-[var(--fog)]">System Prompt</span>
-                        <MiniTextarea
-                          value={sa.systemPrompt}
-                          onChange={(v) => {
-                            const next = [...(cfg.subAgents || [])]
-                            next[i] = { ...next[i], systemPrompt: v }
-                            updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                          }}
-                          placeholder="You are an investigator agent..."
-                          rows={2}
-                        />
-                      </label>
-                      <label className="space-y-0.5 block">
-                        <span className="text-[10px] text-[var(--fog)]">Task Template</span>
-                        <MiniTextarea
-                          value={sa.taskTemplate}
-                          onChange={(v) => {
-                            const next = [...(cfg.subAgents || [])]
-                            next[i] = { ...next[i], taskTemplate: v }
-                            updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                          }}
-                          placeholder="Investigate {{caseId}} for stage {{stage}}..."
-                          rows={2}
-                        />
-                      </label>
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-[var(--fog)]">Skills</span>
-                        <ChipInput
-                          values={sa.skills || []}
-                          onChange={(v) => {
-                            const next = [...(cfg.subAgents || [])]
-                            next[i] = { ...next[i], skills: v }
-                            updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                          }}
-                          suggestions={allSkills}
-                          placeholder="Add skill..."
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = [...(cfg.subAgents || []), {
-                        name: '',
-                        model: availableModels[0] || 'MiniMax-M2.7-highspeed',
-                        systemPrompt: '',
-                        skills: [],
-                        taskTemplate: '',
-                        maxIterations: 3,
-                        parallel: true,
-                      }]
-                      updateStage(activeStage, { subAgents: next }, stageConfigs, onChange)
-                    }}
-                    className="w-full py-2 rounded-lg text-[11px] text-[var(--fog)] border border-dashed border-[var(--border-subtle)] hover:border-indigo/30 hover:text-indigo transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-3 h-3" /> Add Sub-Agent
-                  </button>
                 </div>
               )}
             </div>

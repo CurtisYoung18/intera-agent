@@ -10,7 +10,6 @@ import { CheckCircle2, XCircle, Loader2, Circle, ClipboardList } from 'lucide-re
 import GlassCard from '@intera/shared/ui/glass-card'
 import FormCard from './form-card'
 import IntentClarificationCard from './intent-clarification-card'
-import InteractionCard from './interaction-card'
 import StreamingText from '@/components/ui/streaming-text'
 
 // ─── Shared message shape ───
@@ -26,7 +25,6 @@ export interface MessageShape {
     | 'form_submitted'
     | 'intent_clarification'
     | 'intent_resolved'
-    | 'interaction_proposed'
     | 'interaction_resolved'
     | 'todo_plan'
   content: string
@@ -57,7 +55,6 @@ export interface MessageShape {
     labelsByType: Record<string, string>
     locale: 'zh' | 'en'
   }
-  interactionOptions?: any
   todos?: import('@/app/chat/use-intera-chat').TodoItem[]
   timestamp: string
 }
@@ -122,7 +119,7 @@ function MessageBubble({
   onIntentConfirm,
   onInteractionSelect,
 }: MessageBubbleProps) {
-  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, toolResult, formData, intentOptions, intentResolution, interactionOptions, relatedCaseId } = msg
+  const { role, msgType, content, isStreaming, thinking, thinkingStartedAt, toolStatus, toolName, toolVerb, toolResult, formData, intentOptions, intentResolution, relatedCaseId } = msg
 
   if (msgType === 'tool_call') {
     return <ToolCallBubble toolName={toolName} toolVerb={toolVerb} status={toolStatus} toolResult={toolResult} timestamp={msg.timestamp} />
@@ -207,24 +204,6 @@ function MessageBubble({
 
   if (msgType === 'intent_resolved' && intentResolution) {
     return <IntentResolvedBubble intentResolution={intentResolution} timestamp={msg.timestamp} />
-  }
-
-  if (msgType === 'interaction_proposed' && interactionOptions) {
-    const locale: 'zh' | 'en' = priorUserContent && /[一-鿿]/.test(priorUserContent) ? 'zh' : 'en'
-    return (
-      <div className="flex flex-col items-start">
-        <div className="max-w-[95%] animate-message-in">
-          <InteractionCard
-            locale={locale}
-            title={interactionOptions.title || ''}
-            description={interactionOptions.description || ''}
-            options={interactionOptions}
-            multiSelect={!!interactionOptions.multiSelect}
-            onSelect={(optionId, input) => void onInteractionSelect?.(msg.id, optionId, input)}
-          />
-        </div>
-      </div>
-    )
   }
 
   if (msgType === 'interaction_resolved') {
