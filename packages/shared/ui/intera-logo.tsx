@@ -1,46 +1,41 @@
 'use client'
-import { useEffect, useRef, useCallback, useState, useLayoutEffect } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 
 interface Props {
   collapsed?: boolean
   size?: number
 }
 
-const LETTERS = ['n', 't', 'e', 'r', 'a'] as const
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+const CYCLE_MS = 5000
 
-// ── Measure character widths (memoised per font-size) ──
+// ── Measure ──
 const widthCache = new Map<number, Record<string, number>>()
 
-function measureWidth(size: number, ch: string): number {
-  let cache = widthCache.get(size)
-  if (!cache) { cache = {}; widthCache.set(size, cache) }
-  if (cache[ch] !== undefined) return cache[ch]
+function measure(c: string, px: number): number {
+  let cache = widthCache.get(px)
+  if (!cache) { cache = {}; widthCache.set(px, cache) }
+  if (cache[c] !== undefined) return cache[c]
   const s = document.createElement('span')
-  s.style.cssText = `font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:500;font-size:${size}px;position:fixed;visibility:hidden;top:0;left:0;white-space:nowrap`
-  s.textContent = ch
+  s.style.cssText = `font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:500;font-size:${px}px;position:fixed;visibility:hidden;top:0;left:0`
+  s.textContent = c
   document.body.appendChild(s)
   const w = s.getBoundingClientRect().width
   document.body.removeChild(s)
-  cache[ch] = w
+  cache[c] = w
   return w
 }
 
-function getWidths(size: number): Record<string, number> {
-  const r: Record<string, number> = {}
-  for (const ch of LETTERS) r[ch] = measureWidth(size, ch)
-  return r
-}
-
-// ── Core animation primitive (exactly matching logo-animation.html animL) ──
-function animLetter(
-  el: HTMLSpanElement,
+// ── animL ──
+function animL(
+  el: HTMLElement | null,
   opts: { mw?: number; op?: number; tx?: number; d?: string; delay?: number },
 ) {
+  if (!el) return
   const { mw, op, tx = 0, d = '500ms', delay = 0 } = opts
   el.style.transition = [
     mw !== undefined ? `max-width ${d} ${EASE} ${delay}ms` : '',
-    `opacity 320ms ease ${delay}ms`,
+    `opacity 330ms ease ${delay}ms`,
     `transform ${d} ${EASE} ${delay}ms`,
   ].filter(Boolean).join(', ')
   requestAnimationFrame(() => {
@@ -51,79 +46,115 @@ function animLetter(
 }
 
 // ── Component ──
-export default function InteraLogo({ collapsed = false, size = 22 }: Props) {
+export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
   const letterRefs = useRef<(HTMLSpanElement | null)[]>([])
-  // tick: forces React to create fresh DOM nodes → refs point to live elements
+  const iRef = useRef<HTMLSpanElement | null>(null)
+  const [phase, setPhase] = useState(0)
   const [tick, setTick] = useState(0)
+  const phaseRef = useRef(0)
+  const mounted = useRef(false)
   const prevCollapsed = useRef(collapsed)
 
-  const animate = useCallback(
-    (open: boolean, instant = false) => {
-      const widths = getWidths(size)
-      const d = instant ? '0ms' : '500ms'
-      const refs = letterRefs.current
-      LETTERS.forEach((ch, i) => {
-        const el = refs[i]
-        if (!el) return
-        const w = widths[ch]
-        if (open) {
-          animLetter(el, { mw: w, op: 1, tx: 0, d, delay: i * 30 })
-        } else {
-          animLetter(el, { mw: 0, op: 0, tx: -3, d, delay: (LETTERS.length - 1 - i) * 20 })
-        }
-      })
+  const applyPhase = useCallback(
+    (p: number) => {
+      const W = { I: measure('I', size), A: measure('A', size), N: measure('N', size), T: measure('T', size), E: measure('E', size), R: measure('R', size), A2: measure('A', size) }
+      const [a, n, t, e, r, aLast] = letterRefs.current
+
+      if (p === 0) {
+        animL(iRef.current, { op: 1, tx: 0 })
+        animL(a, { mw: 0, op: 0, tx: 0 })
+        animL(n, { mw: W.N, op: 1, tx: 0, delay: 0 })
+        animL(t, { mw: W.T, op: 1, tx: 0, delay: 30 })
+        animL(e, { mw: W.E, op: 1, tx: 0, delay: 55 })
+        animL(r, { mw: W.R, op: 1, tx: 0, delay: 80 })
+        animL(aLast, { mw: W.A2, op: 1, tx: 0, delay: 105 })
+      } else if (p === 1) {
+        animL(iRef.current, { op: 1, tx: 0, delay: 80 })
+        animL(a, { mw: W.A + 2, op: 1, tx: 0, delay: 110 })
+        animL(n, { mw: 0, op: 0, tx: 0, delay: 0 })
+        animL(t, { mw: 0, op: 0, tx: 0, delay: 20 })
+        animL(e, { mw: 0, op: 0, tx: 0, delay: 38 })
+        animL(r, { mw: 0, op: 0, tx: 0, delay: 55 })
+        animL(aLast, { mw: 0, op: 0, tx: 0, delay: 70 })
+      } else {
+        animL(iRef.current, { op: 1, tx: W.A + 2, delay: 50 })
+        animL(a, { mw: W.A + 2, op: 1, tx: -(W.I + 2), delay: 50 })
+        animL(n, { mw: 0, op: 0, tx: 0 })
+        animL(t, { mw: 0, op: 0, tx: 0 })
+        animL(e, { mw: 0, op: 0, tx: 0 })
+        animL(r, { mw: 0, op: 0, tx: 0 })
+        animL(aLast, { mw: 0, op: 0, tx: 0 })
+      }
     },
     [size],
   )
 
-  // Animate on mount (stagger reveal) and on collapsed changes
+  // Apply phase after tick remounts DOM
   useEffect(() => {
-    const justMounted = prevCollapsed.current === collapsed
-    prevCollapsed.current = collapsed
+    if (!mounted.current) return
+    applyPhase(phase)
+  }, [tick]) // eslint-disable-line
 
-    if (justMounted) {
-      // Initial mount: reveal after delay if not collapsed
-      if (!collapsed) {
-        const id = setTimeout(() => animate(true), 400)
-        return () => clearTimeout(id)
-      }
-    } else {
-      // collapsed prop changed: animate immediately
-      animate(!collapsed)
-      setTick((t) => t + 1)
+  // Mount
+  useEffect(() => {
+    mounted.current = true
+    if (!collapsed) {
+      const id = setTimeout(() => { setTick((t) => t + 1) }, 400)
+      return () => clearTimeout(id)
     }
-  }, [collapsed, animate])
+  }, []) // eslint-disable-line
 
-  // Click to replay
-  const handleClick = useCallback(() => {
-    animate(false)
+  // Auto-cycle
+  useEffect(() => {
+    if (collapsed || !mounted.current) return
+    const interval = setInterval(() => {
+      const next = ((phaseRef.current + 1) % 3) as 0 | 1 | 2
+      phaseRef.current = next
+      setPhase(next)
+      setTick((t) => t + 1)
+    }, CYCLE_MS)
+    return () => clearInterval(interval)
+  }, [collapsed])
+
+  // Collapsed toggle
+  useEffect(() => {
+    if (!mounted.current) return
+    if (prevCollapsed.current === collapsed) return
+    prevCollapsed.current = collapsed
+    if (!collapsed) {
+      phaseRef.current = 0
+      setPhase(0)
+      setTimeout(() => setTick((t) => t + 1), 150)
+    } else {
+      phaseRef.current = 0
+      setPhase(0)
+    }
     setTick((t) => t + 1)
-    setTimeout(() => animate(true), 520)
-  }, [animate])
+  }, [collapsed])
 
-  const widths = getWidths(size)
+  // Click
+  const handleClick = useCallback(() => {
+    if (collapsed) return
+    const next = ((phase + 1) % 3) as 0 | 1 | 2
+    phaseRef.current = next
+    setPhase(next)
+    setTick((t) => t + 1)
+  }, [phase, collapsed])
 
   return (
     <span
       className="intera-logo"
-      style={{ fontSize: size, cursor: 'default', fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontWeight: 500, letterSpacing: '-0.02em', display: 'inline-flex', alignItems: 'baseline', lineHeight: 1, userSelect: 'none' }}
+      style={{ fontSize: size, cursor: collapsed ? 'default' : 'pointer', fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontWeight: 500, letterSpacing: '-0.02em', display: 'inline-flex', alignItems: 'baseline', lineHeight: 1, userSelect: 'none' }}
       aria-label="Intera"
       onClick={handleClick}
       title="Intera"
     >
-      <span style={{ display: 'inline-block' }}>I</span>
-      {LETTERS.map((ch, i) => (
+      <span ref={iRef} style={{ display: 'inline-block', flexShrink: 0 }}>I</span>
+      {['A', 'N', 'T', 'E', 'R', 'A'].map((ch, i) => (
         <span
           key={`${ch}-${tick}-${size}`}
           ref={(el) => { letterRefs.current[i] = el }}
-          style={{
-            display: 'inline-block',
-            maxWidth: 0,
-            opacity: 0,
-            transform: 'translateX(-3px)',
-            whiteSpace: 'pre',
-            overflow: 'hidden',
-          }}
+          style={{ display: 'inline-block', maxWidth: 0, opacity: 0, whiteSpace: 'pre', overflow: 'hidden', flexShrink: 0 }}
         >
           {ch}
         </span>

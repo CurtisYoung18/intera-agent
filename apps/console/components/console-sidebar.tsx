@@ -211,7 +211,7 @@ export default function ConsoleSidebar() {
           ) : (
             <div className="flex flex-col gap-2 px-2">
               <div className="flex items-center gap-2.5 px-2 pt-1">
-                <InteraLogo size={20} />
+                <InteraLogo size={26} />
               </div>
               <div className="flex items-center gap-2">
               <button
