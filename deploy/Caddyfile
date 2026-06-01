@@ -1,0 +1,11 @@
+$DOMAIN {
+    encode gzip
+
+    # SSE 端点：强制立即 flush，关闭缓冲
+    @sse path /api/messages /api/cases/*/stream
+    reverse_proxy @sse localhost:3000 {
+        flush_interval -1
+    }
+
+    reverse_proxy localhost:3000
+}

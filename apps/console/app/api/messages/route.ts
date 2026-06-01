@@ -215,6 +215,13 @@ async function resolveCaseByIntent(
 }
 
 export async function POST(request: NextRequest) {
+  // ── Auth gate (before stream — must return 401, not SSE error event) ──
+  const authOrgId = await resolveOrgFromApiKey(request)
+  const isInternal = !authOrgId && isTrustedInternalCall(request)
+  if (!authOrgId && !isInternal) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -251,15 +258,7 @@ export async function POST(request: NextRequest) {
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
-        // ── Auth gate: orgId from credential, NOT from body ──
-        const authOrgId = await resolveOrgFromApiKey(request)
-        const isInternal = !authOrgId && isTrustedInternalCall(request)
-        if (!authOrgId && !isInternal) {
-          sendEvent({ type: 'error', data: 'Unauthorized — valid API key or internal secret required', timestamp: new Date().toISOString() })
-          controller.close()
-          return
-        }
-        // If body sends a different orgId than the credential, reject (don't silently override)
+        // orgId mismatch check: if body sends a different orgId than the credential
         if (authOrgId && orgId && orgId !== authOrgId) {
           sendEvent({ type: 'error', data: 'orgId mismatch — body orgId must match API key org', timestamp: new Date().toISOString() })
           controller.close()

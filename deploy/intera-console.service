@@ -1,0 +1,20 @@
+[Unit]
+Description=Intera Console (Next standalone)
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=intera
+WorkingDirectory=/home/intera/intera-agent
+EnvironmentFile=/etc/intera/console.env
+ExecStart=/usr/bin/node apps/console/.next/standalone/apps/console/server.js
+Restart=on-failure
+RestartSec=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
