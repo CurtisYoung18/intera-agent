@@ -135,6 +135,7 @@ model Skill {
   renderHints String? // JSON: { livechat?: LivechatRenderHint, "web-chat"?: RenderHint }
 
   guardPhase        String  @default("post") // "pre" | "post"
+  toolCategory      String? // "system_info" | "operational" | null
   isConcurrencySafe Boolean @default(true)
   enabled           Boolean @default(true)
 
@@ -195,7 +196,7 @@ model Case {
   userId     String
   /// Groups all cases that belong to the same chat session.
   /// Generated once per page-load by the frontend and forwarded with every message.
-  chatId     String?
+  chatId     String
 
   type    String
   status  String  @default("created")
@@ -458,6 +459,22 @@ model ChannelHealth {
 
   @@unique([orgId, channel])
   @@map("channel_health")
+}
+
+// ============================================
+// ChatSession — chat-level memory (cross-case)
+// ============================================
+model ChatSession {
+  id             String   @id @default(cuid())
+  chatId         String   @unique
+  orgId          String   @map("org_id") @default("default")
+  confirmedFacts String   @default("{}")
+  summary        String?
+  keyEvents      String   @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("chat_sessions")
 }
 
 // ============================================

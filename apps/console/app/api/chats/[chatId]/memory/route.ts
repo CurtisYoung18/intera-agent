@@ -11,11 +11,8 @@ export async function GET(
   const { chatId } = await params
 
   try {
-    // The [chatId] param is either a real Case.chatId OR a standalone case.id
-    // (chats are keyed by `chatId ?? id` in /api/chats). Resolve both so the
-    // Memory tab works for cases that never got a chatId persisted.
     const chatCases = await prisma.case.findMany({
-      where: { OR: [{ chatId }, { id: chatId }] },
+      where: { chatId },
       select: { id: true, userId: true },
     })
     const userId = chatCases[0]?.userId

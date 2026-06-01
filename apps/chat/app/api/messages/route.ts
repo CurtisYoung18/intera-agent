@@ -479,7 +479,7 @@ export async function POST(request: NextRequest) {
                 userId: resolvedUserId,
                 type: bodyCaseType,
                 status: 'created',
-                chatId: chatId ?? null,
+                chatId,
               },
             })
             resolvedCaseId = newCase.id
@@ -640,7 +640,7 @@ export async function POST(request: NextRequest) {
               userId: resolvedUserId,
               type: inferredCaseTypeForRecord,
               status: 'created',
-              chatId: chatId ?? null,
+              chatId,
             },
           })
         } catch (err) {
@@ -781,7 +781,7 @@ export async function POST(request: NextRequest) {
           systemPrompt,
           coreSystemPrompt,
           caseSchema,
-          chatId: chatId ?? null,
+          chatId,
           bootstrapNewCase,
         })
 
@@ -831,7 +831,7 @@ export async function POST(request: NextRequest) {
             systemPrompt,
             coreSystemPrompt,
             caseSchema,
-            chatId: chatId ?? null,
+            chatId,
             bootstrapNewCase: false,
           })
           // Re-load prior-turn messages for the follow-up loop
@@ -863,7 +863,7 @@ export async function POST(request: NextRequest) {
                 update: { status: result.caseStatus },
                 create: {
                   id: resolvedCaseId, orgId: resolvedCustomerId, userId: resolvedUserId,
-                  type: caseTypeForUpsert, status: result.caseStatus, chatId: chatId ?? null,
+                  type: caseTypeForUpsert, status: result.caseStatus, chatId,
                 },
               })
               await prisma.chatMemory.upsert({
@@ -940,7 +940,7 @@ export async function POST(request: NextRequest) {
                 userId: resolvedUserId,
                 type: caseTypeForUpsert,
                 status: result.caseStatus,
-                chatId: chatId ?? null,
+                chatId,
               },
             })
             await prisma.chatMemory.upsert({

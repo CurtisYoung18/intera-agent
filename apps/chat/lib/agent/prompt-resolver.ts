@@ -32,7 +32,7 @@ function renderCaseTypes(types: PromptContext['case_types']): string {
   const lines = types.map(
     (t) => `- **${t.type}** (${t.displayName}): ${t.description || 'No description'}`
   )
-  return `## Available Case Types\n\nWhen a customer reports an issue, call \`create_case\` with the matching type:\n\n${lines.join('\n')}`
+  return `## Available Case Types\n\nWhen a customer reports an issue, call \`dispatch_case_agent\` with the matching type:\n\n${lines.join('\n')}`
 }
 
 function renderPolicies(policies: PromptContext['active_policies']): string {

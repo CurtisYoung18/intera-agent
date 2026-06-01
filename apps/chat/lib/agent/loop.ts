@@ -12,12 +12,14 @@ import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
-import { ChatMemoryManager } from './memory'
+import { ChatMemoryManager, ChatSessionManager } from './memory'
 import { PolicyEngine } from './policy'
 import { SkillRouter, SOP_INTERNAL_SKILLS } from './skills'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
+import { OrchestratorAgent } from './orchestrator'
+import { generateCaseId } from '@/lib/utils'
 import { microCompact } from './microCompact'
 import { synthesizeMissingToolResults, assertToolResultInvariant } from './tool-result-invariant'
 import { classifyError } from './api/error-classifier'
@@ -292,8 +294,9 @@ export class AgentLoop {
       timestamp: new Date().toISOString(),
     })
 
-    // 2.5 Dispatch dedicated agents on case creation (first stage)
-    await this.startDedicatedAgents(sendEvent)
+    // 2.5 [DEPRECATED] Per-stage sub-agent dispatch removed.
+    // Case agents now run via dispatch_case_agent → Orchestrator background dispatch.
+    // Kept as no-op for backward compat with stream route.
 
     // 3. ReAct loop
     let stopReason: string | null = null
@@ -411,12 +414,12 @@ export class AgentLoop {
 
       // ── StreamingToolExecutor is created BEFORE the stream so tools
       //    can be enqueued incrementally as each tool_use block completes.
-      // NOTE: SOP-internal tools (todo_write / todo_read) and create_case are
+      // NOTE: SOP-internal tools (todo_write / todo_read) and dispatch_case_agent are
       // excluded from live skill_result emission — their executor output is just
       // the empty mock fixture. The real results are emitted manually further
       // down (todo list via processTodoTools, caseId via case_created event).
       const sopInternalNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
-      sopInternalNames.add('create_case')
+      sopInternalNames.add('dispatch_case_agent')
       const toolExecutor = new StreamingToolExecutor(
         this.skillRouter.getToolDefinitions(),
         (toolUse, status, renderHints) => {
@@ -927,6 +930,7 @@ export class AgentLoop {
                     type: resolvedCaseType,
                     status: 'escalated',
                     blocker: `Agent stuck in stage "${this.currentStage}"`,
+                    chatId: this.deps.chatId ?? this.deps.caseId,
                   },
                 })
                 await prisma.humanTask.create({
@@ -1112,6 +1116,7 @@ export class AgentLoop {
                 type: resolvedCaseType,
                 status: 'escalated',
                 blocker: `Policy escalation: ${escalatedReasons}`,
+                chatId: this.deps.chatId ?? this.deps.caseId,
               },
             })
             await prisma.humanTask.create({
@@ -1158,7 +1163,7 @@ export class AgentLoop {
         const todoFailed = toolResults.some(
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
-        const nonSopTools = new Set(['todo_write', 'todo_read', 'create_case', 'request_user_input',
+        const nonSopTools = new Set(['todo_write', 'todo_read', 'dispatch_case_agent', 'request_user_input',
           'propose_cases', 'finalize_case', 'create_human_task', 'propose_interaction', 'finalize_consultation',
           'read_chat_memory', 'read_user_profile'])
         const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
@@ -1234,15 +1239,15 @@ export class AgentLoop {
         continue
       }
 
-      // ── Terminal tool: create_case ─────────────────────────
-      const createCaseResult = toolResults.find(
-        (r) => r.name === 'create_case',
+      // ── Terminal tool: dispatch_case_agent ─────────────────────────
+      const dispatchCaseAgentResult = toolResults.find(
+        (r) => r.name === 'dispatch_case_agent',
       )
-      if (createCaseResult) {
-        const toolInput = createCaseResult.toolUse?.input || {}
+      if (dispatchCaseAgentResult) {
+        const toolInput = dispatchCaseAgentResult.toolUse?.input || {}
         const caseType = String(toolInput.caseType || '')
 
-        if (!this.caseLoop && caseType && isInvestigableCaseType(caseType)) {
+        if (caseType && isInvestigableCaseType(caseType)) {
           try {
             // Load case type from DB to build schema
             const ctRow = await prisma.caseType.findUnique({
@@ -1252,6 +1257,8 @@ export class AgentLoop {
               const stages = (() => { try { return JSON.parse(ctRow.stages) } catch { return [] } })() as string[]
               const requiredFacts = (() => { try { return JSON.parse(ctRow.requiredFacts) } catch { return [] } })() as string[]
               const stageConfigs = (() => { try { return JSON.parse(ctRow.stageConfigs || '{}') } catch { return {} } })() as Record<string, unknown>
+              const executionMode = (((ctRow as any).executionMode === 'sop' ? 'cc' : (ctRow as any).executionMode) as 'stage' | 'cc' | undefined) || 'stage'
+              const allSkills = this.skillRouter.getToolDefinitions()
               const schema: CaseSchemaConfig = {
                 type: ctRow.type, displayName: ctRow.displayName, icon: ctRow.icon,
                 description: ctRow.description || undefined,
@@ -1261,33 +1268,105 @@ export class AgentLoop {
                 defaultGoal: ctRow.defaultGoal,
                 escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
                 requireHumanReview: (ctRow as any).requireHumanReview === true,
-                // Normalize legacy 'sop' value to 'cc'
-                executionMode: (((ctRow as any).executionMode === 'sop' ? 'cc' : (ctRow as any).executionMode) as 'stage' | 'cc' | undefined) || 'stage',
+                executionMode,
                 sop: (ctRow as any).sop || undefined,
               }
-              this.deps.caseSchema = schema
 
-              // Phase 2: Create CaseAgentLoop instead of raw StageExecutor + Orchestrator
-              this.caseLoop = new CaseAgentLoop(schema, this.makeCaseLoopServices())
-
-              // Persist case in DB
-              await prisma.case.upsert({
-                where: { id: this.deps.caseId },
-                update: { type: caseType, status: 'created' },
-                create: {
-                  id: this.deps.caseId,
+              // Create a new case for this sub-agent investigation
+              const subCaseId = generateCaseId()
+              await prisma.case.create({
+                data: {
+                  id: subCaseId,
                   orgId: this.deps.orgId,
                   userId: this.deps.userId,
                   type: caseType,
                   status: 'created',
-                  chatId: this.deps.chatId ?? null,
+                  chatId: this.deps.chatId ?? this.deps.caseId,
                 },
               })
+
+              // Create ChatMemory for the sub-agent's case
+              await prisma.chatMemory.create({
+                data: {
+                  caseId: subCaseId,
+                  confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
+                  skillsCalled: JSON.stringify([]),
+                  skillResults: JSON.stringify({}),
+                  keyEvents: JSON.stringify([]),
+                  humanTaskStatus: 'none',
+                  needsContinuation: false,
+                },
+              })
+
+              // Build SubAgentConfig: merge all stage skills + SOP or stage-driven prompt
+              const stageSkillNames = new Set<string>()
+              for (const sc of Object.values(stageConfigs)) {
+                const cfg = sc as Record<string, unknown>
+                const skills = Array.isArray(cfg.availableSkills) ? cfg.availableSkills : []
+                for (const s of skills) stageSkillNames.add(s)
+              }
+              // Always allow terminal tools
+              for (const t of ['create_human_task', 'finalize_case', 'request_user_input', 'propose_interaction']) {
+                stageSkillNames.add(t)
+              }
+              if (executionMode === 'cc') {
+                stageSkillNames.add('todo_write')
+                stageSkillNames.add('todo_read')
+                stageSkillNames.add('dispatch_subagent')
+              }
+
+              const casePrompt = ctRow.defaultGoal || `Investigate and resolve the customer's ${ctRow.displayName} issue.`
+              const sopDoc = (ctRow as any).sop?.trim()
+              const taskPrompt = executionMode === 'cc' && sopDoc
+                ? `[Case Agent: ${ctRow.displayName}]\n\n## SOP\n${sopDoc}\n\n## Goal\n${casePrompt}\n\nFollow the SOP. Use todo_write to plan, then execute each step. Call finalize_case when done.`
+                : `[Case Agent: ${ctRow.displayName}]\n\n## Goal\n${casePrompt}\n\nInvestigate through these stages: ${stages.join(' → ')}. Call finalize_case when resolved.`
+
+              const subAgentConfig: import('@intera/shared/types').SubAgentConfig = {
+                name: `case_agent_${caseType}`,
+                model: this.deps.config.model,
+                systemPrompt: this.deps.config.systemPrompt,
+                skills: Array.from(stageSkillNames),
+                taskTemplate: taskPrompt,
+                parallel: true,
+                maxIterations: this.deps.config.maxIterations,
+                fallbackModel: this.deps.config.fallbackModel,
+              }
+
+              const orchestrator = new OrchestratorAgent(
+                schema,
+                allSkills,
+                this.deps.userId,
+                this.chatMemory,
+              )
+
+              const caseMem = this.chatMemory.getSummary()
+              const tasks = await orchestrator.planInvestigation(
+                schema.stages[0] || 'created',
+                [subAgentConfig],
+                { ...caseMem, caseId: subCaseId } as any,
+                casePrompt,
+              )
+
+              if (tasks.length > 0) {
+                orchestrator.dispatchInBackground(tasks, sendEvent)
+
+                sendEvent({
+                  type: 'sub_agent_start',
+                  data: {
+                    agentId: tasks[0].id,
+                    agentName: subAgentConfig.name,
+                    taskDescription: casePrompt.slice(0, 200),
+                    stage: 'created',
+                    caseId: subCaseId,
+                  },
+                  timestamp: new Date().toISOString(),
+                })
+              }
 
               sendEvent({
                 type: 'case_created',
                 data: {
-                  caseId: this.deps.caseId,
+                  caseId: subCaseId,
                   caseType: caseType,
                   displayName: ctRow.displayName,
                   icon: ctRow.icon,
@@ -1295,71 +1374,23 @@ export class AgentLoop {
                 timestamp: new Date().toISOString(),
               })
 
-              await this.traceWriter.write('loop_decision', `Case created: ${caseType}`, { caseType, caseId: this.deps.caseId })
+              await this.traceWriter.write('loop_decision', `Case agent dispatched: ${caseType}`, { caseType, caseId: subCaseId })
 
-              // Replace mock create_case result with real case ID
+              // Replace mock result with real case ID
               for (let i = this.messages.length - 1; i >= 0; i--) {
                 const m = this.messages[i]
-                if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
-                  m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'created' })}`
+                if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool dispatch_case_agent result:')) {
+                  m.content = `Tool dispatch_case_agent result: ${JSON.stringify({ caseId: subCaseId, status: 'created', note: 'Case agent dispatched in background. Continue the conversation while it works.' })}`
                   break
                 }
               }
 
-              // ── SOP mode: MANDATORY planning mandate on every create_case ────
-              // The very first action in SOP mode must be todo_write to build
-              // the investigation plan. We ALWAYS inject this instruction,
-              // whether or not investigation tools were pre-called in the same
-              // batch. addToolResultMessages() was already called above so any
-              // pre-fetched results are already in this.messages.
-              if (this.deps.caseSchema?.executionMode === 'cc') {
-                const alreadyCalledTools = toolResults
-                  .filter((r) => r.name !== 'create_case')
-                  .map((r) => r.name)
-
-                const planMsg = alreadyCalledTools.length > 0
-                  ? `[System] Case opened in SOP mode. You called ${alreadyCalledTools.join(', ')} before creating your plan. ` +
-                    `YOUR NEXT ACTION (mandatory): call todo_write({ "action": "add", "text": "..." }) once per SOP step. ` +
-                    `For steps already covered by the data above, add them then immediately complete them with notes. ` +
-                    `The "action" field is required — never omit it.`
-                  : `[System] Case opened in SOP mode. YOUR NEXT ACTION (mandatory): call todo_write({ "action": "add", "text": "..." }) ` +
-                    `once for every step in the SOP. Do NOT call any investigation tool until todos exist.`
-
-                this.messages.push(this.makeUserMessage(planMsg))
-                await this.traceWriter.write('loop_decision', 'SOP: planning mandate injected', {
-                  alreadyCalledTools, caseType, iteration: this.iterationCount,
-                })
-              }
-
-              // Continue loop — next iteration has caseLoop active
+              // Continue loop — main agent stays in conversation mode
               continue
             }
           } catch (err) {
-            console.error('[AgentLoop] Failed to create case from create_case tool:', err)
+            console.error('[AgentLoop] Failed to dispatch case agent:', err)
           }
-        }
-
-        // create_case called when a case is already active — replace mock
-        // result so the LLM doesn't see a fake case_mock_001 ID.
-        if (this.caseLoop) {
-          const key = 'dupCreateCaseCount'
-          const dupCount = (this.chatMemory.getConfirmedFacts()[key] as number) || 0
-          const nextCount = dupCount + 1
-
-          for (let i = this.messages.length - 1; i >= 0; i--) {
-            const m = this.messages[i]
-            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool create_case result:')) {
-              if (nextCount >= 2) {
-                // Force stop: the model keeps calling create_case despite already_active feedback
-                m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'already_active', note: 'STOP calling create_case. The case is already active. Respond with text only — do NOT call create_case again.' })}`
-                await this.traceWriter.write('loop_decision', 'Create_case called repeatedly despite active case', { count: nextCount })
-              } else {
-                m.content = `Tool create_case result: ${JSON.stringify({ caseId: this.deps.caseId, status: 'already_active', note: 'Case already exists — continue with the active case' })}`
-              }
-              break
-            }
-          }
-          this.chatMemory.getConfirmedFacts()[key] = nextCount
         }
       }
 
@@ -1505,6 +1536,7 @@ export class AgentLoop {
         this.nudgeCount = nudgeBox.value
         if (caseToolResult.type === 'terminal') {
           this.compactUserProfile().catch(() => {})
+      this.persistChatSession().catch(() => {})
           return caseToolResult.result
         }
         if (caseToolResult.type === 'continue') continue
@@ -1520,6 +1552,7 @@ export class AgentLoop {
       // The LLM has had a chance to respond naturally — now exit to waiting_human.
       if (this.pendingEscalation) {
         this.compactUserProfile().catch(() => {})
+      this.persistChatSession().catch(() => {})
         await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
@@ -1866,7 +1899,30 @@ export class AgentLoop {
     }
   }
 
-  /** Run LLM-driven compaction with fallback to programmatic summary. */
+  /** Persist chat-level memory to ChatSession table. */
+  private async persistChatSession(): Promise<void> {
+    if (!this.deps.chatId) return
+    try {
+      await prisma.chatSession.upsert({
+        where: { chatId: this.deps.chatId },
+        update: {
+          confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
+          keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
+          summary: this.chatMemory.getSummary().summary || undefined,
+        },
+        create: {
+          chatId: this.deps.chatId,
+          orgId: this.deps.orgId,
+          confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
+          keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
+          summary: this.chatMemory.getSummary().summary || undefined,
+        },
+      })
+    } catch (err) {
+      console.warn('[AgentLoop] persistChatSession failed:', err)
+    }
+  }
+
   /** Standalone compact for UserProfile — takes recent messages, produces a user portrait. */
   private async compactUserProfile(): Promise<void> {
     if (!this.deps.config.memoryStrategy.enableChatMemory) return

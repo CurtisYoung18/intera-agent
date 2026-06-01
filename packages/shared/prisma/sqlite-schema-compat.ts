@@ -45,9 +45,24 @@ export async function ensureSqliteSchemaCompat(prisma: PrismaClient): Promise<vo
     await add('case_types', 'enabled', 'INTEGER NOT NULL DEFAULT 1')
 
     await add('skills', 'displayVerb', 'TEXT')
+    await add('skills', 'toolCategory', 'TEXT')
     await add('cases', 'chatId', 'TEXT')
     await add('human_tasks', 'chatLog', 'TEXT')
     await add('human_tasks', 'customerMessage', 'TEXT')
+
+    // Create chat_sessions table if it doesn't exist
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "chat_sessions" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "chatId" TEXT NOT NULL UNIQUE,
+        "org_id" TEXT NOT NULL DEFAULT 'default',
+        "confirmedFacts" TEXT NOT NULL DEFAULT '{}',
+        "summary" TEXT,
+        "keyEvents" TEXT NOT NULL DEFAULT '[]',
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
   } catch (e) {
     console.warn('[prisma] SQLite schema compat skipped or partial:', e)
   }

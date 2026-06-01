@@ -114,9 +114,9 @@ export class StageStrategy {
     const isAllowed = (name: string) => allowed.has(name) || name.startsWith('kb_search_')
 
     // Prevent duplicate case creation — once past the "created" stage,
-    // remove create_case so the agent doesn't call it again.
+    // remove dispatch_case_agent so the agent doesn't call it again.
     if (cfg.name !== 'created') {
-      allowed.delete('create_case')
+      allowed.delete('dispatch_case_agent')
     }
 
     return allTools.filter((t) => isAllowed(t.name))

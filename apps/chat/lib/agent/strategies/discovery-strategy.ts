@@ -6,9 +6,8 @@ import type { AssistantMessage, LoopResult, Message } from '@intera/shared/types
 
 /** Tools allowed in discovery mode (no active case). */
 const CORE_ALLOWED_TOOLS = new Set([
-  'create_case',
+  'dispatch_case_agent',
   'propose_cases',
-  'propose_interaction',
 ])
 
 function isCoreAllowed(name: string): boolean {
@@ -57,8 +56,8 @@ export class DiscoveryStrategy implements ExecutionStrategy {
       return { action: 'stop', reason: 'no_tools' }
     }
 
-    // create_case was called → transition to case mode.
-    if (toolUses.some((tu) => tu.name === 'create_case')) {
+    // dispatch_case_agent was called → transition to case mode.
+    if (toolUses.some((tu) => tu.name === 'dispatch_case_agent')) {
       return { action: 'transition', nextStage: 'collecting' }
     }
 
@@ -72,7 +71,7 @@ export class DiscoveryStrategy implements ExecutionStrategy {
     _input: unknown,
   ): TerminalToolResult | null {
     switch (toolName) {
-      case 'create_case':
+      case 'dispatch_case_agent':
         return {
           type: 'handled',
           result: {

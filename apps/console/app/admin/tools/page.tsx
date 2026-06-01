@@ -18,6 +18,7 @@ interface SkillItem {
   endpoint?: string; httpMethod?: string; timeoutMs?: number
   inputSchema?: string; outputSchema?: string; headers?: string
   mockFixture?: string; renderHints?: string; guardPhase?: string
+  toolCategory?: 'system_info' | 'operational'
   isConcurrencySafe: boolean; enabled: boolean
   isSystem?: boolean
   isChannel?: boolean
@@ -692,6 +693,13 @@ export default function SkillsPage() {
               </div>
               <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('skills.guardPhase')}</span>
                 <select value={editing.guardPhase || 'pre'} onChange={e => setEditing({ ...editing, guardPhase: e.target.value })} className="glass-input-console text-[13px]"><option value="pre">pre</option><option value="post">post</option></select>
+              </label>
+              <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Tool Category</span>
+                <select value={editing.toolCategory || ''} onChange={e => setEditing({ ...editing, toolCategory: (e.target.value || undefined) as 'system_info' | 'operational' | undefined })} className="glass-input-console text-[13px]">
+                  <option value="">— Default (operational) —</option>
+                  <option value="system_info">system_info — Always available to main agent</option>
+                  <option value="operational">operational — Togglable per channel</option>
+                </select>
               </label>
               <button onClick={handleTestEndpoint} disabled={testing} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] bg-sky/[0.06] border border-sky/20 text-sky hover:bg-sky/[0.1] transition-all">
                 <Zap className="w-3.5 h-3.5" />{testing ? t('skills.testing') : t('skills.testEndpoint')}

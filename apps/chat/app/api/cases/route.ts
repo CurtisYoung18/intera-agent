@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       where: {
         orgId,
         userId,
-        ...(chatId ? { OR: [{ chatId }, { chatId: null }] } : {}),
+        ...(chatId ? { chatId } : {}),
       },
       orderBy: { updatedAt: 'desc' },
       take: limit,

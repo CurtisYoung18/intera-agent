@@ -40,12 +40,11 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    // Group into sessions. Cases with chatId → one session per chatId.
-    // Cases without chatId → each is its own "standalone" session (chatId = case id).
+    // Group into sessions by chatId.
     const sessionMap = new Map<string, ChatSession>()
 
     for (const c of cases) {
-      const key = c.chatId ?? c.id
+      const key = c.chatId
       if (!sessionMap.has(key)) {
         sessionMap.set(key, {
           chatId: key,

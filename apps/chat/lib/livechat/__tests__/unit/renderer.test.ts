@@ -173,10 +173,10 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('human_task_created', () => {
-    it('returns send_text with escalation message', () => {
+    it('returns noop — agent tells customer in its own words', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('human_task_created', {}), makeCtx())
-      expect(actions[0]!.type).toBe('send_text')
+      expect(actions[0]!.type).toBe('noop')
     })
   })
 

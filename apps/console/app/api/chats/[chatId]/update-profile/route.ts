@@ -25,7 +25,7 @@ export async function POST(
 
   try {
     const sampleCase = await prisma.case.findFirst({
-      where: { OR: [{ chatId }, { id: chatId }] },
+      where: { chatId },
       select: { userId: true, orgId: true },
     })
 
@@ -36,7 +36,7 @@ export async function POST(
 
     // Collect summaries from all ChatMemory records in this chat
     const caseIds = await prisma.case.findMany({
-      where: { OR: [{ chatId }, { id: chatId }] },
+      where: { chatId },
       select: { id: true },
     })
     const memories = await prisma.chatMemory.findMany({

@@ -36,6 +36,7 @@ export async function GET() {
             headers: s.headers ?? null, timeoutMs: s.timeoutMs ?? 8000,
             mockFixture: s.mockFixture ?? null,
             displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+            toolCategory: s.toolCategory ?? null,
           },
           create: {
             orgId: ORG_ID, name: s.name, description: s.description,
@@ -45,6 +46,7 @@ export async function GET() {
             headers: s.headers ?? null, timeoutMs: s.timeoutMs ?? 8000,
             mockFixture: s.mockFixture ?? null,
             displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+            toolCategory: s.toolCategory ?? null,
           },
         })
       }
@@ -91,6 +93,7 @@ export async function POST(req: NextRequest) {
         renderHints: body.renderHints ? (typeof body.renderHints === 'string' ? body.renderHints : JSON.stringify(body.renderHints)) : null,
         isConcurrencySafe: body.isConcurrencySafe ?? true,
         enabled: body.enabled ?? true,
+        toolCategory: body.toolCategory || null,
       },
     })
     return NextResponse.json({ skill }, { status: 201 })

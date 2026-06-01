@@ -77,7 +77,7 @@ ${skillNames}
 Rules:
   - 严格按照 task 描述执行，不得自由发挥
   - 工具调用失败时报告具体错误，不得猜测结果
-  - 完成后调用 finalize_sub_agent，禁止调用其他终端工具（finalize_case、create_case、create_human_task）
+  - 完成后调用 finalize_sub_agent，禁止调用其他终端工具（finalize_case、dispatch_case_agent、create_human_task）
   - 如果收集到了足够信息，尽早完成，不要反复核查`
 
       // Surface key facts explicitly so sub-agents don't miss them (e.g. txnId

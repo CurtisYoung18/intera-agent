@@ -18,9 +18,10 @@ import { z } from 'zod'
  */
 export const BUILT_IN_SKILLS: SkillDefinition[] = [
   {
-    name: 'create_case',
+    name: 'dispatch_case_agent',
     description:
-      'Create a tracked Case for a single clear customer issue. ' +
+      'Dispatch a background case investigation agent for a single clear customer issue. ' +
+      'The case agent runs autonomously through all investigation stages while you continue the conversation. ' +
       'Use when the customer reports one distinct problem. ' +
       'For multiple issues or ambiguous intent, use propose_cases instead.',
     inputSchema: {
@@ -33,7 +34,8 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
-    displayVerb: { text: 'Creating your case', icon: 'dots' },
+    toolCategory: 'operational',
+    displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
     zodSchema: z.object({ caseType: z.string() }),
   },
   {
@@ -41,7 +43,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     description:
       'Propose case types when the customer has multiple distinct issues or the intent is ambiguous. ' +
       'The customer will see a multi-select card to choose which cases to open. ' +
-      'Use this INSTEAD of create_case when there are 2+ issues or you are unsure which type fits.',
+      'Use this INSTEAD of dispatch_case_agent when there are 2+ issues or you are unsure which type fits.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -63,6 +65,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Analyzing your issue', icon: 'dots' },
     zodSchema: z.object({
       cases: z.array(z.object({ caseType: z.string(), summary: z.string() })),
@@ -86,6 +89,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'system_info',
     displayVerb: { text: 'Looking up past cases', icon: 'scan' },
     zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
   },
@@ -102,6 +106,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'system_info',
     displayVerb: { text: 'Loading user memory', icon: 'scan' },
     mockFixture: { summary: '', confirmedFacts: {}, stats: {} },
     zodSchema: z.object({}),
@@ -120,6 +125,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'system_info',
     displayVerb: { text: 'Loading user profile', icon: 'scan' },
     mockFixture: { profile: '', stats: {} },
     zodSchema: z.object({}),
@@ -137,6 +143,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Checking order status', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string() }),
     // [MOCK] realistic deposit scenario — Alipay 1000 CNY pending batch settlement
@@ -165,6 +172,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string(), channel: z.string().optional() }),
     // [MOCK] realistic Alipay channel — normal operation, no delays
@@ -189,6 +197,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'system_info',
     displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
     zodSchema: z.object({ query: z.string().optional() }),
     // [MOCK] realistic delay notices — Alipay batch settlement schedule
@@ -220,6 +229,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Checking account status', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
@@ -245,6 +255,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Verifying identity status', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
@@ -271,6 +282,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Checking withdrawal status', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
@@ -299,6 +311,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Checking withdrawal eligibility', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
@@ -328,6 +341,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Loading transaction history', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string(), limit: z.number().optional(), type: z.enum(['deposit', 'withdrawal', 'all']).optional() }),
     mockFixture: {
@@ -354,6 +368,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Loading active promotions', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
@@ -384,6 +399,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Finding available promotions', icon: 'scan' },
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
@@ -418,6 +434,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Reading your receipt', icon: 'spin' },
     zodSchema: z.object({ attachmentId: z.string() }),
     // [MOCK] realistic receipt extraction — Alipay payment of 1000 CNY
@@ -490,6 +507,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       })).optional(),
       context: z.object({}).optional(),
     }),
+    toolCategory: 'operational',
     displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
   },
   {
@@ -515,6 +533,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
     zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
   },
@@ -573,6 +592,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'channel',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
     zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file","date"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
   },
@@ -590,6 +610,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'channel',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Closing consultation', icon: 'spin' },
     zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
   },
@@ -627,7 +648,8 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     },
     isConcurrencySafe: false,
     mode: 'engine_managed',
-    enabled: true,
+    enabled: false, // DEPRECATED: use request_user_input instead
+    toolCategory: 'operational',
     displayVerb: { text: 'Asking you a question', icon: 'pulse' },
     zodSchema: z.object({
       title: z.string(),
@@ -677,6 +699,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Updating task list', icon: 'dots' },
     zodSchema: z.object({
       todos: z.array(
@@ -701,6 +724,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Reviewing task list', icon: 'scan' },
     zodSchema: z.object({}),
   },
@@ -732,6 +756,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
     zodSchema: z.object({
       findings: z.array(z.object({ key: z.string(), value: z.unknown() })),
@@ -758,6 +783,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'static',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Dispatching specialist agent', icon: 'pulse' },
     zodSchema: z.object({
       agentName: z.string(),
@@ -774,6 +800,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     mode: 'static',
     isConcurrencySafe: true,
     enabled: true,
+    toolCategory: 'system_info',
     displayVerb: { text: 'Getting current time', icon: 'dots' },
     mockFixture: {},
   },
@@ -809,6 +836,7 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Updating investigation plan', icon: 'dots' },
     zodSchema: z.object({
       action: z.enum(['add', 'update', 'complete', 'cancel']).optional(),
@@ -827,6 +855,7 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
     isConcurrencySafe: true,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
     displayVerb: { text: 'Reviewing investigation plan', icon: 'scan' },
   },
 ]
@@ -890,9 +919,54 @@ export class SkillRouter {
           mockFixture: s.mockFixture ? JSON.parse(s.mockFixture) : undefined,
           displayVerb: s.displayVerb ? JSON.parse(s.displayVerb) : undefined,
           renderHints: s.renderHints ? JSON.parse(s.renderHints) : undefined,
+          toolCategory: (s.toolCategory as 'system_info' | 'operational') || undefined,
           isConcurrencySafe: s.isConcurrencySafe,
           enabled: s.enabled,
         })
+      }
+
+      // ── Dynamic tool descriptions: inject org's case types into tool descriptions ──
+      // Console admins can override by creating a DB Skill row with the same name,
+      // which has already been loaded above. Only fill in if no DB override exists.
+      const hasDbOverride = (name: string) => dbSkills.some((s) => s.name === name)
+
+      if (!hasDbOverride('dispatch_case_agent') || !hasDbOverride('propose_cases')) {
+        try {
+          const caseTypes = await prisma.caseType.findMany({
+            where: { orgId, enabled: true },
+            select: { type: true, displayName: true, description: true, icon: true },
+          })
+
+          if (caseTypes.length > 0) {
+            const caseTypeList = caseTypes
+              .map((ct) => `- **${ct.type}** (${ct.icon} ${ct.displayName}): ${ct.description || 'No description'}`)
+              .join('\n')
+
+            if (!hasDbOverride('dispatch_case_agent')) {
+              const existingDispatchSkill = router.skills.get('dispatch_case_agent')
+              if (existingDispatchSkill) {
+                existingDispatchSkill.description =
+                  'Dispatch a background case investigation agent. The agent runs autonomously through all investigation stages while you continue the conversation.\n\n' +
+                  '## Available Case Types\n' +
+                  caseTypeList +
+                  '\n\nUse when the customer reports a single distinct issue. For multiple issues, use propose_cases instead.'
+              }
+            }
+
+            if (!hasDbOverride('propose_cases')) {
+              const existingProposeSkill = router.skills.get('propose_cases')
+              if (existingProposeSkill) {
+                existingProposeSkill.description =
+                  'Propose multiple case types when the customer has two or more distinct issues.\n\n' +
+                  '## Available Case Types\n' +
+                  caseTypeList +
+                  '\n\nUse this INSTEAD of dispatch_case_agent when there are 2+ issues.'
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[SkillRouter] Failed to load case types for tool descriptions:', err)
+        }
       }
 
       // Load enabled KnowledgeSources and inject each as a kb_search_<name> tool.
@@ -941,6 +1015,7 @@ export class SkillRouter {
           timeoutMs: 10000,
           isConcurrencySafe: true,
           enabled: true,
+          toolCategory: 'system_info',
           displayVerb: { text: `Searching ${ks.name}`, icon: 'dots' },
           renderHints: {
             livechat: {

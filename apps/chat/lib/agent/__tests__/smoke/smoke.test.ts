@@ -30,7 +30,7 @@ describe('Smoke — Stream Handler (E1-1)', () => {
   })
 
   it('tool_use stream triggers onToolUseCompleted', async () => {
-    const stream = mockToolUseStream('create_case', { caseType: 'withdrawal_issue' })
+    const stream = mockToolUseStream('dispatch_case_agent', { caseType: 'withdrawal_issue' })
     const blocks = new Map<number, StreamContentBlock>()
     let toolCalled = false
     let toolName = ''
@@ -49,7 +49,7 @@ describe('Smoke — Stream Handler (E1-1)', () => {
 
     await consumeStream(stream as any, blocks, cbs)
     expect(toolCalled).toBe(true)
-    expect(toolName).toBe('create_case')
+    expect(toolName).toBe('dispatch_case_agent')
   })
 })
 
@@ -59,8 +59,8 @@ describe('Smoke — SkillRouter (E1-2)', () => {
     const skills = router.getToolDefinitions()
     expect(skills.length).toBeGreaterThan(0)
 
-    const createCase = router.getSkill('create_case')
-    expect(createCase).toBeDefined()
+    const dispatchCaseAgent = router.getSkill('dispatch_case_agent')
+    expect(dispatchCaseAgent).toBeDefined()
 
     const finalizeCase = router.getSkill('finalize_case')
     expect(finalizeCase).toBeDefined()

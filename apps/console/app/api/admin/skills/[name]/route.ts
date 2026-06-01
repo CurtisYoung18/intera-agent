@@ -50,7 +50,7 @@ export async function PUT(
     }
 
     const data: Record<string, unknown> = {}
-    const strFields = ['name', 'description', 'mode', 'endpoint', 'httpMethod', 'guardPhase']
+    const strFields = ['name', 'description', 'mode', 'endpoint', 'httpMethod', 'guardPhase', 'toolCategory']
     for (const f of strFields) if (body[f] !== undefined) data[f] = body[f]
     if (body.timeoutMs !== undefined) data.timeoutMs = body.timeoutMs
     if (body.isConcurrencySafe !== undefined) data.isConcurrencySafe = body.isConcurrencySafe

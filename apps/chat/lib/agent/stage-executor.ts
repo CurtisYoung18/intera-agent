@@ -201,10 +201,10 @@ export class StageExecutor {
     allowed.add('finalize_consultation')
 
     // Prevent duplicate case creation — when a case is already active (past "created"
-    // stage), remove create_case so the agent doesn't call it again. propose_cases
+    // stage), remove dispatch_case_agent so the agent doesn't call it again. propose_cases
     // stays available for multi-intent situations at any stage.
     if (stage !== 'created') {
-      allowed.delete('create_case')
+      allowed.delete('dispatch_case_agent')
     }
 
     // When the case was created from an intent selection card, remove propose_cases

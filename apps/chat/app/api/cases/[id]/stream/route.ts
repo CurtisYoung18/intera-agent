@@ -176,7 +176,7 @@ async function initAgentLoop(
   await prisma.case.upsert({
     where: { id: caseId },
     update: {},
-    create: { id: caseId, orgId, userId, type: 'general', status: 'created', chatId },
+    create: { id: caseId, orgId, userId, type: 'general', status: 'created', chatId: chatId ?? caseId },
   })
 
   // Load case + memory from DB
@@ -282,6 +282,7 @@ async function persistTurn(
   caseId: string,
   orgId: string,
   userId: string,
+  chatId: string | null,
   loop: AgentLoop,
   result: Awaited<ReturnType<AgentLoop['run']>>,
 ): Promise<void> {
@@ -299,7 +300,7 @@ async function persistTurn(
       await prisma.case.upsert({
         where: { id: caseId },
         update: { status: result.caseStatus },
-        create: { id: caseId, orgId, userId, type: caseTypeForUpsert, status: result.caseStatus },
+        create: { id: caseId, orgId, userId, type: caseTypeForUpsert, status: result.caseStatus, chatId: chatId ?? caseId },
       })
       await prisma.chatMemory.upsert({
         where: { caseId },
@@ -463,7 +464,7 @@ export async function GET(
             const result = await session.loop!.run(messageContent, sendEvent, queued.formAnswers, queued.contentBlocks)
 
             // Persist turn to DB asynchronously (don't block the next message wait)
-            persistTurn(caseId, orgId, userId, session.loop!, result).catch((err) =>
+            persistTurn(caseId, orgId, userId, chatId, session.loop!, result).catch((err) =>
               console.error('[Stream] Persist error:', err),
             )
 

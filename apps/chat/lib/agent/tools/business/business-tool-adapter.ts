@@ -37,7 +37,7 @@ export function adaptBusinessTool(def: SkillDefinition): Tool {
 // ── executeMock ──────────────────────────────────────────────
 
 const DEFAULT_MOCK_RESPONSES: Record<string, unknown> = {
-  create_case: { caseId: 'case_mock_001', status: 'created' },
+  dispatch_case_agent: { caseId: 'case_mock_001', status: 'created' },
   read_case_history: { cases: [], total: 0 },
   finalize_case: { status: 'resolved' },
   finalize_sub_agent: { findings: [], recommendation: 'completed' },

@@ -9,12 +9,12 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>
 type Output = { caseId: string; status: 'created' }
 
-export const createCaseTool: Tool<Input, Output> = {
-  name: 'create_case',
+export const dispatchCaseAgentTool: Tool<Input, Output> = {
+  name: 'dispatch_case_agent',
   source: 'builtin',
   inputSchema,
   guardPhase: 'post',
-  displayVerb: { text: 'Creating your case', icon: 'dots' },
+  displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
 
   async prompt(_ctx: ToolContext) {
     return 'Create a tracked Case for a single clear customer issue. ' +
@@ -37,6 +37,7 @@ export const createCaseTool: Tool<Input, Output> = {
         userId: 'system',
         type: input.caseType,
         status: 'created',
+        chatId: caseId,
       },
     })
 
@@ -44,4 +45,4 @@ export const createCaseTool: Tool<Input, Output> = {
   },
 }
 
-registerBuiltin(createCaseTool)
+registerBuiltin(dispatchCaseAgentTool)

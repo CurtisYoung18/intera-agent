@@ -97,6 +97,9 @@ export interface SkillDefinition {
   mockFixture?: unknown
   isConcurrencySafe: boolean
   enabled: boolean
+  /** Category for tool access control: system_info tools are always available to the main agent;
+   *  operational tools can be toggled per-console. Null = legacy (treated as operational). */
+  toolCategory?: 'system_info' | 'operational'
   /** Customer-visible label shown in the chat spinner while this skill is executing.
    *  When absent, the skill name is formatted and used as a fallback. */
   displayVerb?: { text: string; icon: SpinnerIcon }

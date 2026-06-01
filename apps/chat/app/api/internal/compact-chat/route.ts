@@ -27,9 +27,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'chatId is required' }, { status: 400 })
     }
 
-    // [chatId] is either a real Case.chatId OR a standalone case.id.
     const cases = await prisma.case.findMany({
-      where: { OR: [{ chatId }, { id: chatId }] },
+      where: { chatId },
       select: { id: true, userId: true, orgId: true },
     })
     if (cases.length === 0) {

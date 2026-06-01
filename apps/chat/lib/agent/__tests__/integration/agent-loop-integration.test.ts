@@ -19,8 +19,8 @@ describe('E7 — Integration: Stream + Retry + Invariant', () => {
   afterEach(() => { vi.useRealTimers() })
 
   it('full stream flow: text → tool_use → text (multi-iteration simulation)', async () => {
-    // Iteration 1: text + create_case tool_use
-    const stream1 = mockToolUseStream('create_case', { caseType: 'withdrawal_issue' }, 'tool_001')
+    // Iteration 1: text + dispatch_case_agent tool_use
+    const stream1 = mockToolUseStream('dispatch_case_agent', { caseType: 'withdrawal_issue' }, 'tool_001')
     const blocks1 = new Map<number, StreamContentBlock>()
 
     const events: Array<{ type: string; data: unknown }> = []
@@ -192,7 +192,7 @@ describe('E7 — Integration: SkillRouter + Tool Discovery', () => {
 
     // Verify critical skills are present
     const requiredSkills = [
-      'create_case',
+      'dispatch_case_agent',
       'finalize_case',
       'create_human_task',
       'dispatch_subagent',

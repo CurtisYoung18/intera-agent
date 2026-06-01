@@ -812,3 +812,82 @@ export class ChatMemoryManager {
     }
   }
 }
+
+// ============================================
+// ChatSessionManager — chat-level memory
+// ============================================
+
+export class ChatSessionManager {
+  private confirmedFacts: Record<string, unknown> = {}
+  private keyEvents: KeyEvent[] = []
+  private summary: string | null = null
+
+  constructor(
+    private chatId: string,
+    private orgId: string,
+  ) {}
+
+  getConfirmedFacts(): Record<string, unknown> {
+    return this.confirmedFacts
+  }
+
+  setConfirmedFact(key: string, value: unknown): void {
+    this.confirmedFacts[key] = value
+  }
+
+  setConfirmedFactsBulk(facts: Record<string, unknown>): void {
+    Object.assign(this.confirmedFacts, facts)
+  }
+
+  getKeyEvents(): KeyEvent[] {
+    return this.keyEvents
+  }
+
+  addKeyEvent(text: string, source: 'llm' | 'heuristic' | 'dashboard' = 'llm'): void {
+    this.keyEvents.push({ at: new Date().toISOString(), text, source })
+  }
+
+  getSummary(): string | null {
+    return this.summary
+  }
+
+  setSummary(s: string): void {
+    this.summary = s
+  }
+
+  hasSummary(): boolean {
+    return !!this.summary
+  }
+
+  getSummaryData() {
+    return {
+      confirmedFacts: this.confirmedFacts,
+      keyEvents: this.keyEvents,
+      summary: this.summary,
+    }
+  }
+
+  /** Load state from a persisted DB row. */
+  loadFromDb(row: { confirmedFacts?: string; keyEvents?: string; summary?: string | null }): void {
+    if (row.confirmedFacts) {
+      try { this.confirmedFacts = JSON.parse(row.confirmedFacts) } catch { /* keep default */ }
+    }
+    if (row.keyEvents) {
+      try { this.keyEvents = JSON.parse(row.keyEvents) } catch { /* keep default */ }
+    }
+    this.summary = row.summary ?? null
+  }
+
+  /** Return fields for prisma.chatSession.upsert. */
+  getDbFields(): {
+    confirmedFacts: string
+    keyEvents: string
+    summary: string | undefined
+  } {
+    return {
+      confirmedFacts: JSON.stringify(this.confirmedFacts),
+      keyEvents: JSON.stringify(this.keyEvents),
+      summary: this.summary ?? undefined,
+    }
+  }
+}

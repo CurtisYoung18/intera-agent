@@ -95,7 +95,7 @@ export class CaseAgentLoop {
   /**
    * True when the case is past the "created" discovery stage.
    * Step mode: also returns true for "created" so the step prompt with todo
-   * tools is shown immediately after create_case, without waiting for a
+   * tools is shown immediately after dispatch_case_agent, without waiting for a
    * no-tools iteration to trigger stage transition.
    */
   isStageActive(): boolean {
@@ -195,8 +195,8 @@ export class CaseAgentLoop {
    */
   filterSopTools(allTools: Tool[]): Tool[] {
     const sopNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
-    // create_case is not needed in SOP mode — the case already exists
-    const excludedInSop = new Set(['create_case'])
+    // dispatch_case_agent is not needed in SOP mode — the case already exists
+    const excludedInSop = new Set(['dispatch_case_agent'])
     // Prepend todo tools so the LLM sees them first, then deduplicate
     const sopTools: Tool[] = SOP_INTERNAL_SKILLS.map((s) => ({
       name: s.name,
@@ -562,7 +562,7 @@ export class CaseAgentLoop {
             type: resolvedCaseType,
             status: 'waiting_human',
             blocker: `Waiting for ${queue}`,
-            chatId: chatId ?? null,
+            chatId: chatId ?? caseId,
           },
         })
 

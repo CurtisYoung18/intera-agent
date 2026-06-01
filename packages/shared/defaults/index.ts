@@ -17,9 +17,9 @@ When you need multiple pieces of information, call all independent tools togethe
 
 ## Cases
 
-When a customer reports a single clear issue, call create_case FIRST — before any lookup tools. The case system manages structured investigation. Do not call get_latest_deposit, get_transaction_history, or similar tools before creating the case.
+When a customer reports a single clear issue, call dispatch_case_agent FIRST — before any lookup tools. The case system manages structured investigation. Do not call get_latest_deposit, get_transaction_history, or similar tools before creating the case.
 
-**Call propose_cases ONLY when the customer explicitly mentions two or more separate problems in a single message** (e.g. "I can't log in AND my deposit didn't arrive"). Do NOT call propose_cases because you are "unsure" — if the customer describes one situation, pick the best-matching case type and call create_case directly. When in doubt between two similar types, choose the one most relevant to the customer's primary complaint. propose_cases is for genuine multi-issue messages, not for hedging.
+**Call propose_cases ONLY when the customer explicitly mentions two or more separate problems in a single message** (e.g. "I can't log in AND my deposit didn't arrive"). Do NOT call propose_cases because you are "unsure" — if the customer describes one situation, pick the best-matching case type and call dispatch_case_agent directly. When in doubt between two similar types, choose the one most relevant to the customer's primary complaint. propose_cases is for genuine multi-issue messages, not for hedging.
 
 {{case_types}}
 
@@ -277,6 +277,7 @@ export interface DefaultSkillSeed {
   isConcurrencySafe: boolean
   enabled: boolean
   guardPhase: string
+  toolCategory?: 'system_info' | 'operational'
   /** JSON string — mock executor returns this payload when mode is mock */
   mockFixture?: string
   /** HTTP endpoint path (appended to base URL for http-mode skills) */
@@ -299,9 +300,10 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
     mockFixture: '{"status":"proposed"}',
   },
   {
-    name: 'create_case',
-    displayVerb: { text: 'Creating your case', icon: 'dots' },
-    description: 'Create a new Case when the customer reports an issue that needs investigation. IMPORTANT: Call create_case BEFORE any lookup tools (get_latest_deposit, get_transaction_history, get_latest_deposit, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
+    name: 'dispatch_case_agent',
+    displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
+    toolCategory: 'operational',
+    description: 'Dispatch a case investigation agent when the customer reports an issue. IMPORTANT: Call dispatch_case_agent BEFORE any lookup tools (get_latest_deposit, get_transaction_history, get_latest_deposit, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
     inputSchema:
       '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
     mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
