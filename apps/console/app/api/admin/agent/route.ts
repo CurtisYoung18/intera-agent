@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const ORG_ID = await getActiveOrgId()
     await ensureSqliteSchemaCompat(prisma)
-    let config = await prisma.agentConfig.findUnique({ where: { orgId: ORG_ID } })
+    let config = await prisma.agentConfig.findFirst({ where: { orgId: ORG_ID }, orderBy: { createdAt: 'asc' } })
 
     // Lazy init: create from defaults if DB is empty
     if (!config) {
@@ -89,41 +89,48 @@ export async function PUT(req: NextRequest) {
     if (knowledgeRetrieval !== undefined) data.knowledgeRetrieval = typeof knowledgeRetrieval === 'string' ? knowledgeRetrieval : JSON.stringify(knowledgeRetrieval)
 
     await ensureDefaultOrg(ORG_ID)
-    const config = await prisma.agentConfig.upsert({
-      where: { orgId: ORG_ID },
-      update: data,
-      create: {
-        orgId: ORG_ID,
-        systemPrompt: systemPrompt || '',
-        coreSystemPrompt: coreSystemPrompt ?? null,
-        model: model || 'MiniMax-M2.7-highspeed',
-        temperature: temperature ?? 0.5,
-        thinkingBudget: thinkingBudget ?? 4096,
-        maxIterations: maxIterations ?? 20,
-        maxOutputTokens: maxOutputTokens ?? 4096,
-        showThinking: showThinking ?? false,
-        resumePrompt: resumePrompt ?? null,
-        formResponseTemplate: formResponseTemplate ?? null,
-        humanSkills: humanSkills ?? null,
-        consultationPrompt: consultationPrompt ?? null,
-        debugMode: debugMode ?? false,
-        enableLlmSanitization: enableLlmSanitization ?? false,
-        prefixContinuationEnabled:
-          prefixContinuationEnabled !== undefined
-            ? prefixContinuationEnabled !== false &&
-              prefixContinuationEnabled !== 0 &&
-              prefixContinuationEnabled !== 'false'
-            : false,
-        prefixContinuationChatModel: prefixContinuationChatModel ?? null,
-        prefixContinuationBaseUrl: prefixContinuationBaseUrl ?? null,
-        prefixContinuationAssistantPrefix: prefixContinuationAssistantPrefix ?? null,
-        prefixContinuationStop: prefixContinuationStop ?? null,
-        prefixContinuationMinDraftChars: clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4),
-        knowledgeRetrieval: knowledgeRetrieval ?? null,
-        memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
-        policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
-      },
-    })
+    const existing = await prisma.agentConfig.findFirst({ where: { orgId: ORG_ID }, orderBy: { createdAt: 'asc' } })
+    let config
+    if (existing) {
+      config = await prisma.agentConfig.update({
+        where: { id: existing.id },
+        data,
+      })
+    } else {
+      config = await prisma.agentConfig.create({
+        data: {
+          orgId: ORG_ID,
+          systemPrompt: systemPrompt || '',
+          coreSystemPrompt: coreSystemPrompt ?? null,
+          model: model || 'MiniMax-M2.7-highspeed',
+          temperature: temperature ?? 0.5,
+          thinkingBudget: thinkingBudget ?? 4096,
+          maxIterations: maxIterations ?? 20,
+          maxOutputTokens: maxOutputTokens ?? 4096,
+          showThinking: showThinking ?? false,
+          resumePrompt: resumePrompt ?? null,
+          formResponseTemplate: formResponseTemplate ?? null,
+          humanSkills: humanSkills ?? null,
+          consultationPrompt: consultationPrompt ?? null,
+          debugMode: debugMode ?? false,
+          enableLlmSanitization: enableLlmSanitization ?? false,
+          prefixContinuationEnabled:
+            prefixContinuationEnabled !== undefined
+              ? prefixContinuationEnabled !== false &&
+                prefixContinuationEnabled !== 0 &&
+                prefixContinuationEnabled !== 'false'
+              : false,
+          prefixContinuationChatModel: prefixContinuationChatModel ?? null,
+          prefixContinuationBaseUrl: prefixContinuationBaseUrl ?? null,
+          prefixContinuationAssistantPrefix: prefixContinuationAssistantPrefix ?? null,
+          prefixContinuationStop: prefixContinuationStop ?? null,
+          prefixContinuationMinDraftChars: clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4),
+          knowledgeRetrieval: knowledgeRetrieval ?? null,
+          memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
+          policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
+        },
+      })
+    }
 
     return NextResponse.json({ config })
   } catch (err) {

@@ -99,6 +99,12 @@ export default function ConsoleSidebar() {
   const { t, toggleLocale, locale } = useConsoleLocale()
 
   // Session state
+  // Agent configs
+  interface AgentInfo { id: string; name: string }
+  const [agentConfigs, setAgentConfigs] = useState<AgentInfo[]>([])
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [agentOpen, setAgentOpen] = useState(false)
+
   const [customerName, setCustomerName] = useState('Demo Org')
   const [customers, setCustomers] = useState<CustomerInfo[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
@@ -120,6 +126,29 @@ export default function ConsoleSidebar() {
       })
       .catch(() => {})
   }, [])
+
+  // Load agent configs
+  useEffect(() => {
+    fetch('/api/admin/agent-configs')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.configs?.length) {
+          setAgentConfigs(d.configs)
+          const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
+          if (stored && d.configs.find((c: AgentInfo) => c.id === stored)) {
+            setSelectedAgentId(stored)
+          } else {
+            setSelectedAgentId(d.configs[0].id)
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleAgentSelect = (id: string) => {
+    setSelectedAgentId(id)
+    try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
+  }
 
   // Load customer list
   const loadCustomers = useCallback(async () => {
@@ -278,9 +307,54 @@ export default function ConsoleSidebar() {
                 </div>
               )}
 
-              <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)]/40 cursor-not-allowed select-none">
-                <Bot className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">Agent: Default</span>
+              {/* Agent selector */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAgentOpen(!agentOpen)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
+                >
+                  <Bot className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate flex-1 text-left">
+                    {agentConfigs.find(c => c.id === selectedAgentId)?.name ?? 'Agent'}
+                  </span>
+                  <ChevronDown className={`h-2.5 w-2.5 flex-shrink-0 transition-transform ${agentOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {agentOpen && (
+                  <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
+                    {agentConfigs.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => { handleAgentSelect(c.id); setAgentOpen(false) }}
+                        className={`w-full flex items-center gap-2 px-2 py-1 text-[11px] rounded-md transition-all text-left ${
+                          c.id === selectedAgentId
+                            ? 'text-[var(--mist)] bg-black/[0.04] font-medium'
+                            : 'text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03]'
+                        }`}
+                      >
+                        <span className="truncate">{c.name}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/admin/agent-configs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `Agent ${agentConfigs.length + 1}` }) })
+                          const d = await res.json()
+                          if (d.config) {
+                            setAgentConfigs([...agentConfigs, { id: d.config.id, name: d.config.name }])
+                            handleAgentSelect(d.config.id)
+                          }
+                        } catch { /* ignore */ }
+                        setAgentOpen(false)
+                      }}
+                      className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-[var(--fog)]/60 hover:text-[var(--mist)] rounded-md transition-all text-left"
+                    >
+                      + New Agent
+                    </button>
+                  </div>
+                )}
               </div>
 
               <button

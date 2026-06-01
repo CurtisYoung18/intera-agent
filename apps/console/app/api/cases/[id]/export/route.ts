@@ -39,8 +39,9 @@ export async function GET(
     return NextResponse.json({ error: 'Case not found' }, { status: 404 })
   }
 
-  const agentConfig = await prisma.agentConfig.findUnique({
+  const agentConfig = await prisma.agentConfig.findFirst({
     where: { orgId: caseData.orgId },
+    orderBy: { createdAt: 'asc' },
   })
 
   const sections: string[] = []

@@ -10,7 +10,7 @@ const GPTBOTS_KB_API = 'https://api-sg.gptbots.ai/v1/bot/knowledge/base/page'
 async function getApiKey(orgId: string): Promise<string | null> {
   // Try per-customer key first, fall back to env var
   try {
-    const config = await prisma.agentConfig.findUnique({ where: { orgId }, select: { gptbotsApiKey: true } })
+    const config = await prisma.agentConfig.findFirst({ where: { orgId }, select: { gptbotsApiKey: true }, orderBy: { createdAt: 'asc' } })
     if (config?.gptbotsApiKey) return config.gptbotsApiKey
   } catch { /* DB may not be ready */ }
   return process.env.GPTBOTS_API_KEY ?? null
@@ -49,11 +49,17 @@ export async function PUT(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId()
     const { apiKey } = await req.json()
-    await prisma.agentConfig.upsert({
-      where: { orgId },
-      update: { gptbotsApiKey: apiKey || null },
-      create: { orgId, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
-    })
+    const existing = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
+    if (existing) {
+      await prisma.agentConfig.update({
+        where: { id: existing.id },
+        data: { gptbotsApiKey: apiKey || null },
+      })
+    } else {
+      await prisma.agentConfig.create({
+        data: { orgId, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+      })
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[Admin] PUT gptbots key:', err)

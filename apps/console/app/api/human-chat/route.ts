@@ -38,7 +38,7 @@ const DEFAULT_CONFIG: HumanChatConfig = {
 
 async function loadHumanChatConfig(orgId: string): Promise<HumanChatConfig> {
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { orgId } })
+    const dbConfig = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
     if (dbConfig) {
       const consultationPrompt = (dbConfig as Record<string, unknown>).consultationPrompt as string | null
       const humanSkillsRaw = (dbConfig as Record<string, unknown>).humanSkills as string | null

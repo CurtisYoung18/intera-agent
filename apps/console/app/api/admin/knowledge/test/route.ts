@@ -8,7 +8,7 @@ const GPTBOTS_API = 'https://api-sg.gptbots.ai/v1/vector/match'
 
 async function getApiKey(orgId: string): Promise<string | null> {
   try {
-    const config = await prisma.agentConfig.findUnique({ where: { orgId }, select: { gptbotsApiKey: true } })
+    const config = await prisma.agentConfig.findFirst({ where: { orgId }, select: { gptbotsApiKey: true }, orderBy: { createdAt: 'asc' } })
     if (config?.gptbotsApiKey) return config.gptbotsApiKey
   } catch { /* DB not ready */ }
   return process.env.GPTBOTS_API_KEY ?? null

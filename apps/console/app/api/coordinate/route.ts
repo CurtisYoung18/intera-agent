@@ -33,7 +33,7 @@ async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
   if (cached) return cached
 
   try {
-    const dbConfig = await prisma.agentConfig.findUnique({ where: { orgId } })
+    const dbConfig = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
     if (dbConfig) {
       const config: AgentConfigData = {
         model: dbConfig.model,
