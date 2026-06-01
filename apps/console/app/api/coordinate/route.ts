@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from '@/lib/agent/api/provider-config'
 import { prisma } from '@intera/shared/prisma'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
 import {
   DEFAULT_SYSTEM_PROMPT,
@@ -72,6 +73,16 @@ function parseJson(raw: string | null | undefined): unknown {
 }
 
 export async function POST(request: NextRequest) {
+  // ── Auth gate ──
+  const authOrgId = await resolveOrgFromApiKey(request)
+  const isInternal = !authOrgId && isTrustedInternalCall(request)
+  if (!authOrgId && !isInternal) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -81,7 +92,19 @@ export async function POST(request: NextRequest) {
 
       try {
         const body = await request.json()
-        const orgId = String(body.orgId || 'default')
+        const bodyOrgId = String(body.orgId || '')
+
+        if (authOrgId && bodyOrgId && bodyOrgId !== authOrgId) {
+          sendEvent({
+            type: 'error',
+            data: 'orgId mismatch',
+            timestamp: new Date().toISOString(),
+          })
+          controller.close()
+          return
+        }
+
+        const orgId = authOrgId || bodyOrgId || 'default'
         const userUtterance = String(body.userUtterance || '').slice(0, 8000)
         const preferZh = Boolean(body.preferZh)
         const rawIds: unknown[] = Array.isArray(body.caseIds) ? body.caseIds : []

@@ -15,6 +15,7 @@ import { enqueueRetry } from './retry-queue'
 import { markChannelUnhealthy, markChannelHealthy } from './channel-health'
 import { downloadAndEncode, isSupportedImageType } from './image-utils'
 import { generateCaseId } from '@/lib/utils'
+import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
 import type { SSEEvent } from '@intera/shared/types'
 
 /** Extract optional LiveChat API params from config for transparent pass-through. */
@@ -212,7 +213,11 @@ export async function handleIncomingEvent(
   try {
     response = await fetch(getInternalMessagesUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        [INTERNAL_SECRET_HEADER]: process.env.INTERNAL_API_SECRET || '',
+        'x-intera-org': session.orgId,
+      },
       body: JSON.stringify(body),
     })
   } catch (err) {

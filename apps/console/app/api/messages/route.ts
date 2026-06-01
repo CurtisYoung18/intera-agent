@@ -8,6 +8,7 @@ import { enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/ag
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
 import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
 
@@ -250,6 +251,21 @@ export async function POST(request: NextRequest) {
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
+        // ── Auth gate: orgId from credential, NOT from body ──
+        const authOrgId = await resolveOrgFromApiKey(request)
+        const isInternal = !authOrgId && isTrustedInternalCall(request)
+        if (!authOrgId && !isInternal) {
+          sendEvent({ type: 'error', data: 'Unauthorized — valid API key or internal secret required', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+        // If body sends a different orgId than the credential, reject (don't silently override)
+        if (authOrgId && orgId && orgId !== authOrgId) {
+          sendEvent({ type: 'error', data: 'orgId mismatch — body orgId must match API key org', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
         // Validate orgId format
         if (orgId && (typeof orgId !== 'string' || orgId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(orgId))) {
           sendEvent({ type: 'error', data: 'Invalid orgId format', timestamp: new Date().toISOString() })
@@ -290,7 +306,7 @@ export async function POST(request: NextRequest) {
 
         let userMessage = message
         let resolvedCaseId = caseId || generateCaseId()
-        let resolvedOrgId = orgId || 'default'
+        let resolvedOrgId = authOrgId || orgId || 'default'
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
@@ -622,11 +638,6 @@ export async function POST(request: NextRequest) {
           'general'
 
         try {
-          await prisma.organization.upsert({
-            where: { id: resolvedOrgId },
-            update: {},
-            create: { id: resolvedOrgId, name: resolvedOrgId },
-          })
           await prisma.case.upsert({
             where: { id: resolvedCaseId },
             update: {},

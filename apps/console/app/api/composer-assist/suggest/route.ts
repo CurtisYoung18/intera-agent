@@ -4,6 +4,7 @@ import {
   loadComposerAssistSettings,
   parseStopSequences,
 } from '@/lib/agent/composer-assist-config'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 
 const DRAFT_MAX = 3800
 const CONTINUATION_CAP = 360
@@ -31,6 +32,13 @@ function normalizeContinuation(draft: string, raw: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  // ── Auth gate ──
+  const authOrgId = await resolveOrgFromApiKey(request)
+  const isInternal = !authOrgId && isTrustedInternalCall(request)
+  if (!authOrgId && !isInternal) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   let body: { draft?: string; orgId?: string }
   try {
     body = await request.json()
@@ -38,7 +46,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const orgId = typeof body.orgId === 'string' && body.orgId.trim() ? body.orgId.trim() : 'default'
+  const bodyOrgId = typeof body.orgId === 'string' && body.orgId.trim() ? body.orgId.trim() : ''
+  if (authOrgId && bodyOrgId && bodyOrgId !== authOrgId) {
+    return NextResponse.json({ error: 'orgId mismatch' }, { status: 400 })
+  }
+  const orgId = authOrgId || bodyOrgId || 'default'
   const draftRaw = typeof body.draft === 'string' ? body.draft : ''
   if (draftRaw.length > DRAFT_MAX) {
     return NextResponse.json({ error: 'Draft too long' }, { status: 400 })

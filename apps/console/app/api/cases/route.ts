@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 import { getActiveOrgId } from '@/lib/auth'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -12,7 +13,18 @@ export async function GET(req: NextRequest) {
 
   // ── Runtime/user view: list cases for a specific user ──
   if (userId) {
-    const orgId = searchParams.get('orgId') || 'default'
+    // ── Auth gate ──
+    const authOrgId = await resolveOrgFromApiKey(req)
+    const isInternal = !authOrgId && isTrustedInternalCall(req)
+    if (!authOrgId && !isInternal) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const queryOrgId = searchParams.get('orgId') || ''
+    if (authOrgId && queryOrgId && queryOrgId !== authOrgId) {
+      return NextResponse.json({ error: 'orgId mismatch' }, { status: 400 })
+    }
+    const orgId = authOrgId || queryOrgId || 'default'
     const chatId = searchParams.get('chatId') || null
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 50)
 
