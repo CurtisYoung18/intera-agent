@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { enqueueMessageOrCreate } from '@/lib/agent/session-store'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 
 export async function POST(
   request: NextRequest,
@@ -26,6 +27,12 @@ export async function POST(
   // Validate caseId
   if (!caseId || !/^[a-zA-Z0-9_-]+$/.test(caseId) || caseId.length > 128) {
     return NextResponse.json({ error: 'Invalid caseId' }, { status: 400 })
+  }
+
+  // ── Auth gate ──
+  const authOrgId = await resolveOrgFromApiKey(request)
+  if (!authOrgId && !isTrustedInternalCall(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   // Body size guard

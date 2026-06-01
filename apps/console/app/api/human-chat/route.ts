@@ -12,6 +12,7 @@ import { ConsultationAgent } from '@/lib/agent/consultation-agent'
 import { prisma } from '@intera/shared/prisma'
 import type { SSEEvent } from '@intera/shared/types'
 import { DEFAULT_CONSULTATION_PROMPT } from '@intera/shared/defaults'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 
 function parseJsonArray(raw: string | null | undefined): string[] {
   if (!raw) return []
@@ -55,6 +56,13 @@ async function loadHumanChatConfig(orgId: string): Promise<HumanChatConfig> {
 }
 
 export async function POST(request: NextRequest) {
+  // ── Auth gate ──
+  const authOrgId = await resolveOrgFromApiKey(request)
+  const isInternal = !authOrgId && isTrustedInternalCall(request)
+  if (!authOrgId && !isInternal) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -80,6 +88,13 @@ export async function POST(request: NextRequest) {
 
         if (!task || task.status === 'resolved') {
           sendEvent({ type: 'error', data: 'Task not found or already resolved', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
+
+        // Verify the task belongs to the authenticated org
+        if (authOrgId && task.case.orgId !== authOrgId) {
+          sendEvent({ type: 'error', data: 'Forbidden — task does not belong to your org', timestamp: new Date().toISOString() })
           controller.close()
           return
         }

@@ -1,10 +1,11 @@
 // GET /api/human-tasks — list human tasks
-// Agent view: ?caseId=xxx (no auth, returns slim task fields)
-// Ops view: no params (org auth, returns full task objects with case)
+// Agent view: ?caseId=xxx (API key / internal auth, returns slim task fields)
+// Ops view: no params (cookie auth, returns full task objects with case)
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 import { getActiveOrgId } from '@/lib/auth'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -12,6 +13,19 @@ export async function GET(request: NextRequest) {
 
   // ── Agent/runtime view: list tasks for a specific case ──
   if (caseId) {
+    // ── Auth gate ──
+    const authOrgId = await resolveOrgFromApiKey(request)
+    if (!authOrgId && !isTrustedInternalCall(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    // Verify the case belongs to the authenticated org
+    if (authOrgId) {
+      const c = await prisma.case.findUnique({ where: { id: caseId }, select: { orgId: true } })
+      if (!c || c.orgId !== authOrgId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
     try {
       const tasks = await prisma.humanTask.findMany({
         where: { caseId },

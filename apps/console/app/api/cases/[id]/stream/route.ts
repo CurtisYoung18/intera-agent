@@ -31,6 +31,7 @@ import {
   HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
 } from '@intera/shared/defaults'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 
 // ─── Config helpers (shared with /api/messages) ───────────────────────────────
 
@@ -380,7 +381,19 @@ export async function GET(
 ) {
   const { id: caseId } = await params
   const q = request.nextUrl.searchParams
-  const orgId = q.get('orgId') || 'default'
+  const queryOrgId = q.get('orgId') || 'default'
+
+  // ── Auth gate ──
+  const authOrgId = await resolveOrgFromApiKey(request)
+  const isInternal = !authOrgId && isTrustedInternalCall(request)
+  if (!authOrgId && !isInternal) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+  if (authOrgId && queryOrgId !== 'default' && queryOrgId !== authOrgId) {
+    return new Response('orgId mismatch', { status: 400 })
+  }
+  const orgId = authOrgId || queryOrgId
+
   const userId = q.get('userId') || 'anonymous'
   const userLabel = q.get('userLabel') || undefined
   const chatId = q.get('chatId') || null
