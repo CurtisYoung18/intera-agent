@@ -152,7 +152,7 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
       <span ref={iRef} style={{ display: 'inline-block', flexShrink: 0 }}>I</span>
       {['A', 'N', 'T', 'E', 'R', 'A'].map((ch, i) => (
         <span
-          key={`${ch}-${tick}-${size}`}
+          key={`${ch}-${i}-${tick}-${size}`}
           ref={(el) => { letterRefs.current[i] = el }}
           style={{ display: 'inline-block', maxWidth: 0, opacity: 0, whiteSpace: 'pre', overflow: 'hidden', flexShrink: 0 }}
         >

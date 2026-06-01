@@ -16,12 +16,13 @@ import {
   Plug,
   HandPlatter,
   Users2,
+  FlaskConical,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 import InteraLogo from '@intera/shared/ui/intera-logo'
 
-type NavSlug = 'humanTasks' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'humanOps' | 'caseTypes' | 'knowledge' | 'channels' | 'subAgents'
+type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels'
 
 interface NavItem {
   href: string
@@ -29,6 +30,7 @@ interface NavItem {
   icon: typeof ClipboardList
   color: string
   matchPattern?: string
+  badge?: string
 }
 
 interface CustomerInfo {
@@ -62,23 +64,21 @@ interface CustomerInfo {
  *   /admin/integrations    Channel integrations (LiveChat active; Slack/Discord placeholders).
  */
 
-const OPS_ITEMS: NavItem[] = [
-  { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
-  { href: '/ops/users', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/ops/users' },
-  { href: '/ops/dashboards', slug: 'dashboards', icon: BarChart3, color: '#14b8a6', matchPattern: '/ops/dashboards' },
-  // { href: '/ops/human-tasks', slug: 'humanTasks', icon: ClipboardList, color: '#f0b050' }, // moved to Channels → Web Chat
-  { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
-]
-
-const ADMIN_ITEMS: NavItem[] = [
+const BUILD_ITEMS: NavItem[] = [
+  { href: '/admin/playground', slug: 'playground', icon: FlaskConical, color: '#8b6ff5', badge: 'NEW' },
   { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
-  { href: '/admin/tools', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
-  // { href: '/admin/sub-agents', slug: 'subAgents', icon: Users2, color: '#b8944c' }, // Phase A: hidden — merged into Capabilities tab
   { href: '/admin/guardrails', slug: 'guardrails', icon: Shield, color: '#e64539' },
-  // { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#5bb8f7' }, // Phase B: merged into Channels Human Ops tab
+  { href: '/admin/tools', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
   { href: '/admin/channels', slug: 'channels', icon: Plug, color: '#7c3aed' },
+]
+
+const OPERATE_ITEMS: NavItem[] = [
+  { href: '/ops/dashboards', slug: 'dashboards', icon: BarChart3, color: '#14b8a6', matchPattern: '/ops/dashboards' },
+  { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
+  { href: '/ops/users', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/ops/users' },
+  { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -300,8 +300,8 @@ export default function ConsoleSidebar() {
         </div>
 
         <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
-          <NavGroup label={t('sidebar.ops')} items={OPS_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
-          <NavGroup label={t('sidebar.admin')} items={ADMIN_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+          <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+          <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
         </nav>
 
         <div className="px-3 pb-3 pt-2 border-t border-black/5">
@@ -423,6 +423,11 @@ function NavGroup({
                   active ? 'text-[var(--mist)] font-medium' : 'text-[var(--fog)]'
                 }`}>
                   {itemLabel}
+                  {item.badge && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-indigo/10 px-1.5 py-0.5 text-[9px] font-semibold text-indigo">
+                      {item.badge}
+                    </span>
+                  )}
                 </span>
               )}
 
