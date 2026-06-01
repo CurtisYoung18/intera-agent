@@ -251,12 +251,13 @@ export class CaseAgentLoop {
 
   /**
    * Evaluate stage transition after no tools were called.
-   * Includes the "created → next stage" fallback when the evaluator returns no transition.
+   * Uses rule-based checks (required skills + evidence) instead of LLM evaluation.
+   * Includes a "created → next stage" fallback.
    */
   async evaluateStageTransitionAfterNoTools(
     iterationCount: number,
   ): Promise<TransitionEval> {
-    // Step mode: skip LLM stage evaluator — advance 'created' → first stage automatically,
+    // Step mode: skip stage machine — advance 'created' → first stage automatically,
     // then let the agent drive via todos (no further stage machine transitions).
     if (this.caseSchema.executionMode === 'cc') {
       if (this._currentStage === 'created') {
@@ -272,30 +273,32 @@ export class CaseAgentLoop {
       return { shouldTransition: false, reason: 'Step mode: stage progression driven by todos.' }
     }
 
-    let transitionEval: TransitionEval
-    try {
-      transitionEval = await this.stageExecutor.evaluateTransition(this._currentStage, iterationCount)
-    } catch (err) {
-      console.error('[CaseAgentLoop] Stage evaluation failed:', err)
-      transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
+    // Rule-based transition: check skills + evidence requirements
+    const skillCheck = this.stageExecutor.checkRequiredSkills(this._currentStage)
+    const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(this._currentStage)
+    const nextStage = this.stageExecutor.getNextStageName(this._currentStage)
+
+    if (skillCheck.met && evidenceCheck.met && nextStage) {
+      return {
+        shouldTransition: true,
+        nextStage,
+        reason: `Rule-based: all skills and evidence met for ${this._currentStage}.`,
+      }
     }
 
-    // Fallback: advance from 'created' after first assistant turn when evaluator returns nothing
-    if (
-      !(transitionEval.shouldTransition && transitionEval.nextStage) &&
-      this._currentStage === 'created'
-    ) {
+    // Fallback: advance from 'created' after first assistant turn
+    if (this._currentStage === 'created') {
       const fbNext = this.stageExecutor.getNextStageName('created')
       if (fbNext) {
-        transitionEval = {
+        return {
           shouldTransition: true,
           nextStage: fbNext,
-          reason: 'Fallback advance from created after first assistant turn (evaluator returned no transition).',
+          reason: 'Fallback advance from created after first assistant turn.',
         }
       }
     }
 
-    return transitionEval
+    return { shouldTransition: false, reason: 'Requirements not yet met.' }
   }
 
   // ── Sub-agent management ──────────────────────────────────────────────────
@@ -489,27 +492,20 @@ export class CaseAgentLoop {
     }
 
     // ── Stage transition eval (non-terminal) ──────────────────
+    // Rule-based: check required skills + evidence requirements
     if (this.stageExecutor.hasStageConfigs()) {
-      let transitionEval: TransitionEval
-      try {
-        transitionEval = await this.stageExecutor.evaluateTransition(this._currentStage, iterationCount)
-      } catch (err) {
-        console.error('[CaseAgentLoop] Stage evaluation (post-tools) failed:', err)
-        transitionEval = { shouldTransition: false, reason: `evaluation error: ${err}` }
+      const skillCheck = this.stageExecutor.checkRequiredSkills(this._currentStage)
+      const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(this._currentStage)
+      const nextStage = this.stageExecutor.getNextStageName(this._currentStage)
+
+      if (skillCheck.met && evidenceCheck.met && nextStage) {
+        const transitionEval: TransitionEval = {
+          shouldTransition: true,
+          nextStage,
+          reason: `Rule-based: all skills and evidence met for ${this._currentStage}.`,
+        }
+        await this.applyStageTransitionFromEval(transitionEval, nudgeCount, sendEvent)
       }
-      if (transitionEval.modelUsed) {
-        await this.services.traceWriter.write(
-          'stage_eval',
-          `Stage eval (post-tools): ${this._currentStage} → ${transitionEval.nextStage || 'stay'}`,
-          {
-            model: transitionEval.modelUsed,
-            stage: this._currentStage,
-            shouldTransition: transitionEval.shouldTransition,
-            reason: transitionEval.reason,
-          },
-        )
-      }
-      await this.applyStageTransitionFromEval(transitionEval, nudgeCount, sendEvent)
     }
 
     return { type: 'none' }
@@ -819,7 +815,6 @@ export class CaseAgentLoop {
     this.services.chatMemory.setCaseStatus(next)
     nudgeCount.value = 0
     this.services.chatMemory.resetPolicyHits()
-    this.stageExecutor.resetEvalParseFailures()
 
     await this.services.traceWriter.write('loop_decision', 'Stage transition', {
       from: prevStage,

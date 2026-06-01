@@ -30,9 +30,8 @@ export interface StageStrategyOptions {
 
 // NOTE: StageStrategy conforms to the ExecutionStrategy interface shape but does
 // not formally `implements ExecutionStrategy` because evaluateContinuation must
-// be async (StageExecutor.evaluateTransition() may call an LLM), while the
-// current ExecutionStrategy interface declares a synchronous return type.
-// The interface in types.ts should be updated to Promise<ContinueDecision>.
+// be async while the current ExecutionStrategy interface declares a synchronous
+// return type. The interface in types.ts should be updated to Promise<ContinueDecision>.
 export class StageStrategy {
   private stageConfig?: StageConfig
   private stageExecutor?: StageExecutor
@@ -125,29 +124,29 @@ export class StageStrategy {
   // ── Continuation decision ────────────────────────────────────────────
 
   /**
-   * Delegates to StageExecutor.evaluateTransition() if available.
-   * Otherwise uses a simple heuristic:
-   *  - finalize_case tool use → stop (resolved)
-   *  - create_human_task tool use → stop (waiting_human)
-   *  - otherwise → continue
+   * Uses rule-based stage evaluation (checkRequiredSkills + checkEvidenceRequirements
+   * + getNextStageName) instead of LLM-based evaluateTransition.
+   * Falls back to simple heuristic (checking for terminal tool calls) when no
+   * StageExecutor is available.
    */
   async evaluateContinuation(
     lastMessage: Message,
     _toolResults: ToolResult[],
     iteration: number,
   ): Promise<ContinueDecision> {
-    // Delegate to StageExecutor for full transition evaluation
-    // (handles manual, auto-condition, and LLM-evaluation transition types).
+    // Rule-based transition evaluation via StageExecutor
     if (this.stageExecutor) {
       const stage = this.stageExecutor.getCurrentStage()
-      const eval_ = await this.stageExecutor.evaluateTransition(stage, iteration)
+      const skillCheck = this.stageExecutor.checkRequiredSkills(stage)
+      const evidenceCheck = this.stageExecutor.checkEvidenceRequirements(stage)
+      const nextStage = this.stageExecutor.getNextStageName(stage)
 
-      if (eval_.shouldTransition) {
-        if (eval_.nextStage) {
-          return { action: 'transition', nextStage: eval_.nextStage }
+      if (skillCheck.met && evidenceCheck.met) {
+        if (nextStage) {
+          return { action: 'transition', nextStage }
         }
         // End of stage pipeline — no further stages
-        return { action: 'stop', reason: eval_.reason || 'all stages complete' }
+        return { action: 'stop', reason: 'all stages complete' }
       }
 
       return { action: 'continue' }

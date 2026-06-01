@@ -596,8 +596,6 @@ export const en: Record<string, string> = {
     'Main LLM for the agent loop—planning, tool calls, narration, before finalize—your usual “principal brain”. Stage evaluation uses the separate selector below.',
   'agent.modelCaseTypeNote':
     'To run a different model for a flow or phase, configure it under Case Types → Stages → Model for that stage; it overrides this default while that stage applies.',
-  'agent.evaluationModel': 'Stage Evaluation Model',
-  'agent.evaluationModelHint': 'Model for stage transition evaluation. Defaults to MiniMax-M2.7-highspeed if unset.',
   'agent.temperature': 'Temperature ({n})',
   'agent.thinkingBudget': 'Thinking Budget',
   'agent.maxIterations': 'Max Iterations',
@@ -1728,8 +1726,6 @@ export const zh: Record<string, string> = {
     '主 Agent 一轮里「规划—调工具—生成回复—收口」所用的大模型，也就是常说的主引擎。阶段评估另由下方阶段评估模型（或默认 MiniMax-M2.7-highspeed）承担。',
   'agent.modelCaseTypeNote':
     '若某案例类型或阶段需要换模型，请到「案例类型」→ 编辑 → 阶段配置里的「模型」覆盖；该阶段生效期间优先生效于此处默认值。',
-  'agent.evaluationModel': '阶段评估模型',
-  'agent.evaluationModelHint': '用于阶段转换评估的模型。不设置则默认使用 MiniMax-M2.7-highspeed。',
   'agent.temperature': '温度（{n}）',
   'agent.thinkingBudget': '思考预算',
   'agent.maxIterations': '最大轮次',

@@ -661,7 +661,7 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt: `You are the stage transition evaluator for stage "created" only.
 
 Use the Case context block: Confirmed facts, Missing facts, Skills called, Skill results, Key events.
@@ -725,7 +725,7 @@ If you need more info from the customer (screenshots, etc.), you MUST collect it
       ],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
 
 - If get_latest_deposit returned a record whose txnId differs from confirmedFacts.txnId, OR returned "not found" → treat as unresolvable conflict, nextStage stays investigating (agent should call create_human_task).
@@ -766,7 +766,7 @@ Respond JSON ONLY:
           required: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'Check if order details are verified. If order found and matches → investigating. If missing info → back to collecting.' },
+      transition: { type: 'evaluation', evaluationPrompt: 'Check if order details are verified. If order found and matches → investigating. If missing info → back to collecting.' },
     },
     investigating: {
       name: 'investigating',
@@ -784,7 +784,7 @@ Respond JSON ONLY:
           parallel: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'If conflict detected → call create_human_task. If resolved → resolved.' },
+      transition: { type: 'evaluation', evaluationPrompt: 'If conflict detected → call create_human_task. If resolved → resolved.' },
     },
     resolved: {
       name: 'resolved',
@@ -801,7 +801,7 @@ Respond JSON ONLY:
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt: `Stage transition evaluator for **created** only.
 
 Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
@@ -898,7 +898,7 @@ JSON ONLY:
       ],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt:
           'If account/KYC status conflicts with customer narrative → call create_human_task (account_ops). If KB indicates mandatory human appeal → call create_human_task. If status is clearly explained with evidence → resolved. If facts still missing → collecting.',
       },
@@ -933,7 +933,7 @@ JSON ONLY:
           required: true,
         },
       ],
-      transition: { type: 'evaluation', evaluationModel: 'MiniMax-M2.7-highspeed', evaluationPrompt: 'If large_amount or policy_violation → waiting_human. If eligible → approved. If not eligible → resolved with rejection.' },
+      transition: { type: 'evaluation', evaluationPrompt: 'If large_amount or policy_violation → waiting_human. If eligible → approved. If not eligible → resolved with rejection.' },
     },
     approved: {
       name: 'approved',
@@ -955,7 +955,7 @@ JSON ONLY:
       availableSkills: ['request_user_input'],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt: `Stage transition evaluator for **created** only.
 
 Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
@@ -1023,7 +1023,7 @@ JSON ONLY:
       ],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt: 'If withdrawal status conflicts with customer narrative → call create_human_task (withdrawal_ops). If conditions clearly explained with evidence → resolved. If facts still missing → collecting.',
       },
     },
@@ -1062,7 +1062,7 @@ JSON ONLY:
       ],
       transition: {
         type: 'evaluation',
-        evaluationModel: 'MiniMax-M2.7-highspeed',
+
         evaluationPrompt: 'If promotion info is returned and customer question is answered → resolved. If customer needs more details → stay in investigating. If conflict → waiting_human.',
       },
     },

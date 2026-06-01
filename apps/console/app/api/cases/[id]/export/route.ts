@@ -67,7 +67,6 @@ export async function GET(
   if (agentConfig) {
     sections.push('## Agent Config')
     sections.push(`- **Model**: ${agentConfig.model}`)
-    sections.push(`- **Evaluation Model**: ${(agentConfig as any).evaluationModel || 'default'}`)
     sections.push(`- **Temperature**: ${agentConfig.temperature}`)
     sections.push(`- **Thinking Budget**: ${agentConfig.thinkingBudget}`)
     sections.push(`- **Max Iterations**: ${agentConfig.maxIterations}`)

@@ -85,7 +85,6 @@ async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
         policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
         resumePrompt: (dbConfig as Record<string, unknown>).resumePrompt ? String((dbConfig as Record<string, unknown>).resumePrompt) : '',
         formResponseTemplate: (dbConfig as Record<string, unknown>).formResponseTemplate ? String((dbConfig as Record<string, unknown>).formResponseTemplate) : '',
-        evaluationModel: (dbConfig as Record<string, unknown>).evaluationModel ? String((dbConfig as Record<string, unknown>).evaluationModel) : undefined,
         prefixContinuationEnabled: Boolean((dbConfig as Record<string, unknown>).prefixContinuationEnabled),
         prefixContinuationChatModel: (dbConfig as Record<string, unknown>).prefixContinuationChatModel as string | undefined,
         prefixContinuationBaseUrl: (dbConfig as Record<string, unknown>).prefixContinuationBaseUrl as string | undefined,

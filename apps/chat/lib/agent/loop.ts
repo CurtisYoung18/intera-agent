@@ -882,9 +882,6 @@ export class AgentLoop {
         // transition fires here while isCaseActive is still false.
         if (!isConsultation && this.caseLoop?.hasStageConfigs()) {
           const transitionEval = await this.caseLoop.evaluateStageTransitionAfterNoTools(this.iterationCount)
-          if (transitionEval.modelUsed) {
-            await this.traceWriter.write('stage_eval', `Stage eval: ${this.currentStage} → ${transitionEval.nextStage || 'stay'}`, { model: transitionEval.modelUsed, stage: this.currentStage, shouldTransition: transitionEval.shouldTransition, reason: transitionEval.reason })
-          }
 
           const nudgeBox = { value: this.nudgeCount }
           const advanced = await this.caseLoop.applyStageTransitionFromEval(transitionEval, nudgeBox, sendEvent)

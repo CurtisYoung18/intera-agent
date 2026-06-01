@@ -3,9 +3,7 @@
 // Each stage defines: required skills, evidence requirements, guardrails,
 // tool allowlist, model/prompt overrides, and transition evaluation rules.
 
-import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import { createAgentClient } from './api/provider-config'
 import type {
   CaseSchemaConfig,
   StageConfig,
@@ -14,45 +12,8 @@ import type {
   AgentConfigData,
   ChatMemoryData,
 } from '@intera/shared/types'
-import { withRetry, CannotRetryError } from './api/with-retry'
 import { DEFAULT_STAGE_CONFIGS } from '@intera/shared/defaults'
 import type { ChatMemoryManager } from './memory'
-
-/** Extract a JSON object from LLM output that may be wrapped in markdown code fences. */
-function extractJsonFromLlmOutput(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim()
-
-  // 1. Direct parse (works when assistant pre-fill forces clean JSON start)
-  if (trimmed.startsWith('{')) {
-    try { return JSON.parse(trimmed) } catch { /* fall through */ }
-    // Retry: truncate at last complete brace pair (model may append trailing text)
-    const lastBrace = trimmed.lastIndexOf('}')
-    if (lastBrace > 0) {
-      try { return JSON.parse(trimmed.slice(0, lastBrace + 1)) } catch { /* fall through */ }
-    }
-    // Retry: auto-close unclosed braces
-    const openCount = (trimmed.match(/\{/g) || []).length
-    const closeCount = (trimmed.match(/\}/g) || []).length
-    if (openCount > closeCount) {
-      try { return JSON.parse(trimmed + '}'.repeat(openCount - closeCount)) } catch { /* fall through */ }
-    }
-  }
-
-  // 2. Try ```json ... ``` fence
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) {
-    const inner = fenceMatch[1].trim()
-    try { return JSON.parse(inner) } catch { /* fall through */ }
-  }
-
-  // 3. Try regex extraction (last resort)
-  const match = trimmed.match(/\{[\s\S]*\}/)
-  if (match) {
-    try { return JSON.parse(match[0]) } catch { /* fall through */ }
-  }
-
-  return null
-}
 
 export interface StageCheckResult {
   met: boolean
@@ -64,13 +25,10 @@ export interface TransitionEval {
   shouldTransition: boolean
   nextStage?: string
   reason: string
-  modelUsed?: string
-  evaluationFallbackTriggered?: boolean
 }
 
 export class StageExecutor {
   private stageConfigs: Record<string, StageConfig>
-  private consecutiveEvalParseFailures = 0
   private bootstrapNewCase: boolean
 
   constructor(
@@ -104,11 +62,6 @@ export class StageExecutor {
   /** Get the stage config for a given stage name. */
   getStageConfig(stage: string): StageConfig | null {
     return this.stageConfigs[stage] || null
-  }
-
-  /** Reset the evaluation parse failure counter (called on successful stage transition). */
-  resetEvalParseFailures(): void {
-    this.consecutiveEvalParseFailures = 0
   }
 
   /** Get the index of the next stage (for transition). */
@@ -287,199 +240,6 @@ export class StageExecutor {
     }
 
     return { met: missing.length === 0, missing, details }
-  }
-
-  // -----------------------------------------------------------------------
-  // Transition evaluation
-  // -----------------------------------------------------------------------
-
-  /** Evaluate whether the case should transition to the next stage. */
-  async evaluateTransition(
-    stage: string,
-    iterationCount: number,
-  ): Promise<TransitionEval> {
-    const cfg = this.getStageConfig(stage)
-    if (!cfg?.transition) {
-      return { shouldTransition: false, reason: 'no transition rule defined' }
-    }
-
-    const rule = cfg.transition
-
-    // ── Manual: never auto-transition ──
-    if (rule.type === 'manual') {
-      return { shouldTransition: false, reason: 'manual transition' }
-    }
-
-    // ── Auto: check conditions ──
-    if (rule.type === 'auto' && rule.conditions) {
-      for (const cond of rule.conditions) {
-        if (cond.type === 'all_evidence_gathered') {
-          const check = this.checkEvidenceRequirements(stage)
-          if (!check.met) {
-            return { shouldTransition: false, reason: `evidence missing: ${check.missing.join(', ')}` }
-          }
-        }
-        if (cond.type === 'all_skills_called') {
-          const check = this.checkRequiredSkills(stage)
-          if (!check.met) {
-            return { shouldTransition: false, reason: `skills not called: ${check.missing.join(', ')}` }
-          }
-        }
-        if (cond.type === 'min_iterations') {
-          const min = Number(cond.value) || 1
-          if (iterationCount < min) {
-            return { shouldTransition: false, reason: `min iterations not met (${iterationCount} < ${min})` }
-          }
-        }
-      }
-      const nextStage = this.getNextStageName(stage)
-      return {
-        shouldTransition: true,
-        nextStage: nextStage || undefined,
-        reason: `all conditions met, transitioning to ${nextStage || 'end'}`,
-      }
-    }
-
-    // ── Evaluation: use LLM to decide ──
-    if (rule.type === 'evaluation') {
-      const evalModel = rule.evaluationModel || this.agentConfig.evaluationModel || this.agentConfig.model
-      try {
-        const result = await this.runEvaluation(stage, rule.evaluationPrompt, evalModel)
-        if (result.evaluationFallbackTriggered) {
-          return { ...result, modelUsed: evalModel }
-        }
-        this.consecutiveEvalParseFailures = 0
-        return { ...result, modelUsed: evalModel }
-      } catch (err) {
-        console.warn('[StageExecutor] Evaluation failed, defaulting to stay:', err)
-        return { shouldTransition: false, reason: `evaluation failed: ${err}`, modelUsed: evalModel }
-      }
-    }
-
-    return { shouldTransition: false, reason: 'no applicable transition rule' }
-  }
-
-  /** Run LLM-based transition evaluation using native tool_use (not text-JSON prompt). */
-  private async runEvaluation(
-    stage: string,
-    evalPrompt?: string,
-    evalModel?: string,
-  ): Promise<TransitionEval> {
-    const mem = this.chatMemory.getSummary()
-    const model = evalModel || this.agentConfig.model
-    const nextStage = this.getNextStageName(stage)
-    const stages = this.caseSchema.stages
-
-    const prompt = evalPrompt ||
-      `Determine if the case should transition from "${stage}" to the next stage. ` +
-      `Available stages: ${stages.join(' → ')}. ` +
-      `Next stage: ${nextStage || 'none'}. ` +
-      `Call the stage_transition_decision tool with your decision.`
-
-    const contextBlock = [
-      `Current stage: ${stage}`,
-      `Stages: ${stages.join(' → ')}`,
-      `Confirmed facts: ${JSON.stringify(mem.confirmedFacts)}`,
-      `Missing facts: ${JSON.stringify(mem.missingFacts)}`,
-      `Skills called: ${JSON.stringify(mem.skillsCalled)}`,
-      `Skill results: ${JSON.stringify(mem.skillResults)}`,
-      `Key events: ${JSON.stringify(mem.keyEvents)}`,
-    ].join('\n')
-
-    // Native tool_use: model MUST call this tool with structured input.
-    // The API protocol guarantees the input is valid JSON — no regex extraction needed.
-    const transitionTool: Tool = {
-      name: 'stage_transition_decision',
-      description: 'Record your stage transition decision with structured fields.',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          shouldTransition: { type: 'boolean' as const, description: 'Whether the case should move to the next stage' },
-          nextStage: { type: 'string' as const, description: `Target stage name. Must be one of: ${stages.join(', ')}` },
-          reason: { type: 'string' as const, description: 'Brief explanation of why this decision was made' },
-        },
-        required: ['shouldTransition', 'reason'],
-      },
-    }
-
-    let msg: Anthropic.Messages.Message
-    try {
-      msg = await withRetry(
-        (retryClient) => retryClient.messages.create({
-          model,
-          max_tokens: 256,
-          temperature: 0.1,
-          system: 'You are a case stage transition evaluator. Call the stage_transition_decision tool with your decision.',
-          tools: [transitionTool],
-          messages: [
-            { role: 'user', content: `${prompt}\n\nCase context:\n${contextBlock}` },
-          ],
-        }),
-        { querySource: 'policy_eval', model },
-        () => createAgentClient(model),
-      )
-    } catch (err) {
-      if (err instanceof CannotRetryError) {
-        this.consecutiveEvalParseFailures++
-        return { shouldTransition: false, reason: `evaluation error: ${err.errorClass}` }
-      }
-      throw err
-    }
-
-    // Try tool_use blocks FIRST — structured output is preferred.
-    for (const block of msg.content) {
-      if (block.type === 'tool_use') {
-        const input = (block as any).input as Record<string, unknown> | undefined
-        if (input) {
-          this.consecutiveEvalParseFailures = 0
-          return {
-            shouldTransition: !!input.shouldTransition,
-            nextStage: (input.nextStage as string) || nextStage || undefined,
-            reason: (input.reason as string) || 'evaluation complete',
-          }
-        }
-      }
-    }
-
-    // Fallback: model returned text instead of tool_use (e.g. MiniMax)
-    const text = (msg.content[0] as any)?.text || ''
-    const parsed = extractJsonFromLlmOutput(text) as Record<string, unknown> | null
-    if (parsed?.shouldTransition !== undefined) {
-      this.consecutiveEvalParseFailures = 0
-      return {
-        shouldTransition: !!parsed.shouldTransition,
-        nextStage: (parsed.nextStage as string) || nextStage || undefined,
-        reason: (parsed.reason as string) || 'evaluation complete',
-      }
-    }
-
-    this.consecutiveEvalParseFailures++
-    console.warn('[StageExecutor] Could not parse evaluation response:', text.slice(0, 200))
-
-    // Circuit breaker: after 2 consecutive failures, fall back to rule-based auto transition
-    if (this.consecutiveEvalParseFailures >= 2) {
-      const failCount = this.consecutiveEvalParseFailures
-      const check = this.checkEvidenceRequirements(stage)
-      const skillCheck = this.checkRequiredSkills(stage)
-      if (check.met && skillCheck.met && nextStage) {
-        console.warn(`[StageExecutor] Circuit breaker triggered — falling back to auto transition (${stage} → ${nextStage})`)
-        this.consecutiveEvalParseFailures = 0
-        return {
-          shouldTransition: true,
-          nextStage,
-          reason: `fallback auto-transition after ${failCount} failures (evidence + skills met)`,
-          evaluationFallbackTriggered: true,
-        }
-      }
-      this.consecutiveEvalParseFailures = 0
-      return {
-        shouldTransition: false,
-        reason: `evaluation failed (${failCount} consecutive failures, fallback not met — missing: ${[...check.missing, ...skillCheck.missing].join(', ')})`,
-        evaluationFallbackTriggered: true,
-      }
-    }
-
-    return { shouldTransition: false, reason: 'evaluation could not produce valid result' }
   }
 
   // -----------------------------------------------------------------------

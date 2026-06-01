@@ -96,7 +96,6 @@ export interface AgentConfigData {
   debugMode: boolean
   enableLlmSanitization: boolean
   invariantCheck: boolean
-  evaluationModel: string
   prefixContinuationEnabled: boolean
   prefixContinuationChatModel: string
   prefixContinuationBaseUrl: string

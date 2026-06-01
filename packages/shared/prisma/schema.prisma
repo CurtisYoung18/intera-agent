@@ -49,7 +49,6 @@ model AgentConfig {
   consultationPrompt    String? // override for consultation system prompt (human-chat route)
   debugMode             Boolean @default(false) // write full API request/response to debug-logs/
   enableLlmSanitization Boolean @default(false) // LLM-based leaked context sanitization after each stream turn
-  evaluationModel       String? // Model for stage transition evaluation
 
   /// Chat app only: DeepSeek beta chat + prefix row — customer **composer** drafting assist (not agent loop).
   prefixContinuationEnabled         Boolean @default(false)

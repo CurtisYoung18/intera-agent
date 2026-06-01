@@ -271,7 +271,6 @@ export interface AgentConfigData {
   humanSkills?: string
   /** Custom consultation system prompt override (human-chat route). */
   consultationPrompt?: string
-  evaluationModel?: string
   /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */
   debugMode?: boolean
   /** When enabled, runs an LLM eval after each stream turn to detect and strip leaked model-context (think blocks, tool-result echoes). */
@@ -475,7 +474,6 @@ export interface EvidenceRequirement {
 export interface StageTransitionRule {
   type: 'auto' | 'evaluation' | 'manual'
   conditions?: StageTransitionCondition[]
-  evaluationModel?: string
   evaluationPrompt?: string
 }
 

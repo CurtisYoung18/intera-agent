@@ -75,9 +75,6 @@ async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
         formResponseTemplate: (dbConfig as Record<string, unknown>).formResponseTemplate
           ? String((dbConfig as Record<string, unknown>).formResponseTemplate)
           : '',
-        evaluationModel: (dbConfig as Record<string, unknown>).evaluationModel
-          ? String((dbConfig as Record<string, unknown>).evaluationModel)
-          : undefined,
         prefixContinuationEnabled: Boolean((dbConfig as Record<string, unknown>).prefixContinuationEnabled),
         prefixContinuationChatModel: (dbConfig as Record<string, unknown>).prefixContinuationChatModel as
           | string
@@ -293,7 +290,7 @@ export async function POST(request: NextRequest) {
 
         let userMessage = message
         let resolvedCaseId = caseId || generateCaseId()
-        let resolvedCustomerId = orgId || 'default'
+        let resolvedOrgId = orgId || 'default'
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
@@ -359,11 +356,11 @@ export async function POST(request: NextRequest) {
 
           if (task && task.status === 'resolved') {
             resolvedCaseId = task.caseId
-            resolvedCustomerId = task.case.orgId
+            resolvedOrgId = task.case.orgId
             resolvedUserId = task.case.userId
 
             const resumeTmpl =
-              (await loadAgentConfig(resolvedCustomerId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+              (await loadAgentConfig(resolvedOrgId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
             const parts = ['[Human task resolved — operator closed the case]']
             if (task.verdict) parts.push(`Operator verdict: ${task.verdict.replace(/_/g, ' ')}`)
             if (task.expectedEta) parts.push(`Expected resolution time: ${task.expectedEta}`)
@@ -428,7 +425,7 @@ export async function POST(request: NextRequest) {
           try {
             const activeCases = await prisma.case.findMany({
               where: {
-                orgId: resolvedCustomerId,
+                orgId: resolvedOrgId,
                 userId: resolvedUserId,
                 status: { notIn: ['resolved'] },
               },
@@ -471,11 +468,11 @@ export async function POST(request: NextRequest) {
         ) {
           try {
             const ctRow = await prisma.caseType.findUnique({
-              where: { orgId_type: { orgId: resolvedCustomerId, type: bodyCaseType } },
+              where: { orgId_type: { orgId: resolvedOrgId, type: bodyCaseType } },
             })
             const newCase = await prisma.case.create({
               data: {
-                orgId: resolvedCustomerId,
+                orgId: resolvedOrgId,
                 userId: resolvedUserId,
                 type: bodyCaseType,
                 status: 'created',
@@ -531,7 +528,7 @@ export async function POST(request: NextRequest) {
               const ctRow = await prisma.caseType.findUnique({
                 where: {
                   orgId_type: {
-                    orgId: resolvedCustomerId,
+                    orgId: resolvedOrgId,
                     type: inferredType,
                   },
                 },
@@ -566,7 +563,7 @@ export async function POST(request: NextRequest) {
             // Load case type schema if available
             try {
               const caseType = await prisma.caseType.findUnique({
-                where: { orgId_type: { orgId: resolvedCustomerId, type: existingCase.type } },
+                where: { orgId_type: { orgId: resolvedOrgId, type: existingCase.type } },
               })
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
@@ -581,7 +578,7 @@ export async function POST(request: NextRequest) {
                   orderBy: { resolvedAt: 'desc' },
                 })
                 if (resolvedTask) {
-                  const resumeTmpl = (await loadAgentConfig(resolvedCustomerId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+                  const resumeTmpl = (await loadAgentConfig(resolvedOrgId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
                   const parts = ['[Human task resolved — operator reviewed your case]']
                   if (resolvedTask.verdict) parts.push(`Operator verdict: ${resolvedTask.verdict.replace(/_/g, ' ')}`)
                   if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
@@ -627,16 +624,16 @@ export async function POST(request: NextRequest) {
 
         try {
           await prisma.organization.upsert({
-            where: { id: resolvedCustomerId },
+            where: { id: resolvedOrgId },
             update: {},
-            create: { id: resolvedCustomerId, name: resolvedCustomerId },
+            create: { id: resolvedOrgId, name: resolvedOrgId },
           })
           await prisma.case.upsert({
             where: { id: resolvedCaseId },
             update: {},
             create: {
               id: resolvedCaseId,
-              orgId: resolvedCustomerId,
+              orgId: resolvedOrgId,
               userId: resolvedUserId,
               type: inferredCaseTypeForRecord,
               status: 'created',
@@ -653,7 +650,7 @@ export async function POST(request: NextRequest) {
             const ctRow = await prisma.caseType.findUnique({
               where: {
                 orgId_type: {
-                  orgId: resolvedCustomerId,
+                  orgId: resolvedOrgId,
                   type: inferredCaseTypeForRecord,
                 },
               },
@@ -685,7 +682,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const agentConfig = await loadAgentConfig(resolvedCustomerId)
+        const agentConfig = await loadAgentConfig(resolvedOrgId)
 
         // Use DB-custom systemPrompt as Case prompt base if configured
         if (agentConfig.systemPrompt && agentConfig.systemPrompt !== DEFAULT_SYSTEM_PROMPT) {
@@ -702,7 +699,7 @@ export async function POST(request: NextRequest) {
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
         try {
           const dbSkills = await prisma.skill.findMany({
-            where: { orgId: resolvedCustomerId, enabled: true },
+            where: { orgId: resolvedOrgId, enabled: true },
             select: { name: true, description: true, inputSchema: true, mode: true },
           })
           for (const s of dbSkills) {
@@ -711,7 +708,7 @@ export async function POST(request: NextRequest) {
             toolSummaries.push({ name: s.name, description: s.description, needsMemberId })
           }
           const kbSources = await prisma.knowledgeSource.findMany({
-            where: { orgId: resolvedCustomerId, enabled: true },
+            where: { orgId: resolvedOrgId, enabled: true },
             select: { name: true, description: true },
           })
           for (const ks of kbSources) {
@@ -732,7 +729,7 @@ export async function POST(request: NextRequest) {
 
         // Build shared prompt context
         const promptCtx = await buildPromptContext({
-          orgId: resolvedCustomerId,
+          orgId: resolvedOrgId,
           caseSchema: caseSchema ? {
             displayName: caseSchema.displayName,
             goal: caseSchema.defaultGoal,
@@ -776,7 +773,7 @@ export async function POST(request: NextRequest) {
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
           caseId: resolvedCaseId,
-          orgId: resolvedCustomerId,
+          orgId: resolvedOrgId,
           userId: resolvedUserId,
           systemPrompt,
           coreSystemPrompt,
@@ -826,7 +823,7 @@ export async function POST(request: NextRequest) {
           const followup = await AgentLoop.create({
             config: agentConfig,
             caseId: resolvedCaseId,
-            orgId: resolvedCustomerId,
+            orgId: resolvedOrgId,
             userId: resolvedUserId,
             systemPrompt,
             coreSystemPrompt,
@@ -862,7 +859,7 @@ export async function POST(request: NextRequest) {
                 where: { id: resolvedCaseId },
                 update: { status: result.caseStatus },
                 create: {
-                  id: resolvedCaseId, orgId: resolvedCustomerId, userId: resolvedUserId,
+                  id: resolvedCaseId, orgId: resolvedOrgId, userId: resolvedUserId,
                   type: caseTypeForUpsert, status: result.caseStatus, chatId,
                 },
               })
@@ -936,7 +933,7 @@ export async function POST(request: NextRequest) {
               update: { status: result.caseStatus },
               create: {
                 id: resolvedCaseId,
-                orgId: resolvedCustomerId,
+                orgId: resolvedOrgId,
                 userId: resolvedUserId,
                 type: caseTypeForUpsert,
                 status: result.caseStatus,

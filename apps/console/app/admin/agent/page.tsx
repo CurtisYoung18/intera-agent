@@ -179,7 +179,6 @@ export default function AgentConfigPage() {
           debugMode: Boolean(raw.debugMode),
           enableLlmSanitization: Boolean((raw as Record<string, unknown>).enableLlmSanitization),
           invariantCheck: Boolean((raw as Record<string, unknown>).invariantCheck),
-          evaluationModel: raw.evaluationModel || '',
           prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
           prefixContinuationChatModel:
             String((raw as Record<string, unknown>).prefixContinuationChatModel || '') || 'deepseek-chat',
@@ -615,20 +614,6 @@ export default function AgentConfigPage() {
                       {renderModelOptions(mainModels)}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">Switches to this model after 3 consecutive 529 (overloaded) errors from the main model.</span>
-                  </label>
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">{t('agent.evaluationModel')}</span>
-                    <select
-                      value={config.evaluationModel}
-                      onChange={(e) => update('evaluationModel', e.target.value)}
-                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                    >
-                      <option value="">-- Default (haiku) --</option>
-                      {renderModelOptions(mainModels)}
-                    </select>
-                    <span className="text-[10px] text-[var(--fog)]/55 leading-snug block">
-                      {t('agent.evaluationModelHint')}
-                    </span>
                   </label>
                 </DrawerSection>
 

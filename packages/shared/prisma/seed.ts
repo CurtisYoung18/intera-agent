@@ -77,7 +77,6 @@ async function seedVendorConfig(
     memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
     policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
     showThinking: opts.showThinking,
-    evaluationModel: process.env.EVALUATION_MODEL || 'MiniMax-M2.7-highspeed',
     resumePrompt:
       `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
     formResponseTemplate: 'Please continue processing based on this information.',

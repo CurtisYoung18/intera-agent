@@ -28,7 +28,6 @@ interface StageGuardrail {
 interface TransitionRule {
   type: 'auto' | 'evaluation' | 'manual'
   conditions?: { type: string; value?: number | string | boolean }[]
-  evaluationModel?: string
   evaluationPrompt?: string
 }
 
@@ -646,21 +645,6 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
 
                   {cfg.transition?.type === 'evaluation' && (
                     <div className="space-y-3">
-                      <label className="space-y-1 block">
-                        <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Evaluation Model</span>
-                        <select
-                          value={cfg.transition.evaluationModel || ''}
-                          onChange={(e) => updateStage(activeStage, {
-                            transition: { ...cfg.transition!, evaluationModel: e.target.value || undefined },
-                          }, stageConfigs, onChange)}
-                          className="glass-input-console text-[12px] py-1.5"
-                        >
-                          <option value="">Use Agent Config default</option>
-                          {availableModels.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                      </label>
                       <label className="space-y-1 block">
                         <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Evaluation Prompt</span>
                         <MiniTextarea
