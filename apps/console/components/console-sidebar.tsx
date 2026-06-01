@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
+import InteraLogo from '@intera/shared/ui/intera-logo'
 
 type NavSlug = 'humanTasks' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'humanOps' | 'caseTypes' | 'knowledge' | 'channels' | 'subAgents'
 
@@ -202,13 +203,17 @@ export default function ConsoleSidebar() {
                 aria-label={t('sidebar.expandAria')}
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
-                  <User className="h-4 w-4 text-indigo" />
+                  <InteraLogo size={15} collapsed />
                 </div>
                 <ChevronRight className="h-4 w-4 opacity-75" strokeWidth={2.25} aria-hidden />
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-2">
+            <div className="flex flex-col gap-2 px-2">
+              <div className="flex items-center gap-2.5 px-2 pt-1">
+                <InteraLogo size={20} />
+              </div>
+              <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => { setAvatarOpen(!avatarOpen); setSwitchOpen(false) }}
@@ -233,6 +238,7 @@ export default function ConsoleSidebar() {
               >
                 <ChevronLeft className="h-4 w-4" strokeWidth={2.25} />
               </button>
+            </div>
             </div>
           )}
 

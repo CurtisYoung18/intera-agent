@@ -763,3 +763,38 @@ body {
   animation: guide-chip-shine 3.8s ease-in-out infinite;
   animation-delay: var(--guide-shine-delay, 0s);
 }
+
+/* ── Animated wordmark (InteraLogo) ── */
+.intera-logo {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+  user-select: none;
+}
+.il-anchor { display: inline-block; }
+.il-letter {
+  display: inline-block;
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-3px);
+  white-space: pre;
+  overflow: hidden;
+  transition:
+    max-width 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.32s ease,
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.intera-logo.is-revealed .il-letter {
+  max-width: 0.66em;
+  opacity: 1;
+  transform: none;
+}
+.intera-logo.is-collapsed .il-letter {
+  max-width: 0 !important;
+  opacity: 0 !important;
+  transform: translateX(-3px) !important;
+}
