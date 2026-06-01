@@ -209,50 +209,49 @@ export default function ConsoleSidebar() {
               </button>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 px-2">
-              <div className="flex items-center gap-2.5 px-2 pt-1">
+            <div className="flex items-center gap-2 px-2">
+              <div className="flex items-center gap-2.5 px-2 pt-1 flex-1 min-w-0">
                 <InteraLogo size={26} />
               </div>
-              <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => { setAvatarOpen(!avatarOpen); setSwitchOpen(false) }}
-                className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-2 hover:bg-black/5 transition-all"
-                aria-expanded={avatarOpen}
-              >
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
-                  <User className="h-4 w-4 text-indigo" />
-                </div>
-                <div className="min-w-0 flex-1 text-left">
-                  <p className="truncate text-[12px] font-medium text-[var(--mist)]">{t('shell.adminUser')}</p>
-                  <p className="truncate text-[10px] text-[var(--fog)]">{customerName}</p>
-                </div>
-                <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
-              </button>
               <button
                 type="button"
                 onClick={() => setCollapsed(true)}
-                className="console-sidebar-toggle"
+                className="console-sidebar-toggle flex-shrink-0"
                 aria-expanded
                 aria-label={t('sidebar.collapseAria')}
               >
                 <ChevronLeft className="h-4 w-4" strokeWidth={2.25} />
               </button>
             </div>
-            </div>
           )}
+        </div>
 
+        <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
+          <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+          <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+        </nav>
+
+        <div className="border-t border-black/5">
+          {/* Controls panel — opens upward from bottom */}
           {avatarOpen && !collapsed && (
-            <div className="mt-1 ml-10 space-y-0.5 animate-fade-up">
+            <div className="px-3 pt-2 pb-1 space-y-0.5 border-b border-black/[0.04]">
+              <button
+                type="button"
+                onClick={() => toggleLocale()}
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
+              >
+                <Languages className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{langButtonLabel}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleSwitchClick}
                 className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
               >
-                <Building2 className="w-3 h-3" /> {t('sidebar.switchProject')}
+                <Building2 className="w-3 h-3 flex-shrink-0" /> {t('sidebar.switchProject')}
               </button>
 
-              {/* Customer list inline */}
               {switchOpen && (
                 <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
                   {customersLoading ? (
@@ -279,36 +278,41 @@ export default function ConsoleSidebar() {
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => toggleLocale()}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
-                title={t('sidebar.language')}
-              >
-                <Languages className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{langButtonLabel}</span>
-              </button>
+              <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)]/40 cursor-not-allowed select-none">
+                <Bot className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">Agent: Default</span>
+              </div>
+
               <button
                 type="button"
                 onClick={handleSignOut}
                 className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-vermillion hover:bg-vermillion/5 rounded-lg transition-all"
               >
-                <LogOut className="w-3 h-3" /> {t('sidebar.signOut')}
+                <LogOut className="w-3 h-3 flex-shrink-0" /> {t('sidebar.signOut')}
               </button>
             </div>
           )}
-        </div>
 
-        <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
-          <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
-          <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
-        </nav>
+          {/* Bottom bar — always visible */}
+          <button
+            type="button"
+            onClick={() => { setAvatarOpen(!avatarOpen); setSwitchOpen(false) }}
+            className={`w-full flex items-center gap-2.5 px-3 transition-all ${collapsed ? 'justify-center py-2.5' : 'py-2 hover:bg-black/[0.02]'}`}
+            aria-expanded={avatarOpen}
+          >
+            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
+              <User className="h-3 w-3 text-indigo" />
+            </div>
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left text-[11px] text-[var(--fog)] truncate">{customerName}</span>
+                <ChevronDown className={`h-3 w-3 flex-shrink-0 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
+              </>
+            )}
+          </button>
 
-        <div className="px-3 pb-3 pt-2 border-t border-black/5">
-          {!collapsed ? (
-            <p className="text-[10px] text-[var(--fog)] font-mono px-2">{t('shell.version')}</p>
-          ) : (
-            <div className="w-3 h-3 mx-auto rounded-full bg-black/5" />
+          {!collapsed && (
+            <p className="text-[9px] text-[var(--fog)]/40 font-mono px-3 pb-2">{t('shell.version')}</p>
           )}
         </div>
       </aside>
