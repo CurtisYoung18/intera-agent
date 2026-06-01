@@ -326,7 +326,7 @@ export function FactsEvidenceDiagram({ t }: { t: TranslateFn }) {
   )
 }
 
-/** User message → Core Agent ReAct Loop → QA (no tool_use) vs create Case (create_case/propose_cases) → sub-agent dispatch. */
+/** User message → Core Agent ReAct Loop → QA (no tool_use) vs create Case (dispatch_case_agent/propose_cases) → sub-agent dispatch. */
 export function IntentRoutingFlowDiagram({ t }: { t: TranslateFn }) {
   return (
     <div className="relative mx-auto max-w-xl">

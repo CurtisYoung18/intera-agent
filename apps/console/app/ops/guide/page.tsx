@@ -840,7 +840,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
             <DocList items={[t('guide.doc.tools.li1'), t('guide.doc.tools.li2'), t('guide.doc.tools.li3'), t('guide.doc.tools.li4'), t('guide.doc.tools.li5'), t('guide.doc.tools.li6')]} />
             <DocCallout variant="note">
               <span className="text-[12px]">
-                <strong>3 skill tiers</strong>: <em>System</em> (engine-managed, read-only, e.g. <code>create_case</code>, <code>todo_write</code>); <em>Special</em> (<code>kb_hybrid_retrieve</code>, configured on Knowledge page); <em>Business</em> (HTTP / mock, fully editable). <strong>Guardrail hooks</strong>: <code>preTool</code> (block call), <code>postTool</code> (validate result), <code>preFinalize</code> (require before close).
+                <strong>3 skill tiers</strong>: <em>System</em> (engine-managed, read-only, e.g. <code>dispatch_case_agent</code>, <code>todo_write</code>); <em>Special</em> (<code>kb_hybrid_retrieve</code>, configured on Knowledge page); <em>Business</em> (HTTP / mock, fully editable). <strong>Guardrail hooks</strong>: <code>preTool</code> (block call), <code>postTool</code> (validate result), <code>preFinalize</code> (require before close).
               </span>
             </DocCallout>
           </DocSection>

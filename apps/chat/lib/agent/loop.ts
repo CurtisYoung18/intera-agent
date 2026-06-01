@@ -1164,7 +1164,7 @@ export class AgentLoop {
           (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
         )
         const nonSopTools = new Set(['todo_write', 'todo_read', 'dispatch_case_agent', 'request_user_input',
-          'propose_cases', 'finalize_case', 'create_human_task', 'propose_interaction', 'finalize_consultation',
+          'propose_cases', 'finalize_case', 'create_human_task', 'finalize_consultation',
           'read_chat_memory', 'read_user_profile'])
         const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
         if (todoFailed && investigationRan) {
@@ -1306,7 +1306,7 @@ export class AgentLoop {
                 for (const s of skills) stageSkillNames.add(s)
               }
               // Always allow terminal tools
-              for (const t of ['create_human_task', 'finalize_case', 'request_user_input', 'propose_interaction']) {
+              for (const t of ['create_human_task', 'finalize_case', 'request_user_input']) {
                 stageSkillNames.add(t)
               }
               if (executionMode === 'cc') {
@@ -1474,51 +1474,6 @@ export class AgentLoop {
           caseStatus: this.currentStage as CaseStatus,
           transition: 'waiting_form',
           currentStage: this.currentStage,
-        }
-      }
-
-      // ── Terminal tool: propose_interaction ──────────────────
-      const interactionResult = toolResults.find(
-        (r) => r.name === 'propose_interaction',
-      )
-      if (interactionResult) {
-        const toolInput = interactionResult.toolUse?.input || {}
-        const opts = (toolInput.options as Array<Record<string, unknown>>) || []
-        if (opts.length > 0) {
-          await this.traceWriter.write('loop_decision', 'Exit: interaction proposed', {
-            iteration: this.iterationCount, optionCount: opts.length,
-          })
-
-          sendEvent({
-            type: 'interaction_proposed',
-            data: {
-              caseId: this.deps.caseId,
-              skillCallId: interactionResult.toolUse?.id || crypto.randomUUID(),
-              title: String(toolInput.title || ''),
-              description: String(toolInput.description || ''),
-              options: opts,
-              multiSelect: !!toolInput.multiSelect,
-            },
-            timestamp: new Date().toISOString(),
-          })
-
-          // Replace mock result so the model sees the interaction is pending
-          for (let i = this.messages.length - 1; i >= 0; i--) {
-            const m = this.messages[i]
-            if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool propose_interaction result:')) {
-              m.content = `Tool propose_interaction result: ${JSON.stringify({ status: 'presented', message: 'The customer will respond. Wait for their selection before proceeding.' })}`
-              break
-            }
-          }
-
-          await this.writeProfilerSnapshot()
-          return {
-            messages: this.messages,
-            caseStatus: this.currentStage as CaseStatus,
-            transition: 'awaiting_interaction',
-            currentStage: this.currentStage,
-            reason: 'interaction_proposed',
-          }
         }
       }
 

@@ -337,9 +337,9 @@ export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
   {
     name: 'propose_interaction',
     displayVerb: { text: 'Asking you a question', icon: 'pulse' },
-    description: 'Present a choice card with options the customer can select (non-blocking, replaced by agent continuation)',
+    description: '[DEPRECATED] Use request_user_input instead. Present a choice card with options.',
     inputSchema: '{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"description":{"type":"string"},"inputType":{"type":"string","enum":["none","text","number"]},"inputPlaceholder":{"type":"string"}},"required":["id","label"]}},"multiSelect":{"type":"boolean"}},"required":["title","options"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
+    mode: 'mock', isConcurrencySafe: false, enabled: false, guardPhase: 'post', outputSchema: '{}',
     mockFixture: '{"status":"presented"}',
   },
   {

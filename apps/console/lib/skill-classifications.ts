@@ -4,7 +4,7 @@
 
 /** System Tools — engine-managed, READ-ONLY. The agent loop handles these directly. */
 export const SYSTEM_SKILL_NAMES = new Set([
-  'create_case',
+  'dispatch_case_agent',
   'propose_cases',
   'finalize_case',
   'finalize_sub_agent',
@@ -12,7 +12,6 @@ export const SYSTEM_SKILL_NAMES = new Set([
   'read_case_history',
   'todo_write',
   'todo_read',
-  'propose_interaction',
 ])
 
 /** Channel Tools — behavior varies per channel. READ-ONLY. Configured in Channels detail page. */

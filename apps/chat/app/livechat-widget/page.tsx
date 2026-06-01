@@ -7,7 +7,7 @@ import type { WidgetPayload, StatusTrackStep, InteractionOption, FormField } fro
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type ViewKind = 'idle' | 'status_track' | 'propose_interaction' | 'request_user_input' | 'skill_render' | 'submitted'
+type ViewKind = 'idle' | 'status_track' | 'request_user_input' | 'skill_render' | 'submitted'
 
 interface FormFieldSpec {
   id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string
@@ -549,8 +549,6 @@ export default function LiveChatWidget() {
             : [...prev.steps, step]
           return { ...prev, view: 'status_track', caseId: payload.caseId, steps }
         }
-        case 'propose_interaction':
-          return { ...prev, view: 'propose_interaction', caseId: payload.caseId, options: payload.options ?? [], steps: [] }
         case 'request_user_input':
           return { ...prev, view: 'request_user_input', caseId: payload.caseId, fields: payload.fields ?? [], steps: [] }
         case 'skill_render':
@@ -637,11 +635,6 @@ export default function LiveChatWidget() {
         {state.view === 'status_track' && (
           <motion.div key="status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <StatusTrack steps={state.steps} />
-          </motion.div>
-        )}
-        {state.view === 'propose_interaction' && (
-          <motion.div key="options" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <OptionList caseId={state.caseId} options={state.options} onSubmit={handleViewComplete} />
           </motion.div>
         )}
         {state.view === 'request_user_input' && (

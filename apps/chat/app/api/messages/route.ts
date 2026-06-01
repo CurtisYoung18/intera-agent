@@ -929,7 +929,7 @@ export async function POST(request: NextRequest) {
           (mem.caseStatus && mem.caseStatus !== 'created')
         if (hasRealWork) {
           try {
-            // Read type from AgentLoop (may have been set by create_case tool mid-loop)
+            // Read type from AgentLoop (may have been set by dispatch_case_agent tool mid-loop)
             const caseTypeForUpsert = agentLoop.getCaseType()
             await prisma.case.upsert({
               where: { id: resolvedCaseId },
