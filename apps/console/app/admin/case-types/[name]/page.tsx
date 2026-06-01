@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ChevronDown, ChevronRight, Plus, ArrowLeft, Settings2, Bot,
+  ChevronDown, Plus, ArrowLeft, Settings2, Bot,
   Wand2, Save, Loader2,
 } from 'lucide-react'
 import { chatApiUrl } from '@/lib/chat-api'
-import SubAgentForm, { type SubAgentConfig } from '@/components/admin/sub-agent-form'
+import StageConfigEditor from '@/components/admin/stage-config-editor'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -44,21 +44,6 @@ interface StageCfg {
   guardrails?: unknown[]
   evidenceRequirements?: unknown[]
   transition?: unknown
-  subAgents?: SubAgentConfig[]
-}
-
-// ── Default empty sub-agent ────────────────────────────────────────────
-
-function emptySubAgent(model: string): SubAgentConfig {
-  return {
-    name: '',
-    description: '',
-    model: model || 'MiniMax-M2.7-highspeed',
-    systemPrompt: '',
-    skills: [],
-    maxIterations: 3,
-    parallel: true,
-  }
 }
 
 // ── Page ───────────────────────────────────────────────────────────────
@@ -73,8 +58,6 @@ export default function CaseTypeDetailPage() {
   const [saving, setSaving] = useState(false)
   const [allSkills, setAllSkills] = useState<string[]>([])
   const [availableModels, setAvailableModels] = useState<string[]>([])
-  const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({})
-
   // Load case type
   const load = useCallback(async () => {
     setLoading(true)
@@ -129,41 +112,12 @@ export default function CaseTypeDetailPage() {
   const stageNames = parseStages()
   const stageConfigs = parseStageConfigs()
   const isStageMode = ct?.executionMode !== 'cc'
-  const defaultModel = availableModels.length > 0 ? availableModels[0] : 'MiniMax-M2.7-highspeed'
-
-  // Toggle stage expansion
-  const toggleStage = (stage: string) => {
-    setExpandedStages((prev) => ({ ...prev, [stage]: !prev[stage] }))
-  }
-
-  // Update stage config
+  // Update stage config (used by StageConfigEditor onChange callback)
   const updateStage = (stage: string, patch: Partial<StageCfg>) => {
     if (!ct) return
     const current = stageConfigs[stage] || { name: stage }
     const updated = { ...stageConfigs, [stage]: { ...current, ...patch } }
     setCt({ ...ct, stageConfigs: JSON.stringify(updated) })
-  }
-
-  // Add sub-agent to a stage
-  const addSubAgent = (stage: string) => {
-    const cfg = stageConfigs[stage] || { name: stage }
-    const agents = [...(cfg.subAgents || []), emptySubAgent(defaultModel)]
-    updateStage(stage, { subAgents: agents })
-  }
-
-  // Remove sub-agent from a stage
-  const removeSubAgent = (stage: string, idx: number) => {
-    const cfg = stageConfigs[stage] || { name: stage }
-    const agents = (cfg.subAgents || []).filter((_, i) => i !== idx)
-    updateStage(stage, { subAgents: agents })
-  }
-
-  // Update a single sub-agent
-  const updateSubAgent = (stage: string, idx: number, sa: SubAgentConfig) => {
-    const cfg = stageConfigs[stage] || { name: stage }
-    const agents = [...(cfg.subAgents || [])]
-    agents[idx] = sa
-    updateStage(stage, { subAgents: agents })
   }
 
   // Change execution mode with warning
@@ -435,95 +389,18 @@ export default function CaseTypeDetailPage() {
         </div>
       )}
 
-      {/* ── Stage-mode: Per-stage sub-agent panels ────────────── */}
+      {/* ── Stage-mode: Full stage configuration ────────────── */}
       {isStageMode && (
         <div className="space-y-4">
-          <h2 className="text-[14px] font-semibold text-[var(--mist)] flex items-center gap-2">
-            <Bot className="w-4 h-4 text-gold" />
-            Stage Sub-Agents
-          </h2>
-
-          {stageNames.map((stage) => {
-            const cfg = stageConfigs[stage] || { name: stage }
-            const expanded = expandedStages[stage] ?? false
-            const subAgents = cfg.subAgents || []
-
-            return (
-              <div
-                key={stage}
-                className="rounded-xl border border-[var(--border-subtle)] bg-white/30 overflow-hidden"
-              >
-                {/* Stage header */}
-                <button
-                  type="button"
-                  onClick={() => toggleStage(stage)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-black/[0.02] transition-colors text-left"
-                >
-                  <ChevronRight
-                    className={`w-3.5 h-3.5 text-[var(--fog)] transition-transform duration-200 ${
-                      expanded ? 'rotate-90' : ''
-                    }`}
-                  />
-                  <Settings2 className="w-4 h-4 text-lavender" />
-                  <span className="text-[13px] font-semibold text-[var(--mist)] flex-1">{stage}</span>
-                  <span className="text-[10px] text-[var(--smoke)]">
-                    {subAgents.length} sub-agent{subAgents.length !== 1 ? 's' : ''}
-                  </span>
-                </button>
-
-                {expanded && (
-                  <div className="px-4 pb-4 space-y-3 border-t border-[var(--border-subtle)]/50 pt-3">
-                    {/* Stage prompt (optional, lightweight) */}
-                    <label className="space-y-1 block">
-                      <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Stage Prompt</span>
-                      <textarea
-                        value={cfg.systemPrompt || ''}
-                        onChange={(e) => updateStage(stage, { systemPrompt: e.target.value || undefined })}
-                        placeholder="Stage-specific instructions appended to system prompt..."
-                        rows={2}
-                        className="glass-input-console text-[12px] font-mono resize-y"
-                      />
-                    </label>
-
-                    {/* Sub-agents */}
-                    {subAgents.map((sa, i) => (
-                      <SubAgentForm
-                        key={i}
-                        value={sa}
-                        onChange={(updated) => updateSubAgent(stage, i, updated)}
-                        onRemove={() => removeSubAgent(stage, i)}
-                        allSkills={allSkills}
-                        availableModels={
-                          availableModels.length > 0
-                            ? availableModels
-                            : ['MiniMax-M2.7-highspeed', 'MiniMax-M2.5-highspeed']
-                        }
-                      />
-                    ))}
-
-                    {/* Add buttons */}
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => addSubAgent(stage)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium text-[var(--fog)] border border-dashed border-[var(--border-subtle)] hover:border-indigo/30 hover:text-indigo transition-all"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add Inline
-                      </button>
-                      <Link
-                        href="/admin/sub-agents"
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium text-[var(--fog)] border border-dashed border-[var(--border-subtle)] hover:border-indigo/30 hover:text-indigo transition-all"
-                      >
-                        <Bot className="w-3.5 h-3.5" />
-                        Pick from Registry
-                      </Link>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          <StageConfigEditor
+            stages={stageNames}
+            stageConfigs={stageConfigs as any}
+            allSkills={allSkills}
+            availableModels={availableModels.length > 0 ? availableModels : ['MiniMax-M2.7-highspeed']}
+            onChange={(updated) => {
+              if (ct) setCt({ ...ct, stageConfigs: JSON.stringify(updated) })
+            }}
+          />
         </div>
       )}
 

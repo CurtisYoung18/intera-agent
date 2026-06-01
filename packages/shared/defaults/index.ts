@@ -773,17 +773,6 @@ Respond JSON ONLY:
       description: 'Investigate order issue',
       requiredSkills: ['get_withdraw_conditions'],
       availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'read_case_history'],
-      subAgents: [
-        {
-          name: 'order_verifier',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt: 'You are an order verification specialist. Verify the order status and check for any platform notices or delays.',
-          skills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions'],
-          taskTemplate: 'Verify order for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Check order status, payment channel, and any delay notices.',
-          maxIterations: 3,
-          parallel: true,
-        },
-      ],
       transition: { type: 'evaluation', evaluationPrompt: 'If conflict detected → call create_human_task. If resolved → resolved.' },
     },
     resolved: {
@@ -870,30 +859,6 @@ JSON ONLY:
           source: 'skill_output',
           skillName: 'read_case_history',
           required: true,
-        },
-      ],
-      subAgents: [
-        {
-          name: 'account_platform_checker',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt:
-            'You are an account security specialist. Query platform account status and KYC status — structured facts, no speculation.',
-          skills: ['get_account_status', 'get_kyc_status'],
-          taskTemplate:
-            'Check account and KYC status for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Missing: {{missingFacts}}. Call get_account_status and get_kyc_status with member_id from facts.',
-          maxIterations: 3,
-          parallel: true,
-        },
-        {
-          name: 'account_history_policy',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt:
-            'You review historical tickets and KB articles for ban patterns, appeal flows, and known outages.',
-          skills: ['read_case_history'],
-          taskTemplate:
-            'For case {{caseId}}, review prior cases and KB for patterns matching the issue type. Stage goal: {{stageGoal}}. Facts: {{confirmedFacts}}. Use read_case_history and kb_search_* for knowledge base queries.',
-          maxIterations: 3,
-          parallel: true,
         },
       ],
       transition: {
@@ -999,26 +964,6 @@ JSON ONLY:
           source: 'skill_output',
           skillName: 'get_withdraw_conditions',
           required: true,
-        },
-      ],
-      subAgents: [
-        {
-          name: 'withdrawal_verifier',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt: 'You are a withdrawal verification specialist. Check the latest withdrawal status and turnover conditions. Report structured facts only.',
-          skills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
-          taskTemplate: 'Verify withdrawal status for case {{caseId}}. Stage goal: {{stageGoal}}. Known facts: {{confirmedFacts}}. Call get_latest_withdrawal and get_withdraw_conditions with member_id from facts.',
-          maxIterations: 3,
-          parallel: true,
-        },
-        {
-          name: 'history_reviewer',
-          model: 'MiniMax-M2.7-highspeed',
-          systemPrompt: 'You review historical cases and transaction history for patterns.',
-          skills: ['get_transaction_history', 'read_case_history'],
-          taskTemplate: 'Review transaction history and past cases for case {{caseId}}. Stage goal: {{stageGoal}}. Facts: {{confirmedFacts}}. Check withdrawal history and case patterns.',
-          maxIterations: 2,
-          parallel: true,
         },
       ],
       transition: {
