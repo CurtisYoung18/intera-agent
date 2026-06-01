@@ -319,7 +319,7 @@ export class AgentLoop {
             this.messages.push({
               id: crypto.randomUUID(),
               role: 'user' as const,
-              content: hasImages ? pending.content : `[SYSTEM] 用户补充了新信息：${pending.content}`,
+              content: hasImages ? pending.content : `[SYSTEM] The customer sent an additional message while you were working. Process it and respond to the customer with your findings: ${pending.content}`,
               contentBlocks: pending.contentBlocks,
               createdAt: new Date(),
             })

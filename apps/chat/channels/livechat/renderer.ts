@@ -55,15 +55,11 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           return renderSkillByHint(d.result, livechatHint)
         }
 
-        // Fallback: compact "done" card
+        // Fallback: compact done text
         if (!this.showSkillStatus) return { type: 'noop' }
         return {
-          type: 'send_card',
-          card: {
-            title: skillLabel(d.name),
-            subtitle: 'Done',
-            buttons: [],
-          },
+          type: 'send_text',
+          text: `✅ ${skillLabel(d.name)}`,
         }
       }
 

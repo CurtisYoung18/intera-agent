@@ -294,7 +294,7 @@ export async function handleIncomingEvent(
               await appendTextBuffer(chatId, action.delta)
               break
             case 'flush_text': {
-              const text = await flushTextBuffer(chatId)
+              const text = (await flushTextBuffer(chatId)).trimStart()
               if (text.trim()) {
                 await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(e => console.error('[Bridge] sendText failed:', e))
               }

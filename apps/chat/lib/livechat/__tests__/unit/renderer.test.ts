@@ -53,12 +53,12 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('skill_result', () => {
-    it('returns send_card for done skill', () => {
+    it('returns send_text for done skill', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('skill_result', { name: 'query_order', status: 'completed', result: {} }), makeCtx())
       const a = actions[0]!
-      expect(a.type).toBe('send_card')
-      expect((a as { type: 'send_card'; card: { title: string } }).card.title).toContain('query order')
+      expect(a.type).toBe('send_text')
+      expect((a as { type: 'send_text'; text: string }).text).toContain('query order')
     })
 
     it('returns send_card when renderHints.livechat has card hint', () => {
@@ -95,7 +95,7 @@ describe('LiveChatRenderer', () => {
       expect(actions[0]!.type).toBe('send_carousel')
     })
 
-    it('falls back to send_card for unknown hint kind', () => {
+    it('falls back to send_text for unknown hint kind', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('skill_result', {
         name: 'query_order',
@@ -105,8 +105,7 @@ describe('LiveChatRenderer', () => {
           livechat: { kind: 'iframe', template: 'order_timeline' },
         },
       }), makeCtx())
-      // iframe hint kind is not a LivechatRenderHint, falls back to card
-      expect(actions[0]!.type).toBe('send_card')
+      expect(actions[0]!.type).toBe('send_text')
     })
 
     it('returns noop for skill_result without renderHints when showSkillStatus=false', () => {

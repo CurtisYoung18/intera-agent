@@ -25,7 +25,8 @@ case "$SERVICE" in
 {
   "$schema": "https://schema.railway.app/railway.schema.json",
   "build": {
-    "buildCommand": "npx prisma generate --schema=./packages/shared/prisma/schema.prisma && npm run build -w apps/chat && cp -r apps/chat/.next/static apps/chat/.next/standalone/apps/chat/.next/static"
+    "installCommand": "npm install --legacy-peer-deps",
+    "buildCommand": "npm install --legacy-peer-deps && npx prisma generate --schema=./packages/shared/prisma/schema.prisma && npm run build -w apps/chat && cp -r apps/chat/.next/static apps/chat/.next/standalone/apps/chat/.next/static"
   },
   "deploy": {
     "startCommand": "npx prisma db push --schema=./packages/shared/prisma/schema.prisma --accept-data-loss --skip-generate && node apps/chat/.next/standalone/apps/chat/server.js",
@@ -40,7 +41,8 @@ CHAT
 {
   "$schema": "https://schema.railway.app/railway.schema.json",
   "build": {
-    "buildCommand": "npx prisma generate --schema=./packages/shared/prisma/schema.prisma && npm run build -w apps/console && cp -r apps/console/.next/static apps/console/.next/standalone/apps/console/.next/static"
+    "installCommand": "npm install --legacy-peer-deps",
+    "buildCommand": "npm install --legacy-peer-deps && npx prisma generate --schema=./packages/shared/prisma/schema.prisma && npm run build -w apps/console && cp -r apps/console/.next/static apps/console/.next/standalone/apps/console/.next/static"
   },
   "deploy": {
     "startCommand": "node apps/console/.next/standalone/apps/console/server.js",
