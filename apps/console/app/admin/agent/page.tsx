@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { AlertCircle, Brain, Database, Shield, Users, MessageSquareText, Search, X, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
@@ -81,7 +82,7 @@ function multilineToStopJson(text: string): string {
   return JSON.stringify(lines.length ? lines : [])
 }
 
-export default function AgentConfigPage() {
+function AgentConfigPage() {
   const { t } = useConsoleLocale()
   const [config, setConfig] = useState<AgentConfigData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -92,8 +93,12 @@ export default function AgentConfigPage() {
   const [activeSection, setActiveSection] = useState<Section | null>(null)
   const [memoryTier, setMemoryTier] = useState<MemoryTier>('balanced')
   const [showMemoryAdvanced, setShowMemoryAdvanced] = useState(false)
+  const [agentList, setAgentList] = useState<{ id: string; name: string }[]>([])
+  const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const configRef = useRef(config)
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
   const sectionMeta = useMemo(
     () =>
@@ -112,9 +117,33 @@ export default function AgentConfigPage() {
     configRef.current = config
   }, [config])
 
+  // Fetch agent configs list and resolve currentAgentId
   useEffect(() => {
+    fetch('/api/admin/agent-configs')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.configs?.length) {
+          setAgentList(d.configs)
+          const urlAgentId = searchParams.get('agentId')
+          if (urlAgentId && d.configs.find((c: { id: string }) => c.id === urlAgentId)) {
+            setCurrentAgentId(urlAgentId)
+          } else {
+            const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
+            if (stored && d.configs.find((c: { id: string }) => c.id === stored)) {
+              setCurrentAgentId(stored)
+            } else {
+              setCurrentAgentId(d.configs[0].id)
+            }
+          }
+        }
+      })
+      .catch(() => {})
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!currentAgentId) return
     Promise.all([
-      fetch('/api/admin/agent').then((r) => {
+      fetch(`/api/admin/agent?agentId=${currentAgentId}`).then((r) => {
         if (!r.ok) throw new Error(`Config: ${r.status}`)
         return r.json()
       }),
@@ -201,7 +230,7 @@ export default function AgentConfigPage() {
       })
       .catch((err: Error) => setError(err.message || t('agent.loadError')))
       .finally(() => setLoading(false))
-  }, [t])
+  }, [t, currentAgentId])
 
   const autoSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -211,7 +240,7 @@ export default function AgentConfigPage() {
       if (!current) return
       try {
         const { prefixContinuationStopText, memoryStrategy, policyHooks: ph, knowledgeRetrieval: kb, ...persist } = current
-        const res = await fetch('/api/admin/agent', {
+        const res = await fetch(`/api/admin/agent?agentId=${currentAgentId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -346,6 +375,25 @@ export default function AgentConfigPage() {
   return (
     <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
       <div className="flex-1 min-w-0 overflow-hidden relative">
+        {/* Agent selector dropdown */}
+        {agentList.length > 0 && (
+          <div className="absolute top-4 left-4 z-10">
+            <select
+              value={currentAgentId ?? ''}
+              onChange={(e) => {
+                const id = e.target.value
+                setCurrentAgentId(id)
+                try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
+                router.push(`/admin/agent?agentId=${id}`)
+              }}
+              className="glass-input-console rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--mist)] border border-black/[0.08] bg-white/70 backdrop-blur"
+            >
+              {agentList.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <AgentBlueprint
           config={config}
           activeSection={activeSection}
@@ -1016,5 +1064,13 @@ function NumField({
         {unit && <span className="text-[10px] text-[var(--smoke)] flex-shrink-0">{unit}</span>}
       </div>
     </label>
+  )
+}
+
+export default function AgentConfigPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><p className="text-sm text-[var(--fog)]">Loading...</p></div>}>
+      <AgentConfigPage />
+    </Suspense>
   )
 }

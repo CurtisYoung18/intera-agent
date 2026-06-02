@@ -1,8 +1,8 @@
 # Handoff: Intera Agent — Post-Phase B Reference
 
-**Last updated:** 2026-06-02 | **Branch:** `main` @ `6346c23` | **Status:** Post-Phase B cleanup complete
+**Last updated:** 2026-06-02 | **Branch:** `main` @ TBD | **Status:** Post-Phase B + C1 (multi-agent UI) complete
 
-> This is a **generic context document** for any coding agent picking up this project.  
+> This is a **generic context document** for any coding agent picking up this project.
 > Concrete tasks live in [doc/to-do/](../../doc/to-do/).
 
 > ssh config:
@@ -12,6 +12,14 @@ ssh ubuntu@43.134.51.138
 
 > credentials
 see `/Users/curtis/Desktop/scs1751876232493_.anytrans.ai`
+
+> console login
+- `/login` page accepts two modes
+- **Staff**: single shared password (env `STAFF_PASSWORD`) — may switch orgs
+- **Customer**: per-org bcrypt password (env `API_ORG_PASSWORD` for the seeded `api` org)
+- Server env: `/etc/intera/console.env` on `43.134.51.138`
+- Required env for login to work: `SESSION_SECRET` (random 32-byte hex), `STAFF_PASSWORD`, `API_ORG_PASSWORD`
+- See `.env.example` for placeholders
 
 ---
 
@@ -26,6 +34,8 @@ see `/Users/curtis/Desktop/scs1751876232493_.anytrans.ai`
 4. **Every safety/isolation change** must deliver an e2e guard test with red→green proof. "Seam tests" (testing mocks/constructors) don't count — must drive the real pipeline entry point.
 
 5. **Receipt required** for every task: changed files, verification output (`tsc` + `npm test` + `npm run build:console`), UI items with Chrome screenshots.
+
+6. **Minimize deployments**: test thoroughly locally before deploying. Deploy at normal major-version cadence — not per-commit. Batch changes into meaningful releases.
 
 ---
 
@@ -53,7 +63,7 @@ packages/shared/
   defaults/index.ts    ← default system prompts, memory strategies, policy hooks
 ```
 
-### Auth (multi-tenant)
+### Auth (multi-tenant, signed session)
 
 ```
 External API → Bearer intera_sk_live_... → resolveOrgFromApiKey() → sha256 lookup
@@ -63,7 +73,9 @@ LiveChat webhook → /api/livechat/webhook/:orgId (webhookSecret validation)
   → bridge.ts → x-intera-internal + x-intera-org headers → /api/messages
   → isTrustedInternalCall() → orgId from header
 
-Console UI → cookie intera_auth=1 + intera_org_id → getActiveOrgId()
+Console UI → signed `intera_session` cookie (HMAC-SHA256 JWT in `lib/session.ts`)
+  → verifySessionToken() → { role: 'staff' | 'customer', orgId, exp }
+  → middleware blocks /admin /ops /api/admin|ops|chats|users when invalid
 ```
 
 ### Playground dry-run isolation
@@ -86,11 +98,18 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 | `apps/console/lib/agent/loop.ts` | Core AgentLoop (2000+ lines). Persistence port + dryRun injected at constructor. |
 | `apps/console/lib/agent/streaming-tool-executor.ts` | Tool dispatch. `dryRun` chokepoint at `runTrackedTool`:211. |
 | `apps/console/lib/agent/persistence-port.ts` | `PersistencePort` interface + `PrismaPersistence` + `MemoryPersistence`. |
-| `apps/console/lib/agent/playground-runner.ts` | `runPlaygroundTurn()` — creates AgentLoop with memory port + dryRun. |
-| `apps/console/lib/agent/__tests__/integration/playground-isolation.test.ts` | E2E guard test. 10 scenarios. Must stay green. |
-| `packages/shared/prisma/schema.prisma` | 21 models. `ApiKey` schema clean (agentConfigId removed). |
-| `apps/console/app/api/admin/playground/run/route.ts` | SSE endpoint. Admin cookie auth. |
-| `apps/console/components/docked-preview.tsx` | Slide-in test panel. Keep className single-line (SWC constraint). |
+| `apps/console/lib/agent/playground-runner.ts` | `runPlaygroundTurn()` — accepts optional `configId` for multi-agent. |
+| `apps/console/lib/agent/config-cache.ts` | Config cache keyed `orgId::agentId` (falls back to `orgId`). |
+| `apps/console/lib/session.ts` | Signed HMAC-SHA256 JWT session token (no external dep). |
+| `apps/console/lib/auth.ts` | `getSession()`, `getActiveOrgId()`, `getActiveVendor()` — all read verified session. |
+| `apps/console/middleware.ts` | Edge gate: redirects `/admin` `/ops` to `/login`; returns 401 for gated API. |
+| `apps/console/app/api/admin/agent/route.ts` | GET/PUT `/api/admin/agent` — accepts `?agentId=` (fallback to first config). |
+| `apps/console/app/api/admin/agent-configs/route.ts` | GET/POST — list/create agent configs. POST accepts `templateId` for duplicate. |
+| `apps/console/app/api/admin/agent-configs/[id]/route.ts` | DELETE — refuses to delete the only config. |
+| `apps/console/app/api/auth/login/route.ts` | Issues `intera_session` cookie. Needs `STAFF_PASSWORD` (staff mode) or per-org bcrypt (customer mode). |
+| `apps/console/components/console-sidebar.tsx` | Agent switcher dropdown + duplicate/delete buttons. NEW badge removed from playground. |
+| `apps/console/app/admin/agent/page.tsx` | Wrapped in `<Suspense>` for `useSearchParams`. Agent selector dropdown at top. |
+| `packages/shared/ui/intera-logo.tsx` | 2-phase cycle: INTERA → IA → AI (auto-swaps after 600ms). |
 
 ---
 
@@ -167,10 +186,40 @@ cd ~/intera-agent && ./scripts/deploy.sh
 ## Tests
 
 ```bash
-npm test                    # 234 passed, 0 failed, 8 skipped (25 files)
+npm test                    # 25 passed, 1 failed (DB connectivity pre-existing), 2 skipped
 npm run build:console       # must succeed
 npx tsc --noEmit -p apps/console/tsconfig.json  # 0 errors
 ```
+
+The single failing test is `db-integration.test.ts` which requires live PostgreSQL
+connectivity to a now-defunct Railway instance — pre-existing, unrelated to current work.
+
+---
+
+## Latest Progress (2026-06-02)
+
+**Post-Phase B complete (committed `6346c23`)**:
+- Deleted `apps/chat` (155 files, 26k LOC); fixed 2 broken imports; i18n path updates
+- 14 LLM models live (MiniMax × DeepSeek × OpenRouter × 3)
+- LiveChat webhooks configured to `demo.anytrans.ai/api/livechat/webhook/default`
+- GitHub deploy key set up; `git push deploy main` triggers full build+restart
+
+**C1 multi-agent UI (admin/management only, runtime routing deferred to C2)**:
+- `AgentConfig` schema gained `@@unique([orgId, name])`
+- New DELETE endpoint `/api/admin/agent-configs/[id]`
+- POST `/api/admin/agent-configs` accepts `templateId` for duplicate
+- GET/PUT `/api/admin/agent` accepts `?agentId=`
+- Config cache now keyed `orgId::agentId`
+- Admin agent page has agentId dropdown + Suspense wrapper
+- Sidebar agent switcher wires up to `?agentId=` nav + duplicate/delete buttons
+- Playground uses selected agent config (reads from localStorage)
+
+**Logo animation**: 2-phase cycle (INTERA → IA → AI in one transition, no pause at IA).
+
+**Cleanup**:
+- Removed `/ops/human-tasks` (orphaned), `/embed/human-tasks`, `/api/human-tasks/*`,
+  `/api/cases/[id]/{stream,message}` (legacy web-chat), `event-translators.ts` shim,
+  `propose_interaction` disabled skill.
 
 ---
 

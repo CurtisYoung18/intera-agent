@@ -8,23 +8,30 @@ const TTL_MS = 30_000
 
 const cache = new Map<string, { config: AgentConfigData; timestamp: number }>()
 
-export function getCachedConfig(orgId: string): AgentConfigData | null {
-  const entry = cache.get(orgId)
+function cacheKey(orgId: string, agentId?: string): string {
+  return agentId ? `${orgId}::${agentId}` : orgId
+}
+
+export function getCachedConfig(orgId: string, agentId?: string): AgentConfigData | null {
+  const key = cacheKey(orgId, agentId)
+  const entry = cache.get(key)
   if (!entry) return null
   if (Date.now() - entry.timestamp > TTL_MS) {
-    cache.delete(orgId)
+    cache.delete(key)
     return null
   }
   return entry.config
 }
 
-export function setCachedConfig(orgId: string, config: AgentConfigData): void {
-  cache.set(orgId, { config, timestamp: Date.now() })
+export function setCachedConfig(orgId: string, config: AgentConfigData, agentId?: string): void {
+  const key = cacheKey(orgId, agentId)
+  cache.set(key, { config, timestamp: Date.now() })
 }
 
-export function clearConfigCache(orgId?: string): void {
+export function clearConfigCache(orgId?: string, agentId?: string): void {
   if (orgId) {
-    cache.delete(orgId)
+    const key = cacheKey(orgId, agentId)
+    cache.delete(key)
     clearCaseTypeCache(orgId)
   } else {
     cache.clear()

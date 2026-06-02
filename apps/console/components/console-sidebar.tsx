@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers,
+  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers, Copy,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Languages, Lock, Unlock,
   BookOpen,
@@ -65,7 +65,7 @@ interface CustomerInfo {
  */
 
 const BUILD_ITEMS: NavItem[] = [
-  { href: '/admin/playground', slug: 'playground', icon: FlaskConical, color: '#8b6ff5', badge: 'NEW' },
+  { href: '/admin/playground', slug: 'playground', icon: FlaskConical, color: '#8b6ff5' },
   { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
   { href: '/admin/guardrails', slug: 'guardrails', icon: Shield, color: '#e64539' },
   { href: '/admin/tools', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
@@ -150,7 +150,23 @@ export default function ConsoleSidebar() {
   const handleAgentSelect = (id: string) => {
     setSelectedAgentId(id)
     try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
+    if (pathname.startsWith('/admin/agent')) {
+      router.push(`/admin/agent?agentId=${id}`)
+    }
   }
+
+  const refreshAgentConfigs = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/agent-configs')
+      const d = await r.json()
+      if (d.configs?.length) {
+        setAgentConfigs(d.configs)
+        if (!d.configs.find((c: AgentInfo) => c.id === selectedAgentId)) {
+          setSelectedAgentId(d.configs[0].id)
+        }
+      }
+    } catch { /* ignore */ }
+  }, [selectedAgentId])
 
   // Load customer list
   const loadCustomers = useCallback(async () => {
@@ -315,18 +331,57 @@ export default function ConsoleSidebar() {
                 {agentOpen && (
                   <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
                     {agentConfigs.map((c) => (
-                      <button
+                      <div
                         key={c.id}
-                        type="button"
-                        onClick={() => { handleAgentSelect(c.id); setAgentOpen(false) }}
-                        className={`w-full flex items-center gap-2 px-2 py-1 text-[11px] rounded-md transition-all text-left ${
+                        className={`w-full flex items-center gap-1 px-2 py-1 text-[11px] rounded-md transition-all ${
                           c.id === selectedAgentId
                             ? 'text-[var(--mist)] bg-black/[0.04] font-medium'
                             : 'text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03]'
                         }`}
                       >
-                        <span className="truncate">{c.name}</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => { handleAgentSelect(c.id); setAgentOpen(false) }}
+                          className="flex-1 text-left truncate"
+                        >
+                          {c.name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            try {
+                              await fetch('/api/admin/agent-configs', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: `${c.name} (Copy)`, templateId: c.id }),
+                              })
+                              await refreshAgentConfigs()
+                            } catch { /* ignore */ }
+                          }}
+                          className="shrink-0 p-0.5 rounded-md text-[var(--fog)]/40 hover:text-[var(--mist)] hover:bg-black/[0.06] transition-colors"
+                          title="Duplicate"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {agentConfigs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              if (!confirm(`Delete "${c.name}"?`)) return
+                              try {
+                                await fetch(`/api/admin/agent-configs/${c.id}`, { method: 'DELETE' })
+                                await refreshAgentConfigs()
+                              } catch { /* ignore */ }
+                            }}
+                            className="shrink-0 p-0.5 rounded-md text-[var(--fog)]/40 hover:text-vermillion hover:bg-vermillion/5 transition-colors"
+                            title="Delete"
+                          >
+                            <XCircle className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     ))}
                     <button
                       type="button"

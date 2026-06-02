@@ -8,6 +8,7 @@ interface Props {
 
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const CYCLE_MS = 5000
+const IA_TO_AI_DELAY_MS = 600 // pause at IA before swapping to AI
 
 // ── Measure ──
 const widthCache = new Map<number, Record<string, number>>()
@@ -54,13 +55,18 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
   const phaseRef = useRef(0)
   const mounted = useRef(false)
   const prevCollapsed = useRef(collapsed)
+  const aiSwapTimer = useRef<ReturnType<typeof setTimeout>>(null)
 
   const applyPhase = useCallback(
     (p: number) => {
       const W = { I: measure('I', size), A: measure('A', size), N: measure('N', size), T: measure('T', size), E: measure('E', size), R: measure('R', size), A2: measure('A', size) }
       const [a, n, t, e, r, aLast] = letterRefs.current
 
+      // Clear any pending AI swap
+      if (aiSwapTimer.current) { clearTimeout(aiSwapTimer.current); aiSwapTimer.current = null }
+
       if (p === 0) {
+        // ── INTERA ──
         animL(iRef.current, { op: 1, tx: 0 })
         animL(a, { mw: 0, op: 0, tx: 0 })
         animL(n, { mw: W.N, op: 1, tx: 0, delay: 0 })
@@ -68,7 +74,9 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
         animL(e, { mw: W.E, op: 1, tx: 0, delay: 55 })
         animL(r, { mw: W.R, op: 1, tx: 0, delay: 80 })
         animL(aLast, { mw: W.A2, op: 1, tx: 0, delay: 105 })
-      } else if (p === 1) {
+      } else {
+        // ── IA (first), then swap to AI ──
+        // Step 1: squeeze INTERA → IA
         animL(iRef.current, { op: 1, tx: 0, delay: 80 })
         animL(a, { mw: W.A + 2, op: 1, tx: 0, delay: 110 })
         animL(n, { mw: 0, op: 0, tx: 0, delay: 0 })
@@ -76,14 +84,16 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
         animL(e, { mw: 0, op: 0, tx: 0, delay: 38 })
         animL(r, { mw: 0, op: 0, tx: 0, delay: 55 })
         animL(aLast, { mw: 0, op: 0, tx: 0, delay: 70 })
-      } else {
-        animL(iRef.current, { op: 1, tx: W.A + 2, delay: 50 })
-        animL(a, { mw: W.A + 2, op: 1, tx: -(W.I + 2), delay: 50 })
-        animL(n, { mw: 0, op: 0, tx: 0 })
-        animL(t, { mw: 0, op: 0, tx: 0 })
-        animL(e, { mw: 0, op: 0, tx: 0 })
-        animL(r, { mw: 0, op: 0, tx: 0 })
-        animL(aLast, { mw: 0, op: 0, tx: 0 })
+        // Step 2: after brief pause, swap IA → AI
+        aiSwapTimer.current = setTimeout(() => {
+          animL(iRef.current, { op: 1, tx: W.A + 2, delay: 50 })
+          animL(a, { mw: W.A + 2, op: 1, tx: -(W.I + 2), delay: 50 })
+          animL(n, { mw: 0, op: 0, tx: 0 })
+          animL(t, { mw: 0, op: 0, tx: 0 })
+          animL(e, { mw: 0, op: 0, tx: 0 })
+          animL(r, { mw: 0, op: 0, tx: 0 })
+          animL(aLast, { mw: 0, op: 0, tx: 0 })
+        }, IA_TO_AI_DELAY_MS)
       }
     },
     [size],
@@ -108,7 +118,7 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
   useEffect(() => {
     if (collapsed || !mounted.current) return
     const interval = setInterval(() => {
-      const next = ((phaseRef.current + 1) % 3) as 0 | 1 | 2
+      const next = ((phaseRef.current + 1) % 2) as 0 | 1
       phaseRef.current = next
       setPhase(next)
       setTick((t) => t + 1)
@@ -135,7 +145,7 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
   // Click
   const handleClick = useCallback(() => {
     if (collapsed) return
-    const next = ((phase + 1) % 3) as 0 | 1 | 2
+    const next = ((phase + 1) % 2) as 0 | 1
     phaseRef.current = next
     setPhase(next)
     setTick((t) => t + 1)

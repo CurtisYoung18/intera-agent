@@ -57,12 +57,22 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}))
   const name = (body.name as string)?.trim() || 'New Agent'
+  const templateId = body.templateId as string | undefined
 
-  // Clone the first existing config as template, or use defaults
-  const template = await prisma.agentConfig.findFirst({
-    where: { orgId },
-    orderBy: { createdAt: 'asc' },
-  })
+  // Clone a specific config if templateId is provided and valid, else fall back to first config
+  let template = null
+  if (templateId) {
+    template = await prisma.agentConfig.findUnique({ where: { id: templateId } })
+    if (!template || template.orgId !== orgId) {
+      template = null
+    }
+  }
+  if (!template) {
+    template = await prisma.agentConfig.findFirst({
+      where: { orgId },
+      orderBy: { createdAt: 'asc' },
+    })
+  }
 
   const config = await prisma.agentConfig.create({
     data: {

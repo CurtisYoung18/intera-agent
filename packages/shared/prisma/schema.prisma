@@ -87,6 +87,7 @@ model AgentConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([orgId, name])
   @@index([orgId])
   @@map("agent_configs")
 }

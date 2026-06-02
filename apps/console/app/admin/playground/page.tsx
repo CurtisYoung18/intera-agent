@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 interface PlaygroundConfig {
   model: 'claude-sonnet' | 'minimax' | 'deepseek'
@@ -36,6 +36,14 @@ export default function PlaygroundPage() {
   const [traces, setTraces] = useState<any[]>([])
   const [selectedTrace, setSelectedTrace] = useState<any>(null)
   const [error, setError] = useState('')
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('intera-agent-id')
+      if (stored) setSelectedAgentId(stored)
+    } catch { /* ignore */ }
+  }, [])
 
   const runTurn = useCallback(async (msg: string) => {
     setReply('')
@@ -51,7 +59,7 @@ export default function PlaygroundPage() {
       const res = await fetch('/api/admin/playground/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, config }),
+        body: JSON.stringify({ message: msg, config, configId: selectedAgentId }),
       })
 
       if (!res.ok) {
@@ -94,7 +102,7 @@ export default function PlaygroundPage() {
       clearInterval(spinner)
       setResponding(false)
     }
-  }, [config])
+  }, [config, selectedAgentId])
 
   const toggleGuardrail = (key: keyof PlaygroundConfig['guardrails']) => {
     setConfig((c) => ({ ...c, guardrails: { ...c.guardrails, [key]: !c.guardrails[key] } }))
@@ -104,6 +112,11 @@ export default function PlaygroundPage() {
     <div style={{ display: 'grid', gridTemplateColumns: '268px 1fr 360px', height: 'calc(100vh - 52px)', overflow: 'hidden' }}>
       {/* ── Left: ConfigPanel ── */}
       <div className="border-r border-black/[0.06] bg-white/40 backdrop-blur-xl p-4 space-y-5 overflow-y-auto">
+        {selectedAgentId && (
+          <div className="rounded-lg bg-indigo/[0.04] border border-indigo/10 px-3 py-2 text-[10px] text-[var(--fog)]">
+            Using config: <span className="font-mono text-indigo">{selectedAgentId}</span>
+          </div>
+        )}
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]/40 mb-2">Model</p>
           <div className="flex gap-1">

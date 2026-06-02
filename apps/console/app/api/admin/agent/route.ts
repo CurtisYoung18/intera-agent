@@ -7,11 +7,22 @@ import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } 
 
 import { getActiveOrgId } from '@/lib/auth'
 
-export async function GET() {
+async function resolveAgentConfig(orgId: string, agentId: string | null) {
+  if (agentId) {
+    const config = await prisma.agentConfig.findUnique({ where: { id: agentId } })
+    if (config && config.orgId === orgId) {
+      return config
+    }
+  }
+  return prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
+}
+
+export async function GET(request: NextRequest) {
   try {
     const ORG_ID = await getActiveOrgId()
     await ensureSqliteSchemaCompat(prisma)
-    let config = await prisma.agentConfig.findFirst({ where: { orgId: ORG_ID }, orderBy: { createdAt: 'asc' } })
+    const agentId = request.nextUrl.searchParams.get('agentId')
+    let config = await resolveAgentConfig(ORG_ID, agentId)
 
     // Lazy init: create from defaults if DB is empty
     if (!config) {
@@ -89,7 +100,8 @@ export async function PUT(req: NextRequest) {
     if (knowledgeRetrieval !== undefined) data.knowledgeRetrieval = typeof knowledgeRetrieval === 'string' ? knowledgeRetrieval : JSON.stringify(knowledgeRetrieval)
 
     await ensureDefaultOrg(ORG_ID)
-    const existing = await prisma.agentConfig.findFirst({ where: { orgId: ORG_ID }, orderBy: { createdAt: 'asc' } })
+    const agentId = req.nextUrl.searchParams.get('agentId')
+    const existing = await resolveAgentConfig(ORG_ID, agentId)
     let config
     if (existing) {
       config = await prisma.agentConfig.update({

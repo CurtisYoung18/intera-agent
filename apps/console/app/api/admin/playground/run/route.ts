@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──
-  let body: { message?: string; config?: Partial<PlaygroundConfig> }
+  let body: { message?: string; config?: Partial<PlaygroundConfig>; configId?: string | null }
   try {
     body = await request.json()
   } catch {
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig })) {
+        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined })) {
           send(event)
         }
       } catch (err) {

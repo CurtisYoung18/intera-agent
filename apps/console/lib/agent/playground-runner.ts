@@ -36,8 +36,17 @@ function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
   return null
 }
 
-async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
-  const dbConfig = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
+async function loadAgentConfig(orgId: string, agentId?: string | null): Promise<AgentConfigData> {
+  let dbConfig = null
+  if (agentId) {
+    const byId = await prisma.agentConfig.findUnique({ where: { id: agentId } })
+    if (byId && byId.orgId === orgId) {
+      dbConfig = byId
+    }
+  }
+  if (!dbConfig) {
+    dbConfig = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
+  }
   if (dbConfig) {
     return {
       model: dbConfig.model,
@@ -66,7 +75,7 @@ async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
 
 /** Run a single playground turn using the REAL AgentLoop pipeline. */
 export async function* runPlaygroundTurn(input: {
-  orgId: string; message: string; playgroundConfig: PlaygroundConfig
+  orgId: string; message: string; playgroundConfig: PlaygroundConfig; configId?: string | null
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc } = input
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -76,7 +85,7 @@ export async function* runPlaygroundTurn(input: {
   const { port: persistence, traces: memoryTraces } = createMemoryPersistence()
 
   // ── Load real config from DB ──
-  const agentConfig = await loadAgentConfig(orgId)
+  const agentConfig = await loadAgentConfig(orgId, input.configId)
   const systemPrompt = (agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT)
     + (pc.persona === 'concise' ? '\n\nBe concise and direct.' : '\n\nBe warm and empathetic.')
 
