@@ -200,3 +200,73 @@ describe('SkillRouter auto-heal dry-run gate', () => {
     expect(h.writes).toContain('knowledgeSource.update')
   })
 })
+
+// ── Additional tool-specific isolation scenarios ──
+// Each must fail (real write) when its dryRun guard is removed, and pass when present.
+
+function makeToolStream(toolName: string, toolInput: Record<string, unknown> = {}) {
+  const endEvents = [
+    { type: 'message_start', message: { id: 'm2', role: 'assistant', model: 'x', usage: { input_tokens: 1, output_tokens: 0 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Done.' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } },
+    { type: 'message_stop' },
+  ]
+  const toolEvents = [
+    { type: 'message_start', message: { id: 'm1', role: 'assistant', model: 'x', usage: { input_tokens: 1, output_tokens: 0 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu1', name: toolName, input: toolInput } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
+    { type: 'message_stop' },
+  ]
+  let streamCall = 0
+  return {
+    stream(..._args: unknown[]) {
+      streamCall++
+      const events = streamCall === 1 ? toolEvents : endEvents
+      return {
+        async *[Symbol.asyncIterator]() { for (const e of events) yield e },
+      }
+    },
+  }
+}
+
+describe('Playground isolation — additional operational tools', () => {
+  beforeEach(() => {
+    h.writes.length = 0
+    h.resetStreams()
+  })
+
+  it('dispatch_subagent produces ZERO real prisma writes (dryRun intercepts)', async () => {
+    vi.spyOn(OrchestratorAgent.prototype, 'planInvestigation').mockResolvedValue([{ id: 't1' } as never])
+    const dispatchSpy = vi.spyOn(OrchestratorAgent.prototype, 'dispatchInBackground').mockImplementation((() => undefined) as never)
+
+    const sub = makeToolStream('dispatch_subagent', { agentType: 'verifier', task: 'check order' })
+    const streamSpy = vi.spyOn(h.fakeClient.messages, 'stream').mockImplementation(sub.stream.bind(sub) as any)
+
+    await drainPlayground('dispatch a sub-agent to check order ORDER123')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(dispatchSpy).not.toHaveBeenCalled()
+    expect(h.writes, `unexpected DB writes: ${h.writes.join(', ')}`).toHaveLength(0)
+    streamSpy.mockRestore()
+    dispatchSpy.mockRestore()
+  })
+
+  it('finalize_case produces ZERO real prisma writes (dryRun intercepts)', async () => {
+    const fin = makeToolStream('finalize_case', { verdict: 'resolved' })
+    const streamSpy = vi.spyOn(h.fakeClient.messages, 'stream').mockImplementation(fin.stream.bind(fin) as any)
+
+    await drainPlayground('resolve the case now')
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(h.writes, `unexpected DB writes: ${h.writes.join(', ')}`).toHaveLength(0)
+    streamSpy.mockRestore()
+  })
+
+  it('request_user_input produces ZERO real prisma writes (dryRun intercepts)', async () => {
+    const req = makeToolStream('request_user_input', { question: 'What is your order ID?' })
+    const streamSpy = vi.spyOn(h.fakeClient.messages, 'stream').mockImplementation(req.stream.bind(req) as any)
+
+    await drainPlayground('I need to report an issue')
