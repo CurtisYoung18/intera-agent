@@ -55,7 +55,7 @@ function LoginForm() {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
           <InteraLogo size={28} />
-          <p className="mt-3 text-[12px] text-[var(--fog)]">Operator & agent console</p>
+          <p className="mt-3 text-[12px] text-[var(--fog)]">Agent Console</p>
         </div>
 
         {/* Mode toggle */}
