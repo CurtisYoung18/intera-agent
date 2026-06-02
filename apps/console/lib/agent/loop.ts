@@ -185,7 +185,7 @@ export class AgentLoop {
   constructor(private deps: AgentLoopDeps) {
     this.chatMemory = new ChatMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.skillRouter = new SkillRouter(deps.orgId)
-    this.traceWriter = new TraceWriter(deps.caseId)
+    this.traceWriter = new TraceWriter(deps.caseId, deps.dryRun ?? false)
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.abortController = new AbortController()
     this.anthropicClient = createAgentClient(deps.config.model)
@@ -232,7 +232,7 @@ export class AgentLoop {
   /** Create and initialize an AgentLoop — loads skills/policies from DB. */
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
-    loop.skillRouter = await SkillRouter.create(deps.orgId)
+    loop.skillRouter = await SkillRouter.create(deps.orgId, deps.dryRun ?? false)
     loop.policyEngine = await PolicyEngine.create(deps.orgId, deps.config.policyHooks)
     return loop
   }
@@ -1265,32 +1265,50 @@ export class AgentLoop {
                 fallbackModel: this.deps.config.fallbackModel,
               }
 
-              const orchestrator = new OrchestratorAgent(
-                schema,
-                allSkills,
-                this.deps.userId,
-                this.chatMemory,
-              )
+              if (!this.dryRun) {
+                const orchestrator = new OrchestratorAgent(
+                  schema,
+                  allSkills,
+                  this.deps.userId,
+                  this.chatMemory,
+                )
 
-              const caseMem = this.chatMemory.getSummary()
-              const tasks = await orchestrator.planInvestigation(
-                schema.stages[0] || 'created',
-                [subAgentConfig],
-                { ...caseMem, caseId: subCaseId } as any,
-                casePrompt,
-              )
+                const caseMem = this.chatMemory.getSummary()
+                const tasks = await orchestrator.planInvestigation(
+                  schema.stages[0] || 'created',
+                  [subAgentConfig],
+                  { ...caseMem, caseId: subCaseId } as any,
+                  casePrompt,
+                )
 
-              if (tasks.length > 0) {
-                orchestrator.dispatchInBackground(tasks, sendEvent)
+                if (tasks.length > 0) {
+                  orchestrator.dispatchInBackground(tasks, sendEvent)
 
+                  sendEvent({
+                    type: 'sub_agent_start',
+                    data: {
+                      agentId: tasks[0].id,
+                      agentName: subAgentConfig.name,
+                      taskDescription: casePrompt.slice(0, 200),
+                      stage: 'created',
+                      caseId: subCaseId,
+                    },
+                    timestamp: new Date().toISOString(),
+                  })
+                }
+              } else {
+                // Dry-run (playground): never spawn a real background agent or its
+                // DB writes. Emit a mock sub_agent_start so the UI/trace still shows
+                // the dispatch step, but skip OrchestratorAgent entirely.
                 sendEvent({
                   type: 'sub_agent_start',
                   data: {
-                    agentId: tasks[0].id,
+                    agentId: `dryrun_${subCaseId}`,
                     agentName: subAgentConfig.name,
                     taskDescription: casePrompt.slice(0, 200),
                     stage: 'created',
                     caseId: subCaseId,
+                    dryRun: true,
                   },
                   timestamp: new Date().toISOString(),
                 })

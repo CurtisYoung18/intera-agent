@@ -10,6 +10,7 @@
     "./prisma": "./prisma/index.ts",
     "./composer-min-draft": "./composer-min-draft.ts",
     "./defaults": "./defaults/index.ts",
+    "./memory/*": "./memory/*.ts",
     "./ui/*": "./ui/*.tsx",
     "./channels/*": "./channels/*.ts"
   },

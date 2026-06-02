@@ -50,7 +50,14 @@ export interface TraceEntry {
 export class TraceWriter {
   private chatId: string | null = null
 
-  constructor(private caseId: string) {}
+  /**
+   * @param caseId  Case this writer traces.
+   * @param dryRun  When true (playground), trace entries are returned to callers
+   *                but NEVER persisted to the DB. The playground collects its
+   *                timeline from the SSE event stream instead, so DB actionTrace
+   *                rows must not be written for dry-run turns.
+   */
+  constructor(private caseId: string, private dryRun: boolean = false) {}
 
   /** Set the chatId for all subsequent trace writes. */
   setChatId(chatId: string | null): void {
@@ -75,6 +82,9 @@ export class TraceWriter {
     } else if (detailOrPayload) {
       entry.payload = detailOrPayload as Record<string, unknown>
     }
+
+    // Dry-run (playground): never persist trace rows to the DB.
+    if (this.dryRun) return entry
 
     // Fire-and-forget: never block the agent loop on trace writes
     prisma.actionTrace

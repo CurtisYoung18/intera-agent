@@ -858,7 +858,7 @@ export class SkillRouter {
   }
 
   /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources. */
-  static async create(orgId: string): Promise<SkillRouter> {
+  static async create(orgId: string, dryRun = false): Promise<SkillRouter> {
     const router = new SkillRouter(orgId)
 
     // Load DB skills (overlay on top of built-ins already loaded in constructor)
@@ -934,20 +934,24 @@ export class SkillRouter {
 
       // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
       // Seed already has new defaults; this handles rows created before this deploy.
-      const healOps: Promise<unknown>[] = []
-      for (const ks of knowledgeSources) {
-        const patches: Record<string, unknown> = {}
-        if (!ks.rerankVersion || ks.rerankVersion === 'Jina-reranker-v2-base-multilingual') {
-          patches.rerankVersion = 'BGE-Rerank'
+      // Skipped entirely in dry-run (playground) so a turn performs ZERO DB writes —
+      // note prisma.update() must not even be *called*, since calling it issues the write.
+      if (!dryRun) {
+        const healOps: Promise<unknown>[] = []
+        for (const ks of knowledgeSources) {
+          const patches: Record<string, unknown> = {}
+          if (!ks.rerankVersion || ks.rerankVersion === 'Jina-reranker-v2-base-multilingual') {
+            patches.rerankVersion = 'BGE-Rerank'
+          }
+          if (ks.topK < 15) patches.topK = 15
+          if (ks.docCorrelation === 0.5) patches.docCorrelation = 0.3
+          if (Object.keys(patches).length > 0) {
+            healOps.push(prisma.knowledgeSource.update({ where: { id: ks.id }, data: patches }))
+          }
         }
-        if (ks.topK < 15) patches.topK = 15
-        if (ks.docCorrelation === 0.5) patches.docCorrelation = 0.3
-        if (Object.keys(patches).length > 0) {
-          healOps.push(prisma.knowledgeSource.update({ where: { id: ks.id }, data: patches }))
+        if (healOps.length > 0) {
+          Promise.allSettled(healOps).catch(() => {})
         }
-      }
-      if (healOps.length > 0) {
-        Promise.allSettled(healOps).catch(() => {})
       }
 
       for (const ks of knowledgeSources) {
