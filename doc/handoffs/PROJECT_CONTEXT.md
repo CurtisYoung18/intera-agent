@@ -1,6 +1,6 @@
 # Handoff: Intera Agent — Post-Phase B Reference
 
-**Last updated:** 2026-06-02 | **Branch:** `main` @ TBD | **Status:** Post-Phase B + C1 (multi-agent UI) complete
+**Last updated:** 2026-06-02 | **Branch:** `main` @ `781fb6c` | **Status:** Post-Phase B + C1 (multi-agent UI) + C1 security fix shipped & verified on prod
 
 > This is a **generic context document** for any coding agent picking up this project.
 > Concrete tasks live in [doc/to-do/](../../doc/to-do/).
@@ -111,7 +111,7 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 | `apps/console/app/api/auth/login/route.ts` | Issues `intera_session` cookie. Needs `STAFF_PASSWORD` (staff mode) or per-org bcrypt (customer mode). |
 | `apps/console/components/console-sidebar.tsx` | Agent switcher dropdown + duplicate/delete buttons. NEW badge removed from playground. |
 | `apps/console/app/admin/agent/page.tsx` | Wrapped in `<Suspense>` for `useSearchParams`. Agent selector dropdown at top. |
-| `packages/shared/ui/intera-logo.tsx` | 2-phase cycle: INTERA → IA → AI (auto-swaps after 600ms). |
+| `packages/shared/ui/intera-logo.tsx` | 2-phase cycle: **INTERA ↔ AI** in one fluid transition. No static IA pause — middle letters cascade-collapse while I/A simultaneously slide past each other (delays 0/20/38/55/70 then 80/110). 5s auto-cycle. |
 
 ---
 
@@ -200,28 +200,52 @@ connectivity to a now-defunct Railway instance — pre-existing, unrelated to cu
 
 ## Latest Progress (2026-06-02)
 
-**Post-Phase B complete (committed `6346c23`)**:
-- Deleted `apps/chat` (155 files, 26k LOC); fixed 2 broken imports; i18n path updates
+**Today's session (shipped to prod, verified end-to-end):**
+
+| Commit | Change | Status |
+|---|---|---|
+| `83028cd` | C1 security fix — signed HMAC session + middleware gate | ✅ closed & verified |
+| `76b6821` | C1 multi-agent UI (admin/management) | ✅ live |
+| `ce250c7` | Login copy fix ("Operator & agent console" → "Agent Console") | ✅ live |
+| `2c2d18a` | docs(security): mark C1 IDOR as closed | ✅ |
+| `2f15ac2` | drop unused `query-config.cjs` + SSH-pw warning | ✅ |
+| `dcc7bca` | **Logo fix** — INTERA→IA→AI now one fluid motion (no IA pause) | ✅ live |
+| `781fb6c` | **Deploy fix** — remove broken `git pull` from `scripts/deploy.sh` | ✅ live |
+
+**Push-to-deploy now works end-to-end.** `git push deploy main` runs the post-receive
+hook → `scripts/deploy.sh` → npm ci → prisma generate → next build → copy static →
+systemctl restart → health check. Verified 2026-06-02 with the deploy-script fix.
+
+> The deploy-script bug: the post-receive hook checks files out via `git --work-tree=… --git-dir=… checkout`, which doesn't update HEAD/index in the work tree. The old `git pull origin main` line in `deploy.sh` then failed with `fatal: not a git repository: '.'`. Removed; the hook's checkout is sufficient. Manual usage docs are in the script header.
+
+**C1 verification (run on prod after each deploy):**
+- Forged cookie `intera_auth=1; intera_org_id=default` → **401** (pre-fix it was 200 + plaintext keys)
+- `GET /admin` unauthenticated → **307 /login?next=/admin**
+- Staff login → **200** + signed JWT `intera_session` cookie
+- `/api/health` → `{"status":"ok","db":"connected"}`
+
+**Earlier in the week (committed `6346c23`):**
+- Post-Phase B: deleted `apps/chat` (155 files, 26k LOC); fixed 2 imports; i18n updates
 - 14 LLM models live (MiniMax × DeepSeek × OpenRouter × 3)
-- LiveChat webhooks configured to `demo.anytrans.ai/api/livechat/webhook/default`
-- GitHub deploy key set up; `git push deploy main` triggers full build+restart
+- LiveChat webhooks → `demo.anytrans.ai/api/livechat/webhook/default`
+- GitHub deploy key set up
 
-**C1 multi-agent UI (admin/management only, runtime routing deferred to C2)**:
+**C1 multi-agent UI** (admin/management only, runtime routing deferred to C2):
 - `AgentConfig` schema gained `@@unique([orgId, name])`
-- New DELETE endpoint `/api/admin/agent-configs/[id]`
-- POST `/api/admin/agent-configs` accepts `templateId` for duplicate
-- GET/PUT `/api/admin/agent` accepts `?agentId=`
-- Config cache now keyed `orgId::agentId`
-- Admin agent page has agentId dropdown + Suspense wrapper
-- Sidebar agent switcher wires up to `?agentId=` nav + duplicate/delete buttons
-- Playground uses selected agent config (reads from localStorage)
-
-**Logo animation**: 2-phase cycle (INTERA → IA → AI in one transition, no pause at IA).
+- New DELETE `/api/admin/agent-configs/[id]`; POST accepts `templateId` for duplicate
+- GET/PUT `/api/admin/agent` accepts `?agentId=`; config cache keyed `orgId::agentId`
+- Admin agent page: agentId dropdown + Suspense; Sidebar: agent switcher + dup/delete
+- Playground uses selected agent config from localStorage
 
 **Cleanup**:
-- Removed `/ops/human-tasks` (orphaned), `/embed/human-tasks`, `/api/human-tasks/*`,
+- Removed `/ops/human-tasks`, `/embed/human-tasks`, `/api/human-tasks/*`,
   `/api/cases/[id]/{stream,message}` (legacy web-chat), `event-translators.ts` shim,
   `propose_interaction` disabled skill.
+
+**Known follow-ups (not blocking):**
+- **Server working tree is "dirty"** — `git status` on the server shows phantom modifications because the post-receive hook's checkout mode doesn't update HEAD. Build uses files-on-disk so it works fine; cosmetic only. Cleanup pattern: `git update-ref HEAD <sha> && git reset --mixed` on the server, or accept it.
+- L1: `STAFF_PASSWORD` / `API_ORG_PASSWORD` still `ChangeMe2026!` — deferred to UI session.
+- H4: SSH password in this doc (line 10). User asked not to change; treat as known.
 
 ---
 
