@@ -106,6 +106,7 @@ export default function ConsoleSidebar() {
   const [agentOpen, setAgentOpen] = useState(false)
 
   const [customerName, setCustomerName] = useState('Demo Org')
+  const [isStaff, setIsStaff] = useState(false)
   const [customers, setCustomers] = useState<CustomerInfo[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
 
@@ -123,6 +124,7 @@ export default function ConsoleSidebar() {
       .then((r) => r.json())
       .then((d) => {
         if (d.customerName) setCustomerName(d.customerName)
+        setIsStaff(d.role === 'staff')
       })
       .catch(() => {})
   }, [])
@@ -171,43 +173,31 @@ export default function ConsoleSidebar() {
   }
 
   const handleCustomerSelect = (customer: CustomerInfo) => {
-    if (customer.hasPassword) {
-      setPasswordTarget(customer)
-      setPassword('')
-      setPasswordError('')
-    } else {
-      doSwitch(customer.id)
-    }
+    // Staff switch freely — no per-org password (they're already authenticated as staff).
+    doSwitch(customer.id)
   }
 
-  const doSwitch = async (orgId: string, pwd?: string) => {
+  const doSwitch = async (orgId: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/switch-org', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId, password: pwd || '' }),
+        body: JSON.stringify({ orgId }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setPasswordError(data.error || 'Login failed')
+        setPasswordError(data.error || 'Switch failed')
         return
       }
       setSwitchOpen(false)
       setPasswordTarget(null)
       setPassword('')
       setAvatarOpen(false)
-      // Full page reload to pick up new cookie on server side
+      // Full page reload to pick up the new session cookie on the server side.
       window.location.href = window.location.pathname
     } catch {
       setPasswordError('Network error — try again')
     }
-  }
-
-  const handlePasswordSubmit = () => {
-    if (!passwordTarget) return
-    setPasswordLoading(true)
-    doSwitch(passwordTarget.id, password)
-    setPasswordLoading(false)
   }
 
   const handleSignOut = async () => {
@@ -273,6 +263,7 @@ export default function ConsoleSidebar() {
                 <span className="truncate">{langButtonLabel}</span>
               </button>
 
+              {isStaff && (
               <button
                 type="button"
                 onClick={handleSwitchClick}
@@ -280,8 +271,9 @@ export default function ConsoleSidebar() {
               >
                 <Building2 className="w-3 h-3 flex-shrink-0" /> {t('sidebar.switchProject')}
               </button>
+              )}
 
-              {switchOpen && (
+              {isStaff && switchOpen && (
                 <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
                   {customersLoading ? (
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--fog)] py-1">
@@ -390,60 +382,6 @@ export default function ConsoleSidebar() {
           )}
         </div>
       </aside>
-
-      {/* Password Modal */}
-      {passwordTarget && (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center pt-[25vh] bg-black/20 backdrop-blur-sm"
-          onClick={(e) => { if (e.target === e.currentTarget) { setPasswordTarget(null); setPasswordError('') } }}
-        >
-          <div className="w-full max-w-sm mx-4 rounded-2xl border border-black/[0.08] bg-white shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-black/[0.06]">
-              <h3 className="text-[14px] font-bold text-[var(--mist)]">
-                Login to {passwordTarget.name}
-              </h3>
-              <button
-                onClick={() => { setPasswordTarget(null); setPasswordError('') }}
-                className="p-1 rounded-lg hover:bg-black/[0.04]"
-              >
-                <XCircle className="w-5 h-5 text-[var(--fog)]" />
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handlePasswordSubmit() }}
-                  autoFocus
-                  placeholder="Enter password"
-                  className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] text-[var(--mist)] outline-none focus:border-indigo/30"
-                />
-              </div>
-              {passwordError && (
-                <p className="text-[11px] text-red-500">{passwordError}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 px-5 py-3 border-t border-black/[0.06]">
-              <button
-                onClick={() => { setPasswordTarget(null); setPasswordError('') }}
-                className="flex-1 px-4 py-2 rounded-lg border border-black/[0.08] text-[12px] text-[var(--fog)] hover:bg-black/[0.02] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePasswordSubmit}
-                disabled={passwordLoading || !password}
-                className="flex-1 px-4 py-2 rounded-lg bg-indigo text-white text-[12px] font-semibold hover:bg-indigo/90 transition-colors disabled:opacity-40"
-              >
-                {passwordLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Login'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

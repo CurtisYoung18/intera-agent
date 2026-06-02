@@ -1,6 +1,9 @@
 // ConsoleShell — full-width canvas with command center background
 
+'use client'
+
 import type { ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import LiquidGlassBg from '@intera/shared/ui/liquid-glass-bg'
 import ConsoleBackToTop from '@/components/console-back-to-top'
 import ConsoleSidebar from './console-sidebar'
@@ -11,6 +14,10 @@ interface ConsoleShellProps {
 }
 
 export default function ConsoleShell({ children }: ConsoleShellProps) {
+  const pathname = usePathname()
+  // The login page renders standalone — no sidebar / preview chrome.
+  if (pathname === '/login') return <>{children}</>
+
   return (
     <div className="relative flex h-[100dvh] min-h-0 overflow-hidden">
       {/* Liquid glass background */}
