@@ -10,26 +10,13 @@
 ## Immediate (code-level, no deployment needed)
 
 ### 1. Remove `agentConfigId` from ApiKey schema
-- **File:** `packages/shared/prisma/schema.prisma:36`
-- **Bug:** Supposed to be removed in `9899c74` ("YAGNI") but wasn't. Dead code.
-- **Action:** Delete the field, run `prisma db push` (local + server), commit.
+→ [Detailed guide](2026-06-02-01-remove-agent-config-id.md)
 
 ### 2. Fix Prisma seed bug
-- **File:** `packages/shared/prisma/schema.prisma` (generator client block)
-- **Bug:** Monorepo codegen produces duplicate `coreSystemPrompt` type definitions (`string|null` × 2 + `number`). Causes `PrismaClientValidationError` on `api` org's `agentConfig.upsert` in seed.
-- **Action:** Add explicit `output` path to `generator client` block:
-  ```prisma
-  generator client {
-    provider = "prisma-client-js"
-    output   = "../node_modules/.prisma/client"
-  }
-  ```
-  Then `npm run db:generate && npm run db:seed` — verify `api` org seeds without error.
+→ [Detailed guide](2026-06-02-02-fix-prisma-seed.md)
 
 ### 3. Fix docked-preview SWC bug
-- **File:** `apps/console/components/docked-preview.tsx`
-- **Bug:** Multi-line string in JSX `className` causes Next.js SWC compiler to fail with "Unterminated string constant."
-- **Action:** Refactor any multi-line classNames to single-line. Build verify: `npm run build:console` must pass.
+→ [Detailed guide](2026-06-02-03-fix-docked-preview-swc.md)
 
 ### 4. Clean `doc/handoffs/`
 - **Action:** After this todo is completed and reviewed, move `HANDOFF_DEPLOY_PHASE_B_06_02.md` to `doc/what's done/` and create a new handoff for the next phase.
