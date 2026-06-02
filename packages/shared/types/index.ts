@@ -391,6 +391,7 @@ export type SSEEventType =
   | 'policy_blocked'
   | 'retry_pending'
   | 'escalated'
+  | 'trace'
   | 'error'
 
 /** Option presented in an interaction card. */

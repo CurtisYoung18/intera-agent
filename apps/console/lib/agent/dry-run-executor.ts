@@ -1,0 +1,43 @@
+// Dry-run tool execution — single chokepoint for playground mode.
+// Operational tools: mock. system_info tools: real execution allowed.
+// Unknown/missing category → treated as operational (fail-safe).
+
+import type { ToolExecutionResult } from './streaming-tool-executor'
+import type { SkillDefinition } from '@intera/shared/types'
+
+export type ToolCategory = 'system_info' | 'operational' | null
+
+/** Check whether a tool is safe to execute in dry-run mode. */
+export function isSafeInDryRun(skill: SkillDefinition): boolean {
+  // system_info tools read data — safe to execute for real
+  if ((skill as any).toolCategory === 'system_info') return true
+  // Everything else (operational, null, undefined) → mock in dry-run
+  return false
+}
+
+/** Produce a mock ToolExecutionResult for a dry-run intercepted tool. */
+export function dryRunMockResult(skill: SkillDefinition): ToolExecutionResult {
+  return {
+    name: skill.name,
+    latencyMs: 1,
+    output: JSON.stringify({
+      _dryRun: true,
+      _note: `Playground dry-run: "${skill.name}" was intercepted. No external side effects.`,
+      category: (skill as any).toolCategory ?? 'operational',
+    }),
+  }
+}
+
+/** MOCK result for dispatch_case_agent — never spawn real background agents in playground. */
+export function dispatchCaseAgentMockResult(caseType: string): ToolExecutionResult {
+  return {
+    name: 'dispatch_case_agent',
+    latencyMs: 1,
+    output: JSON.stringify({
+      _dryRun: true,
+      _note: `Playground: dispatch_case_agent(${caseType}) intercepted. Would create case + spawn background agent in production.`,
+      caseId: `mock_case_${Date.now()}`,
+      caseType,
+    }),
+  }
+}
