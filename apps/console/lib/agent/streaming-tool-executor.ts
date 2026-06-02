@@ -58,6 +58,7 @@ export class StreamingToolExecutor {
   constructor(
     private toolDefinitions: SkillDefinition[],
     private onStatusChange?: StatusCallback,
+    private dryRun?: boolean,
   ) {}
 
   /**
@@ -132,8 +133,9 @@ export class StreamingToolExecutor {
     toolDefinitions: SkillDefinition[],
     toolUses: ToolUse[],
     onStatusChange?: StatusCallback,
+    dryRun?: boolean,
   ): Promise<ToolExecutionResult[]> {
-    const executor = new StreamingToolExecutor(toolDefinitions, onStatusChange)
+    const executor = new StreamingToolExecutor(toolDefinitions, onStatusChange, dryRun)
     for (const toolUse of toolUses) {
       executor.enqueue(toolUse)
     }
@@ -203,6 +205,32 @@ export class StreamingToolExecutor {
       }
     } catch {
       // Zod schema itself is malformed — skip validation, let execution proceed
+    }
+
+    // ── Dry-run chokepoint: operational + unknown tools mocked, system_info allowed ──
+    if (this.dryRun) {
+      const category = tool.definition.toolCategory
+      const isSystemInfo = category === 'system_info'
+      if (!isSystemInfo) {
+        // Operational or unknown → mock, no real execution
+        tool.status = 'completed'
+        tool.result = {
+          ok: true,
+          output: {
+            _dryRun: true,
+            _note: `Playground: "${tool.name}" (category: ${category || 'unknown'}) intercepted — no side effects.`,
+          },
+          latencyMs: 1,
+        }
+        this.onStatusChange?.(
+          { id: tool.id, name: tool.name, input: tool.input, result: tool.result },
+          'completed',
+          tool.definition.renderHints,
+        )
+        this.results.push({ name: tool.name, output: tool.result, latencyMs: 1, toolUse: { id: tool.id, name: tool.name, input: tool.input, status: 'completed' as const } })
+        return
+      }
+      // system_info tools: allowed to execute for real in dryRun mode
     }
 
     try {

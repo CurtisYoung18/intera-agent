@@ -14,15 +14,18 @@ export interface CaseRecord {
 
 export interface MemoryRecord {
   caseId: string
-  confirmedFacts: string
-  missingFacts: string
-  skillsCalled: string
-  skillResults: string
-  keyEvents: string
+  confirmedFacts?: string
+  missingFacts?: string
+  skillsCalled?: string
+  skillResults?: string
+  keyEvents?: string
   summary?: string | null
   todos?: string | null
   agentTodos?: string | null
   dashboardVersion?: number
+  humanTaskStatus?: string
+  needsContinuation?: boolean
+  continuationLock?: Date | null
 }
 
 export interface MessageRecord {

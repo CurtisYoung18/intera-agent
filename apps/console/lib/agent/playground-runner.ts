@@ -1,16 +1,14 @@
-// Playground turn runner — exercises the real agent pipeline (config, skills, guardrails, LLM)
-// with in-memory persistence and dry-run tool execution. No DB writes.
+// Playground turn runner — uses the REAL AgentLoop pipeline with injected
+// memory persistence + dry-run tool execution. No DB writes.
 
 import { prisma } from '@intera/shared/prisma'
-import { Anthropic } from '@anthropic-ai/sdk'
-import type { SSEEvent, AgentConfigData } from '@intera/shared/types'
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
-import { SkillRouter } from './skills'
-import { resolvePrompt, buildPromptContext } from './prompt-resolver'
-import { getProviderConfig } from './api/provider-config'
-import { isSafeInDryRun, dryRunMockResult, dispatchCaseAgentMockResult } from './dry-run-executor'
-import { createMemoryPersistence, type PersistencePort, type TraceRecord } from './persistence-port'
+import { AgentLoop } from './loop'
+import { createMemoryPersistence, type TraceRecord } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
+import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
+import { DEFAULT_SYSTEM_PROMPT, CORE_SYSTEM_PROMPT, CASE_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import { resolvePrompt, buildPromptContext } from './prompt-resolver'
+import { generateCaseId } from '@/lib/utils'
 
 export interface PlaygroundConfig {
   model: 'claude-sonnet' | 'minimax' | 'deepseek'
@@ -18,12 +16,7 @@ export interface PlaygroundConfig {
   memory: boolean
   knowledge: boolean
   debug: boolean
-  guardrails: {
-    pii: boolean
-    refundPolicy: boolean
-    profanity: boolean
-    escalation: boolean
-  }
+  guardrails: { pii: boolean; refundPolicy: boolean; profanity: boolean; escalation: boolean }
 }
 
 export interface PlaygroundResult {
@@ -53,6 +46,7 @@ async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
       maxIterations: dbConfig.maxIterations,
       maxOutputTokens: (dbConfig as any).maxOutputTokens ?? 4096,
       systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      coreSystemPrompt: (dbConfig as any).coreSystemPrompt || undefined,
       showThinking: dbConfig.showThinking,
       memoryStrategy: (parseNonEmptyJson(dbConfig.memoryStrategy) as any) || { ...DEFAULT_MEMORY_STRATEGY },
       policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as any) || { ...DEFAULT_POLICY_HOOKS },
@@ -63,228 +57,117 @@ async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
     }
   }
   return {
-    model: 'claude-sonnet-4-20250514',
-    temperature: 0.5,
-    thinkingBudget: 4096,
-    maxIterations: 20,
-    maxOutputTokens: 4096,
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
-    showThinking: false,
-    memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY },
-    policyHooks: { ...DEFAULT_POLICY_HOOKS },
-    resumePrompt: '',
-    formResponseTemplate: '',
-    prefixContinuationEnabled: false,
+    model: 'claude-sonnet-4-20250514', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20,
+    maxOutputTokens: 4096, systemPrompt: DEFAULT_SYSTEM_PROMPT, showThinking: false,
+    memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY }, policyHooks: { ...DEFAULT_POLICY_HOOKS },
+    resumePrompt: '', formResponseTemplate: '', prefixContinuationEnabled: false,
   }
 }
 
-/**
- * Run a single playground turn.
- * Returns an async generator of SSEEvent — stream tokens, then emit final trace.
- */
+/** Run a single playground turn using the REAL AgentLoop pipeline. */
 export async function* runPlaygroundTurn(input: {
-  orgId: string
-  message: string
-  playgroundConfig: PlaygroundConfig
+  orgId: string; message: string; playgroundConfig: PlaygroundConfig
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc } = input
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
 
+  // ── Memory persistence (zero DB writes) ──
   const { port: persistence, traces: memoryTraces } = createMemoryPersistence()
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId)
-  const skillRouter = await SkillRouter.create(orgId)
-  const allTools = skillRouter.getTools()
+  const systemPrompt = (agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT)
+    + (pc.persona === 'concise' ? '\n\nBe concise and direct.' : '\n\nBe warm and empathetic.')
 
-  // ── Filter tools based on playground toggles ──
-  const filteredTools = allTools.filter((t) => {
-    if (t.name === 'dispatch_case_agent') return true // keep but mock
-    if (t.name.startsWith('kb_search')) return pc.knowledge
-    return true
+  // ── Create the REAL AgentLoop with injected port + dryRun ──
+  const caseId = turnId
+  const chatId = `pg_chat_${Date.now()}`
+
+  const agentLoop = await AgentLoop.create({
+    config: agentConfig,
+    caseId,
+    orgId,
+    userId: 'playground',
+    systemPrompt,
+    coreSystemPrompt: CORE_SYSTEM_PROMPT,
+    caseSchema: null,
+    chatId,
+    bootstrapNewCase: true,
+    persistence,     // ← memory port: no DB writes
+    dryRun: true,    // ← operational tools mocked, system_info allowed
   })
 
-  // ── Build system prompt (reusing real prompt resolver) ──
-  let systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
-  const personaNote = pc.persona === 'concise'
-    ? '\n\nBe concise and direct. Use minimal words.'
-    : '\n\nBe warm and empathetic. Use a friendly tone.'
-  systemPrompt += personaNote
-
-  if (pc.guardrails.pii) systemPrompt += '\n\nGUARDRAIL: Never expose PII (names, emails, phone numbers).'
-  if (pc.guardrails.refundPolicy) systemPrompt += '\n\nGUARDRAIL: Do not promise refunds. Escalate refund requests to human.'
-  if (pc.guardrails.profanity) systemPrompt += '\n\nGUARDRAIL: Do not respond to profanity or abusive language.'
-  if (pc.guardrails.escalation) systemPrompt += '\n\nGUARDRAIL: Escalate if the user reports fraud or account compromise.'
-
-  // ── Model mapping ──
-  const modelMap: Record<string, string> = {
-    'claude-sonnet': agentConfig.model || 'claude-sonnet-4-20250514',
-    minimax: 'MiniMax-M2.7-highspeed',
-    deepseek: 'deepseek-chat',
-  }
-  const model = modelMap[pc.model] || agentConfig.model
-
-  // ── Call LLM ──
-  const providerConfig = getProviderConfig(model)
-  const client = new Anthropic(providerConfig)
-
-  // Trace: intent classification
-  memoryTraces.push({
-    caseId: turnId,
-    actionType: 'intent_classify',
-    title: `Intent classification for: "${message.slice(0, 80)}"`,
-    detail: 'Classifying user intent against enabled case types',
-  })
-
+  // ── Collect events from real pipeline into buffer ──
   let reply = ''
   let blocked = false
-  let intent = 'general'
-  let caseType = ''
+  const eventBuffer: SSEEvent[] = []
 
+  const sendEvent = (event: SSEEvent) => {
+    // Collect text for reply
+    if (event.type === 'text_delta') reply += event.data as string
+
+    // Collect trace-relevant events
+    if (['intent_classify', 'policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_request_start', 'llm_response'].includes(event.type as string)) {
+      memoryTraces.push({
+        caseId: turnId,
+        actionType: event.type as string,
+        title: typeof event.data === 'string' ? event.data : JSON.stringify(event.data).slice(0, 200),
+        detail: typeof event.data === 'string' ? event.data : undefined,
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    if (event.type === 'tool_executing') {
+      const d = event.data as any
+      memoryTraces.push({
+        caseId: turnId,
+        actionType: 'skill_called',
+        title: d?.name ? `${d.name} executing` : 'tool executing',
+        detail: d?.dryRun ? 'dry-run' : 'executing',
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    if (event.type === 'skill_result') {
+      const d = event.data as any
+      memoryTraces.push({
+        caseId: turnId,
+        actionType: 'skill_result',
+        title: d?.name ? `${d.name} result` : 'tool result',
+        detail: d?.dryRun ? 'dry-run result' : 'result',
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    if (event.type === 'policy_blocked') blocked = true
+
+    eventBuffer.push(event)
+  }
+
+  // ── Run the REAL agent loop ──
   try {
-    const toolDefs = filteredTools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: t.input_schema as any,
-    }))
-
-    const stream = client.messages.stream({
-      model,
-      max_tokens: agentConfig.maxOutputTokens || 4096,
-      temperature: agentConfig.temperature,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: message }],
-      tools: toolDefs.length > 0 ? toolDefs : undefined,
-    })
-
-    // Trace: llm request start
-    memoryTraces.push({
-      caseId: turnId,
-      actionType: 'llm_request_start',
-      title: `LLM request: ${model}`,
-      detail: `Model: ${model}, max_tokens: ${agentConfig.maxOutputTokens || 4096}, tools: ${toolDefs.length}`,
-    })
-
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        reply += event.delta.text
-        yield { type: 'text_delta', data: event.delta.text, timestamp: new Date().toISOString() }
-      }
-
-      // Intercept tool_use BEFORE execution (dry-run chokepoint)
-      if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
-        const toolName = event.content_block.name
-
-        if (toolName === 'dispatch_case_agent') {
-          // Never spawn real background agents in playground
-          memoryTraces.push({
-            caseId: turnId,
-            actionType: 'skill_called',
-            title: `[DRY-RUN] ${toolName}`,
-            detail: 'dispatch_case_agent intercepted — would create case + spawn background agent in production',
-          })
-          yield {
-            type: 'tool_executing',
-            data: { name: toolName, input: event.content_block.input, dryRun: true },
-            timestamp: new Date().toISOString(),
-          }
-          yield {
-            type: 'skill_result',
-            data: { name: toolName, output: dispatchCaseAgentMockResult('general').output, dryRun: true },
-            timestamp: new Date().toISOString(),
-          }
-          continue
-        }
-
-        const skillDef = skillRouter.getSkill(toolName)
-        const safe = skillDef != null && isSafeInDryRun(skillDef)
-
-        if (!safe) {
-          // Operational or unknown → mock
-          memoryTraces.push({
-            caseId: turnId,
-            actionType: 'skill_called',
-            title: `[DRY-RUN] ${toolName}`,
-            detail: skillDef
-              ? `Operational tool (category: ${skillDef.toolCategory || 'unknown'}) intercepted — no side effects`
-              : 'Unknown tool intercepted',
-          })
-          yield {
-            type: 'tool_executing',
-            data: { name: toolName, input: event.content_block.input, dryRun: true },
-            timestamp: new Date().toISOString(),
-          }
-          yield {
-            type: 'skill_result',
-            data: {
-              name: toolName,
-              output: skillDef ? dryRunMockResult(skillDef).output : JSON.stringify({ _dryRun: true, _note: 'Unknown tool intercepted' }),
-              dryRun: true,
-            },
-            timestamp: new Date().toISOString(),
-          }
-        } else {
-          // system_info → allow real execution
-          memoryTraces.push({
-            caseId: turnId,
-            actionType: 'skill_called',
-            title: `[EXEC] ${toolName}`,
-            detail: 'system_info tool — real execution allowed',
-          })
-          // Note: real execution requires the agent loop infrastructure
-          // For MVP playground, we trace the call but don't actually execute real tools
-          // (real execution would need DB context, session state, etc.)
-          yield {
-            type: 'skill_result',
-            data: { name: toolName, output: JSON.stringify({ _note: `Playground: ${toolName} traced. Real execution needs agent loop context.` }), dryRun: true },
-            timestamp: new Date().toISOString(),
-          }
-        }
-      }
-
-      // Check for guardrail blocks
-      if (event.type === 'content_block_stop') {
-        memoryTraces.push({
-          caseId: turnId,
-          actionType: 'policy_hit',
-          title: 'Guardrails: content block complete',
-          detail: blocked ? 'Content blocked by guardrails' : 'Passed',
-        })
-      }
-    }
-
-    // Detect intent from reply
-    if (reply.toLowerCase().includes('order') || reply.toLowerCase().includes('refund')) {
-      intent = 'deposit_issue'
-      caseType = 'deposit_issue'
-    } else if (reply.toLowerCase().includes('account')) {
-      intent = 'account_issue'
-      caseType = 'account_issue'
-    }
-
-    // Trace: llm response
-    memoryTraces.push({
-      caseId: turnId,
-      actionType: 'llm_response',
-      title: `LLM response: ${reply.length} chars`,
-      detail: reply.slice(0, 200),
-    })
-
+    await agentLoop.run(message, sendEvent)
   } catch (err) {
-    memoryTraces.push({
-      caseId: turnId,
-      actionType: 'llm_response',
-      title: 'LLM error',
-      detail: err instanceof Error ? err.message : 'Unknown error',
-    })
-    yield { type: 'error', data: err instanceof Error ? err.message : 'LLM call failed', timestamp: new Date().toISOString() }
+    eventBuffer.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
+  }
+
+  // Yield buffered events
+  for (const ev of eventBuffer) { yield ev }
+
+  // Add LLM request/response traces if not already captured
+  if (!memoryTraces.some(t => t.actionType === 'llm_request_start')) {
+    memoryTraces.push({ caseId: turnId, actionType: 'llm_request_start', title: 'LLM request', createdAt: new Date().toISOString() })
+  }
+  if (!memoryTraces.some(t => t.actionType === 'llm_response')) {
+    memoryTraces.push({ caseId: turnId, actionType: 'llm_response', title: `LLM response: ${reply.length} chars`, detail: reply.slice(0, 200), createdAt: new Date().toISOString() })
   }
 
   // ── Aggregate traces ──
   const trace = aggregateTraces(memoryTraces, startTime, pc.debug)
+  const intent = reply ? 'general' : 'none'
+  const caseType = ''
 
-  // ── Emit final trace event ──
   const result: PlaygroundResult = { turnId, intent, caseType, reply, blocked, trace }
   yield { type: 'trace', data: result, timestamp: new Date().toISOString() }
   yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }

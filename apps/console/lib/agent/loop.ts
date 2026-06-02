@@ -138,6 +138,10 @@ export interface AgentLoopDeps {
   chatId?: string | null
   /** When true, the case was created from an intent selection card. */
   bootstrapNewCase?: boolean
+  /** Persistence port — if set, all DB writes use this port. Defaults to Prisma. */
+  persistence?: import('./persistence-port').PersistencePort
+  /** Dry-run mode — operational tools mocked, system_info allowed. Playground only. */
+  dryRun?: boolean
 }
 
 export interface LoopResult {
@@ -170,6 +174,8 @@ export class AgentLoop {
   private abortController: AbortController
   private aborted = false
   private anthropicClient: Anthropic
+  private persistence: import('./persistence-port').PersistencePort
+  private dryRun: boolean
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -183,6 +189,9 @@ export class AgentLoop {
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.abortController = new AbortController()
     this.anthropicClient = createAgentClient(deps.config.model)
+    // Persistence port — defaults to Prisma if not injected (playground injects memory port)
+    this.persistence = deps.persistence || (() => { const { createPrismaPersistence } = require('./persistence-port'); return createPrismaPersistence() })()
+    this.dryRun = deps.dryRun ?? false
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
     this.conversationLoop = new ConversationLoop({
@@ -436,6 +445,7 @@ export class AgentLoop {
             timestamp: new Date().toISOString(),
           })
         },
+        this.dryRun,
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
@@ -916,19 +926,16 @@ export class AgentLoop {
 
               try {
                 const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-                await prisma.case.upsert({
-                  where: { id: this.deps.caseId },
-                  update: { status: 'escalated', blocker: `Agent stuck in stage "${this.currentStage}"` },
-                  create: {
-                    id: this.deps.caseId,
-                    orgId: this.deps.orgId,
-                    userId: this.deps.userId,
-                    type: resolvedCaseType,
-                    status: 'escalated',
-                    blocker: `Agent stuck in stage "${this.currentStage}"`,
-                    chatId: this.deps.chatId ?? this.deps.caseId,
-                  },
+                await this.persistence.ensureCase({
+                  id: this.deps.caseId,
+                  orgId: this.deps.orgId,
+                  userId: this.deps.userId,
+                  type: resolvedCaseType,
+                  status: 'escalated',
+                  blocker: `Agent stuck in stage "${this.currentStage}"`,
+                  chatId: this.deps.chatId ?? this.deps.caseId,
                 })
+                // humanTask.create — not routed through persistence port (operational, playground unreachable)
                 await prisma.humanTask.create({
                   data: {
                     caseId: this.deps.caseId,
@@ -1102,19 +1109,16 @@ export class AgentLoop {
 
           try {
             const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-            await prisma.case.upsert({
-              where: { id: this.deps.caseId },
-              update: { status: 'escalated', blocker: `Policy escalation: ${escalatedReasons}` },
-              create: {
-                id: this.deps.caseId,
-                orgId: this.deps.orgId,
-                userId: this.deps.userId,
-                type: resolvedCaseType,
-                status: 'escalated',
-                blocker: `Policy escalation: ${escalatedReasons}`,
-                chatId: this.deps.chatId ?? this.deps.caseId,
-              },
+            await this.persistence.ensureCase({
+              id: this.deps.caseId,
+              orgId: this.deps.orgId,
+              userId: this.deps.userId,
+              type: resolvedCaseType,
+              status: 'escalated',
+              blocker: `Policy escalation: ${escalatedReasons}`,
+              chatId: this.deps.chatId ?? this.deps.caseId,
             })
+            // humanTask.create — not routed through persistence port (operational, playground unreachable)
             await prisma.humanTask.create({
               data: {
                 caseId: this.deps.caseId,
@@ -1213,28 +1217,24 @@ export class AgentLoop {
 
               // Create a new case for this sub-agent investigation
               const subCaseId = generateCaseId()
-              await prisma.case.create({
-                data: {
-                  id: subCaseId,
-                  orgId: this.deps.orgId,
-                  userId: this.deps.userId,
-                  type: caseType,
-                  status: 'created',
-                  chatId: this.deps.chatId ?? this.deps.caseId,
-                },
+              await this.persistence.ensureCase({
+                id: subCaseId,
+                orgId: this.deps.orgId,
+                userId: this.deps.userId,
+                type: caseType,
+                status: 'created',
+                chatId: this.deps.chatId ?? this.deps.caseId,
               })
 
               // Create ChatMemory for the sub-agent's case
-              await prisma.chatMemory.create({
-                data: {
-                  caseId: subCaseId,
-                  confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
-                  skillsCalled: JSON.stringify([]),
-                  skillResults: JSON.stringify({}),
-                  keyEvents: JSON.stringify([]),
-                  humanTaskStatus: 'none',
-                  needsContinuation: false,
-                },
+              await this.persistence.saveMemory(subCaseId, {
+                caseId: subCaseId,
+                confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
+                skillsCalled: JSON.stringify([]),
+                skillResults: JSON.stringify({}),
+                keyEvents: JSON.stringify([]),
+                humanTaskStatus: 'none',
+                needsContinuation: false,
               })
 
               // Build SubAgentConfig: merge all stage skills + SOP or stage-driven prompt
@@ -1796,6 +1796,7 @@ export class AgentLoop {
   /** Persist chat-level memory to ChatSession table. */
   private async persistChatSession(): Promise<void> {
     if (!this.deps.chatId) return
+    if (this.dryRun) return
     try {
       await prisma.chatSession.upsert({
         where: { chatId: this.deps.chatId },
@@ -1836,11 +1837,13 @@ export class AgentLoop {
       const merged = mergeProfile(existing?.profile ?? '', summary, maxTokens)
       const stats = await recomputeProfileStats(prisma, key)
 
-      await prisma.userProfile.upsert({
-        where: { userId: key },
-        create: { userId: key, profile: merged, ...stats },
-        update: { profile: merged, ...stats },
-      })
+      if (!this.dryRun) {
+        await prisma.userProfile.upsert({
+          where: { userId: key },
+          create: { userId: key, profile: merged, ...stats },
+          update: { profile: merged, ...stats },
+        })
+      }
     } catch (err) {
       console.warn('[AgentLoop] compactUserProfile failed:', err)
     }
@@ -2023,7 +2026,7 @@ export class AgentLoop {
       }
 
       // ── Execute tools ─────────────────────────────────────────
-      const execResults = await StreamingToolExecutor.executeAll(skillDefinitions, toolUses)
+      const execResults = await StreamingToolExecutor.executeAll(skillDefinitions, toolUses, undefined, false)
 
       // Build Anthropic-format tool result blocks
       const toolResultBlocks = execResults.map((er) => {
