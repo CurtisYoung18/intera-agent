@@ -1,9 +1,23 @@
 # Handoff: Intera Agent — Post-Phase B Reference
 
-**Last updated:** 2026-06-02 | **Branch:** `main` @ `57f2ea3`
+**Last updated:** 2026-06-02 | **Branch:** `main` @ `e77ddaf`
 
 > This is a **generic context document** for any coding agent picking up this project.  
-> Concrete tasks live in [doc/to-do/](../../doc/to-do/). See [2026-06-02-post-phase-b-cleanup.md](../../doc/to-do/2026-06-02-post-phase-b-cleanup.md) for the current task list.
+> Concrete tasks live in [doc/to-do/](../../doc/to-do/).
+
+---
+
+## Process Rules (铁律)
+
+1. **Master planning handoffs** live in `doc/handoffs/`. When a phase completes, move the previous handoff to `doc/what's done/` and create a new one.
+
+2. **Specific implementation tasks** must have detailed code-level guides in `doc/to-do/`. Each guide includes exact file paths, line numbers, and verification steps. After completion **and user approval**, move the guide to `doc/what's done/`.
+
+3. **Audit `doc/to-do/` periodically**: move completed items to `doc/what's done/`, consolidate remaining items into a single todo. Never leave stale to-do files.
+
+4. **Every safety/isolation change** must deliver an e2e guard test with red→green proof. "Seam tests" (testing mocks/constructors) don't count — must drive the real pipeline entry point.
+
+5. **Receipt required** for every task: changed files, verification output (`tsc` + `npm test` + `npm run build:console`), UI items with Chrome screenshots.
 
 ---
 
