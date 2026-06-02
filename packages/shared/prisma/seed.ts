@@ -92,11 +92,12 @@ async function seedVendorConfig(
     prefixContinuationMinDraftChars: 4,
   }
 
-  await prisma.agentConfig.upsert({
-    where: { orgId },
-    update: agentPayload,
-    create: { orgId, ...agentPayload },
-  })
+  const existing = await prisma.agentConfig.findFirst({ where: { orgId } })
+  if (existing) {
+    await prisma.agentConfig.update({ where: { id: existing.id }, data: agentPayload })
+  } else {
+    await prisma.agentConfig.create({ data: { orgId, ...agentPayload } })
+  }
   console.log(`  ✓ AgentConfig (${orgId})`)
 
   // Skills
@@ -243,15 +244,23 @@ async function seed() {
   })
 
   // ── API Org config ──
+  // Note: Prisma 6 monorepo codegen produces duplicate AgentConfig types,
+  // causing validation errors on upsert for the api org. Wrapped in try/catch
+  // so the seed completes for default org. To fully seed api org, use raw SQL.
   console.log('\n── API Org ──')
-  await seedVendorConfig('api', {
-    model: 'MiniMax-M2.7-highspeed',
-    temperature: 0.7,
-    maxIterations: 10,
-    composerEnabled: false,
-    showThinking: false,
-    skillsMode: 'http',
-  })
+  try {
+    await seedVendorConfig('api', {
+      model: 'MiniMax-M2.7-highspeed',
+      temperature: 0.7,
+      maxIterations: 10,
+      composerEnabled: false,
+      showThinking: false,
+      skillsMode: 'http',
+    })
+  } catch (err: any) {
+    console.warn(`  ⚠️  API Org seed skipped (known Prisma 6 monorepo codegen bug): ${err.message?.slice(0, 120)}`)
+    console.warn('  → Workaround: insert AgentConfig + skills via raw SQL on server.')
+  }
 
   // ── Demo data: Case + Memory + Messages + Traces + HumanTask ──
   const c = await prisma.case.create({
@@ -259,6 +268,7 @@ async function seed() {
       id: 'seed-case-1',
       orgId: 'default',
       userId: 'u_try_1',
+      chatId: 'seed-chat-1',
       type: 'deposit_issue',
       status: 'waiting_human',
       goal: 'Confirm whether the deposit has arrived; if not, request a reissue',
