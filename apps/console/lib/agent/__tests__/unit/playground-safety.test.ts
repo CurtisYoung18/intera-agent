@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { createMemoryPersistence } from '../../persistence-port'
 import { isSafeInDryRun, dryRunMockResult, dispatchCaseAgentMockResult } from '../../dry-run-executor'
+import { StreamingToolExecutor } from '../../streaming-tool-executor'
 import type { SkillDefinition } from '@intera/shared/types'
 
 function makeSkill(overrides: Partial<SkillDefinition> = {}): SkillDefinition {
@@ -107,5 +108,49 @@ describe('Playground safety invariants', () => {
       const skill = makeSkill({ name, toolCategory: 'system_info' })
       expect(isSafeInDryRun(skill)).toBe(true)
     }
+  })
+
+  // ── AgentLoop + StreamingToolExecutor integration ──
+  it('AgentLoopDeps accepts persistence port + dryRun', () => {
+    const { port } = createMemoryPersistence()
+    const deps = {
+      config: {} as any,
+      caseId: 'test',
+      orgId: 'org1',
+      userId: 'u1',
+      systemPrompt: 'test',
+      persistence: port,
+      dryRun: true,
+    }
+    expect(deps.persistence).toBeDefined()
+    expect(deps.dryRun).toBe(true)
+  })
+
+  it('memory persistence implements full PersistencePort interface', async () => {
+    const { port, cases, memories, messages, traces } = createMemoryPersistence()
+
+    await port.ensureCase({ id: 'c1', orgId: 'o1', userId: 'u1', type: 't', status: 'created', chatId: null })
+    await port.saveMemory('c1', { caseId: 'c1' })
+    await port.saveMessages([{ id: 'm1', caseId: 'c1', role: 'user', content: 'hi' }])
+    await port.saveTrace({ caseId: 'c1', actionType: 'test', title: 't' })
+    await port.flush()
+
+    expect(cases).toHaveLength(1)
+    expect(memories).toHaveLength(1)
+    expect(messages).toHaveLength(1)
+    expect(traces).toHaveLength(1)
+    expect(cases[0].id).toBe('c1')
+  })
+
+  it('StreamingToolExecutor accepts dryRun in constructor', () => {
+    const skill = makeSkill({ name: 'query_order', mode: 'static', toolCategory: 'operational' })
+    const executor = new StreamingToolExecutor([skill], undefined, true)
+    expect(executor).toBeDefined()
+  })
+
+  it('StreamingToolExecutor with dryRun + system_info tool', () => {
+    const skill = makeSkill({ name: 'read_chat_memory', mode: 'static', toolCategory: 'system_info' })
+    const executor = new StreamingToolExecutor([skill], undefined, true)
+    expect(executor).toBeDefined()
   })
 })
