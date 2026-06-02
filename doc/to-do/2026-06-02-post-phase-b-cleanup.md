@@ -9,17 +9,17 @@
 
 ## Immediate (code-level, no deployment needed)
 
-### 1. Remove `agentConfigId` from ApiKey schema
-→ [Detailed guide](2026-06-02-01-remove-agent-config-id.md)
+### 1. Remove `agentConfigId` from ApiKey schema ✅
+→ Done in `bd8bd9c`. Guide archived: `doc/what's done/2026-06-02-01-remove-agent-config-id.md`
 
-### 2. Fix Prisma seed bug
-→ [Detailed guide](2026-06-02-02-fix-prisma-seed.md)
+### 2. Fix Prisma seed bug ✅
+→ Done in `e77ddaf`. Guide archived: `doc/what's done/2026-06-02-02-fix-prisma-seed.md`
 
-### 3. Fix docked-preview SWC bug
-→ [Detailed guide](2026-06-02-03-fix-docked-preview-swc.md)
+### 3. Fix docked-preview SWC bug ✅
+→ Done in `654bde9`. Guide archived: `doc/what's done/2026-06-02-03-fix-docked-preview-swc.md`
 
-### 4. Clean `doc/handoffs/`
-- **Action:** After this todo is completed and reviewed, move `HANDOFF_DEPLOY_PHASE_B_06_02.md` to `doc/what's done/` and create a new handoff for the next phase.
+### 4. Clean `doc/handoffs/` ✅
+→ Old handoff renamed to `PROJECT_CONTEXT.md` (`2d55c2b`). Updated 2026-06-02: removed stale gotchas (agentConfigId, SWC bug), fixed test count (424).
 
 ---
 
@@ -73,3 +73,6 @@
 | `2026-06-01-deploy-auth-checklist.md` | (previously archived) |
 | `2026-06-01-chat-to-console-migration.md` | (previously archived) |
 | `2026-06-01-case-agent-refactor.md` | (previously archived) |
+| `2026-06-02-01-remove-agent-config-id.md` | agentConfigId YAGNI removal |
+| `2026-06-02-02-fix-prisma-seed.md` | Prisma seed fix |
+| `2026-06-02-03-fix-docked-preview-swc.md` | docked-preview SWC fix |

@@ -5,6 +5,14 @@
 > This is a **generic context document** for any coding agent picking up this project.  
 > Concrete tasks live in [doc/to-do/](../../doc/to-do/).
 
+> ssh config:
+ssh ubuntu@43.134.51.138
+70?kwi@Kmqt(dtY
+
+
+> credentials
+see `/Users/curtis/Desktop/scs1751876232493_.anytrans.ai`
+
 ---
 
 ## Process Rules (铁律)
@@ -80,9 +88,9 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 | `apps/console/lib/agent/persistence-port.ts` | `PersistencePort` interface + `PrismaPersistence` + `MemoryPersistence`. |
 | `apps/console/lib/agent/playground-runner.ts` | `runPlaygroundTurn()` — creates AgentLoop with memory port + dryRun. |
 | `apps/console/lib/agent/__tests__/integration/playground-isolation.test.ts` | E2E guard test. 10 scenarios. Must stay green. |
-| `packages/shared/prisma/schema.prisma` | 21 models. `ApiKey` still has `agentConfigId?` (YAGNI, to be removed). |
+| `packages/shared/prisma/schema.prisma` | 21 models. `ApiKey` schema clean (agentConfigId removed). |
 | `apps/console/app/api/admin/playground/run/route.ts` | SSE endpoint. Admin cookie auth. |
-| `apps/console/components/docked-preview.tsx` | Slide-in test panel. SWC bug: multi-line classNames break build. |
+| `apps/console/components/docked-preview.tsx` | Slide-in test panel. Keep className single-line (SWC constraint). |
 
 ---
 
@@ -90,11 +98,9 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 
 1. **Prisma standalone embed:** Next standalone embeds Prisma schema at build time. Always: `db:generate` → `build:console` → `cp static+public`.
 2. **Prisma monorepo type duplication:** `node_modules/.prisma/client/index.d.ts` has `coreSystemPrompt` defined 3 times — Prisma 6 monorepo codegen bug. Causes seed failure for `api` org. Fix: add explicit `output` path to generator client.
-3. **`agentConfigId` YAGNI:** `packages/shared/prisma/schema.prisma:36` still has the field. Was supposed to be removed in `9899c74`. Dead code, remove it.
-4. **SWC multi-line className:** `docked-preview.tsx` has a classname spanning two lines. Next.js SWC compiler fails with "Unterminated string constant." Keep all `className` strings single-line.
-5. **SSE + Caddy:** `flush_interval -1` is critical. Without it, SSE buffers.
-6. **`apps/chat` not deleted:** Kept as reference. Console doesn't depend on it.
-7. **Cert renewal:** Manual cert, expires 2026-07-22. No auto-renewal.
+3. **SWC multi-line className:** Next.js SWC compiler fails with "Unterminated string constant" when `className` spans two lines. Keep all `className` strings single-line.
+4. **SSE + Caddy:** `flush_interval -1` is critical. Without it, SSE buffers.
+5. **Cert renewal:** Manual cert, expires 2026-07-22. No auto-renewal.
 
 ---
 
@@ -138,7 +144,7 @@ ssh ubuntu@43.134.51.138 "sudo -iu intera bash -c 'cd ~/intera-agent && git remo
 ## Tests
 
 ```bash
-npm test                    # 421 passed, 0 failed, 29 skipped
+npm test                    # 234 passed, 0 failed, 8 skipped (25 files)
 npm run build:console       # must succeed
 npx tsc --noEmit -p apps/console/tsconfig.json  # 0 errors
 ```

@@ -226,18 +226,18 @@ export const en: Record<string, string> = {
 
   'guide.doc.codes.modulesTitle': 'Module map (filesystem)',
 
-  'guide.doc.codes.p1': 'apps/chat/app/api/messages/route.ts — storefront turns → AgentLoop entry',
-  'guide.doc.codes.p2': 'apps/chat/app/api/human-chat/route.ts — operator harness',
-  'guide.doc.codes.p3': 'apps/chat/lib/agent/loop.ts — transition loop, corrective nudge fuse (3 strikes → escalate)',
-  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — prerequisites, evidence manifests, corrective copy, assistant pre-fill JSON stabilisation, circuit breaker fallback',
-  'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — partial token execution, parallelism flags',
-  'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingestion + persistence helpers',
-  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — guardrails (incl. investigate_before_escalation), skill registry, trace writer, profiler telemetry',
-  'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts — optional deputy reactors',
+  'guide.doc.codes.p1': 'apps/console/app/api/messages/route.ts — storefront turns → AgentLoop entry',
+  'guide.doc.codes.p2': 'apps/console/app/api/human-chat/route.ts — operator harness',
+  'guide.doc.codes.p3': 'apps/console/lib/agent/loop.ts — transition loop, corrective nudge fuse (3 strikes → escalate)',
+  'guide.doc.codes.p4': 'apps/console/lib/agent/stage-executor.ts — prerequisites, evidence manifests, corrective copy, assistant pre-fill JSON stabilisation, circuit breaker fallback',
+  'guide.doc.codes.p5': 'apps/console/lib/agent/streaming-tool-executor.ts — partial token execution, parallelism flags',
+  'guide.doc.codes.p6': 'apps/console/lib/agent/memory.ts — CaseMemory ingestion + persistence helpers',
+  'guide.doc.codes.p7': 'apps/console/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — guardrails (incl. investigate_before_escalation), skill registry, trace writer, profiler telemetry',
+  'guide.doc.codes.p8': 'apps/console/lib/agent/orchestrator.ts · sub-agent.ts — optional deputy reactors',
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* — investigator UX & timeline readers',
   'guide.doc.codes.p10': 'packages/shared/types & defaults — schemas shared chat ↔ console',
 
-	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
+	'guide.doc.codes.p11': 'apps/console/lib/agent/loop.ts —— Core Agent 通过内置 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
 
 	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 
@@ -1361,18 +1361,18 @@ export const zh: Record<string, string> = {
 
   'guide.doc.codes.modulesTitle': '模块地图（filesystem）',
 
-  'guide.doc.codes.p1': 'apps/chat/app/api/messages/route.ts — 顾客回合 → AgentLoop',
-  'guide.doc.codes.p2': 'apps/chat/app/api/human-chat/route.ts — 内部坐席 harness',
-  'guide.doc.codes.p3': 'apps/chat/lib/agent/loop.ts — Transition 循环、纠偏熔断（三连 → 升级）',
-  'guide.doc.codes.p4': 'apps/chat/lib/agent/stage-executor.ts — 阶段门槛 / 证据 / 纠偏文案 / assistant pre-fill JSON 稳定 / 断路器降级',
-  'guide.doc.codes.p5': 'apps/chat/lib/agent/streaming-tool-executor.ts — 并发 vs 串行工具执行',
-  'guide.doc.codes.p6': 'apps/chat/lib/agent/memory.ts — CaseMemory ingest / persist',
-  'guide.doc.codes.p7': 'apps/chat/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — 护栏引擎（含 investigate_before_escalation）、技能注册表、trace writer、profiler 遥测',
-  'guide.doc.codes.p8': 'apps/chat/lib/agent/orchestrator.ts · sub-agent.ts',
+  'guide.doc.codes.p1': 'apps/console/app/api/messages/route.ts — 顾客回合 → AgentLoop',
+  'guide.doc.codes.p2': 'apps/console/app/api/human-chat/route.ts — 内部坐席 harness',
+  'guide.doc.codes.p3': 'apps/console/lib/agent/loop.ts — Transition 循环、纠偏熔断（三连 → 升级）',
+  'guide.doc.codes.p4': 'apps/console/lib/agent/stage-executor.ts — 阶段门槛 / 证据 / 纠偏文案 / assistant pre-fill JSON 稳定 / 断路器降级',
+  'guide.doc.codes.p5': 'apps/console/lib/agent/streaming-tool-executor.ts — 并发 vs 串行工具执行',
+  'guide.doc.codes.p6': 'apps/console/lib/agent/memory.ts — CaseMemory ingest / persist',
+  'guide.doc.codes.p7': 'apps/console/lib/agent/policy.ts · skills.ts · trace.ts · profiler.ts — 护栏引擎（含 investigate_before_escalation）、技能注册表、trace writer、profiler 遥测',
+  'guide.doc.codes.p8': 'apps/console/lib/agent/orchestrator.ts · sub-agent.ts',
   'guide.doc.codes.p9': 'apps/console/app/ops/cases/* —— 案件运营 UI',
   'guide.doc.codes.p10': 'packages/shared/types & defaults',
 
-	'guide.doc.codes.p11': 'apps/chat/lib/agent/loop.ts —— Core Agent 通过内置 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
+	'guide.doc.codes.p11': 'apps/console/lib/agent/loop.ts —— Core Agent 通过内置 dispatch_case_agent（建案+子Agent派遣）工具自主路由，无需独立意图分类模块。',
 
 	'guide.doc.codes.intentParamsTitle': 'Case routing (Core Agent built-in tools)',
 

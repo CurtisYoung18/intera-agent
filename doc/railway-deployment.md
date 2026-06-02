@@ -192,3 +192,53 @@ npm run db:studio              # Prisma Studio (port 5555)
 **第四轮 — Console 502（部署脚本缺陷）**：`railway up --service console` 上传了整个目录，但 `railway.json` 仍是 Chat 配置。Railpack 构建出 Chat App 部署到 Console 服务，导致 Console 404/502。修复：`deploy.sh` 在部署前根据目标服务替换 `railway.json`。
 
 **第五轮 — Console 502（HOSTNAME 缺失）**：Console 服务从 Nixpacks 迁移到 standalone 后，未设置 `HOSTNAME=0.0.0.0`，导致同样的绑定问题。修复：在 Console 环境变量中添加。
+
+---
+
+## 10. SSL 证书续期策略
+
+> 当前：手动 DigiCert/RapidSSL 通配符证书，2026-07-22 到期。
+> 部署方式：自托管 Ubuntu + Caddy（`demo.anytrans.ai`）。
+
+### 方案 A：手动续期（当前方式）
+
+在腾讯云 SSL 控制台重新申请/续期证书，下载 Nginx 版本，scp 到服务器：
+
+```bash
+# 1. 上传新证书
+scp demo.anytrans.ai_server.crt ubuntu@43.134.51.138:/tmp/
+scp demo.anytrans.ai_server.key ubuntu@43.134.51.138:/tmp/
+
+# 2. 安装
+ssh ubuntu@43.134.51.138
+sudo mv /tmp/demo.anytrans.ai_server.crt /etc/intera/tls/demo.anytrans.ai.crt
+sudo mv /tmp/demo.anytrans.ai_server.key /etc/intera/tls/demo.anytrans.ai.key
+sudo chmod 600 /etc/intera/tls/demo.anytrans.ai.key
+sudo systemctl reload caddy
+
+# 3. 验证
+curl -sI https://demo.anytrans.ai/api/health | head -5
+```
+
+### 方案 B：切换到 Let's Encrypt 自动 TLS
+
+Caddy 原生支持 Let's Encrypt，但通配符证书需要 DNS 挑战。修改 Caddyfile：
+
+```caddy
+# 删除 tls /path/to/cert 行，Caddy 自动申请 Let's Encrypt
+demo.anytrans.ai {
+    encode gzip
+    # tls 行已移除 — Caddy 自动管理
+
+    @sse path /api/messages /api/cases/*/stream
+    reverse_proxy @sse localhost:3000 { flush_interval -1 }
+    reverse_proxy localhost:3000
+}
+```
+
+**前提条件：**
+- 服务器 80 端口可公网访问（ACME HTTP 挑战）
+- 如用通配符 `*.demo.anytrans.ai`，需配置 DNS 挑战插件（如 `tls { dns cloudflare }`）
+- 非通配符 `demo.anytrans.ai` 无需额外配置
+
+**推荐：** 方案 A（手动续期）最简单可靠，提前 7 天设置日历提醒即可。方案 B 需要 DNS API 配置，适合长期维护。

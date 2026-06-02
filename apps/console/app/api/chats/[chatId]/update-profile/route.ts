@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
-import { profileKey } from '@/../chat/lib/agent/identity'
+import { profileKey } from '@/lib/agent/identity'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 
 function parseMemoryStrategy(raw: unknown) {

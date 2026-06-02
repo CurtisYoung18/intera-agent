@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
-import { profileKey } from '@/../chat/lib/agent/identity'
+import { profileKey } from '@/lib/agent/identity'
 
 export async function GET(
   _req: NextRequest,
