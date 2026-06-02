@@ -90,8 +90,7 @@ export default function DockedPreview() {
       {/* Toggle button */}
       <button
         onClick={toggleOpen}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all
-          bg-white/60 backdrop-blur border border-black/[0.06] text-[var(--mist)] hover:bg-white hover:border-indigo/20"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all bg-white/60 backdrop-blur border border-black/[0.06] text-[var(--mist)] hover:bg-white hover:border-indigo/20"
         style={{ position: 'fixed', top: 12, right: open ? 436 : 16, zIndex: 45 }}
         title="Test agent"
       >
