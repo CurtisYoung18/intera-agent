@@ -1,11 +1,13 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Loader2, ShieldCheck, Building2 } from 'lucide-react'
+import { Building2, ShieldCheck, ArrowRight } from 'lucide-react'
 import InteraLogo from '@intera/shared/ui/intera-logo'
+import styles from './login.module.css'
 
 type Mode = 'customer' | 'staff'
+type Health = 'unknown' | 'ok' | 'down'
 
 export default function LoginPage() {
   return (
@@ -24,6 +26,22 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [health, setHealth] = useState<Health>('unknown')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/health')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j) => {
+        if (!cancelled) setHealth(j?.status === 'ok' ? 'ok' : 'down')
+      })
+      .catch(() => {
+        if (!cancelled) setHealth('down')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,7 +59,6 @@ function LoginForm() {
         setError(data.error || 'Login failed')
         return
       }
-      // Full reload so server components pick up the new session cookie.
       window.location.href = next
     } catch {
       setError('Network error — try again')
@@ -51,68 +68,128 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--paper,#faf9f5)] px-4">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8">
-          <InteraLogo size={28} />
-          <p className="mt-3 text-[12px] text-[var(--fog)]">Agent Console</p>
+    <div className={styles.shell}>
+      {/* ── Brand panel (left) ── */}
+      <aside className={styles.brand} aria-hidden>
+        <div className={`${styles.orb} ${styles.orbA}`} />
+        <div className={`${styles.orb} ${styles.orbB}`} />
+        <div className={`${styles.orb} ${styles.orbC}`} />
+        <div className={styles.grain} />
+
+        <div className={styles.brandTop}>
+          <div className={styles.brandGlyph}>
+            <span className={styles.brandDot} />
+          </div>
+          <InteraLogo size={22} />
         </div>
 
-        {/* Mode toggle */}
-        <div className="flex gap-1 p-1 rounded-xl bg-black/[0.04] mb-5">
-          <button
-            type="button"
-            onClick={() => { setMode('customer'); setError('') }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-medium transition-all ${mode === 'customer' ? 'bg-white shadow-sm text-[var(--mist)]' : 'text-[var(--fog)]'}`}
-          >
-            <Building2 className="w-3.5 h-3.5" /> Organization
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('staff'); setError('') }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-medium transition-all ${mode === 'staff' ? 'bg-white shadow-sm text-[var(--mist)]' : 'text-[var(--fog)]'}`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" /> Staff
-          </button>
+        <div className={styles.brandMid}>
+          <div className={styles.brandEyebrow}>Customer Support, Resolved</div>
+          <h1 className={styles.brandHeadline}>
+            The console where <em>every</em> conversation finds its answer.
+          </h1>
+          <p className={styles.brandSub}>
+            Configure agents, tune guardrails, and watch cases resolve themselves — all from one calm, considered workspace.
+          </p>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
-          {mode === 'customer' && (
-            <div>
-              <label className="block text-[11px] text-[var(--fog)] mb-1">Organization ID</label>
-              <input
-                type="text"
-                value={orgId}
-                onChange={(e) => setOrgId(e.target.value)}
-                placeholder="your-org-id"
-                autoComplete="username"
-                className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] outline-none focus:border-indigo/40"
-              />
-            </div>
-          )}
-          <div>
-            <label className="block text-[11px] text-[var(--fog)] mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
-              autoComplete="current-password"
-              className="w-full px-3 py-2 rounded-lg border border-black/[0.08] bg-white text-[13px] outline-none focus:border-indigo/40"
-            />
+        <div className={styles.brandStatus}>
+          <span className={`${styles.live} ${health === 'down' ? styles.liveDown : ''}`} />
+          {health === 'down' ? 'Service degraded' : 'All systems operational'}
+        </div>
+      </aside>
+
+      {/* ── Form panel (right) ── */}
+      <main className={styles.panel}>
+        <div className={styles.formWrap}>
+          <div className={styles.formHead}>
+            <div className={styles.formEyebrow}>Agent Console</div>
+            <h2 className={styles.formTitle}>Welcome back</h2>
+            <p className={styles.formDesc}>Sign in to manage your agents and conversations.</p>
           </div>
 
-          {error && <p className="text-[11px] text-red-500">{error}</p>}
+          <div className={styles.modeToggle} role="tablist" aria-label="Sign-in mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'customer'}
+              onClick={() => { setMode('customer'); setError('') }}
+              className={`${styles.modeBtn} ${mode === 'customer' ? styles.modeBtnActive : ''}`}
+            >
+              <Building2 />
+              Organization
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'staff'}
+              onClick={() => { setMode('staff'); setError('') }}
+              className={`${styles.modeBtn} ${mode === 'staff' ? styles.modeBtnActive : ''}`}
+            >
+              <ShieldCheck />
+              Staff
+            </button>
+          </div>
 
-          <button
-            type="submit"
-            disabled={loading || !password || (mode === 'customer' && !orgId.trim())}
-            className="w-full py-2.5 rounded-lg bg-indigo text-white text-[13px] font-medium hover:bg-indigo/90 disabled:opacity-40 transition-all"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Sign in'}
-          </button>
-        </form>
-      </div>
+          <form onSubmit={submit} className={styles.form}>
+            {mode === 'customer' && (
+              <div className={styles.field}>
+                <label htmlFor="orgId">Organization ID</label>
+                <input
+                  id="orgId"
+                  type="text"
+                  value={orgId}
+                  onChange={(e) => setOrgId(e.target.value)}
+                  placeholder="your-org-id"
+                  autoComplete="username"
+                />
+              </div>
+            )}
+            <div className={styles.field}>
+              <div className={styles.rowBetween}>
+                <label htmlFor="password">Password</label>
+                <a href="#" className={styles.forgot} onClick={(e) => e.preventDefault()}>Forgot?</a>
+              </div>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+              />
+            </div>
+
+            {error && (
+              <div className={styles.errorBox} role="alert">
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !password || (mode === 'customer' && !orgId.trim())}
+              className={styles.submitBtn}
+            >
+              {loading ? (
+                <>
+                  <div className={styles.spinner} />
+                  <span>Signing in…</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign in</span>
+                  <ArrowRight />
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className={styles.panelFoot}>
+            Protected by SSO · <a href="#" onClick={(e) => e.preventDefault()}>Contact your administrator</a>
+          </p>
+        </div>
+      </main>
     </div>
   )
 }

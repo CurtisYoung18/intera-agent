@@ -777,6 +777,27 @@ body {
   user-select: none;
 }
 
+/* ── Login page: drift (orbs), dotPulse (status / brand glyph), slideIn (msg boxes), shine (CTA sweep) ── */
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(24px, -30px) scale(1.06); }
+  66%      { transform: translate(-18px, 20px) scale(0.96); }
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: .55; box-shadow: 0 0 0 0 rgba(139, 111, 245, .4); }
+  50%      { opacity: 1;  box-shadow: 0 0 0 5px rgba(139, 111, 245, 0); }
+}
+
+@keyframes msgSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes submitShine {
+  to { transform: translateX(120%); }
+}
+
 /* ============================================================
    Playground — 3-pane studio: Config · Test chat · Trace
    ============================================================ */
