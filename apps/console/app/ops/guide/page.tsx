@@ -416,20 +416,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               summary="Replay the message log of a single case (user, assistant, tool_use, tool_result blocks in order)."
             />
 
-            <SectionHeading>1.5 Subscribe to live SSE of one case</SectionHeading>
-            <Endpoint
-              method="GET"
-              path="/api/cases/{id}/stream"
-              host={CHAT_HOST}
-              summary="Subscribe to the live SSE stream of an in-flight case (read-only observer)."
-              headers={{ Accept: 'text/event-stream' }}
-              notes={[
-                'Used by Console live trace viewer and by external observability.',
-                'No body — just open the connection and consume events.',
-              ]}
-            />
-
-            <SectionHeading>1.6 Send follow-up message into existing case</SectionHeading>
+            <SectionHeading>1.5 Send follow-up message into existing case</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/cases/{id}/message"
@@ -442,21 +429,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               body={`{ "message": "我刚收到一条通知", "userId": "player_123" }`}
             />
 
-            <SectionHeading>1.7 List human tasks</SectionHeading>
-            <Endpoint
-              method="GET"
-              path="/api/human-tasks"
-              host={CHAT_HOST}
-              summary="List human tasks (escalations). Filter by caseId."
-              query={[{ name: 'caseId', desc: 'Filter by case id.' }]}
-              response={`{
-  "tasks": [
-    { "id": "htask_…", "caseId": "case_…", "queue": "kyc_review", "question": "…", "status": "pending", "createdAt": "…" }
-  ]
-}`}
-            />
-
-            <SectionHeading>1.8 Human operator chat (consultation)</SectionHeading>
+            <SectionHeading>1.6 Human operator chat (consultation)</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/human-chat"
@@ -469,7 +442,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               body={`{ "caseId": "case_…", "message": "已为您办理，3 分钟到账" }`}
             />
 
-            <SectionHeading>1.9 Composer assist (typing suggestions)</SectionHeading>
+            <SectionHeading>1.7 Composer assist (typing suggestions)</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/composer-assist/suggest"
@@ -483,7 +456,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               response={`{ "suggestion": "我的提现什么时候到账？" }`}
             />
 
-            <SectionHeading>1.10 Composer assist feature flag</SectionHeading>
+            <SectionHeading>1.8 Composer assist feature flag</SectionHeading>
             <Endpoint
               method="GET"
               path="/api/composer-assist/feature"
@@ -493,7 +466,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               response={`{ "enabled": true, "minDraftChars": 4 }`}
             />
 
-            <SectionHeading>1.11 Orchestrator endpoint (multi-agent coordination)</SectionHeading>
+            <SectionHeading>1.9 Orchestrator endpoint (multi-agent coordination)</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/coordinate"
@@ -501,7 +474,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               summary="Internal orchestrator entry (sub-agent dispatch). Used by main agent — not typically called externally."
             />
 
-            <SectionHeading>1.12 LiveChat integration</SectionHeading>
+            <SectionHeading>1.10 LiveChat integration</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/livechat/webhook/{orgId}"
@@ -543,7 +516,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
 }`}
             />
 
-            <SectionHeading>1.13 {t('guide.doc.api.sseCatalogTitle')} (consume on /api/messages or /api/cases/[id]/stream)</SectionHeading>
+            <SectionHeading>1.11 {t('guide.doc.api.sseCatalogTitle')} (consume on /api/messages)</SectionHeading>
             <p className="text-[11px] text-[var(--fog)]" dangerouslySetInnerHTML={{ __html: t('guide.doc.api.sseCatalogNote') }} />
             <div className="!mt-3 overflow-hidden rounded-xl border border-black/[0.06]">
               <table className="w-full text-[11px]">
@@ -715,13 +688,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
             <Endpoint method="GET" path="/api/chats/{chatId}" host={CONSOLE_HOST} summary="Read chat session." />
             <Endpoint method="GET" path="/api/chats/{chatId}/traces" host={CONSOLE_HOST} summary="Read trace events of an entire chat session." />
 
-            <SectionHeading>2.9 Human tasks (ops)</SectionHeading>
-            <Endpoint method="GET" path="/api/human-tasks" host={CONSOLE_HOST} summary="List human tasks (admin queue view)." />
-            <Endpoint method="GET" path="/api/human-tasks/{id}" host={CONSOLE_HOST} summary="Read one human task." />
-            <Endpoint method="POST" path="/api/human-tasks/{id}/resolve" host={CONSOLE_HOST} summary="Resolve a task; engine receives a resumeTrigger." body={`{ "verdict": "approved", "note": "verified KYC, refunded" }`} />
-            <Endpoint method="POST" path="/api/human-tasks/{id}/delete" host={CONSOLE_HOST} summary="Cancel a task (admin override)." />
-
-            <SectionHeading>2.10 Cache invalidation</SectionHeading>
+            <SectionHeading>2.9 Cache invalidation</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/admin/config-changed"

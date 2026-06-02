@@ -1,6 +1,6 @@
 # Handoff: Intera Agent — Post-Phase B Reference
 
-**Last updated:** 2026-06-02 | **Branch:** `main` @ `e77ddaf`
+**Last updated:** 2026-06-02 | **Branch:** `main` @ `6346c23` | **Status:** Post-Phase B cleanup complete
 
 > This is a **generic context document** for any coding agent picking up this project.  
 > Concrete tasks live in [doc/to-do/](../../doc/to-do/).
@@ -100,11 +100,36 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 2. **Prisma monorepo type duplication:** `node_modules/.prisma/client/index.d.ts` has `coreSystemPrompt` defined 3 times — Prisma 6 monorepo codegen bug. Causes seed failure for `api` org. Fix: add explicit `output` path to generator client.
 3. **SWC multi-line className:** Next.js SWC compiler fails with "Unterminated string constant" when `className` spans two lines. Keep all `className` strings single-line.
 4. **SSE + Caddy:** `flush_interval -1` is critical. Without it, SSE buffers.
-5. **Cert renewal:** Manual cert, expires 2026-07-22. No auto-renewal.
+5. **Cert renewal:** Manual RapidSSL wildcard (`*.anytrans.ai`), expires 2026-07-22. Caddy auto-renews Let's Encrypt for `demo.anytrans.ai`. Durable cron monitors expiry for the wildcard.
 
 ---
 
 ## Server Quick Reference
+
+### Push-to-Deploy (primary)
+
+```bash
+# One-time setup on server (as root):
+/home/intera/intera-agent/deploy/setup-bare-repo.sh
+
+# On local machine — add deploy remote (one-time):
+git remote add deploy ssh://intera@43.134.51.138/var/git/intera.git
+
+# Deploy: push = checkout + build + restart
+git push deploy main
+```
+
+### Post-receive hook chain
+
+```
+git push deploy main
+  → /var/git/intera.git (bare repo, post-receive hook fires)
+    → git checkout -f main → /home/intera/intera-agent
+      → sudo -u intera scripts/deploy.sh
+        → npm ci → db:generate → build:console → cp static → systemctl restart
+```
+
+### Manual server commands
 
 ```bash
 # SSH
@@ -124,10 +149,8 @@ sudo systemctl restart intera-console
 # DB access
 sudo -u postgres psql -d intera
 
-# Deploy (bundle method)
-git bundle create /tmp/intera-agent.bundle main
-scp /tmp/intera-agent.bundle ubuntu@43.134.51.138:/tmp/
-ssh ubuntu@43.134.51.138 "sudo -iu intera bash -c 'cd ~/intera-agent && git remote set-url origin /tmp/intera-agent.bundle && git pull origin main && npm ci && npm run db:generate && npm run build:console && cp -r apps/console/.next/static apps/console/.next/standalone/apps/console/.next/static && cp -r apps/console/public apps/console/.next/standalone/apps/console/public && sudo cp -r node_modules/.prisma apps/console/.next/standalone/node_modules/.prisma && sudo systemctl restart intera-console && curl -s localhost:3000/api/health'"
+# Manual deploy (if hook fails)
+cd ~/intera-agent && ./scripts/deploy.sh
 ```
 
 ---

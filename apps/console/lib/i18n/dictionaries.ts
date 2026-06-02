@@ -11,7 +11,6 @@ export const en: Record<string, string> = {
   'sidebar.chats': 'Chats',
   'sidebar.users': 'Users',
   'sidebar.dashboards': 'Dashboards',
-  'sidebar.humanTasks': 'Human Tasks',
   'sidebar.cases': 'Cases',
   'sidebar.agentConfig': 'Agent Config',
   'sidebar.tools': 'Tools',
@@ -928,7 +927,6 @@ export const en: Record<string, string> = {
   'policies.ruleFields': 'Rule Fields',
   'policies.denySkills': 'Deny Skills',
   'policies.requireSkills': 'Require Skills',
-  'policies.denyKeywords': 'Deny Keywords (deprecated)',
   'policies.requireSkillsAny': 'Require Skills (Any)',
   'policies.evaluationPrompt': 'LLM Evaluation Prompt',
   'policies.phEvalPrompt': 'Describe what the LLM should check in natural language...',
@@ -989,14 +987,6 @@ export const en: Record<string, string> = {
   'routing.skillsJson': 'Skills Allowed (JSON)',
   'routing.autoAssign': 'Auto Assign',
   'routing.maxWaitLine': '{n}s max wait',
-
-  // ── Ops: human tasks ─────────────────────────────────────────
-  'humanTasks.title': 'Human Tasks',
-  'humanTasks.subtitle': 'Pending operator actions from agent escalations',
-  'humanTasks.pendingBadge': '{n} pending',
-  'humanTasks.emptyTitle': 'No tasks yet',
-  'humanTasks.emptyDesc': 'When the agent escalates a case that needs human review, it will appear here.',
-  'humanTasks.backAria': 'Back to tasks list',
 
   // ── Ops: human task detail ───────────────────────────────────
   'humanTaskDetail.taskNotFound': 'Task not found',
@@ -1165,7 +1155,6 @@ export const zh: Record<string, string> = {
   'sidebar.chats': '对话',
   'sidebar.users': '用户',
   'sidebar.dashboards': '仪表盘',
-  'sidebar.humanTasks': '人工任务',
   'sidebar.cases': '案例',
   'sidebar.agentConfig': 'Agent 配置',
   'sidebar.tools': '工具',
@@ -2048,7 +2037,6 @@ export const zh: Record<string, string> = {
   'policies.ruleFields': '规则字段',
   'policies.denySkills': '禁止的技能',
   'policies.requireSkills': '必需的技能',
-  'policies.denyKeywords': '禁止关键词（已弃用）',
   'policies.requireSkillsAny': '必须调用技能（任一）',
   'policies.evaluationPrompt': 'LLM 评估提示词',
   'policies.phEvalPrompt': '用自然语言描述 LLM 应检查的内容...',
@@ -2106,13 +2094,6 @@ export const zh: Record<string, string> = {
   'routing.skillsJson': '允许的技能（JSON）',
   'routing.autoAssign': '自动分配',
   'routing.maxWaitLine': '最长等待 {n} 秒',
-
-  'humanTasks.title': '人工任务',
-  'humanTasks.subtitle': '由 Agent 升级、待人工处理的队列',
-  'humanTasks.pendingBadge': '{n} 待处理',
-  'humanTasks.emptyTitle': '暂无任务',
-  'humanTasks.emptyDesc': '当 Agent 将案例升级并需要人工审核时，任务会出现在这里。',
-  'humanTasks.backAria': '返回人工任务列表',
 
   'humanTaskDetail.taskNotFound': '找不到任务',
   'humanTaskDetail.caseLine': '案例 {cid}… {sep} 用户 {uid}',

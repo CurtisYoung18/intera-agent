@@ -1,14 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Globe, MessageSquare, GitBranch, Monitor, UserCheck, ClipboardList, ExternalLink } from 'lucide-react'
+import { Globe, MessageSquare, GitBranch, Monitor, UserCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 const TABS = [
   { id: 'connection', label: 'Connection', labelZh: '连接', icon: Globe },
   { id: 'humanOps', label: 'Human Ops', labelZh: '人工配置', icon: UserCheck },
-  { id: 'humanTasks', label: 'Human Tasks', labelZh: '人工任务', icon: ClipboardList },
 ] as const
 
 const L = {
@@ -22,9 +21,6 @@ const L = {
   consultationPromptHint: { en: 'System prompt used when a human specialist is consulting on a case via web chat.', zh: '人工专员通过 Web Chat 咨询案例时使用的系统提示词。' },
   allowedSkills: { en: 'Skills during consultation', zh: '咨询期间可用工具' },
   allowedSkillsHint: { en: 'Comma-separated skill names. Empty = allow all.', zh: '逗号分隔的工具名称。留空 = 全部允许。' },
-  humanTasks: { en: 'Human Tasks', zh: '人工任务' },
-  humanTasksDesc: { en: 'Task queue for human specialist review. Only Web Chat creates human tasks — LiveChat transfers directly to agent queue.', zh: '人工专员审核任务队列。仅 Web Chat 会创建人工任务 — LiveChat 直接转接人工队列。' },
-  openHumanTasks: { en: 'Open full task list', zh: '打开完整任务列表' },
 } as const
 
 function useL() {
@@ -100,22 +96,6 @@ export default function WebChatDetailPage() {
             <input className={inputCls} placeholder="read_case_history, kb_search_General" defaultValue="read_case_history" />
             <p className="text-[10px] text-[var(--fog)] mt-1">{l('allowedSkillsHint')}</p>
           </div>
-        </div>
-      )}
-
-      {activeTab === 'humanTasks' && (
-        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-black/[0.05] flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{l('humanTasks')}</p>
-              <p className="text-[10px] text-[var(--fog)] mt-0.5">{l('humanTasksDesc')}</p>
-            </div>
-            <a href="/ops/human-tasks" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[11px] text-indigo hover:text-indigo/80">
-              {l('openHumanTasks')} <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-          <iframe src="/embed/human-tasks" className="w-full border-0" style={{ height: 520 }} title="Human Tasks" />
         </div>
       )}
     </div>
