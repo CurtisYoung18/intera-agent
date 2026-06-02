@@ -270,3 +270,8 @@ describe('Playground isolation — additional operational tools', () => {
     const streamSpy = vi.spyOn(h.fakeClient.messages, 'stream').mockImplementation(req.stream.bind(req) as any)
 
     await drainPlayground('I need to report an issue')
+
+    expect(h.writes, `unexpected DB writes: ${h.writes.join(', ')}`).toHaveLength(0)
+    streamSpy.mockRestore()
+  })
+})
