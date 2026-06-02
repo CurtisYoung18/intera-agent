@@ -8,7 +8,6 @@ interface Props {
 
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const CYCLE_MS = 5000
-const IA_TO_AI_DELAY_MS = 600 // pause at IA before swapping to AI
 
 // ── Measure ──
 const widthCache = new Map<number, Record<string, number>>()
@@ -55,15 +54,11 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
   const phaseRef = useRef(0)
   const mounted = useRef(false)
   const prevCollapsed = useRef(collapsed)
-  const aiSwapTimer = useRef<ReturnType<typeof setTimeout>>(null)
 
   const applyPhase = useCallback(
     (p: number) => {
       const W = { I: measure('I', size), A: measure('A', size), N: measure('N', size), T: measure('T', size), E: measure('E', size), R: measure('R', size), A2: measure('A', size) }
       const [a, n, t, e, r, aLast] = letterRefs.current
-
-      // Clear any pending AI swap
-      if (aiSwapTimer.current) { clearTimeout(aiSwapTimer.current); aiSwapTimer.current = null }
 
       if (p === 0) {
         // ── INTERA ──
@@ -75,25 +70,16 @@ export default function InteraLogo({ collapsed = false, size = 26 }: Props) {
         animL(r, { mw: W.R, op: 1, tx: 0, delay: 80 })
         animL(aLast, { mw: W.A2, op: 1, tx: 0, delay: 105 })
       } else {
-        // ── IA (first), then swap to AI ──
-        // Step 1: squeeze INTERA → IA
-        animL(iRef.current, { op: 1, tx: 0, delay: 80 })
-        animL(a, { mw: W.A + 2, op: 1, tx: 0, delay: 110 })
-        animL(n, { mw: 0, op: 0, tx: 0, delay: 0 })
+        // ── INTERA → AI in one fluid motion (no static IA) ──
+        // Middle letters cascade-collapse
+        animL(n, { mw: 0, op: 0, tx: 0 })
         animL(t, { mw: 0, op: 0, tx: 0, delay: 20 })
         animL(e, { mw: 0, op: 0, tx: 0, delay: 38 })
         animL(r, { mw: 0, op: 0, tx: 0, delay: 55 })
         animL(aLast, { mw: 0, op: 0, tx: 0, delay: 70 })
-        // Step 2: after brief pause, swap IA → AI
-        aiSwapTimer.current = setTimeout(() => {
-          animL(iRef.current, { op: 1, tx: W.A + 2, delay: 50 })
-          animL(a, { mw: W.A + 2, op: 1, tx: -(W.I + 2), delay: 50 })
-          animL(n, { mw: 0, op: 0, tx: 0 })
-          animL(t, { mw: 0, op: 0, tx: 0 })
-          animL(e, { mw: 0, op: 0, tx: 0 })
-          animL(r, { mw: 0, op: 0, tx: 0 })
-          animL(aLast, { mw: 0, op: 0, tx: 0 })
-        }, IA_TO_AI_DELAY_MS)
+        // I and A become visible AND simultaneously slide past each other
+        animL(iRef.current, { op: 1, tx: W.A + 2, delay: 80 })
+        animL(a, { mw: W.A + 2, op: 1, tx: -(W.I + 2), delay: 110 })
       }
     },
     [size],
