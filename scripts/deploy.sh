@@ -5,8 +5,14 @@ set -e
 
 cd ~/intera-agent
 
-echo "=== Pull ==="
-git pull origin main
+# NOTE: `git pull` is intentionally omitted. The post-receive hook
+# (`/var/git/intera.git/hooks/post-receive`) already checks the new
+# commit into this working tree via `git --work-tree=… --git-dir=… checkout`,
+# and that mode leaves the work tree's HEAD/index behind, so a `git pull`
+# here would fail with "fatal: not a git repository: '.'". If you want
+# to run this script manually (not from the hook), do
+#   sudo -iu intera git pull origin main
+# yourself first, then invoke the script.
 
 echo "=== Install ==="
 npm ci
