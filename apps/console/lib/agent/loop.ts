@@ -935,14 +935,11 @@ export class AgentLoop {
                   blocker: `Agent stuck in stage "${this.currentStage}"`,
                   chatId: this.deps.chatId ?? this.deps.caseId,
                 })
-                // humanTask.create — not routed through persistence port (operational, playground unreachable)
-                await prisma.humanTask.create({
-                  data: {
-                    caseId: this.deps.caseId,
-                    queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-                    question: `Agent stuck in stage "${this.currentStage}" after 3 nudges. Case type: ${resolvedCaseType}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
-                    status: 'pending',
-                  },
+                await this.persistence.createHumanTask({
+                  caseId: this.deps.caseId,
+                  queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+                  question: `Agent stuck in stage "${this.currentStage}" after 3 nudges. Case type: ${resolvedCaseType}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
+                  status: 'pending',
                 })
               } catch (err) {
                 console.error('[AgentLoop] Failed to auto-create human task:', err)
@@ -1118,14 +1115,11 @@ export class AgentLoop {
               blocker: `Policy escalation: ${escalatedReasons}`,
               chatId: this.deps.chatId ?? this.deps.caseId,
             })
-            // humanTask.create — not routed through persistence port (operational, playground unreachable)
-            await prisma.humanTask.create({
-              data: {
-                caseId: this.deps.caseId,
-                queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-                question: `Auto-escalated by policy conflict_requires_human. ${escalatedReasons}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
-                status: 'pending',
-              },
+            await this.persistence.createHumanTask({
+              caseId: this.deps.caseId,
+              queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+              question: `Auto-escalated by policy conflict_requires_human. ${escalatedReasons}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
+              status: 'pending',
             })
           } catch (err) {
             console.error('[AgentLoop] Failed to auto-create human task from postTool:', err)

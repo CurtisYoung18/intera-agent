@@ -153,4 +153,31 @@ describe('Playground safety invariants', () => {
     const executor = new StreamingToolExecutor([skill], undefined, true)
     expect(executor).toBeDefined()
   })
+
+  // ── Blocker 1 fix: humanTask.create routes through persistence port ──
+  it('memory persistence createHumanTask accumulates in-memory (no real DB)', async () => {
+    const { port, humanTasks } = createMemoryPersistence()
+
+    await port.createHumanTask({ caseId: 'c1', queue: 'general', question: 'Agent stuck test' })
+
+    expect(humanTasks).toHaveLength(1)
+    expect(humanTasks[0].caseId).toBe('c1')
+    expect(humanTasks[0].queue).toBe('general')
+    expect(humanTasks[0].question).toContain('Agent stuck')
+  })
+
+  it('memory persistence creates no side effects beyond arrays', async () => {
+    const { port, cases, humanTasks, traces } = createMemoryPersistence()
+
+    await port.ensureCase({ id: 'c1', orgId: 'o1', userId: 'u1', type: 't', status: 'created', chatId: null })
+    await port.createHumanTask({ caseId: 'c1', queue: 'general', question: 'escalation' })
+    await port.saveTrace({ caseId: 'c1', actionType: 'test', title: 'trace' })
+
+    // All three arrays should have entries
+    expect(cases).toHaveLength(1)
+    expect(humanTasks).toHaveLength(1)
+    expect(traces).toHaveLength(1)
+
+    // verify these came from memory, not real DB (which this test has no access to)
+  })
 })

@@ -61,6 +61,14 @@ export interface PersistencePort {
   /** Write an action trace row (or accumulate in memory). */
   saveTrace(record: TraceRecord): Promise<void>
 
+  /** Create a human task escalation record. Memory port no-ops this. */
+  createHumanTask(record: {
+    caseId: string
+    queue: string
+    question: string
+    status?: string
+  }): Promise<void>
+
   /** Flush any buffered writes (no-op for Prisma, meaningful for batched memory). */
   flush(): Promise<void>
 }
@@ -136,6 +144,17 @@ export function createPrismaPersistence(): PersistencePort {
       })
     },
 
+    async createHumanTask(record) {
+      await prisma.humanTask.create({
+        data: {
+          caseId: record.caseId,
+          queue: record.queue,
+          question: record.question,
+          status: record.status ?? 'pending',
+        },
+      })
+    },
+
     async flush() {
       // Prisma writes are immediate — no buffering needed
     },
@@ -149,11 +168,13 @@ export function createMemoryPersistence(): {
   memories: MemoryRecord[]
   messages: MessageRecord[]
   traces: TraceRecord[]
+  humanTasks: { caseId: string; queue: string; question: string; status?: string }[]
 } {
   const cases: CaseRecord[] = []
   const memories: MemoryRecord[] = []
   const messages: MessageRecord[] = []
   const traces: TraceRecord[] = []
+  const humanTasks: { caseId: string; queue: string; question: string; status?: string }[] = []
 
   const port: PersistencePort = {
     async ensureCase(record: CaseRecord) {
@@ -180,10 +201,14 @@ export function createMemoryPersistence(): {
       traces.push(record)
     },
 
+    async createHumanTask(record) {
+      humanTasks.push(record) // accumulate in memory, no real DB write
+    },
+
     async flush() {
       // no-op — everything is already in-memory
     },
   }
 
-  return { port, cases, memories, messages, traces }
+  return { port, cases, memories, messages, traces, humanTasks }
 }
