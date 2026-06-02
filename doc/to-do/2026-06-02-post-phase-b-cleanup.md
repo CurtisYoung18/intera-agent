@@ -1,0 +1,88 @@
+# Post-Phase B Cleanup & Next Steps
+
+**Created:** 2026-06-02 | **Branch:** `main` @ `63ba1c8`  
+**Context:** Phase A (migration) + Phase B (UI) complete. Deployed to `demo.anytrans.ai`.
+
+> Reference: [doc/handoffs/HANDOFF_DEPLOY_PHASE_B_06_02.md](../handoffs/HANDOFF_DEPLOY_PHASE_B_06_02.md)
+
+---
+
+## Immediate (code-level, no deployment needed)
+
+### 1. Remove `agentConfigId` from ApiKey schema
+- **File:** `packages/shared/prisma/schema.prisma:36`
+- **Bug:** Supposed to be removed in `9899c74` ("YAGNI") but wasn't. Dead code.
+- **Action:** Delete the field, run `prisma db push` (local + server), commit.
+
+### 2. Fix Prisma seed bug
+- **File:** `packages/shared/prisma/schema.prisma` (generator client block)
+- **Bug:** Monorepo codegen produces duplicate `coreSystemPrompt` type definitions (`string|null` × 2 + `number`). Causes `PrismaClientValidationError` on `api` org's `agentConfig.upsert` in seed.
+- **Action:** Add explicit `output` path to `generator client` block:
+  ```prisma
+  generator client {
+    provider = "prisma-client-js"
+    output   = "../node_modules/.prisma/client"
+  }
+  ```
+  Then `npm run db:generate && npm run db:seed` — verify `api` org seeds without error.
+
+### 3. Fix docked-preview SWC bug
+- **File:** `apps/console/components/docked-preview.tsx`
+- **Bug:** Multi-line string in JSX `className` causes Next.js SWC compiler to fail with "Unterminated string constant."
+- **Action:** Refactor any multi-line classNames to single-line. Build verify: `npm run build:console` must pass.
+
+### 4. Clean `doc/handoffs/`
+- **Action:** After this todo is completed and reviewed, move `HANDOFF_DEPLOY_PHASE_B_06_02.md` to `doc/what's done/` and create a new handoff for the next phase.
+
+---
+
+## Server-side (requires SSH to demo.anytrans.ai)
+
+### 5. Fill real LLM API keys
+- **File:** `/etc/intera/console.env` on server
+- **Action:** Set `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` (currently PLACEHOLDER).
+- **Verify:** `curl https://demo.anytrans.ai/api/health` still 200, then test via Playground.
+
+### 6. Rotate SSH credentials
+- **Reason:** Password exposed in chat history.
+- **Action:** `passwd` → `ssh-copy-id` → disable `PasswordAuthentication` + `PermitRootLogin` in sshd_config.
+
+### 7. Connect LiveChat
+- **File:** `/etc/intera/console.env`
+- **Action:** Set `LIVECHAT_CLIENT_ID` + `LIVECHAT_CLIENT_SECRET`. Configure webhook URL in LiveChat Developer Console to `https://demo.anytrans.ai/api/livechat/webhook/<orgId>`.
+
+---
+
+## Longer-term
+
+### 8. Add GitHub deploy key to server
+- **Reason:** Currently using git-bundle + scp for deployment. Deploy key enables direct `git pull`.
+- **Reference:** [deploy-ubuntu spec (now archived)](../what's%20done/2026-06-01-deploy-ubuntu.md) §3.
+
+### 9. Delete `apps/chat`
+- **Reason:** Kept as reference; safe to remove after live validation confirms console works independently.
+
+### 10. Cert renewal strategy
+- **Current:** Manual cert, expires 2026-07-22.
+- **Options:** Tencent SSL console re-upload or switch to Let's Encrypt auto-TLS via Caddy.
+
+---
+
+## Phase C (future, not started)
+
+### 11. Multi-agent per org + Multi-org user accounts
+- **Spec:** [doc/to-do/2026-06-01-multi-agent-multi-org-plan.md](2026-06-01-multi-agent-multi-org-plan.md)
+- **Scope:** AgentConfig 1:N, User table, workspace switcher — deferred.
+
+---
+
+## Done (moved to doc/what's done/)
+
+| Doc | Completed |
+|---|---|
+| `2026-06-01-combined-migration-and-ui-refactor.md` | Phase A migration + Phase B UI |
+| `2026-06-01-deploy-ubuntu.md` | Ubuntu deployment to demo.anytrans.ai |
+| `2026-06-01-workorder-local-validation-and-phase-b.md` | Local validation + Phase B work order |
+| `2026-06-01-deploy-auth-checklist.md` | (previously archived) |
+| `2026-06-01-chat-to-console-migration.md` | (previously archived) |
+| `2026-06-01-case-agent-refactor.md` | (previously archived) |
