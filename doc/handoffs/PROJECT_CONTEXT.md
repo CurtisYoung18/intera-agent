@@ -9,6 +9,8 @@
 ssh ubuntu@43.134.51.138
 70?kwi@Kmqt(dtY
 
+**CAREFULL** MUST NOT CHANGE THE SSH PW, JUST USE IT.
+
 
 > credentials
 see `/Users/curtis/Desktop/scs1751876232493_.anytrans.ai`
