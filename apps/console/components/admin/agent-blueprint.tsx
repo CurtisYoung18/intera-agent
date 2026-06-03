@@ -219,9 +219,20 @@ export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: Blueprint
     return { x1: fromX, y1: fromY, x2: toX, y2: toY, id: s.id, color: s.color }
   })
 
+  // Map satellite node id → bindingStats key (subAgents → caseTypes)
+  const NODE_TO_STAT_KEY: Record<string, string> = {
+    brain: 'brain',
+    memory: 'memory',
+    guardrails: 'guardrails',
+    subAgents: 'caseTypes',
+    knowledge: 'knowledge',
+  }
+
   function getNodePreview(nodeId: string): string {
     if (!bindingStats) return ''
-    const stats = bindingStats[nodeId as keyof typeof bindingStats]
+    const statKey = NODE_TO_STAT_KEY[nodeId]
+    if (!statKey) return ''
+    const stats = bindingStats[statKey as keyof typeof bindingStats]
     if (!stats) return ''
     const parts: string[] = []
     if (stats.bound > 0) parts.push(t('blueprint.nodeCount', { n: stats.bound }))
@@ -246,7 +257,9 @@ export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: Blueprint
 
   function hasDrift(nodeId: string): boolean {
     if (!bindingStats) return false
-    const stats = bindingStats[nodeId as keyof typeof bindingStats]
+    const statKey = NODE_TO_STAT_KEY[nodeId]
+    if (!statKey) return false
+    const stats = bindingStats[statKey as keyof typeof bindingStats]
     return stats ? stats.missing > 0 : false
   }
 
