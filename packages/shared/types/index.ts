@@ -264,7 +264,10 @@ export interface AgentConfigData {
   coreSystemPrompt?: string
   showThinking: boolean
   memoryStrategy: MemoryStrategy
+  /** @deprecated — migrated into capabilityBindings.guardrails. Read from capabilityBindings instead. */
   policyHooks: PolicyHooks
+  /** Per-version capability bindings (guardrails/tools/caseTypes/knowledge). Null = unset → fall back to policyHooks + global enabled. */
+  capabilityBindings?: CapabilityBindings
   resumePrompt?: string
   /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */
   debugMode?: boolean
@@ -338,6 +341,28 @@ export interface PolicyHooks {
   preTool: string[]
   postTool: string[]
   preFinalize: string[]
+}
+
+// ============================================
+// Capability Bindings — unified version-bound capability manifest
+// ============================================
+
+/** Per-version binding of shared-library capabilities (guardrails, tools, case types, knowledge).
+ *  Replaces org-global `enabled` flags + `policyHooks` asymmetry.
+ *  Stored as JSON string on AgentConfig.capabilityBindings. */
+export interface CapabilityBindings {
+  guardrails: { preTool: string[]; postTool: string[]; preFinalize: string[] } // Policy.name[]
+  tools: string[]      // Skill.name[]
+  caseTypes: string[]  // CaseType.type[]
+  knowledge: string[]  // KnowledgeSource.name[]（仅引用）
+}
+
+/** Default empty bindings — used as fallback when capabilityBindings is unset. */
+export const EMPTY_BINDINGS: CapabilityBindings = {
+  guardrails: { preTool: [], postTool: [], preFinalize: [] },
+  tools: [],
+  caseTypes: [],
+  knowledge: [],
 }
 
 // ============================================

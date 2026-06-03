@@ -6,6 +6,8 @@ import {
   Play, RefreshCw, CheckCircle2, XCircle, Loader2,
   ChevronDown, ExternalLink, GripVertical, Eye, EyeOff, Key, Bot,
 } from 'lucide-react'
+import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -61,6 +63,8 @@ const CASE_TYPE_OPTIONS = [
 
 export default function KnowledgePage() {
   const { t } = useConsoleLocale()
+  const agentId = useSelectedAgentId()
+  const { bindings, saveBindings } = useCapabilityBindings(agentId)
 
   // State
   const [sources, setSources] = useState<KnowledgeSource[]>([])
@@ -225,6 +229,8 @@ export default function KnowledgePage() {
   // ── Render ─────────────────────────────────────────────────────────
 
   return (
+    <div>
+      <VersionContextBar />
     <div className="flex flex-col h-full min-h-0 overflow-auto bg-transparent">
       {/* Header */}
       <div className="flex-shrink-0 px-8 pt-8 pb-6">
@@ -374,6 +380,20 @@ export default function KnowledgePage() {
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                      {agentId && (() => {
+                        const stats = checkItemBinding(bindings, 'knowledge', s.name)
+                        return (
+                          <BindingIndicator
+                            isBound={stats.isBound}
+                            isDrift={stats.isDrift}
+                            otherVersionsBound={stats.otherVersionsBound}
+                            onToggle={() => {
+                              const newB = toggleItemBinding(bindings, 'knowledge', s.name)
+                              saveBindings(newB)
+                            }}
+                          />
+                        )
+                      })()}
                     </div>
                   </div>
                 )
@@ -632,6 +652,7 @@ export default function KnowledgePage() {
         </div>
       )}
     </div>
+  </div>
   )
 }
 

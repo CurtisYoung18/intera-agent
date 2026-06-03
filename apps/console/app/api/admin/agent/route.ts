@@ -63,6 +63,7 @@ export async function PUT(req: NextRequest) {
       showThinking, memoryStrategy, policyHooks,
       resumePrompt,
       debugMode, invariantCheck,
+      capabilityBindings,
     } = body
 
     const data: Record<string, unknown> = {}
@@ -81,6 +82,7 @@ export async function PUT(req: NextRequest) {
     if (resumePrompt !== undefined) data.resumePrompt = resumePrompt
     if (debugMode !== undefined) data.debugMode = debugMode
     if (invariantCheck !== undefined) data.invariantCheck = invariantCheck
+    if (capabilityBindings !== undefined) data.capabilityBindings = typeof capabilityBindings === 'string' ? capabilityBindings : JSON.stringify(capabilityBindings)
 
     await ensureDefaultOrg(ORG_ID)
     const agentId = req.nextUrl.searchParams.get('agentId')

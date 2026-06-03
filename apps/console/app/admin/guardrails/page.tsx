@@ -7,7 +7,10 @@ import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
 import TiltCard from '@/components/ui/tilt-card'
 import ChipInput from '@/components/ui/chip-input'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { useConsoleLocale } from '@/components/locale-provider'
+import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 
 interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; enabled: boolean }
 interface RuleFields {
@@ -17,6 +20,7 @@ interface RuleFields {
   hook_skills: string[]
   enableLlm: boolean
   evaluationPrompt: string
+  guardrailType?: GuardrailType
 }
 
 const PLACEHOLDERS = ['{{skill_name}}', '{{skill_output}}', '{{confirmed_facts}}', '{{skills_called}}']
@@ -31,6 +35,7 @@ function parseRule(rule: string): RuleFields {
       hook_skills: Array.isArray(r.hook_skills) ? r.hook_skills : [],
       enableLlm: r.enableLlm !== false,
       evaluationPrompt: r.evaluationPrompt || '',
+      guardrailType: r.guardrailType as GuardrailType | undefined,
     }
   } catch {
     return { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
@@ -45,6 +50,7 @@ function buildRule(f: RuleFields): string {
   if (f.hook_skills.length) rule.hook_skills = f.hook_skills
   if (!f.enableLlm) rule.enableLlm = false
   if (f.evaluationPrompt) rule.evaluationPrompt = f.evaluationPrompt
+  if (f.guardrailType) rule.guardrailType = f.guardrailType
   return JSON.stringify(rule)
 }
 
@@ -68,6 +74,8 @@ const HOOK_SIMPLE_LABELS: Record<string, string> = {
 }
 
 function detectGuardrailType(f: RuleFields): GuardrailType {
+  // Prefer the explicit stored field; fall back to field-based detection
+  if (f.guardrailType) return f.guardrailType
   // Priority: deny > require_skills > require_skills_any > ai eval
   if (f.deny_skills.length > 0) return 'never_allow'
   if (f.require_skills.length > 0) return 'must_call'
@@ -103,7 +111,7 @@ function summarizeRule(rule: string): string {
 
 function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string[], condition: string): RuleFields {
   // Preserve existing fields — only modify what this guardrail type controls
-  const next = { ...f }
+  const next = { ...f, guardrailType: type }
   switch (type) {
     case 'must_call':
       next.require_skills = skills
@@ -129,6 +137,8 @@ function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string
 
 export default function PoliciesPage() {
   const { t } = useConsoleLocale()
+  const agentId = useSelectedAgentId()
+  const { bindings, saveBindings } = useCapabilityBindings(agentId)
   const hookMeta = useMemo(
     () =>
       ({
@@ -267,7 +277,9 @@ export default function PoliciesPage() {
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
   return (
-    <div className="px-8 py-8 animate-fade-up">
+    <div>
+      <VersionContextBar />
+      <div className="px-8 py-8 animate-fade-up">
       <div className="flex items-center justify-between mb-6">
         <div><h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('policies.title')}</h1><p className="text-[13px] text-[var(--fog)] mt-0.5">{t('policies.subtitle', { n: items.length })}</p></div>
         <button type="button" onClick={openNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"><Plus className="w-4 h-4" /> {t('policies.new')}</button>
@@ -311,6 +323,20 @@ export default function PoliciesPage() {
                               {usedByAgent.has(p.name) && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-malachite/[0.08] text-malachite font-medium">Assigned to agent</span>
                               )}
+                              {agentId && (() => {
+                                const stats = checkItemBinding(bindings, 'guardrails', p.name, p.hook as 'preTool' | 'postTool' | 'preFinalize')
+                                return (
+                                  <BindingIndicator
+                                    isBound={stats.isBound}
+                                    isDrift={stats.isDrift}
+                                    otherVersionsBound={stats.otherVersionsBound}
+                                    onToggle={() => {
+                                      const newB = toggleItemBinding(bindings, 'guardrails', p.name, p.hook as 'preTool' | 'postTool' | 'preFinalize')
+                                      saveBindings(newB)
+                                    }}
+                                  />
+                                )
+                              })()}
                             </div>
                             <div className="flex gap-1">
                               <button type="button" onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5" title={t('common.edit')}><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
@@ -359,20 +385,13 @@ export default function PoliciesPage() {
       )}
 
       {/* ── Delete Confirmation Dialog ── */}
-      {confirmDeleteName && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl border border-black/[0.06] shadow-2xl p-6 max-w-sm w-full mx-4">
-            <p className="text-[14px] font-semibold text-[var(--mist)] mb-2">Delete Guardrail</p>
-            <p className="text-[13px] text-[var(--fog)] mb-5">
-              Permanently delete <span className="font-mono text-[var(--mist)] font-medium">{confirmDeleteName}</span>? This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setConfirmDeleteName(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">Cancel</button>
-              <button type="button" onClick={confirmDelete} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-vermillion/10 border border-vermillion/20 text-vermillion hover:bg-vermillion/15 transition-all">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirmDeleteName}
+        title="Delete Guardrail"
+        message={confirmDeleteName ? t('common.permanentlyDelete', { name: confirmDeleteName }) : ''}
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDeleteName(null)}
+      />
 
       <ImmersiveModal open={!!editing} onClose={() => { setEditing(null); setSaveError(null) }} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
         {editing && (
@@ -617,5 +636,6 @@ export default function PoliciesPage() {
         )}
       </ImmersiveModal>
     </div>
+  </div>
   )
 }

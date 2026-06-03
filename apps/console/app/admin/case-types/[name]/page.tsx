@@ -5,10 +5,12 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronDown, Plus, ArrowLeft, Settings2, Bot, Puzzle,
-  Wand2, Save, Loader2,
+  Wand2, Save, Loader2, Trash2, Code, Layout, CheckCircle, XCircle,
 } from 'lucide-react'
 
 import StageConfigEditor from '@/components/admin/stage-config-editor'
+import ChipInput from '@/components/ui/chip-input'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -46,6 +48,8 @@ interface StageCfg {
   transition?: unknown
 }
 
+type FormMode = 'simple' | 'advanced'
+
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function CaseTypeDetailPage() {
@@ -56,8 +60,21 @@ export default function CaseTypeDetailPage() {
   const [ct, setCt] = useState<CaseTypeDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [allSkills, setAllSkills] = useState<string[]>([])
   const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
+  const [confirmExecMode, setConfirmExecMode] = useState<string | null>(null)
+
+  // Form mode for JSON fields
+  const [fieldsMode, setFieldsMode] = useState<Record<string, FormMode>>({
+    stages: 'simple',
+    requiredFacts: 'simple',
+    escalateOn: 'simple',
+    autoCloseConditions: 'simple',
+  })
+
   // Load case type
   const load = useCallback(async () => {
     setLoading(true)
@@ -105,6 +122,15 @@ export default function CaseTypeDetailPage() {
     try { return JSON.parse(ct?.stages || '[]') } catch { return [] }
   }
 
+  const parseField = (field: string): string[] => {
+    try { return JSON.parse(ct ? (ct as any)[field] || '[]' : '[]') } catch { return [] }
+  }
+
+  const setParsedField = (field: string, values: string[]) => {
+    if (!ct) return
+    setCt({ ...ct, [field]: JSON.stringify(values) })
+  }
+
   const parseStageConfigs = (): Record<string, StageCfg> => {
     try { return JSON.parse(ct?.stageConfigs || '{}') } catch { return {} }
   }
@@ -112,6 +138,7 @@ export default function CaseTypeDetailPage() {
   const stageNames = parseStages()
   const stageConfigs = parseStageConfigs()
   const isStageMode = ct?.executionMode !== 'cc'
+
   // Update stage config (used by StageConfigEditor onChange callback)
   const updateStage = (stage: string, patch: Partial<StageCfg>) => {
     if (!ct) return
@@ -120,7 +147,6 @@ export default function CaseTypeDetailPage() {
     setCt({ ...ct, stageConfigs: JSON.stringify(updated) })
   }
 
-  // Change execution mode with warning
   // ── Stage management ──────────────────────────────────────────
 
   const addStage = () => {
@@ -153,26 +179,21 @@ export default function CaseTypeDetailPage() {
   const changeExecutionMode = (newMode: string) => {
     if (!ct) return
     if (newMode === ct.executionMode) return
+    setConfirmExecMode(newMode)
+  }
 
-    if (ct.executionMode !== 'cc' && newMode === 'cc') {
-      // stage -> adaptive
-      if (!confirm(
-        'Switch to Adaptive mode? Stage-mode sub-agent configs will be archived to JSON metadata but no longer dispatched.'
-      )) return
-    } else if (ct.executionMode === 'cc' && newMode !== 'cc') {
-      // adaptive -> stage
-      if (!confirm(
-        'Switch to Stage mode? You\'ll need to assign sub-agents per stage. Existing sub-agent suggestions will be preserved.'
-      )) return
-    }
-
-    setCt({ ...ct, executionMode: newMode })
+  const confirmExecModeChange = () => {
+    if (!ct || !confirmExecMode) return
+    setCt({ ...ct, executionMode: confirmExecMode })
+    setConfirmExecMode(null)
   }
 
   // Save
   const handleSave = async () => {
     if (!ct) return
     setSaving(true)
+    setSaveStatus('saving')
+    setSaveError(null)
     try {
       const res = await fetch(`/api/admin/case-types/${encodeURIComponent(ct.type)}`, {
         method: 'PUT',
@@ -180,13 +201,32 @@ export default function CaseTypeDetailPage() {
         body: JSON.stringify(ct),
       })
       if (!res.ok) {
-        alert(`Save failed (${res.status})`)
+        setSaveError(`Save failed (HTTP ${res.status})`)
+        setSaveStatus('error')
         return
       }
       notifyConfigChanged()
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 2000)
+    } catch {
+      setSaveError('Save failed')
+      setSaveStatus('error')
     } finally {
       setSaving(false)
     }
+  }
+
+  // Delete
+  const handleDelete = () => {
+    if (!ct) return
+    setConfirmDeleteName(ct.type)
+  }
+
+  const confirmDelete = async () => {
+    if (!confirmDeleteName) return
+    setConfirmDeleteName(null)
+    await fetch(`/api/admin/case-types/${encodeURIComponent(confirmDeleteName)}`, { method: 'DELETE' })
+    router.replace('/admin/case-types')
   }
 
   // ── Render ────────────────────────────────────────────────────────
@@ -201,16 +241,91 @@ export default function CaseTypeDetailPage() {
 
   if (!ct) return null
 
+  const stageList = parseStages()
+  const requiredFactsList = parseField('requiredFacts')
+  const escalateOnList = parseField('escalateOn')
+  const autoCloseConditionsList = parseField('autoCloseConditions')
+
+  const renderFieldEditor = (field: string, label: string, helpText: string) => {
+    const mode = fieldsMode[field] || 'simple'
+    const values = parseField(field)
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-[var(--fog)]">{label}</span>
+          <div className="flex rounded border border-[var(--border-subtle)] bg-black/[0.02] p-0.5">
+            <button
+              type="button"
+              onClick={() => setFieldsMode({ ...fieldsMode, [field]: 'simple' })}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                mode === 'simple'
+                  ? 'bg-white shadow-sm text-[var(--mist)]'
+                  : 'text-[var(--fog)] hover:text-[var(--mist)]'
+              }`}
+            >
+              <Layout className="w-3 h-3 inline mr-0.5" />
+              Simple
+            </button>
+            <button
+              type="button"
+              onClick={() => setFieldsMode({ ...fieldsMode, [field]: 'advanced' })}
+              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                mode === 'advanced'
+                  ? 'bg-white shadow-sm text-[var(--mist)]'
+                  : 'text-[var(--fog)] hover:text-[var(--mist)]'
+              }`}
+            >
+              <Code className="w-3 h-3 inline mr-0.5" />
+              JSON
+            </button>
+          </div>
+        </div>
+        {helpText && (
+          <p className="text-[10px] text-[var(--smoke)] -mt-1">{helpText}</p>
+        )}
+        {mode === 'simple' ? (
+          <ChipInput
+            values={values}
+            onChange={(v) => setParsedField(field, v)}
+            placeholder={`Add ${label.toLowerCase()}…`}
+          />
+        ) : (
+          <textarea
+            value={ct ? String((ct as any)[field] || '[]') : '[]'}
+            onChange={(e) => {
+              if (!ct) return
+              setCt({ ...ct, [field]: e.target.value })
+            }}
+            rows={4}
+            className="glass-input-console text-[12px] font-mono resize-y"
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="px-8 py-8 animate-fade-up max-w-3xl">
       {/* Back link */}
-      <Link
-        href="/admin/case-types"
-        className="inline-flex items-center gap-1.5 text-[12px] text-[var(--fog)] hover:text-[var(--mist)] mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-3.5 h-3.5" />
-        Back to Case Types
-      </Link>
+      <div className="flex items-center justify-between mb-6">
+        <Link
+          href="/admin/case-types"
+          className="inline-flex items-center gap-1.5 text-[12px] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to Case Types
+        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-vermillion/70 hover:bg-vermillion/5 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
+      </div>
 
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
@@ -220,16 +335,37 @@ export default function CaseTypeDetailPage() {
           </h1>
           <p className="text-[13px] text-[var(--fog)] mt-0.5 font-mono">{ct.type}</p>
         </div>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all disabled:opacity-50"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save
-        </button>
+        <div className="flex items-center gap-3">
+          {saveStatus === 'saving' && (
+            <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+            </span>
+          )}
+          {saveStatus === 'saved' && (
+            <span className="text-[11px] text-malachite flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" /> Saved
+            </span>
+          )}
+          {saveStatus === 'error' && (
+            <span className="text-[11px] text-vermillion flex items-center gap-1">
+              <XCircle className="w-3 h-3" /> Failed
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
       </div>
+
+      {saveError && (
+        <div className="mb-4 text-[12px] text-vermillion bg-vermillion/[0.06] border border-vermillion/15 rounded-lg px-3 py-2">{saveError}</div>
+      )}
 
       {/* Basic info */}
       <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 space-y-4 mb-6">
@@ -258,6 +394,43 @@ export default function CaseTypeDetailPage() {
             onChange={(e) => setCt({ ...ct, description: e.target.value })}
             className="glass-input-console text-[13px]"
           />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Default Goal</span>
+            <input
+              value={ct.defaultGoal || ''}
+              onChange={(e) => setCt({ ...ct, defaultGoal: e.target.value })}
+              className="glass-input-console text-[13px]"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Type Key</span>
+            <input
+              value={ct.type}
+              disabled
+              className="glass-input-console text-[13px] font-mono opacity-50"
+            />
+          </label>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer py-1">
+          <input
+            type="checkbox"
+            checked={ct.enabled}
+            onChange={(e) => setCt({ ...ct, enabled: e.target.checked })}
+            className="accent-indigo rounded"
+          />
+          <span className="text-[12px] text-[var(--fog)]">Eligible for intent routing</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer py-1">
+          <input
+            type="checkbox"
+            checked={!!ct.requireHumanReview}
+            onChange={(e) => setCt({ ...ct, requireHumanReview: e.target.checked })}
+            className="accent-vermillion rounded"
+          />
+          <span className="text-[12px] text-[var(--fog)]">Require human review before finalize</span>
         </label>
 
         {/* Execution Mode selector */}
@@ -295,6 +468,13 @@ export default function CaseTypeDetailPage() {
               : 'LLM-driven execution. The agent autonomously plans and adapts — define sub-agents in the global registry.'}
           </p>
         </div>
+
+        {/* Structured field editors with JSON escape hatch */}
+        <div className="border-t border-[var(--border-subtle)] pt-4 space-y-4">
+          {renderFieldEditor('requiredFacts', 'Required Facts', 'Facts the agent must collect before advancing (e.g. transaction_id, amount, payment_method)')}
+          {renderFieldEditor('escalateOn', 'Escalate On', 'Conditions that trigger human escalation (e.g. "payment_not_found", "fraud_suspected")')}
+          {renderFieldEditor('autoCloseConditions', 'Auto-Close Conditions', 'Conditions that allow automatic case resolution')}
+        </div>
       </div>
 
       {/* Lifecycle — Stage mode only */}
@@ -313,7 +493,7 @@ export default function CaseTypeDetailPage() {
               <Plus className="w-3.5 h-3.5" /> Add Stage
             </button>
           </div>
-          {stageNames.length === 0 ? (
+          {stageList.length === 0 ? (
             <div className="rounded-lg border border-dashed border-[var(--border-subtle)] bg-black/[0.01] p-6 text-center">
               <p className="text-[12px] text-[var(--fog)]">
                 No stages defined. Click "Add Stage" to build the pipeline.
@@ -321,7 +501,7 @@ export default function CaseTypeDetailPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {stageNames.map((stage, i) => (
+              {stageList.map((stage, i) => (
                 <div
                   key={stage}
                   className="flex items-center gap-3 p-3 rounded-lg bg-white/60 border border-[var(--border-subtle)] group hover:border-lavender/20 transition-colors"
@@ -340,7 +520,7 @@ export default function CaseTypeDetailPage() {
                   />
 
                   {/* Arrow to next */}
-                  {i < stageNames.length - 1 && (
+                  {i < stageList.length - 1 && (
                     <span className="text-[var(--smoke)]/30 text-[16px]">→</span>
                   )}
 
@@ -359,6 +539,17 @@ export default function CaseTypeDetailPage() {
               ))}
             </div>
           )}
+
+          {/* Stages JSON escape hatch */}
+          <details className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-3 py-2">
+            <summary className="text-[10px] text-[var(--fog)] cursor-pointer">Edit stages as JSON</summary>
+            <textarea
+              value={ct.stages || '[]'}
+              onChange={(e) => setCt({ ...ct, stages: e.target.value })}
+              rows={3}
+              className="glass-input-console text-[12px] font-mono resize-y mt-2 w-full"
+            />
+          </details>
         </div>
       )}
 
@@ -393,7 +584,7 @@ export default function CaseTypeDetailPage() {
       {isStageMode && (
         <div className="space-y-4">
           <StageConfigEditor
-            stages={stageNames}
+            stages={stageList}
             stageConfigs={stageConfigs as any}
             allSkills={allSkills}
             availableModels={availableModels.length > 0 ? availableModels : ['MiniMax-M2.7-highspeed']}
@@ -431,6 +622,30 @@ export default function CaseTypeDetailPage() {
           </div>
         </div>
       )}
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <ConfirmDialog
+        open={!!confirmDeleteName}
+        title="Delete Case Type"
+        message={confirmDeleteName ? `Permanently delete "${confirmDeleteName}"? This action cannot be undone.` : ''}
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDeleteName(null)}
+      />
+
+      {/* ── Execution Mode Change Confirmation ── */}
+      <ConfirmDialog
+        open={!!confirmExecMode}
+        title="Change Execution Mode"
+        message={
+          confirmExecMode === 'cc'
+            ? 'Switch to Adaptive mode? Stage-mode sub-agent configs will be archived to JSON metadata but no longer dispatched.'
+            : 'Switch to Stage mode? You\'ll need to assign sub-agents per stage. Existing sub-agent suggestions will be preserved.'
+        }
+        variant="warning"
+        confirmLabel="Switch"
+        onConfirm={confirmExecModeChange}
+        onCancel={() => setConfirmExecMode(null)}
+      />
     </div>
   )
 }

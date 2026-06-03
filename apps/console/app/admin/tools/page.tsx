@@ -7,8 +7,11 @@ import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
 import TiltCard from '@/components/ui/tilt-card'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 import { useConsoleLocale } from '@/components/locale-provider'
+import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
@@ -73,6 +76,8 @@ interface KnowledgeSourceRow {
 
 export default function SkillsPage() {
   const { t } = useConsoleLocale()
+  const agentId = useSelectedAgentId()
+  const { bindings, saveBindings } = useCapabilityBindings(agentId)
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -84,6 +89,9 @@ export default function SkillsPage() {
   const [testResult, setTestResult] = useState<{ ok: boolean; status: number; body: unknown } | null>(null)
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSourceRow[]>([])
   const [kbLoading, setKbLoading] = useState(true)
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const loadKnowledgeSources = useCallback(async () => {
     try {
@@ -121,31 +129,52 @@ export default function SkillsPage() {
 
   const handleSave = useCallback(async () => {
     if (!editing) return
+    setSaveError(null)
+    setSaveStatus('saving')
     const mf = editing.mockFixture?.trim()
     if (mf) {
       const parsed = parseJsonField(editing.mockFixture)
       if (!parsed.ok) {
-        alert(t('skills.mockInvalidJson', { detail: parsed.error }))
+        setSaveError(t('skills.mockInvalidJson', { detail: parsed.error }))
+        setSaveStatus('error')
         return
       }
     }
     const urlName = isNew ? editing.name : originalName
     const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
-    const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
-    if (!res.ok) return alert(t('common.failedSave', { status: res.status }))
+    try {
+      const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
+      if (!res.ok) {
+        setSaveError(t('common.saveError', { status: res.status }))
+        setSaveStatus('error')
+        return
+      }
+    } catch {
+      setSaveError(t('common.saveFailed'))
+      setSaveStatus('error')
+      return
+    }
     const cacheBody = JSON.stringify({ orgId: 'default' })
     Promise.allSettled([
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
       fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
     ]).catch(() => {})
+    setSaveStatus('saved')
+    setTimeout(() => setSaveStatus('idle'), 2000)
     setEditing(null); load()
   }, [editing, isNew, load, originalName, t])
 
   const handleDelete = useCallback(async (name: string) => {
-    if (!confirm(t('common.deleteConfirm', { name }))) return
+    setConfirmDeleteName(name)
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    const name = confirmDeleteName
+    if (!name) return
+    setConfirmDeleteName(null)
     await fetch(`/api/admin/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
     load()
-  }, [load, t])
+  }, [confirmDeleteName, load])
 
   const handleTestEndpoint = useCallback(async () => {
     if (!editing) return
@@ -196,7 +225,9 @@ export default function SkillsPage() {
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
   return (
-    <div className="px-8 py-8 animate-fade-up">
+    <div>
+      <VersionContextBar />
+      <div className="px-8 py-8 animate-fade-up">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -458,7 +489,23 @@ export default function SkillsPage() {
                       )}
                       {/* Bottom actions — slide up on hover */}
                       <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
-                        <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
+                          {agentId && (() => {
+                            const stats = checkItemBinding(bindings, 'tools', s.name)
+                            return (
+                              <BindingIndicator
+                                isBound={stats.isBound}
+                                isDrift={stats.isDrift}
+                                otherVersionsBound={stats.otherVersionsBound}
+                                onToggle={() => {
+                                  const newB = toggleItemBinding(bindings, 'tools', s.name)
+                                  saveBindings(newB)
+                                }}
+                              />
+                            )
+                          })()}
+                        </div>
                         <div className="flex gap-1">
                           <button onClick={e => { e.stopPropagation(); openEdit(s) }}
                             className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" title={t('common.edit')}>
@@ -548,7 +595,7 @@ export default function SkillsPage() {
                 }
                 setEditing({ ...editing, ...update })
               }} className="glass-input-console text-[13px]" disabled={!!editing.isSystem}>
-                <option value="mock">{t('common.mock')}</option><option value="http">{t('common.http')}</option><option value="engine_managed">Engine Managed</option>
+                <option value="static">{t('common.mock')}</option><option value="http">{t('common.http')}</option><option value="engine_managed">Engine Managed</option>
               </select>
             </label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span>
@@ -750,13 +797,29 @@ export default function SkillsPage() {
               <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editing.isConcurrencySafe} onChange={e => setEditing({ ...editing, isConcurrencySafe: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('skills.concurrencySafe')}</span></label>
               <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
             </div>
-            <div className="flex gap-3 pt-4 border-t border-[var(--border-subtle)]">
-              <button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">{t('common.save')}</button>
-              <button type="button" onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button>
+            {saveError && (
+              <div className="text-[12px] text-vermillion bg-vermillion/[0.06] border border-vermillion/15 rounded-lg px-3 py-2">{saveError}</div>
+            )}
+            <div className="flex items-center gap-3 pt-4 border-t border-[var(--border-subtle)]">
+              <button type="button" onClick={handleSave} disabled={saveStatus === 'saving'} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all disabled:opacity-50">{saveStatus === 'saving' ? t('common.saving') : t('common.save')}</button>
+              <button type="button" onClick={() => { setEditing(null); setSaveError(null); setSaveStatus('idle') }} className="flex-1 py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">{t('common.cancel')}</button>
             </div>
+            {saveStatus === 'saved' && (
+              <div className="text-[11px] text-malachite/80 text-center">{t('common.saved')}</div>
+            )}
           </div>
         )}
       </ImmersiveModal>
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <ConfirmDialog
+        open={!!confirmDeleteName}
+        title={t('confirm.deleteTitle', { entity: t('sidebar.tools') })}
+        message={confirmDeleteName ? t('common.permanentlyDelete', { name: confirmDeleteName }) : ''}
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDeleteName(null)}
+      />
     </div>
+  </div>
   )
 }

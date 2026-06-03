@@ -7,9 +7,11 @@
 //   - Support dynamic skill registration via Admin console
 //   - Route mock/http based on Skill.mode field
 
-import type { SkillDefinition, ToolUse } from '@intera/shared/types'
+import type { SkillDefinition, ToolUse, CapabilityBindings } from '@intera/shared/types'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { z } from 'zod'
+import { resolveBindings, formatDriftWarnings, type CapabilityLibrary } from './resolve-bindings'
+import { EMPTY_BINDINGS } from '@intera/shared/types'
 
 /**
  * Built-in Skills — core capabilities available to the Agent.
@@ -792,6 +794,8 @@ export function isBuiltInSkill(name: string): boolean {
  */
 export class SkillRouter {
   private skills: Map<string, SkillDefinition> = new Map()
+  /** Resolved tool names from capabilityBindings. null = no bindings (backward compat: all enabled). */
+  private boundToolNames: Set<string> | null = null
 
   constructor(_orgId: string) {
     // Load built-in skills synchronously (fallback).
@@ -807,8 +811,13 @@ export class SkillRouter {
     }
   }
 
-  /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources. */
-  static async create(orgId: string, dryRun = false): Promise<SkillRouter> {
+  /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources.
+   *  @param orgId   — organization ID for DB queries.
+   *  @param dryRun  — when true, skips knowledge-source auto-heal writes.
+   *  @param bindings — optional CapabilityBindings from the active AgentConfig version.
+   *                     When provided, only skills/knowledge/caseTypes in the bindings are exposed.
+   *                     When null/undefined (backward compat), all enabled items are exposed. */
+  static async create(orgId: string, dryRun = false, bindings?: CapabilityBindings | null): Promise<SkillRouter> {
     const router = new SkillRouter(orgId)
 
     // Load DB skills (overlay on top of built-ins already loaded in constructor)
@@ -841,6 +850,53 @@ export class SkillRouter {
         })
       }
 
+      // ── Resolve bindings against the library (if provided) ──
+      if (bindings) {
+        const enabledSkillNames = new Set(
+          Array.from(router.skills.values()).filter((s) => s.enabled).map((s) => s.name),
+        )
+        // Build library from DB-loaded skills only (built-ins + DB overlay).
+        // Policies and knowledge sources are resolved separately below.
+        const library: CapabilityLibrary = {
+          skillNames: enabledSkillNames,
+          caseTypeSlugs: new Set(), // populated below
+          policyNames: new Set(),   // not used in SkillRouter
+          knowledgeNames: new Set(), // populated below
+        }
+
+        // Load case type slugs for binding resolution
+        try {
+          const allCaseTypes = await prisma.caseType.findMany({
+            where: { orgId, enabled: true },
+            select: { type: true },
+          })
+          library.caseTypeSlugs = new Set(allCaseTypes.map((c) => c.type))
+        } catch { /* keep empty */ }
+
+        // Load knowledge source names for binding resolution
+        try {
+          const allKb = await prisma.knowledgeSource.findMany({
+            where: { orgId, enabled: true },
+            select: { name: true },
+          })
+          library.knowledgeNames = new Set(allKb.map((k) => k.name))
+        } catch { /* keep empty */ }
+
+        const resolution = resolveBindings(bindings, library)
+
+        // Store resolved tool names for getTools / getToolDefinitions filtering
+        router.boundToolNames = new Set(resolution.bound.tools)
+
+        // Log drift warnings
+        const driftMsg = formatDriftWarnings(resolution.missing)
+        if (driftMsg) {
+          console.warn(`[SkillRouter] ${driftMsg}`)
+        }
+
+        // Override bindings with the resolved set (drifted names removed)
+        bindings = resolution.bound
+      }
+
       // ── Dynamic tool descriptions: inject org's case types into tool descriptions ──
       // Console admins can override by creating a DB Skill row with the same name,
       // which has already been loaded above. Only fill in if no DB override exists.
@@ -848,8 +904,16 @@ export class SkillRouter {
 
       if (!hasDbOverride('dispatch_case_agent')) {
         try {
+          const caseTypeWhere: { orgId: string; enabled: boolean; type?: { in: string[] } } = {
+            orgId,
+            enabled: true,
+          }
+          // If bindings are provided, only include case types in the bindings
+          if (bindings?.caseTypes && bindings.caseTypes.length > 0) {
+            caseTypeWhere.type = { in: bindings.caseTypes }
+          }
           const caseTypes = await prisma.caseType.findMany({
-            where: { orgId, enabled: true },
+            where: caseTypeWhere,
             select: { type: true, displayName: true, description: true, icon: true },
           })
 
@@ -874,12 +938,17 @@ export class SkillRouter {
         }
       }
 
-      // Load enabled KnowledgeSources and inject each as a kb_search_<name> tool.
-      // The LLM sees each source as a separate tool with its own description,
-      // allowing it to decide which source(s) to query — including calling
-      // multiple in parallel (isConcurrencySafe: true).
+      // Load knowledge sources and inject each as a kb_search_<name> tool.
+      // If bindings are provided, only inject sources named in bindings.knowledge.
+      const kbWhere: { orgId: string; enabled: boolean; name?: { in: string[] } } = {
+        orgId,
+        enabled: true,
+      }
+      if (bindings?.knowledge && bindings.knowledge.length > 0) {
+        kbWhere.name = { in: bindings.knowledge }
+      }
       const knowledgeSources = await prisma.knowledgeSource.findMany({
-        where: { orgId, enabled: true },
+        where: kbWhere,
       })
 
       // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
@@ -906,6 +975,11 @@ export class SkillRouter {
 
       for (const ks of knowledgeSources) {
         const toolName = `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+        // Include dynamically-created kb_search_* tools in the bound set so
+        // getTools() / getToolDefinitions() won't filter them out.
+        if (router.boundToolNames) {
+          router.boundToolNames.add(toolName)
+        }
         router.skills.set(toolName, {
           name: toolName,
           description: ks.description || `Search the "${ks.name}" knowledge base`,
@@ -947,11 +1021,14 @@ export class SkillRouter {
     return router
   }
 
-  /** Returns Anthropic tool format for all enabled skills. */
+  /** Returns Anthropic tool format for all enabled skills.
+   *  When capabilityBindings are set, only returns tools whose names are in the bound list. */
   getTools(): Tool[] {
     const tools: Tool[] = []
     for (const skill of this.skills.values()) {
       if (!skill.enabled) continue
+      // Binding filter: if boundToolNames is set, only include tools in the bound set
+      if (this.boundToolNames && !this.boundToolNames.has(skill.name)) continue
       tools.push({
         name: skill.name,
         description: skill.description,
@@ -961,9 +1038,14 @@ export class SkillRouter {
     return tools
   }
 
-  /** Returns full skill definitions (with runtime config). */
+  /** Returns full skill definitions (with runtime config).
+   *  When capabilityBindings are set, only returns tools whose names are in the bound list. */
   getToolDefinitions(): SkillDefinition[] {
-    return Array.from(this.skills.values()).filter((s) => s.enabled)
+    const defs = Array.from(this.skills.values()).filter((s) => s.enabled)
+    if (this.boundToolNames) {
+      return defs.filter((s) => this.boundToolNames!.has(s.name))
+    }
+    return defs
   }
 
   getSkill(name: string): SkillDefinition | undefined {

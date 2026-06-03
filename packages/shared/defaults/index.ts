@@ -86,8 +86,15 @@ For general / catalog / how-to questions (what promotions, games, or payment met
 
 `;
 
-/** Case-execution prompt — used when a case is active and past the "created" stage.
- *  Stage-driven, policy-enforced, with sub-agent and human-handoff awareness. */
+/**
+ * Case-execution prompt — used when a case is active and past the "created" stage.
+ * Stage-driven, policy-enforced, with sub-agent and human-handoff awareness.
+ *
+ * @deprecated Since Phase 1 (2026-06-03) — use the base+append model instead:
+ *   coreSystemPrompt + caseAddendum (see buildModePrompt.ts).
+ *   The legacy swap path (systemPrompt / CASE_SYSTEM_PROMPT) is still supported
+ *   when useLegacyCasePrompt=true, but will be removed in Phase 3.
+ */
 export const CASE_SYSTEM_PROMPT = `You are Intera, handling an active customer case. Follow the stage requirements.
 
 ## How you work

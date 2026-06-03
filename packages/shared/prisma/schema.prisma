@@ -73,7 +73,7 @@ model AgentConfig {
   systemPrompt   String  // Case base prompt (active-case mode) — @deprecated Phase 1: useLegacyCasePrompt=true paths only; Phase 2: remove
   coreSystemPrompt String? // Core/discovery prompt (no active case); falls back to CORE_SYSTEM_PROMPT default when empty
   caseAddendum   String? // Optional short addendum appended to core prompt when a case is active (base+append model)
-  useLegacyCasePrompt Boolean @default(true) // true = old swap behavior (systemPrompt); false = base+append (coreSystemPrompt + caseAddendum)
+  useLegacyCasePrompt Boolean @default(false) // false = base+append (coreSystemPrompt + caseAddendum); true = old swap behavior (systemPrompt) — @deprecated
   showThinking   Boolean @default(false)
 
   maxOutputTokens       Int? // default 4096
@@ -82,7 +82,8 @@ model AgentConfig {
 
   // JSON fields
   memoryStrategy     String  // MemoryStrategy
-  policyHooks        String  // PolicyHooks
+  policyHooks        String  // @deprecated PolicyHooks — migrated into capabilityBindings.guardrails. Remove after backfill + code migration.
+  capabilityBindings String? // JSON: CapabilityBindings (guardrails/tools/caseTypes/knowledge). Unified version-bound manifest.
   gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
   invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
 

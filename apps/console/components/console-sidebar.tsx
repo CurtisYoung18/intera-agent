@@ -19,6 +19,8 @@ import {
   Key,
   GitBranch,
   Settings,
+  Brain,
+  Database,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
@@ -26,7 +28,7 @@ import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 
-type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys'
+type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'model' | 'memory'
 
 interface NavItem {
   href: string
@@ -68,6 +70,8 @@ interface CustomerInfo {
 const BUILD_ITEMS: NavItem[] = [
   { href: '/admin/playground', slug: 'playground', icon: FlaskConical, color: '#8b6ff5' },
   { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
+  { href: '/admin/model', slug: 'model' as NavSlug, icon: Brain, color: '#8b6ff5' },
+  { href: '/admin/memory', slug: 'memory' as NavSlug, icon: Database, color: '#d4912e' },
   { href: '/admin/guardrails', slug: 'guardrails', icon: Shield, color: '#e64539' },
   { href: '/admin/tools', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },

@@ -60,7 +60,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
   })
 
   const basePrompt = resolvePrompt(baseRaw, baseCtx)
-  const useLegacy = input.useLegacyCasePrompt !== false // null/default → legacy
+  const useLegacy = input.useLegacyCasePrompt !== false // null/undefined → legacy (backward compat); false → base+append (new default)
 
   let prompt: string
   let addendum = ''

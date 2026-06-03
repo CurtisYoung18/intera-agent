@@ -161,8 +161,8 @@ export class AgentLoop {
   /** Create and initialize an AgentLoop — loads skills/policies from DB. */
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
-    loop.skillRouter = await SkillRouter.create(deps.orgId, deps.dryRun ?? false)
-    loop.policyEngine = await PolicyEngine.create(deps.orgId, deps.config.policyHooks)
+    loop.skillRouter = await SkillRouter.create(deps.orgId, deps.dryRun ?? false, deps.config.capabilityBindings)
+    loop.policyEngine = await PolicyEngine.create(deps.orgId, deps.config.capabilityBindings?.guardrails)
     return loop
   }
 

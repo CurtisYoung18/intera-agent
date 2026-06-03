@@ -1,6 +1,7 @@
 // Intera Harness - Policy Engine
 // Guardrail policies evaluated at preTool, postTool, and preFinalize checkpoints.
-// Policies load from DB (overlay on built-in seed) and hooks are driven by AgentConfig.policyHooks.
+// Policies load from DB (overlay on built-in seed) and hooks are driven by
+// AgentConfig.capabilityBindings.guardrails (was AgentConfig.policyHooks, now deprecated).
 // All evaluationPrompt policies at a checkpoint are batched into a single LLM call.
 // Non-pass results are fed back to the agent as [POLICY] messages in the conversation stream.
 
@@ -10,7 +11,7 @@ import type {
   PolicyHook,
   PolicyResult,
   PolicyRule,
-  PolicyHooks,
+  CapabilityBindings,
   PolicyCheckResult,
   PolicyEvaluationResult,
   StageGuardrail,
@@ -49,15 +50,17 @@ export class PolicyEngine {
   private policyModel: string
   private llmClient: Anthropic
 
-  constructor(private orgId: string, _policyHooks?: PolicyHooks) {
+  constructor(private orgId: string, _guardrails?: CapabilityBindings['guardrails']) {
     this.policyModel = process.env.POLICY_EVAL_MODEL || 'MiniMax-M2.7-highspeed'
     this.llmClient = createAgentClient(this.policyModel)
     this.loadBuiltInPolicies()
   }
 
-  /** Create and initialize a PolicyEngine — loads built-ins + DB policies. */
-  static async create(orgId: string, policyHooks?: PolicyHooks): Promise<PolicyEngine> {
-    const engine = new PolicyEngine(orgId, policyHooks)
+  /** Create and initialize a PolicyEngine — loads built-ins + DB policies.
+   *  @param guardrails — capabilityBindings.guardrails from the active AgentConfig version
+   *                       (was policyHooks, now migrated into capabilityBindings). */
+  static async create(orgId: string, guardrails?: CapabilityBindings['guardrails']): Promise<PolicyEngine> {
+    const engine = new PolicyEngine(orgId, guardrails)
 
     // Load DB policies into the rules Map
     try {
@@ -74,12 +77,12 @@ export class PolicyEngine {
       console.warn('[PolicyEngine] Failed to load policies from DB, using built-ins only:', err)
     }
 
-    // Determine hook assignment (priority: AgentConfig > DB > built-in fallback)
-    if (policyHooks) {
-      // AgentConfig.policyHooks is authoritative — resolve each name against the rule Map
-      engine.hooks.preTool = (policyHooks.preTool || []).filter((n) => engine.policies.has(n))
-      engine.hooks.postTool = (policyHooks.postTool || []).filter((n) => engine.policies.has(n))
-      engine.hooks.preFinalize = (policyHooks.preFinalize || []).filter((n) => engine.policies.has(n))
+    // Determine hook assignment (priority: AgentConfig capabilityBindings > DB > built-in fallback)
+    if (guardrails) {
+      // capabilityBindings.guardrails is authoritative — resolve each name against the rule Map
+      engine.hooks.preTool = (guardrails.preTool || []).filter((n) => engine.policies.has(n))
+      engine.hooks.postTool = (guardrails.postTool || []).filter((n) => engine.policies.has(n))
+      engine.hooks.preFinalize = (guardrails.preFinalize || []).filter((n) => engine.policies.has(n))
     } else {
       // Build from DB enabled policies grouped by their hook field
       try {

@@ -66,6 +66,8 @@ async function seedVendorConfig(
   const agentPayload = {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     coreSystemPrompt: CORE_SYSTEM_PROMPT,
+    caseAddendum: null,
+    useLegacyCasePrompt: false, // base+append by default
     model: opts.model,
     temperature: opts.temperature,
     thinkingBudget: 4096,

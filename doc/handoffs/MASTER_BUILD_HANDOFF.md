@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-03 | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-03 (v1.3 shipped) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -85,13 +85,69 @@ npm run build:console                             # success, 53 static pages
 
 ## Active backlog
 
+## v1.3 — 2026-06-03 — ✅ SHIPPED
+
+**Version-bound config + blueprint/library redesign.** Executed by 4 parallel coding agents (Lane 1 + Lane 2 + Lane 3 + U1 Phase 2), zero merge conflicts.
+
+### Lane 1 — Data + Runtime (foundation)
+- `CapabilityBindings` interface + `EMPTY_BINDINGS` frozen in `packages/shared/types/index.ts`
+- Schema: `capabilityBindings String?` added to `AgentConfig`, `policyHooks` marked @deprecated (migration `0008_add_capability_bindings`)
+- `resolveBindings()` helper: `apps/console/lib/agent/resolve-bindings.ts`
+- Runtime switch: `loop.ts`, `skills.ts` (SkillRouter), `policy.ts` (PolicyEngine), `config-loader.ts` all read `capabilityBindings`
+- Backfill script: `scripts/backfill-capability-bindings.ts`
+- 11 e2e guard tests: `capability-bindings-e2e.test.ts` — binding isolation, drift fail-soft, guardrail migration regression
+
+Files: `types/index.ts`, `schema.prisma`, `resolve-bindings.ts`, `loop.ts`, `skills.ts`, `policy.ts`, `config-loader.ts`
+
+### Lane 2 — CRUD Consolidation (pure UI)
+- `ConfirmDialog` shared component (`components/ui/confirm-dialog.tsx`) — danger + warning variants
+- All `alert()`/`confirm()` removed from guardrails, tools, case-types pages
+- Four-state save feedback (Unsaved/Saving…/Saved✓/Failed✗) across all three pages
+- Tools: unified mode naming (`static` everywhere, no more mock/static mix); modal broken into steps
+- Case types: dual-entry eliminated (list → detail page only); 4 bare JSON textareas → ChipInput + draggable pills + JSON escape hatch
+- Guardrails: `guardrailType` explicit stored field, shared ConfirmDialog
+
+Files: `confirm-dialog.tsx`, `guardrails/page.tsx`, `tools/page.tsx`, `case-types/page.tsx`, `case-types/[name]/page.tsx`, `dictionaries.ts`
+
+### Lane 3 — Binding UI + Blueprint + Model/Memory Pages
+- `VersionContextBar` component + `useSelectedAgentId()` / `useIsActiveVersion()` hooks
+- `BindingIndicator` three-state (✓ bound / ＋ unbound / ⚠ drift) on all 4 library pages
+- New `/admin/model` page — brain config (model, temperature, prompts, thinking budget, etc.) extracted from agent drawer
+- New `/admin/memory` page — memory strategy config extracted from agent drawer
+- `agent-blueprint.tsx` → read-only health dashboard: 6 nodes with binding counts + drift indicators, click to navigate
+- `agent/page.tsx` slimmed from ~1159 to ~140 lines (drawer editing removed)
+- Sidebar: `/admin/model` + `/admin/memory` entries added
+- T4 active-version guard on model/memory pages (fork-to-draft warning)
+
+Files: `version-context-bar.tsx`, `binding-column.tsx`, `model/page.tsx`, `memory/page.tsx`, `agent-blueprint.tsx`, `agent/page.tsx`, `console-sidebar.tsx`, `guardrails/page.tsx`, `tools/page.tsx`, `case-types/page.tsx`, `knowledge/page.tsx`, `agent/route.ts`, `agent/types.ts`, `dictionaries.ts`
+
+### U1 Phase 2 — Case Prompt Default Flip
+- `CASE_SYSTEM_PROMPT` marked `@deprecated` in `packages/shared/defaults/index.ts`
+- `useLegacyCasePrompt` default flipped: `true` → `false` (migration `0008_set_use_legacy_case_prompt_default`)
+- Seed updated: explicit `useLegacyCasePrompt: false`
+- Data migration script: `packages/shared/prisma/migrate-legacy-case-prompt.ts` — flips only configs with both `coreSystemPrompt` + `caseAddendum` filled
+
+Files: `defaults/index.ts`, `schema.prisma`, `seed.ts`, `buildModePrompt.ts`
+
+### Verification (2026-06-03, all 4 lanes)
+```
+npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors
+npm test                                          # 27 passed, 2 skipped, 1 PostgreSQL known-fail
+npm run build:console                             # success
+```
+
+→ [`doc/what's done/2026-06-03-lane-1-capability-bindings-runtime.md`](../what's%20done/2026-06-03-lane-1-capability-bindings-runtime.md)
+→ [`doc/what's done/2026-06-03-lane-2-crud-consolidation.md`](../what's%20done/2026-06-03-lane-2-crud-consolidation.md)
+→ [`doc/what's done/2026-06-03-lane-3-binding-ui-blueprint-pages.md`](../what's%20done/2026-06-03-lane-3-binding-ui-blueprint-pages.md)
+→ [`doc/what's done/2026-06-03-U1-phase-2-case-prompt-cleanup.md`](../what's%20done/2026-06-03-U1-phase-2-case-prompt-cleanup.md)
+
 ### 🔬 UX batch 2 — prompt / playground / i18n (post-Friday, decisions locked)
 
 From production testing + architect cross-page review. All directions confirmed by user. → [`doc/what's done/2026-06-03-ux-batch-2-prompt-playground.md`](../what's%20done/2026-06-03-ux-batch-2-prompt-playground.md)
 
 | ID | Item | Decision | Status |
 |---|---|---|---|
-| U1 | **Case Prompt → base+append model.** ✅ Phase 1 shipped. New `buildModePrompt.ts` unifies assembly for messages + playground. DB: `caseAddendum` + `useLegacyCasePrompt` columns (migration 0007). UI: Brain split into Base + Case Addendum areas. `DEFAULT_MODEL` extracted to shared defaults. → [`2026-06-03-U1-case-prompt-base-append-plan.md`](../what's%20done/2026-06-03-U1-case-prompt-base-append-plan.md) | base+append (locked) | 🟢 done |
+| U1 | **Case Prompt → base+append model.** ✅ **Phase 1 shipped** (verified in code 2026-06-03). ✅ **Phase 2 shipped** (2026-06-03): `CASE_SYSTEM_PROMPT` marked @deprecated, `useLegacyCasePrompt` default flipped to `false`, migration script for existing configs. Both phases complete. Plan: [`2026-06-03-U1-case-prompt-base-append-plan.md`](../what's%20done/2026-06-03-U1-case-prompt-base-append-plan.md) | base+append (locked) | 🟢 done |
 | U2 | **Playground render fidelity.** ✅ `thinking_delta` SSE branch + collapsible &lt;details&gt; render. ✅ renderHint layer: playground now parses `renderHints` from `skill_result` SSE events and renders form fields, cards, and quick_replies. SSE already emitted renderHints — only playground consumption was missing. | add thinking + renderHint rendering (locked) | 🟢 done |
 | U3 | **Placeholder indicator cleanup.** ✅ Count bar removed from `HighlightedTextarea`. Placeholder pills verified correct (each prompt section shows its actual placeholders — Core has 3, Case has 5). | remove count bar + fix placeholder tables (locked) | 🟢 done |
 | U4 | **i18n extend.** ✅ human-ops fully i18n'd (20+ keys en+zh). knowledge error messages + key labels wrapped. routing already had good coverage. | extend coverage (locked) | 🟢 done |
@@ -113,6 +169,7 @@ From production testing + architect cross-page review. All directions confirmed 
 
 | ID | Item |
 |---|---|
+| TODO-40 | **v1.3 version-bound config redesign.** 4 lanes (CapabilityBindings runtime + CRUD consolidation + binding UI + case prompt default flip), 4 parallel agents. |
 | TODO-36 | **Animated logo lockup.** Replaced CSS-based InteraLogo with disc+wordmark animation. New `intera-svg.ts` DOM helpers + rewritten `intera-logo.tsx`. Modes: `idle` (shimmer intro → auto-loop Intera ↔ AI, 5s cycle), `none` (static SSR-safe). 5 files touched. → [`2026-06-03-logo-lockup.md`](../what's%20done/2026-06-03-logo-lockup.md) |
 | TODO-21 | Web Chat page cleaned (widget pending) |
 | TODO-22 | Web Chat embed script fixed |
@@ -173,7 +230,7 @@ curl -s https://demo.anytrans.ai/api/health                            # expect 
 
 → [`doc/what's done/2026-06-03-remove-routing-human-ops-dead-config.md`](../what's%20done/2026-06-03-remove-routing-human-ops-dead-config.md)
 
-## Applied migrations (6)
+## Applied migrations (10)
 
 ```
 20260603000001_initial_baseline
@@ -181,5 +238,20 @@ curl -s https://demo.anytrans.ai/api/health                            # expect 
 20260603000003_remove_dead_columns
 20260603000004_remove_consultation_fields
 20260603000005_remove_enableLlmSanitization
+20260603000006_remove_formResponseTemplate
+20260603000007_add_case_addendum
 20260603000008_remove_routing_table
+20260603000008_add_capability_bindings
+20260603000008_set_use_legacy_case_prompt_default
 ```
+
+## Ops hardening backlog (folded from PRODUCTION_READINESS_AUDIT, 2026-06-03)
+
+Security audit C1/C2 + H1 (backups) + H2 (UFW) + H3 (rate limits) + M1/M2/M5 + L1/L2 all closed (see "What shipped v1.1"). Still open:
+
+| ID | Item | Priority |
+|---|---|---|
+| M3 | No observability — add error tracking (Sentry) + health alerting | medium |
+| M6 | Confirm which TLS cert actually serves (`*.anytrans.ai` RapidSSL expires 2026-07-22 vs Caddy LE) — see GENERIC gotcha #5 | medium |
+| L3 | Rotate DB password (`Intera2026Pg!` weak/known) | low |
+| H4 | SSH password was in `PROJECT_CONTEXT.md` (now deleted from tree; history retains it). **Rotation explicitly waived by user — do NOT change SSH pw.** | waived |

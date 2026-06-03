@@ -9,7 +9,7 @@ import {
   DEFAULT_MEMORY_STRATEGY,
   DEFAULT_POLICY_HOOKS,
 } from '@intera/shared/defaults'
-import type { AgentConfigData } from '@intera/shared/types'
+import type { AgentConfigData, CapabilityBindings } from '@intera/shared/types'
 
 function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
   try {
@@ -30,6 +30,31 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY },
   policyHooks: { ...DEFAULT_POLICY_HOOKS },
   resumePrompt: '',
+}
+
+/**
+ * Parse capabilityBindings from a DB JSON string.
+ * Returns undefined if the column is null or the JSON is invalid,
+ * signalling callers to fall back to policyHooks + global enabled.
+ */
+function parseBindings(raw: string | null | undefined): CapabilityBindings | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return {
+        guardrails: {
+          preTool: Array.isArray(parsed.guardrails?.preTool) ? parsed.guardrails.preTool : [],
+          postTool: Array.isArray(parsed.guardrails?.postTool) ? parsed.guardrails.postTool : [],
+          preFinalize: Array.isArray(parsed.guardrails?.preFinalize) ? parsed.guardrails.preFinalize : [],
+        },
+        tools: Array.isArray(parsed.tools) ? parsed.tools : [],
+        caseTypes: Array.isArray(parsed.caseTypes) ? parsed.caseTypes : [],
+        knowledge: Array.isArray(parsed.knowledge) ? parsed.knowledge : [],
+      }
+    }
+  } catch { /* ignore */ }
+  return undefined
 }
 
 export async function loadAgentConfig(
@@ -61,6 +86,7 @@ export async function loadAgentConfig(
         policyHooks:
           (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) ||
           DEFAULT_AGENT_CONFIG.policyHooks,
+        capabilityBindings: parseBindings(r.capabilityBindings as string | null),
         resumePrompt: r.resumePrompt ? String(r.resumePrompt) : '',
         debugMode: Boolean(r.debugMode),
         invariantCheck: Boolean(r.invariantCheck),

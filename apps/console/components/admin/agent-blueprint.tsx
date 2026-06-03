@@ -1,31 +1,105 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Brain, Database, Shield, Users, Search, Zap } from 'lucide-react'
-import type { AgentConfigData } from '@/app/admin/agent/types'
+import { useRouter } from 'next/navigation'
+import { Brain, Database, Shield, Users, Search, Zap, ExternalLink } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
-
-type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'knowledge'
+import { resolveBindings, hasMissing } from '@/lib/agent/resolve-bindings'
+import type { CapabilityLibrary } from '@/lib/agent/resolve-bindings'
+import type { CapabilityBindings } from '@intera/shared/types'
 
 interface BlueprintProps {
-  config: AgentConfigData
-  activeSection: Section | null
-  onSelectSection: (s: Section | null) => void
-  syncStatus: 'idle' | 'syncing' | 'synced' | 'error'
+  /** The currently selected agent ID (from localStorage) */
+  agentId?: string | null
   kbSourceCount?: number
 }
 
-const CORE_RADIUS = 52 // px, edge of core orb for line endpoints — clears rings
-const NODE_OFFSET = 60  // px, offset from node center for line target
+const CORE_RADIUS = 52
+const NODE_OFFSET = 60
 
-export default function AgentBlueprint({ config, activeSection, onSelectSection, syncStatus, kbSourceCount = 0 }: BlueprintProps) {
+export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: BlueprintProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 })
   const { t } = useConsoleLocale()
+  const router = useRouter()
   const [subAgentCount, setSubAgentCount] = useState(0)
   const [caseTypeCount, setCaseTypeCount] = useState(0)
+  const [bindings, setBindings] = useState<CapabilityBindings | null>(null)
+  const [library, setLibrary] = useState<CapabilityLibrary | null>(null)
+  const [bindingStats, setBindingStats] = useState<{
+    brain: { bound: number; missing: number }
+    memory: { bound: number; missing: number }
+    guardrails: { bound: number; missing: number }
+    tools: { bound: number; missing: number }
+    caseTypes: { bound: number; missing: number }
+    knowledge: { bound: number; missing: number }
+  } | null>(null)
 
-  const ms = config.memoryStrategy
+  // Fetch capability bindings for the selected version
+  useEffect(() => {
+    if (!agentId) return
+    fetch(`/api/admin/agent?agentId=${agentId}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.config?.capabilityBindings) {
+          try {
+            const raw = d.config.capabilityBindings
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+            setBindings(parsed)
+          } catch { setBindings(null) }
+        } else {
+          setBindings(null)
+        }
+      })
+      .catch(() => {})
+  }, [agentId])
+
+  // Fetch library data for drift detection
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/admin/policies').then(r => r.ok ? r.json() : null),
+      fetch('/api/admin/skills').then(r => r.ok ? r.json() : null),
+      fetch('/api/admin/case-types').then(r => r.ok ? r.json() : null),
+      fetch('/api/admin/knowledge/sources').then(r => r.ok ? r.json() : null),
+    ])
+      .then(([policiesData, skillsData, caseTypesData, knowledgeData]) => {
+        const policyNames = new Set<string>((policiesData?.policies || []).map((p: { name: string }) => p.name))
+        const skillNames = new Set<string>((skillsData?.skills || []).map((s: { name: string }) => s.name))
+        const caseTypeSlugs = new Set<string>((caseTypesData?.types || []).map((ct: { type: string }) => ct.type))
+        const knowledgeNames = new Set<string>((knowledgeData?.sources || []).map((ks: { name: string }) => ks.name))
+        setLibrary({ policyNames, skillNames, caseTypeSlugs, knowledgeNames })
+      })
+      .catch(() => {})
+  }, [])
+
+  // Compute binding stats
+  useEffect(() => {
+    if (!bindings || !library) {
+      setBindingStats(null)
+      return
+    }
+    const resolved = resolveBindings(bindings, library)
+    setBindingStats({
+      brain: { bound: 0, missing: 0 },
+      memory: { bound: 0, missing: 0 },
+      guardrails: {
+        bound: resolved.bound.guardrails.preTool.length + resolved.bound.guardrails.postTool.length + resolved.bound.guardrails.preFinalize.length,
+        missing: resolved.missing.guardrails.length,
+      },
+      tools: {
+        bound: resolved.bound.tools.length,
+        missing: resolved.missing.tools.length,
+      },
+      caseTypes: {
+        bound: resolved.bound.caseTypes.length,
+        missing: resolved.missing.caseTypes.length,
+      },
+      knowledge: {
+        bound: resolved.bound.knowledge.length,
+        missing: resolved.missing.knowledge.length,
+      },
+    })
+  }, [bindings, library])
 
   // Fetch case-type info for sub-agent preview
   useEffect(() => {
@@ -56,27 +130,14 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       .catch(() => { /* ignore */ })
   }, [])
 
-  const guardrailCount = useMemo(() => {
-    try {
-      const obj = JSON.parse(config.policyHooks || '{}')
-      let count = 0
-      for (const key of ['preTool', 'postTool', 'preFinalize']) {
-        if (Array.isArray(obj[key])) count += obj[key].length
-      }
-      return count
-    } catch {
-      return 0
-    }
-  }, [config.policyHooks])
-
   const satellites = useMemo(
     () =>
       [
         {
           id: 'brain' as const,
+          navigateTo: '/admin/model',
           icon: <Brain className="w-5 h-5" />,
           label: t('blueprint.nodeBrain'),
-          preview: `${config.model} · T=${config.temperature} · core ${(config.coreSystemPrompt?.length ?? 0)}c · addendum ${(config.caseAddendum?.length ?? 0)}c`,
           color: '#8b6ff5',
           glow: 'rgba(139,111,245,0.15)',
           angle: -90,
@@ -84,11 +145,9 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
         },
         {
           id: 'memory' as const,
+          navigateTo: '/admin/memory',
           icon: <Database className="w-5 h-5" />,
           label: t('blueprint.nodeMemory'),
-          preview: t('blueprint.compactTokens', {
-            n: ms.autocompactThresholdTokens.toLocaleString(),
-          }),
           color: '#d4912e',
           glow: 'rgba(212,145,46,0.15)',
           angle: -20,
@@ -96,9 +155,9 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
         },
         {
           id: 'guardrails' as const,
+          navigateTo: '/admin/guardrails',
           icon: <Shield className="w-5 h-5" />,
           label: t('blueprint.nodeGuardrails'),
-          preview: t('blueprint.guardrailsCount', { n: guardrailCount }),
           color: '#2ea04a',
           glow: 'rgba(46,160,74,0.15)',
           angle: 50,
@@ -106,9 +165,9 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
         },
         {
           id: 'subAgents' as const,
+          navigateTo: '/admin/case-types',
           icon: <Users className="w-5 h-5" />,
           label: t('blueprint.nodeSubAgents'),
-          preview: t('blueprint.subAgentsPreview', { n: subAgentCount, c: caseTypeCount }),
           color: '#e75c8a',
           glow: 'rgba(231,92,138,0.15)',
           angle: 130,
@@ -116,28 +175,16 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
         },
         {
           id: 'knowledge' as const,
+          navigateTo: '/admin/knowledge',
           icon: <Search className="w-5 h-5" />,
           label: t('blueprint.nodeKnowledge'),
-          preview: kbSourceCount > 0
-            ? t('blueprint.knowledgeActive', { n: kbSourceCount })
-            : t('blueprint.knowledgeDisabled'),
           color: '#14b8a6',
           glow: 'rgba(20,184,166,0.15)',
           angle: 200,
           distance: 0.65,
         },
       ] as const,
-    [
-      t,
-      config.systemPrompt,
-      config.model,
-      config.temperature,
-      config.resumePrompt,
-      ms.autocompactThresholdTokens,
-      guardrailCount,
-      subAgentCount,
-      caseTypeCount,
-    ],
+    [t],
   )
 
   useEffect(() => {
@@ -162,18 +209,46 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
     return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r }
   }
 
-  // Calculate line endpoints (stop at core/nodes edges, not centers)
   const connectionLines = satellites.map(s => {
     const nodePos = getNodePos(s.angle, s.distance)
     const rad = (s.angle * Math.PI) / 180
-    // Start from edge of core
     const fromX = cx + Math.cos(rad) * CORE_RADIUS
     const fromY = cy + Math.sin(rad) * CORE_RADIUS
-    // End at edge of node (approximate)
     const toX = nodePos.x - Math.cos(rad) * NODE_OFFSET
     const toY = nodePos.y - Math.sin(rad) * NODE_OFFSET
     return { x1: fromX, y1: fromY, x2: toX, y2: toY, id: s.id, color: s.color }
   })
+
+  function getNodePreview(nodeId: string): string {
+    if (!bindingStats) return ''
+    const stats = bindingStats[nodeId as keyof typeof bindingStats]
+    if (!stats) return ''
+    const parts: string[] = []
+    if (stats.bound > 0) parts.push(t('blueprint.nodeCount', { n: stats.bound }))
+    if (stats.missing > 0) parts.push(t('blueprint.nodeDrift', { n: stats.missing }))
+    if (stats.bound === 0 && stats.missing === 0) parts.push(t('blueprint.clickToNavigate'))
+    return parts.join(' · ')
+  }
+
+  function getSpecialPreview(nodeId: string): string {
+    // Fallback previews when no bindings yet
+    switch (nodeId) {
+      case 'subAgents':
+        return t('blueprint.subAgentsPreview', { n: subAgentCount, c: caseTypeCount })
+      case 'knowledge':
+        return kbSourceCount > 0
+          ? t('blueprint.knowledgeActive', { n: kbSourceCount })
+          : t('blueprint.knowledgeDisabled')
+      default:
+        return ''
+    }
+  }
+
+  function hasDrift(nodeId: string): boolean {
+    if (!bindingStats) return false
+    const stats = bindingStats[nodeId as keyof typeof bindingStats]
+    return stats ? stats.missing > 0 : false
+  }
 
   return (
     <div ref={containerRef} className="relative w-full" style={{ height: '100%', minHeight: '500px' }}>
@@ -189,25 +264,19 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
         </defs>
         {connectionLines.map(line => (
           <g key={line.id}>
-            {/* Background glow line */}
             <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
               stroke={line.color} strokeOpacity={0.1} strokeWidth={4} strokeLinecap="round" />
-            {/* Main line */}
             <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-              stroke={`url(#grad-${line.id})`} strokeWidth={activeSection === line.id ? 2 : 1} strokeLinecap="round" />
-            {/* Animated dash — particle trail effect */}
+              stroke={`url(#grad-${line.id})`} strokeWidth={1} strokeLinecap="round" />
             <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
               stroke={line.color}
-              strokeOpacity={activeSection === line.id ? 0.6 : 0.25}
-              strokeWidth={activeSection === line.id ? 2 : 1.5}
+              strokeOpacity={0.25}
+              strokeWidth={1.5}
               strokeDasharray="4 12"
               strokeLinecap="round"
-              style={{ animationDuration: activeSection === line.id ? '1.2s' : '2.5s' }}
               className="animate-particle-flow" />
-            {/* Endpoint dot at node side */}
-            <circle cx={line.x2} cy={line.y2} r={activeSection === line.id ? 3 : 2}
-              fill={line.color} opacity={activeSection === line.id ? 0.8 : 0.3}
-              className={activeSection === line.id ? 'animate-breathe' : ''} />
+            <circle cx={line.x2} cy={line.y2} r={2}
+              fill={line.color} opacity={0.3} />
           </g>
         ))}
       </svg>
@@ -215,8 +284,6 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       {/* Agent Core — center */}
       <div className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center pointer-events-none"
         style={{ transform: 'translate(-50%, -50%)' }}>
-
-        {/* Soft halo — no stroke (avoids dark ring) */}
         <div
           className="absolute w-[140px] h-[140px] rounded-full pointer-events-none opacity-[0.38]"
           style={{
@@ -226,8 +293,6 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
             top: '50%',
           }}
         />
-
-        {/* Core orb — scale + glow (shadow lives in keyframes, not inline) */}
         <div
           className="relative w-[72px] h-[72px] rounded-2xl flex flex-col items-center justify-center pointer-events-auto animate-core-box-breathe"
           style={{
@@ -239,18 +304,10 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           <Zap className="w-[22px] h-[22px] text-lavender mb-0.5 animate-core-zap-soft" />
           <span className="text-[11px] font-bold text-lavender/70 tracking-[0.1em] uppercase">{t('blueprint.core')}</span>
         </div>
-
-        {/* Status label below core */}
         <div className="mt-3 flex items-center gap-1.5 pointer-events-auto">
-          <div className={`w-1.5 h-1.5 rounded-full ${
-            syncStatus === 'synced' ? 'bg-malachite' : syncStatus === 'syncing' ? 'bg-amber animate-breathe' : 'bg-lavender/40'
-          }`} />
+          <div className="w-1.5 h-1.5 rounded-full bg-lavender/40" />
           <span className="text-[11px] text-[var(--fog)] font-medium">
-            {syncStatus === 'synced'
-              ? t('blueprint.synced')
-              : syncStatus === 'syncing'
-                ? t('blueprint.saving')
-                : config.model.split('-')[0]}
+            {t('blueprint.clickToNavigate')}
           </span>
         </div>
       </div>
@@ -258,34 +315,47 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       {/* Satellite nodes */}
       {satellites.map(s => {
         const pos = getNodePos(s.angle, s.distance)
-        const isActive = activeSection === s.id
+        const bindingPreview = getNodePreview(s.id)
+        const specialPreview = getSpecialPreview(s.id)
+        const preview = bindingPreview || specialPreview
+        const drift = hasDrift(s.id)
 
         return (
           <button
             key={s.id}
-            onClick={() => onSelectSection(isActive ? null : s.id)}
+            onClick={() => router.push(s.navigateTo)}
             className="absolute z-10 flex items-center gap-3 px-6 py-4 rounded-xl transition-all duration-300 ease-out
-              bg-white/80 backdrop-blur-xl border cursor-pointer text-left
+              bg-white/80 backdrop-blur-xl border cursor-pointer text-left group
               hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
             style={{
               left: pos.x,
               top: pos.y,
-              transform: `translate(-50%, -50%)${isActive ? ' scale(1.04)' : ''}`,
-              borderColor: isActive ? s.color : 'rgba(0,0,0,0.05)',
-              boxShadow: isActive ? `0 0 28px ${s.glow}, 0 4px 20px rgba(0,0,0,0.06)` : '0 1px 3px rgba(0,0,0,0.04)',
+              transform: `translate(-50%, -50%)`,
+              borderColor: drift ? 'rgba(212,145,46,0.4)' : 'rgba(0,0,0,0.05)',
+              boxShadow: drift ? '0 0 16px rgba(212,145,46,0.12), 0 1px 3px rgba(0,0,0,0.04)' : '0 1px 3px rgba(0,0,0,0.04)',
             }}
+            title={t('blueprint.clickToNavigate')}
           >
             <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform duration-200"
               style={{ background: `linear-gradient(135deg, ${s.glow}, transparent)`, color: s.color }}>
               {s.icon}
             </div>
             <div className="min-w-0">
-              <div className="text-[13px] font-semibold text-[var(--mist)]">{s.label}</div>
-              <div className="text-[11px] text-[var(--fog)] truncate max-w-[320px] mt-0.5">{s.preview}</div>
+              <div className="text-[13px] font-semibold text-[var(--mist)] flex items-center gap-1.5">
+                {s.label}
+                {drift && (
+                  <span className="text-[9px] px-1 py-0.5 rounded-full bg-amber/[0.12] text-amber font-bold">
+                    {bindingStats?.[s.id === 'subAgents' ? 'caseTypes' : s.id]?.missing ?? 0}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-[var(--fog)] truncate max-w-[320px] mt-0.5">{preview || '—'}</div>
             </div>
-            {/* Active indicator dot */}
-            <div className="w-2 h-2 rounded-full flex-shrink-0 transition-all duration-300"
-              style={{ background: s.color, opacity: isActive ? 1 : 0.2, transform: isActive ? 'scale(1.3)' : 'scale(1)' }} />
+            {/* Navigate arrow */}
+            <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: `${s.color}10` }}>
+              <ExternalLink className="w-3 h-3" style={{ color: s.color }} />
+            </div>
           </button>
         )
       })}
