@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { AlertCircle, Brain, Database, Shield, Users, MessageSquareText, Search, X, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
+import { AlertCircle, Brain, CheckCircle2, Database, Shield, Users, MessageSquareText, Search, X, ChevronDown, ChevronRight, ExternalLink, GitBranch, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
 import GuardrailSummaryList from '@/components/admin/guardrail-summary-list'
 import SubAgentSummaryList from '@/components/admin/sub-agent-summary-list'
-import AgentHumanInteractionPanel from '@/components/admin/agent-human-interaction-panel'
+import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import Link from 'next/link'
 import {
   DrawerCheckboxRail,
@@ -17,13 +17,12 @@ import {
   drawerFieldClass,
 } from '@/components/admin/agent-config-drawer-ui'
 
-import type { AgentConfigData, KnowledgeRetrievalConfig, MemoryStrategy, ModelInfo } from './types'
-import { DEFAULT_KNOWLEDGE_RETRIEVAL, DEFAULT_MEMORY } from './types'
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CONSULTATION_PROMPT, CORE_SYSTEM_PROMPT } from '@intera/shared/defaults'
-import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
+import type { AgentConfigData, MemoryStrategy, ModelInfo } from './types'
+import { DEFAULT_MEMORY } from './types'
+import { DEFAULT_SYSTEM_PROMPT, CORE_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'humanOps' | 'knowledge'
+type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'knowledge'
 type MemoryTier = 'short' | 'balanced' | 'long' | 'custom'
 
 const TIER_LABELS: Record<MemoryTier, string> = {
@@ -59,29 +58,6 @@ function detectMemoryTier(ms: MemoryStrategy): MemoryTier {
   return 'custom'
 }
 
-function parseStopJsonSafe(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'string') return []
-  try {
-    const j = JSON.parse(raw)
-    return Array.isArray(j) ? j.filter((x): x is string => typeof x === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function stopArrayToMultiline(arr: string[]): string {
-  return arr.join('\n')
-}
-
-/** One stop marker per non-empty line → JSON array for DB. */
-function multilineToStopJson(text: string): string {
-  const lines = text
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return JSON.stringify(lines.length ? lines : [])
-}
-
 function AgentConfigPage() {
   const { t } = useConsoleLocale()
   const [config, setConfig] = useState<AgentConfigData | null>(null)
@@ -93,8 +69,13 @@ function AgentConfigPage() {
   const [activeSection, setActiveSection] = useState<Section | null>(null)
   const [memoryTier, setMemoryTier] = useState<MemoryTier>('balanced')
   const [showMemoryAdvanced, setShowMemoryAdvanced] = useState(false)
-  const [agentList, setAgentList] = useState<{ id: string; name: string }[]>([])
+  const [agentList, setAgentList] = useState<{ id: string; name: string; version: number; isActive: boolean }[]>([])
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
+  const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
+  const [forking, setForking] = useState(false)
+  const [forkError, setForkError] = useState<string | null>(null)
+  const [isDirty, setIsDirty] = useState(false)
+  const [agentName, setAgentName] = useState('')
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const configRef = useRef(config)
   const searchParams = useSearchParams()
@@ -107,7 +88,6 @@ function AgentConfigPage() {
         memory: { icon: <Database className="w-4 h-4" />, title: t('agent.section.memory'), color: '#d4912e' },
         guardrails: { icon: <Shield className="w-4 h-4" />, title: t('agent.section.guardrails'), color: '#2ea04a' },
         subAgents: { icon: <Users className="w-4 h-4" />, title: t('agent.section.subAgents'), color: '#e75c8a' },
-        humanOps: { icon: <MessageSquareText className="w-4 h-4" />, title: t('agent.section.humanOps'), color: '#5bb8f7' },
         knowledge: { icon: <Search className="w-4 h-4" />, title: t('agent.section.knowledge'), color: '#14b8a6' },
       }) satisfies Record<Section, { icon: React.ReactNode; title: string; color: string }>,
     [t],
@@ -125,19 +105,40 @@ function AgentConfigPage() {
         if (d.configs?.length) {
           setAgentList(d.configs)
           const urlAgentId = searchParams.get('agentId')
-          if (urlAgentId && d.configs.find((c: { id: string }) => c.id === urlAgentId)) {
-            setCurrentAgentId(urlAgentId)
+          const resolveStored = (id: string): string | null => {
+            const found = d.configs.find((c: { id: string }) => c.id === id)
+            if (!found) return null
+            // Snap stale draft to the active sibling of the same name
+            if (found.isActive) return found.id
+            const activeSibling = d.configs.find(
+              (c: { name: string; isActive: boolean }) => c.name === found.name && c.isActive,
+            )
+            return activeSibling ? activeSibling.id : found.id
+          }
+          if (urlAgentId) {
+            const resolved = resolveStored(urlAgentId)
+            if (resolved) setCurrentAgentId(resolved)
           } else {
             const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
-            if (stored && d.configs.find((c: { id: string }) => c.id === stored)) {
-              setCurrentAgentId(stored)
-            } else {
-              setCurrentAgentId(d.configs[0].id)
+            if (stored) {
+              const resolved = resolveStored(stored)
+              if (resolved) {
+                setCurrentAgentId(resolved)
+                if (resolved !== stored) {
+                  try { localStorage.setItem('intera-agent-id', resolved) } catch { /* */ }
+                }
+              }
+            }
+            if (!currentAgentId) {
+              const firstActive = d.configs.find((c: { isActive: boolean }) => c.isActive)
+              setCurrentAgentId((firstActive ?? d.configs[0]).id)
             }
           }
         }
       })
       .catch(() => {})
+    // currentAgentId intentionally not in deps — initial-load resolver only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
   useEffect(() => {
@@ -178,18 +179,9 @@ function AgentConfigPage() {
         } catch {
           policyHooks = '{}'
         }
-        let knowledgeRetrieval: typeof DEFAULT_KNOWLEDGE_RETRIEVAL = { ...DEFAULT_KNOWLEDGE_RETRIEVAL }
-        try {
-          const kbRaw = (raw as Record<string, unknown>).knowledgeRetrieval
-          if (kbRaw) {
-            const parsed = typeof kbRaw === 'string' ? JSON.parse(kbRaw as string) : kbRaw
-            knowledgeRetrieval = { ...DEFAULT_KNOWLEDGE_RETRIEVAL, ...parsed }
-          }
-        } catch { /* use default */ }
-
+        setAgentName(raw.name || '')
         setConfig({
-          model: raw.model || 'MiniMax-M2.7-highspeed',
-          fallbackModel: raw.fallbackModel || '',
+          model: raw.model || DEFAULT_MODEL,
           temperature: raw.temperature ?? 0.5,
           thinkingBudget: raw.thinkingBudget ?? 4096,
           maxIterations: raw.maxIterations ?? 20,
@@ -198,31 +190,14 @@ function AgentConfigPage() {
           coreSystemPrompt: (raw as Record<string, unknown>).coreSystemPrompt
             ? String((raw as Record<string, unknown>).coreSystemPrompt)
             : CORE_SYSTEM_PROMPT,
+          caseAddendum: String((raw as Record<string, unknown>).caseAddendum ?? ''),
+          useLegacyCasePrompt: (raw as Record<string, unknown>).useLegacyCasePrompt !== false,
           showThinking: raw.showThinking ?? false,
           memoryStrategy,
           policyHooks,
           resumePrompt: raw.resumePrompt || '',
-          formResponseTemplate: raw.formResponseTemplate || '',
-          humanSkills: raw.humanSkills || '',
-          consultationPrompt: raw.consultationPrompt || DEFAULT_CONSULTATION_PROMPT,
           debugMode: Boolean(raw.debugMode),
-          enableLlmSanitization: Boolean((raw as Record<string, unknown>).enableLlmSanitization),
           invariantCheck: Boolean((raw as Record<string, unknown>).invariantCheck),
-          prefixContinuationEnabled: Boolean((raw as Record<string, unknown>).prefixContinuationEnabled),
-          prefixContinuationChatModel:
-            String((raw as Record<string, unknown>).prefixContinuationChatModel || '') || 'deepseek-chat',
-          prefixContinuationBaseUrl:
-            String((raw as Record<string, unknown>).prefixContinuationBaseUrl || '') || 'https://api.deepseek.com/beta',
-          prefixContinuationAssistantPrefix:
-            ((raw as Record<string, unknown>).prefixContinuationAssistantPrefix as string | null | undefined) ?? '',
-          prefixContinuationStopText: stopArrayToMultiline(
-            parseStopJsonSafe((raw as Record<string, unknown>).prefixContinuationStop),
-          ),
-          prefixContinuationMinDraftChars: clampComposerMinDraftChars(
-            (raw as Record<string, unknown>).prefixContinuationMinDraftChars,
-            4,
-          ),
-          knowledgeRetrieval,
         })
         setMemoryTier(detectMemoryTier(memoryStrategy))
         setMainModels(modelsData.models || [])
@@ -232,6 +207,14 @@ function AgentConfigPage() {
       .finally(() => setLoading(false))
   }, [t, currentAgentId])
 
+  // beforeunload guard when there are unsaved changes
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
   const autoSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     setSyncStatus('syncing')
@@ -239,7 +222,7 @@ function AgentConfigPage() {
       const current = configRef.current
       if (!current) return
       try {
-        const { prefixContinuationStopText, memoryStrategy, policyHooks: ph, knowledgeRetrieval: kb, ...persist } = current
+        const { memoryStrategy, policyHooks: ph, ...persist } = current
         const res = await fetch(`/api/admin/agent?agentId=${currentAgentId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -247,25 +230,17 @@ function AgentConfigPage() {
             ...persist,
             policyHooks: ph,
             memoryStrategy: JSON.stringify(memoryStrategy),
-            knowledgeRetrieval: JSON.stringify(kb),
-            prefixContinuationStop: multilineToStopJson(prefixContinuationStopText),
           }),
         })
         if (!res.ok) throw new Error(`Save: ${res.status}`)
         const cacheBody = JSON.stringify({ orgId: 'default' })
-        Promise.allSettled([
-          fetch('/api/admin/config-changed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: cacheBody,
-          }),
-          fetch('/api/admin/config-changed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: cacheBody,
-          }),
-        ]).catch(() => {})
+        fetch('/api/admin/config-changed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: cacheBody,
+        }).catch(() => {})
         setSyncStatus('synced')
+        setIsDirty(false)
         setTimeout(() => setSyncStatus('idle'), 2500)
       } catch {
         setSyncStatus('error')
@@ -276,6 +251,7 @@ function AgentConfigPage() {
   const update = useCallback(
     (field: string, value: unknown) => {
       setConfig((prev) => (prev ? { ...prev, [field]: value } : null))
+      setIsDirty(true)
       autoSave()
     },
     [autoSave],
@@ -288,6 +264,7 @@ function AgentConfigPage() {
       )
       // When user manually edits any advanced field, mark tier as custom
       setMemoryTier('custom')
+      setIsDirty(true)
       autoSave()
     },
     [autoSave],
@@ -321,6 +298,32 @@ function AgentConfigPage() {
     ms: t('common.unitMs'),
   }
 
+  const handleFork = useCallback(async () => {
+    if (!currentAgentId || forking) return
+    setForking(true)
+    setForkError(null)
+    try {
+      const r = await fetch(`/api/admin/agent-configs/${currentAgentId}/fork`, { method: 'POST' })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setForkError(d.error || t('agentVersion.forkError'))
+        return
+      }
+      if (d.config?.id) {
+        const newId = d.config.id
+        setPickerRefreshKey(k => k + 1)
+        setCurrentAgentId(newId)
+        try { localStorage.setItem('intera-agent-id', newId) } catch { /* */ }
+        router.push(`/admin/agent?agentId=${newId}`)
+      }
+    } catch {
+      setForkError(t('agentVersion.forkError'))
+    } finally {
+      setForking(false)
+    }
+  }, [currentAgentId, forking, router, t])
+
+  const currentAgent = agentList.find(a => a.id === currentAgentId)
   if (loading)
     return (
       <div className="p-8 space-y-4">
@@ -375,25 +378,70 @@ function AgentConfigPage() {
   return (
     <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
       <div className="flex-1 min-w-0 overflow-hidden relative">
-        {/* Agent selector dropdown */}
+        {/* Agent selector + fork + readiness + warnings */}
         {agentList.length > 0 && (
-          <div className="absolute top-4 left-4 z-10">
-            <select
-              value={currentAgentId ?? ''}
-              onChange={(e) => {
-                const id = e.target.value
-                setCurrentAgentId(id)
-                try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
-                router.push(`/admin/agent?agentId=${id}`)
-              }}
-              className="glass-input-console rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--mist)] border border-black/[0.08] bg-white/70 backdrop-blur"
-            >
-              {agentList.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
+          <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <AgentVersionPicker
+                key={pickerRefreshKey}
+                agentId={currentAgentId}
+                onChange={(id) => {
+                  setCurrentAgentId(id)
+                  try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
+                  router.push(`/admin/agent?agentId=${id}`)
+                }}
+                onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}
+              />
+              <button
+                type="button"
+                onClick={handleFork}
+                disabled={!currentAgentId || forking}
+                title={t('agentVersion.forkAsNew')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-black/[0.08] bg-white/70 px-2.5 py-1.5 text-[11px] font-semibold text-indigo backdrop-blur hover:bg-indigo/[0.06] hover:border-indigo/20 disabled:opacity-50 transition-colors"
+              >
+                {forking ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
+                <span>{t('agentVersion.forkAsNew')}</span>
+              </button>
+              {forkError && (
+                <span className="text-[10.5px] text-vermillion bg-vermillion/[0.06] border border-vermillion/15 rounded-md px-2 py-1">
+                  {forkError}
+                </span>
+              )}
+            </div>
+
           </div>
         )}
+
+        {/* ── Save status bar ── */}
+        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/75 backdrop-blur px-3 py-2 shadow-sm">
+          {syncStatus === 'syncing' ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin text-amber" />
+              <span className="text-[11px] font-medium text-amber">{t('agent.sync.saving')}</span>
+            </>
+          ) : syncStatus === 'synced' ? (
+            <>
+              <CheckCircle2 className="w-3 h-3 text-malachite" />
+              <span className="text-[11px] font-medium text-malachite">{t('agent.sync.saved')}</span>
+            </>
+          ) : syncStatus === 'error' ? (
+            <>
+              <AlertCircle className="w-3 h-3 text-vermillion" />
+              <span className="text-[11px] font-medium text-vermillion">{t('agent.sync.error')}</span>
+            </>
+          ) : isDirty ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-amber" />
+              <span className="text-[11px] font-medium text-amber">Unsaved changes</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2 h-2 rounded-full bg-malachite" />
+              <span className="text-[11px] font-medium text-malachite">All changes saved</span>
+            </>
+          )}
+        </div>
+
         <AgentBlueprint
           config={config}
           activeSection={activeSection}
@@ -442,7 +490,6 @@ function AgentConfigPage() {
                   </h2>
                   {activeSection === 'guardrails' && <Link href="/admin/guardrails" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Open Guardrails page →</Link>}
                   {activeSection === 'knowledge' && <Link href="/admin/knowledge" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Open Knowledge page →</Link>}
-                  {activeSection === 'humanOps' && <Link href="/admin/channels/livechat" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Configure in Channels →</Link>}
                   {activeSection === 'subAgents' && <Link href="/admin/case-types" className="text-[10px] text-indigo hover:text-indigo/80 mt-0.5 inline-block">Manage in Case Types →</Link>}
                   <div className="flex items-center gap-1.5 mt-1">
                     <div
@@ -634,6 +681,64 @@ function AgentConfigPage() {
                   </div>
                 </DrawerSection>
 
+                {/* ── Case Addendum sub-section (base+append model) ── */}
+                <DrawerSection
+                  accent="#d4912e"
+                  eyebrow="Base+Append"
+                  title="Case Addendum (optional)"
+                  lead="Appended to Core prompt when a case is active. Leave empty to use Core prompt as-is. Only effective when not using legacy case prompt mode."
+                >
+                  <div className="flex flex-col gap-3">
+                    <HighlightedTextarea
+                      id="case-addendum-textarea"
+                      value={config.caseAddendum}
+                      onChange={(v) => update('caseAddendum', v)}
+                      spellCheck={false}
+                      className={`w-full ${drawerFieldClass(true)}`}
+                      highlights={[
+                        { pattern: /\{\{case_schema\}\}/g, color: '#d4912e' },
+                        { pattern: /\{\{case_state\}\}/g, color: '#e64539' },
+                        { pattern: /\{\{confirmed_facts\}\}/g, color: '#14b8a6' },
+                      ]}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2.5 text-[10px] text-[var(--fog)]/60">
+                      <span className="mr-1 font-medium text-[var(--fog)]/80">Placeholders</span>
+                      {[
+                        { key: '{{case_schema}}', desc: 'Case schema definition' },
+                        { key: '{{case_state}}', desc: 'Current case state & stage' },
+                        { key: '{{confirmed_facts}}', desc: 'Facts collected during case' },
+                      ].map((ph) => (
+                        <button
+                          key={ph.key}
+                          type="button"
+                          title={ph.desc}
+                          onClick={() => {
+                            const ta = document.getElementById('case-addendum-textarea') as HTMLTextAreaElement | null
+                            if (!ta) { update('caseAddendum', (config.caseAddendum + '\n' + ph.key).trimStart()); return }
+                            const start = ta.selectionStart ?? ta.value.length
+                            const end = ta.selectionEnd ?? start
+                            const next = ta.value.slice(0, start) + ph.key + ta.value.slice(end)
+                            update('caseAddendum', next)
+                            requestAnimationFrame(() => {
+                              const el = document.getElementById('case-addendum-textarea') as HTMLTextAreaElement | null
+                              if (el) { el.selectionStart = el.selectionEnd = start + ph.key.length; el.focus() }
+                            })
+                          }}
+                          className="rounded-full border border-black/[0.06] bg-white/70 px-2 py-0.5 font-mono text-[10px] hover:bg-amber/15 hover:border-amber/30 transition-colors"
+                        >
+                          {ph.key}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
+                      <span>{t('agent.promptAutosaveHint')}</span>
+                      <span className="font-mono tabular-nums opacity-95">
+                        {config.caseAddendum?.length ?? 0} chars
+                      </span>
+                    </div>
+                  </div>
+                </DrawerSection>
+
                 {/* ── Model sub-section ── */}
                 <DrawerSection
                   accent="#8b6ff5"
@@ -650,18 +755,6 @@ function AgentConfigPage() {
                       {renderModelOptions(mainModels)}
                     </select>
                     <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">{t('agent.modelMainHint')}</span>
-                  </label>
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">Fallback Model</span>
-                    <select
-                      value={config.fallbackModel}
-                      onChange={(e) => update('fallbackModel', e.target.value)}
-                      className={`glass-input-console ${drawerFieldClass(true)} w-full`}
-                    >
-                      <option value="">-- None --</option>
-                      {renderModelOptions(mainModels)}
-                    </select>
-                    <span className="text-[10px] text-[var(--fog)]/70 leading-snug block">Switches to this model after 3 consecutive 529 (overloaded) errors from the main model.</span>
                   </label>
                 </DrawerSection>
 
@@ -962,16 +1055,6 @@ function AgentConfigPage() {
               </DrawerSection>
             )}
 
-            {activeSection === 'humanOps' && (
-              <DrawerSection accent="#5bb8f7" title={t('agent.section.humanOps')} lead={t('agent.section.humanOpsLead')}>
-                <AgentHumanInteractionPanel
-                  consultationPrompt={config.consultationPrompt}
-                  humanSkills={config.humanSkills}
-                  onConsultationPromptChange={(v) => update('consultationPrompt', v)}
-                  onHumanSkillsChange={(v) => update('humanSkills', v)}
-                />
-              </DrawerSection>
-            )}
 
             {activeSection === 'knowledge' && (
               <DrawerSection

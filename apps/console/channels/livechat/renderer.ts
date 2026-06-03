@@ -74,7 +74,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         }
         const formCaseId = d.caseId ?? caseId
         const fields = d.fields ?? []
-        const baseUrl = process.env.LIVECHAT_WIDGET_URL ?? 'https://intera-chat.up.railway.app/livechat-widget'
+        const baseUrl = process.env.LIVECHAT_WIDGET_URL ?? 'https://demo.anytrans.ai/livechat-widget'
         const params = new URLSearchParams({
           view: 'form',
           caseId: formCaseId,

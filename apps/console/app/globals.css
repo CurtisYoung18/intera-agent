@@ -765,16 +765,23 @@ body {
   animation-delay: var(--guide-shine-delay, 0s);
 }
 
-/* ── Animated wordmark (InteraLogo) ── */
-.intera-logo {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  display: inline-flex;
-  align-items: baseline;
-  line-height: 1;
+/* ── Animated logo lockup (intera-logo.tsx) ── */
+.intera-logo-stage {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
   user-select: none;
+}
+
+/* Disc (glass circle frame) */
+.intera-disc {
+  position: relative; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.intera-disc-shimmer {
+  position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%);
+  background-size: 250% 100%;
 }
 
 /* ── Login page: drift (orbs), dotPulse (status / brand glyph), slideIn (msg boxes), shine (CTA sweep) ── */

@@ -40,8 +40,7 @@ export async function GET(
   }
 
   const agentConfig = await prisma.agentConfig.findFirst({
-    where: { orgId: caseData.orgId },
-    orderBy: { createdAt: 'asc' },
+    where: { orgId: caseData.orgId, isActive: true },
   })
 
   const sections: string[] = []

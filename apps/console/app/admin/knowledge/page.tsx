@@ -93,7 +93,7 @@ export default function KnowledgePage() {
       const data = await res.json()
       setSources(data.sources || [])
     } catch {
-      setError('Failed to load knowledge sources')
+      setError(t('knowledge.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -145,20 +145,20 @@ export default function KnowledgePage() {
       })
       if (!res.ok) {
         const err = await res.json()
-        alert(err.error || 'Save failed')
+        alert(err.error || t('knowledge.saveFailed'))
         return
       }
       setEditingSource(null)
       fetchSources()
     } catch {
-      alert('Save failed')
+      alert(t('knowledge.saveFailed'))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this knowledge source?')) return
+    if (!confirm(t('knowledge.deleteConfirm'))) return
     try {
       await fetch(`/api/admin/knowledge/sources/${id}`, { method: 'DELETE' })
       fetchSources()

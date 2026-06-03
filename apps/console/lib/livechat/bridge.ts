@@ -121,6 +121,7 @@ async function sendFailureNotice(
 export async function handleIncomingEvent(
   chatId: string, orgId: string, userId: string,
   event: IncomingEvent, config: LiveChatConfig,
+  agentConfigId?: string,
 ): Promise<void> {
   // Skip system-generated messages that would waste agent tokens
   if (event.type === 'message' && (event as { text?: string }).text) {
@@ -174,6 +175,9 @@ export async function handleIncomingEvent(
   setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(e => console.error('[Bridge] setTyping on failed:', e))
 
   const body = buildMessagesBody(event, session)
+
+  // Per-agent routing: pass the specific AgentConfig ID to /api/messages
+  if (agentConfigId) body.configId = agentConfigId
 
   // Empty message from non-action events (e.g. incoming_chat) → skip agent loop
   if (body.skip) {

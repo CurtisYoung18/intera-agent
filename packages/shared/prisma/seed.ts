@@ -5,7 +5,6 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { config as loadDotEnv } from 'dotenv'
-import { hashSync } from 'bcryptjs'
 import { PrismaClient } from '@prisma/client'
 
 import {
@@ -49,7 +48,6 @@ const prisma = new PrismaClient()
 
 const VENDORS = [
   { id: 'default', name: 'Demo Org', password: null },
-  { id: 'api', name: 'API Org', password: hashSync('0000', 10) },
 ]
 
 // ── Seed helpers ────────────────────────────────────────────────────
@@ -60,7 +58,6 @@ async function seedVendorConfig(
     model: string
     temperature: number
     maxIterations: number
-    composerEnabled: boolean
     showThinking: boolean
     skillsMode: 'mock' | 'http'
   },
@@ -79,20 +76,9 @@ async function seedVendorConfig(
     showThinking: opts.showThinking,
     resumePrompt:
       `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
-    formResponseTemplate: 'Please continue processing based on this information.',
-    prefixContinuationEnabled: opts.composerEnabled,
-    prefixContinuationChatModel: opts.composerEnabled ? (process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-chat') : null,
-    prefixContinuationBaseUrl: opts.composerEnabled
-      ? (process.env.DEEPSEEK_BETA_CHAT_BASE_URL?.trim() || 'https://api.deepseek.com/beta')
-      : null,
-    prefixContinuationAssistantPrefix: opts.composerEnabled
-      ? "Keep completions brief; mirror the visitor's language; supportive, plain wording."
-      : null,
-    prefixContinuationStop: null as string | null,
-    prefixContinuationMinDraftChars: 4,
   }
 
-  const existing = await prisma.agentConfig.findFirst({ where: { orgId } })
+  const existing = await prisma.agentConfig.findFirst({ where: { orgId, isActive: true } })
   if (existing) {
     await prisma.agentConfig.update({ where: { id: existing.id }, data: agentPayload })
   } else {
@@ -238,29 +224,9 @@ async function seed() {
     model: 'MiniMax-M2.7-highspeed',
     temperature: 0.5,
     maxIterations: 20,
-    composerEnabled: true,
     showThinking: true,
     skillsMode: 'mock',
   })
-
-  // ── API Org config ──
-  // Note: Prisma 6 monorepo codegen produces duplicate AgentConfig types,
-  // causing validation errors on upsert for the api org. Wrapped in try/catch
-  // so the seed completes for default org. To fully seed api org, use raw SQL.
-  console.log('\n── API Org ──')
-  try {
-    await seedVendorConfig('api', {
-      model: 'MiniMax-M2.7-highspeed',
-      temperature: 0.7,
-      maxIterations: 10,
-      composerEnabled: false,
-      showThinking: false,
-      skillsMode: 'http',
-    })
-  } catch (err: any) {
-    console.warn(`  ⚠️  API Org seed skipped (known Prisma 6 monorepo codegen bug): ${err.message?.slice(0, 120)}`)
-    console.warn('  → Workaround: insert AgentConfig + skills via raw SQL on server.')
-  }
 
   // ── Demo data: Case + Memory + Messages + Traces + HumanTask ──
   const c = await prisma.case.create({

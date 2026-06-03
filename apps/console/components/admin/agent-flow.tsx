@@ -142,10 +142,6 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
               <span className="text-[11px] text-[var(--fog)] cursor-help border-b border-dotted border-[var(--border-hover)]">Resume Prompt</span>
               <textarea value={config.resumePrompt} onChange={e => update('resumePrompt', e.target.value)} rows={10} className="glass-input-console text-[12px] font-mono resize-y" />
             </label>
-            <label className="space-y-1.5 block" title="Template for synthetic user message when a customer submits a form.">
-              <span className="text-[11px] text-[var(--fog)] cursor-help border-b border-dotted border-[var(--border-hover)]">Form Response Template</span>
-              <textarea value={config.formResponseTemplate} onChange={e => update('formResponseTemplate', e.target.value)} rows={10} className="glass-input-console text-[12px] font-mono resize-y" />
-            </label>
           </div>
         )}
 

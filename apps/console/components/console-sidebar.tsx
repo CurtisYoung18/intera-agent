@@ -4,25 +4,29 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers, Copy,
+  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Languages, Lock, Unlock,
   BookOpen,
   MessageSquare,
   Search,
   Loader2,
-  XCircle,
   BarChart3,
   Plug,
   HandPlatter,
   Users2,
   FlaskConical,
+  Key,
+  GitBranch,
+  Settings,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import type { TranslateFn } from '@/lib/i18n/types'
 import InteraLogo from '@intera/shared/ui/intera-logo'
+import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
+import AgentVersionPicker from '@/components/admin/agent-version-picker'
 
-type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels'
+type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'humanOps' | 'routing'
 
 interface NavItem {
   href: string
@@ -72,6 +76,9 @@ const BUILD_ITEMS: NavItem[] = [
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
   { href: '/admin/channels', slug: 'channels', icon: Plug, color: '#7c3aed' },
+  { href: '/admin/api-keys', slug: 'apiKeys', icon: Key, color: '#d4912e' },
+  { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#e64539' },
+  { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#14b8a6' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
@@ -103,7 +110,7 @@ export default function ConsoleSidebar() {
   interface AgentInfo { id: string; name: string }
   const [agentConfigs, setAgentConfigs] = useState<AgentInfo[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
-  const [agentOpen, setAgentOpen] = useState(false)
+  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
 
   const [customerName, setCustomerName] = useState('Demo Org')
   const [isStaff, setIsStaff] = useState(false)
@@ -238,7 +245,7 @@ export default function ConsoleSidebar() {
                 aria-label={t('sidebar.expandAria')}
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
-                  <InteraLogo size={15} collapsed />
+                  <InteraLogo size={15} collapsed mode="none" />
                 </div>
                 <ChevronRight className="h-4 w-4 opacity-75" strokeWidth={2.25} aria-hidden />
               </button>
@@ -246,7 +253,7 @@ export default function ConsoleSidebar() {
           ) : (
             <div className="flex items-center gap-2 px-2">
               <div className="flex items-center gap-2.5 px-2 pt-1 flex-1 min-w-0">
-                <InteraLogo size={26} />
+                <InteraLogo size={26} mode="idle" />
               </div>
               <button
                 type="button"
@@ -260,6 +267,29 @@ export default function ConsoleSidebar() {
             </div>
           )}
         </div>
+
+        {/* Agent switcher — always visible below logo */}
+        {!collapsed && (
+          <div className="flex-shrink-0 px-3 py-2 border-b border-black/[0.04]">
+            <div className="flex items-center gap-1.5">
+              <div className="flex-1 min-w-0">
+                <AgentVersionPicker
+                  agentId={selectedAgentId}
+                  onChange={handleAgentSelect}
+                  onAgentsChanged={refreshAgentConfigs}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setAgentDrawerOpen(true)}
+                className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-black/[0.05] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
+                title={t('sidebar.openAgents')}
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
           <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
@@ -315,95 +345,6 @@ export default function ConsoleSidebar() {
                 </div>
               )}
 
-              {/* Agent selector */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setAgentOpen(!agentOpen)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
-                >
-                  <Bot className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate flex-1 text-left">
-                    {agentConfigs.find(c => c.id === selectedAgentId)?.name ?? 'Agent'}
-                  </span>
-                  <ChevronDown className={`h-2.5 w-2.5 flex-shrink-0 transition-transform ${agentOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {agentOpen && (
-                  <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
-                    {agentConfigs.map((c) => (
-                      <div
-                        key={c.id}
-                        className={`w-full flex items-center gap-1 px-2 py-1 text-[11px] rounded-md transition-all ${
-                          c.id === selectedAgentId
-                            ? 'text-[var(--mist)] bg-black/[0.04] font-medium'
-                            : 'text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03]'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => { handleAgentSelect(c.id); setAgentOpen(false) }}
-                          className="flex-1 text-left truncate"
-                        >
-                          {c.name}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            try {
-                              await fetch('/api/admin/agent-configs', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ name: `${c.name} (Copy)`, templateId: c.id }),
-                              })
-                              await refreshAgentConfigs()
-                            } catch { /* ignore */ }
-                          }}
-                          className="shrink-0 p-0.5 rounded-md text-[var(--fog)]/40 hover:text-[var(--mist)] hover:bg-black/[0.06] transition-colors"
-                          title="Duplicate"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </button>
-                        {agentConfigs.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={async (e) => {
-                              e.stopPropagation()
-                              if (!confirm(`Delete "${c.name}"?`)) return
-                              try {
-                                await fetch(`/api/admin/agent-configs/${c.id}`, { method: 'DELETE' })
-                                await refreshAgentConfigs()
-                              } catch { /* ignore */ }
-                            }}
-                            className="shrink-0 p-0.5 rounded-md text-[var(--fog)]/40 hover:text-vermillion hover:bg-vermillion/5 transition-colors"
-                            title="Delete"
-                          >
-                            <XCircle className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const res = await fetch('/api/admin/agent-configs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `Agent ${agentConfigs.length + 1}` }) })
-                          const d = await res.json()
-                          if (d.config) {
-                            setAgentConfigs([...agentConfigs, { id: d.config.id, name: d.config.name }])
-                            handleAgentSelect(d.config.id)
-                          }
-                        } catch { /* ignore */ }
-                        setAgentOpen(false)
-                      }}
-                      className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-[var(--fog)]/60 hover:text-[var(--mist)] rounded-md transition-all text-left"
-                    >
-                      + New Agent
-                    </button>
-                  </div>
-                )}
-              </div>
-
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -437,6 +378,14 @@ export default function ConsoleSidebar() {
           )}
         </div>
       </aside>
+
+      <AgentManagementDrawer
+        open={agentDrawerOpen}
+        onClose={() => setAgentDrawerOpen(false)}
+        activeAgentId={selectedAgentId}
+        onSelectAgent={handleAgentSelect}
+        onAgentsChanged={refreshAgentConfigs}
+      />
     </>
   )
 }

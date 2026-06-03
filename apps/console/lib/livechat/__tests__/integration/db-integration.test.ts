@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 
-// These tests hit the real Railway PostgreSQL database.
+// These tests require a live PostgreSQL database.
 // Set DATABASE_URL env var before running.
 
 const TEST_CHAT_ID = `test-chat-${Date.now()}`
 const TEST_CUSTOMER = 'default'
 
-describe('DB integration tests (Railway PostgreSQL)', () => {
+describe('DB integration tests (PostgreSQL)', () => {
   // Lazy imports to ensure env is loaded
   let getSession: typeof import('../../session-store').getSession
   let upsertSession: typeof import('../../session-store').upsertSession

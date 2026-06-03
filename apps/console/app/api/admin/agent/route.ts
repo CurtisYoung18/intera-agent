@@ -2,8 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, ensureSqliteSchemaCompat, ensureDefaultOrg } from '@intera/shared/prisma'
-import { clampComposerMinDraftChars } from '@intera/shared/composer-min-draft'
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 
 import { getActiveOrgId } from '@/lib/auth'
 
@@ -14,7 +13,7 @@ async function resolveAgentConfig(orgId: string, agentId: string | null) {
       return config
     }
   }
-  return prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
+  return prisma.agentConfig.findFirst({ where: { orgId, isActive: true } })
 }
 
 export async function GET(request: NextRequest) {
@@ -31,14 +30,15 @@ export async function GET(request: NextRequest) {
         data: {
           orgId: ORG_ID,
           systemPrompt: DEFAULT_SYSTEM_PROMPT,
-          model: 'MiniMax-M2.7-highspeed',
+          model: DEFAULT_MODEL,
           temperature: 0.5,
           thinkingBudget: 4096,
           maxIterations: 20,
           maxOutputTokens: 4096,
           showThinking: false,
+          caseAddendum: null,
+          useLegacyCasePrompt: false, // new configs use base+append by default
           resumePrompt: null,
-          formResponseTemplate: null,
           memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
           policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
         },
@@ -59,16 +59,10 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const {
       model, temperature, thinkingBudget, maxIterations, maxOutputTokens,
-      systemPrompt, coreSystemPrompt, showThinking, memoryStrategy, policyHooks,
-      resumePrompt, formResponseTemplate, humanSkills, consultationPrompt,
-      debugMode, enableLlmSanitization,
-      prefixContinuationEnabled,
-      prefixContinuationChatModel,
-      prefixContinuationBaseUrl,
-      prefixContinuationAssistantPrefix,
-      prefixContinuationStop,
-      prefixContinuationMinDraftChars,
-      knowledgeRetrieval,
+      systemPrompt, coreSystemPrompt, caseAddendum, useLegacyCasePrompt,
+      showThinking, memoryStrategy, policyHooks,
+      resumePrompt,
+      debugMode, invariantCheck,
     } = body
 
     const data: Record<string, unknown> = {}
@@ -79,25 +73,14 @@ export async function PUT(req: NextRequest) {
     if (maxOutputTokens !== undefined) data.maxOutputTokens = maxOutputTokens
     if (systemPrompt !== undefined) data.systemPrompt = systemPrompt
     if (coreSystemPrompt !== undefined) data.coreSystemPrompt = coreSystemPrompt
+    if (caseAddendum !== undefined) data.caseAddendum = caseAddendum
+    if (useLegacyCasePrompt !== undefined) data.useLegacyCasePrompt = useLegacyCasePrompt
     if (showThinking !== undefined) data.showThinking = showThinking
     if (memoryStrategy !== undefined) data.memoryStrategy = typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy)
     if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
     if (resumePrompt !== undefined) data.resumePrompt = resumePrompt
-    if (formResponseTemplate !== undefined) data.formResponseTemplate = formResponseTemplate
-    if (humanSkills !== undefined) data.humanSkills = humanSkills
-    if (consultationPrompt !== undefined) data.consultationPrompt = consultationPrompt
     if (debugMode !== undefined) data.debugMode = debugMode
-    if (enableLlmSanitization !== undefined) data.enableLlmSanitization = enableLlmSanitization
-    if (prefixContinuationEnabled !== undefined)
-      data.prefixContinuationEnabled = prefixContinuationEnabled !== false && prefixContinuationEnabled !== 0 && prefixContinuationEnabled !== 'false'
-    if (prefixContinuationChatModel !== undefined) data.prefixContinuationChatModel = prefixContinuationChatModel
-    if (prefixContinuationBaseUrl !== undefined) data.prefixContinuationBaseUrl = prefixContinuationBaseUrl
-    if (prefixContinuationAssistantPrefix !== undefined) data.prefixContinuationAssistantPrefix = prefixContinuationAssistantPrefix
-    if (prefixContinuationStop !== undefined) data.prefixContinuationStop = prefixContinuationStop
-    if (prefixContinuationMinDraftChars !== undefined) {
-      data.prefixContinuationMinDraftChars = clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4)
-    }
-    if (knowledgeRetrieval !== undefined) data.knowledgeRetrieval = typeof knowledgeRetrieval === 'string' ? knowledgeRetrieval : JSON.stringify(knowledgeRetrieval)
+    if (invariantCheck !== undefined) data.invariantCheck = invariantCheck
 
     await ensureDefaultOrg(ORG_ID)
     const agentId = req.nextUrl.searchParams.get('agentId')
@@ -114,30 +97,16 @@ export async function PUT(req: NextRequest) {
           orgId: ORG_ID,
           systemPrompt: systemPrompt || '',
           coreSystemPrompt: coreSystemPrompt ?? null,
-          model: model || 'MiniMax-M2.7-highspeed',
+          caseAddendum: caseAddendum ?? null,
+          useLegacyCasePrompt: useLegacyCasePrompt ?? false, // new configs use base+append
+          model: model || DEFAULT_MODEL,
           temperature: temperature ?? 0.5,
           thinkingBudget: thinkingBudget ?? 4096,
           maxIterations: maxIterations ?? 20,
           maxOutputTokens: maxOutputTokens ?? 4096,
           showThinking: showThinking ?? false,
           resumePrompt: resumePrompt ?? null,
-          formResponseTemplate: formResponseTemplate ?? null,
-          humanSkills: humanSkills ?? null,
-          consultationPrompt: consultationPrompt ?? null,
           debugMode: debugMode ?? false,
-          enableLlmSanitization: enableLlmSanitization ?? false,
-          prefixContinuationEnabled:
-            prefixContinuationEnabled !== undefined
-              ? prefixContinuationEnabled !== false &&
-                prefixContinuationEnabled !== 0 &&
-                prefixContinuationEnabled !== 'false'
-              : false,
-          prefixContinuationChatModel: prefixContinuationChatModel ?? null,
-          prefixContinuationBaseUrl: prefixContinuationBaseUrl ?? null,
-          prefixContinuationAssistantPrefix: prefixContinuationAssistantPrefix ?? null,
-          prefixContinuationStop: prefixContinuationStop ?? null,
-          prefixContinuationMinDraftChars: clampComposerMinDraftChars(prefixContinuationMinDraftChars, 4),
-          knowledgeRetrieval: knowledgeRetrieval ?? null,
           memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
           policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
         },

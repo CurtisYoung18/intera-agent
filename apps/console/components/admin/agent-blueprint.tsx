@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Brain, Database, Shield, Users, MessageSquareText, Search, Zap } from 'lucide-react'
+import { Brain, Database, Shield, Users, Search, Zap } from 'lucide-react'
 import type { AgentConfigData } from '@/app/admin/agent/types'
 import { useConsoleLocale } from '@/components/locale-provider'
 
-type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'humanOps' | 'knowledge'
+type Section = 'brain' | 'memory' | 'guardrails' | 'subAgents' | 'knowledge'
 
 interface BlueprintProps {
   config: AgentConfigData
@@ -76,7 +76,7 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           id: 'brain' as const,
           icon: <Brain className="w-5 h-5" />,
           label: t('blueprint.nodeBrain'),
-          preview: `${config.model} · T=${config.temperature} · prompt ${(config.systemPrompt?.length ?? 0)} chars`,
+          preview: `${config.model} · T=${config.temperature} · core ${(config.coreSystemPrompt?.length ?? 0)}c · addendum ${(config.caseAddendum?.length ?? 0)}c`,
           color: '#8b6ff5',
           glow: 'rgba(139,111,245,0.15)',
           angle: -90,
@@ -91,7 +91,7 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           }),
           color: '#d4912e',
           glow: 'rgba(212,145,46,0.15)',
-          angle: -30,
+          angle: -20,
           distance: 0.65,
         },
         {
@@ -101,7 +101,7 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           preview: t('blueprint.guardrailsCount', { n: guardrailCount }),
           color: '#2ea04a',
           glow: 'rgba(46,160,74,0.15)',
-          angle: 30,
+          angle: 50,
           distance: 0.65,
         },
         {
@@ -111,17 +111,7 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
           preview: t('blueprint.subAgentsPreview', { n: subAgentCount, c: caseTypeCount }),
           color: '#e75c8a',
           glow: 'rgba(231,92,138,0.15)',
-          angle: 90,
-          distance: 0.65,
-        },
-        {
-          id: 'humanOps' as const,
-          icon: <MessageSquareText className="w-5 h-5" />,
-          label: t('blueprint.nodeHumanOps'),
-          preview: config.consultationPrompt ? t('blueprint.humanOpsReady') : t('blueprint.notConfigured'),
-          color: '#5bb8f7',
-          glow: 'rgba(91,184,247,0.15)',
-          angle: 150,
+          angle: 130,
           distance: 0.65,
         },
         {
@@ -133,7 +123,7 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
             : t('blueprint.knowledgeDisabled'),
           color: '#14b8a6',
           glow: 'rgba(20,184,166,0.15)',
-          angle: 210,
+          angle: 200,
           distance: 0.65,
         },
       ] as const,
@@ -143,8 +133,6 @@ export default function AgentBlueprint({ config, activeSection, onSelectSection,
       config.model,
       config.temperature,
       config.resumePrompt,
-      config.knowledgeRetrieval,
-      config.consultationPrompt,
       ms.autocompactThresholdTokens,
       guardrailCount,
       subAgentCount,

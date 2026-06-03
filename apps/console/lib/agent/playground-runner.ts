@@ -5,18 +5,17 @@ import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
 import { createMemoryPersistence, type TraceRecord } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
-import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
-import { DEFAULT_SYSTEM_PROMPT, CORE_SYSTEM_PROMPT, CASE_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import type { SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
+import { DEFAULT_SYSTEM_PROMPT, CORE_SYSTEM_PROMPT, CASE_SYSTEM_PROMPT } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext } from './prompt-resolver'
+import { buildModePrompt } from './buildModePrompt'
+import { loadAgentConfig } from './config-loader'
 import { generateCaseId } from '@/lib/utils'
 
+/** Lightweight overrides for playground runs. Real AgentConfig is loaded from DB. */
 export interface PlaygroundConfig {
-  model: 'claude-sonnet' | 'minimax' | 'deepseek'
-  persona: 'concise' | 'warm'
-  memory: boolean
-  knowledge: boolean
-  debug: boolean
-  guardrails: { pii: boolean; refundPolicy: boolean; profanity: boolean; escalation: boolean }
+  /** Override agentConfig.debugMode for trace detail. */
+  debug?: boolean
 }
 
 export interface PlaygroundResult {
@@ -26,51 +25,6 @@ export interface PlaygroundResult {
   reply: string
   blocked: boolean
   trace: PlaygroundTraceStep[]
-}
-
-function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
-  try {
-    const p = JSON.parse(raw)
-    if (p && typeof p === 'object' && !Array.isArray(p) && Object.keys(p).length > 0) return p
-  } catch { /* ignore */ }
-  return null
-}
-
-async function loadAgentConfig(orgId: string, agentId?: string | null): Promise<AgentConfigData> {
-  let dbConfig = null
-  if (agentId) {
-    const byId = await prisma.agentConfig.findUnique({ where: { id: agentId } })
-    if (byId && byId.orgId === orgId) {
-      dbConfig = byId
-    }
-  }
-  if (!dbConfig) {
-    dbConfig = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
-  }
-  if (dbConfig) {
-    return {
-      model: dbConfig.model,
-      temperature: dbConfig.temperature,
-      thinkingBudget: dbConfig.thinkingBudget,
-      maxIterations: dbConfig.maxIterations,
-      maxOutputTokens: (dbConfig as any).maxOutputTokens ?? 4096,
-      systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-      coreSystemPrompt: (dbConfig as any).coreSystemPrompt || undefined,
-      showThinking: dbConfig.showThinking,
-      memoryStrategy: (parseNonEmptyJson(dbConfig.memoryStrategy) as any) || { ...DEFAULT_MEMORY_STRATEGY },
-      policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as any) || { ...DEFAULT_POLICY_HOOKS },
-      resumePrompt: '',
-      formResponseTemplate: '',
-      prefixContinuationEnabled: false,
-      debugMode: Boolean((dbConfig as any).debugMode),
-    }
-  }
-  return {
-    model: 'claude-sonnet-4-20250514', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20,
-    maxOutputTokens: 4096, systemPrompt: DEFAULT_SYSTEM_PROMPT, showThinking: false,
-    memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY }, policyHooks: { ...DEFAULT_POLICY_HOOKS },
-    resumePrompt: '', formResponseTemplate: '', prefixContinuationEnabled: false,
-  }
 }
 
 /** Run a single playground turn using the REAL AgentLoop pipeline. */
@@ -86,8 +40,23 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId, input.configId)
-  const systemPrompt = (agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT)
-    + (pc.persona === 'concise' ? '\n\nBe concise and direct.' : '\n\nBe warm and empathetic.')
+  const systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
+
+  // ── Unified prompt assembly (matches production messages/route.ts) ──
+  // Fixes bug: coreSystemPrompt was hardcoded to CORE_SYSTEM_PROMPT,
+  // ignoring DB-configured coreSystemPrompt. Now reads from DB via buildModePrompt.
+  const assembled = await buildModePrompt({
+    orgId,
+    coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
+    systemPrompt: agentConfig.systemPrompt ?? null,
+    caseAddendum: (agentConfig as any).caseAddendum ?? null,
+    useLegacyCasePrompt: (agentConfig as any).useLegacyCasePrompt ?? true,
+    hasActiveCase: true, // playground always simulates a case
+    caseSchema: null,
+    caseState: null,
+    sessionBinding: { userId: 'playground' },
+    availableTools: [],
+  })
 
   // ── Create the REAL AgentLoop with injected port + dryRun ──
   const caseId = turnId
@@ -98,8 +67,8 @@ export async function* runPlaygroundTurn(input: {
     caseId,
     orgId,
     userId: 'playground',
-    systemPrompt,
-    coreSystemPrompt: CORE_SYSTEM_PROMPT,
+    systemPrompt: assembled.prompt,
+    coreSystemPrompt: assembled.basePrompt,
     caseSchema: null,
     chatId,
     bootstrapNewCase: true,
@@ -107,16 +76,23 @@ export async function* runPlaygroundTurn(input: {
     dryRun: true,    // ← operational tools mocked, system_info allowed
   })
 
-  // ── Collect events from real pipeline into buffer ──
+  // ── Collect events from real pipeline and stream them as they fire ──
   let reply = ''
   let blocked = false
-  const eventBuffer: SSEEvent[] = []
+
+  // Tiny event bus: sendEvent (called by the agent loop synchronously) pushes
+  // into `pending` and signals the consumer. The generator drains `pending`
+  // and yields each event in real time.
+  const pending: SSEEvent[] = []
+  let resolveNext: (() => void) | null = null
+  let runDone = false
+  const wake = () => { const r = resolveNext; resolveNext = null; r?.() }
 
   const sendEvent = (event: SSEEvent) => {
     // Collect text for reply
     if (event.type === 'text_delta') reply += event.data as string
 
-    // Collect trace-relevant events
+    // Collect trace-relevant events into memoryTraces (for final aggregated `trace` payload)
     if (['intent_classify', 'policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_request_start', 'llm_response'].includes(event.type as string)) {
       memoryTraces.push({
         caseId: turnId,
@@ -151,18 +127,31 @@ export async function* runPlaygroundTurn(input: {
 
     if (event.type === 'policy_blocked') blocked = true
 
-    eventBuffer.push(event)
+    // Stream out in real-time (was buffered until end-of-run previously)
+    pending.push(event)
+    wake()
   }
 
-  // ── Run the REAL agent loop ──
-  try {
-    await agentLoop.run(message, sendEvent)
-  } catch (err) {
-    eventBuffer.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
-  }
+  // ── Run the REAL agent loop concurrently with the stream consumer ──
+  void (async () => {
+    try {
+      await agentLoop.run(message, sendEvent)
+    } catch (err) {
+      pending.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
+    } finally {
+      runDone = true
+      wake()
+    }
+  })()
 
-  // Yield buffered events
-  for (const ev of eventBuffer) { yield ev }
+  // Drain pending events as they arrive
+  while (true) {
+    while (pending.length > 0) {
+      yield pending.shift()!
+    }
+    if (runDone) break
+    await new Promise<void>((resolve) => { resolveNext = resolve })
+  }
 
   // Add LLM request/response traces if not already captured
   if (!memoryTraces.some(t => t.actionType === 'llm_request_start')) {
@@ -173,7 +162,7 @@ export async function* runPlaygroundTurn(input: {
   }
 
   // ── Aggregate traces ──
-  const trace = aggregateTraces(memoryTraces, startTime, pc.debug)
+  const trace = aggregateTraces(memoryTraces, startTime, pc.debug ?? agentConfig.debugMode ?? false)
   const intent = reply ? 'general' : 'none'
   const caseType = ''
 

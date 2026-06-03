@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 
-// These tests hit the real Railway PostgreSQL and GPTBots API.
+// These tests require a live PostgreSQL database and GPTBots API.
 // Requires DATABASE_URL and GPTBOTS_API_KEY env vars.
 // Skipped in local/CI environments without live service access.
 
-describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (Railway DB + GPTBots)', () => {
+describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTBots)', () => {
   let SkillRouter: typeof import('../../../agent/skills').SkillRouter
   let StreamingToolExecutor: typeof import('../../../agent/streaming-tool-executor').StreamingToolExecutor
 

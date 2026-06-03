@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
+import { getSession } from '@/lib/auth'
 import { prisma } from '@intera/shared/prisma'
 
 const CORS = {
@@ -19,7 +20,8 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const orgId = request.nextUrl.searchParams.get('orgId') ?? 'default'
+  const session = await getSession()
+  const orgId = session?.orgId || request.nextUrl.searchParams.get('orgId') || 'default'
   const config = await getLiveChatConfig(orgId)
   if (!config) {
     return json({ orgId, botAccessToken: '', licenseId: '', webhookSecret: '', showSkillStatus: true, enabled: false })

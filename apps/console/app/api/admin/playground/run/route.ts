@@ -8,12 +8,7 @@ import { runPlaygroundTurn, type PlaygroundConfig } from '@/lib/agent/playground
 import type { SSEEvent } from '@intera/shared/types'
 
 const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = {
-  model: 'claude-sonnet',
-  persona: 'concise',
-  memory: true,
-  knowledge: true,
   debug: false,
-  guardrails: { pii: true, refundPolicy: true, profanity: true, escalation: true },
 }
 
 export async function POST(request: NextRequest) {
@@ -48,8 +43,7 @@ export async function POST(request: NextRequest) {
 
   const playgroundConfig: PlaygroundConfig = {
     ...DEFAULT_PLAYGROUND_CONFIG,
-    ...body.config,
-    guardrails: { ...DEFAULT_PLAYGROUND_CONFIG.guardrails, ...(body.config?.guardrails || {}) },
+    ...(body.config || {}),
   }
 
   // ── SSE stream ──

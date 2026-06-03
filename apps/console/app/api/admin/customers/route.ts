@@ -2,12 +2,10 @@
 // Auto-seeds the two built-in customers on first access.
 
 import { NextResponse } from 'next/server'
-import { hashSync } from 'bcryptjs'
 import { prisma } from '@intera/shared/prisma'
 
 const BUILT_IN_CUSTOMERS = [
   { id: 'default', name: 'Demo Org', password: null },
-  { id: 'api', name: 'API Org', password: process.env.API_ORG_PASSWORD ? hashSync(process.env.API_ORG_PASSWORD, 10) : null },
 ]
 
 export async function GET() {

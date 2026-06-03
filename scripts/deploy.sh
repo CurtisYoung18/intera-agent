@@ -3,6 +3,13 @@
 # Usage: sudo -iu intera ./scripts/deploy.sh
 set -e
 
+# Load environment variables for Prisma / build
+if [ -f /etc/intera/console.env ]; then
+  set -a
+  . /etc/intera/console.env
+  set +a
+fi
+
 cd ~/intera-agent
 
 # NOTE: `git pull` is intentionally omitted. The post-receive hook
@@ -14,8 +21,29 @@ cd ~/intera-agent
 #   sudo -iu intera git pull origin main
 # yourself first, then invoke the script.
 
+echo "=== Prisma provider ==="
+# Force-clean: ensure work tree exactly matches HEAD
+GIT_DIR=/var/git/intera.git GIT_WORK_TREE=$(pwd) git checkout -f main
+GIT_DIR=/var/git/intera.git GIT_WORK_TREE=$(pwd) git reset --hard HEAD
+# Remove stale files deleted in repo but lingering in work tree
+rm -rf \
+  apps/console/app/api/human-chat \
+  apps/console/app/api/composer-assist \
+  apps/console/app/api/coordinate \
+  apps/console/lib/agent/consultation-agent.ts \
+  apps/console/lib/composer-assist-config.ts \
+  apps/console/lib/deepseek-prefix-chat.ts \
+  apps/console/components/AgentHumanInteractionPanel.tsx \
+  || true
+# Repo uses sqlite for local dev; production uses PostgreSQL.
+sed -i 's|provider = "sqlite"|provider = "postgresql"|' packages/shared/prisma/schema.prisma
+
 echo "=== Install ==="
-npm ci
+rm -rf node_modules
+npm ci --include=dev
+
+echo "=== Prisma migrate ==="
+npx prisma migrate deploy --schema=packages/shared/prisma/schema.prisma
 
 echo "=== Prisma ==="
 npm run db:generate

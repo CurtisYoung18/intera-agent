@@ -21,11 +21,11 @@ import {
 } from '@/components/ops/runtime-guide-doc-layout'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hosts (single source of truth; if Railway URLs change, update here)
+// Hosts (single source of truth)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CHAT_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://intera-console.up.railway.app'
-const CONSOLE_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://intera-console.up.railway.app'
+const CHAT_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://demo.anytrans.ai'
+const CONSOLE_HOST = process.env.NEXT_PUBLIC_APP_URL || 'https://demo.anytrans.ai'
 const CHAT_UI_URL = '#'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -429,52 +429,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
               body={`{ "message": "我刚收到一条通知", "userId": "player_123" }`}
             />
 
-            <SectionHeading>1.6 Human operator chat (consultation)</SectionHeading>
-            <Endpoint
-              method="POST"
-              path="/api/human-chat"
-              host={CHAT_HOST}
-              summary="Human operator pushes a follow-up to a case in the consultation loop (Web Chat App only)."
-              bodyFields={[
-                { name: 'caseId', type: 'string', desc: 'Case id.', required: true },
-                { name: 'message', type: 'string', desc: 'Operator message.', required: true },
-              ]}
-              body={`{ "caseId": "case_…", "message": "已为您办理，3 分钟到账" }`}
-            />
-
-            <SectionHeading>1.7 Composer assist (typing suggestions)</SectionHeading>
-            <Endpoint
-              method="POST"
-              path="/api/composer-assist/suggest"
-              host={CHAT_HOST}
-              summary="Lightweight prefix-completion for the user's input box (beta)."
-              bodyFields={[
-                { name: 'draftText', type: 'string', desc: 'Current text in the composer.', required: true },
-                { name: 'caseId', type: 'string', desc: 'Optional case context.' },
-              ]}
-              body={`{ "draftText": "我想问下", "caseId": "case_…" }`}
-              response={`{ "suggestion": "我的提现什么时候到账？" }`}
-            />
-
-            <SectionHeading>1.8 Composer assist feature flag</SectionHeading>
-            <Endpoint
-              method="GET"
-              path="/api/composer-assist/feature"
-              host={CHAT_HOST}
-              summary="Returns whether composer assist is enabled for the customer."
-              query={[{ name: 'orgId', desc: 'Customer slug.' }]}
-              response={`{ "enabled": true, "minDraftChars": 4 }`}
-            />
-
-            <SectionHeading>1.9 Orchestrator endpoint (multi-agent coordination)</SectionHeading>
-            <Endpoint
-              method="POST"
-              path="/api/coordinate"
-              host={CHAT_HOST}
-              summary="Internal orchestrator entry (sub-agent dispatch). Used by main agent — not typically called externally."
-            />
-
-            <SectionHeading>1.10 LiveChat integration</SectionHeading>
+            <SectionHeading>1.6 LiveChat integration</SectionHeading>
             <Endpoint
               method="POST"
               path="/api/livechat/webhook/{orgId}"

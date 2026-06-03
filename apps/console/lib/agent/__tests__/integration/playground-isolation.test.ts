@@ -125,8 +125,7 @@ async function drainPlayground(message: string) {
     orgId: 'org1',
     message,
     playgroundConfig: {
-      model: 'claude-sonnet', persona: 'concise', memory: true, knowledge: true, debug: false,
-      guardrails: { pii: false, refundPolicy: false, profanity: false, escalation: false },
+      debug: false,
     },
   })) {
     events.push(ev)

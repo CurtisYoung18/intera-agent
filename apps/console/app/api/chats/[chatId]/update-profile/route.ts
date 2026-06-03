@@ -54,7 +54,7 @@ export async function POST(
       .join('\n\n---\n\n')
 
     const orgId = sampleCase?.orgId ?? 'default'
-    const agentCfg = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } }).catch(() => null)
+    const agentCfg = await prisma.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 

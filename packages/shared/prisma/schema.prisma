@@ -31,16 +31,18 @@ model Organization {
 // API Key — per-org authentication keys
 // ============================================
 model ApiKey {
-  id         String    @id @default(cuid())
-  orgId      String    @map("org_id")
-  name       String    // "production" | "staging" | 渠道名
-  prefix     String    // 明文前 8 位，便于 UI 识别，如 "intera_sk_live_a1b2"
-  hash       String    @unique // sha256(fullKey)
-  lastUsedAt DateTime? @map("last_used_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime  @default(now())
+  id            String    @id @default(cuid())
+  orgId         String    @map("org_id")
+  name          String    // "production" | "staging" | 渠道名
+  prefix        String    // 明文前 8 位，便于 UI 识别，如 "intera_sk_live_a1b2"
+  hash          String    @unique // sha256(fullKey)
+  agentConfigId String?   @map("agent_config_id") // 绑定到具体 AgentConfig；null = org 默认
+  lastUsedAt    DateTime? @map("last_used_at")
+  revokedAt     DateTime? @map("revoked_at")
+  createdAt     DateTime  @default(now())
 
   @@index([orgId])
+  @@index([orgId, agentConfigId])
   @@map("api_keys")
 }
 
@@ -52,43 +54,44 @@ model AgentConfig {
   orgId String  @map("org_id")
   name       String  @default("Default")
 
+  /// Version number — multiple rows per (orgId, name) form a linear version history.
+  /// The row where isActive = true is the one runtime traffic uses.
+  version  Int      @default(1)
+  /// Points to the row this version was forked from. Null for v1 (root).
+  parentId String?
+  /// Exactly one row per (orgId, name) has isActive = true.
+  /// Enforced in app code via atomic transactions on /activate.
+  isActive Boolean  @default(true)
+
+  parent   AgentConfig?  @relation("AgentVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  children AgentConfig[] @relation("AgentVersions")
+
   model          String  @default("claude-sonnet-4-20250514")
   temperature    Float   @default(0.5)
   thinkingBudget Int     @default(4096)
   maxIterations  Int     @default(20)
-  systemPrompt   String  // Case base prompt (active-case mode)
+  systemPrompt   String  // Case base prompt (active-case mode) — @deprecated Phase 1: useLegacyCasePrompt=true paths only; Phase 2: remove
   coreSystemPrompt String? // Core/discovery prompt (no active case); falls back to CORE_SYSTEM_PROMPT default when empty
+  caseAddendum   String? // Optional short addendum appended to core prompt when a case is active (base+append model)
+  useLegacyCasePrompt Boolean @default(true) // true = old swap behavior (systemPrompt); false = base+append (coreSystemPrompt + caseAddendum)
   showThinking   Boolean @default(false)
 
   maxOutputTokens       Int? // default 4096
   resumePrompt          String? // synthetic message for human task resume
-  formResponseTemplate  String? // synthetic message for form submission
-  humanSkills           String? // JSON array of skill names available to human operator during consultation
-  consultationPrompt    String? // override for consultation system prompt (human-chat route)
   debugMode             Boolean @default(false) // write full API request/response to debug-logs/
-  enableLlmSanitization Boolean @default(false) // LLM-based leaked context sanitization after each stream turn
-
-  /// Chat app only: DeepSeek beta chat + prefix row — customer **composer** drafting assist (not agent loop).
-  prefixContinuationEnabled         Boolean @default(false)
-  prefixContinuationChatModel       String? // e.g. deepseek-chat
-  prefixContinuationBaseUrl         String? // e.g. https://api.deepseek.com/beta
-  prefixContinuationAssistantPrefix String? // extra system notes for completion (accessibility / tone)
-  prefixContinuationStop            String? // JSON string[] optional stop sequences
-  /// Composer: min draft chars before continuation request (CJK-aware).
-  prefixContinuationMinDraftChars   Int     @default(4)
 
   // JSON fields
   memoryStrategy     String  // MemoryStrategy
   policyHooks        String  // PolicyHooks
-  knowledgeRetrieval String?  // KnowledgeRetrievalConfig (skeleton, awaiting embedding key)
   gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
   invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orgId, name])
+  @@unique([orgId, name, version])
   @@index([orgId])
+  @@index([orgId, name, isActive])
   @@map("agent_configs")
 }
 
@@ -183,27 +186,6 @@ model Policy {
 
   @@unique([orgId, name])
   @@map("policies")
-}
-
-// ============================================
-// 人工路由配置
-// ============================================
-model Routing {
-  id         String   @id @default(cuid())
-  orgId String  @map("org_id") @default("default")
-
-  queue          String
-  description    String?
-  skillsAllowed  String // JSON: string[]
-  priority       Int     @default(0)
-  autoAssign     Boolean @default(true)
-  maxWaitingTime Int     @default(300)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([orgId, queue])
-  @@map("routings")
 }
 
 // ============================================
@@ -511,8 +493,6 @@ model ChannelBinding {
   /// Human Ops: escalation strategy per channel
   transferStrategy    String?  // 'transfer_chat' | 'consult' | 'silent_task'
   transferTarget      String?  // JSON: { type: 'group'|'agent'|'queue', ids: [...] }
-  consultationPrompt  String?  // System prompt override for human consultation
-  humanSkills         String?  // JSON: string[] — skills available during consultation
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

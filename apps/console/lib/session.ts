@@ -69,7 +69,7 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 export async function signSession(input: { role: SessionRole; orgId: string }): Promise<string | null> {
   const secret = getSecret()
   if (!secret) {
-    console.error('[session] SESSION_SECRET is not set — cannot issue sessions')
+    console.error('[session] SESSION_SECRET is not set — cannot issue sessions') // operational-critical: log to stderr directly
     return null
   }
   const now = Math.floor(Date.now() / 1000)

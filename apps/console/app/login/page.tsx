@@ -77,10 +77,7 @@ function LoginForm() {
         <div className={styles.grain} />
 
         <div className={styles.brandTop}>
-          <div className={styles.brandGlyph}>
-            <span className={styles.brandDot} />
-          </div>
-          <InteraLogo size={22} />
+          <InteraLogo size={22} mode="idle" theme="dark" />
         </div>
 
         <div className={styles.brandMid}>

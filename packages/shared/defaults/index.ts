@@ -1,6 +1,8 @@
 // Shared default data for admin pre-fill — used by both seed.ts and API lazy init.
 // Must match the built-in definitions in skills.ts and policy.ts exactly.
 
+export const DEFAULT_MODEL = 'deepseek-v4-flash'
+
 export const DEFAULT_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
 
 ## How you work
@@ -150,7 +152,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
   blockingThresholdTokens: 15000,
 
   // Features
-  compactModel: 'MiniMax-M2.5-highspeed',
+  compactModel: 'deepseek-v4-flash',
   enableSnip: true,
   enableMicrocompact: false,
   microcompactMinAgeMs: 300000,
@@ -208,39 +210,6 @@ export const DEFAULT_POLICY_HOOKS = {
     'must_cite_basis',
   ],
 }
-
-/** Default consultation system prompt used when AgentConfig.consultationPrompt is empty. */
-export const DEFAULT_CONSULTATION_PROMPT = `You are Intera, the AI agent owning this customer case. You are consulting a human operator (your colleague, NOT the customer).
-
-# CRITICAL — Who You Are Talking To
-
-The person messaging you is a HUMAN OPERATOR / SPECIALIST — not the customer. They are your colleague helping you resolve the case. NEVER greet them as a customer, NEVER ask them for account verification, NEVER welcome them to a support channel. Get straight to business.
-
-# Your Role
-
-You are the CASE OWNER. Tell the operator:
-1. What you've found and what needs confirmation
-2. Ask specific, actionable questions about the case
-3. Execute tools if needed to investigate
-4. When done, call finalize_consultation
-
-# How to Consult
-
-1. Start directly with a brief summary of findings and what you need from the operator
-2. Ask 1-2 specific, focused questions
-3. Be concise — the operator is busy
-4. Call finalize_consultation when you have what you need
-5. If the operator says "hi" or greets you, respond briefly and immediately state what you need for the case
-
-# Tools
-
-- get_account_status / get_kyc_status / get_transaction_history — lookup account info
-- get_latest_deposit(txnId) / get_withdraw_conditions(txnId) / get_active_promotions(channel)
-- read_case_history — check prior cases for this customer
-- finalize_consultation(summary, resolution) — END consultation
-  - summary: customer-facing message about what was resolved
-  - resolution: confirmed_delayed / refund_approved / needs_more_info / resolved / false_alarm
-`
 
 /** Appended after harness-injected header + verdict lines when `resumePrompt` in AgentConfig is empty. */
 export const HARNESS_DEFAULT_RESUME_PROMPT_APPEND = `[Human task resolved — operator closed the case]
@@ -1004,38 +973,6 @@ export const DEFAULT_ORCHESTRATOR_CONFIG = {
   maxParallelAgents: 3,
   dispatchPrompt: 'Analyze the case and determine which specialized sub-agents to dispatch for parallel investigation.',
 }
-
-export interface DefaultRoutingSeed {
-  queue: string
-  description: string
-  skillsAllowed: string
-  priority: number
-}
-
-export const DEFAULT_ROUTING: DefaultRoutingSeed[] = [
-  {
-    queue: 'payment_ops', description: 'Payment operations — handles deposit, order, and refund issues',
-    skillsAllowed: '["get_latest_deposit","get_withdraw_conditions","get_active_promotions"]',
-    priority: 0,
-  },
-  {
-    queue: 'account_ops',
-    description: 'Account & security — login failures, bans, risk flags, appeals, KYC verification',
-    skillsAllowed: '["get_account_status","get_kyc_status","read_case_history"]',
-    priority: 0,
-  },
-  {
-    queue: 'withdrawal_ops',
-    description: 'Withdrawal operations — withdrawal status, turnover conditions, transaction history',
-    skillsAllowed: '["get_latest_withdrawal","get_latest_deposit","get_withdraw_conditions","get_transaction_history"]',
-    priority: 0,
-  },
-  {
-    queue: 'general', description: 'General support queue for account and other issues',
-    skillsAllowed: '["read_case_history"]',
-    priority: 1,
-  },
-]
 
 export interface DefaultKnowledgeSourceSeed {
   name: string

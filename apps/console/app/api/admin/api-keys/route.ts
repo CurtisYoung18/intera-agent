@@ -20,6 +20,7 @@ export async function GET() {
       id: true,
       name: true,
       prefix: true,
+      agentConfigId: true,
       lastUsedAt: true,
       createdAt: true,
     },
@@ -37,12 +38,13 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}))
   const name = (body.name as string)?.trim() || 'default'
+  const agentConfigId = (body.agentConfigId as string)?.trim() || null
 
   const { plaintext, hash, prefix } = generateApiKey()
 
   const key = await prisma.apiKey.create({
-    data: { orgId, name, hash, prefix },
-    select: { id: true, name: true, prefix: true, createdAt: true },
+    data: { orgId, name, hash, prefix, agentConfigId },
+    select: { id: true, name: true, prefix: true, agentConfigId: true, createdAt: true },
   })
 
   return NextResponse.json({ key, plaintext })

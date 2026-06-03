@@ -208,12 +208,21 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             </p>
           </div>
         </div>
-        {caseData.chatId && (
-          <button onClick={() => router.push(`/ops/chats/${encodeURIComponent(caseData.chatId!)}`)}
-            className="text-[11px] text-indigo hover:underline whitespace-nowrap">
-            {t('caseDetail.viewChat')}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/cases/${encodeURIComponent(caseData.id)}/export`}
+            className="text-[11px] text-[var(--fog)] hover:text-[var(--mist)] whitespace-nowrap px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] hover:bg-black/[0.03] transition-colors"
+            onClick={(e) => { e.preventDefault(); window.open(`/api/cases/${encodeURIComponent(caseData.id)}/export`, '_blank') }}
+          >
+            Export .md
+          </a>
+          {caseData.chatId && (
+            <button onClick={() => router.push(`/ops/chats/${encodeURIComponent(caseData.chatId!)}`)}
+              className="text-[11px] text-indigo hover:underline whitespace-nowrap">
+              {t('caseDetail.viewChat')}
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Metrics cards */}

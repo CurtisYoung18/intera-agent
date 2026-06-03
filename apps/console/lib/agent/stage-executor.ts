@@ -151,10 +151,7 @@ export class StageExecutor {
     allowed.add('create_human_task')
     allowed.add('finalize_case')
     allowed.add('request_user_input')
-    // finalize_consultation is the terminal tool for human-chat consultation mode.
-    // Adding it here is safe: customer-facing chat won't call it because it has no
-    // reason to (no human task context), and the human-chat agent MUST be able to
-    // call it to complete the consultation.
+    // finalize_consultation is the terminal tool for consultation resolution.
     allowed.add('finalize_consultation')
 
     // Prevent duplicate case creation — when a case is already active (past "created"

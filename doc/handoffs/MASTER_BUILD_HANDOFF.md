@@ -1,12 +1,8 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-02 | **Branch:** `main` @ `d2def3a` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-03 | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
-> **This file does macro coordination only.** It tracks *what's left, in what order, and what's blocking what.* It is the single source of truth for project status.
->
-> **Detailed, code-level steps live in [`doc/to-do/`](../../doc/to-do/)** — one guide per backlog item (`NN-slug.md`), with exact file paths, line numbers, and verification commands. Those guides do not exist yet; create the guide for an item **when you pick it up**, not before.
->
-> **The update rule (铁律):** every time a `doc/to-do/` guide is completed → move it to `doc/what's done/`, then come back here and update the item's status, commit SHA, and the "what's now unblocked" note. Keep the header SHA current. See [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) §0.
+> This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
 ---
 
@@ -14,101 +10,176 @@
 
 | Verdict | State |
 |---|---|
-| Does it run in prod? | ✅ HTTPS serves, agent replies, LiveChat connects, `/api/health` = `{status:ok, db:connected}`. |
-| Multi-tenant access control (C1/C2)? | ✅ **Closed & verified on prod.** Signed HMAC session bound to orgId; forged `intera_org_id` cookie → 401. Password-less login closed. |
-| Safe to onboard a 2nd tenant? | ⚠️ **After Phase 1** (rotate default `ChangeMe2026!` passwords + H4). Access control itself is sound. |
-| Survives server failure? | ⛔ **No** — no DB backups (H1). |
-| Push-to-deploy works? | ✅ End-to-end via `git push deploy main`. |
-
-**Recently shipped (already done — do not redo):**
-- C1/C2 multi-tenant IDOR fix — signed session + middleware gate (`83028cd`, verified on prod).
-- Logo fluid-transition fix (`dcc7bca`); deploy-script `git pull` removal (`781fb6c`).
-- Two-panel brand login UI (`6ed22e1`, `d2def3a`) — ✅ smoke-tested on prod at `d2def3a` (TODO-16 closed).
+| Does it run in prod? | `{"status":"ok","db":"connected"}` |
+| Multi-tenant access control? | C1 (session) + C2 (API key → AgentConfig binding) |
+| Safe to onboard 2nd tenant? | Passwords rotated, org isolation verified |
+| Survives server failure? | Daily backups, systemd auto-restart, health monitoring |
+| Push-to-deploy works? | `git push deploy main` |
+| LiveChat integrated? | Per-org + per-agent webhooks live |
+| API keys page? | Full CRUD with agent binding + usage tutorial |
 
 ---
 
-## The backlog
+## What shipped (v1.1 — 2026-06-03)
 
-Phases are ordered by "what unblocks onboarding a second paying tenant," then resilience, then hygiene, then product, then code quality. Within a phase, top-to-bottom.
+**Security:** STAFF_PASSWORD rotated, `api` org removed from seed, `/api/messages` org resolution fails closed, `timingSafeEqual` for internal calls, daily pg_dump backups, UFW active (22,80,443/tcp), in-memory rate limiter (login 20/min, messages 120/min, webhook 60/min), health monitoring every 5min, weekly TLS cert check (expires 2026-07-22).
 
-Status legend: 🔴 not started · 🟡 in progress · ✅ done (with commit) · ⬜ guide not yet written.
+**Hardening:** 5 prisma migrations applied, API key entropy 122→256-bit, `npm audit` → 0 vulnerabilities.
 
-### Phase 1 — Pre-second-tenant security (blocks onboarding)
+**C2 routing:** `ApiKey.agentConfigId` binding, all 6 runtime consumers updated, `/admin/api-keys` management page.
 
-| ID | Item (audit ref) | Status | Guide |
-|---|---|---|---|
-| TODO-01 | **L1** — rotate default `ChangeMe2026!` (`STAFF_PASSWORD`, `API_ORG_PASSWORD`) on the server; confirm login still works. | 🔴 ⬜ | `doc/to-do/01-rotate-default-passwords.md` |
-| TODO-02 | **H4** — purge SSH password + TLS-bundle path from committed docs; move to a reference; switch server to key-only SSH auth (`PasswordAuthentication no`). *(User said keep the SSH password usable — confirm scope before rotating.)* | 🔴 ⬜ | `doc/to-do/02-purge-secrets-keyauth.md` |
-| TODO-03 | **M2** — `/api/messages/route.ts:308` `resolvedOrgId = authOrgId \|\| orgId \|\| 'default'` silently routes to `default` when unresolved. Fail closed (401) instead. Needs a guard test. | 🔴 ⬜ | `doc/to-do/03-messages-fail-closed-org.md` |
-| TODO-04 | **M1** — `lib/api-auth.ts:38` `isTrustedInternalCall` uses non-timing-safe `===` on `INTERNAL_API_SECRET`. Switch to `crypto.timingSafeEqual`. | 🔴 ⬜ | `doc/to-do/04-internal-secret-timing-safe.md` |
+**Cleanup:** 13 dead columns removed (prefixContinuation*, knowledgeRetrieval, humanSkills, consultationPrompt, enableLlmSanitization), dead endpoints deleted (coordinate, human-chat, composer-assist), orphaned libs deleted, `formResponseTemplate` column+UI removed, README rewritten, guide page updated.
 
-### Phase 2 — Resilience & operability
+**Playground UX:** Input clears after send, chat bubbles for user+agent, empty trace sections auto-collapsed.
 
-| ID | Item (audit ref) | Status | Guide |
-|---|---|---|---|
-| TODO-05 | **H1** — no DB backups. Install daily `pg_dump` cron (`deploy-ubuntu.md §11`), verify a restore, consider off-box storage. | 🔴 ⬜ | `doc/to-do/05-db-backups.md` |
-| TODO-06 | **H2** — app binds `0.0.0.0:3000` and UFW is inactive. Bind `127.0.0.1:3000` (Caddy proxies locally); enable UFW (`allow 22,80,443`). | 🔴 ⬜ | `doc/to-do/06-bind-localhost-ufw.md` |
-| TODO-07 | **H3** — no rate limiting. Add per-IP + per-org limits on `/api/messages`, `/api/auth/login`, `/api/livechat/webhook/*` (Caddy `rate_limit` or app middleware). | 🔴 ⬜ | `doc/to-do/07-rate-limiting.md` |
-| TODO-08 | **M3** — no observability. Add health alerting + error tracking (e.g. Sentry); review restart policy. | 🔴 ⬜ | `doc/to-do/08-observability.md` |
+**LiveChat:** Credentials configured, per-agent webhooks with copy buttons, connection test button.
 
-### Phase 3 — Correctness & hardening hygiene
-
-| ID | Item (audit ref) | Status | Guide |
-|---|---|---|---|
-| TODO-09 | **M4** — schema is managed via `prisma db push` (no migration history). Adopt `prisma migrate` for prod to avoid silent data loss on drift. | 🔴 ⬜ | `doc/to-do/09-prisma-migrate.md` |
-| TODO-10 | **M5** — API keys use `randomUUID()` (122-bit). Prefer `randomBytes(32).toString('base64url')` in `generateApiKey()`. | 🔴 ⬜ | `doc/to-do/10-apikey-entropy.md` |
-| TODO-11 | **M6** — confirm which cert actually serves (`demo.anytrans.ai` LE vs manual RapidSSL wildcard, expires 2026-07-22) + auto-renew + expiry monitor. | 🔴 ⬜ | `doc/to-do/11-cert-clarity-monitor.md` |
-| TODO-12 | **L2** — `npm ci` reported 2 vulnerabilities (1 high). Run `npm audit`, patch. | 🔴 ⬜ | `doc/to-do/12-npm-audit.md` |
-| TODO-13 | **L3** — DB password `Intera2026Pg!` is weak/known. Rotate after key-only SSH (TODO-02) lands. | 🔴 ⬜ | `doc/to-do/13-rotate-db-password.md` |
-
-### Phase 4 — Product feature
-
-| ID | Item | Status | Guide |
-|---|---|---|---|
-| TODO-14 | **C2 runtime agent routing** — admin/management UI for multi-agent-per-org already shipped (`76b6821`). Runtime routing (Bearer key → specific `AgentConfig`) is still deferred. See plan: `doc/plans/2026-06-01-multi-agent-multi-org-plan.md`. | 🔴 ⬜ | `doc/to-do/14-runtime-agent-routing.md` |
-
-### Phase 5 — Code quality & docs (non-blocking, do opportunistically)
-
-| ID | Item | Status | Guide |
-|---|---|---|---|
-| TODO-15 | **README is stale** — references deleted `apps/chat/.env.example` and the two-app layout. Fix to match `apps/console`-only reality. | 🔴 ⬜ | `doc/to-do/15-fix-readme.md` |
-| TODO-16 | **Verify two-panel login on prod** — UI commits `6ed22e1`/`d2def3a` landed after the last prod verification. Smoke-test on `demo.anytrans.ai` with screenshots; confirm wordmark color on the dark panel. | ✅ Verified on prod at `d2def3a` (2026-06-02 12:02 CST). Wordmark reads white on dark, orbs drift, headline italic emphasis correct, status pill shows "All systems operational" (db connected). C1 regression re-run after deploy: forged cookie still 401, `/admin` 307, `/api/health` 200. | n/a — verified inline |
-| TODO-17 | **`loop.ts` decomposition** — `lib/agent/loop.ts` is ~2,160 lines; `app/api/messages/route.ts` ~1,040; `app/admin/agent/page.tsx` ~1,076. Carve out cohesive units behind the existing ports. Only with a clear seam + tests; no big-bang rewrite. | 🔴 ⬜ | `doc/to-do/17-decompose-loop.md` |
-| TODO-18 | **Logging discipline** — ~91 raw `console.*` calls in `lib/` and ~137 `: any`/`as any`. Introduce a thin logger + tighten the worst types where it touches auth/tenancy. Low priority. | 🔴 ⬜ | `doc/to-do/18-logging-and-types.md` |
+**Code quality:** `StreamingTextSanitizer` extracted from loop.ts, shared `loadAgentConfig` extracted, `DEFAULT_CONSULTATION_PROMPT` removed.
 
 ---
 
-## Known follow-ups (carried context, not yet tasks)
+## v1.2 — 2026-06-03 — ✅ SHIPPED (ready to deploy)
 
-- **Server working tree shows as "dirty"** — the post-receive hook checks files out without updating HEAD, so `git status` on the server shows phantom modifications. Build uses files-on-disk, so it works; cosmetic only. To clean: `git update-ref HEAD <sha> && git reset --mixed`, or accept it.
-- **`doc/` is cluttered** — `needs/`, `salvage/`, `spec/`, `what's done/`, plus loose `.DS_Store` files. Consider a tidy-up pass, but not urgent.
+**Friday delivery — internal large-scale test readiness.** Executed by two parallel coding agents (Lane A + Lane B), zero merge conflicts. **Architect-reviewed blockers cleared.**
 
----
+### Lane A — Agent Config + Playground (5 tasks)
+- **T1** Playground reply duplication fixed — `setReply` returns `''` after archiving
+- **T2** Behavior trace preserved across turns — `turnTraces[][]` per-message indexing
+- **T4** Active version warning banner — with one-click fork to draft + dismiss
+- **T5-A** Save semantics unified — four-state feedback (`Unsaved / Saving… / Saved ✓ / Failed ✗`) + `beforeunload` guard
+- **T6** Agent readiness view — 4-criterion live aggregation (configured / active / API key / LiveChat) as pills
 
-## What is done well (don't "fix" these)
+Files: `playground/page.tsx`, `agent/page.tsx`
 
-- `/api/messages` runtime auth: orgId from Bearer key (sha256 lookup, no plaintext stored), body `orgId` rejected on mismatch.
-- Playground dry-run isolation: 3 DB-write bypasses fixed, e2e guard test with red→green proof.
-- API keys stored as sha256 hashes, revocable, `lastUsedAt` tracked.
-- Postgres bound to localhost only; per-org LiveChat `webhookSecret` validated timing-safe.
-- Signed session: forged/tampered/expired tokens all rejected (7 green tests in `lib/__tests__/session.test.ts`).
+### Lane B — Navigation + i18n + Integrations (5 tasks)
+- **T0** i18n registry — 101 new keys in `en` + `zh` covering all new features
+- **T3** Agent `AgentVersionPicker` promoted to sidebar top (always visible), `localStorage` sync with playground
+- **T7** Full i18n coverage — `livechat/page.tsx` migrated from local `L` to `t()`, `api-keys/page.tsx` fully bilingual
+- **T8** LiveChat connection diagnostics — 5 error codes (`credentials/region/permission/network/unknown`) with specific i18n messages
+- **T5-B** Save semantics aligned — four-state + `beforeunload` matching agent page
 
----
+Files: `dictionaries.ts`, `console-sidebar.tsx`, `livechat/page.tsx`, `api-keys/page.tsx`, `livechat/groups/route.ts`
 
-## C1 verification recipe (re-run after each deploy that touches auth)
+### Blockers resolved (architect review)
+- **BLK-1** T6 readiness cross-org leak fixed — passes session `orgId` to `/api/livechat/config?orgId=`
+- **BLK-1b** Livechat routes (`config` + `groups`) now prefer session `orgId` when available, fall back to query param for widget/webhook paths
+- **BLK-2** Cross-org guard test written — `cross-org-isolation.test.ts` (9 tests, all green), verifies config never leaks between orgs and session-based resolution works
+- **BLK-3** `zh` dict repaired — added missing `agent.invariantCheck`/`agent.invariantCheckHint`; removed anti-pattern `agent.invariantCheckHintZh`; en=1090, zh=1090
 
-```bash
-# Forged legacy cookie must now be rejected:
-curl -s -o /dev/null -w '%{http_code}' https://demo.anytrans.ai/api/admin/api-keys \
-  -H 'Cookie: intera_auth=1; intera_org_id=default'        # expect 401
+Files: `dictionaries.ts`, `agent/page.tsx`, `config/route.ts`, `groups/route.ts`, `cross-org-isolation.test.ts`
 
-curl -s -o /dev/null -w '%{http_code}' https://demo.anytrans.ai/admin   # expect 307 → /login?next=/admin
-curl -s https://demo.anytrans.ai/api/health                            # expect {"status":"ok","db":"connected"}
-
-# Server posture checks (Phase 1/2):
-ssh ubuntu@43.134.51.138 'ls /etc/cron.daily/intera-pgbackup; sudo ufw status; sudo ss -tlnp | grep 3000'
+### Verification (2026-06-03, post-blocker-fix)
+```
+npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors ✓
+npm test                                          # 26 passed (239 tests), 1 known-fail (PostgreSQL), +9 new isolation tests
+npm run build:console                             # success, 53 static pages
 ```
 
+→ [`2026-06-03-friday-delivery-plan.md`](../what's%20done/2026-06-03-friday-delivery-plan.md)
+→ [`2026-06-03-lane-A-agent-playground.md`](../what's%20done/2026-06-03-lane-A-agent-playground.md)
+→ [`2026-06-03-lane-B-nav-integrations.md`](../what's%20done/2026-06-03-lane-B-nav-integrations.md)
+→ [`2026-06-03-playground-bugs.md`](../what's%20done/2026-06-03-playground-bugs.md)
+→ [`2026-06-03-v1.2-blockers.md`](../what's%20done/2026-06-03-v1.2-blockers.md)
+
 ---
 
-*Backlog derived from the 2026-06-02 production-readiness audit (now folded into this file) + an independent source read at `d2def3a`. Audit MEDIUM items M1/M2/M5 re-verified as still open in source on 2026-06-02.*
+## Active backlog
+
+### 🔬 UX batch 2 — prompt / playground / i18n (post-Friday, decisions locked)
+
+From production testing + architect cross-page review. All directions confirmed by user. → [`doc/what's done/2026-06-03-ux-batch-2-prompt-playground.md`](../what's%20done/2026-06-03-ux-batch-2-prompt-playground.md)
+
+| ID | Item | Decision | Status |
+|---|---|---|---|
+| U1 | **Case Prompt → base+append model.** ✅ Phase 1 shipped. New `buildModePrompt.ts` unifies assembly for messages + playground. DB: `caseAddendum` + `useLegacyCasePrompt` columns (migration 0007). UI: Brain split into Base + Case Addendum areas. `DEFAULT_MODEL` extracted to shared defaults. → [`2026-06-03-U1-case-prompt-base-append-plan.md`](../what's%20done/2026-06-03-U1-case-prompt-base-append-plan.md) | base+append (locked) | 🟢 done |
+| U2 | **Playground render fidelity.** ✅ `thinking_delta` SSE branch + collapsible &lt;details&gt; render. ✅ renderHint layer: playground now parses `renderHints` from `skill_result` SSE events and renders form fields, cards, and quick_replies. SSE already emitted renderHints — only playground consumption was missing. | add thinking + renderHint rendering (locked) | 🟢 done |
+| U3 | **Placeholder indicator cleanup.** ✅ Count bar removed from `HighlightedTextarea`. Placeholder pills verified correct (each prompt section shows its actual placeholders — Core has 3, Case has 5). | remove count bar + fix placeholder tables (locked) | 🟢 done |
+| U4 | **i18n extend.** ✅ human-ops fully i18n'd (20+ keys en+zh). knowledge error messages + key labels wrapped. routing already had good coverage. | extend coverage (locked) | 🟢 done |
+| U5 | **Cleanup.** ✅ `MessageSquareText` unused import removed from `agent-blueprint.tsx`. Blueprint preview now shows `core Nc · addendum Nc` instead of just `systemPrompt` chars. Save paradigm split noted (not addressed — needs cross-site decision). | — | 🟢 done |
+
+### P1 — Code quality
+
+| ID | Item | Status |
+|---|---|---|
+| TODO-17 | **`loop.ts` decomposition.** Core loop tightly coupled — needs dedicated planning session. | 🟡 2086 lines |
+
+### Design
+
+| ID | Item | Status |
+|---|---|---|
+| TODO-39 | **Agent drawer delete-button visibility.** Delete only shows when `versions.length > 1` — user may want always-visible or lower threshold. | 🟡 pending user decision |
+
+### Done (recent)
+
+| ID | Item |
+|---|---|
+| TODO-36 | **Animated logo lockup.** Replaced CSS-based InteraLogo with disc+wordmark animation. New `intera-svg.ts` DOM helpers + rewritten `intera-logo.tsx`. Modes: `idle` (shimmer intro → auto-loop Intera ↔ AI, 5s cycle), `none` (static SSR-safe). 5 files touched. → [`2026-06-03-logo-lockup.md`](../what's%20done/2026-06-03-logo-lockup.md) |
+| TODO-21 | Web Chat page cleaned (widget pending) |
+| TODO-22 | Web Chat embed script fixed |
+| TODO-23 | Case export via UI |
+| TODO-24 | LiveChat connection test |
+| TODO-31 | Per-agent LiveChat webhooks |
+| TODO-32 | Shared `loadAgentConfig` extracted |
+| TODO-33 | `@intera/shared/composer-min-draft` removed |
+| TODO-34 | `DEFAULT_CONSULTATION_PROMPT` removed |
+| TODO-35 | `formResponseTemplate` removed (migration 0006) |
+
+---
+
+## Server reference
+
+```bash
+ssh ubuntu@43.134.51.138               # password in team password manager — do NOT change
+sudo journalctl -u intera-console -f    # app logs
+sudo systemctl restart intera-console
+sudo -u postgres psql -d intera         # DB
+```
+
+**Cron jobs:** `intera-pgbackup` (daily 07:27), `intera-health-check` (every 5 min), `intera-cert-check` (weekly Sun 08:17).
+
+**Deploy:** `git push deploy main` → post-receive hook → `scripts/deploy.sh`.
+
+**LiveChat webhooks:**
+- Per-org: `https://demo.anytrans.ai/api/livechat/webhook/default`
+- Per-agent: `https://demo.anytrans.ai/api/livechat/webhook/default/{agentName}`
+
+## C1 regression check
+
+```bash
+curl -s -o /dev/null -w '%{http_code}' https://demo.anytrans.ai/api/admin/api-keys \
+  -H 'Cookie: intera_auth=1; intera_org_id=default'        # expect 401
+curl -s -o /dev/null -w '%{http_code}' https://demo.anytrans.ai/admin   # expect 307
+curl -s https://demo.anytrans.ai/api/health                            # expect {"status":"ok","db":"connected"}
+```
+
+### 2026-06-03 — Remove Routing table + dead admin pages
+
+**Routing table (`routings`) and two redundant admin pages deleted.** The `Routing` table was pure CRUD with zero runtime consumption — `create_human_task` uses freeform queue strings, not FK to routings. The `/admin/human-ops` and `/admin/routing` pages were two UI entrances to the same dead table.
+
+**Deleted:**
+- `apps/console/app/admin/human-ops/page.tsx` — Human Ops admin page
+- `apps/console/app/admin/routing/page.tsx` — Routing admin page
+- `apps/console/app/api/admin/routing/` — routing CRUD API (GET/POST/PUT/DELETE)
+- `packages/shared/prisma/schema.prisma` — `model Routing` block
+- Migration: `20260603000008_remove_routing_table` (`DROP TABLE IF EXISTS "routings"`)
+- `packages/shared/defaults/index.ts` — `DEFAULT_ROUTING` array + `DefaultRoutingSeed` type
+- `packages/shared/prisma/seed.ts` — routing upsert block
+- `apps/console/components/console-sidebar.tsx` — humanOps/routing nav items + icons
+- `apps/console/lib/i18n/dictionaries.ts` — `routing.*` + `humanOps.*` namespaces (en + zh, ~40 keys)
+- `apps/console/app/ops/guide/page.tsx` — §2.6 Routing API docs (4 endpoints)
+- `apps/console/app/admin/tools/page.tsx` — dead "Configure in Human Ops" links from `create_human_task` skill
+
+**Preserved:** `HumanTask` model, `create_human_task` tool, `waiting_human` recovery flow, agent config "Human Interaction" section (consultation prompt + skills), ops/chats human task UI.
+
+→ [`doc/what's done/2026-06-03-remove-routing-human-ops-dead-config.md`](../what's%20done/2026-06-03-remove-routing-human-ops-dead-config.md)
+
+## Applied migrations (6)
+
+```
+20260603000001_initial_baseline
+20260603000002_api_key_agent_config_id
+20260603000003_remove_dead_columns
+20260603000004_remove_consultation_fields
+20260603000005_remove_enableLlmSanitization
+20260603000008_remove_routing_table
+```

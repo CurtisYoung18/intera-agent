@@ -13,6 +13,7 @@ import { timingSafeEqual } from 'crypto'
 import { compareSync } from 'bcryptjs'
 import { prisma } from '@intera/shared/prisma'
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE_S } from '@/lib/session'
+import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 
 const COOKIE_OPTS = {
   path: '/',
@@ -47,6 +48,16 @@ async function issue(role: 'staff' | 'customer', orgId: string, body: Record<str
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: 20 attempts per minute per IP
+    const ip = clientIp(req)
+    const rl = checkRateLimit({ key: `login:${ip}`, max: 20, windowSec: 60 })
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please wait before trying again.' },
+        { status: 429 },
+      )
+    }
+
     const { mode, orgId, password } = await req.json()
     const pwd = typeof password === 'string' ? password : ''
 

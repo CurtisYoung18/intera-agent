@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { listGroups } from '@/lib/livechat/livechat-api'
+import { getSession } from '@/lib/auth'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -20,7 +21,8 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const orgId = request.nextUrl.searchParams.get('orgId') ?? 'default'
+  const session = await getSession()
+  const orgId = session?.orgId || request.nextUrl.searchParams.get('orgId') || 'default'
 
   try {
     const config = await getLiveChatConfig(orgId)
@@ -32,6 +34,45 @@ export async function GET(request: NextRequest) {
     return json({ groups })
   } catch (err) {
     console.error('[LiveChat] Failed to list groups:', err)
-    return json({ groups: [], error: 'Failed to fetch groups' }, { status: 502 })
+
+    // Classify the error to return a machine-readable code the frontend can map to i18n.
+    const msg = String((err as Error)?.message ?? String(err) ?? '').toLowerCase()
+    const code = inferErrorCode(err, msg)
+
+    const messages: Record<string, string> = {
+      credentials: 'Invalid credentials — check License ID / Bot token.',
+      region: 'Region mismatch — token region differs from setting.',
+      permission: 'Permission denied — token lacks required scope.',
+      network: 'Network error — could not reach LiveChat.',
+      unknown: 'Connection failed — check server logs for details.',
+    }
+
+    return json({ groups: [], error: messages[code], code }, { status: 502 })
   }
+}
+
+/** Map a thrown error to one of five stable error categories for the UI. */
+function inferErrorCode(err: unknown, msg: string): string {
+  // If the thrown error has a status-like property
+  const status =
+    (err as { status?: number })?.status ??
+    (err as { statusCode?: number })?.statusCode
+
+  if (status === 401) return 'credentials'
+  if (status === 403) return 'permission'
+
+  // Region mismatch: LiveChat API often returns a 4xx with a message hinting at region.
+  if (msg.includes('region') || msg.includes('fra') || msg.includes('dal')) return 'region'
+
+  // Network / fetch errors — no HTTP status available.
+  const isNetwork =
+    msg.includes('fetch failed') ||
+    msg.includes('econnrefused') ||
+    msg.includes('enotfound') ||
+    msg.includes('network') ||
+    msg.includes('timeout') ||
+    msg.includes('abort')
+  if (isNetwork) return 'network'
+
+  return 'unknown'
 }

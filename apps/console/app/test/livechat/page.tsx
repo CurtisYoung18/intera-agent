@@ -25,7 +25,7 @@ export default function LiveChatTestPage() {
         <p style={{ color: '#666', marginTop: 8, lineHeight: 1.6 }}>
           License <strong>18578946</strong> · API Org<br />
           Webhook → <code style={{ background: '#f0f0f0', padding: '2px 6px', borderRadius: 4, fontSize: 13 }}>
-            intera-chat.up.railway.app/api/livechat/webhook/api
+            demo.anytrans.ai/api/livechat/webhook/default
           </code>
         </p>
 

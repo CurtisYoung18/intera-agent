@@ -7,7 +7,6 @@ import { usePathname } from 'next/navigation'
 import LiquidGlassBg from '@intera/shared/ui/liquid-glass-bg'
 import ConsoleBackToTop from '@/components/console-back-to-top'
 import ConsoleSidebar from './console-sidebar'
-import DockedPreview from './docked-preview'
 
 interface ConsoleShellProps {
   children: ReactNode
@@ -41,7 +40,6 @@ export default function ConsoleShell({ children }: ConsoleShellProps) {
         {children}
         <ConsoleBackToTop />
       </main>
-      <DockedPreview />
     </div>
   )
 }

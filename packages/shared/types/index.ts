@@ -266,35 +266,13 @@ export interface AgentConfigData {
   memoryStrategy: MemoryStrategy
   policyHooks: PolicyHooks
   resumePrompt?: string
-  formResponseTemplate?: string
-  /** JSON array of skill names available to human operator during consultation. */
-  humanSkills?: string
-  /** Custom consultation system prompt override (human-chat route). */
-  consultationPrompt?: string
   /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */
   debugMode?: boolean
-  /** When enabled, runs an LLM eval after each stream turn to detect and strip leaked model-context (think blocks, tool-result echoes). */
-  enableLlmSanitization?: boolean
   /** When enabled, asserts the S1 tool-result invariant after every iteration (catches unmatched tool_use before API rejections). */
   invariantCheck?: boolean
   /** Fallback model to use when the primary model is overloaded (consecutive 529s). */
   fallbackModel?: string
 
-  /**
-   * DeepSeek beta chat completions — **customer-side composer** drafting assist only (`/api/composer-assist/*`).
-   * Field names are legacy; they do not alter the main agent / tool loop.
-   */
-  prefixContinuationEnabled?: boolean
-  /** DeepSeek Chat model id (e.g. deepseek-chat). */
-  prefixContinuationChatModel?: string
-  /** Beta base URL, e.g. https://api.deepseek.com/beta */
-  prefixContinuationBaseUrl?: string
-  /** Optional extra instructions appended to the fixed composer system prompt (accessibility, tone). */
-  prefixContinuationAssistantPrefix?: string
-  /** JSON-encoded string[] optional `stop` sequences for the completion API. */
-  prefixContinuationStop?: string
-  /** Min draft characters before composer continuation runs (default 4). */
-  prefixContinuationMinDraftChars?: number
 }
 
 export interface MemoryStrategy {

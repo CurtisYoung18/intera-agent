@@ -1,5 +1,5 @@
 // AgentConfig + CaseType cache — per-customer, TTL-based
-// Used by messages/route.ts and human-chat/route.ts to avoid DB hammering.
+// Used by messages/route.ts to avoid DB hammering.
 // Invalidated by POST /api/admin/config-changed when admin saves config.
 
 import type { AgentConfigData } from '@intera/shared/types'
@@ -30,8 +30,16 @@ export function setCachedConfig(orgId: string, config: AgentConfigData, agentId?
 
 export function clearConfigCache(orgId?: string, agentId?: string): void {
   if (orgId) {
-    const key = cacheKey(orgId, agentId)
-    cache.delete(key)
+    if (agentId) {
+      // Clear a specific agent config's cache entry.
+      cache.delete(cacheKey(orgId, agentId))
+    } else {
+      // Clear org-default AND all per-agent-id entries for this org.
+      const prefix = `${orgId}::`
+      for (const key of cache.keys()) {
+        if (key === orgId || key.startsWith(prefix)) cache.delete(key)
+      }
+    }
     clearCaseTypeCache(orgId)
   } else {
     cache.clear()

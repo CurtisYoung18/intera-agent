@@ -14,7 +14,8 @@ export async function GET(req: NextRequest) {
   // ── Runtime/user view: list cases for a specific user ──
   if (userId) {
     // ── Auth gate ──
-    const authOrgId = await resolveOrgFromApiKey(req)
+    const resolved = await resolveOrgFromApiKey(req)
+    const authOrgId = resolved?.orgId ?? null
     const isInternal = !authOrgId && isTrustedInternalCall(req)
     if (!authOrgId && !isInternal) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

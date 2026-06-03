@@ -5,6 +5,7 @@ import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { sendTextMessage, deactivateChat } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
+import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import type { InteraInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
 
 function getChatPresence(body: Record<string, unknown>): string[] {
@@ -17,6 +18,13 @@ export async function POST(
   { params }: { params: Promise<{ orgId: string }> },
 ) {
   const { orgId } = await params
+
+  // Rate limit: 60 webhooks per minute per org
+  const rl = checkRateLimit({ key: `webhook:${orgId}`, max: 60, windowSec: 60 })
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 })
+  }
+
   const rawBody = await request.text()
   let body: Record<string, unknown>
   try { body = JSON.parse(rawBody) } catch {

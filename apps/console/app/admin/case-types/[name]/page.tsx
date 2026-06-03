@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ChevronDown, Plus, ArrowLeft, Settings2, Bot,
+  ChevronDown, Plus, ArrowLeft, Settings2, Bot, Puzzle,
   Wand2, Save, Loader2,
 } from 'lucide-react'
 
@@ -419,14 +419,14 @@ export default function CaseTypeDetailPage() {
           {/* For now, show a message linking to the registry */}
           <div className="p-4 rounded-lg bg-[var(--abyss)]/30 border border-[var(--border-subtle)] text-center">
             <p className="text-[12px] text-[var(--fog)] mb-3">
-              Configure sub-agents in the registry, then select them as suggestions here.
+              Each case type acts as a sub-agent. Configure stage SOPs and skill suggestions to define sub-agent behavior.
             </p>
             <Link
-              href="/admin/sub-agents"
+              href="/admin/tools"
               className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:underline"
             >
-              <Bot className="w-3.5 h-3.5" />
-              Open Sub-Agent Registry
+              <Puzzle className="w-3.5 h-3.5" />
+              Manage Skills & Tools
             </Link>
           </div>
         </div>

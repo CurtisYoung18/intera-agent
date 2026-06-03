@@ -2,6 +2,8 @@ node_modules/
 .next/
 dev.db
 dev.db-journal
+dev.db.bak
+dev.db.backup-*
 .env.local
 .env*.local
 test-assets/

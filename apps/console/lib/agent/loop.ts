@@ -43,82 +43,11 @@ import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 // ensures patterns that straddle chunk boundaries are caught correctly.
 // ---------------------------------------------------------------------------
 
-export class StreamingTextSanitizer {
-  private static readonly HOLD_BACK = 60
-  private buf = ''
-  private inThink = false
-  private inToolResult = false
-
-  feed(chunk: string): string {
-    this.buf += chunk
-    return this.drain()
-  }
-
-  flush(): string {
-    if (this.inThink || this.inToolResult) {
-      this.buf = ''
-      return ''
-    }
-    const out = this.buf
-    this.buf = ''
-    return out
-  }
-
-  private drain(): string {
-    let out = ''
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      if (this.inThink) {
-        const end = this.buf.indexOf('</think>')
-        if (end === -1) break
-        this.buf = this.buf.slice(end + 8).replace(/^\s+/, '')
-        this.inThink = false
-        continue
-      }
-      if (this.inToolResult) {
-        const blank = this.buf.indexOf('\n\n')
-        if (blank === -1) break
-        this.buf = this.buf.slice(blank + 2)
-        this.inToolResult = false
-        continue
-      }
-
-      let earliest = -1
-      let kind: 'think' | 'orphan' | 'tool' | null = null
-      const tryIdx = (idx: number, k: typeof kind) => {
-        if (idx !== -1 && (earliest === -1 || idx < earliest)) {
-          earliest = idx
-          kind = k
-        }
-      }
-      tryIdx(this.buf.indexOf('<think>'), 'think')
-      tryIdx(this.buf.indexOf('</think>'), 'orphan')
-      const toolM = this.buf.match(/Tool \w+ result: /)
-      tryIdx(toolM ? this.buf.indexOf(toolM[0]) : -1, 'tool')
-
-      if (earliest === -1) {
-        const safe = Math.max(0, this.buf.length - StreamingTextSanitizer.HOLD_BACK)
-        out += this.buf.slice(0, safe)
-        this.buf = this.buf.slice(safe)
-        break
-      }
-
-      if (kind === 'think') {
-        out += this.buf.slice(0, earliest)
-        this.buf = this.buf.slice(earliest + '<think>'.length)
-        this.inThink = true
-      } else if (kind === 'orphan') {
-        out += this.buf.slice(0, earliest)
-        this.buf = this.buf.slice(earliest + '</think>'.length).replace(/^\s+/, '')
-      } else if (kind === 'tool') {
-        out += this.buf.slice(0, earliest)
-        this.buf = this.buf.slice(earliest + toolM![0].length)
-        this.inToolResult = true
-      }
-    }
-    return out
-  }
-}
+import { StreamingTextSanitizer } from './streaming-text-sanitizer'
+import { makeUserMessage, addToolResultMessages, buildApiMessages } from './message-builder'
+import { writeProfilerSnapshot } from './profiler-utils'
+import { runReActLoop } from './react-loop'
+import { processTodoTools } from './todo-processor'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -224,7 +153,7 @@ export class AgentLoop {
       skillRouter: this.skillRouter,
       getMessages: () => this.messages,
       addMessage: (msg) => this.messages.push(msg),
-      makeUserMessage: (content) => this.makeUserMessage(content),
+      makeUserMessage: (content) => makeUserMessage(content),
       writeProfilerSnapshot: () => this.writeProfilerSnapshot(),
     }
   }
@@ -235,16 +164,6 @@ export class AgentLoop {
     loop.skillRouter = await SkillRouter.create(deps.orgId, deps.dryRun ?? false)
     loop.policyEngine = await PolicyEngine.create(deps.orgId, deps.config.policyHooks)
     return loop
-  }
-
-  // -----------------------------------------------------------------------
-  // Dedicated Agent Dispatch on case creation
-  // -----------------------------------------------------------------------
-
-  /** Dispatch sub-agents for the current stage (non-blocking, runs alongside ReAct loop). */
-  /** Delegate dedicated-agent startup to CaseAgentLoop (case mode only). */
-  private async startDedicatedAgents(sendEvent: (event: SSEEvent) => void): Promise<void> {
-    await this.caseLoop?.startDedicatedAgents(sendEvent)
   }
 
   // -----------------------------------------------------------------------
@@ -280,7 +199,7 @@ export class AgentLoop {
 
     // 1. Record user message
     this.profiler.startTurn()
-    const userMsg = this.makeUserMessage(userMessage, contentBlocks)
+    const userMsg = makeUserMessage(userMessage, contentBlocks)
     this.messages.push(userMsg)
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
     await this.traceWriter.writeAgentTreeNode(agentName, 0, chainId, 'run start')
@@ -772,7 +691,7 @@ export class AgentLoop {
 
         // Now push pending policy feedback AFTER the tool_result message
         for (const feedback of pendingPolicyFeedback) {
-          this.messages.push(this.makeUserMessage(feedback))
+          this.messages.push(makeUserMessage(feedback))
         }
         pendingPolicyFeedback.length = 0
         missingReasons.clear()
@@ -909,7 +828,7 @@ export class AgentLoop {
           if (stageResult.needsNudge) {
             this.nudgeCount++
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(this.makeUserMessage(stageResult.nudgeMessage))
+            this.messages.push(makeUserMessage(stageResult.nudgeMessage))
 
             await this.traceWriter.write('loop_decision', 'Nudge: stage incomplete', {
               stage: this.currentStage,
@@ -1007,7 +926,7 @@ export class AgentLoop {
                 'or (3) respond to the customer with findings and next steps. ' +
                 'Do not produce empty turns — act on the data you just received.'
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(this.makeUserMessage(sopNudge))
+            this.messages.push(makeUserMessage(sopNudge))
             await this.traceWriter.write('loop_decision', 'SOP nudge: empty turn after tool results', {
               stage: this.currentStage, nudgeCount: this.nudgeCount, iteration: this.iterationCount,
             })
@@ -1087,7 +1006,7 @@ export class AgentLoop {
 
         // Inject policy feedback into message stream
         if (postToolEval.feedbackMessage) {
-          this.messages.push(this.makeUserMessage(postToolEval.feedbackMessage))
+          this.messages.push(makeUserMessage(postToolEval.feedbackMessage))
         }
 
         // Auto-escalate on escalated: create human task immediately.
@@ -1146,7 +1065,7 @@ export class AgentLoop {
 
       // ── Add to message history ───────────────────────────────
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-      this.addToolResultMessages(toolResults)
+      addToolResultMessages(this.messages, toolResults)
 
       // ── Step mode: detect todo_write failure + investigation in same batch
       // If the model tried to plan (called todo_write) but the call failed
@@ -1163,7 +1082,7 @@ export class AgentLoop {
         const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
         if (todoFailed && investigationRan) {
           this.nudgeCount++
-          this.messages.push(this.makeUserMessage(
+          this.messages.push(makeUserMessage(
             `[System] Your todo_write call failed — the "action" field is required. ` +
             `The investigation data above is already collected. You MUST now: ` +
             `(1) Call todo_write({ "action": "add", "text": "..." }) for each SOP step. ` +
@@ -1507,108 +1426,7 @@ export class AgentLoop {
    * Must be called after toolExecutor.waitForAll() when executionMode is 'sop'.
    */
   private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
-    const sopToolNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
-    return results.map((result) => {
-      if (!sopToolNames.has(result.name)) return result
-
-      if (result.name === 'todo_read') {
-        return {
-          ...result,
-          output: {
-            ok: true,
-            todos: this.chatMemory.getTodos(),
-            dashboardVersion: this.chatMemory.getDashboardVersion(),
-          },
-        }
-      }
-
-      if (result.name === 'todo_write') {
-        const raw = result.toolUse?.input as Record<string, unknown> | undefined
-        // ── Defensive action inference (handles weak models that omit `action`) ──
-        // If the model sends { text } without action → treat as "add".
-        // If the model sends { id } without action → treat as "complete".
-        // If the model sends a top-level `todos` array → batch-add each item.
-        // If the model sends no input at all → return current state with guidance.
-        let input: { action?: string; id?: string; text?: string; notes?: string; status?: string } | undefined = raw as any
-
-        if (!input) {
-          // Model called todo_write() with no arguments.
-          // If Zod already rejected this (result.toolUse is missing), preserve its
-          // specific error ("Input validation failed: action: Required") instead of
-          // replacing it with a less helpful generic message.
-          const existingError = (result.output as Record<string, unknown> | null)?.error as string | undefined
-          if (!result.toolUse && existingError) {
-            return {
-              ...result,
-              output: {
-                ok: false,
-                error: `todo_write input invalid: ${existingError}`,
-                todos: this.chatMemory.getTodos(),
-                dashboardVersion: this.chatMemory.getDashboardVersion(),
-              },
-            }
-          }
-          return {
-            ...result,
-            output: {
-              ok: false,
-              error: 'todo_write requires action ("add"|"update"|"complete"|"cancel") and relevant fields. Current todos returned so you can proceed.',
-              todos: this.chatMemory.getTodos(),
-              dashboardVersion: this.chatMemory.getDashboardVersion(),
-            },
-          }
-        }
-
-        if (!input.action) {
-          if (Array.isArray((raw as any)?.todos)) {
-            // Model tried to send a batch: add each as a separate todo
-            const batchItems = (raw as any).todos as Array<{ text?: string; notes?: string }>
-            let lastTodos: ReturnType<typeof this.chatMemory.getTodos> = this.chatMemory.getTodos()
-            for (const item of batchItems) {
-              if (item?.text) {
-                const out = this.chatMemory.applyTodoAction({ action: 'add', text: item.text, notes: item.notes })
-                lastTodos = out.todos
-              }
-            }
-            return {
-              ...result,
-              output: { ok: true, todos: lastTodos, dashboardVersion: this.chatMemory.getDashboardVersion() },
-            }
-          } else if (input.id) {
-            input = { ...input, action: 'complete' }
-          } else if (input.text) {
-            input = { ...input, action: 'add' }
-          } else {
-            // No recoverable fields — return current todo list so agent can see state
-            return {
-              ...result,
-              output: {
-                ok: false,
-                error: 'todo_write requires action ("add"|"update"|"complete"|"cancel"). Current todos returned so you can proceed.',
-                todos: this.chatMemory.getTodos(),
-                dashboardVersion: this.chatMemory.getDashboardVersion(),
-              },
-            }
-          }
-        }
-
-        if (!input?.action) {
-          return { ...result, output: { ok: false, error: 'Missing required field: action', todos: this.chatMemory.getTodos() } }
-        }
-
-        const outcome = this.chatMemory.applyTodoAction(input as any)
-        return {
-          ...result,
-          output: {
-            ok: true,
-            todos: outcome.todos,
-            dashboardVersion: this.chatMemory.getDashboardVersion(),
-          },
-        }
-      }
-
-      return result
-    })
+    return processTodoTools(results, this.chatMemory)
   }
 
   /**
@@ -1654,57 +1472,7 @@ export class AgentLoop {
   }
 
   private buildApiMessages() {
-    const limit = this.deps.config.memoryStrategy.l1MaxMessages * 2
-    const recentMessages = this.messages.slice(-limit)
-
-    const toAnthropic = (msg: Message): { role: string; content: string | Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> } => {
-      if (msg.contentBlocks?.length) {
-        const blocks = msg.contentBlocks.map((b) => {
-          if (b.type === 'text') return { type: 'text' as const, text: b.text }
-          if (b.type === 'image') return { type: 'image' as const, source: { type: b.source.type, media_type: b.source.media_type, data: b.source.data } }
-          return { type: 'text' as const, text: '' }
-        })
-        return { role: msg.role, content: blocks }
-      }
-      return { role: msg.role, content: msg.content }
-    }
-
-    if (this.chatMemory.hasSummary()) {
-      const maxSummaryChars = this.deps.config.memoryStrategy.l2SummaryMaxTokens * 3
-      let summaryText = this.chatMemory.getSummary().summary || ''
-      if (summaryText.length > maxSummaryChars) {
-        summaryText = summaryText.slice(0, maxSummaryChars) + '...'
-      }
-      const summaryMsg = this.makeUserMessage(
-        `[Case context from previous turns — use this to stay oriented]\n${summaryText}`
-      )
-      const apiSummary = toAnthropic(summaryMsg)
-      return [apiSummary, ...recentMessages.map(toAnthropic)] as any
-    }
-
-    return recentMessages.map(toAnthropic) as any
-  }
-
-  private makeUserMessage(content: string, contentBlocks?: import('@intera/shared/types').ContentBlock[]): Message {
-    return {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content,
-      contentBlocks,
-      createdAt: new Date(),
-    }
-  }
-
-  private addToolResultMessages(results: ToolExecutionResult[]) {
-    for (const result of results) {
-      const payload = unwrapToolExecutionPayload(result.output)
-      this.messages.push({
-        id: crypto.randomUUID(),
-        role: 'assistant' as const,
-        content: `Tool ${result.name} result: ${JSON.stringify(payload)}`,
-        createdAt: new Date(),
-      })
-    }
+    return buildApiMessages(this.messages, this.chatMemory, this.deps.config.memoryStrategy)
   }
 
   private async checkAndCompact(): Promise<{
@@ -1796,13 +1564,7 @@ export class AgentLoop {
 
   /** Write profiler snapshot to ActionTrace for observability. */
   private async writeProfilerSnapshot(): Promise<void> {
-    const snapshot = this.profiler.snapshot()
-    if (snapshot.totalDurationMs > 0) {
-      await this.traceWriter.write('loop_decision', 'Profiler Snapshot', snapshot as unknown as Record<string, unknown>)
-    }
-    if (this.deps.config.debugMode) {
-      writeDebugTranscript(this.deps.caseId, this.messages)
-    }
+    await writeProfilerSnapshot(this.profiler, this.traceWriter, this.deps.config, this.deps.caseId, this.messages)
   }
 
   /** Persist chat-level memory to ChatSession table. */
@@ -1899,235 +1661,8 @@ export class AgentLoop {
    *
    * Used by `SubAgent.run()` via `ChecklistPolicy`.
    */
-  static async runReActLoop(
-    client: Anthropic,
-    model: string,
-    fallbackModel: string | undefined,
-    systemPrompt: string,
-    skillDefinitions: SkillDefinition[],
-    ctx: AgentContext,
-    policy: ExecutionStrategy,
-    sendEvent: (event: SSEEvent) => void,
-    taskPrompt: string,
-    abortController?: AbortController,
-  ): Promise<LoopResult> {
-    const ac = abortController ?? new AbortController()
-    let totalTokens = 0
-
-    // ── Build initial messages ──────────────────────────────────────
-    const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
-      { role: 'user', content: taskPrompt },
-    ]
-
-    // ── ReAct iteration loop ───────────────────────────────────────
-    for (let iter = 0; iter < ctx.maxIterations; iter++) {
-      if (ac.signal.aborted) break
-
-      // Build prompt and filter tools via policy
-      const stagePrompt = policy.buildPrompt(systemPrompt)
-      const allAnthropicTools = AgentLoop.buildAnthropicTools(skillDefinitions)
-      const stageTools = policy.filterTools(allAnthropicTools, iter)
-
-      // ── Call LLM ─────────────────────────────────────────────
-      let msg: Anthropic.Messages.Message
-      try {
-        msg = await withRetry(
-          (retryClient, retryCtx) => retryClient.messages.create({
-            model: retryCtx.model,
-            max_tokens: 4096,
-            temperature: 0.3,
-            system: stagePrompt,
-            tools: stageTools.length > 0 ? stageTools : undefined,
-            messages: messages as any,
-          }, { signal: ac.signal }),
-          { querySource: 'sub_agent_loop', model, fallbackModel, signal: ac.signal },
-          () => client,
-        )
-      } catch (err) {
-        if (err instanceof FallbackTriggeredError) {
-          return { messages: [], caseStatus: 'escalated' as const, transition: 'waiting_human' as const, reason: 'model_fallback_exhausted' }
-        }
-        if (err instanceof CannotRetryError && err.errorClass === 'aborted') {
-          return {
-            messages: [],
-            caseStatus: 'escalated' as const,
-            transition: 'connection_lost' as const,
-            reason: 'aborted',
-          }
-        }
-        if (err instanceof CannotRetryError) {
-          return { messages: [], caseStatus: 'escalated' as const, transition: 'waiting_human' as const, reason: `sub_agent_llm_${err.errorClass}` }
-        }
-        throw err
-      }
-
-      const usage = (msg as any).usage || {}
-      totalTokens += (usage.input_tokens || 0) + (usage.output_tokens || 0)
-
-      // ── Parse response ────────────────────────────────────────
-      let textContent = ''
-      const toolUses: ToolUse[] = []
-
-      for (const block of msg.content) {
-        if (block.type === 'text') {
-          textContent += (block as any).text
-        } else if (block.type === 'tool_use') {
-          toolUses.push({
-            id: (block as any).id,
-            name: (block as any).name,
-            input: (block as any).input || {},
-          })
-        }
-      }
-
-      sendEvent({
-        type: 'text_delta',
-        data: textContent,
-        timestamp: new Date().toISOString(),
-      })
-
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant' as const,
-        content: textContent,
-        toolUses: toolUses.length > 0 ? toolUses : undefined,
-        createdAt: new Date(),
-      }
-
-      // ── Intercept terminal tools BEFORE execution ─────────────
-      // The policy may claim a tool call and terminate the loop
-      // without running it (e.g. finalize_sub_agent).
-      for (const tu of toolUses) {
-        const terminalResult = policy.handleTerminalTool(tu.name, tu.input)
-        if (terminalResult && terminalResult.type === 'handled') {
-          messages.push({ role: 'assistant' as const, content: msg.content })
-          const result = terminalResult.result
-          return {
-            messages: [assistantMsg],
-            caseStatus: result.caseStatus,
-            transition: result.transition as LoopResult['transition'],
-            currentStage: result.currentStage,
-            reason: result.reason,
-            pendingSubAgents: result.pendingSubAgents,
-          }
-        }
-      }
-
-      // ── No tool calls — evaluate continuation ─────────────────
-      if (toolUses.length === 0) {
-        messages.push({ role: 'assistant' as const, content: msg.content })
-        const decision = await policy.evaluateContinuation(assistantMsg, [], iter + 1)
-
-        if (decision.action === 'complete_task') {
-          return {
-            messages: [assistantMsg],
-            caseStatus: 'resolved' as const,
-            transition: 'stage_continue' as const,
-            reason: 'sub_agent_complete',
-          }
-        }
-        if (decision.action === 'stop') {
-          return {
-            messages: [assistantMsg],
-            caseStatus: 'resolved' as const,
-            transition: 'stage_continue' as const,
-            reason: decision.reason,
-          }
-        }
-        continue
-      }
-
-      // ── Execute tools ─────────────────────────────────────────
-      const execResults = await StreamingToolExecutor.executeAll(skillDefinitions, toolUses, undefined, false)
-
-      // Build Anthropic-format tool result blocks
-      const toolResultBlocks = execResults.map((er) => {
-        const toolUseId =
-          er.toolUse?.id ??
-          toolUses.find((tu) => tu.name === er.name)?.id ??
-          ''
-        return {
-          type: 'tool_result' as const,
-          tool_use_id: toolUseId,
-          content: JSON.stringify(unwrapToolExecutionPayload(er.output)),
-        }
-      })
-
-      // ── S1: Guarantee one tool_result per tool_use ──
-      const completedIds = new Set(
-        execResults.map((er) => er.toolUse?.id ?? toolUses.find((tu) => tu.name === er.name)?.id ?? ''),
-      )
-      const missingBlocks: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = []
-      for (const tu of toolUses) {
-        if (!completedIds.has(tu.id)) {
-          missingBlocks.push({
-            type: 'tool_result' as const,
-            tool_use_id: tu.id,
-            content: JSON.stringify({ error: 'tool_execution_failed', reason: 'executor_did_not_produce_result' }),
-          })
-        }
-      }
-      const allToolResultBlocks = [...toolResultBlocks, ...missingBlocks]
-
-      // Add assistant + tool results to message history
-      messages.push({ role: 'assistant' as const, content: msg.content })
-      messages.push({ role: 'user' as const, content: allToolResultBlocks })
-
-      // ── Emit tool call progress events ────────────────────────
-      for (const tu of toolUses) {
-        sendEvent({
-          type: 'sub_agent_progress',
-          data: { agentName: ctx.agentId, toolName: tu.name },
-          timestamp: new Date().toISOString(),
-        })
-      }
-
-      // ── Evaluate continuation after tools ──────────────────────
-      const policyToolResults: ToolResult[] = execResults.map((er) => ({
-        ok: true,
-        output: er.output,
-        latencyMs: er.latencyMs,
-      }))
-
-      const decision = await policy.evaluateContinuation(assistantMsg, policyToolResults, iter + 1)
-
-      if (decision.action === 'complete_task') {
-        return {
-          messages: [assistantMsg],
-          caseStatus: 'resolved' as const,
-          transition: 'stage_continue' as const,
-          reason: 'sub_agent_complete',
-        }
-      }
-      if (decision.action === 'stop') {
-        return {
-          messages: [assistantMsg],
-          caseStatus: 'resolved' as const,
-          transition: 'stage_continue' as const,
-          reason: decision.reason,
-        }
-      }
-    }
-
-    // Max iterations reached
-    return {
-      messages: [],
-      caseStatus: 'escalated' as const,
-      transition: 'stage_continue' as const,
-      reason: 'max_iterations',
-    }
-  }
-
-  /** Build Anthropic tool definitions from skill definitions. */
-  private static buildAnthropicTools(skillDefinitions: SkillDefinition[]): Tool[] {
-    return skillDefinitions
-      .filter((s) => s.enabled)
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        input_schema: s.inputSchema as Tool['input_schema'],
-      }))
-  }
+  // Delegated to react-loop.ts — backward-compatible static method.
+  static runReActLoop = runReActLoop
 
   getCaseType(): string {
     return this.deps.caseSchema?.type || 'general'

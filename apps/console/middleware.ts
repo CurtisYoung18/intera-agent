@@ -21,6 +21,18 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value
   const session = await verifySessionToken(token)
 
+  // Root path — redirect with correct host via x-forwarded-host
+  if (pathname === '/') {
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
+    const proto = req.headers.get('x-forwarded-proto') || 'https'
+    if (session) {
+      return NextResponse.redirect(new URL('/ops/guide', `${proto}://${host}`))
+    }
+    const loginUrl = new URL('/login', `${proto}://${host}`)
+    loginUrl.searchParams.set('next', '/ops/guide')
+    return NextResponse.redirect(loginUrl)
+  }
+
   if (session) return NextResponse.next()
 
   // No valid session ──────────────────────────────────────────
@@ -29,10 +41,11 @@ export async function middleware(req: NextRequest) {
   }
 
   if (PAGE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-    const url = req.nextUrl.clone()
-    url.pathname = '/login'
-    url.search = `?next=${encodeURIComponent(pathname)}`
-    return NextResponse.redirect(url)
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
+    const proto = req.headers.get('x-forwarded-proto') || 'https'
+    const loginUrl = new URL(`${proto}://${host}/login`)
+    loginUrl.searchParams.set('next', pathname)
+    return NextResponse.redirect(loginUrl)
   }
 
   return NextResponse.next()
@@ -40,6 +53,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    '/',
     '/admin/:path*',
     '/ops/:path*',
     '/api/admin/:path*',

@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     const orgId = cases[0]?.orgId ?? 'default'
-    const agentCfg = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } }).catch(() => null)
+    const agentCfg = await prisma.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
 
     const apiMessages = messages

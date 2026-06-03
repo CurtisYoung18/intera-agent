@@ -8,7 +8,9 @@ import { enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/ag
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
 import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
+import { buildModePrompt } from '@/lib/agent/buildModePrompt'
 import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
+import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
 
@@ -30,86 +32,10 @@ import {
   HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
 } from '@intera/shared/defaults'
 
-// Default fallback config. Production loads from AgentConfig table via Customer.
-const DEFAULT_AGENT_CONFIG: AgentConfigData = {
-  model: 'MiniMax-M2.7-highspeed',
-  temperature: 0.5,
-  thinkingBudget: 4096,
-  maxIterations: 20,
-  maxOutputTokens: 4096,
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  showThinking: false,
-  memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY },
-  policyHooks: { ...DEFAULT_POLICY_HOOKS },
-  resumePrompt: '',
-  formResponseTemplate: '',
-  prefixContinuationEnabled: false,
-  enableLlmSanitization: false,
-}
-
-// Per-customer TTL cache for AgentConfig (30s). Invalidated on admin save.
-import { getCachedConfig, setCachedConfig } from '@/lib/agent/config-cache'
-
-async function loadAgentConfig(orgId: string): Promise<AgentConfigData> {
-  const cached = getCachedConfig(orgId)
-  if (cached) return cached
-
-  try {
-    const dbConfig = await prisma.agentConfig.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' } })
-    if (dbConfig) {
-      const config: AgentConfigData = {
-        model: dbConfig.model,
-        temperature: dbConfig.temperature,
-        thinkingBudget: dbConfig.thinkingBudget,
-        maxIterations: dbConfig.maxIterations,
-        maxOutputTokens: (dbConfig as any).maxOutputTokens ?? 4096,
-        systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-        coreSystemPrompt: (dbConfig as Record<string, unknown>).coreSystemPrompt
-          ? String((dbConfig as Record<string, unknown>).coreSystemPrompt)
-          : undefined,
-        showThinking: dbConfig.showThinking,
-        memoryStrategy: (parseNonEmptyJson(dbConfig.memoryStrategy) as unknown as AgentConfigData['memoryStrategy']) || DEFAULT_AGENT_CONFIG.memoryStrategy,
-        policyHooks: (parseNonEmptyJson(dbConfig.policyHooks) as unknown as AgentConfigData['policyHooks']) || DEFAULT_AGENT_CONFIG.policyHooks,
-        resumePrompt: (dbConfig as Record<string, unknown>).resumePrompt
-          ? String((dbConfig as Record<string, unknown>).resumePrompt)
-          : '',
-        formResponseTemplate: (dbConfig as Record<string, unknown>).formResponseTemplate
-          ? String((dbConfig as Record<string, unknown>).formResponseTemplate)
-          : '',
-        prefixContinuationEnabled: Boolean((dbConfig as Record<string, unknown>).prefixContinuationEnabled),
-        prefixContinuationChatModel: (dbConfig as Record<string, unknown>).prefixContinuationChatModel as
-          | string
-          | undefined,
-        prefixContinuationBaseUrl: (dbConfig as Record<string, unknown>).prefixContinuationBaseUrl as
-          | string
-          | undefined,
-        prefixContinuationAssistantPrefix:
-          ((dbConfig as Record<string, unknown>).prefixContinuationAssistantPrefix as string | null | undefined) ??
-          '',
-        prefixContinuationStop: ((dbConfig as Record<string, unknown>).prefixContinuationStop as string | undefined) ?? undefined,
-        debugMode: Boolean((dbConfig as Record<string, unknown>).debugMode),
-        enableLlmSanitization: Boolean((dbConfig as Record<string, unknown>).enableLlmSanitization),
-      }
-      setCachedConfig(orgId, config)
-      return config
-    }
-  } catch (err) {
-    console.warn('[Intera] Failed to load agent config from DB, using default:', err)
-  }
-
-  return { ...DEFAULT_AGENT_CONFIG }
-}
+import { loadAgentConfig } from '@/lib/agent/config-loader'
 
 function parseJson(raw: string): unknown {
   try { return JSON.parse(raw) } catch { return null }
-}
-
-function parseNonEmptyJson(raw: string): Record<string, unknown> | null {
-  const parsed = parseJson(raw)
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
-    return parsed as Record<string, unknown>
-  }
-  return null
 }
 
 /** Human verdicts that mean the case is definitively closed. */
@@ -216,10 +142,19 @@ async function resolveCaseByIntent(
 
 export async function POST(request: NextRequest) {
   // ── Auth gate (before stream — must return 401, not SSE error event) ──
-  const authOrgId = await resolveOrgFromApiKey(request)
+  const resolved = await resolveOrgFromApiKey(request)
+  const authOrgId = resolved?.orgId ?? null
+  const authAgentConfigId = resolved?.agentConfigId ?? null
   const isInternal = !authOrgId && isTrustedInternalCall(request)
   if (!authOrgId && !isInternal) {
     return new Response('Unauthorized', { status: 401 })
+  }
+
+  // Rate limit: 120 requests per minute per IP
+  const ip = clientIp(request)
+  const rl = checkRateLimit({ key: `messages:${ip}`, max: 120, windowSec: 60 })
+  if (!rl.allowed) {
+    return new Response('Too Many Requests', { status: 429 })
   }
 
   const encoder = new TextEncoder()
@@ -305,7 +240,12 @@ export async function POST(request: NextRequest) {
 
         let userMessage = message
         let resolvedCaseId = caseId || generateCaseId()
-        let resolvedOrgId = authOrgId || orgId || 'default'
+        let resolvedOrgId = authOrgId || orgId
+        if (!resolvedOrgId) {
+          sendEvent({ type: 'error', data: 'Unable to resolve organization', timestamp: new Date().toISOString() })
+          controller.close()
+          return
+        }
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
@@ -375,7 +315,7 @@ export async function POST(request: NextRequest) {
             resolvedUserId = task.case.userId
 
             const resumeTmpl =
-              (await loadAgentConfig(resolvedOrgId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+              (await loadAgentConfig(resolvedOrgId, authAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
             const parts = ['[Human task resolved — operator closed the case]']
             if (task.verdict) parts.push(`Operator verdict: ${task.verdict.replace(/_/g, ' ')}`)
             if (task.expectedEta) parts.push(`Expected resolution time: ${task.expectedEta}`)
@@ -418,8 +358,8 @@ export async function POST(request: NextRequest) {
         }
 
         // ── System prompts (Core + Case) ──
-        // Core prompt — used when no case is active (discovery mode).
-        // Case prompt — used when a case exists (stage-driven execution).
+        // Unified assembly via buildModePrompt — single source of truth
+        // shared with playground-runner.ts. Eliminates dual-path drift.
         let coreSystemPrompt: string = CORE_SYSTEM_PROMPT
         let systemPrompt: string = CASE_SYSTEM_PROMPT
 
@@ -592,7 +532,7 @@ export async function POST(request: NextRequest) {
                   orderBy: { resolvedAt: 'desc' },
                 })
                 if (resolvedTask) {
-                  const resumeTmpl = (await loadAgentConfig(resolvedOrgId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+                  const resumeTmpl = (await loadAgentConfig(resolvedOrgId, authAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
                   const parts = ['[Human task resolved — operator reviewed your case]']
                   if (resolvedTask.verdict) parts.push(`Operator verdict: ${resolvedTask.verdict.replace(/_/g, ' ')}`)
                   if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
@@ -691,18 +631,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const agentConfig = await loadAgentConfig(resolvedOrgId)
-
-        // Use DB-custom systemPrompt as Case prompt base if configured
-        if (agentConfig.systemPrompt && agentConfig.systemPrompt !== DEFAULT_SYSTEM_PROMPT) {
-          systemPrompt = agentConfig.systemPrompt
-        }
-
-        // Use DB-custom coreSystemPrompt as Core/discovery prompt if configured
-        // (editable in Console; falls back to the CORE_SYSTEM_PROMPT default when empty).
-        if (agentConfig.coreSystemPrompt && agentConfig.coreSystemPrompt.trim()) {
-          coreSystemPrompt = agentConfig.coreSystemPrompt
-        }
+        const agentConfig = await loadAgentConfig(resolvedOrgId, authAgentConfigId)
 
         // Load tool summaries for {{available_tools}} template var
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
@@ -751,9 +680,26 @@ export async function POST(request: NextRequest) {
           available_tools: toolSummaries,
         })
 
-        // Resolve both prompts — Core (discovery) and Case (execution)
-        coreSystemPrompt = resolvePrompt(coreSystemPrompt, promptCtx)
-        systemPrompt = resolvePrompt(systemPrompt, promptCtx)
+        // ── Unified prompt assembly (base+append model) ──
+        // Replaces the old dual resolvePrompt + fragile !== DEFAULT_SYSTEM_PROMPT check.
+        const isCaseActive = !!caseSchema && !!resolvedCaseState
+        const assembled = await buildModePrompt({
+          orgId: resolvedOrgId,
+          coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
+          systemPrompt: agentConfig.systemPrompt ?? null,
+          caseAddendum: (agentConfig as any).caseAddendum ?? null,
+          useLegacyCasePrompt: (agentConfig as any).useLegacyCasePrompt ?? true,
+          hasActiveCase: isCaseActive,
+          caseSchema,
+          caseState: isCaseActive
+            ? { confirmedFacts: resolvedCaseState.confirmedFacts as Record<string, unknown>, skillsCalled: resolvedCaseState.skillsCalled, missingFacts: resolvedCaseState.missingFacts }
+            : null,
+          sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
+          availableTools: toolSummaries,
+        })
+
+        systemPrompt = assembled.prompt
+        coreSystemPrompt = agentConfig.coreSystemPrompt?.trim() || assembled.basePrompt
 
         // ── Concurrency guard: if an AgentLoop is already running for this caseId,
         //     enqueue the message and return 202 — don't create a second loop.
