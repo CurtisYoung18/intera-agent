@@ -973,6 +973,17 @@ export class SkillRouter {
         }
       }
 
+      // Resolve GPTBots API key: per-org DB key first, env var fallback.
+      // Mirrors the getApiKey() pattern in app/api/admin/knowledge/gptbots/route.ts.
+      let gptbotsApiKey = process.env.GPTBOTS_API_KEY ?? ''
+      try {
+        const config = await prisma.agentConfig.findFirst({
+          where: { orgId, isActive: true },
+          select: { gptbotsApiKey: true },
+        })
+        if (config?.gptbotsApiKey) gptbotsApiKey = config.gptbotsApiKey
+      } catch { /* DB may not be ready, use env fallback */ }
+
       for (const ks of knowledgeSources) {
         const toolName = `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
         // Include dynamically-created kb_search_* tools in the bound set so
@@ -994,7 +1005,7 @@ export class SkillRouter {
           mode: 'http',
           endpoint: 'https://api-sg.gptbots.ai/v1/vector/match',
           httpMethod: 'POST',
-          headers: { Authorization: 'Bearer ${GPTBOTS_API_KEY}' },
+          headers: { Authorization: `Bearer ${gptbotsApiKey}` },
           timeoutMs: 10000,
           isConcurrencySafe: true,
           enabled: true,
