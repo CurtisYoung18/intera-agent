@@ -180,15 +180,17 @@ export default function ModelPage() {
         </div>
 
         {/* Save status bar */}
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
-          {syncStatus === 'syncing' ? (
-            <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('model.saving')}</span></>
-          ) : syncStatus === 'synced' ? (
-            <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('model.saved')}</span></>
-          ) : syncStatus === 'error' ? (
-            <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
-          ) : null}
-        </div>
+        {syncStatus !== 'idle' && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
+            {syncStatus === 'syncing' ? (
+              <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('model.saving')}</span></>
+            ) : syncStatus === 'synced' ? (
+              <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('model.saved')}</span></>
+            ) : syncStatus === 'error' ? (
+              <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
+            ) : null}
+          </div>
+        )}
 
         <DrawerShell>
           {/* ── Model sub-section ── */}

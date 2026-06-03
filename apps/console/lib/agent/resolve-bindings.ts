@@ -43,6 +43,7 @@ export function resolveBindings(
   bindings: CapabilityBindings,
   library: CapabilityLibrary,
 ): ResolvedCapabilityBindings {
+  const guardrails = bindings.guardrails || { preTool: [], postTool: [], preFinalize: [] }
   const bound: CapabilityBindings = {
     guardrails: { preTool: [], postTool: [], preFinalize: [] },
     tools: [],
@@ -59,7 +60,7 @@ export function resolveBindings(
   // Guardrails — resolve each hook's policy names
   const allGuardrailNames: string[] = []
   for (const hook of ['preTool', 'postTool', 'preFinalize'] as const) {
-    for (const name of bindings.guardrails[hook]) {
+    for (const name of (guardrails[hook] || [])) {
       allGuardrailNames.push(name)
       if (library.policyNames.has(name)) {
         bound.guardrails[hook].push(name)
@@ -73,7 +74,7 @@ export function resolveBindings(
   missing.guardrails = [...new Set(missing.guardrails)]
 
   // Tools
-  for (const name of bindings.tools) {
+  for (const name of (bindings.tools || [])) {
     if (library.skillNames.has(name)) {
       bound.tools.push(name)
     } else {
@@ -82,7 +83,7 @@ export function resolveBindings(
   }
 
   // Case types
-  for (const type of bindings.caseTypes) {
+  for (const type of (bindings.caseTypes || [])) {
     if (library.caseTypeSlugs.has(type)) {
       bound.caseTypes.push(type)
     } else {
@@ -91,7 +92,7 @@ export function resolveBindings(
   }
 
   // Knowledge sources
-  for (const name of bindings.knowledge) {
+  for (const name of (bindings.knowledge || [])) {
     if (library.knowledgeNames.has(name)) {
       bound.knowledge.push(name)
     } else {
