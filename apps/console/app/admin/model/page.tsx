@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { AlertCircle, Brain, CheckCircle2, Loader2, GitBranch } from 'lucide-react'
+import { AlertCircle, Brain, CheckCircle2, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
-import VersionContextBar, { useSelectedAgentId, useVersionInfo } from '@/components/admin/version-context-bar'
+import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { CORE_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { drawerFieldClass, DrawerCheckboxRail, DrawerSection, DrawerShell } from '@/components/admin/agent-config-drawer-ui'
-import { useRouter } from 'next/navigation'
 import type { ModelInfo } from '@/app/admin/agent/types'
 
 interface ModelConfig {
@@ -17,7 +16,6 @@ interface ModelConfig {
   thinkingBudget: number
   maxIterations: number
   maxOutputTokens: number
-  systemPrompt: string
   coreSystemPrompt: string
   caseAddendum: string
   showThinking: boolean
@@ -28,25 +26,19 @@ interface ModelConfig {
 
 export default function ModelPage() {
   const { t } = useConsoleLocale()
-  const router = useRouter()
   const agentId = useSelectedAgentId()
-  const versionInfo = useVersionInfo(agentId)
 
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mainModels, setMainModels] = useState<ModelInfo[]>([])
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
-  const [forking, setForking] = useState(false)
-  const [forkError, setForkError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const configRef = useRef(config)
 
   useEffect(() => {
     configRef.current = config
   }, [config])
-
-  const isActive = versionInfo?.isActive ?? false
 
   // Fetch config + models
   useEffect(() => {
@@ -70,7 +62,6 @@ export default function ModelPage() {
           thinkingBudget: raw.thinkingBudget ?? 4096,
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
-          systemPrompt: raw.systemPrompt || '',
           coreSystemPrompt: raw.coreSystemPrompt ? String(raw.coreSystemPrompt) : CORE_SYSTEM_PROMPT,
           caseAddendum: String(raw.caseAddendum ?? ''),
           showThinking: raw.showThinking ?? false,
@@ -119,25 +110,6 @@ export default function ModelPage() {
     },
     [autoSave],
   )
-
-  const handleFork = useCallback(async () => {
-    if (!agentId || forking) return
-    setForking(true)
-    setForkError(null)
-    try {
-      const r = await fetch(`/api/admin/agent-configs/${agentId}/fork`, { method: 'POST' })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) { setForkError(d.error || t('agentVersion.forkError')); return }
-      if (d.config?.id) {
-        try { localStorage.setItem('intera-agent-id', d.config.id) } catch { /* */ }
-        router.push(`/admin/model?agentId=${d.config.id}`)
-      }
-    } catch {
-      setForkError(t('agentVersion.forkError'))
-    } finally {
-      setForking(false)
-    }
-  }, [agentId, forking, router, t])
 
   function renderModelOptions(models: ModelInfo[]) {
     const groups = new Map<string, ModelInfo[]>()
@@ -205,26 +177,6 @@ export default function ModelPage() {
             <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('model.subtitle')}</p>
           </div>
 
-          {/* T4 guard: fork to draft warning for active versions */}
-          {isActive && (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-vermillion bg-vermillion/[0.06] border border-vermillion/15 rounded-lg px-3 py-2">
-                {t('model.editActiveWarning')}
-              </span>
-              <button
-                type="button"
-                onClick={handleFork}
-                disabled={forking}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo/20 bg-white/70 px-3 py-2 text-[11px] font-semibold text-indigo hover:bg-indigo/[0.06] disabled:opacity-50 transition-colors"
-              >
-                {forking ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitBranch className="w-3 h-3" />}
-                {t('agentVersion.forkAsNew')}
-              </button>
-              {forkError && (
-                <span className="text-[10.5px] text-vermillion">{forkError}</span>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Save status bar */}
@@ -318,48 +270,6 @@ export default function ModelPage() {
                 <span className="text-[12px] text-[var(--mist)]">Debug Mode</span>
               </label>
             </DrawerCheckboxRail>
-          </DrawerSection>
-
-          {/* ── Case Prompt ── */}
-          <DrawerSection
-            accent="#8b6ff5"
-            title={t('model.casePromptTitle')}
-            lead={t('model.casePromptHelp')}
-            actions={
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm(t('model.promptResetConfirm')))
-                    update('systemPrompt', '')
-                }}
-                className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
-              >
-                {t('model.promptResetDefault')}
-              </button>
-            }
-          >
-            <div className="flex flex-col gap-3">
-              <HighlightedTextarea
-                id="system-prompt-textarea"
-                value={config.systemPrompt}
-                onChange={(v) => update('systemPrompt', v)}
-                spellCheck={false}
-                className={`w-full ${drawerFieldClass(true)}`}
-                highlights={[
-                  { pattern: /\{\{case_types\}\}/g, color: '#7c5ce7' },
-                  { pattern: /\{\{active_policies\}\}/g, color: '#e75c8a' },
-                  { pattern: /\{\{case_schema\}\}/g, color: '#2ea04a' },
-                  { pattern: /\{\{case_state\}\}/g, color: '#d4912e' },
-                  { pattern: /\{\{session_binding\}\}/g, color: '#5b8af7' },
-                ]}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
-                <span>{t('model.promptAutosaveHint')}</span>
-                <span className="font-mono tabular-nums opacity-95">
-                  {t('model.promptCharCount', { n: config.systemPrompt?.length ?? 0 })}
-                </span>
-              </div>
-            </div>
           </DrawerSection>
 
           {/* ── Core / Discovery Prompt ── */}

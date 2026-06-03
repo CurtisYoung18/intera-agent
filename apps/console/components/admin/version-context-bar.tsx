@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { GitBranch, Loader2, AlertCircle } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useConsoleLocale } from '@/components/locale-provider'
 
@@ -88,8 +88,6 @@ export default function VersionContextBar({ onVersionChange }: VersionContextBar
 
   if (!versionInfo) return null
 
-  const isActive = versionInfo.isActive
-
   return (
     <div className="flex items-center gap-3 px-4 py-1.5 bg-white/40 border-b border-black/[0.04] text-[12px]">
       <span className="text-[var(--fog)] font-medium">
@@ -101,12 +99,6 @@ export default function VersionContextBar({ onVersionChange }: VersionContextBar
         onChange={handleVersionChange}
         onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}
       />
-      {isActive && (
-        <span className="flex items-center gap-1 rounded-full bg-vermillion/[0.08] border border-vermillion/15 px-2 py-0.5 text-[10px] font-semibold text-vermillion">
-          <AlertCircle className="w-3 h-3" />
-          {t('binding.liveWarning')}
-        </span>
-      )}
     </div>
   )
 }

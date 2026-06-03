@@ -1310,7 +1310,7 @@ export const en: Record<string, string> = {
 
   // ── Binding & Version Context ─────────────────────────────────
   'binding.editingVersion': 'Editing:',
-  'binding.liveWarning': 'Live — fork to edit safely',
+
   'binding.bound': 'Bound',
   'binding.boundTitle': 'Bound to this version — click to unbind',
   'binding.unbound': 'Bind',
@@ -1332,8 +1332,7 @@ export const en: Record<string, string> = {
   'model.showThinking': 'Show Thinking',
   'model.invariantCheck': 'Tool-Result Invariant Check',
   'model.invariantCheckHint': 'Asserts every tool_use block has a matching tool_result before API calls.',
-  'model.casePromptTitle': 'Case Prompt (active case)',
-  'model.casePromptHelp': 'How Intera behaves in the Harness: Case-led goals, staged skills/intent routing, guardrails.',
+
   'model.corePromptTitle': 'Core / Discovery Prompt (no active case)',
   'model.corePromptHelp': 'How Intera behaves before any case is open.',
   'model.caseAddendumTitle': 'Case Addendum (optional)',
@@ -1345,7 +1344,7 @@ export const en: Record<string, string> = {
   'model.promptAutosaveHint': 'Changes save automatically shortly after edits.',
   'model.saved': 'Saved',
   'model.saving': 'Saving...',
-  'model.editActiveWarning': 'You are editing the live ACTIVE version — changes hit LiveChat/API immediately.',
+
 
   // ── Memory page (independent) ─────────────────────────────────
   'memPage.title': 'Memory Strategy',
@@ -2673,7 +2672,7 @@ export const zh: Record<string, string> = {
 
   // ── Binding & Version Context ─────────────────────────────────
   'binding.editingVersion': '正在编辑：',
-  'binding.liveWarning': '线上版本 — 请先复制为草稿',
+
   'binding.bound': '已绑定',
   'binding.boundTitle': '已绑定到此版本 — 点击取消绑定',
   'binding.unbound': '绑定',
@@ -2696,8 +2695,7 @@ export const zh: Record<string, string> = {
   'model.showThinking': '显示思考过程',
   'model.invariantCheck': '工具结果一致性检查',
   'model.invariantCheckHint': '在每次 API 调用前断言每个 tool_use 都有对应的 tool_result。',
-  'model.casePromptTitle': '案例提示词（活跃案例）',
-  'model.casePromptHelp': 'Intera 在案例模式下的行为：目标导向、阶段技能/意图路由、护栏。',
+
   'model.corePromptTitle': '核心/发现提示词（无活跃案例）',
   'model.corePromptHelp': 'Intera 在案例开启前的行为。',
   'model.caseAddendumTitle': '案例补充（可选）',
@@ -2709,7 +2707,7 @@ export const zh: Record<string, string> = {
   'model.promptAutosaveHint': '修改后会短暂延迟自动保存。',
   'model.saved': '已保存',
   'model.saving': '保存中...',
-  'model.editActiveWarning': '你正在编辑线上版本 — 修改将立即影响 LiveChat/API。',
+
 
   // ── Memory page (independent) ─────────────────────────────────
   'sidebar.memory': '记忆',
