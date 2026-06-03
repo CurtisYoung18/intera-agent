@@ -22,7 +22,8 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
   const { t } = useConsoleLocale()
   const router = useRouter()
   const [subAgentCount, setSubAgentCount] = useState(0)
-  const [caseTypeCount, setCaseTypeCount] = useState(0)
+  const [agentModel, setAgentModel] = useState<string | null>(null)
+  const [memoryTier, setMemoryTier] = useState<string | null>(null)
   const [bindings, setBindings] = useState<CapabilityBindings | null>(null)
   const [library, setLibrary] = useState<CapabilityLibrary | null>(null)
   const [bindingStats, setBindingStats] = useState<{
@@ -34,15 +35,25 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
     knowledge: { bound: number; missing: number }
   } | null>(null)
 
-  // Fetch capability bindings for the selected version
+  // Fetch agent config (model, memory, capabilityBindings)
   useEffect(() => {
     if (!agentId) return
     fetch(`/api/admin/agent?agentId=${agentId}`)
       .then(r => r.json())
       .then(d => {
-        if (d.config?.capabilityBindings) {
+        const cfg = d.config || {}
+        if (cfg.model) setAgentModel(cfg.model)
+        try {
+          const ms = typeof cfg.memoryStrategy === 'string' ? JSON.parse(cfg.memoryStrategy || '{}') : (cfg.memoryStrategy || {})
+          const thresholds = ms.autocompactThresholdTokens ?? 0
+          if (thresholds <= 20000) setMemoryTier('short')
+          else if (thresholds <= 40000) setMemoryTier('balanced')
+          else if (thresholds > 40000) setMemoryTier('long')
+          else setMemoryTier(null)
+        } catch { setMemoryTier(null) }
+        if (cfg.capabilityBindings) {
           try {
-            const raw = d.config.capabilityBindings
+            const raw = cfg.capabilityBindings
             const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
             setBindings(parsed)
           } catch { setBindings(null) }
@@ -124,7 +135,6 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
           }
         }
         setSubAgentCount(saCount)
-        setCaseTypeCount(enabled.length)
       })
       .catch(() => { /* ignore */ })
   }, [])
@@ -227,37 +237,45 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
     tools: 'tools',
   }
 
-  function getNodePreview(nodeId: string): string {
-    if (!bindingStats) return ''
-    const statKey = NODE_TO_STAT_KEY[nodeId]
-    if (!statKey) return ''
-    const stats = bindingStats[statKey as keyof typeof bindingStats]
-    if (!stats) return ''
-    const parts: string[] = []
-    if (stats.bound > 0) parts.push(t('blueprint.nodeCount', { n: stats.bound }))
-    if (stats.missing > 0) parts.push(t('blueprint.nodeDrift', { n: stats.missing }))
-    if (stats.bound === 0 && stats.missing === 0) parts.push(t('blueprint.clickToNavigate'))
-    return parts.join(' · ')
-  }
-
-  function getSpecialPreview(nodeId: string): string {
-    // Fallback previews when no bindings yet
-    switch (nodeId) {
-      case 'subAgents':
-        return subAgentCount > 0
-          ? t('blueprint.subAgentsPreview', { n: subAgentCount })
-          : t('blueprint.noSubAgents')
-      default:
-        return ''
-    }
-  }
-
   function hasDrift(nodeId: string): boolean {
     if (!bindingStats) return false
     const statKey = NODE_TO_STAT_KEY[nodeId]
     if (!statKey) return false
     const stats = bindingStats[statKey as keyof typeof bindingStats]
     return stats ? stats.missing > 0 : false
+  }
+
+  // Stat pill data per node
+  function getNodePill(nodeId: string): { label: string; color: string; muted?: boolean } | null {
+    const c = satellites.find(s => s.id === nodeId)?.color || '#888'
+    switch (nodeId) {
+      case 'brain':
+        return agentModel
+          ? { label: agentModel, color: c }
+          : { label: t('blueprint.notConfigured'), color: c, muted: true }
+      case 'memory':
+        return memoryTier
+          ? { label: t(`blueprint.memoryTier${memoryTier.charAt(0).toUpperCase() + memoryTier.slice(1)}` as any) || memoryTier, color: c }
+          : { label: t('blueprint.notConfigured'), color: c, muted: true }
+      case 'guardrails': {
+        const n = bindingStats?.guardrails?.bound ?? 0
+        return n > 0
+          ? { label: t('blueprint.guardrailsCount', { n }), color: c }
+          : { label: t('blueprint.noPolicies'), color: c, muted: true }
+      }
+      case 'tools': {
+        const n = bindingStats?.tools?.bound ?? 0
+        return n > 0
+          ? { label: t('blueprint.toolsCount', { n }), color: c }
+          : { label: t('blueprint.noTools'), color: c, muted: true }
+      }
+      case 'subAgents':
+        return subAgentCount > 0
+          ? { label: t('blueprint.subAgentsPreview', { n: subAgentCount }), color: c }
+          : { label: t('blueprint.noSubAgents'), color: c, muted: true }
+      default:
+        return null
+    }
   }
 
   return (
@@ -325,16 +343,14 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
       {/* Satellite nodes */}
       {satellites.map(s => {
         const pos = getNodePos(s.angle, s.distance)
-        const bindingPreview = getNodePreview(s.id)
-        const specialPreview = getSpecialPreview(s.id)
-        const preview = bindingPreview || specialPreview
         const drift = hasDrift(s.id)
+        const pill = getNodePill(s.id)
 
         return (
           <button
             key={s.id}
             onClick={() => router.push(s.navigateTo)}
-            className="absolute z-10 flex items-center gap-3 px-6 py-4 rounded-xl transition-all duration-300 ease-out
+            className="absolute z-10 flex items-center gap-3 px-5 py-3.5 rounded-xl transition-all duration-300 ease-out
               bg-white/80 backdrop-blur-xl border cursor-pointer text-left group
               hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
             style={{
@@ -344,7 +360,6 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
               borderColor: drift ? 'rgba(212,145,46,0.4)' : 'rgba(0,0,0,0.05)',
               boxShadow: drift ? '0 0 16px rgba(212,145,46,0.12), 0 1px 3px rgba(0,0,0,0.04)' : '0 1px 3px rgba(0,0,0,0.04)',
             }}
-            title={t('blueprint.clickToNavigate')}
           >
             <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform duration-200"
               style={{ background: `linear-gradient(135deg, ${s.glow}, transparent)`, color: s.color }}>
@@ -359,7 +374,20 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-[var(--fog)] truncate max-w-[320px] mt-0.5">{preview || '—'}</div>
+              {pill && (
+                <div className="mt-1">
+                  <span
+                    className="inline-block max-w-[200px] truncate rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor: pill.muted ? 'transparent' : `${pill.color}12`,
+                      border: pill.muted ? '1px dashed rgba(0,0,0,0.08)' : `1px solid ${pill.color}25`,
+                      color: pill.muted ? 'var(--fog)' : pill.color,
+                    }}
+                  >
+                    {pill.label}
+                  </span>
+                </div>
+              )}
             </div>
             {/* Navigate arrow */}
             <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"

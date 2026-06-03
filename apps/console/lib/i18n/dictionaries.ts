@@ -1399,6 +1399,12 @@ export const en: Record<string, string> = {
   'blueprint.nodeDrift': '{n} drift',
   'blueprint.nodeHealthy': 'Healthy',
   'blueprint.clickToNavigate': 'Click to navigate',
+  'blueprint.memoryTierShort': 'Short-term',
+  'blueprint.memoryTierBalanced': 'Balanced',
+  'blueprint.memoryTierLong': 'Long-term',
+  'blueprint.noPolicies': 'No policies',
+  'blueprint.toolsCount': '{n} tools',
+  'blueprint.noTools': 'No tools',
 }
 
 export const zh: Record<string, string> = {
@@ -2762,6 +2768,12 @@ export const zh: Record<string, string> = {
   'blueprint.nodeDrift': '{n} 漂移',
   'blueprint.nodeHealthy': '健康',
   'blueprint.clickToNavigate': '点击跳转',
+  'blueprint.memoryTierShort': '短期',
+  'blueprint.memoryTierBalanced': '均衡',
+  'blueprint.memoryTierLong': '长期',
+  'blueprint.noPolicies': '无策略',
+  'blueprint.toolsCount': '{n} 个工具',
+  'blueprint.noTools': '无工具',
 }
 
 export const DICTS: Record<ConsoleLocale, Record<string, string>> = {
