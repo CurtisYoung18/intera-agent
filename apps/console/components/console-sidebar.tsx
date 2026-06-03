@@ -26,7 +26,7 @@ import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 
-type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'humanOps' | 'routing'
+type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys'
 
 interface NavItem {
   href: string
@@ -60,11 +60,8 @@ interface CustomerInfo {
  *                          Agent-config "Guardrails" satellite is a read-only mirror.
  *   /admin/case-types      Stage / SOP definitions, sub-agent configuration.
  *                          Agent-config "Sub-Agents" satellite is a read-only mirror.
- *   /admin/routing         Channel → case-type routing rules.
  *   /admin/knowledge       Knowledge sources + GPTBots API key + retrieval params.
  *                          Mirrored from agent-config "Knowledge" satellite.
- *   /admin/human-ops       Consultation prompt + human skills allowed list.
- *                          Mirrored from agent-config "Human Ops" satellite.
  *   /admin/integrations    Channel integrations (LiveChat active; Slack/Discord placeholders).
  */
 
@@ -77,8 +74,6 @@ const BUILD_ITEMS: NavItem[] = [
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
   { href: '/admin/channels', slug: 'channels', icon: Plug, color: '#7c3aed' },
   { href: '/admin/api-keys', slug: 'apiKeys', icon: Key, color: '#d4912e' },
-  { href: '/admin/human-ops', slug: 'humanOps', icon: HandPlatter, color: '#e64539' },
-  { href: '/admin/routing', slug: 'routing', icon: GitBranch, color: '#14b8a6' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
