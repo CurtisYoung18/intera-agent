@@ -12,7 +12,6 @@ function AgentConfigPage() {
   const { t } = useConsoleLocale()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [kbSourceCount, setKbSourceCount] = useState(0)
   const [agentList, setAgentList] = useState<{ id: string; name: string; version: number; isActive: boolean }[]>([])
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null)
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
@@ -60,19 +59,9 @@ function AgentConfigPage() {
         }
       })
       .catch(() => {})
+      .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
-
-  // Fetch KB source count
-  useEffect(() => {
-    fetch('/api/admin/knowledge/sources')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.sources) setKbSourceCount(d.sources.filter((s: { enabled: boolean }) => s.enabled).length)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
 
   const handleFork = useCallback(async () => {
     if (!currentAgentId || forking) return
@@ -160,7 +149,6 @@ function AgentConfigPage() {
         {/* Agent Blueprint — read-only health dashboard, click to navigate */}
         <AgentBlueprint
           agentId={currentAgentId}
-          kbSourceCount={kbSourceCount}
         />
       </div>
     </div>

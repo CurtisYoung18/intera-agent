@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Brain, Database, Shield, Users, Search, Zap, ExternalLink } from 'lucide-react'
+import { Brain, Database, Shield, Users, Wrench, Zap, ExternalLink } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { resolveBindings, hasMissing } from '@/lib/agent/resolve-bindings'
 import type { CapabilityLibrary } from '@/lib/agent/resolve-bindings'
@@ -11,13 +11,12 @@ import type { CapabilityBindings } from '@intera/shared/types'
 interface BlueprintProps {
   /** The currently selected agent ID (from localStorage) */
   agentId?: string | null
-  kbSourceCount?: number
 }
 
 const CORE_RADIUS = 52
 const NODE_OFFSET = 60
 
-export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: BlueprintProps) {
+export default function AgentBlueprint({ agentId }: BlueprintProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 })
   const { t } = useConsoleLocale()
@@ -174,12 +173,12 @@ export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: Blueprint
           distance: 0.65,
         },
         {
-          id: 'knowledge' as const,
-          navigateTo: '/admin/knowledge',
-          icon: <Search className="w-5 h-5" />,
-          label: t('blueprint.nodeKnowledge'),
-          color: '#14b8a6',
-          glow: 'rgba(20,184,166,0.15)',
+          id: 'tools' as const,
+          navigateTo: '/admin/tools',
+          icon: <Wrench className="w-5 h-5" />,
+          label: t('blueprint.nodeTools'),
+          color: '#5b8af7',
+          glow: 'rgba(91,138,247,0.15)',
           angle: 200,
           distance: 0.65,
         },
@@ -225,7 +224,7 @@ export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: Blueprint
     memory: 'memory',
     guardrails: 'guardrails',
     subAgents: 'caseTypes',
-    knowledge: 'knowledge',
+    tools: 'tools',
   }
 
   function getNodePreview(nodeId: string): string {
@@ -245,11 +244,9 @@ export default function AgentBlueprint({ agentId, kbSourceCount = 0 }: Blueprint
     // Fallback previews when no bindings yet
     switch (nodeId) {
       case 'subAgents':
-        return t('blueprint.subAgentsPreview', { n: subAgentCount, c: caseTypeCount })
-      case 'knowledge':
-        return kbSourceCount > 0
-          ? t('blueprint.knowledgeActive', { n: kbSourceCount })
-          : t('blueprint.knowledgeDisabled')
+        return subAgentCount > 0
+          ? t('blueprint.subAgentsPreview', { n: subAgentCount })
+          : t('blueprint.noSubAgents')
       default:
         return ''
     }
