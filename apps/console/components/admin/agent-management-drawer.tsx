@@ -51,6 +51,7 @@ function formatModel(model: string | null): string {
     const ver = m[2] ? ` ${m[2]}` : ''
     return `${family}${ver}`.trim()
   }
+  if (model.includes('MiniMax-M3')) return 'M3'
   if (model.includes('MiniMax-M2.7-highspeed')) return 'M2.7'
   if (model.includes('MiniMax-M2.5-highspeed')) return 'M2.5'
   if (model.includes('deepseek-v4-pro')) return 'DeepSeek V4 Pro'
@@ -465,7 +466,7 @@ function NameCard({
 
       <button
         type="button"
-        onClick={() => { const v = group.active ?? group.versions[group.versions.length - 1]; if (v) onEdit(v) }}
+        onClick={() => { const v = group.versions[group.versions.length - 1]; if (v) onEdit(v) }}
         className="w-full text-left p-4 flex items-start gap-2.5 cursor-pointer"
       >
         <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border ${
