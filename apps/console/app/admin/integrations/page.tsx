@@ -63,7 +63,7 @@ function IntegrationsPageInner() {
 
       {/* Tab bar */}
       <div className="flex gap-0 mb-8 border-b border-black/5">
-        {(['channels', 'api-keys'] as const).map((tKey) => (
+        {(['channels', 'apiKeys'] as const).map((tKey) => (
           <button
             key={tKey}
             type="button"
@@ -83,7 +83,7 @@ function IntegrationsPageInner() {
       </div>
 
       {tab === 'channels' && <ChannelsTab />}
-      {tab === 'api-keys' && <ApiKeysTab />}
+      {tab === 'apiKeys' && <ApiKeysTab />}
     </div>
   )
 }
