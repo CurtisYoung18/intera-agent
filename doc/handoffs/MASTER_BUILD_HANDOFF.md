@@ -154,6 +154,7 @@ npm run build:console                             # success (53 static pages)
 | L3 | Rotate DB password (`Intera2026Pg!` weak/known) | low |
 
 ### Deferred
+- **C3/C4** User table + multi-org login/membership (from [multi-agent-multi-org-plan](../to-do/2026-06-01-multi-agent-multi-org-plan.md)) — not needed for current phase
 - **C5** Anonymous visitor identity key — needs separate exploration
 
 ### Planned specs in [`doc/to-do/`](../to-do/) (for coding-team pickup)
@@ -163,7 +164,7 @@ Architect-authored specs. Status verified in code 2026-06-04.
 | Spec | Scope | Status | Coding-team action |
 |---|---|---|---|
 | [`sub-agent-max-iterations-config.md`](../to-do/sub-agent-max-iterations-config.md) | Per-stage `maxIterations` for sub-agents (UI field → `stageConfigs` JSON → `loop.ts` builder). | 🟢 **SHIPPED 2026-06-04.** 4 edits: `stage-config-editor.tsx` (type + UI), `case-types/[name]/page.tsx` (type), `loop.ts` (builder). | ✅ Done. |
-| [`2026-06-01-multi-agent-multi-org-plan.md`](../to-do/2026-06-01-multi-agent-multi-org-plan.md) | Phase C: 1 org → N AgentConfig, User table + multi-org membership/login. | 🟡 **Partially shipped.** C1 (AgentConfig 1:N) ✅ v1.3, C2 (ApiKey.agentConfigId) ✅ v1.1. C3 (User table) + C4 (membership/invite) **unbuilt** — no `User` model. | Only C3/C4 remain. C3 changes the login model (org-password → email/User) — needs architect sign-off before build. Doc reconciled with reality 2026-06-04. |
+| [`2026-06-01-multi-agent-multi-org-plan.md`](../to-do/2026-06-01-multi-agent-multi-org-plan.md) | Phase C: 1 org → N AgentConfig, User table + multi-org membership/login. | 🟡 **Partially shipped, remainder deferred.** C1 (AgentConfig 1:N) ✅ v1.3, C2 (ApiKey.agentConfigId) ✅ v1.1. C3/C4 (User table + login + membership) deferred — not needed for current phase. | No action needed now. |
 | [`2026-06-03-version-bound-config-blueprint-redesign.md`](../to-do/2026-06-03-version-bound-config-blueprint-redesign.md) | Version-bound `capabilityBindings` + library/blueprint redesign (4 architecture decisions D1–D6). | ⚪ **Already SHIPPED as v1.3 / TODO-40.** This is the *source plan*, not backlog. | **Do NOT re-execute.** Move to [`doc/what's done/`](../what's%20done/); kept here only as design reference. |
 
 ## v1.3 — 2026-06-03 — ✅ SHIPPED

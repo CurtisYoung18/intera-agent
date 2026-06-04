@@ -2,7 +2,7 @@
 
 > 来源：Phase B B2 侧边栏讨论。
 >
-> **Status (2026-06-04): 🟡 Partially shipped.** C1 + C2 shipped in v1.1/v1.3. C3 + C4 **unbuilt** — require architect sign-off before build (changes the login model from org-password to email/User).
+> **Status (2026-06-04): 🟡 Partially shipped, remainder deferred.** C1 + C2 shipped in v1.1/v1.3. C3 + C4 deferred — not needed for current phase.
 
 ## 1. 一个 Org → 多个 Agent Config（1:N）✅ C1 SHIPPED (v1.3)
 
