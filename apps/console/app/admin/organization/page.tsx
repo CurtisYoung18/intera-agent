@@ -46,7 +46,7 @@ const ROLE_ICONS: Record<string, typeof Shield> = {
 }
 
 function formatDate(iso: string): string {
-  try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return iso }
+  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return iso }
 }
 
 // ── Permissions matrix (static) ────────────────────────────────────
@@ -108,7 +108,7 @@ function OrganizationPageInner() {
           >
             {t(`organization.${tKey}`)}
             {tab === tKey && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-0.5 rounded-full bg-indigo" />
+              <div className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-indigo" />
             )}
           </button>
         ))}
@@ -321,7 +321,7 @@ function MembersTab() {
       <GlassCard className="overflow-hidden mb-8">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-black/5 text-[11px] text-[var(--smoke)] uppercase tracking-wider">
+            <tr className="border-b border-black/5 text-[11px] text-[var(--mist)]/60 uppercase tracking-wider">
               <th className="text-left px-5 py-3 font-semibold">Member</th>
               <th className="text-left px-5 py-3 font-semibold">Role</th>
               <th className="text-left px-5 py-3 font-semibold">Joined</th>
@@ -375,7 +375,7 @@ function MembersTab() {
           <GlassCard className="overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-black/5 text-[11px] text-[var(--smoke)] uppercase tracking-wider">
+                <tr className="border-b border-black/5 text-[11px] text-[var(--mist)]/60 uppercase tracking-wider">
                   <th className="text-left px-5 py-3 font-semibold">Email</th>
                   <th className="text-left px-5 py-3 font-semibold">Role</th>
                   <th className="text-left px-5 py-3 font-semibold">Expires</th>

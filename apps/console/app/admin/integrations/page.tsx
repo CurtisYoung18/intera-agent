@@ -76,7 +76,7 @@ function IntegrationsPageInner() {
           >
             {t(`integrationsPage.${tKey}`)}
             {tab === tKey && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-0.5 rounded-full bg-indigo" />
+              <div className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-indigo" />
             )}
           </button>
         ))}
