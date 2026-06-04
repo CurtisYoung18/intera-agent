@@ -22,7 +22,7 @@ export async function GET() {
     const apiKey = await getApiKey(orgId)
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'GPTBOTS_API_KEY not configured' }, { status: 503 })
+      return NextResponse.json({ data: [], total: 0, note: 'GPTBots API key not configured' })
     }
 
     const response = await fetch(GPTBOTS_KB_API, {

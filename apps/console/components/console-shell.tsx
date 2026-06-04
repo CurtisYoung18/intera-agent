@@ -8,6 +8,7 @@ import LiquidGlassBg from '@intera/shared/ui/liquid-glass-bg'
 import ConsoleBackToTop from '@/components/console-back-to-top'
 import ConsoleSidebar from './console-sidebar'
 import { AgentProvider } from '@/lib/agent/agent-context'
+import AgentOnboardingGate from '@/components/admin/agent-onboarding'
 
 interface ConsoleShellProps {
   children: ReactNode
@@ -39,7 +40,9 @@ export default function ConsoleShell({ children }: ConsoleShellProps) {
         id="console-scroll-root"
         className="relative z-10 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
       >
-        {children}
+        <AgentOnboardingGate>
+          {children}
+        </AgentOnboardingGate>
         <ConsoleBackToTop />
       </main>
     </div>
