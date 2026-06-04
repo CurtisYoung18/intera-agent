@@ -2,7 +2,7 @@
 // Uses repo.invitation (orgId auto-injected by Proxy).
 // Supports email-bound invites AND share links (email-less, anyone-can-join).
 
-import { defineRoute, ConflictError } from '@/lib/api/define-route'
+import { defineRoute, ConflictError, RouteError } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
@@ -12,12 +12,6 @@ const createInviteSchema = z.object({
   role: z.enum(['admin', 'operator', 'viewer']),
   maxUses: z.number().int().min(1).max(500).optional(),
 })
-
-const INVITE_SELECT = {
-  id: true, email: true, role: true, state: true, token: true,
-  expiresAt: true, createdAt: true, maxUses: true, useCount: true,
-  inviter: { select: { email: true, name: true } },
-} as const
 
 export const GET = defineRoute({
   method: 'GET',
@@ -37,6 +31,8 @@ export const POST = defineRoute({
   inputSchema: createInviteSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, session, repo, audit }) {
+    if (!session.userId) throw new RouteError('internal', 'Session missing userId — please re-login')
+
     // Email-bound invite: check for duplicate member / pending invite
     if (input.email) {
       const existingMember = await repo.raw.membership.findFirst({
@@ -56,18 +52,19 @@ export const POST = defineRoute({
     const token = randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
+    const data: Record<string, unknown> = {
+      email: input.email ?? null,
+      role: input.role,
+      maxUses: input.email ? null : (input.maxUses ?? null),
+      useCount: 0,
+      token,
+      state: 'pending',
+      expiresAt,
+    }
+
     const invitation = await (repo.invitation.create as any)({
-      data: {
-        email: input.email ?? null,
-        invitedBy: session.userId!,
-        role: input.role,
-        maxUses: input.email ? null : (input.maxUses ?? null),
-        useCount: 0,
-        token,
-        state: 'pending',
-        expiresAt,
-      },
-      select: INVITE_SELECT,
+      data: { ...data, orgId: session.orgId, invitedBy: session.userId },
+      include: { inviter: { select: { email: true, name: true } } },
     })
 
     await audit({
