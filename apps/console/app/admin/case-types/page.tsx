@@ -162,7 +162,7 @@ export default function CaseTypesPage() {
 
   return (
     <div>
-      <VersionContextBar onVersionChange={() => window.location.reload()} />
+      <VersionContextBar />
     <div className="px-8 py-8 animate-fade-up">
       <div className="flex items-center justify-between mb-6">
         <div>

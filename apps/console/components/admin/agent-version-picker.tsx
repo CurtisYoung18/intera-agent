@@ -19,6 +19,7 @@ import {
   ChevronDown, GitBranch, ExternalLink, Loader2, AlertCircle, Trash2, Play, X, Bot,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useAgentContext } from '@/lib/agent/agent-context'
 
 interface AgentVersion {
   id: string
@@ -66,6 +67,7 @@ export default function AgentVersionPicker({
   onAgentsChanged,
 }: AgentVersionPickerProps) {
   const { t } = useConsoleLocale()
+  const { selectAgent } = useAgentContext()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number; minWidth: number } | null>(null)
@@ -249,7 +251,7 @@ export default function AgentVersionPicker({
 
   const handleOpenEditor = () => {
     if (!agentId) return
-    try { localStorage.setItem('intera-agent-id', agentId) } catch { /* */ }
+    selectAgent(agentId)
     router.push(`/admin/agent?agentId=${agentId}`)
     setOpen(false)
   }
@@ -422,7 +424,7 @@ export default function AgentVersionPicker({
                 onSwitch={handleSwitch}
                 onActivate={handleActivate}
                 onDelete={handleDelete}
-                onOpenEditor={(id) => { try { localStorage.setItem('intera-agent-id', id) } catch { /* */ }; router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
+                onOpenEditor={(id) => { selectAgent(id); router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
                 busyId={busyId}
                 t={t}
               />
@@ -436,7 +438,7 @@ export default function AgentVersionPicker({
                   onSwitch={handleSwitch}
                   onActivate={handleActivate}
                   onDelete={handleDelete}
-                  onOpenEditor={(id) => { try { localStorage.setItem('intera-agent-id', id) } catch { /* */ }; router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
+                  onOpenEditor={(id) => { selectAgent(id); router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
                   busy={busyId === v.id}
                   t={t}
                 />

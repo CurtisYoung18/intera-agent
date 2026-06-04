@@ -8,6 +8,7 @@ import {
   Shield, Brain, Search, Puzzle, ExternalLink, Wrench, Activity,
   ChevronDown,
 } from 'lucide-react'
+import { useAgentContext } from '@/lib/agent/agent-context'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 
@@ -94,7 +95,7 @@ function countGuardrails(s: string): number {
 /* ── Page ── */
 
 export default function PlaygroundPage() {
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const { selectedAgentId, selectAgent } = useAgentContext()
   const [agentList, setAgentList] = useState<AgentListItem[]>([])
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -122,41 +123,9 @@ export default function PlaygroundPage() {
       fetch('/api/admin/agent-configs').then(r => r.json()),
       fetch('/api/admin/models').then(r => r.json()),
     ]).then(([agentsData, modelsData]) => {
-      const list: AgentListItem[] = agentsData.configs || []
-      setAgentList(list)
+      setAgentList(agentsData.configs || [])
       setModels(modelsData.models || [])
-
-      const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
-
-      const resolveStored = (id: string): string | null => {
-        const found = list.find(a => a.id === id)
-        if (!found) return null
-        // Backwards-compat: if the stored id exists but is a draft, snap to the
-        // active version of the same name so the user always lands on a runnable
-        // config. Old behavior was to just take any row, which now risks picking
-        // a draft by accident.
-        if (found.isActive) return found.id
-        const activeSibling = list.find(a => a.name === found.name && a.isActive)
-        return activeSibling ? activeSibling.id : found.id
-      }
-
-      if (stored) {
-        const resolved = resolveStored(stored)
-        if (resolved) {
-          setSelectedAgentId(resolved)
-          if (resolved !== stored) {
-            try { localStorage.setItem('intera-agent-id', resolved) } catch { /* */ }
-          }
-        }
-      }
-      if (!selectedAgentId && list.length > 0) {
-        // Prefer the active row of the first name, else first row
-        const firstActive = list.find(a => a.isActive)
-        setSelectedAgentId((firstActive ?? list[0]).id)
-      }
     })
-    // selectedAgentId intentionally not in deps — this is initial-load only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -165,7 +134,6 @@ export default function PlaygroundPage() {
     setTurnTraces([])
     turnNumRef.current = 0
     setCollapsedTraces(new Set())
-    try { localStorage.setItem('intera-agent-id', selectedAgentId) } catch { /* */ }
 
     fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
       .then(r => r.json())
@@ -337,7 +305,7 @@ export default function PlaygroundPage() {
           <AgentVersionPicker
             key={pickerRefreshKey}
             agentId={selectedAgentId}
-            onChange={(id) => setSelectedAgentId(id)}
+            onChange={(id) => selectAgent(id)}
             onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}
           />
         </div>

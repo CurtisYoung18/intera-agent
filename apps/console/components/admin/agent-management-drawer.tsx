@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import SlidePanel from '@/components/ui/slide-panel'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useAgentContext } from '@/lib/agent/agent-context'
 
 interface AgentVersion {
   id: string
@@ -78,6 +79,7 @@ export default function AgentManagementDrawer({
   onAgentsChanged,
 }: AgentManagementDrawerProps) {
   const { t } = useConsoleLocale()
+  const { selectAgent } = useAgentContext()
   const router = useRouter()
   const [allVersions, setAllVersions] = useState<AgentVersion[]>([])
   const [loading, setLoading] = useState(false)
@@ -268,7 +270,7 @@ export default function AgentManagementDrawer({
   }
 
   const handleEdit = (v: AgentVersion) => {
-    try { localStorage.setItem('intera-agent-id', v.id) } catch { /* */ }
+    selectAgent(v.id)
     router.push(`/admin/agent?agentId=${v.id}`)
     onClose()
   }

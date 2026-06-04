@@ -226,7 +226,7 @@ export default function SkillsPage() {
 
   return (
     <div>
-      <VersionContextBar onVersionChange={() => window.location.reload()} />
+      <VersionContextBar />
       <div className="px-8 py-8 animate-fade-up">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">

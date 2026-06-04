@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useAgentContext } from '@/lib/agent/agent-context'
 
 interface VersionInfo {
   id: string
@@ -13,17 +14,17 @@ interface VersionInfo {
 }
 
 interface VersionContextBarProps {
-  /** Called when a new version is selected from the picker. */
+  /** @deprecated No longer needed — context propagates reactively. Kept for backward compat. */
   onVersionChange?: (agentId: string) => void
 }
 
 /**
- * Narrow version context bar showing "正在编排：客服Agent · v3（草稿）"
- * Reads the selected agent ID from localStorage, fetches version info,
- * and allows switching via AgentVersionPicker click.
+ * Narrow version context bar showing "正在编排：客服Agent · v3（草稿）".
+ * Reads the selected agent ID from AgentContext (reactive, no localStorage).
  */
 export default function VersionContextBar({ onVersionChange }: VersionContextBarProps) {
   const { t } = useConsoleLocale()
+  const { selectedAgentId, selectAgent, agentConfigs } = useAgentContext()
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
@@ -38,7 +39,6 @@ export default function VersionContextBar({ onVersionChange }: VersionContextBar
         if (found) {
           setVersionInfo(found)
         } else {
-          // Fall back to active version
           const active = d.configs.find((c: VersionInfo) => c.isActive)
           if (active) setVersionInfo(active)
         }
@@ -50,28 +50,26 @@ export default function VersionContextBar({ onVersionChange }: VersionContextBar
     }
   }, [])
 
+  // Sync versionInfo from context — reactive, no localStorage polling
   useEffect(() => {
-    const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
-    if (stored) {
-      fetchVersionInfo(stored)
-    } else {
-      // Fetch active
-      fetch('/api/admin/agent-configs')
-        .then(r => r.json())
-        .then(d => {
-          if (d.configs?.length) {
-            const active = d.configs.find((c: VersionInfo) => c.isActive) ?? d.configs[0]
-            setVersionInfo(active)
-            try { localStorage.setItem('intera-agent-id', active.id) } catch { /* */ }
-          }
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false))
+    if (selectedAgentId) {
+      // Try local configs first (instant), then fetch from API
+      const local = agentConfigs.find((c) => c.id === selectedAgentId) as VersionInfo | undefined
+      if (local) {
+        setVersionInfo(local)
+        setLoading(false)
+      } else {
+        fetchVersionInfo(selectedAgentId)
+      }
+    } else if (agentConfigs.length > 0) {
+      const active = agentConfigs.find((c) => c.isActive) ?? agentConfigs[0]
+      setVersionInfo(active as VersionInfo)
+      setLoading(false)
     }
-  }, [fetchVersionInfo])
+  }, [selectedAgentId, agentConfigs, fetchVersionInfo])
 
   const handleVersionChange = (id: string) => {
-    try { localStorage.setItem('intera-agent-id', id) } catch { /* */ }
+    selectAgent(id)
     fetchVersionInfo(id)
     setPickerRefreshKey(k => k + 1)
     onVersionChange?.(id)
@@ -104,22 +102,15 @@ export default function VersionContextBar({ onVersionChange }: VersionContextBar
 }
 
 /**
- * Hook: returns the currently selected agent ID from localStorage.
+ * Hook: returns the currently selected agent ID — now reads from AgentContext (reactive).
  */
 export function useSelectedAgentId(): string | null {
-  const [agentId, setAgentId] = useState<string | null>(null)
-
-  useEffect(() => {
-    const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
-    if (stored) setAgentId(stored)
-  }, [])
-
-  return agentId
+  const { selectedAgentId } = useAgentContext()
+  return selectedAgentId
 }
 
 /**
  * Returns whether the currently selected version is the live/active version.
- * Used to guard against editing live versions.
  */
 export function useIsActiveVersion(agentId: string | null): boolean {
   const [isActive, setIsActive] = useState(false)

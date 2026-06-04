@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import LiquidGlassBg from '@intera/shared/ui/liquid-glass-bg'
 import ConsoleBackToTop from '@/components/console-back-to-top'
 import ConsoleSidebar from './console-sidebar'
+import { AgentProvider } from '@/lib/agent/agent-context'
 
 interface ConsoleShellProps {
   children: ReactNode
@@ -18,7 +19,8 @@ export default function ConsoleShell({ children }: ConsoleShellProps) {
   if (pathname === '/login') return <>{children}</>
 
   return (
-    <div className="relative flex h-[100dvh] min-h-0 overflow-hidden">
+    <AgentProvider>
+      <div className="relative flex h-[100dvh] min-h-0 overflow-hidden">
       {/* Liquid glass background */}
       <LiquidGlassBg variant="console" />
 
@@ -41,5 +43,6 @@ export default function ConsoleShell({ children }: ConsoleShellProps) {
         <ConsoleBackToTop />
       </main>
     </div>
+    </AgentProvider>
   )
 }

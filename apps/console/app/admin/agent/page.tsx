@@ -7,9 +7,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import AgentBlueprint from '@/components/admin/agent-blueprint'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useAgentContext } from '@/lib/agent/agent-context'
 
 function AgentConfigPage() {
   const { t } = useConsoleLocale()
+  const { selectedAgentId: contextAgentId, selectAgent } = useAgentContext()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [agentList, setAgentList] = useState<{ id: string; name: string; version: number; isActive: boolean }[]>([])
@@ -41,15 +43,9 @@ function AgentConfigPage() {
             const resolved = resolveStored(urlAgentId)
             if (resolved) setCurrentAgentId(resolved)
           } else {
-            const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
-            if (stored) {
-              const resolved = resolveStored(stored)
-              if (resolved) {
-                setCurrentAgentId(resolved)
-                if (resolved !== stored) {
-                  try { localStorage.setItem('intera-agent-id', resolved) } catch { /* */ }
-                }
-              }
+            if (contextAgentId) {
+              const resolved = resolveStored(contextAgentId)
+              if (resolved) setCurrentAgentId(resolved)
             }
             if (!currentAgentId) {
               const firstActive = d.configs.find((c: { isActive: boolean }) => c.isActive)
@@ -78,7 +74,7 @@ function AgentConfigPage() {
         const newId = d.config.id
         setPickerRefreshKey(k => k + 1)
         setCurrentAgentId(newId)
-        try { localStorage.setItem('intera-agent-id', newId) } catch { /* */ }
+        selectAgent(newId)
         router.push(`/admin/agent?agentId=${newId}`)
       }
     } catch {
@@ -122,7 +118,7 @@ function AgentConfigPage() {
                 agentId={currentAgentId}
                 onChange={(id) => {
                   setCurrentAgentId(id)
-                  try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
+                  selectAgent(id)
                   router.push(`/admin/agent?agentId=${id}`)
                 }}
                 onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}

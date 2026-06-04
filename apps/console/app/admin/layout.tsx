@@ -1,7 +1,8 @@
-// Admin layout — pass-through wrapper (chrome is in root layout via ConsoleShell)
+// Admin layout — wraps children with AgentProvider for reactive agent selection state
 
 import type { ReactNode } from 'react'
+import { AgentProvider } from '@/lib/agent/agent-context'
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>
+  return <AgentProvider>{children}</AgentProvider>
 }

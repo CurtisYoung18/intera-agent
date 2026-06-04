@@ -161,7 +161,7 @@ export default function ModelPage() {
 
   return (
     <div>
-      <VersionContextBar onVersionChange={() => window.location.reload()} />
+      <VersionContextBar />
 
       <div className="px-8 py-8 animate-fade-up">
         {/* Header */}

@@ -278,7 +278,7 @@ export default function PoliciesPage() {
 
   return (
     <div>
-      <VersionContextBar onVersionChange={() => window.location.reload()} />
+      <VersionContextBar />
       <div className="px-8 py-8 animate-fade-up">
       <div className="flex items-center justify-between mb-6">
         <div><h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('policies.title')}</h1><p className="text-[13px] text-[var(--fog)] mt-0.5">{t('policies.subtitle', { n: items.length })}</p></div>

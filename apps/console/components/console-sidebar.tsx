@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useAgentContext } from '@/lib/agent/agent-context'
 import {
   ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
@@ -103,12 +104,9 @@ export default function ConsoleSidebar() {
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [switchOpen, setSwitchOpen] = useState(false)
   const { t, toggleLocale, locale } = useConsoleLocale()
+  const { selectedAgentId, selectAgent, refreshConfigs } = useAgentContext()
 
   // Session state
-  // Agent configs
-  interface AgentInfo { id: string; name: string }
-  const [agentConfigs, setAgentConfigs] = useState<AgentInfo[]>([])
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
 
   const [customerName, setCustomerName] = useState('Demo Org')
@@ -135,49 +133,12 @@ export default function ConsoleSidebar() {
       .catch(() => {})
   }, [])
 
-  // Load agent configs — re-sync on navigation so sidebar picker reflects
-  // localStorage changes made by AgentManagementDrawer.handleEdit.
-  useEffect(() => {
-    fetch('/api/admin/agent-configs')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.configs?.length) {
-          setAgentConfigs(d.configs)
-          const stored = (() => { try { return localStorage.getItem('intera-agent-id') } catch { return null } })()
-          if (stored && d.configs.find((c: AgentInfo) => c.id === stored)) {
-            setSelectedAgentId(stored)
-          } else {
-            setSelectedAgentId(d.configs[0].id)
-          }
-        }
-      })
-      .catch(() => {})
-  }, [pathname])
-
   const handleAgentSelect = (id: string) => {
-    setSelectedAgentId(id)
-    try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
+    selectAgent(id)
     if (pathname.startsWith('/admin/agent')) {
       router.push(`/admin/agent?agentId=${id}`)
-    } else if (pathname.startsWith('/admin/')) {
-      // Sub-pages read from localStorage via useSelectedAgentId() on mount only.
-      // Reload so they re-mount with the new value.
-      window.location.reload()
     }
   }
-
-  const refreshAgentConfigs = useCallback(async () => {
-    try {
-      const r = await fetch('/api/admin/agent-configs')
-      const d = await r.json()
-      if (d.configs?.length) {
-        setAgentConfigs(d.configs)
-        if (!d.configs.find((c: AgentInfo) => c.id === selectedAgentId)) {
-          setSelectedAgentId(d.configs[0].id)
-        }
-      }
-    } catch { /* ignore */ }
-  }, [selectedAgentId])
 
   // Load customer list
   const loadCustomers = useCallback(async () => {
@@ -280,7 +241,7 @@ export default function ConsoleSidebar() {
                 <AgentVersionPicker
                   agentId={selectedAgentId}
                   onChange={handleAgentSelect}
-                  onAgentsChanged={refreshAgentConfigs}
+                  onAgentsChanged={refreshConfigs}
                 />
               </div>
               <button
@@ -388,7 +349,7 @@ export default function ConsoleSidebar() {
         onClose={() => setAgentDrawerOpen(false)}
         activeAgentId={selectedAgentId}
         onSelectAgent={handleAgentSelect}
-        onAgentsChanged={refreshAgentConfigs}
+        onAgentsChanged={refreshConfigs}
       />
     </>
   )
