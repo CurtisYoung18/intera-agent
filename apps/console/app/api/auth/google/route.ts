@@ -1,17 +1,8 @@
 // GET /api/auth/google — Initiate Google OAuth flow.
-//
-// Generates a Google OAuth 2.0 authorization URL with:
-//  - client_id from GOOGLE_CLIENT_ID env
-//  - redirect_uri from GOOGLE_REDIRECT_URI env
-//  - response_type=code (authorization code flow)
-//  - scope=openid email profile
-//  - state=<random CSRF token, stored in a short-lived signed cookie>
-//  - nonce=<random value>
-//
-// Returns { url: "https://accounts.google.com/o/oauth2/v2/auth?..." }
+// Redirects directly to Google's authorization page (302).
 
 import { NextResponse } from 'next/server'
-import { setCsrfStateCookie } from '@/lib/auth/google'
+import { signCsrfCookie } from '@/lib/auth/google'
 
 export async function GET() {
   const clientId = process.env.GOOGLE_CLIENT_ID
@@ -24,10 +15,7 @@ export async function GET() {
     )
   }
 
-  // Build the authorization URL
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
-
-  // Generate nonce (for replay protection in id_token)
   const nonce = crypto.randomUUID()
 
   authUrl.searchParams.set('client_id', clientId)
@@ -36,24 +24,29 @@ export async function GET() {
   authUrl.searchParams.set('scope', 'openid email profile')
   authUrl.searchParams.set('nonce', nonce)
   authUrl.searchParams.set('access_type', 'online')
-  // Prompt=select_account ensures the user can choose which Google account to use
   authUrl.searchParams.set('prompt', 'select_account')
 
-  const res = NextResponse.json({ url: authUrl.toString() })
-
-  // Set CSRF state cookie — signCsrfCookie embeds the state in a signed cookie.
-  // The state is also embedded in the URL so Google returns it in the callback.
-  const state = await setCsrfStateCookie(res)
-  if (state === null) {
+  // Sign the CSRF state cookie first, then set state in the URL
+  const state = crypto.randomUUID()
+  const csrfValue = await signCsrfCookie(state)
+  if (!csrfValue) {
     return NextResponse.json(
       { error: 'Server session secret not configured' },
       { status: 500 },
     )
   }
 
-  // Append state to the URL AFTER signing the cookie (so both match)
-  // We need to re-build because we already created the JSON body
   authUrl.searchParams.set('state', state)
 
-  return NextResponse.json({ url: authUrl.toString() })
+  // Redirect to Google with the CSRF cookie set
+  const res = NextResponse.redirect(authUrl.toString())
+  res.cookies.set('google_oauth_state', csrfValue, {
+    path: '/api/auth/google',
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 60 * 10, // 10 minutes
+  })
+
+  return res
 }
