@@ -296,7 +296,7 @@ export default function PlaygroundPage() {
   /* ── Render ── */
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* ═══════════════════════════════════════════
           Ambient background orbs
           ═══════════════════════════════════════════ */}
