@@ -34,11 +34,11 @@ export default function AgentOnboardingGate({ children }: Props) {
       })
       const d = await r.json()
       if (!r.ok) {
-        setError(d.error || 'Failed to create agent')
+        setError(d.error || d.data?.error || 'Failed to create agent')
         return
       }
       await refreshConfigs()
-      if (d.config?.id) selectAgent(d.config.id)
+      if (d.data?.config?.id) selectAgent(d.data.config.id)
     } catch {
       setError('Network error — try again')
     } finally {

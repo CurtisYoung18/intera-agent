@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 (Wave 1 Enterprise-SaaS Readiness integrated — G1/G2/G3/G8/G9 foundations landed) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-04 (Wave 1 + D2 SSO/invites ✅ shipped & architect-verified, keyless test bar green; G11 guardrail/policy program added — see to-do §7) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -39,17 +39,19 @@ Full spec: [`doc/to-do/2026-06-04-enterprise-saas-readiness.md`](../to-do/2026-0
 - `apps/console/lib/db/repo-for-org.ts` — `scopedModel` Proxy with deny-by-default safety
 - `apps/console/lib/api/client.ts` — typed `apiClient` + `useApi` (SWR cache/dedup)
 
-### 🔍 Architect review (2026-06-04) — Wave 1 is NOT "done": 1 security blocker + 2 should-fixes
+### 🔍 Architect review (2026-06-04) — Wave 1 + D2 ✅ CLOSED (blocker + S1/S2 all resolved; keyless bar green)
 
 **Verified good (read, not receipt):** `repoForOrg` C1 binding fix `(model as any)[prop](args)` + deny-by-default (22 unit tests); `define-route` C2 `__status` strip; `register` correctly invite-gated (token+email match, no open signup); contract/envelope/apiClient seam; 38 route-level tests.
 
 - **B1 — ✅ CLOSED (verified by architect 2026-06-04).** Anon `/api/livechat/config`: PUT removed, GET returns only `{enabled, showSkillStatus, region}`. New gated `/api/admin/livechat/config`: `defineRoute` + `repoForOrg`, **orgId strictly from session**, `requireRole:['admin','owner']`, audit on write. Admin page repointed. `livechat-b1-guard.test.ts` green. Session role model migrated to `owner|admin|operator|viewer` end-to-end, so `requireRole` is functional.
 - **S1 — ✅ DONE.** `defineRoute({ requireRole })` added (`define-route.ts:101,123`); authZ is declarative at the seam.
-- **S2 — 🟡 HALF-DONE (finish before Wave 2).** PG tests now `skipIf` (26 skipped). BUT the *same* problem remains for `MINIMAX_API_KEY`-dependent e2e tests: `capability-bindings-e2e.test.ts` **hard-fails** without the key → a keyless `npm test` shows "9 failed" (vitest doesn't load `.env.local`). These are **env failures, not regressions** (file unmodified; provider-config/defaults untouched). **Finish: apply `skipIf(missing dependency)` uniformly to ALL external-key/DB e2e tests** so a clean `npm test` is GREEN — otherwise the red bar hides real signal (the exact cost S2 names).
+- **S2 — ✅ RESOLVED (architect-verified 2026-06-04, round 5).** Root-caused via a **global** provider mock — `apps/console/lib/agent/__tests__/vitest-setup.ts` (wired through `vitest.config.ts` `setupFiles`) fakes `createAgentClient`/`getProviderConfig` so **no test can hit a live LLM**. This closes the whole class (incl. `profile-write.test.ts` + `capability-bindings-e2e.test.ts`) instead of per-file patching. Independent architect run of `env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test` → **474 passed / 0 failed / 26 skipped**; `profile-write` 5/5 in isolation. (Took 5 rounds — the first 4 "green" receipts came from a keyed shell; the global mock makes the keyless bar genuinely real. **Lesson for the team: wire this exact keyless command into CI so green is enforced, not self-reported.**)
 - **Cleanup (non-gating):** `Invitation.state` vs spec's `status`; `User.role` denormalized/vestigial (real role lives on Membership); `livechat/config/route.ts` stale `// apps/chat/...` header.
 - **Process note:** this round arrived with **no receipt** and a red suite — §0.3 requires a receipt (changed files + green verification) and §0.4 a red→green proof. The work was good, but "done" must come with evidence next time.
 
-**Up next:** Lane D2 (Google SSO + invites, spec §3.5) + finish S2 + cleanups → then Wave 2 (G2-RLS, G5 observability, G9 expand coverage).
+- **D2 — ✅ DONE & verified (2026-06-04).** Google SSO (real JWKS RS256 verify, `alg` pin, `aud`/`iss`/`exp`/`email_verified` checks, CSRF `state`, `googleSub` durable join key) + invite-only membership (no public signup) + `/admin/members` (RBAC role editor, **owner-only** on owner roles, last-owner protection, `repoForOrg`-scoped) + `/admin/invitations` (409 on dup, 7-day token) + `switch-org` (membership-validated → no IDOR). All architect-read, not receipt-trusted.
+
+**Up next (dispatch plan, owner-approved 2026-06-04):** ship the **three safe streams together now** — **G5 observability · G9 coverage · G11 Phase 1** (configurable guardrail primitive; combined kickoff in spec **§9**, lane brief §8, design §7). **G2-RLS is a separate gated follow-up** right after — it can break the live bot, so keep its smoke-test signal clean; enable RLS on `audit_logs` **LAST** (G11 writes it from the runtime via a shared audit-writer seam built in this dispatch's Task 0). **G11 Phase 2** (preReply / two-loop) + **G4/G6/G7/G10** are Wave 3. (F2 fail-mode is resolved → configurable fallback-to-tool; defaults §7.6.)
 
 ---
 
@@ -191,7 +193,7 @@ npm run build:console                             # success (53 static pages)
 | L3 | Rotate DB password (`Intera2026Pg!` weak/known) | low |
 
 ### Deferred
-- **C3/C4** User table + multi-org login/membership (from [multi-agent-multi-org-plan](../to-do/2026-06-01-multi-agent-multi-org-plan.md)) — not needed for current phase
+- ~~**C3/C4** User table + multi-org login/membership~~ → **✅ SUPERSEDED & DELIVERED by G3 (Wave 1).** Built better than the old sketch: `Membership` (not `UserOrgMembership`), RBAC `owner/admin/operator/viewer` (not `admin/member`), Google SSO + invite-only. The doc's `passwordHash`/`admin|member` schema is **stale — do NOT build it.** See [enterprise-saas-readiness](../to-do/2026-06-04-enterprise-saas-readiness.md) §3.5.
 - **C5** Anonymous visitor identity key — needs separate exploration
 
 ### Planned specs in [`doc/to-do/`](../to-do/) (for coding-team pickup)
@@ -201,7 +203,7 @@ Architect-authored specs. Status verified in code 2026-06-04.
 | Spec | Scope | Status | Coding-team action |
 |---|---|---|---|
 | [`sub-agent-max-iterations-config.md`](../to-do/sub-agent-max-iterations-config.md) | Per-stage `maxIterations` for sub-agents (UI field → `stageConfigs` JSON → `loop.ts` builder). | 🟢 **SHIPPED 2026-06-04.** 4 edits: `stage-config-editor.tsx` (type + UI), `case-types/[name]/page.tsx` (type), `loop.ts` (builder). | ✅ Done. |
-| [`2026-06-01-multi-agent-multi-org-plan.md`](../to-do/2026-06-01-multi-agent-multi-org-plan.md) | Phase C: 1 org → N AgentConfig, User table + multi-org membership/login. | 🟡 **Partially shipped, remainder deferred.** C1 (AgentConfig 1:N) ✅ v1.3, C2 (ApiKey.agentConfigId) ✅ v1.1. C3/C4 (User table + login + membership) deferred — not needed for current phase. | No action needed now. |
+| ~~`2026-06-01-multi-agent-multi-org-plan.md`~~ (deleted 2026-06-04) | Phase C: 1 org → N AgentConfig, User table + multi-org membership/login. | ✅ **C1/C2 shipped** (C1 AgentConfig 1:N v1.3 · C2 ApiKey.agentConfigId v1.1); **C3/C4 SUPERSEDED & DELIVERED by G3** (Wave 1) as `Membership`/RBAC/Google-SSO/invite. Doc **deleted** so a zero-context agent can't build the stale `UserOrgMembership`/`passwordHash` sketch (history in git). | None — fully absorbed. |
 | [`2026-06-03-version-bound-config-blueprint-redesign.md`](../to-do/2026-06-03-version-bound-config-blueprint-redesign.md) | Version-bound `capabilityBindings` + library/blueprint redesign (4 architecture decisions D1–D6). | ⚪ **Already SHIPPED as v1.3 / TODO-40.** This is the *source plan*, not backlog. | **Do NOT re-execute.** Move to [`doc/what's done/`](../what's%20done/); kept here only as design reference. |
 
 ## v1.3 — 2026-06-03 — ✅ SHIPPED

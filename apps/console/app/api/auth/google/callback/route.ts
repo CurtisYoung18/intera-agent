@@ -71,7 +71,7 @@ function redirectWithSession(
   token: string,
   destination: string,
 ): NextResponse {
-  const res = NextResponse.redirect(new URL(destination, process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'))
+  const res = NextResponse.redirect(new URL(destination, process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'))
   res.cookies.set(SESSION_COOKIE, token, COOKIE_OPTS)
   // Clear legacy plaintext cookies
   res.cookies.set('intera_org_id', '', { path: '/', maxAge: 0 })
@@ -81,7 +81,7 @@ function redirectWithSession(
 }
 
 function errorRedirect(message: string): NextResponse {
-  const url = new URL('/login', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001')
+  const url = new URL('/login', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
   url.searchParams.set('error', encodeURIComponent(message))
   return NextResponse.redirect(url)
 }

@@ -145,10 +145,10 @@ export default function AgentVersionPicker({
       const r = await fetch('/api/admin/agent-configs')
       const d = await r.json()
       if (!r.ok) {
-        setError(d.error || t('agentDrawer.loadError'))
+        setError((d.error || d.data?.error) || t('agentDrawer.loadError'))
         return
       }
-      setAllVersions(d.configs || [])
+      setAllVersions(d.data?.configs || d.configs || [])
     } catch {
       setError(t('agentDrawer.loadError'))
     } finally {
@@ -181,7 +181,7 @@ export default function AgentVersionPicker({
       const r = await fetch(`/api/admin/agent-configs/${id}/activate`, { method: 'PUT' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentVersion.activateError'))
+        setError((d.error || d.data?.error) || t('agentVersion.activateError'))
         return
       }
       await fetchAll()
@@ -203,13 +203,14 @@ export default function AgentVersionPicker({
       const r = await fetch(`/api/admin/agent-configs/${agentId}/fork`, { method: 'POST' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentVersion.forkError'))
+        setError((d.error || d.data?.error) || t('agentVersion.forkError'))
         return
       }
-      if (d.config?.id) {
+      const cfg = d.data?.config ?? d.config
+      if (cfg?.id) {
         await fetchAll()
         onAgentsChanged?.()
-        onChange(d.config.id)
+        onChange(cfg.id)
         setOpen(false)
       }
     } catch {
@@ -227,7 +228,7 @@ export default function AgentVersionPicker({
       const r = await fetch(`/api/admin/agent-configs/${id}`, { method: 'DELETE' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentVersion.deleteBlockedChildren'))
+        setError((d.error || d.data?.error) || t('agentVersion.deleteBlockedChildren'))
         return
       }
       // If we deleted the one currently selected, fall back to the active sibling

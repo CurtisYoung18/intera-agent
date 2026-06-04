@@ -34,12 +34,13 @@ export default function VersionContextBar({ onVersionChange }: VersionContextBar
     try {
       const r = await fetch('/api/admin/agent-configs')
       const d = await r.json()
-      if (d.configs?.length) {
-        const found = d.configs.find((c: VersionInfo) => c.id === agentId)
+      const configs = d.data?.configs ?? d.configs
+      if (configs?.length) {
+        const found = configs.find((c: VersionInfo) => c.id === agentId)
         if (found) {
           setVersionInfo(found)
         } else {
-          const active = d.configs.find((c: VersionInfo) => c.isActive)
+          const active = configs.find((c: VersionInfo) => c.isActive)
           if (active) setVersionInfo(active)
         }
       }
@@ -120,8 +121,9 @@ export function useIsActiveVersion(agentId: string | null): boolean {
     fetch('/api/admin/agent-configs')
       .then(r => r.json())
       .then(d => {
-        if (d.configs?.length) {
-          const found = d.configs.find((c: VersionInfo) => c.id === agentId)
+        const configs = d.data?.configs ?? d.configs
+        if (configs?.length) {
+          const found = configs.find((c: VersionInfo) => c.id === agentId)
           setIsActive(found?.isActive ?? false)
         }
       })
@@ -142,8 +144,9 @@ export function useVersionInfo(agentId: string | null): VersionInfo | null {
     fetch('/api/admin/agent-configs')
       .then(r => r.json())
       .then(d => {
-        if (d.configs?.length) {
-          const found = d.configs.find((c: VersionInfo) => c.id === agentId)
+        const configs = d.data?.configs ?? d.configs
+        if (configs?.length) {
+          const found = configs.find((c: VersionInfo) => c.id === agentId)
           if (found) setInfo(found)
         }
       })

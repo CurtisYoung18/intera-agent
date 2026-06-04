@@ -101,10 +101,10 @@ export default function AgentManagementDrawer({
       const r = await fetch('/api/admin/agent-configs')
       const d = await r.json()
       if (!r.ok) {
-        setError(d.error || t('agentDrawer.loadError'))
+        setError(d.error || d.data?.error || t('agentDrawer.loadError'))
         return
       }
-      setAllVersions(d.configs || [])
+      setAllVersions(d.data?.configs || d.configs || [])
     } catch {
       setError(t('agentDrawer.loadError'))
     } finally {
@@ -153,16 +153,17 @@ export default function AgentManagementDrawer({
       })
       const d = await r.json()
       if (!r.ok) {
-        setError(d.error || t('agentDrawer.createError'))
+        setError(d.error || d.data?.error || t('agentDrawer.createError'))
         return
       }
       await refresh()
       onAgentsChanged?.()
-      if (d.config?.id) {
-        onSelectAgent(d.config.id)
+      const config = d.data?.config ?? d.config
+      if (config?.id) {
+        onSelectAgent(config.id)
         // Auto-expand the new group
-        if (d.config.name) {
-          setExpandedGroups(prev => new Set(prev).add(d.config.name))
+        if (config.name) {
+          setExpandedGroups(prev => new Set(prev).add(config.name))
         }
       }
     } catch {
@@ -179,7 +180,7 @@ export default function AgentManagementDrawer({
       const r = await fetch(`/api/admin/agent-configs/${v.id}/activate`, { method: 'PUT' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentVersion.activateError'))
+        setError(d.error || d.data?.error || t('agentVersion.activateError'))
         return
       }
       await refresh()
@@ -199,7 +200,7 @@ export default function AgentManagementDrawer({
       const r = await fetch(`/api/admin/agent-configs/${v.id}/fork`, { method: 'POST' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentVersion.forkError'))
+        setError(d.error || d.data?.error || t('agentVersion.forkError'))
         return
       }
       await refresh()
@@ -219,7 +220,7 @@ export default function AgentManagementDrawer({
       const r = await fetch(`/api/admin/agent-configs?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentDrawer.deleteError'))
+        setError(d.error || d.data?.error || t('agentDrawer.deleteError'))
         return
       }
       // If the deleted agent was the active one, fall back to first remaining
@@ -248,7 +249,7 @@ export default function AgentManagementDrawer({
       const r = await fetch(`/api/admin/agent-configs/${v.id}`, { method: 'DELETE' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentVersion.deleteBlockedChildren'))
+        setError(d.error || d.data?.error || t('agentVersion.deleteBlockedChildren'))
         return
       }
       // If we deleted the active one, fall back to the first remaining (the
@@ -305,7 +306,7 @@ export default function AgentManagementDrawer({
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError(d.error || t('agentDrawer.renameError'))
+        setError(d.error || d.data?.error || t('agentDrawer.renameError'))
         return
       }
       await refresh()

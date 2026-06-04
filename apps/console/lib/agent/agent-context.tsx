@@ -42,7 +42,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const r = await fetch('/api/admin/agent-configs')
       if (!r.ok) return []
       const d = await r.json()
-      return (d.configs ?? []) as AgentInfo[]
+      return (d.data?.configs ?? d.configs ?? []) as AgentInfo[]
     } catch { return [] }
   }, [])
 

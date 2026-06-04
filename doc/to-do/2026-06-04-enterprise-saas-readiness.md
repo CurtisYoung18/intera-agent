@@ -1,6 +1,6 @@
-# Enterprise-SaaS Readiness — Architecture Program (G1–G10)
+# Enterprise-SaaS Readiness — Architecture Program (G1–G11)
 
-**Author:** Architect | **Date:** 2026-06-04 | **Status:** backlog — **Wave 1 ready to execute**
+**Author:** Architect | **Date:** 2026-06-04 | **Status:** **Wave 1 + D2 ✅ SHIPPED & verified** (keyless test bar green, architect-confirmed) · **Wave 2 + G11 ready to execute**
 **Source:** architect review of console↔backend cooperation (long-term, non-patch).
 
 > This is the *steps* doc for the program. Macro status lives in
@@ -54,6 +54,7 @@ just move?
 | **G8** | Dev/prod parity | local Postgres (docker compose); one schema; kill `sed` | delete → "green local / red prod" |
 | **G9** | Contract-surface tests | route-level tests driving real handlers | delete → the most important seam is unguarded |
 | **G10** | `loop.ts` 2160-line monolith (TODO-17) | decompose **after** G1/G7 seams are correct | — |
+| **G11** | Guardrail/policy engine: fail-open on the money checks, no audit trail, non-uniform checkpoint coverage (CS-native hooks) | richer `PolicyOutcome` + `failureMode` + `preReply` checkpoint + `AuditLog` wiring over the existing `PolicyEngine` seam | delete → safety decisions go silent + unauditable; "why did the agent refuse this refund?" is unanswerable |
 
 ---
 
@@ -66,10 +67,11 @@ WAVE 1 (this spec, fully detailed below) — the foundational seams, each route/
 
 WAVE 2 (detail after Wave 1 review):
   G2-RLS (DB defense-in-depth, needs G8)  ·  G5 observability (reuse ActionTrace correlation)  ·  G9 expand coverage
+  ·  G11-P0 guardrail safety (fail-closed money checks + audit trail + close preFinalize/preReply gap — rides with G5)
 
 WAVE 3:
   G4 Redis stateless runtime  ·  G6 unified job queue  ·  G7 jsonb + optimistic-concurrency + partial-unique-index
-  ·  G10 loop.ts decomposition (now that seams are correct)
+  ·  G10 loop.ts decomposition (now that seams are correct)  ·  G11-P1 CS-native hook model (matcher/preReply/PolicyOutcome — rides with G10)
 ```
 
 **Why this order:** G1/G2/G8 are prerequisite seams; G3 is an independent identity vertical that can run in parallel
@@ -288,6 +290,13 @@ redirect URIs for localhost + `demo.anytrans.ai`) is an **ops prerequisite** the
 **Scope:** G2-RLS (DB-layer tenant defense-in-depth) · G5 observability · G9 test-coverage expansion. Each route/page is
 NOT re-touched — Wave 2 works *below* (DB) and *around* (logging/metrics) the Wave 1 seams.
 
+> **Dispatch split (owner-approved 2026-06-04):** the three file-disjoint streams — **G5 · G9 · G11 Phase 1** — ship
+> together FIRST (combined kickoff in **§9**). **G2-RLS (Lane R + the GUC/tx-wrapper Task-0 work + §5.3) is a SEPARATE
+> gated follow-up dispatch** so the prod-risky RLS rollout gets a clean, unconfounded smoke-test signal. For the
+> combined dispatch, **Task 0 is the LEAN version** (requestId correlation + a *shared audit-writer seam*); the
+> AsyncLocalStorage / `SET LOCAL` GUC plumbing moves to the RLS dispatch. **Enable RLS on `audit_logs` LAST** — G11
+> writes it from the agent runtime via the shared audit-writer, so RLS-on-audit_logs must come after that path lands.
+
 ### 5.1 Task 0 (W2) — shared plumbing (SERIAL, owns `define-route.ts`)
 
 So Lanes R and O never both edit `define-route.ts`, all its changes land here first:
@@ -305,7 +314,7 @@ So Lanes R and O never both edit `define-route.ts`, all its changes land here fi
 |---|---|---|
 | **R — RLS (G2 DB-layer)** | new migration(s), a global Prisma client extension, `repo-for-org.ts` (tx client), a DB-role doc | Postgres Row-Level Security as defense-in-depth (see design below). **Highest-risk lane — own review checkpoint.** |
 | **O — Observability (G5)** | `lib/logger.ts`, `@sentry/nextjs` init, `lib/metrics.ts`, agent-trace correlation | structured JSON logs (prod) w/ requestId·orgId·userId; Sentry error capture (scrub PII); per-org **LLM token+cost** metric events (billing substrate); thread requestId → `ActionTrace` so HTTP-error → agent-run is one hop. |
-| **T — Coverage (G9)** | `__tests__` only | route-level tests for ALL remaining mutating/tenant-sensitive routes; **real-DB** integration tests (PG is local now) for one route per domain; RLS defense-in-depth test (with Lane R); **finish S2: `skipIf(missing dependency)` on every external-key/DB e2e** so a keyless `npm test` is fully green. |
+| **T — Coverage (G9)** | `__tests__` only | route-level tests for ALL remaining mutating/tenant-sensitive routes; **real-DB** integration tests (PG is local now) for one route per domain. NOTE: **S2 is already RESOLVED** (global provider mock in `vitest-setup.ts`) — do **not** add `skipIf`; KEEP the keyless bar green and add new coverage under it. (The RLS defense-in-depth test belongs to the separate RLS dispatch, not this one.) |
 
 ### 5.3 G2-RLS design (read before touching — this is the dangerous one)
 
@@ -406,4 +415,224 @@ PHASE 3 — Integrate: merge lanes, run the full local gate once more, reconcile
 
 If anything in the spec is ambiguous or you find a load-bearing reason a step is wrong, STOP and surface it rather
 than guessing — the architect will adjudicate.
+```
+
+---
+
+## 7. G11 — Guardrail / Policy Engine (CS-native hook model)
+
+**Supersedes** the Codex policy-engine audit (`policy-engine-review.md` — now deleted; fully absorbed here, in git history). Defects F1–F3 below were **re-verified by the architect against the real `policy.ts` / `loop.ts` / `case-agent-loop.ts`**; findings **F4–F6 are new** (the audit missed them). **This §7 is the single source of truth for G11 — build from here.**
+
+### 7.0 Why this is a readiness gap, not a feature
+
+`PolicyEngine` is a **deep module** (deletion test: remove it → guardrail logic reappears inline at every checkpoint, in *two* loops). The **seam is right; the interface is missing concepts** and has a safety inversion. For a SaaS that arbitrates refunds / account actions / financial disputes, "guardrails silently vanish under an LLM outage" and "no audit trail of why the agent refused" are enterprise blockers — same class as G3/G5.
+
+### 7.1 Verified findings (architect, against real code)
+
+| # | Finding | Evidence | Severity |
+|---|---|---|---|
+| F1 | preTool LLM eval is dead | `policy.ts:228` `if(!context.skillOutput) continue` — no tool has run, so every `evaluationPrompt` at preTool is skipped | Med (latent) |
+| F2 | **Fail-OPEN on the money checks, inconsistently** | `policy.ts:399-404` `CannotRetryError` → all `pass` (silent); but the outer catch in `evaluate()` `248-258` → all `hint` (visible). The *more common* failure (retries exhausted / rate-limit / auth) gets the *worse* silent-pass path. `no_compensation_promise` + `must_cite_basis` disappear during a policy-LLM outage, agent unaware. | **High** |
+| F3 | `ai_eval_filtered` misnames gating as tool-filtering | `hook_skills` only gates *which skills trigger* a policy (`policy.ts:231,274`); nothing restricts the agent's palette | Low |
+| **F4** | **preFinalize coverage is non-uniform across the two loops** | `loop.ts` calls only `evaluate('preTool')` (522) + `evaluate('postTool')` (995). `preFinalize` is invoked **only** in `case-agent-loop.ts:693`. Any customer-facing finalization that doesn't go through the case-agent path runs **no** finalize guardrail. | **High — verify reach** |
+| **F5** | **No outbound (`preReply`) checkpoint** | Customer-visible replies are emitted mid-loop (`loop.ts:253,388,934`) as free-text assistant messages, gated by **no** policy. `no_compensation_promise` inspects only the `finalize_case` output → a conversational "sure, I'll refund you" is never checked. | **High** |
+| **F6** | Zero audit trail of guardrail decisions | no `audit`/`AuditLog` reference anywhere in `lib/agent/*`; every `[POLICY]` verdict is ephemeral conversation text. G3 just shipped `AuditLog`. | Med (compliance) |
+| F7 | `escalate` already exists + is wired | `PolicyResult` includes `escalated`; postTool→auto `create_human_task` (`loop.ts:1019-1051`) + graduated escalation (267-296). Not used as a fail-closed default; not uniform across checkpoints. | (asset to reuse) |
+
+### 7.2 The platform primitive — a guardrail IS a configurable Hook
+
+Architect direction (2026-06-04): don't ship defect-patches + a pile of optional fields. Define **one configurable primitive — a `GuardrailHook`** — and make the engine its interpreter. The configurator's mental model *is* the interface (the deep-module test: a lot of engine behaviour behind a tiny, fixed set of config questions). The platform owns the **safety floor**; the configurator tunes within it.
+
+**Adding a guardrail = answering exactly six questions:**
+
+| # | Question | Field | What the configurator gets to choose |
+|---|---|---|---|
+| 1 | **WHEN** does it run? | `when` | a fixed checkpoint enum — `preTool` · `postTool` · `preReply` · `preFinalize` (platform-owned; admins pick, can't invent new lifecycle events) |
+| 2 | **WHICH** actions / outputs? | `match` | `skills` matcher (regex or `\|`-list) + optional cheap `ifPattern` on the payload (skip the expensive check when it can't apply) |
+| 3 | **HOW** does it decide? | `check` | `rule` (deterministic: must/never-call skills) **or** `ai` (an `evaluationPrompt` judged by the policy LLM, optional model override) |
+| 4 | **WHAT** on a violation? | `onViolation` | `warn` · `block(+guidance)` · **`invoke_tool`** (auto-call a safe system tool — §7.3) |
+| 5 | **FALLBACK** if the check can't run? | `onUnavailable` | `open` (allow+warn) · `closed` (block) · **`invoke_tool`** — *constrained by the safety floor (§7.3)* |
+| 6 | **What is the agent told?** | `guidance` | free text injected as the next instruction when blocked |
+
+Everything else (audit write, severity aggregation, LLM batching, graduated escalation) is engine behaviour the configurator never touches. `matcher` **replaces** today's `hook_skills` (two conflated concepts → one — a genuine deepening); `ifPattern` makes cheap→expensive gating the default pipeline shape (the high-volume-CS cost model).
+
+### 7.3 Fallback = invoke a system tool (the key generalization)
+
+The platform already exposes **system tools** — `create_human_task` (转人工), `request_user_input`. Rather than a hardcoded `escalate` verdict, a hook's action *and* fallback can be **"invoke system tool T."** This:
+- **unifies** intervention into the machinery the agent already uses — `escalate` simply *is* `invoke_tool: create_human_task`; no special escalation path (reuse the existing auto-human-task wiring at `loop.ts:1019-1051`);
+- makes new control-flow tools **automatically available** as hook outcomes — wiring "on failure → 转人工" needs zero new code;
+- is a real *deepening*: one mechanism (a hook can drive a tool call) replaces N special-case verdicts.
+
+**Safety floor — platform-owned, NOT configurable (the 铁律 a configurator cannot override):**
+- `invoke_tool` may target only a **curated allowlist of safe control-flow tools** (default: `create_human_task`, `request_user_input`). **Business / irreversible tools (`refund_money`, `change_ban_status`, `delete_account`) are never valid hook targets** — a guardrail must never *cause* a high-risk action. Rejected at config-validation **and** defended in the engine.
+- For hooks attached to a **high-risk skill**, the configurator **cannot pick `onUnavailable: open`** — the UI offers only `closed` or `invoke_tool`(转人工). The platform refuses "silently allow a refund when the checker is down." *(This is the F2 fix expressed as a **constraint on the configuration space**, not a per-hook free choice.)*
+- Every hook resolution writes an `AuditLog` row (F6) — non-optional.
+
+So the safe **default wiring** of `no_compensation_promise` becomes, purely in config terms: `when: preReply + preFinalize`, `check: ai`, `onViolation: block(+guidance)`, `onUnavailable: invoke_tool(create_human_task)` — *if we can't verify the promise is safe, hand to a human automatically.*
+
+### 7.4 What's exposed vs platform-fixed
+
+| Layer | Owned by | Examples |
+|---|---|---|
+| **Configurable (admin UI)** | the configurator | the six fields above; enable/disable; tuning built-in `evaluationPrompt`s; the matcher; the guidance text |
+| **Platform-fixed (铁律)** | the platform | the checkpoint enum; the safe-tool allowlist; the "no `open` fallback on a high-risk hook" rule; mandatory audit; deny-by-default; the engine's batching / severity / graduated-escalation behaviour |
+
+The architect line: **the platform guarantees a safety floor; the configurator tunes within it.** An admin can make guardrails stricter or rewire a fallback to 转人工, but cannot configure their way *below* the floor.
+
+### 7.5 Build sequencing — two phases, hard STOP between
+
+- **G11 Phase 1 — the configurable model + safety floor (low runtime risk).** `GuardrailHook` schema (`PolicyRule` superset) in `packages/shared/types` + migration & backfill from today's built-ins; `PolicyEngine` interprets the new shape; `onUnavailable` risk-tiering with the high-risk-`open` prohibition (**fixes F2** — deletes the silent `pass` at `policy.ts:399-404`); `invoke_tool` **fallback** path wired to the existing human-task tool for the LLM-down case; every resolution → `AuditLog` (**fixes F6**); preTool *input-based* eval (**fixes F1**); admin UI for the six fields + the safe-tool picker + `ai_eval_filtered → ai_eval_targeted` rename (**F3**). *Mostly `policy.ts` + `types` + admin UI + `define-route` audit; minimal hot-loop change.* **This is the dispatch in §8.**
+- **G11 Phase 2 — uniform runtime checkpoints (rides with G10 `loop.ts` decomposition).** Add `preReply`; make **both** `loop.ts` and `case-agent-loop.ts` honour the same checkpoint set (**fixes F4/F5** — the known live coverage gaps); full engine-initiated `invoke_tool` at every checkpoint (not just the fallback path). Co-located with G10 because both restructure the hot loop — touch those files once. **Do not start until G10 planning.**
+- **Defer:** async eval, generic `PostTurn`.
+
+### 7.6 Platform-policy decisions (architect-set defaults; owner may override)
+
+The earlier fail-open-vs-closed question is **resolved**: fallback is a *configurable tool-invocation*, default 转人工 for high-risk. Remaining knobs (defaults baked into §8 — adjust if you disagree):
+
+1. **Safe-tool allowlist for `invoke_tool`** → `create_human_task` (转人工), `request_user_input`.
+2. **High-risk skill set** (forbids `onUnavailable: open`) → `refund_money`, `change_ban_status`, `delete_account` (today's `no_high_risk_account_change` deny-list).
+3. **Default `onUnavailable` for an `ai` check NOT on a high-risk skill** → `open` + warn (availability over strictness for advisory checks).
+
+---
+
+## 8. Coding-agent kickoff prompt — G11 Phase 1 (configurable guardrail primitive)
+
+Paste into a fresh Claude Code (zero context). It is the lead agent; it may spawn sub-agents.
+
+```text
+You are the lead coding agent for Intera — a multi-tenant AI customer-service SaaS (Next.js 15 monorepo:
+apps/console + packages/shared; Prisma 6 + PostgreSQL). You may spawn sub-agents (git-worktree isolation).
+
+SOURCE OF TRUTH — read these first, in order, before writing any code:
+  1) doc/handoffs/GENERIC_HANDOFF.md   — project context + §0 work rules (these are 铁律 / non-negotiable)
+  2) doc/handoffs/MASTER_BUILD_HANDOFF.md   — current status; find the G1–G11 program
+  3) doc/to-do/2026-06-04-enterprise-saas-readiness.md — §0/§1 give the architecture vocabulary
+     (seam, deep module, deletion test); **§7 is your COMPLETE spec for this task. Build from §7 only.**
+
+TASK: implement **G11 Phase 1** — turn the guardrail/policy engine into a single CONFIGURABLE PRIMITIVE
+(a `GuardrailHook`) with a platform-owned safety floor and a fallback-to-system-tool mechanism. Spec: §7.2–§7.6.
+**DO NOT implement Phase 2** (new `preReply` checkpoint + uniform two-loop runtime rewiring) — that rides with the
+G10 loop.ts decomposition, separate dispatch. If a Phase-2-shaped change seems required, STOP and ask the architect.
+
+WHAT TO BUILD (all per §7.2–§7.4):
+  1) `GuardrailHook` config model — a superset of today's `PolicyRule` (packages/shared/types):
+     when (checkpoint enum) · match {skills matcher, ifPattern?} · check {kind:'rule'|'ai', ...} ·
+     onViolation {warn | block(+guidance) | invoke_tool} · onUnavailable {open | closed | invoke_tool} · guidance.
+     Add a NEW Prisma migration (do NOT rename applied migrations — spec §3.4) + a backfill mapping the current
+     built-ins (policy.ts loadBuiltInPolicies) into the new shape with the §7.6 safe defaults.
+  2) PolicyEngine (apps/console/lib/agent/policy.ts) interprets the new model:
+     - onUnavailable risk-tiering — FIXES F2. On an `ai` check hitting CannotRetryError/timeout, follow the hook's
+       onUnavailable. DELETE the current silent "all pass" (policy.ts:399-404).
+     - SAFETY FLOOR (platform-owned, NOT configurable): for hooks on high-risk skills
+       {refund_money, change_ban_status, delete_account}, onUnavailable:'open' is REJECTED at config-validation AND
+       defended in the engine (coerced to invoke_tool: create_human_task). invoke_tool may target ONLY the
+       allowlist {create_human_task, request_user_input} — business/irreversible tools are never valid targets.
+     - preTool input-based eval — FIXES F1: at preTool, resolve {{skill_input}}/{{skill_name}} (skillOutput is
+       absent by definition); stop silently skipping `ai` checks at preTool.
+  3) Fallback-to-tool wiring (eval-unavailable path ONLY, this phase): when a hook resolves to
+     invoke_tool(create_human_task), signal the loop to enqueue that system tool call by REUSING the existing path
+     (loop.ts already auto-creates a human task on postTool 'escalated', ~loop.ts:1019-1051 — generalize that; do
+     NOT invent a new escalation path, and do NOT add new checkpoints).
+  4) Audit — FIXES F6: every hook resolution writes an AuditLog row (G3 AuditLog model + the audit() hook from
+     define-route / packages/shared/contracts/audit.ts). e.g. action "guardrail.block" / "guardrail.escalate".
+  5) Admin UI (apps/console/app/admin/guardrails/page.tsx + i18n dictionaries.ts en+zh): expose the six fields;
+     the onViolation/onUnavailable tool pickers list ONLY the safe-tool allowlist; for a hook on a high-risk skill
+     the UI forbids onUnavailable:'open'. Do the ai_eval_filtered → ai_eval_targeted rename (F3) here.
+
+DEFAULTS (architect-set, §7.6; the owner may override — if so you'll be told):
+  - safe-tool allowlist: { create_human_task (转人工), request_user_input }
+  - high-risk skills (forbid onUnavailable:'open'): { refund_money, change_ban_status, delete_account }
+  - default onUnavailable for an `ai` check NOT on a high-risk skill: 'open' + warn
+  - no_compensation_promise default: check:ai · onViolation:block(+guidance) · onUnavailable:invoke_tool(create_human_task)
+
+NON-NEGOTIABLE RULES (GENERIC_HANDOFF §0 + this program):
+  - Local gate for EVERY unit of work; paste the output as a receipt:
+      npx tsc --noEmit -p apps/console/tsconfig.json     # 0 errors
+      env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test   # ALL GREEN, KEYLESS
+      npm run build:console                               # success
+    Run tests with keys UNSET (the suite has a global provider mock; a green bar must NOT depend on live keys).
+  - The safety changes (F2 fail-closed + the safe-tool floor) MUST ship a red→green guard test driving the REAL
+    PolicyEngine entry point: simulate CannotRetryError on a money-hook `ai` check → assert create_human_task is
+    invoked and the action is NOT silently passed. Mock/seam-only tests do NOT count (§0.4).
+  - Config-validation tests: onUnavailable:'open' on a high-risk hook is rejected; invoke_tool to a non-allowlisted
+    tool is rejected.
+  - UI: browser screenshots of the guardrails page (add/edit a hook, the tool picker, the high-risk constraint).
+  - Do NOT deploy. Local only. Do NOT touch SSH creds, the DB password, or rotate anything.
+
+>>> STOP after this phase. Post: changed files, the KEYLESS receipt, the red→green guard-test output, UI
+    screenshots, and a 10-line summary of the GuardrailHook interface as built. WAIT for architect review.
+    Do NOT start Phase 2 (preReply / two-loop checkpoint unification). <<<
+
+If anything in §7 is ambiguous or you find a load-bearing reason a step is wrong, STOP and surface it rather than
+guessing — the architect adjudicates.
+```
+
+---
+
+## 9. Combined dispatch kickoff — Wave 2 "safe three" (G5 + G9 + G11 Phase 1)
+
+> Sequencing decision (2026-06-04, owner-approved): dispatch the **three low-risk, file-disjoint** streams together
+> now; **G2-RLS is a SEPARATE gated follow-up** (it can break the live bot — it gets a clean smoke-test signal).
+> This prompt covers G5 + G9 + G11-P1 only. Lane briefs: G5/G9 in §5.2, G11 in §7+§8.
+
+```text
+You are the lead coding agent for Intera — a multi-tenant AI customer-service SaaS (Next.js 15 monorepo:
+apps/console + packages/shared; Prisma 6 + PostgreSQL). You may spawn sub-agents (git-worktree isolation).
+
+SOURCE OF TRUTH — read first, in order:
+  1) doc/handoffs/GENERIC_HANDOFF.md        — project context + §0 work rules (铁律, non-negotiable)
+  2) doc/handoffs/MASTER_BUILD_HANDOFF.md    — current status; the G1–G11 program
+  3) doc/to-do/2026-06-04-enterprise-saas-readiness.md — §5 (Wave 2 G5/G9 specs) + §7 (G11 design) + §8 (G11 lane
+     brief). §0/§1 give the architecture vocabulary (seam, deep module, deletion test).
+
+SCOPE: three file-disjoint streams in ONE dispatch — G5 observability, G9 coverage, G11 Phase 1 (configurable
+guardrail primitive).
+  DO NOT do G2-RLS — separate gated follow-up. If you find yourself writing `ENABLE ROW LEVEL SECURITY`,
+    `SET LOCAL app.current_org_id`, or RLS policies, STOP — wrong dispatch.
+  DO NOT do G11 Phase 2 (new `preReply` checkpoint / two-loop checkpoint unification) — rides with G10, Wave 3.
+
+EXECUTION — Task 0 (serial, STOP for review) → 3 parallel lanes → integrate.
+
+PHASE 1 — Task 0 (SERIAL, do yourself, NO sub-agents): the shared foundation G5 + G11 both need.
+  a) Request correlation (G5 seed, §5.1): defineRoute generates `requestId = crypto.randomUUID()` per request, adds
+     it to the `log` context (already carries orgId/userId), sets `x-request-id` on the response.
+  b) Shared audit-writer seam: today defineRoute.audit() writes AuditLog for HTTP routes. Extract the underlying
+     writer so the AGENT RUNTIME (policy.ts/loop.ts) can write AuditLog too, taking orgId explicitly from the caller.
+     Keep it a SINGLE seam (one writeAudit(event)) so the later RLS dispatch can make it GUC-aware in one place
+     without re-touching G11. Do NOT add AsyncLocalStorage / SET LOCAL now (that's the RLS dispatch).
+  Acceptance: x-request-id on every response; a 500 logs {requestId, orgId, userId, route}; the audit-writer is
+  callable from BOTH defineRoute and a plain agent-runtime context (unit test proving both paths write a row).
+  >>> STOP. Post the receipt + a 10-line summary of the requestId + audit-writer seam. WAIT for architect approval. <<<
+
+PHASE 2 — fan out 3 sub-agents (own git worktree each), disjoint files:
+  • Lane O — G5 observability (§5.2): lib/logger.ts (structured JSON in prod; requestId·orgId·userId), @sentry/nextjs
+    init (scrub PII), lib/metrics.ts (per-org LLM token+cost events — billing substrate), thread requestId →
+    ActionTrace so HTTP-error → agent-run is one hop. Owns: logger / sentry / metrics / trace-correlation.
+  • Lane T — G9 coverage (§5.2, __tests__ only): route-level tests for remaining mutating/tenant-sensitive routes;
+    one real-DB (local PG) integration test per domain. S2 is ALREADY resolved (global provider mock) — do NOT add
+    skipIf; KEEP the keyless bar green and add coverage under it.
+  • Lane G — G11 Phase 1: implement the configurable GuardrailHook primitive EXACTLY per §7.2–§7.6 + the lane brief
+    §8 (model + safety floor + fallback-to-tool + audit + F1/F2/F3/F6 fixes + admin UI). Its AuditLog writes use the
+    Task-0 shared audit-writer. Owns: policy.ts, packages/shared/types, guardrails admin page, dictionaries.ts, a new
+    migration + backfill, minimal loop.ts (reuse the EXISTING escalate path only — no new checkpoints).
+
+CONFLICT RULES: lanes edit only their listed files; Task-0 files (defineRoute requestId, the audit-writer) are
+read-only to lanes after Phase 1; new migrations get distinct numeric prefixes (§3.4 — never rename applied ones).
+
+NON-NEGOTIABLE (GENERIC_HANDOFF §0 + program):
+  - Local gate per unit of work, paste as receipt:
+      npx tsc --noEmit -p apps/console/tsconfig.json     # 0 errors
+      env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test   # ALL GREEN, KEYLESS
+      npm run build:console                               # success
+  - G11 safety changes (F2 fail-closed + safe-tool floor) ship a red→green guard test driving the REAL PolicyEngine
+    (simulate CannotRetryError on a money-hook ai check → assert create_human_task invoked, NOT silent pass).
+    Mock/seam-only tests don't count (§0.4).
+  - UI (Lane G + any G5 surface): browser screenshots in loading / error / success states.
+  - Do NOT deploy. Local only. Do NOT touch SSH creds, the DB password, or rotate anything.
+
+PHASE 3 — integrate, run the full KEYLESS gate once more, produce the consolidated receipt (changed files by lane +
+tsc/test/build + guard-test red→green + screenshots). Update MASTER_BUILD_HANDOFF.md (flip G5/G9/G11-P1) and move the
+shipped portion of the spec to doc/what's done/. Then STOP for architect review — do NOT start G2-RLS or G11 Phase 2.
+
+If anything is ambiguous or you find a load-bearing reason a step is wrong, STOP and surface it — the architect adjudicates.
 ```

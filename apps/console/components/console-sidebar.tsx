@@ -79,7 +79,6 @@ const BUILD_ITEMS: NavItem[] = [
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
   { href: '/admin/channels', slug: 'channels', icon: Plug, color: '#7c3aed' },
   { href: '/admin/api-keys', slug: 'apiKeys', icon: Key, color: '#d4912e' },
-  { href: '/admin/members', slug: 'members', icon: Users2, color: '#6366f1' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
@@ -87,6 +86,7 @@ const OPERATE_ITEMS: NavItem[] = [
   { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
   { href: '/ops/users', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/ops/users' },
   { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
+  { href: '/admin/members', slug: 'members', icon: Users2, color: '#6366f1' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
