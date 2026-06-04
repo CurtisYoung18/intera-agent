@@ -35,6 +35,11 @@ export default function AgentOnboardingGate({ children }: Props) {
       const d = await r.json()
       if (!r.ok) {
         const errMsg = typeof d.error === 'string' ? d.error : d.error?.message
+        // If already exists, just refresh — agents were created elsewhere
+        if (errMsg?.includes('already exists')) {
+          await refreshConfigs()
+          return
+        }
         setError(errMsg || 'Failed to create agent')
         return
       }
