@@ -31,7 +31,16 @@ export const POST = defineRoute({
   inputSchema: createInviteSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, session, repo, audit }) {
-    if (!session.userId) throw new RouteError('internal', 'Session missing userId — please re-login')
+    // Resolve inviter userId — session may not carry it (legacy tokens / apiKey auth fallback)
+    let inviterUserId = session.userId
+    if (!inviterUserId) {
+      const ownerMembership = await repo.membership.findFirst({
+        where: { role: 'owner' },
+        select: { userId: true },
+      })
+      inviterUserId = ownerMembership?.userId
+      if (!inviterUserId) throw new RouteError('internal', 'Cannot determine inviter — no owner membership found')
+    }
 
     // Email-bound invite: check for duplicate member / pending invite
     if (input.email) {
@@ -52,18 +61,17 @@ export const POST = defineRoute({
     const token = randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
-    const data: Record<string, unknown> = {
-      email: input.email ?? null,
-      role: input.role,
-      maxUses: input.email ? null : (input.maxUses ?? null),
-      useCount: 0,
-      token,
-      state: 'pending',
-      expiresAt,
-    }
-
     const invitation = await (repo.invitation.create as any)({
-      data: { ...data, orgId: session.orgId, invitedBy: session.userId },
+      data: {
+        email: input.email ?? null,
+        invitedBy: inviterUserId,
+        role: input.role,
+        maxUses: input.email ? null : (input.maxUses ?? null),
+        useCount: 0,
+        token,
+        state: 'pending',
+        expiresAt,
+      },
       include: { inviter: { select: { email: true, name: true } } },
     })
 
