@@ -82,7 +82,7 @@ export default function ApiKeysPage() {
     try {
       const r = await fetch('/api/admin/api-keys')
       const d = await r.json()
-      if (!r.ok) { setError(d.error || t('common.failedLoad')); return }
+      if (!r.ok) { setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('common.failedLoad')); return }
       setKeys(d.keys || [])
     } catch {
       setError(t('common.failedLoad'))
@@ -125,7 +125,7 @@ export default function ApiKeysPage() {
         body: JSON.stringify(body),
       })
       const d = await r.json()
-      if (!r.ok) { setError(d.error || t('common.failedSave', { status: String(r.status) })); return }
+      if (!r.ok) { setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('common.failedSave', { status: String(r.status) })); return }
       addRevealed(name, d.plaintext)
       setShowForm(false)
       setNewName('')
@@ -144,7 +144,7 @@ export default function ApiKeysPage() {
     setError('')
     try {
       const r = await fetch(`/api/admin/api-keys/${id}`, { method: 'DELETE' })
-      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || t('common.failedLoad')); return }
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('common.failedLoad')); return }
       await fetchKeys()
     } catch {
       setError(t('common.failedLoad'))

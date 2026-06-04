@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, ArrowRight, Loader2, Sparkles, Brain, Puzzle, Shield, Layers } from 'lucide-react'
+import { Bot, ArrowRight, Loader2, Sparkles, Brain, Puzzle, Shield, Layers, AlertTriangle, RefreshCw } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function AgentOnboardingGate({ children }: Props) {
-  const { agentConfigs, loading, refreshConfigs, selectAgent } = useAgentContext()
+  const { agentConfigs, loading, loadError, retryLoad, refreshConfigs, selectAgent } = useAgentContext()
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
@@ -17,6 +17,42 @@ export default function AgentOnboardingGate({ children }: Props) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="animate-spin text-indigo" size={24} />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex items-center justify-center h-full px-4">
+        <div style={{ maxWidth: 420, width: '100%', textAlign: 'center' }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 16,
+            background: 'rgba(230,69,57,0.08)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 20px',
+          }}>
+            <AlertTriangle size={24} color="var(--vermillion)" />
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--mist)', marginBottom: 8 }}>
+            Failed to load agent configs
+          </h2>
+          <p style={{ fontSize: 13, color: 'var(--fog)', lineHeight: 1.5, marginBottom: 20 }}>
+            {loadError}
+          </p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '10px 24px', borderRadius: 10,
+              background: 'var(--indigo)', color: '#fff', fontSize: 13, fontWeight: 600,
+              border: 'none', cursor: 'pointer',
+            }}
+          >
+            <RefreshCw size={14} />
+            Retry
+          </button>
+        </div>
       </div>
     )
   }

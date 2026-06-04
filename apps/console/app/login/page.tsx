@@ -54,7 +54,7 @@ function LoginForm() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error || 'Login failed')
+        setError((typeof data.error === 'string' ? data.error : data.error?.message) || 'Login failed')
         return
       }
       window.location.href = next

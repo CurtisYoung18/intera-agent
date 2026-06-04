@@ -10,6 +10,7 @@ import VersionContextBar, { useSelectedAgentId } from '@/components/admin/versio
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -76,6 +77,8 @@ export default function KnowledgePage() {
   // Edit panel
   const [editingSource, setEditingSource] = useState<Partial<KnowledgeSource> | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   // GPTBots KB list
   const [gptKbs, setGptKbs] = useState<GptBotKb[]>([])
@@ -136,6 +139,7 @@ export default function KnowledgePage() {
   const handleSave = async () => {
     if (!editingSource?.name) return
     setSaving(true)
+    setSaveError(null)
     try {
       const isNew = !editingSource.id
       const url = isNew
@@ -150,25 +154,32 @@ export default function KnowledgePage() {
       })
       if (!res.ok) {
         const err = await res.json()
-        alert(err.error || t('knowledge.saveFailed'))
+        setSaveError(err.error || t('knowledge.saveFailed'))
         return
       }
       setEditingSource(null)
+      setSaveError(null)
       fetchSources()
     } catch {
-      alert(t('knowledge.saveFailed'))
+      setSaveError(t('knowledge.saveFailed'))
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm(t('knowledge.deleteConfirm'))) return
+  const handleDelete = (id: string) => {
+    setConfirmDeleteId(id)
+  }
+
+  const confirmDelete = async () => {
+    const id = confirmDeleteId
+    if (!id) return
+    setConfirmDeleteId(null)
     try {
       await fetch(`/api/admin/knowledge/sources/${id}`, { method: 'DELETE' })
       fetchSources()
     } catch {
-      alert('Delete failed')
+      setError(t('knowledge.deleteFailed'))
     }
   }
 
@@ -181,7 +192,7 @@ export default function KnowledgePage() {
       })
       fetchSources()
     } catch {
-      // ignore
+      setError(t('knowledge.saveFailed'))
     }
   }
 
@@ -204,7 +215,7 @@ export default function KnowledgePage() {
       })
       const data = await res.json()
       if (data.error) {
-        setTestError(data.error)
+        setTestError(typeof data.error === 'string' ? data.error : data.error?.message || 'Test failed')
       } else {
         setTestResults(data.list || [])
         setTestTotal(data.total || 0)
@@ -471,14 +482,14 @@ export default function KnowledgePage() {
       {/* Edit Modal */}
       {editingSource && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black/20 backdrop-blur-sm"
-          onClick={(e) => { if (e.target === e.currentTarget) setEditingSource(null) }}>
+          onClick={(e) => { if (e.target === e.currentTarget) { setEditingSource(null); setSaveError(null) } }}>
           <div className="w-full max-w-lg mx-4 rounded-2xl border border-black/[0.08] bg-white shadow-2xl max-h-[80vh] overflow-auto">
             {/* Modal header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-black/[0.06]">
               <h3 className="text-[15px] font-bold text-[var(--mist)]">
                 {editingSource.id ? 'Edit Source' : 'Add Knowledge Source'}
               </h3>
-              <button onClick={() => setEditingSource(null)} className="p-1 rounded-lg hover:bg-black/[0.04]">
+              <button onClick={() => { setEditingSource(null); setSaveError(null) }} className="p-1 rounded-lg hover:bg-black/[0.04]">
                 <XCircle className="w-5 h-5 text-[var(--fog)]" />
               </button>
             </div>
@@ -634,9 +645,12 @@ export default function KnowledgePage() {
             </div>
 
             {/* Modal footer */}
+            {saveError && (
+              <div className="px-5 py-2 text-[12px] text-vermillion bg-vermillion/[0.06] border-b border-vermillion/10">{saveError}</div>
+            )}
             <div className="flex items-center gap-2 px-5 py-3 border-t border-black/[0.06]">
               <button
-                onClick={() => setEditingSource(null)}
+                onClick={() => { setEditingSource(null); setSaveError(null) }}
                 className="px-4 py-2 rounded-lg border border-black/[0.08] text-[12px] text-[var(--fog)] hover:bg-black/[0.02] transition-colors"
               >
                 Cancel
@@ -652,6 +666,14 @@ export default function KnowledgePage() {
           </div>
         </div>
       )}
+      {/* ── Delete Confirmation Dialog ── */}
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title={t('knowledge.deleteConfirm')}
+        message={t('common.permanentlyDelete', { name: sources.find(s => s.id === confirmDeleteId)?.name ?? '' })}
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </div>
   </div>
   )

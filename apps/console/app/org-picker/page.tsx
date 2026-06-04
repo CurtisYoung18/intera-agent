@@ -72,7 +72,7 @@ function OrgPicker() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error || 'Failed to switch organization')
+        setError((typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to switch organization')
         setSwitching(null)
         return
       }

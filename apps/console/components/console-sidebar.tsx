@@ -175,7 +175,7 @@ export default function ConsoleSidebar() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setPasswordError(data.error || 'Switch failed')
+        setPasswordError((typeof data.error === 'string' ? data.error : data.error?.message) || 'Switch failed')
         return
       }
       setSwitchOpen(false)
