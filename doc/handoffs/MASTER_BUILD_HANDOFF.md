@@ -124,6 +124,10 @@ npm run build:console                             # success, 53 static pages
 - [case-types/[name]/page.tsx](apps/console/app/admin/case-types/[name]/page.tsx): Added `maxIterations` to local `StageCfg` type
 - [loop.ts](apps/console/lib/agent/loop.ts): Derives sub-agent `maxIterations` from `Math.max(...stageConfigs.*.maxIterations)`, defaults to 5
 
+### M3 token count fix (2026-06-04)
+
+Renamed `beforeTokens`/`afterTokens` → `beforeChars`/`afterChars` in compact route API response — the values were always character counts, now the names match. Updated UI + test.
+
 ### Verification (2026-06-04)
 ```
 npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors ✓

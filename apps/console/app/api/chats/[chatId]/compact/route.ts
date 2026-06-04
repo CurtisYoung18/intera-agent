@@ -54,7 +54,7 @@ export async function POST(
         createdAt: m.createdAt,
       }))
 
-    const beforeTokens = apiMessages.reduce((sum, m) => sum + m.content.length, 0)
+    const beforeChars = apiMessages.reduce((sum, m) => sum + m.content.length, 0)
 
     const result = await compactConversation(apiMessages as never, strategy as never)
 
@@ -62,8 +62,8 @@ export async function POST(
       return NextResponse.json({
         error: result.error || 'Compaction produced no summary',
         compactModel: result.model,
-        beforeTokens,
-        afterTokens: 0,
+        beforeChars,
+        afterChars: 0,
       }, { status: 200 })
     }
 
@@ -85,8 +85,8 @@ export async function POST(
 
     return NextResponse.json({
       summary,
-      beforeTokens,
-      afterTokens: summary.length,
+      beforeChars,
+      afterChars: summary.length,
       compactModel: result.model,
       compactedAt: new Date().toISOString(),
     })

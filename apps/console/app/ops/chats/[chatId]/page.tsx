@@ -403,7 +403,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           {/* Compact Chat result banner */}
           {compactResult && !compactResult.error && (
             <div className="rounded-xl border border-teal/10 bg-teal/[0.04] p-3 text-[11px] text-[var(--mist)]">
-              ✓ Compact complete · Model: {compactResult.compactModel} · {compactResult.beforeTokens?.toLocaleString()} → {compactResult.afterTokens?.toLocaleString()} chars
+              ✓ Compact complete · Model: {compactResult.compactModel} · {compactResult.beforeChars?.toLocaleString()} → {compactResult.afterChars?.toLocaleString()} chars
               {!compactResult.summary && <span className="ml-2 text-amber">(no summary generated — conversation may be too short)</span>}
             </div>
           )}

@@ -96,8 +96,8 @@ describe('POST /api/chats/[chatId]/compact', () => {
     expect(res.status).toBe(200)
     expect(body.summary).toContain('TX-12345')
     expect(body.compactModel).toBe('deepseek-v4-flash')
-    expect(body.beforeTokens).toBeGreaterThan(0)
-    expect(body.afterTokens).toBeGreaterThan(0)
+    expect(body.beforeChars).toBeGreaterThan(0)
+    expect(body.afterChars).toBeGreaterThan(0)
     expect(body.compactedAt).toBeDefined()
   })
 
@@ -127,7 +127,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
     expect(res.status).toBe(200)
     expect(body.error).toBe('Summary too short')
     expect(body.compactModel).toBe('deepseek-v4-flash')
-    expect(body.afterTokens).toBe(0)
+    expect(body.afterChars).toBe(0)
   })
 
   it('persists the summary to ChatMemory for every case in the chat', async () => {
