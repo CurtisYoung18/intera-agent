@@ -1,8 +1,9 @@
-// GET /api/admin/customers — List all customers (for sidebar switcher)
+// GET /api/admin/customers — List customers the current user can access (for sidebar switcher)
 // Auto-seeds the two built-in customers on first access.
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
+import { getSession } from '@/lib/auth'
 
 const BUILT_IN_CUSTOMERS = [
   { id: 'default', name: 'Demo Org', password: null },
@@ -10,6 +11,11 @@ const BUILT_IN_CUSTOMERS = [
 
 export async function GET() {
   try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     // Auto-seed/update built-in customers
     for (const c of BUILT_IN_CUSTOMERS) {
       await prisma.organization.upsert({
@@ -19,22 +25,19 @@ export async function GET() {
       })
     }
 
-    const customers = await prisma.organization.findMany({
-      select: {
-        id: true,
-        name: true,
-        password: true,
-        apiKey: true,
-      },
-      orderBy: { name: 'asc' },
+    // Only return orgs the current user has a membership in
+    const memberships = await prisma.membership.findMany({
+      where: { userId: session.userId },
+      include: { org: { select: { id: true, name: true, password: true, apiKey: true } } },
+      orderBy: { org: { name: 'asc' } },
     })
 
     return NextResponse.json({
-      customers: customers.map((c) => ({
-        id: c.id,
-        name: c.name,
-        hasPassword: c.password != null,
-        hasApiKey: c.apiKey != null,
+      customers: memberships.map((m) => ({
+        id: m.org.id,
+        name: m.org.name,
+        hasPassword: m.org.password != null,
+        hasApiKey: m.org.apiKey != null,
       })),
     })
   } catch (err) {
