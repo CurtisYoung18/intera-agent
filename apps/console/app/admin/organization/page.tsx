@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle, X } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, ApiClientError } from '@/lib/api/client'
 
@@ -37,6 +38,17 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_OPTIONS = ['admin', 'operator', 'viewer'] as const
 
+const ROLE_ICONS: Record<string, typeof Shield> = {
+  owner: Shield,
+  admin: Shield,
+  operator: Shield,
+  viewer: Shield,
+}
+
+function formatDate(iso: string): string {
+  try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return iso }
+}
+
 // ── Permissions matrix (static) ────────────────────────────────────
 
 interface PermRow { capability: string; owner: boolean; admin: boolean; operator: boolean; viewer: boolean }
@@ -52,6 +64,16 @@ const PERMISSIONS: PermRow[] = [
   { capability: 'Manage API keys', owner: true, admin: true, operator: false, viewer: false },
 ]
 
+// ── Glass card wrapper ─────────────────────────────────────────────
+
+function GlassCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-2xl bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm ${className}`}>
+      {children}
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────
 
 function OrganizationPageInner() {
@@ -61,10 +83,10 @@ function OrganizationPageInner() {
   const tab = searchParams.get('tab') || 'general'
 
   return (
-    <div className="px-8 py-8 animate-fade-up">
+    <div className="px-8 py-8">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-          <Building2 className="w-4 h-4 text-indigo-600" />
+        <div className="w-9 h-9 rounded-xl bg-white/60 backdrop-blur-sm border border-white/20 shadow-sm flex items-center justify-center">
+          <Building2 className="w-4.5 h-4.5 text-indigo-500" />
         </div>
         <div>
           <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('organization.title')}</h1>
@@ -72,21 +94,21 @@ function OrganizationPageInner() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 mb-6 border-b border-[var(--border-color)]">
+      <div className="flex gap-0 mb-8 border-b border-black/5">
         {(['general', 'members', 'permissions'] as const).map((tKey) => (
           <button
             key={tKey}
             type="button"
             onClick={() => router.push(`/admin/organization?tab=${tKey}`)}
-            className={`relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
+            className={`relative px-5 py-2.5 text-[13px] font-medium transition-colors -mb-px ${
               tab === tKey
                 ? 'text-[var(--mist)]'
-                : 'text-[var(--fog)] hover:text-[var(--mist)]'
+                : 'text-[var(--fog)]/60 hover:text-[var(--fog)]'
             }`}
           >
             {t(`organization.${tKey}`)}
             {tab === tKey && (
-              <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-indigo" />
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-0.5 rounded-full bg-indigo" />
             )}
           </button>
         ))}
@@ -150,30 +172,32 @@ function GeneralTab() {
 
   return (
     <div className="max-w-md">
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs text-[var(--fog)] mb-1">{t('organization.nameLabel')}</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="glass-input-console text-[14px] w-full"
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
-          />
+      <GlassCard className="p-6">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-[var(--smoke)] mb-1.5 uppercase tracking-wider">{t('organization.nameLabel')}</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="glass-input-console text-[14px] w-full"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !name.trim()}
+              className="px-5 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 disabled:opacity-40 transition-all shadow-sm"
+            >
+              {saving ? 'Saving…' : t('common.save')}
+            </button>
+            {saved && <span className="text-[12px] text-malachite font-medium">{t('organization.nameSaved')}</span>}
+          </div>
+          {error && <p className="text-[12px] text-red-500">{error}</p>}
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-            className="px-4 py-2 rounded-xl text-[13px] font-medium bg-indigo text-white hover:bg-indigo/90 disabled:opacity-40 transition-all"
-          >
-            {saving ? 'Saving…' : t('common.save')}
-          </button>
-          {saved && <span className="text-[12px] text-malachite">{t('organization.nameSaved')}</span>}
-        </div>
-        {error && <p className="text-[12px] text-red-500">{error}</p>}
-      </div>
+      </GlassCard>
     </div>
   )
 }
@@ -191,7 +215,9 @@ function MembersTab() {
   const [inviteRole, setInviteRole] = useState<string>('viewer')
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState(false)
+  const [inviteToken, setInviteToken] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [copiedLink, setCopiedLink] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -214,18 +240,26 @@ function MembersTab() {
   const handleInvite = async () => {
     setInviteError(null)
     try {
-      await apiClient('/api/admin/invitations', {
+      const res = await apiClient<{ invitation: { token: string } }>('/api/admin/invitations', {
         method: 'POST',
         body: { email: inviteEmail, role: inviteRole },
       })
+      setInviteToken(res.data.invitation.token)
       setInviteSuccess(true)
-      setInviteEmail('')
-      setInviteRole('viewer')
-      setTimeout(() => { setShowInvite(false); setInviteSuccess(false) }, 1500)
+      setCopiedLink(false)
       load()
     } catch (err) {
       setInviteError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to send invitation')
     }
+  }
+
+  const handleCloseInvite = () => {
+    setShowInvite(false)
+    setInviteEmail('')
+    setInviteRole('viewer')
+    setInviteSuccess(false)
+    setInviteToken(null)
+    setCopiedLink(false)
   }
 
   const handleRevoke = async (id: string) => {
@@ -243,6 +277,14 @@ function MembersTab() {
     navigator.clipboard.writeText(url)
     setCopiedId(token)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const copyLinkFromSuccess = () => {
+    if (!inviteToken) return
+    const url = `${window.location.origin}/login?invite=${inviteToken}`
+    navigator.clipboard.writeText(url)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 3000)
   }
 
   if (loading) {
@@ -264,47 +306,45 @@ function MembersTab() {
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <p className="text-[13px] text-[var(--fog)]">
-            {members.length} member{members.length !== 1 ? 's' : ''} · {invitations.length} pending invitation{invitations.length !== 1 ? 's' : ''}
-          </p>
-        </div>
+        <p className="text-[13px] text-[var(--fog)]">
+          {members.length} member{members.length !== 1 ? 's' : ''} · {invitations.length} pending invitation{invitations.length !== 1 ? 's' : ''}
+        </p>
         <button
-          onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(false) }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all"
+          onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(false); setInviteToken(null); setCopiedLink(false) }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 transition-all shadow-sm"
         >
           <UserPlus className="w-4 h-4" /> Invite Member
         </button>
       </div>
 
       {/* Members table */}
-      <div className="rounded-xl border border-[var(--border-color)] overflow-hidden mb-8">
+      <GlassCard className="overflow-hidden mb-8">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-[var(--border-color)] text-[var(--smoke)] text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3">Member</th>
-              <th className="text-left px-4 py-3">Role</th>
-              <th className="text-left px-4 py-3">Joined</th>
+            <tr className="border-b border-black/5 text-[11px] text-[var(--smoke)] uppercase tracking-wider">
+              <th className="text-left px-5 py-3 font-semibold">Member</th>
+              <th className="text-left px-5 py-3 font-semibold">Role</th>
+              <th className="text-left px-5 py-3 font-semibold">Joined</th>
             </tr>
           </thead>
           <tbody>
             {members.map((m) => (
-              <tr key={m.id} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-hover)] transition-colors">
-                <td className="px-4 py-3">
+              <tr key={m.id} className="border-b border-black/[0.03] last:border-0 hover:bg-black/[0.01] transition-colors">
+                <td className="px-5 py-3.5">
                   <div className="font-medium text-[var(--mist)]">{m.user.name || m.user.email}</div>
-                  <div className="text-xs text-[var(--fog)]">{m.user.email}</div>
+                  <div className="text-xs text-[var(--fog)] mt-0.5">{m.user.email}</div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-5 py-3.5">
                   {m.role === 'owner' ? (
-                    <span className="inline-flex items-center gap-1 text-[var(--mist)]">
+                    <span className="inline-flex items-center gap-1.5 text-[var(--mist)] bg-amber-50 border border-amber-200/50 px-2.5 py-1 rounded-lg">
                       <Shield className="w-3.5 h-3.5 text-amber-500" />
-                      Owner
+                      <span className="text-[12px] font-medium">Owner</span>
                     </span>
                   ) : (
                     <select
                       value={m.role}
                       onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                      className="glass-input-console text-[13px] py-1 px-2 rounded-lg"
+                      className="glass-input-console text-[13px] py-1.5 px-2.5 rounded-lg"
                     >
                       {ROLE_OPTIONS.map((r) => (
                         <option key={r} value={r}>{ROLE_LABELS[r]}</option>
@@ -312,64 +352,67 @@ function MembersTab() {
                     </select>
                   )}
                 </td>
-                <td className="px-4 py-3 text-[var(--fog)] text-xs">
-                  {new Date(m.invitedAt).toLocaleDateString()}
+                <td className="px-5 py-3.5 text-[var(--fog)] text-xs">
+                  {formatDate(m.invitedAt)}
                 </td>
               </tr>
             ))}
             {members.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-[var(--fog)] text-sm">
+                <td colSpan={3} className="px-5 py-10 text-center text-[var(--fog)] text-sm">
                   No members yet. Invite someone to get started.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </div>
+      </GlassCard>
 
       {/* Pending invitations */}
       {invitations.length > 0 && (
         <>
           <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-3">Pending Invitations</h2>
-          <div className="rounded-xl border border-[var(--border-color)] overflow-hidden">
+          <GlassCard className="overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--border-color)] text-[var(--smoke)] text-xs uppercase tracking-wider">
-                  <th className="text-left px-4 py-3">Email</th>
-                  <th className="text-left px-4 py-3">Role</th>
-                  <th className="text-left px-4 py-3">Expires</th>
-                  <th className="text-right px-4 py-3">Actions</th>
+                <tr className="border-b border-black/5 text-[11px] text-[var(--smoke)] uppercase tracking-wider">
+                  <th className="text-left px-5 py-3 font-semibold">Email</th>
+                  <th className="text-left px-5 py-3 font-semibold">Role</th>
+                  <th className="text-left px-5 py-3 font-semibold">Expires</th>
+                  <th className="text-right px-5 py-3 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {invitations.map((inv) => (
-                  <tr key={inv.id} className="border-b border-[var(--border-color)] last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="text-[var(--mist)]">{inv.email}</div>
+                  <tr key={inv.id} className="border-b border-black/[0.03] last:border-0">
+                    <td className="px-5 py-3.5">
+                      <div className="text-[var(--mist)] font-medium">{inv.email}</div>
                       {inv.inviter && (
-                        <div className="text-xs text-[var(--fog)]">Invited by {inv.inviter.name || inv.inviter.email}</div>
+                        <div className="text-xs text-[var(--fog)] mt-0.5">Invited by {inv.inviter.name || inv.inviter.email}</div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[var(--fog)]">{ROLE_LABELS[inv.role] || inv.role}</td>
-                    <td className="px-4 py-3 text-[var(--fog)] text-xs">
-                      {new Date(inv.expiresAt).toLocaleDateString()}
+                    <td className="px-5 py-3.5">
+                      <span className="text-[13px] text-[var(--fog)] bg-black/[0.03] px-2.5 py-1 rounded-lg">{ROLE_LABELS[inv.role] || inv.role}</span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-5 py-3.5 text-[var(--fog)] text-xs">
+                      {formatDate(inv.expiresAt)}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => copyInviteLink(inv.token)}
-                          className="p-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo/[0.06] text-[var(--fog)] hover:text-indigo transition-colors text-[12px] font-medium"
                           title="Copy invite link"
                         >
-                          {copiedId === inv.token ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                          {copiedId === inv.token ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedId === inv.token ? 'Copied' : 'Copy link'}
                         </button>
                         <button
                           onClick={() => handleRevoke(inv.id)}
-                          className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--fog)] hover:text-red-500 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-500/10 text-[var(--fog)] hover:text-red-500 transition-colors text-[12px]"
                           title="Revoke invitation"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -377,32 +420,77 @@ function MembersTab() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </GlassCard>
         </>
       )}
 
-      {/* Invite modal */}
-      {showInvite && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowInvite(false)}>
-          <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border-color)] p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-[16px] font-semibold text-[var(--mist)] mb-4">Invite Member</h3>
+      {/* Invite modal — rendered via portal for proper centering */}
+      {showInvite && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={handleCloseInvite}>
+          <div
+            className="bg-white/90 backdrop-blur-xl rounded-2xl border border-white/30 shadow-2xl p-6 w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-[16px] font-semibold text-[var(--mist)]">Invite Member</h3>
+              <button onClick={handleCloseInvite} className="p-1.5 rounded-lg hover:bg-black/[0.04] text-[var(--fog)] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
             {inviteSuccess ? (
-              <div className="text-green-500 text-sm py-4 text-center">Invitation sent!</div>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-green-600 text-sm py-2">
+                  <Check className="w-4 h-4" />
+                  <span className="font-medium">Invitation created for {inviteEmail}</span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200/50">
+                  <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider mb-2">Share this link</p>
+                  <p className="text-[11px] text-amber-700 mb-3 leading-relaxed">
+                    Send this link to <strong>{inviteEmail}</strong>. They can sign in with Google using that email, or register with email+password.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-[11px] font-mono text-amber-900 bg-white/60 px-3 py-2 rounded-lg border border-amber-200/50 break-all select-all">
+                      {window.location.origin}/login?invite={inviteToken}
+                    </code>
+                    <button
+                      onClick={copyLinkFromSuccess}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold transition-all"
+                      style={{
+                        background: copiedLink ? 'var(--malachite)' : 'var(--amber)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedLink ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <button onClick={handleCloseInvite} className="w-full py-2.5 rounded-xl text-[13px] font-medium border border-black/10 text-[var(--fog)] hover:bg-black/[0.02] transition-colors">
+                    Done
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-[var(--fog)] mb-1">Email</label>
+                  <label className="block text-[11px] font-semibold text-[var(--smoke)] mb-1.5 uppercase tracking-wider">Email</label>
                   <input
                     type="email"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     placeholder="colleague@company.com"
                     className="glass-input-console text-[14px] w-full"
+                    autoFocus
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--fog)] mb-1">Role</label>
+                  <label className="block text-[11px] font-semibold text-[var(--smoke)] mb-1.5 uppercase tracking-wider">Role</label>
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value)}
@@ -414,20 +502,21 @@ function MembersTab() {
                   </select>
                 </div>
                 {inviteError && (
-                  <div className="text-red-500 text-xs">{inviteError}</div>
+                  <div className="text-red-500 text-xs bg-red-50 px-3 py-2 rounded-lg">{inviteError}</div>
                 )}
                 <div className="flex gap-3 pt-2">
-                  <button onClick={() => setShowInvite(false)} className="flex-1 py-2.5 rounded-xl text-[13px] border border-[var(--border-color)] text-[var(--fog)] hover:bg-[var(--bg-hover)] transition-colors">
+                  <button onClick={handleCloseInvite} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium border border-black/[0.08] text-[var(--fog)] hover:bg-black/[0.02] transition-colors">
                     Cancel
                   </button>
-                  <button onClick={handleInvite} disabled={!inviteEmail} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium bg-indigo text-white hover:bg-indigo/90 disabled:opacity-40 transition-all">
+                  <button onClick={handleInvite} disabled={!inviteEmail} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 disabled:opacity-40 transition-all shadow-sm">
                     Send Invitation
                   </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
@@ -437,30 +526,30 @@ function MembersTab() {
 
 function PermissionsTab() {
   return (
-    <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-w-2xl">
+    <GlassCard className="overflow-hidden max-w-2xl">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-[var(--border-color)] text-[var(--smoke)] text-xs uppercase tracking-wider">
-            <th className="text-left px-4 py-3">Capability</th>
-            <th className="text-center px-4 py-3 w-16">Owner</th>
-            <th className="text-center px-4 py-3 w-16">Admin</th>
-            <th className="text-center px-4 py-3 w-16">Operator</th>
-            <th className="text-center px-4 py-3 w-16">Viewer</th>
+          <tr className="border-b border-black/5 text-[11px] text-[var(--smoke)] uppercase tracking-wider">
+            <th className="text-left px-5 py-3 font-semibold">Capability</th>
+            <th className="text-center px-5 py-3 font-semibold w-16">Owner</th>
+            <th className="text-center px-5 py-3 font-semibold w-16">Admin</th>
+            <th className="text-center px-5 py-3 font-semibold w-16">Operator</th>
+            <th className="text-center px-5 py-3 font-semibold w-16">Viewer</th>
           </tr>
         </thead>
         <tbody>
           {PERMISSIONS.map((row) => (
-            <tr key={row.capability} className="border-b border-[var(--border-color)] last:border-0">
-              <td className="px-4 py-3 text-[var(--mist)]">{row.capability}</td>
-              <td className="px-4 py-3 text-center">{row.owner ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
-              <td className="px-4 py-3 text-center">{row.admin ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
-              <td className="px-4 py-3 text-center">{row.operator ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
-              <td className="px-4 py-3 text-center">{row.viewer ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
+            <tr key={row.capability} className="border-b border-black/[0.03] last:border-0">
+              <td className="px-5 py-3.5 text-[var(--mist)] text-[13px]">{row.capability}</td>
+              <td className="px-5 py-3.5 text-center">{row.owner ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">—</span>}</td>
+              <td className="px-5 py-3.5 text-center">{row.admin ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">—</span>}</td>
+              <td className="px-5 py-3.5 text-center">{row.operator ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">—</span>}</td>
+              <td className="px-5 py-3.5 text-center">{row.viewer ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">—</span>}</td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </GlassCard>
   )
 }
 

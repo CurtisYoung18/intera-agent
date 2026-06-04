@@ -19,6 +19,7 @@ export default function LoginPage() {
 function LoginForm() {
   const params = useSearchParams()
   const next = params.get('next') || '/ops/guide'
+  const invite = params.get('invite')
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -99,9 +100,31 @@ function LoginForm() {
         <div className={styles.formWrap}>
           <div className={styles.formHead}>
             <div className={styles.formEyebrow}>Agent Console</div>
-            <h2 className={styles.formTitle}>Welcome back</h2>
-            <p className={styles.formDesc}>Sign in to manage your agents and conversations.</p>
+            <h2 className={styles.formTitle}>{invite ? "You've been invited" : 'Welcome back'}</h2>
+            <p className={styles.formDesc}>
+              {invite
+                ? 'Sign in with your invited email to join the organization. Use the same email your admin sent the invitation to.'
+                : 'Sign in to manage your agents and conversations.'}
+            </p>
           </div>
+
+          {invite && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,111,245,0.06))',
+              border: '1px solid rgba(99,102,241,0.12)',
+              borderRadius: 12,
+              padding: '12px 16px',
+              marginBottom: 16,
+              fontSize: 13,
+              color: 'var(--mist)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 16 }}>📨</span>
+              <span>Sign in with Google using your <strong>invited email</strong> to accept the invitation automatically.</span>
+            </div>
+          )}
 
           <form onSubmit={submit} className={styles.form}>
             <div className={styles.field}>
@@ -163,7 +186,7 @@ function LoginForm() {
           </div>
 
           <a
-            href="/api/auth/google"
+            href={`/api/auth/google${invite ? `?invite=${encodeURIComponent(invite)}` : ''}`}
             style={{
               display: 'flex',
               alignItems: 'center',

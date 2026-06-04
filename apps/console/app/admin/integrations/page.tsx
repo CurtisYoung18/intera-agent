@@ -51,10 +51,10 @@ function IntegrationsPageInner() {
   const tab = searchParams.get('tab') || 'channels'
 
   return (
-    <div className="px-8 py-8 animate-fade-up">
+    <div className="px-8 py-8">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
-          <Plug className="w-4 h-4 text-purple-600" />
+        <div className="w-9 h-9 rounded-xl bg-white/60 backdrop-blur-sm border border-white/20 shadow-sm flex items-center justify-center">
+          <Plug className="w-4.5 h-4.5 text-purple-500" />
         </div>
         <div>
           <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('integrationsPage.title')}</h1>
@@ -62,21 +62,21 @@ function IntegrationsPageInner() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 mb-6 border-b border-[var(--border-color)]">
+      <div className="flex gap-0 mb-8 border-b border-black/5">
         {(['channels', 'api-keys'] as const).map((tKey) => (
           <button
             key={tKey}
             type="button"
             onClick={() => router.push(`/admin/integrations?tab=${tKey}`)}
-            className={`relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
+            className={`relative px-5 py-2.5 text-[13px] font-medium transition-colors -mb-px ${
               tab === tKey
                 ? 'text-[var(--mist)]'
-                : 'text-[var(--fog)] hover:text-[var(--mist)]'
+                : 'text-[var(--fog)]/60 hover:text-[var(--fog)]'
             }`}
           >
             {t(`integrationsPage.${tKey}`)}
             {tab === tKey && (
-              <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-indigo" />
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-0.5 rounded-full bg-indigo" />
             )}
           </button>
         ))}
@@ -91,12 +91,12 @@ function IntegrationsPageInner() {
 // ── Channels Tab ───────────────────────────────────────────────────
 
 const channelCardCls = (ch: ChannelInfo) =>
-  `relative text-left rounded-2xl p-6 transition-all duration-200 group block ${
+  `relative text-left rounded-2xl p-6 transition-all duration-200 group block backdrop-blur-sm ${
     ch.comingSoon
       ? 'bg-white/30 border border-black/[0.03] opacity-50 cursor-not-allowed'
       : ch.active
-        ? 'bg-white/80 backdrop-blur-xl border border-black/[0.06] hover:border-indigo/20 hover:shadow-sm hover:-translate-y-0.5'
-        : 'bg-white/60 backdrop-blur-xl border border-black/[0.05] hover:border-black/[0.1]'
+        ? 'bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm hover:shadow-md hover:-translate-y-0.5'
+        : 'bg-white/40 backdrop-blur-xl border border-white/10 hover:border-black/[0.1]'
   }`
 
 function ChannelsTab() {
