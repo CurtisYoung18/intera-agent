@@ -1,8 +1,30 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Plug, MessageCircle, ArrowRight, Send, Headset, Globe, Plus, Trash2, Copy, Check, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
+
+// ── Channels types ─────────────────────────────────────────────────
+
+interface ChannelInfo {
+  id: string; label: string; description: string; icon: typeof Plug; href: string
+  active: boolean; comingSoon: boolean
+}
+
+const CHANNELS: ChannelInfo[] = [
+  { id: 'livechat', label: 'LiveChat', description: 'Connection · Routing · Rendering · Human Ops',
+    icon: MessageCircle, href: '/admin/channels/livechat', active: true, comingSoon: false },
+  { id: 'web-chat', label: 'Web Chat', description: 'Embedded widget · Human Tasks queue',
+    icon: Globe, href: '/admin/channels/web-chat', active: true, comingSoon: false },
+  { id: 'telegram', label: 'Telegram', description: 'Connect Intera to Telegram chats',
+    icon: Send, href: '', active: false, comingSoon: true },
+  { id: 'livedesk', label: 'LiveDesk', description: 'Customer service platform integration',
+    icon: Headset, href: '', active: false, comingSoon: true },
+]
+
+// ── API Keys types ─────────────────────────────────────────────────
 
 interface ApiKeyRow {
   id: string
@@ -20,7 +42,102 @@ interface AgentOption {
   isActive: boolean
 }
 
-export default function ApiKeysPage() {
+// ── Page ───────────────────────────────────────────────────────────
+
+function IntegrationsPageInner() {
+  const { t } = useConsoleLocale()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const tab = searchParams.get('tab') || 'channels'
+
+  return (
+    <div className="px-8 py-8 animate-fade-up">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+          <Plug className="w-4 h-4 text-purple-600" />
+        </div>
+        <div>
+          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('integrationsPage.title')}</h1>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 mb-6 border-b border-[var(--border-color)]">
+        {(['channels', 'api-keys'] as const).map((tKey) => (
+          <button
+            key={tKey}
+            type="button"
+            onClick={() => router.push(`/admin/integrations?tab=${tKey}`)}
+            className={`relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
+              tab === tKey
+                ? 'text-[var(--mist)]'
+                : 'text-[var(--fog)] hover:text-[var(--mist)]'
+            }`}
+          >
+            {t(`integrationsPage.${tKey}`)}
+            {tab === tKey && (
+              <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-indigo" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'channels' && <ChannelsTab />}
+      {tab === 'api-keys' && <ApiKeysTab />}
+    </div>
+  )
+}
+
+// ── Channels Tab ───────────────────────────────────────────────────
+
+const channelCardCls = (ch: ChannelInfo) =>
+  `relative text-left rounded-2xl p-6 transition-all duration-200 group block ${
+    ch.comingSoon
+      ? 'bg-white/30 border border-black/[0.03] opacity-50 cursor-not-allowed'
+      : ch.active
+        ? 'bg-white/80 backdrop-blur-xl border border-black/[0.06] hover:border-indigo/20 hover:shadow-sm hover:-translate-y-0.5'
+        : 'bg-white/60 backdrop-blur-xl border border-black/[0.05] hover:border-black/[0.1]'
+  }`
+
+function ChannelsTab() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
+      {CHANNELS.map((ch) => {
+        const Icon = ch.icon
+        const badge = ch.active
+          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-malachite/10 text-malachite border border-malachite/20"><span className="w-1.5 h-1.5 rounded-full bg-malachite" />Active</span>
+          : ch.comingSoon
+            ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/[0.04] text-[var(--fog)] border border-black/[0.06]">Coming soon</span>
+            : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber/10 text-amber border border-amber/20">Inactive</span>
+
+        const inner = (
+          <>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ch.active ? 'bg-indigo/[0.08]' : 'bg-black/[0.03]'}`}>
+                  <Icon className={`w-5 h-5 ${ch.active ? 'text-indigo' : 'text-[var(--fog)]'}`} />
+                </div>
+                <div>
+                  <p className="text-[14px] font-semibold text-[var(--mist)]">{ch.label}</p>
+                  <p className="text-[11px] text-[var(--fog)] mt-0.5">{ch.description}</p>
+                </div>
+              </div>
+              {ch.active && <ArrowRight className="w-4 h-4 text-[var(--fog)]/30 group-hover:text-indigo group-hover:translate-x-0.5 transition-all" />}
+            </div>
+            <div className="mt-3">{badge}</div>
+          </>
+        )
+
+        if (ch.comingSoon) return <div key={ch.id} className={channelCardCls(ch)}>{inner}</div>
+        return <Link key={ch.id} href={ch.href} className={channelCardCls(ch)}>{inner}</Link>
+      })}
+    </div>
+  )
+}
+
+// ── API Keys Tab ───────────────────────────────────────────────────
+
+function ApiKeysTab() {
   const { t } = useConsoleLocale()
   const [keys, setKeys] = useState<ApiKeyRow[]>([])
   const [agents, setAgents] = useState<AgentOption[]>([])
@@ -28,14 +145,10 @@ export default function ApiKeysPage() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  // New key form
   const [showForm, setShowForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newAgentConfigId, setNewAgentConfigId] = useState('')
 
-  // Revealed plaintexts — persisted in sessionStorage so keys can be copied
-  // repeatedly within the same browser session. Keys are only stored client-side;
-  // the server only keeps the SHA256 hash.
   const [revealedKeys, setRevealedKeys] = useState<Array<{ name: string; plaintext: string }>>(() => {
     try { return JSON.parse(sessionStorage.getItem('intera-revealed-keys') || '[]') } catch { return [] }
   })
@@ -59,11 +172,8 @@ export default function ApiKeysPage() {
   const toggleVisible = (plaintext: string) => {
     setVisibleKeys(prev => {
       const next = new Set(prev)
-      if (next.has(plaintext)) {
-        next.delete(plaintext)
-      } else {
-        next.add(plaintext)
-      }
+      if (next.has(plaintext)) next.delete(plaintext)
+      else next.add(plaintext)
       return next
     })
   }
@@ -96,7 +206,6 @@ export default function ApiKeysPage() {
       const r = await fetch('/api/admin/agent-configs')
       const d = await r.json()
       if (r.ok && d.configs) {
-        // Group by name, pick one row per name for the dropdown
         const seen = new Set<string>()
         const opts: AgentOption[] = []
         for (const a of d.configs) {
@@ -165,28 +274,7 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-            <Key className="w-4 h-4 text-amber-600" />
-          </div>
-          <div>
-            <h1 className="text-[18px] font-bold text-[var(--mist)]">{t('apiKeys.title')}</h1>
-            <p className="text-[12px] text-[var(--fog)]">{t('apiKeys.subtitle')}</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white bg-[var(--indigo)] hover:opacity-90 transition-opacity"
-          style={{ border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          <Plus size={14} />
-          {t('apiKeys.newKey')}
-        </button>
-      </div>
-
+    <div className="max-w-4xl">
       {/* Error */}
       {error && (
         <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-red-50 border border-red-100 text-[11px] text-red-600">
@@ -196,7 +284,7 @@ export default function ApiKeysPage() {
         </div>
       )}
 
-      {/* Revealed keys (persisted in sessionStorage) */}
+      {/* Revealed keys */}
       {revealedKeys.map(rk => {
         const isVisible = visibleKeys.has(rk.plaintext)
         const isCopied = copiedKey === rk.plaintext
@@ -224,13 +312,7 @@ export default function ApiKeysPage() {
               <button
                 onClick={() => handleCopy(rk.plaintext)}
                 className="flex items-center gap-1 px-3 py-2 rounded-lg text-[12px] font-semibold transition-colors"
-                style={{
-                  background: isCopied ? 'var(--malachite)' : 'var(--amber)',
-                  color: 'white',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
+                style={{ background: isCopied ? 'var(--malachite)' : 'var(--amber)', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 {isCopied ? <Check size={12} /> : <Copy size={12} />}
                 {isCopied ? t('apiKeys.copied') : t('apiKeys.copy')}
@@ -298,6 +380,18 @@ export default function ApiKeysPage() {
         </div>
       )}
 
+      {/* New key button */}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white bg-[var(--indigo)] hover:opacity-90 transition-opacity"
+          style={{ border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          <Plus size={14} />
+          {t('apiKeys.newKey')}
+        </button>
+      </div>
+
       {/* Key list */}
       {loading ? (
         <div className="flex justify-center py-12">
@@ -306,7 +400,7 @@ export default function ApiKeysPage() {
       ) : keys.length === 0 ? (
         <div className="text-center py-16">
           <div className="w-12 h-12 rounded-2xl bg-black/[0.03] flex items-center justify-center mx-auto mb-3">
-            <Key size={18} className="text-[var(--fog)] opacity-30" />
+            <Plus size={18} className="text-[var(--fog)] opacity-30" />
           </div>
           <p className="text-[13px] text-[var(--fog)] opacity-50">{t('apiKeys.empty')}</p>
         </div>
@@ -364,7 +458,6 @@ export default function ApiKeysPage() {
         <h2 className="text-[14px] font-bold text-[var(--mist)] mb-4">{t('apiKeys.howToUse')}</h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Auth card */}
           <div className="p-5 rounded-2xl bg-white/60 backdrop-blur-xl border border-black/[0.06]">
             <p className="text-[12px] font-bold text-[var(--mist)] mb-3">{t('apiKeys.authTitle')}</p>
             <p className="text-[11px] text-[var(--fog)] mb-3 leading-relaxed">
@@ -376,7 +469,6 @@ export default function ApiKeysPage() {
   -d '{"message":"Hello","userId":"u_1"}'`}</pre>
           </div>
 
-          {/* Endpoints card */}
           <div className="p-5 rounded-2xl bg-white/60 backdrop-blur-xl border border-black/[0.06]">
             <p className="text-[12px] font-bold text-[var(--mist)] mb-3">{t('apiKeys.endpointsTitle')}</p>
             <div className="flex flex-col gap-2">
@@ -396,7 +488,6 @@ export default function ApiKeysPage() {
           </div>
         </div>
 
-        {/* Agent routing note */}
         {agents.length > 1 && (
           <div className="mt-4 p-4 rounded-2xl bg-indigo/[0.03] border border-indigo/[0.08]">
             <p className="text-[11px] text-[var(--mist)] leading-relaxed">
@@ -406,5 +497,15 @@ export default function ApiKeysPage() {
         )}
       </div>
     </div>
+  )
+}
+
+// ── Export ─────────────────────────────────────────────────────────
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-[var(--fog)] text-sm">Loading…</div>}>
+      <IntegrationsPageInner />
+    </Suspense>
   )
 }

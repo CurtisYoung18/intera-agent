@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { UserPlus, Trash2, Copy, Check, Shield } from 'lucide-react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, ApiClientError } from '@/lib/api/client'
+
+// ── Types ──────────────────────────────────────────────────────────
 
 interface Member {
   id: string
@@ -34,11 +37,155 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_OPTIONS = ['admin', 'operator', 'viewer'] as const
 
-export default function MembersPage() {
+// ── Permissions matrix (static) ────────────────────────────────────
+
+interface PermRow { capability: string; owner: boolean; admin: boolean; operator: boolean; viewer: boolean }
+
+const PERMISSIONS: PermRow[] = [
+  { capability: 'Manage org settings', owner: true, admin: false, operator: false, viewer: false },
+  { capability: 'Manage members', owner: true, admin: true, operator: false, viewer: false },
+  { capability: 'Edit agent config', owner: true, admin: true, operator: false, viewer: false },
+  { capability: 'View agent config', owner: true, admin: true, operator: true, viewer: true },
+  { capability: 'Access playground', owner: true, admin: true, operator: true, viewer: false },
+  { capability: 'View dashboards', owner: true, admin: true, operator: true, viewer: true },
+  { capability: 'View chats', owner: true, admin: true, operator: true, viewer: false },
+  { capability: 'Manage API keys', owner: true, admin: true, operator: false, viewer: false },
+]
+
+// ── Page ───────────────────────────────────────────────────────────
+
+function OrganizationPageInner() {
+  const { t } = useConsoleLocale()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const tab = searchParams.get('tab') || 'general'
+
+  return (
+    <div className="px-8 py-8 animate-fade-up">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+          <Building2 className="w-4 h-4 text-indigo-600" />
+        </div>
+        <div>
+          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('organization.title')}</h1>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 mb-6 border-b border-[var(--border-color)]">
+        {(['general', 'members', 'permissions'] as const).map((tKey) => (
+          <button
+            key={tKey}
+            type="button"
+            onClick={() => router.push(`/admin/organization?tab=${tKey}`)}
+            className={`relative px-4 py-2.5 text-[13px] font-medium transition-colors ${
+              tab === tKey
+                ? 'text-[var(--mist)]'
+                : 'text-[var(--fog)] hover:text-[var(--mist)]'
+            }`}
+          >
+            {t(`organization.${tKey}`)}
+            {tab === tKey && (
+              <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-indigo" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {tab === 'general' && <GeneralTab />}
+      {tab === 'members' && <MembersTab />}
+      {tab === 'permissions' && <PermissionsTab />}
+    </div>
+  )
+}
+
+// ── General Tab ────────────────────────────────────────────────────
+
+function GeneralTab() {
+  const { t } = useConsoleLocale()
+  const [orgId, setOrgId] = useState('')
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then((r) => r.json())
+      .then((d) => {
+        setOrgId(d.orgId || '')
+        setName(d.customerName || '')
+      })
+      .catch(() => setError(t('common.failedLoad')))
+      .finally(() => setLoading(false))
+  }, [t])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    setSaved(false)
+    try {
+      const r = await fetch(`/api/admin/organizations/${orgId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('organization.nameSaveError'))
+        return
+      }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      setError(t('organization.nameSaveError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div className="text-[var(--fog)] text-sm">Loading…</div>
+
+  return (
+    <div className="max-w-md">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs text-[var(--fog)] mb-1">{t('organization.nameLabel')}</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="glass-input-console text-[14px] w-full"
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+            className="px-4 py-2 rounded-xl text-[13px] font-medium bg-indigo text-white hover:bg-indigo/90 disabled:opacity-40 transition-all"
+          >
+            {saving ? 'Saving…' : t('common.save')}
+          </button>
+          {saved && <span className="text-[12px] text-malachite">{t('organization.nameSaved')}</span>}
+        </div>
+        {error && <p className="text-[12px] text-red-500">{error}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ── Members Tab ────────────────────────────────────────────────────
+
+function MembersTab() {
   const { t } = useConsoleLocale()
   const [members, setMembers] = useState<Member[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('viewer')
@@ -54,9 +201,13 @@ export default function MembersPage() {
       ])
       setMembers(mRes.data.members)
       setInvitations(iRes.data.invitations)
-    } catch { /* ignore */ }
-    setLoading(false)
-  }, [])
+      setError(null)
+    } catch {
+      setError(t('common.failedLoad'))
+    } finally {
+      setLoading(false)
+    }
+  }, [t])
 
   useEffect(() => { load() }, [load])
 
@@ -95,15 +246,26 @@ export default function MembersPage() {
   }
 
   if (loading) {
-    return <div className="p-8 text-[var(--fog)] text-sm">Loading…</div>
+    return <div className="text-[var(--fog)] text-sm">Loading…</div>
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-lg mx-auto text-center mt-20 space-y-4">
+        <AlertCircle className="w-10 h-10 text-vermillion/60 mx-auto" />
+        <p className="text-[var(--fog)]">{error}</p>
+        <button type="button" onClick={() => window.location.reload()} className="px-5 py-2.5 rounded-xl bg-indigo/[0.08] border border-indigo/20 text-indigo">
+          {t('common.retry')}
+        </button>
+      </div>
+    )
   }
 
   return (
-    <div className="px-8 py-8 animate-fade-up">
+    <>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--mist)]">Members</h1>
-          <p className="text-[13px] text-[var(--fog)] mt-0.5">
+          <p className="text-[13px] text-[var(--fog)]">
             {members.length} member{members.length !== 1 ? 's' : ''} · {invitations.length} pending invitation{invitations.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -267,6 +429,47 @@ export default function MembersPage() {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+// ── Permissions Tab ────────────────────────────────────────────────
+
+function PermissionsTab() {
+  return (
+    <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-w-2xl">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[var(--border-color)] text-[var(--smoke)] text-xs uppercase tracking-wider">
+            <th className="text-left px-4 py-3">Capability</th>
+            <th className="text-center px-4 py-3 w-16">Owner</th>
+            <th className="text-center px-4 py-3 w-16">Admin</th>
+            <th className="text-center px-4 py-3 w-16">Operator</th>
+            <th className="text-center px-4 py-3 w-16">Viewer</th>
+          </tr>
+        </thead>
+        <tbody>
+          {PERMISSIONS.map((row) => (
+            <tr key={row.capability} className="border-b border-[var(--border-color)] last:border-0">
+              <td className="px-4 py-3 text-[var(--mist)]">{row.capability}</td>
+              <td className="px-4 py-3 text-center">{row.owner ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
+              <td className="px-4 py-3 text-center">{row.admin ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
+              <td className="px-4 py-3 text-center">{row.operator ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
+              <td className="px-4 py-3 text-center">{row.viewer ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/30">—</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
+  )
+}
+
+// ── Export ─────────────────────────────────────────────────────────
+
+export default function OrganizationPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-[var(--fog)] text-sm">Loading…</div>}>
+      <OrganizationPageInner />
+    </Suspense>
   )
 }
