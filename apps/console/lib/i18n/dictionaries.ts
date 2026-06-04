@@ -20,6 +20,7 @@ export const en: Record<string, string> = {
   'sidebar.apiKeys': 'API Keys',
   'sidebar.model': 'Model',
   'sidebar.memory': 'Memory',
+  'sidebar.members': 'Members',
 
   'guide.hero.eyebrow': 'Intera',
   'guide.hero.title': 'How Intera runs',
@@ -2715,6 +2716,7 @@ export const zh: Record<string, string> = {
 
   // ── Memory page (independent) ─────────────────────────────────
   'sidebar.memory': '记忆',
+  'sidebar.members': '成员管理',
   'memPage.title': '记忆策略',
   'memory.subtitle': '压缩阈值、保留策略和 Token 预估（所选版本）',
   'memory.tiers': '层级与限制',
