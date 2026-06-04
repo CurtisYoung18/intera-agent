@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { config as loadDotEnv } from 'dotenv'
 import { PrismaClient } from '@prisma/client'
 
+import { hashSync } from 'bcryptjs'
 import {
   DEFAULT_SYSTEM_PROMPT,
   CORE_SYSTEM_PROMPT,
@@ -219,6 +220,39 @@ async function seed() {
     })
   }
   console.log(`  ✓ ${VENDORS.length} Vendors`)
+
+  // ── Bootstrap owner user (D1) ──
+  const staffPassword = process.env.STAFF_PASSWORD
+  if (staffPassword) {
+    const ownerEmail = process.env.SEED_OWNER_EMAIL || 'admin@intera.local'
+    const existingUser = await prisma.user.findUnique({ where: { email: ownerEmail } })
+    if (!existingUser) {
+      const user = await prisma.user.create({
+        data: {
+          email: ownerEmail,
+          name: 'Intera Admin',
+          passwordHash: hashSync(staffPassword, 10),
+        },
+      })
+      await prisma.membership.create({
+        data: { userId: user.id, orgId: 'default', role: 'owner' },
+      })
+      console.log(`  ✓ Owner user created: ${ownerEmail}`)
+    } else {
+      // Update password if STAFF_PASSWORD changed
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { passwordHash: hashSync(staffPassword, 10) },
+      })
+      // Ensure membership exists
+      await prisma.membership.upsert({
+        where: { userId_orgId: { userId: existingUser.id, orgId: 'default' } },
+        update: { role: 'owner' },
+        create: { userId: existingUser.id, orgId: 'default', role: 'owner' },
+      })
+      console.log(`  ✓ Owner user updated: ${ownerEmail}`)
+    }
+  }
 
   // ── Demo Org config ──
   console.log('\n── Demo Org ──')

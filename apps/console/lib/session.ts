@@ -3,9 +3,10 @@
 // The session is a compact HMAC-SHA256 JWT (no external dep), verifiable in BOTH
 // the Edge middleware and Node route handlers via Web Crypto (`crypto.subtle`).
 //
-// Payload: { role: 'staff' | 'customer', orgId, iat, exp }
-//   - staff:    may switch to any org (orgId is the currently-selected org)
-//   - customer: orgId is fixed to their organization; switching is rejected
+// Payload: { userId, orgId, role, iat, exp }
+//   - userId: the authenticated User.id
+//   - orgId:  the currently-active org (via Membership)
+//   - role:   User.role (single-org) or Membership.role (active org) — owner|admin|operator|viewer
 //
 // SECURITY: the secret MUST be set via SESSION_SECRET env. If unset, signing/
 // verifying fail closed (no valid session can be produced), so a missing secret
@@ -14,11 +15,13 @@
 export const SESSION_COOKIE = 'intera_session'
 export const SESSION_MAX_AGE_S = 60 * 60 * 24 * 7 // 7 days
 
-export type SessionRole = 'staff' | 'customer'
+/** User role within an organization. */
+export type UserRole = 'owner' | 'admin' | 'operator' | 'viewer'
 
 export interface SessionPayload {
-  role: SessionRole
+  userId: string
   orgId: string
+  role: UserRole
   iat: number
   exp: number
 }
@@ -66,7 +69,7 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 }
 
 /** Sign a session token. Returns null if SESSION_SECRET is unset (fail closed). */
-export async function signSession(input: { role: SessionRole; orgId: string }): Promise<string | null> {
+export async function signSession(input: { userId: string; orgId: string; role: UserRole }): Promise<string | null> {
   const secret = getSecret()
   if (!secret) {
     console.error('[session] SESSION_SECRET is not set — cannot issue sessions') // operational-critical: log to stderr directly
@@ -74,6 +77,7 @@ export async function signSession(input: { role: SessionRole; orgId: string }): 
   }
   const now = Math.floor(Date.now() / 1000)
   const payload: SessionPayload = {
+    userId: input.userId,
     role: input.role,
     orgId: input.orgId,
     iat: now,
@@ -98,8 +102,11 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   if (!timingSafeEqualStr(sig, expected)) return null
   try {
     const payload = JSON.parse(b64urlDecodeToStr(body)) as SessionPayload
-    if (!payload || (payload.role !== 'staff' && payload.role !== 'customer')) return null
+    if (!payload) return null
+    const validRoles: UserRole[] = ['owner', 'admin', 'operator', 'viewer']
+    if (!validRoles.includes(payload.role)) return null
     if (typeof payload.orgId !== 'string' || !payload.orgId) return null
+    if (typeof payload.userId !== 'string' || !payload.userId) return null
     if (typeof payload.exp !== 'number' || payload.exp < Math.floor(Date.now() / 1000)) return null
     return payload
   } catch {

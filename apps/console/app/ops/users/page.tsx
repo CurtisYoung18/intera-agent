@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Users2, User, ChevronRight } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
+import { apiClient } from '@/lib/api/client'
 
 interface UserRow {
   userId: string
@@ -34,9 +35,8 @@ export default function UsersListPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/users')
-      .then((r) => (r.ok ? r.json() : { users: [] }))
-      .then((d) => setUsers(d.users ?? []))
+    apiClient<{ users: UserRow[]; total: number }>('/api/users')
+      .then((r) => setUsers(r.data.users ?? []))
       .catch(() => setUsers([]))
       .finally(() => setLoading(false))
   }, [])

@@ -2,11 +2,10 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Building2, ShieldCheck, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import InteraLogo from '@intera/shared/ui/intera-logo'
 import styles from './login.module.css'
 
-type Mode = 'customer' | 'staff'
 type Health = 'unknown' | 'ok' | 'down'
 
 export default function LoginPage() {
@@ -21,8 +20,7 @@ function LoginForm() {
   const params = useSearchParams()
   const next = params.get('next') || '/ops/guide'
 
-  const [mode, setMode] = useState<Mode>('customer')
-  const [orgId, setOrgId] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -48,7 +46,7 @@ function LoginForm() {
     setError('')
     setLoading(true)
     try {
-      const body = mode === 'staff' ? { mode, password } : { mode, orgId: orgId.trim(), password }
+      const body = { email: email.trim(), password }
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,43 +103,18 @@ function LoginForm() {
             <p className={styles.formDesc}>Sign in to manage your agents and conversations.</p>
           </div>
 
-          <div className={styles.modeToggle} role="tablist" aria-label="Sign-in mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'customer'}
-              onClick={() => { setMode('customer'); setError('') }}
-              className={`${styles.modeBtn} ${mode === 'customer' ? styles.modeBtnActive : ''}`}
-            >
-              <Building2 />
-              Organization
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'staff'}
-              onClick={() => { setMode('staff'); setError('') }}
-              className={`${styles.modeBtn} ${mode === 'staff' ? styles.modeBtnActive : ''}`}
-            >
-              <ShieldCheck />
-              Staff
-            </button>
-          </div>
-
           <form onSubmit={submit} className={styles.form}>
-            {mode === 'customer' && (
-              <div className={styles.field}>
-                <label htmlFor="orgId">Organization ID</label>
-                <input
-                  id="orgId"
-                  type="text"
-                  value={orgId}
-                  onChange={(e) => setOrgId(e.target.value)}
-                  placeholder="your-org-id"
-                  autoComplete="username"
-                />
-              </div>
-            )}
+            <div className={styles.field}>
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="username"
+              />
+            </div>
             <div className={styles.field}>
               <div className={styles.rowBetween}>
                 <label htmlFor="password">Password</label>
@@ -165,7 +138,7 @@ function LoginForm() {
 
             <button
               type="submit"
-              disabled={loading || !password || (mode === 'customer' && !orgId.trim())}
+              disabled={loading || !password || !email.trim()}
               className={styles.submitBtn}
             >
               {loading ? (

@@ -9,6 +9,7 @@ import {
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient } from '@/lib/api/client'
 
 // ── Types ──────────────────────────────────────────────────────────────
 

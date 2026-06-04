@@ -11,8 +11,9 @@ export async function GET() {
     }
     return NextResponse.json({
       isAuthenticated: true,
+      userId: vendor.userId,
       role: vendor.role,
-      canSwitch: vendor.role === 'staff',
+      canSwitch: true, // per-user auth: any authenticated user with multiple orgs can switch
       orgId: vendor.id,
       customerName: vendor.name,
     })

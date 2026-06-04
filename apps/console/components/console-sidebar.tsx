@@ -128,7 +128,7 @@ export default function ConsoleSidebar() {
       .then((r) => r.json())
       .then((d) => {
         if (d.customerName) setCustomerName(d.customerName)
-        setIsStaff(d.role === 'staff')
+        setIsStaff(d.isAuthenticated === true)
       })
       .catch(() => {})
   }, [])

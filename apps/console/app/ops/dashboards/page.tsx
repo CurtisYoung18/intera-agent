@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { BarChart3, MessageSquare, Briefcase, Clock, Shield, Activity, ArrowRight, ArrowUp, ArrowDown } from 'lucide-react'
 import Link from 'next/link'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient, ApiClientError } from '@/lib/api/client'
 
 interface DashboardData {
   overview: {
@@ -61,9 +62,8 @@ export default function DashboardPage() {
   const l = useL()
 
   useEffect(() => {
-    fetch('/api/ops/dashboard')
-      .then(r => r.json())
-      .then(setData)
+    apiClient<DashboardData>('/api/ops/dashboard')
+      .then((r) => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])

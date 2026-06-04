@@ -11,6 +11,7 @@ import {
 import StageConfigEditor from '@/components/admin/stage-config-editor'
 import ChipInput from '@/components/ui/chip-input'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
+import { apiClient } from '@/lib/api/client'
 
 // ── Types ──────────────────────────────────────────────────────────────
 

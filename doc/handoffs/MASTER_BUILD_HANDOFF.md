@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 (v1.4 shipped — TODO-41 + TODO-42; `doc/to-do/` specs referenced into backlog) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-04 (Wave 1 Enterprise-SaaS Readiness integrated — G1/G2/G3/G8/G9 foundations landed) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -17,6 +17,39 @@
 | Push-to-deploy works? | `git push deploy main` |
 | LiveChat integrated? | Per-org + per-agent webhooks live |
 | API keys page? | Full CRUD with agent binding + usage tutorial |
+
+---
+
+## 🌊 Wave 1 Enterprise-SaaS Readiness — ✅ COMPLETE (B1 security fix verified 2026-06-04)
+
+**Executed by 5 parallel lanes (A/B/C/D1/E) from Task 0 foundation.**
+Full spec: [`doc/to-do/2026-06-04-enterprise-saas-readiness.md`](../to-do/2026-06-04-enterprise-saas-readiness.md).
+
+| ID | Seam | Status |
+|---|---|---|
+| **G1** | FE↔BE contract: `defineRoute` + `apiClient`/`useApi` + zod validation + uniform `ApiEnvelope` | ✅ 10 routes migrated, 6 pages updated |
+| **G2** | Tenant isolation: `repoForOrg` Proxy (throw-on-unknown, bulk-method injection, compound-key detection) + livechat gotcha #7 | ✅ 14 models scoped, cross-org guard test green. ✅ **gotcha #7 CLOSED** — anon `/api/livechat/config` PUT removed, GET returns non-sensitive fields only; gated `/api/admin/livechat/config` (session-only orgId + `requireRole:['admin','owner']`); `livechat-b1-guard.test.ts` green |
+| **G3** | Identity/RBAC/audit: `User`/`Membership`/`Role`/`AuditLog`/`Invitation` models, per-user login (bcrypt), RBAC guards on mutations, audit() hook | ✅ Schema migrated, login routes live, RBAC guard tests green |
+| **G8** | Dev/prod parity: `docker-compose.yml` (Postgres:16), `deploy.sh` sed lines deleted, schema permanently `postgresql` | ✅ Config ready, integration tests need `docker compose up -d` |
+| **G9** | Contract-surface tests: route-level tests driving real handlers | ✅ 38 route-level tests (was 1), +22 repo-for-org unit tests |
+
+**Foundation files (Task 0):**
+- `packages/shared/contracts/` — envelope, audit, per-domain zod schemas (7 domains)
+- `apps/console/lib/api/define-route.ts` — server pipeline (session→zod→repo→handler→envelope)
+- `apps/console/lib/db/repo-for-org.ts` — `scopedModel` Proxy with deny-by-default safety
+- `apps/console/lib/api/client.ts` — typed `apiClient` + `useApi` (SWR cache/dedup)
+
+### 🔍 Architect review (2026-06-04) — Wave 1 is NOT "done": 1 security blocker + 2 should-fixes
+
+**Verified good (read, not receipt):** `repoForOrg` C1 binding fix `(model as any)[prop](args)` + deny-by-default (22 unit tests); `define-route` C2 `__status` strip; `register` correctly invite-gated (token+email match, no open signup); contract/envelope/apiClient seam; 38 route-level tests.
+
+- **B1 — ✅ CLOSED (verified by architect 2026-06-04).** Anon `/api/livechat/config`: PUT removed, GET returns only `{enabled, showSkillStatus, region}`. New gated `/api/admin/livechat/config`: `defineRoute` + `repoForOrg`, **orgId strictly from session**, `requireRole:['admin','owner']`, audit on write. Admin page repointed. `livechat-b1-guard.test.ts` green. Session role model migrated to `owner|admin|operator|viewer` end-to-end, so `requireRole` is functional.
+- **S1 — ✅ DONE.** `defineRoute({ requireRole })` added (`define-route.ts:101,123`); authZ is declarative at the seam.
+- **S2 — 🟡 HALF-DONE (finish before Wave 2).** PG tests now `skipIf` (26 skipped). BUT the *same* problem remains for `MINIMAX_API_KEY`-dependent e2e tests: `capability-bindings-e2e.test.ts` **hard-fails** without the key → a keyless `npm test` shows "9 failed" (vitest doesn't load `.env.local`). These are **env failures, not regressions** (file unmodified; provider-config/defaults untouched). **Finish: apply `skipIf(missing dependency)` uniformly to ALL external-key/DB e2e tests** so a clean `npm test` is GREEN — otherwise the red bar hides real signal (the exact cost S2 names).
+- **Cleanup (non-gating):** `Invitation.state` vs spec's `status`; `User.role` denormalized/vestigial (real role lives on Membership); `livechat/config/route.ts` stale `// apps/chat/...` header.
+- **Process note:** this round arrived with **no receipt** and a red suite — §0.3 requires a receipt (changed files + green verification) and §0.4 a red→green proof. The work was good, but "done" must come with evidence next time.
+
+**Up next:** Lane D2 (Google SSO + invites, spec §3.5) + finish S2 + cleanups → then Wave 2 (G2-RLS, G5 observability, G9 expand coverage).
 
 ---
 

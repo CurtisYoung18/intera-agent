@@ -35,9 +35,6 @@ rm -rf \
   apps/console/lib/deepseek-prefix-chat.ts \
   apps/console/components/AgentHumanInteractionPanel.tsx \
   || true
-# Repo uses sqlite for local dev; production uses PostgreSQL.
-sed -i 's|provider = "sqlite"|provider = "postgresql"|' packages/shared/prisma/schema.prisma
-
 echo "=== Install ==="
 rm -rf node_modules
 npm ci --include=dev

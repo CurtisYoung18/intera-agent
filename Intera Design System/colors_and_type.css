@@ -1,0 +1,219 @@
+/* ============================================================
+   INTERA — Design Tokens: Colors & Type
+   "iOS Liquid Glass" · Light mode only · Frosted translucency
+   ------------------------------------------------------------
+   Source of truth lifted from:
+     apps/chat/app/globals.css   (Chat — customer surface)
+     apps/console/app/globals.css (Console — operator surface)
+   Both surfaces share one palette; Chat uses a warmer paper
+   (#faf6f0), Console a cooler paper (#f8f7f4).
+   ============================================================ */
+
+/* ── Webfonts (Google Fonts — same families the product loads) ──
+   Cormorant Garamond  → serif display / brand wordmark
+   Inter               → UI sans
+   JetBrains Mono      → code, IDs, metadata
+   Noto Serif/Sans SC  → CJK companions (product is bilingual EN/中文)        */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500&family=Noto+Serif+SC:wght@400;500&display=swap');
+
+:root {
+  /* ──────────────────────────────────────────────
+     PAPER / SURFACE BACKGROUNDS  (warm → deep)
+     ────────────────────────────────────────────── */
+  --void:     #faf6f0;   /* app background (Chat) */
+  --abyss:    #f3efe6;
+  --basalt:   #ebe5db;
+  --obsidian: #e4dcd1;
+
+  --void-console: #f8f7f4; /* app background (Console — cooler) */
+  --abyss-console: #f0eeea;
+
+  /* ──────────────────────────────────────────────
+     INK  (text — never pure black)
+     ────────────────────────────────────────────── */
+  --mist:  #1a1814;   /* primary text */
+  --fog:   #6b6758;   /* secondary text / labels */
+  --smoke: #a09888;   /* tertiary / placeholder */
+
+  /* ──────────────────────────────────────────────
+     SEMANTIC ACCENTS  (status + intent)
+     ────────────────────────────────────────────── */
+  --vermillion: #e64539;  /* error / escalated / destructive */
+  --indigo:     #5b8af7;  /* primary action / in-progress / focus */
+  --amber:      #d4912e;  /* warning / waiting */
+  --malachite:  #2ea04a;  /* success / resolved / online */
+
+  /* ──────────────────────────────────────────────
+     BRAND EXPRESSIVE  (decorative — orbs, wordmark, glow)
+     ────────────────────────────────────────────── */
+  --gold:       #b8944c;
+  --gold-hover: #c8a45c;
+  --gold-muted: #d4c8a8;
+  --lavender:   #8b6ff5;  /* the signature Intera hue — user bubbles, orbs */
+  --sky:        #5bb8f7;
+  --teal:       #14b8a6;  /* dashboards / knowledge accent */
+
+  /* ──────────────────────────────────────────────
+     GLASS SURFACES  (translucent fills)
+     ────────────────────────────────────────────── */
+  --surface:        rgba(255, 255, 255, 0.45);
+  --surface-hover:  rgba(255, 255, 255, 0.65);
+  --surface-user:   rgba(139, 111, 245, 0.06);   /* lavender wash */
+  --surface-accent: rgba(139, 111, 245, 0.05);
+
+  /* ── Borders ── */
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --border-hover:  rgba(139, 111, 245, 0.12);
+  --border-focus:  rgba(91, 138, 247, 0.25);
+
+  /* ──────────────────────────────────────────────
+     ELEVATION  (soft, warm, low-contrast)
+     ────────────────────────────────────────────── */
+  --shadow-card:       0 2px 12px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+  --shadow-card-hover: 0 4px 20px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.7) inset;
+  --shadow-input:      inset 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-glow:       0 0 16px rgba(91, 138, 247, 0.10);
+  --shadow-glass:      0 2px 16px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+
+  /* ──────────────────────────────────────────────
+     RADII   (Chat is rounder; Console a touch tighter)
+     ────────────────────────────────────────────── */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-console-sm: 8px;
+  --radius-console-md: 12px;
+  --radius-console-lg: 16px;
+  --radius-pill: 999px;
+
+  /* ──────────────────────────────────────────────
+     TYPE FAMILIES
+     ────────────────────────────────────────────── */
+  --font-serif: 'Cormorant Garamond', 'Noto Serif SC', serif;
+  --font-sans:  'Inter', 'Noto Sans SC', -apple-system, system-ui, sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, monospace;
+
+  /* ──────────────────────────────────────────────
+     MOTION   (the house easings)
+     ────────────────────────────────────────────── */
+  --ease-glass:  cubic-bezier(0.22, 1, 0.36, 1);   /* enter / lift / settle */
+  --ease-soft:   cubic-bezier(0.16, 1, 0.3, 1);    /* fade-up */
+  --dur-fast:    150ms;
+  --dur-base:    200ms;
+  --dur-slow:    300ms;
+
+  /* ─── Semantic role mapping (shadcn-style) ─── */
+  --background:           var(--void);
+  --foreground:           var(--mist);
+  --card:                 rgba(255, 255, 255, 0.45);
+  --card-foreground:      var(--mist);
+  --primary:              var(--indigo);
+  --primary-foreground:   #ffffff;
+  --muted-foreground:     var(--fog);
+  --destructive:          var(--vermillion);
+  --ring:                 rgba(91, 138, 247, 0.25);
+}
+
+/* ============================================================
+   BASE TYPE STYLES  (semantic element defaults)
+   Apply to a document, or copy individual rules.
+   ============================================================ */
+
+.intera-type {
+  font-family: var(--font-sans);
+  color: var(--mist);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Brand wordmark — the big italic serif "Intera" ── */
+.brand-wordmark {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--mist);
+}
+
+/* ── Display / Headings ── */
+.display {              /* hero — welcome screen */
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 48px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--mist);
+}
+
+h1, .h1 {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--mist);
+}
+h2, .h2 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--mist);
+}
+h3, .h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--mist);
+}
+
+/* ── Body — note: chat MESSAGE prose is SERIF, UI chrome is SANS ── */
+.prose-serif {           /* assistant & user message bubbles */
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--mist);
+}
+p, .body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--mist);
+}
+.body-sm {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fog);
+}
+
+/* ── Eyebrow / overline — uppercase tracked labels ── */
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fog);
+}
+.label-caps {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fog);
+}
+
+/* ── Mono — IDs, metadata, code ── */
+code, .mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fog);
+}
+
+/* ── Responding verb (italic serif, the "thinking…" word) ── */
+.responding-verb {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--fog);
+}

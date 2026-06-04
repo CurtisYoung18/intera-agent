@@ -12,7 +12,8 @@
     "./defaults": "./defaults/index.ts",
     "./memory/*": "./memory/*.ts",
     "./ui/*": "./ui/*.tsx",
-    "./channels/*": "./channels/*.ts"
+    "./channels/*": "./channels/*.ts",
+    "./contracts/*": "./contracts/*.ts"
   },
   "scripts": {
     "db:generate": "prisma generate --schema=./prisma/schema.prisma",

@@ -1,63 +1,54 @@
-// GET /api/cases/[id] — Case detail with memory, tasks, and message count
+// GET + DELETE /api/cases/[id] — Case detail and deletion.
+// Migrated to defineRoute + repoForOrg (Wave 1 G1/G2/G3).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId } from '@/lib/auth'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
+import { z } from 'zod'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const ORG_ID = await getActiveOrgId()
-  const { id } = await params
+const paramsSchema = z.object({ id: z.string().min(1) })
 
-  try {
-    const c = await prisma.case.findFirst({
-      where: { id, orgId: ORG_ID },
-      include: {
-        memory: true,
-        humanTasks: { orderBy: { createdAt: 'desc' } },
-        _count: { select: { messages: true, traces: true } },
-      },
+export const GET = defineRoute<void, { id: string }>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const c = await repo.case.findFirst({
+      where: { id: params.id },
     })
 
-    if (!c) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
+    if (!c) throw new NotFoundError('Case not found')
 
-    return NextResponse.json({ case: c })
-  } catch (err) {
-    console.error('[API] Failed to get case:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    // Fetch related data via raw prisma (these models aren't org-scoped)
+    const [memory, humanTasks, msgCount, traceCount] = await Promise.all([
+      repo.raw.chatMemory.findUnique({ where: { caseId: params.id } }),
+      repo.raw.humanTask.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'desc' } }),
+      repo.raw.message.count({ where: { caseId: params.id } }),
+      repo.raw.actionTrace.count({ where: { caseId: params.id } }),
+    ])
 
-/** DELETE — remove case and all dependent rows (messages, traces, memory, human tasks). */
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const ORG_ID = await getActiveOrgId()
-  const { id } = await params
+    return apiOk({ case: { ...c, memory, humanTasks, _count: { messages: msgCount, traces: traceCount } } })
+  },
+})
 
-  try {
-    const existing = await prisma.case.findFirst({
-      where: { id, orgId: ORG_ID },
-      select: { id: true },
+export const DELETE = defineRoute<void, { id: string }>({
+  method: 'DELETE',
+  async handler({ params, repo, audit }) {
+    const existing = await repo.case.findFirst({
+      where: { id: params.id },
     })
-    if (!existing) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
+    if (!existing) throw new NotFoundError('Case not found')
 
-    await prisma.humanTask.deleteMany({ where: { caseId: id } })
-    await prisma.actionTrace.deleteMany({ where: { caseId: id } })
-    await prisma.message.deleteMany({ where: { caseId: id } })
-    await prisma.chatMemory.deleteMany({ where: { caseId: id } })
-    await prisma.case.delete({ where: { id } })
+    // Clean up dependents via raw prisma (belt-and-suspenders with onDelete: Cascade)
+    await repo.raw.humanTask.deleteMany({ where: { caseId: params.id } })
+    await repo.raw.actionTrace.deleteMany({ where: { caseId: params.id } })
+    await repo.raw.message.deleteMany({ where: { caseId: params.id } })
+    await repo.raw.chatMemory.deleteMany({ where: { caseId: params.id } })
+    await repo.case.delete({ where: { id: params.id } })
 
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    console.error('[API] Failed to delete case:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    await audit({
+      action: 'case.delete',
+      target: `case:${params.id}`,
+      before: { type: (existing as any).type, status: (existing as any).status },
+    })
+
+    return apiOk({ ok: true })
+  },
+})

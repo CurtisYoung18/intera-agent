@@ -1,41 +1,51 @@
 // GET + PUT + DELETE /api/admin/policies/[name]
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 audit).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { z } from 'zod'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-import { getActiveOrgId } from '@/lib/auth'
+interface PolicyParams { name: string }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params
-  try {
-    const ORG_ID = await getActiveOrgId()
-    const policy = await prisma.policy.findUnique({ where: { orgId_name: { orgId: ORG_ID, name } } })
-    if (!policy) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json({ policy })
-  } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
-}
+export const GET = defineRoute<void, PolicyParams>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const policy = await repo.policy.findUnique({ where: { orgId_name: { orgId: repo.orgId, name: params.name } } })
+    if (!policy) throw new NotFoundError(`Policy "${params.name}" not found`)
+    return apiOk({ policy })
+  },
+})
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params
-  try {
-    const ORG_ID = await getActiveOrgId()
-    const body = await req.json()
+const updateSchema = z.object({
+  name: z.string().optional(), description: z.string().nullable().optional(), hook: z.string().optional(),
+  rule: z.union([z.string(), z.record(z.unknown())]).optional(), enabled: z.boolean().optional(),
+})
+type UpdateInput = z.infer<typeof updateSchema>
+
+export const PUT = defineRoute<UpdateInput, PolicyParams>({
+  method: 'PUT', inputSchema: updateSchema,
+  async handler({ input, params, repo, audit }) {
+    const existing = await repo.policy.findUnique({ where: { orgId_name: { orgId: repo.orgId, name: params.name } } })
+    if (!existing) throw new NotFoundError(`Policy "${params.name}" not found`)
     const data: Record<string, unknown> = {}
-    if (body.description !== undefined) data.description = body.description
-    if (body.hook !== undefined) data.hook = body.hook
-    if (body.enabled !== undefined) data.enabled = body.enabled
-    if (body.name !== undefined) data.name = body.name
-    if (body.rule !== undefined) data.rule = typeof body.rule === 'string' ? body.rule : JSON.stringify(body.rule)
-    const policy = await prisma.policy.update({ where: { orgId_name: { orgId: ORG_ID, name } }, data })
-    return NextResponse.json({ policy })
-  } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
-}
+    if (input.description !== undefined) data.description = input.description
+    if (input.hook !== undefined) data.hook = input.hook
+    if (input.enabled !== undefined) data.enabled = input.enabled
+    if (input.name !== undefined) data.name = input.name
+    if (input.rule !== undefined) data.rule = typeof input.rule === 'string' ? input.rule : JSON.stringify(input.rule)
+    const policy = await repo.policy.update({ where: { orgId_name: { orgId: repo.orgId, name: params.name } }, data })
+    await audit({ action: 'policy.update', target: `policy:${policy.name}`, before: existing as Record<string, unknown>, after: policy as Record<string, unknown> })
+    return apiOk({ policy })
+  },
+})
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await prisma.policy.delete({ where: { orgId_name: { orgId: ORG_ID, name } } })
-    return NextResponse.json({ success: true })
-  } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
-}
+export const DELETE = defineRoute<void, PolicyParams>({
+  method: 'DELETE',
+  async handler({ params, repo, audit }) {
+    const existing = await repo.policy.findUnique({ where: { orgId_name: { orgId: repo.orgId, name: params.name } } })
+    if (!existing) throw new NotFoundError(`Policy "${params.name}" not found`)
+    await repo.policy.delete({ where: { orgId_name: { orgId: repo.orgId, name: params.name } } })
+    await audit({ action: 'policy.delete', target: `policy:${params.name}`, before: existing as Record<string, unknown> })
+    return apiOk({ success: true })
+  },
+})

@@ -1,66 +1,45 @@
-// GET + POST /api/admin/policies
+// GET + POST /api/admin/policies — List and create policies
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 audit).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultOrg } from '@intera/shared/prisma'
+import { z } from 'zod'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
-import { getActiveOrgId } from '@/lib/auth'
-
-export async function GET() {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    let policies = await prisma.policy.findMany({
-      where: { orgId: ORG_ID },
-      orderBy: { name: 'asc' },
-    })
-
-    // Ensure all default policies exist (insert missing, skip existing)
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ repo }) {
+    let policies = await repo.policy.findMany({ orderBy: { name: 'asc' } })
     const existingNames = new Set(policies.map((p) => p.name))
     const missing = DEFAULT_POLICIES.filter((p) => !existingNames.has(p.name))
-
     if (missing.length > 0) {
-      await ensureDefaultOrg(ORG_ID)
+      await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
       for (const p of missing) {
-        await prisma.policy.create({
-          data: {
-            orgId: ORG_ID,
-            name: p.name,
-            description: p.description,
-            hook: p.hook,
-            rule: p.rule,
-            enabled: true,
-          },
-        })
+        await repo.policy.create({ data: { name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true } })
       }
-      policies = await prisma.policy.findMany({
-        where: { orgId: ORG_ID },
-        orderBy: { name: 'asc' },
-      })
+      policies = await repo.policy.findMany({ orderBy: { name: 'asc' } })
     }
+    return apiOk({ policies })
+  },
+})
 
-    return NextResponse.json({ policies })
-  } catch (err) {
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+const createSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  description: z.string().nullable().optional(),
+  hook: z.string().optional().default('preTool'),
+  rule: z.union([z.string(), z.record(z.unknown())]).optional().default('{}'),
+  enabled: z.boolean().optional().default(true),
+})
+type CreateInput = z.infer<typeof createSchema>
 
-export async function POST(req: NextRequest) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureDefaultOrg(ORG_ID)
-    const body = await req.json()
-    const policy = await prisma.policy.create({
-      data: {
-        orgId: ORG_ID,
-        name: body.name,
-        description: body.description || null,
-        hook: body.hook || 'preTool',
-        rule: typeof body.rule === 'string' ? body.rule : JSON.stringify(body.rule || {}),
-        enabled: body.enabled ?? true,
-      },
+export const POST = defineRoute<CreateInput>({
+  method: 'POST', inputSchema: createSchema,
+  async handler({ input, repo, audit }) {
+    await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
+    const policy = await repo.policy.create({
+      data: { name: input.name, description: input.description ?? null, hook: input.hook ?? 'preTool', rule: typeof input.rule === 'string' ? input.rule : JSON.stringify(input.rule ?? {}), enabled: input.enabled ?? true },
     })
-    return NextResponse.json({ policy }, { status: 201 })
-  } catch (err) {
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    await audit({ action: 'policy.create', target: `policy:${policy.name}`, after: policy as Record<string, unknown> })
+    return apiCreated({ policy })
+  },
+})

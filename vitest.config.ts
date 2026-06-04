@@ -8,8 +8,9 @@ export default defineConfig({
     },
   },
   test: {
+    setupFiles: ['./apps/console/lib/agent/__tests__/vitest-setup.ts'],
     include: ['**/*.test.ts', '**/*.test.tsx'],
-    exclude: ['node_modules', '**/.next/**', 'claude-code-source-code-ref-only'],
+    exclude: ['node_modules', '**/.next/**', 'claude-code-source-code-ref-only', '**/.claude/worktrees/**'],
     globals: true,
     coverage: {
       provider: 'v8',

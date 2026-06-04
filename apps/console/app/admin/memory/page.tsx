@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2, Database, Loader2, ChevronDown, ChevronRight
 import { Skeleton } from '@/components/ui/skeleton'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient } from '@/lib/api/client'
 import { drawerFieldClass, DrawerCheckboxRail, DrawerSection, DrawerShell } from '@/components/admin/agent-config-drawer-ui'
 
 import type { MemoryStrategy as MemStrategy, ModelInfo } from '@/app/admin/agent/types'

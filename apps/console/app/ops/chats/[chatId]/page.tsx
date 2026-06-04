@@ -21,6 +21,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 // Trace timeline rendered inline below
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient } from '@/lib/api/client'
+import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
 
 interface MsgItem {
   id: string; role: string; content: string; createdAt: string
@@ -153,8 +155,8 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   const loadMemory = async () => {
     setMemoryLoading(true)
     try {
-      const r = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/memory`)
-      if (r.ok) setMemoryData(await r.json())
+      const r = await apiClient(`/api/chats/${encodeURIComponent(decodedChatId)}/memory`)
+      setMemoryData(r.data)
     } catch { /* ignore */ }
     finally { setMemoryLoading(false) }
   }
@@ -167,9 +169,8 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
     setCompacting(true)
     setCompactResult(null)
     try {
-      const r = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/compact`, { method: 'POST' })
-      const d = await r.json()
-      setCompactResult(d)
+      const r = await apiClient(`/api/chats/${encodeURIComponent(decodedChatId)}/compact`, { method: 'POST' })
+      setCompactResult(r.data)
       loadMemory()
     } catch { setCompactResult({ error: 'Compact failed' }) }
     finally { setCompacting(false) }
@@ -178,9 +179,8 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
     setUpdatingProfile(true)
     setProfileResult(null)
     try {
-      const r = await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/update-profile`, { method: 'POST' })
-      const d = await r.json()
-      setProfileResult(d)
+      const r = await apiClient(`/api/chats/${encodeURIComponent(decodedChatId)}/update-profile`, { method: 'POST' })
+      setProfileResult(r.data)
     } catch { setProfileResult({ error: 'Update failed' }) }
     finally { setUpdatingProfile(false) }
   }
@@ -191,24 +191,26 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
     async function load() {
       setLoading(true)
       try {
-        const [sessRes, tracesRes] = await Promise.all([
-          fetch('/api/chats?limit=200'),
-          fetch(`/api/chats/${encodeURIComponent(decodedChatId)}/traces?limit=200`),
+        const [sessResult, tracesResult] = await Promise.all([
+          apiClient<ChatsListResponse>('/api/chats?limit=200'),
+          apiClient<{ traces: TraceItem[] }>(`/api/chats/${encodeURIComponent(decodedChatId)}/traces?limit=200`),
         ])
-        const sessData = (await sessRes.json()) as { sessions: ChatSession[] }
-        const found = sessData.sessions.find((s) => s.chatId === decodedChatId)
+        const found = sessResult.data.sessions.find((s) => s.chatId === decodedChatId)
         if (!found) { setLoading(false); return }
         setSession(found)
 
-        const tracesData = (await tracesRes.json()) as { traces: TraceItem[] }
-        setTraces(tracesData.traces ?? [])
+        setTraces(tracesResult.data.traces ?? [])
 
         const msgArrays = await Promise.all(
           found.cases.map(async (c) => {
-            const r = await fetch(`/api/cases/${c.id}/messages?limit=200`)
-            if (!r.ok) return []
-            const d = (await r.json()) as { messages: { id: string; role: string; content: string; createdAt: string }[] }
-            return d.messages.map((m) => ({ ...m, caseId: c.id, caseType: c.type, caseStatus: c.status }))
+            try {
+              const r = await apiClient<{ messages: { id: string; role: string; content: string; createdAt: string }[] }>(
+                `/api/cases/${c.id}/messages?limit=200`,
+              )
+              return r.data.messages.map((m) => ({ ...m, caseId: c.id, caseType: c.type, caseStatus: c.status }))
+            } catch {
+              return []
+            }
           }),
         )
         setMessages(msgArrays.flat().sort((a, b) =>
@@ -236,7 +238,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
     if (!confirm(`Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} case(s)?`)) return
     setDeleting(true)
     try {
-      await fetch(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
+      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
       router.push('/ops/chats')
     } catch { alert('Delete failed'); setDeleting(false) }
   }

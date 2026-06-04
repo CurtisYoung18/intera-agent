@@ -1,7 +1,8 @@
-// POST /api/auth/switch-org — staff-only org switch (re-issues session for a new org)
+// POST /api/auth/switch-org — Switch active organization (re-issues session for new org)
 //
 // Body: { orgId }
-// Only sessions with role==='staff' may switch. Customers are locked to their org → 403.
+// Only users who have a Membership in the target org may switch. Viewers are
+// allowed to switch between orgs they belong to.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
@@ -14,24 +15,39 @@ export async function POST(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (session.role !== 'staff') {
-      return NextResponse.json({ error: 'Forbidden — only staff may switch organizations' }, { status: 403 })
-    }
 
     const { orgId } = await req.json()
     if (!orgId || typeof orgId !== 'string') {
       return NextResponse.json({ error: 'orgId is required' }, { status: 400 })
     }
-    const org = await prisma.organization.findUnique({ where: { id: orgId } })
-    if (!org) {
-      return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+
+    // Verify the user has a Membership in the target org
+    const membership = await prisma.membership.findUnique({
+      where: { userId_orgId: { userId: session.userId, orgId } },
+      include: { org: true },
+    })
+
+    if (!membership) {
+      return NextResponse.json({ error: 'You are not a member of this organization' }, { status: 403 })
     }
 
-    const token = await signSession({ role: 'staff', orgId: org.id })
+    const token = await signSession({
+      userId: session.userId,
+      orgId: membership.orgId,
+      role: membership.role as 'owner' | 'admin' | 'operator' | 'viewer',
+    })
+
     if (!token) {
       return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
     }
-    const res = NextResponse.json({ ok: true, orgId: org.id, name: org.name })
+
+    const res = NextResponse.json({
+      ok: true,
+      userId: session.userId,
+      orgId: membership.orgId,
+      role: membership.role,
+      name: membership.org.name,
+    })
     res.cookies.set(SESSION_COOKIE, token, {
       path: '/', httpOnly: true, secure: true, sameSite: 'lax', maxAge: SESSION_MAX_AGE_S,
     })

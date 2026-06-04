@@ -11,6 +11,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
+import { apiClient } from '@/lib/api/client'
 
 interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; enabled: boolean }
 interface RuleFields {

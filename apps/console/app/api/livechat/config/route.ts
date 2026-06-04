@@ -1,18 +1,24 @@
-// apps/chat/app/api/livechat/config/route.ts
+// GET /api/livechat/config — Anonymous widget-facing route.
+// Returns only non-sensitive fields (no secrets, no transfer routing).
+// orgId comes from the widget embed query param (no session required).
+//
+// B1 fix: PUT was moved to the gated /api/admin/livechat/config route.
+// This route no longer accepts writes.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
-import { getSession } from '@/lib/auth'
 import { prisma } from '@intera/shared/prisma'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
 function json(body: unknown, init?: ResponseInit) {
-  return NextResponse.json(body, { ...init, headers: { ...(init?.headers as Record<string, string> ?? {}), ...CORS } })
+  return NextResponse.json(body, {
+    ...init,
+    headers: { ...(init?.headers as Record<string, string> ?? {}), ...CORS },
+  })
 }
 
 export async function OPTIONS() {
@@ -20,53 +26,21 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession()
-  const orgId = session?.orgId || request.nextUrl.searchParams.get('orgId') || 'default'
-  const config = await getLiveChatConfig(orgId)
-  if (!config) {
-    return json({ orgId, botAccessToken: '', licenseId: '', webhookSecret: '', showSkillStatus: true, enabled: false })
-  }
+  const orgId = request.nextUrl.searchParams.get('orgId') || 'default'
+
+  const row = await prisma.liveChatConfig.findUnique({
+    where: { orgId },
+    select: { enabled: true, showSkillStatus: true, region: true },
+  })
+
+  // Widget-facing response: ONLY non-sensitive fields.
+  // Never expose botAccessToken, licenseId, webhookSecret, transfer config.
   return json({
-    ...config,
-    botAccessToken: config.botAccessToken ? '••••••••' : '',
-    webhookSecret: config.webhookSecret ? '••••••••' : '',
+    orgId,
+    enabled: row?.enabled ?? false,
+    showSkillStatus: row?.showSkillStatus ?? true,
+    region: row?.region ?? 'dal',
   })
 }
 
-export async function PUT(request: NextRequest) {
-  let body: Record<string, unknown>
-  try { body = await request.json() } catch { return json({ error: 'Invalid JSON' }, { status: 400 }) }
-
-  const { orgId, botAccessToken, licenseId, webhookSecret, region, authType, accountId, agentAccountId, showSkillStatus, enabled, transferGroupId, transferMessage } = body as {
-    orgId: string; botAccessToken: string; licenseId: string; webhookSecret?: string
-    region?: string; authType?: string; accountId?: string; agentAccountId?: string
-    showSkillStatus: boolean; enabled: boolean
-    transferGroupId?: number; transferMessage?: string
-  }
-
-  if (!orgId) return json({ error: 'orgId required' }, { status: 400 })
-
-  let tokenToSave = botAccessToken
-  let secretToSave = webhookSecret ?? ''
-  if (botAccessToken === '••••••••' || webhookSecret === '••••••••') {
-    const existing = await prisma.liveChatConfig.findUnique({
-      where: { orgId }, select: { botAccessToken: true, webhookSecret: true },
-    })
-    if (botAccessToken === '••••••••') tokenToSave = existing?.botAccessToken ?? ''
-    if (webhookSecret === '••••••••') secretToSave = existing?.webhookSecret ?? ''
-  }
-
-  await upsertLiveChatConfig(orgId, {
-    botAccessToken: tokenToSave, licenseId: licenseId ?? '',
-    webhookSecret: secretToSave,
-    region: region ?? undefined,
-    authType: (authType as 'bearer' | 'basic' | 'auto' | undefined) ?? undefined,
-    accountId: accountId ?? undefined,
-    agentAccountId: agentAccountId ?? undefined,
-    showSkillStatus: showSkillStatus ?? true, enabled: enabled ?? false,
-    transferGroupId: transferGroupId ?? undefined,
-    transferMessage: transferMessage ?? undefined,
-  })
-
-  return json({ ok: true })
-}
+// PUT intentionally removed — writes are gated at /api/admin/livechat/config

@@ -11,6 +11,7 @@ import {
 import { useAgentContext } from '@/lib/agent/agent-context'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
+import { apiClient } from '@/lib/api/client'
 
 /* ── Types ── */
 

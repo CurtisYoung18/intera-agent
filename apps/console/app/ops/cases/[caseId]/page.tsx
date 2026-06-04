@@ -7,6 +7,8 @@ import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { CaseTraceTimeline, type TraceRow } from '@/components/ops/case-trace-view'
 import { useConsoleLocale } from '@/components/locale-provider'
 import ReactMarkdown from 'react-markdown'
+import { apiClient } from '@/lib/api/client'
+import type { CaseDetailResponse } from '@intera/shared/contracts/cases'
 
 interface CaseData {
   id: string; type: string; status: string; goal: string | null
@@ -65,23 +67,14 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     async function load() {
       setLoading(true)
       try {
-        const [caseRes, tracesRes, msgsRes] = await Promise.all([
-          fetch(`/api/cases/${encodeURIComponent(caseId)}`),
-          fetch(`/api/cases/${encodeURIComponent(caseId)}/traces?limit=500`),
-          fetch(`/api/cases/${encodeURIComponent(caseId)}/messages?limit=200`),
+        const [caseResult, tracesResult, msgsResult] = await Promise.all([
+          apiClient<CaseDetailResponse>(`/api/cases/${encodeURIComponent(caseId)}`),
+          apiClient<{ traces: TraceRow[] }>(`/api/cases/${encodeURIComponent(caseId)}/traces?limit=500`),
+          apiClient<{ messages: MsgItem[] }>(`/api/cases/${encodeURIComponent(caseId)}/messages?limit=200`),
         ])
-        if (caseRes.ok) {
-          const d = await caseRes.json()
-          setCaseData(d.case ?? d)
-        }
-        if (tracesRes.ok) {
-          const d = await tracesRes.json()
-          setTraces(d.traces ?? [])
-        }
-        if (msgsRes.ok) {
-          const d = await msgsRes.json()
-          setMessages(d.messages ?? [])
-        }
+        setCaseData(caseResult.data.case as unknown as CaseData)
+        setTraces(tracesResult.data.traces ?? [])
+        setMessages(msgsResult.data.messages ?? [])
       } catch (e) { console.error('Case load failed:', e) }
       finally { setLoading(false) }
     }

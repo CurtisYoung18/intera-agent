@@ -1,34 +1,37 @@
 // GET + POST /api/admin/skills — List and create skills
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 RBAC + audit).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureDefaultOrg } from '@intera/shared/prisma'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
+import {
+  skillCreateRequestSchema,
+  type SkillCreateRequest,
+} from '@intera/shared/contracts/skills'
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
-
-import { getActiveOrgId } from '@/lib/auth'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
-export async function GET() {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    let skills = await prisma.skill.findMany({
-      where: { orgId: ORG_ID },
-      orderBy: { name: 'asc' },
-    })
+// ── GET ──
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ session, repo }) {
+    let skills = await repo.skill.findMany({ orderBy: { name: 'asc' } })
 
-    // Auto-seed: always ensure system + special skills exist (idempotent upsert).
-    // Previously only seeded when the table was empty, which meant new skills
-    // added in later releases never appeared for existing customers.
     const requiredNames = new Set([...SYSTEM_SKILL_NAMES, ...SPECIAL_SKILL_NAMES])
-    const existingNames = new Set(skills.map((s) => s.name))
-    const toCreate = DEFAULT_SKILLS.filter((s) => !existingNames.has(s.name))
-    const toUpsert = DEFAULT_SKILLS.filter((s) => requiredNames.has(s.name) && !existingNames.has(s.name))
+    const existingNames = new Set(skills.map((s: { name: string }) => s.name))
+    const toUpsert = DEFAULT_SKILLS.filter(
+      (s) => requiredNames.has(s.name) && !existingNames.has(s.name),
+    )
 
     if (skills.length === 0 || toUpsert.length > 0) {
-      await ensureDefaultOrg(ORG_ID)
+      await repo.raw.organization.upsert({
+        where: { id: session.orgId },
+        update: {},
+        create: { id: session.orgId, name: 'Demo Org' },
+      })
       const namesToSeed = skills.length === 0 ? DEFAULT_SKILLS : toUpsert
       for (const s of namesToSeed) {
-        await prisma.skill.upsert({
-          where: { orgId_name: { orgId: ORG_ID, name: s.name } },
+        await repo.skill.upsert({
+          where: { orgId_name: { orgId: session.orgId, name: s.name } },
           update: {
             description: s.description, inputSchema: s.inputSchema, outputSchema: s.outputSchema,
             mode: s.mode, isConcurrencySafe: s.isConcurrencySafe, enabled: s.enabled,
@@ -39,7 +42,7 @@ export async function GET() {
             toolCategory: s.toolCategory ?? null,
           },
           create: {
-            orgId: ORG_ID, name: s.name, description: s.description,
+            orgId: session.orgId, name: s.name, description: s.description,
             inputSchema: s.inputSchema, outputSchema: s.outputSchema, mode: s.mode,
             isConcurrencySafe: s.isConcurrencySafe, enabled: s.enabled, guardPhase: s.guardPhase,
             endpoint: s.endpoint ?? null, httpMethod: s.httpMethod ?? 'POST',
@@ -50,55 +53,60 @@ export async function GET() {
           },
         })
       }
-      skills = await prisma.skill.findMany({
-        where: { orgId: ORG_ID },
-        orderBy: { name: 'asc' },
-      })
+      skills = await repo.skill.findMany({ orderBy: { name: 'asc' } })
     }
 
-    const enriched = skills.map((s) => ({
+    const enriched = skills.map((s: { name: string; [k: string]: unknown }) => ({
       ...s,
       isSystem: SYSTEM_SKILL_NAMES.has(s.name),
       isChannel: CHANNEL_SKILL_NAMES.has(s.name),
       isSpecial: SPECIAL_SKILL_NAMES.has(s.name),
     }))
 
-    return NextResponse.json({ skills: enriched })
-  } catch (err) {
-    console.error('[Admin] GET skills:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ skills: enriched })
+  },
+})
 
-export async function POST(req: NextRequest) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureDefaultOrg(ORG_ID)
-    const body = await req.json()
-    const skill = await prisma.skill.create({
+// ── POST ──
+export const POST = defineRoute<SkillCreateRequest>({
+  method: 'POST',
+  inputSchema: skillCreateRequestSchema,
+  requireRole: ['admin', 'owner'],
+  async handler({ input, session, repo, audit }) {
+    await repo.raw.organization.upsert({
+      where: { id: session.orgId },
+      update: {},
+      create: { id: session.orgId, name: 'Demo Org' },
+    })
+
+    const stringifyField = (val: unknown): string | null => {
+      if (val === null || val === undefined) return null
+      return typeof val === 'string' ? val : JSON.stringify(val)
+    }
+
+    const skill = await repo.skill.create({
       data: {
-        orgId: ORG_ID,
-        name: body.name,
-        description: body.description || '',
-        inputSchema: typeof body.inputSchema === 'string' ? body.inputSchema : JSON.stringify(body.inputSchema || {}),
-        outputSchema: typeof body.outputSchema === 'string' ? body.outputSchema : JSON.stringify(body.outputSchema || {}),
-        mode: body.mode || 'mock',
-        endpoint: body.endpoint || null,
-        httpMethod: body.httpMethod || 'POST',
-        headers: body.headers ? (typeof body.headers === 'string' ? body.headers : JSON.stringify(body.headers)) : null,
-        timeoutMs: body.timeoutMs ?? 8000,
-        mockFixture: body.mockFixture ? (typeof body.mockFixture === 'string' ? body.mockFixture : JSON.stringify(body.mockFixture)) : null,
-        guardPhase: body.guardPhase || 'post',
-        displayVerb: body.displayVerb ? (typeof body.displayVerb === 'string' ? body.displayVerb : JSON.stringify(body.displayVerb)) : null,
-        renderHints: body.renderHints ? (typeof body.renderHints === 'string' ? body.renderHints : JSON.stringify(body.renderHints)) : null,
-        isConcurrencySafe: body.isConcurrencySafe ?? true,
-        enabled: body.enabled ?? true,
-        toolCategory: body.toolCategory || null,
+        name: input.name,
+        description: input.description ?? '',
+        inputSchema: stringifyField(input.inputSchema) ?? '{}',
+        outputSchema: stringifyField(input.outputSchema) ?? '{}',
+        mode: input.mode ?? 'mock',
+        endpoint: input.endpoint ?? null,
+        httpMethod: input.httpMethod ?? 'POST',
+        headers: stringifyField(input.headers),
+        timeoutMs: input.timeoutMs ?? 8000,
+        mockFixture: stringifyField(input.mockFixture),
+        guardPhase: input.guardPhase ?? 'post',
+        displayVerb: stringifyField(input.displayVerb),
+        renderHints: stringifyField(input.renderHints),
+        isConcurrencySafe: input.isConcurrencySafe ?? true,
+        enabled: input.enabled ?? true,
+        toolCategory: input.toolCategory ?? null,
       },
     })
-    return NextResponse.json({ skill }, { status: 201 })
-  } catch (err) {
-    console.error('[Admin] POST skill:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+
+    await audit({ action: 'skill.create', target: `skill:${skill.name}`, after: skill as Record<string, unknown> })
+
+    return apiCreated({ skill })
+  },
+})

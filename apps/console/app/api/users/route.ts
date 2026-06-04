@@ -1,26 +1,34 @@
-// GET /api/users — List users that have an accumulated UserProfile.
-// UserProfile.userId stores a profileKey ("user:<id>" or "chat:<id>"); we strip
-// the prefix for display. (orgId is not reliably set on UserProfile yet, so
-// this lists all profiles — an ops-wide view.)
+// GET /api/users — List users with accumulated UserProfile records.
+//
+// UserProfile.userId stores a profileKey ("user:<id>" or "chat:<id>"); we
+// strip the prefix for display.
+//
+// Migrated to defineRoute + repoForOrg (Wave 1 G1/G2).
+// Scoped to the active org via the repo Proxy.
 
-import { NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function GET() {
-  try {
-    const profiles = await prisma.userProfile.findMany({
-      orderBy: { updatedAt: 'desc' },
+export const GET = defineRoute({
+  method: 'GET',
+  handler: async ({ repo }) => {
+    const profiles = await repo.userProfile.findMany({
+      orderBy: { updatedAt: 'desc' as const },
       take: 200,
     })
 
     const users = profiles.map((p) => {
       const key = p.userId
-      const kind = key.startsWith('user:') ? 'member' : key.startsWith('chat:') ? 'anonymous' : 'unknown'
+      const kind = key.startsWith('user:')
+        ? 'member'
+        : key.startsWith('chat:')
+          ? 'anonymous'
+          : 'unknown'
       const label = key.replace(/^(user:|chat:)/, '')
       return {
-        userId: key,            // the stored profileKey — use for /ops/users/[userId]
-        label,                  // display name (prefix stripped)
-        kind,                   // member | anonymous | unknown
+        userId: key,
+        label,
+        kind,
         totalChats: p.totalChats,
         totalCases: p.totalCases,
         resolvedCases: p.resolvedCases,
@@ -31,9 +39,6 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json({ users, total: users.length })
-  } catch (err) {
-    console.error('[API] GET users list:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ users, total: users.length })
+  },
+})

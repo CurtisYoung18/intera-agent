@@ -1,39 +1,24 @@
-// GET /api/chats — List chat sessions grouped by chatId
+// GET /api/chats — List chat sessions grouped by chatId.
+//
 // Each "chat" is a conversation that may contain 1-N cases.
 // Cases without a chatId are treated as standalone sessions.
+//
+// Migrated to defineRoute + repoForOrg (Wave 1 G1/G2).
+// orgId is auto-injected by the repo Proxy.
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId } from '@/lib/auth'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
+import { ChatsListInput, type ChatSession } from '@intera/shared/contracts/chats'
 
-export interface ChatSession {
-  chatId: string
-  userId: string
-  cases: {
-    id: string
-    type: string
-    status: string
-    goal: string | null
-    createdAt: string
-    updatedAt: string
-    _count?: { messages: number }
-  }[]
-  messageCount: number
-  lastActivity: string
-  hasHumanTask: boolean
-}
+export const GET = defineRoute({
+  method: 'GET',
+  inputSchema: ChatsListInput,
+  handler: async ({ input, repo }) => {
+    const { limit, offset } = input
 
-export async function GET(req: NextRequest) {
-  const ORG_ID = await getActiveOrgId()
-  const { searchParams } = new URL(req.url)
-  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
-  const offset = parseInt(searchParams.get('offset') || '0')
-
-  try {
-    // Fetch all cases for this customer (ordered newest first)
-    const cases = await prisma.case.findMany({
-      where: { orgId: ORG_ID },
-      orderBy: { updatedAt: 'desc' },
+    // Fetch all cases for this org (repo injects orgId).
+    const cases = await repo.case.findMany({
+      orderBy: { updatedAt: 'desc' as const },
       include: {
         humanTasks: { select: { id: true }, take: 1 },
         _count: { select: { messages: true } },
@@ -63,26 +48,22 @@ export async function GET(req: NextRequest) {
         goal: c.goal,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
-        _count: c._count,
+        _count: c._count as { messages: number },
       })
       session.messageCount += c._count.messages
       if (c.humanTasks.length > 0) session.hasHumanTask = true
-      // Keep lastActivity as the most recent update across all cases in the session
       if (c.updatedAt.toISOString() > session.lastActivity) {
         session.lastActivity = c.updatedAt.toISOString()
       }
     }
 
-    // Sort sessions by lastActivity descending and apply pagination
+    // Sort sessions by lastActivity descending, then paginate.
     const sorted = Array.from(sessionMap.values()).sort((a, b) =>
       b.lastActivity.localeCompare(a.lastActivity),
     )
     const total = sorted.length
     const page = sorted.slice(offset, offset + limit)
 
-    return NextResponse.json({ sessions: page, total })
-  } catch (err) {
-    console.error('[API] Failed to list chats:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ sessions: page, total })
+  },
+})

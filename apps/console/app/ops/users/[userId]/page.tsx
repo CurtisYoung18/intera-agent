@@ -7,6 +7,7 @@ import { ArrowLeft, Save, User, MessageSquare, Trash2 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ReactMarkdown from 'react-markdown'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient, ApiClientError } from '@/lib/api/client'
 
 interface UserProfileData {
   userId: string
@@ -36,19 +37,13 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
     async function load() {
       setLoading(true)
       try {
-        const [profRes, chatsRes] = await Promise.all([
-          fetch(`/api/users/${encodeURIComponent(userId)}/profile`),
-          fetch(`/api/users/${encodeURIComponent(userId)}/chats`),
+        const [profResult, chatsResult] = await Promise.all([
+          apiClient<{ profile: UserProfileData }>(`/api/users/${encodeURIComponent(userId)}/profile`),
+          apiClient<{ chats: ChatLink[] }>(`/api/users/${encodeURIComponent(userId)}/chats`),
         ])
-        if (profRes.ok) {
-          const d = await profRes.json()
-          setProfile(d.profile ?? d)
-          setEditText(d.profile?.profile ?? '')
-        }
-        if (chatsRes.ok) {
-          const d = await chatsRes.json()
-          setChats(d.chats ?? [])
-        }
+        setProfile(profResult.data.profile ?? profResult.data)
+        setEditText(profResult.data.profile?.profile ?? '')
+        setChats(chatsResult.data.chats ?? [])
       } catch (e) { console.error('Profile load failed:', e) }
       finally { setLoading(false) }
     }
@@ -58,10 +53,9 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await fetch(`/api/users/${encodeURIComponent(userId)}/profile`, {
+      await apiClient(`/api/users/${encodeURIComponent(userId)}/profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile: editText }),
+        body: { profile: editText },
       })
       setProfile(prev => prev ? { ...prev, profile: editText } : null)
       setEditing(false)
@@ -73,13 +67,12 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
     if (!confirm(`Delete ALL data for user ${userId}? This cannot be undone.`)) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(userId)}/profile`, { method: 'DELETE' })
-      if (res.ok) {
-        router.push('/ops/users')
-      } else {
-        alert('Delete failed')
-      }
-    } catch (e) { console.error('Delete failed:', e) }
+      await apiClient(`/api/users/${encodeURIComponent(userId)}/profile`, { method: 'DELETE' })
+      router.push('/ops/users')
+    } catch (e) {
+      console.error('Delete failed:', e)
+      alert('Delete failed')
+    }
     finally { setDeleting(false) }
   }
 

@@ -8,6 +8,7 @@ import VersionContextBar, { useSelectedAgentId } from '@/components/admin/versio
 import { useConsoleLocale } from '@/components/locale-provider'
 import { CORE_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { drawerFieldClass, DrawerCheckboxRail, DrawerSection, DrawerShell } from '@/components/admin/agent-config-drawer-ui'
+import { apiClient } from '@/lib/api/client'
 import type { ModelInfo } from '@/app/admin/agent/types'
 
 interface ModelConfig {
@@ -45,17 +46,12 @@ export default function ModelPage() {
     if (!agentId) return
     setLoading(true)
     Promise.all([
-      fetch(`/api/admin/agent?agentId=${agentId}`).then((r) => {
-        if (!r.ok) throw new Error(`Config: ${r.status}`)
-        return r.json()
-      }),
-      fetch('/api/admin/models').then((r) => {
-        if (!r.ok) throw new Error(`Models: ${r.status}`)
-        return r.json()
-      }),
+      apiClient(`/api/admin/agent?agentId=${agentId}`),
+      apiClient('/api/admin/models'),
     ])
-      .then(([agentData, modelsData]) => {
-        const raw = agentData.config || {}
+      .then(([agentResult, modelsResult]) => {
+        const raw = (agentResult.data as any).config || {}
+        const modelsData = (modelsResult.data as any)
         setConfig({
           model: raw.model || DEFAULT_MODEL,
           temperature: raw.temperature ?? 0.5,
@@ -84,16 +80,12 @@ export default function ModelPage() {
       const current = configRef.current
       if (!current) return
       try {
-        const res = await fetch(`/api/admin/agent?agentId=${agentId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(current),
+        await apiClient(`/api/admin/agent?agentId=${agentId}`, {
+          body: current,
         })
-        if (!res.ok) throw new Error(`Save: ${res.status}`)
-        fetch('/api/admin/config-changed', {
+        apiClient('/api/admin/config-changed', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orgId: 'default' }),
+          body: { orgId: 'default' },
         }).catch(() => {})
         setSyncStatus('synced')
         setTimeout(() => setSyncStatus('idle'), 2500)

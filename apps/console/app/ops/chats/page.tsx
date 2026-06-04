@@ -15,6 +15,8 @@ import EmptyState from '@/components/ui/empty-state'
 import ExportButton from '@/components/ui/export-button'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient } from '@/lib/api/client'
+import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
 
 interface CaseSummary {
   id: string
@@ -162,11 +164,9 @@ export default function ChatsPage() {
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true)
     try {
-      const res = await fetch('/api/chats?limit=200')
-      if (!res.ok) throw new Error('Failed')
-      const data = (await res.json()) as { sessions: ChatSession[]; total: number }
-      setSessions(data.sessions)
-      setTotal(data.total)
+      const result = await apiClient<ChatsListResponse>('/api/chats?limit=200')
+      setSessions(result.data.sessions)
+      setTotal(result.data.total)
     } catch {
       if (showLoading) setSessions([])
     } finally {
@@ -185,8 +185,7 @@ export default function ChatsPage() {
     if (!confirm(`Delete chat session ${label} and all its cases?\nThis cannot be undone.`)) return
     setDeletingId(chatId)
     try {
-      const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
-      if (!res.ok) { alert('Failed to delete — see console'); return }
+      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
       setSessions((prev) => prev.filter((s) => s.chatId !== chatId))
       setTotal((prev) => prev - 1)
     } catch {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { MessageCircle, Eye, EyeOff, Save, CheckCircle2, ExternalLink, Globe, Monitor, UserCheck, Copy, RotateCcw, AlertCircle } from 'lucide-react'
 
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient } from '@/lib/api/client'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -110,15 +111,9 @@ export default function LiveChatDetailPage() {
     setConnectionTested(null)
     setConnectionErrorCode(null)
     try {
-      const res = await fetch(`/api/livechat/groups?orgId=${encodeURIComponent(orgId)}`)
-      const data = await res.json().catch(() => ({}))
-      if (res.ok) {
-        setConnectionTested(true)
-      } else {
-        setConnectionTested(false)
-        const code = data.code as string | undefined
-        setConnectionErrorCode(code || 'unknown')
-      }
+      const result = await apiClient<{ groups?: unknown[] }>('/api/admin/livechat/groups')
+      setConnectionTested(true)
+      void result
     } catch {
       setConnectionTested(false)
       setConnectionErrorCode('network')
@@ -134,11 +129,12 @@ export default function LiveChatDetailPage() {
   useEffect(() => {
     if (!orgId) return
     setLoading(true)
-    fetch(`/api/livechat/config?orgId=${encodeURIComponent(orgId)}`)
-      .then(r => r.json()).then((data: LiveChatConfig) => { setConfig(data); setOrigConfig(data) }).catch(() => {}).finally(() => setLoading(false))
+    // B1 fix: use gated admin route (orgId from session, not query param)
+    apiClient<{ config: LiveChatConfig }>('/api/admin/livechat/config')
+      .then(r => { setConfig(r.data.config); setOrigConfig(r.data.config) }).catch(() => {}).finally(() => setLoading(false))
     // Fetch available groups for escalation tab
-    fetch(`/api/livechat/groups?orgId=${encodeURIComponent(orgId)}`)
-      .then(r => r.json()).then((d: { groups?: LiveChatGroup[] }) => { if (d.groups) setGroups(d.groups) }).catch(() => {})
+    apiClient<{ groups?: LiveChatGroup[] }>('/api/admin/livechat/groups')
+      .then(r => { if (r.data.groups) setGroups(r.data.groups) }).catch(() => {})
     // Fetch agent list for per-agent webhook URLs
     fetch('/api/admin/agent-configs')
       .then(r => r.json()).then((d: { configs?: Array<{ id: string; name: string; isActive: boolean }> }) => {
@@ -149,8 +145,8 @@ export default function LiveChatDetailPage() {
   const handleSave = async () => {
     setSaving(true); setSaveStatus('idle')
     try {
-      const res = await fetch('/api/livechat/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...config, orgId }) })
-      if (!res.ok) throw new Error('save failed')
+      // B1 fix: use gated admin route, orgId from session (NOT body)
+      await apiClient('/api/admin/livechat/config', { method: 'PUT', body: config })
       setSaveStatus('saved'); setOrigConfig({ ...config })
       setTimeout(() => setSaveStatus('idle'), 3000)
     } catch { setSaveStatus('error') } finally { setSaving(false) }

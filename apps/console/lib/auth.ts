@@ -6,11 +6,12 @@
 
 import { cookies } from 'next/headers'
 import { prisma } from '@intera/shared/prisma'
-import { SESSION_COOKIE, verifySessionToken, type SessionRole } from '@/lib/session'
+import { SESSION_COOKIE, verifySessionToken, type UserRole } from '@/lib/session'
 
 export interface ActiveSession {
+  userId: string
   orgId: string
-  role: SessionRole
+  role: UserRole
 }
 
 /** Read + verify the current session. Returns null if no valid session. */
@@ -20,7 +21,7 @@ export async function getSession(): Promise<ActiveSession | null> {
     const token = cookieStore.get(SESSION_COOKIE)?.value
     const payload = await verifySessionToken(token)
     if (!payload) return null
-    return { orgId: payload.orgId, role: payload.role }
+    return { userId: payload.userId, orgId: payload.orgId, role: payload.role }
   } catch {
     return null
   }
@@ -37,21 +38,35 @@ export async function getActiveOrgId(): Promise<string> {
   return session?.orgId ?? ''
 }
 
+/** List all organizations a user belongs to, with their membership role. */
+export async function getUserOrgs(userId: string): Promise<{ orgId: string; role: string; name: string }[]> {
+  const memberships = await prisma.membership.findMany({
+    where: { userId },
+    include: { org: true },
+  })
+  return memberships.map((m) => ({
+    orgId: m.orgId,
+    role: m.role,
+    name: m.org.name,
+  }))
+}
+
 export async function getActiveVendor(): Promise<{
   id: string
   name: string
   hasPassword: boolean
   isAuthed: boolean
-  role: SessionRole | null
+  role: UserRole | null
+  userId: string | null
 } | null> {
   try {
     const session = await getSession()
     if (!session) {
-      return { id: '', name: '', hasPassword: false, isAuthed: false, role: null }
+      return { id: '', name: '', hasPassword: false, isAuthed: false, role: null, userId: null }
     }
     const org = await prisma.organization.findUnique({ where: { id: session.orgId } })
     if (!org) {
-      return { id: '', name: '', hasPassword: false, isAuthed: false, role: null }
+      return { id: '', name: '', hasPassword: false, isAuthed: false, role: null, userId: null }
     }
     return {
       id: org.id,
@@ -59,6 +74,7 @@ export async function getActiveVendor(): Promise<{
       hasPassword: org.password != null,
       isAuthed: true,
       role: session.role,
+      userId: session.userId,
     }
   } catch {
     return null

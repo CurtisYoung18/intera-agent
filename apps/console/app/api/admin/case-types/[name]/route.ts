@@ -1,51 +1,67 @@
 // GET + PUT + DELETE /api/admin/case-types/[name]
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 audit).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat } from '@intera/shared/prisma'
+import { z } from 'zod'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-import { getActiveOrgId } from '@/lib/auth'
+interface CaseTypeParams { name: string }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureSqliteSchemaCompat(prisma)
-    const ct = await prisma.caseType.findUnique({ where: { orgId_type: { orgId: ORG_ID, type: name } } })
-    if (!ct) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json({ caseType: ct })
-  } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
+const stringifyMaybe = (val: unknown): string => {
+  if (typeof val === 'string') return val
+  return JSON.stringify(val ?? '')
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureSqliteSchemaCompat(prisma)
-    const body = await req.json()
+export const GET = defineRoute<void, CaseTypeParams>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const ct = await repo.caseType.findUnique({ where: { orgId_type: { orgId: repo.orgId, type: params.name } } })
+    if (!ct) throw new NotFoundError(`Case type "${params.name}" not found`)
+    return apiOk({ caseType: ct })
+  },
+})
+
+const updateSchema = z.object({
+  type: z.string().optional(), displayName: z.string().optional(), description: z.string().nullable().optional(), icon: z.string().optional(),
+  requiredFacts: z.union([z.string(), z.array(z.string())]).optional(), stages: z.union([z.string(), z.array(z.string())]).optional(),
+  stageConfigs: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
+  orchestratorConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
+  defaultGoal: z.string().optional(), escalateOn: z.union([z.string(), z.array(z.string())]).optional(),
+  autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
+  enabled: z.boolean().optional(), requireHumanReview: z.boolean().optional(), executionMode: z.string().optional(),
+  sop: z.string().nullable().optional(), sopMaxAutoTurns: z.number().optional(),
+})
+type UpdateInput = z.infer<typeof updateSchema>
+
+export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
+  method: 'PUT', inputSchema: updateSchema,
+  async handler({ input, params, repo, audit }) {
+    const existing = await repo.caseType.findUnique({ where: { orgId_type: { orgId: repo.orgId, type: params.name } } })
+    if (!existing) throw new NotFoundError(`Case type "${params.name}" not found`)
     const data: Record<string, unknown> = {}
     const strFields = ['type', 'displayName', 'description', 'icon', 'defaultGoal']
-    for (const f of strFields) if (body[f] !== undefined) data[f] = body[f]
-    if (body.enabled !== undefined)
-      data.enabled = body.enabled !== false && body.enabled !== 0 && body.enabled !== 'false'
-    if (body.requireHumanReview !== undefined)
-      data.requireHumanReview = body.requireHumanReview === true || body.requireHumanReview === 'true'
+    for (const f of strFields) { const v = (input as Record<string, unknown>)[f]; if (v !== undefined) data[f] = v }
+    if (input.enabled !== undefined) data.enabled = input.enabled !== false
+    if (input.requireHumanReview !== undefined) data.requireHumanReview = input.requireHumanReview === true
     for (const f of ['requiredFacts', 'stages', 'escalateOn', 'autoCloseConditions', 'stageConfigs', 'orchestratorConfig']) {
-      if (body[f] !== undefined) data[f] = typeof body[f] === 'string' ? body[f] : JSON.stringify(body[f])
+      const v = (input as Record<string, unknown>)[f]; if (v !== undefined) data[f] = stringifyMaybe(v)
     }
-    if (body.executionMode !== undefined) data.executionMode = body.executionMode === 'cc' ? 'cc' : 'stage'
-    if (body.sop !== undefined) data.sop = body.sop || null
-    if (body.sopMaxAutoTurns !== undefined) data.sopMaxAutoTurns = Math.max(1, Math.min(50, Number(body.sopMaxAutoTurns) || 10))
-    const ct = await prisma.caseType.update({ where: { orgId_type: { orgId: ORG_ID, type: name } }, data })
-    return NextResponse.json({ caseType: ct })
-  } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
-}
+    if (input.executionMode !== undefined) data.executionMode = input.executionMode === 'cc' ? 'cc' : 'stage'
+    if (input.sop !== undefined) data.sop = input.sop || null
+    if (input.sopMaxAutoTurns !== undefined) data.sopMaxAutoTurns = Math.max(1, Math.min(50, Number(input.sopMaxAutoTurns) || 10))
+    const ct = await repo.caseType.update({ where: { orgId_type: { orgId: repo.orgId, type: params.name } }, data })
+    await audit({ action: 'case_type.update', target: `case_type:${ct.type}`, before: existing as Record<string, unknown>, after: ct as Record<string, unknown> })
+    return apiOk({ caseType: ct })
+  },
+})
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
-  const { name } = await params
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureSqliteSchemaCompat(prisma)
-    await prisma.caseType.delete({ where: { orgId_type: { orgId: ORG_ID, type: name } } })
-    return NextResponse.json({ success: true })
-  } catch { return NextResponse.json({ error: 'Internal error' }, { status: 500 }) }
-}
+export const DELETE = defineRoute<void, CaseTypeParams>({
+  method: 'DELETE',
+  async handler({ params, repo, audit }) {
+    const existing = await repo.caseType.findUnique({ where: { orgId_type: { orgId: repo.orgId, type: params.name } } })
+    if (!existing) throw new NotFoundError(`Case type "${params.name}" not found`)
+    await repo.caseType.delete({ where: { orgId_type: { orgId: repo.orgId, type: params.name } } })
+    await audit({ action: 'case_type.delete', target: `case_type:${params.name}`, before: existing as Record<string, unknown> })
+    return apiOk({ success: true })
+  },
+})

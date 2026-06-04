@@ -1,4 +1,4 @@
-// PUT /api/admin/organizations/[id] — Update organization name (staff only)
+// PUT /api/admin/organizations/[id] — Update organization name (admin/owner only)
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 import { getSession } from '@/lib/auth'
@@ -9,8 +9,8 @@ export async function PUT(
 ) {
   const { id } = await params
   const session = await getSession()
-  if (!session || session.role !== 'staff') {
-    return NextResponse.json({ error: 'Staff only' }, { status: 403 })
+  if (!session || (session.role !== 'admin' && session.role !== 'owner')) {
+    return NextResponse.json({ error: 'Admin or owner role required' }, { status: 403 })
   }
 
   let body: { name?: string }

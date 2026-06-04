@@ -8,6 +8,7 @@ import AgentBlueprint from '@/components/admin/agent-blueprint'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import { apiClient } from '@/lib/api/client'
 
 function AgentConfigPage() {
   const { t } = useConsoleLocale()
@@ -24,9 +25,9 @@ function AgentConfigPage() {
 
   // Fetch agent configs list and resolve currentAgentId
   useEffect(() => {
-    fetch('/api/admin/agent-configs')
-      .then((r) => r.json())
-      .then((d) => {
+    apiClient('/api/admin/agent-configs')
+      .then((result) => {
+        const d = result.data as any
         if (d.configs?.length) {
           setAgentList(d.configs)
           const urlAgentId = searchParams.get('agentId')
@@ -64,12 +65,8 @@ function AgentConfigPage() {
     setForking(true)
     setForkError(null)
     try {
-      const r = await fetch(`/api/admin/agent-configs/${currentAgentId}/fork`, { method: 'POST' })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) {
-        setForkError(d.error || t('agentVersion.forkError'))
-        return
-      }
+      const result = await apiClient(`/api/admin/agent-configs/${currentAgentId}/fork`, { method: 'POST' })
+      const d = result.data as any
       if (d.config?.id) {
         const newId = d.config.id
         setPickerRefreshKey(k => k + 1)

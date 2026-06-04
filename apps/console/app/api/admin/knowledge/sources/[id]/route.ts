@@ -1,86 +1,69 @@
 // GET + PUT + DELETE /api/admin/knowledge/sources/[id]
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 audit).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { z } from 'zod'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-import { getActiveOrgId } from '@/lib/auth'
+interface KnowledgeSourceParams { id: string }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    const { id } = await params
-    const source = await prisma.knowledgeSource.findFirst({
-      where: { id, orgId: ORG_ID },
-    })
-    if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json({ source })
-  } catch (err) {
-    console.error('[Admin] GET knowledge source:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+const stringifyMaybe = (val: unknown): string => {
+  if (typeof val === 'string') return val
+  return JSON.stringify(val ?? '')
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    const { id } = await params
-    const body = await req.json()
+export const GET = defineRoute<void, KnowledgeSourceParams>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const source = await repo.knowledgeSource.findFirst({ where: { id: params.id } })
+    if (!source) throw new NotFoundError('Knowledge source not found')
+    return apiOk({ source })
+  },
+})
 
+const updateSchema = z.object({
+  name: z.string().optional(), description: z.string().nullable().optional(),
+  groupIds: z.union([z.string(), z.array(z.string())]).optional(),
+  dataIds: z.union([z.string(), z.array(z.string())]).nullable().optional(),
+  embeddingRate: z.number().optional(), topK: z.number().optional(), rerankVersion: z.string().nullable().optional(),
+  docCorrelation: z.number().nullable().optional(), caseTypeTag: z.string().nullable().optional(), enabled: z.boolean().optional(),
+})
+type UpdateInput = z.infer<typeof updateSchema>
+
+export const PUT = defineRoute<UpdateInput, KnowledgeSourceParams>({
+  method: 'PUT', inputSchema: updateSchema,
+  async handler({ input, params, repo, audit }) {
+    const { id } = params
+    const existing = await repo.knowledgeSource.findFirst({ where: { id } })
+    if (!existing) throw new NotFoundError('Knowledge source not found')
     const updateData: Record<string, unknown> = {}
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.description !== undefined) updateData.description = body.description
-    if (body.groupIds !== undefined) {
-      updateData.groupIds = typeof body.groupIds === 'string' ? body.groupIds : JSON.stringify(body.groupIds)
-    }
-    if (body.dataIds !== undefined) {
-      updateData.dataIds = typeof body.dataIds === 'string' ? body.dataIds : JSON.stringify(body.dataIds)
-    }
-    if (body.embeddingRate !== undefined) updateData.embeddingRate = body.embeddingRate
-    if (body.topK !== undefined) updateData.topK = body.topK
-    if (body.rerankVersion !== undefined) updateData.rerankVersion = body.rerankVersion
-    if (body.docCorrelation !== undefined) updateData.docCorrelation = body.docCorrelation
-    if (body.caseTypeTag !== undefined) updateData.caseTypeTag = body.caseTypeTag
-    if (body.enabled !== undefined) updateData.enabled = body.enabled
+    if (input.name !== undefined) updateData.name = input.name
+    if (input.description !== undefined) updateData.description = input.description
+    if (input.groupIds !== undefined) updateData.groupIds = stringifyMaybe(input.groupIds)
+    if (input.dataIds !== undefined) updateData.dataIds = input.dataIds ? stringifyMaybe(input.dataIds) : null
+    if (input.embeddingRate !== undefined) updateData.embeddingRate = input.embeddingRate
+    if (input.topK !== undefined) updateData.topK = input.topK
+    if (input.rerankVersion !== undefined) updateData.rerankVersion = input.rerankVersion
+    if (input.docCorrelation !== undefined) updateData.docCorrelation = input.docCorrelation
+    if (input.caseTypeTag !== undefined) updateData.caseTypeTag = input.caseTypeTag
+    if (input.enabled !== undefined) updateData.enabled = input.enabled
+    const result = await repo.knowledgeSource.updateMany({ where: { id }, data: updateData })
+    if (result.count === 0) throw new NotFoundError('Knowledge source not found')
+    const updated = await repo.knowledgeSource.findFirst({ where: { id } })
+    await audit({ action: 'knowledge_source.update', target: `knowledge_source:${id}`, before: existing as Record<string, unknown>, after: updated as Record<string, unknown> })
+    return apiOk({ source: updated })
+  },
+})
 
-    const source = await prisma.knowledgeSource.updateMany({
-      where: { id, orgId: ORG_ID },
-      data: updateData,
-    })
-
-    if (source.count === 0) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-
-    const updated = await prisma.knowledgeSource.findUnique({ where: { id } })
-    return NextResponse.json({ source: updated })
-  } catch (err) {
-    console.error('[Admin] PUT knowledge source:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
-
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    const { id } = await params
-    const result = await prisma.knowledgeSource.deleteMany({
-      where: { id, orgId: ORG_ID },
-    })
-    if (result.count === 0) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    console.error('[Admin] DELETE knowledge source:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+export const DELETE = defineRoute<void, KnowledgeSourceParams>({
+  method: 'DELETE',
+  async handler({ params, repo, audit }) {
+    const { id } = params
+    const existing = await repo.knowledgeSource.findFirst({ where: { id } })
+    if (!existing) throw new NotFoundError('Knowledge source not found')
+    const result = await repo.knowledgeSource.deleteMany({ where: { id } })
+    if (result.count === 0) throw new NotFoundError('Knowledge source not found')
+    await audit({ action: 'knowledge_source.delete', target: `knowledge_source:${id}`, before: existing as Record<string, unknown> })
+    return apiOk({ ok: true })
+  },
+})

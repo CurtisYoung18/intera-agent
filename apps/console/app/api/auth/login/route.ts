@@ -1,15 +1,14 @@
 // POST /api/auth/login — Console login (issues a SIGNED session cookie)
 //
-// Body:
-//   { mode: 'staff',    password }              → staff session (may switch orgs)
-//   { mode: 'customer', orgId, password }       → customer session locked to orgId
+// Body: { email, password }
 //
-// Staff auth: single shared STAFF_PASSWORD env (constant-time compare).
-// Customer auth: per-org bcrypt password. Orgs without a password CANNOT be logged
-// into as a customer (staff access those via staff login) — closes the password-less hole.
+// Looks up User by email, bcrypt-compares passwordHash, finds the user's primary
+// Membership (highest role), and signs a session with { userId, orgId, role }.
+//
+// STAFF_PASSWORD is only used during seed to bootstrap the first owner user; it is
+// NOT accepted at runtime.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
 import { compareSync } from 'bcryptjs'
 import { prisma } from '@intera/shared/prisma'
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE_S } from '@/lib/session'
@@ -23,15 +22,8 @@ const COOKIE_OPTS = {
   maxAge: SESSION_MAX_AGE_S,
 }
 
-function constantTimeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a)
-  const bb = Buffer.from(b)
-  if (ab.length !== bb.length) return false
-  return timingSafeEqual(ab, bb)
-}
-
-async function issue(role: 'staff' | 'customer', orgId: string, body: Record<string, unknown>) {
-  const token = await signSession({ role, orgId })
+async function issue(userId: string, orgId: string, role: string, body: Record<string, unknown>) {
+  const token = await signSession({ userId, orgId, role: role as 'owner' | 'admin' | 'operator' | 'viewer' })
   if (!token) {
     return NextResponse.json(
       { error: 'Server session secret not configured' },
@@ -46,6 +38,17 @@ async function issue(role: 'staff' | 'customer', orgId: string, body: Record<str
   return res
 }
 
+/** Pick the user's primary membership — highest-role then earliest invited. */
+function primaryMembershipRole(user: {
+  memberships: Array<{ orgId: string; role: string }>
+}): { orgId: string; role: string } | null {
+  const sorted = [...user.memberships].sort((a, b) => {
+    const rank: Record<string, number> = { owner: 4, admin: 3, operator: 2, viewer: 1 }
+    return (rank[b.role] ?? 0) - (rank[a.role] ?? 0)
+  })
+  return sorted[0] ?? null
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Rate limit: 20 attempts per minute per IP
@@ -58,40 +61,44 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { mode, orgId, password } = await req.json()
+    const { email, password } = await req.json()
     const pwd = typeof password === 'string' ? password : ''
+    const em = typeof email === 'string' ? email.trim().toLowerCase() : ''
 
-    // ── Staff login ──
-    if (mode === 'staff') {
-      const staffPw = process.env.STAFF_PASSWORD
-      if (!staffPw) {
-        return NextResponse.json({ error: 'Staff login is not configured' }, { status: 500 })
-      }
-      if (!pwd || !constantTimeEqual(pwd, staffPw)) {
-        return NextResponse.json({ error: 'Invalid staff password' }, { status: 401 })
-      }
-      // Staff start at the default org; can switch via /api/auth/switch-org.
-      return issue('staff', 'default', { ok: true, role: 'staff', orgId: 'default' })
+    if (!em || !pwd) {
+      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
     }
 
-    // ── Customer login ──
-    if (!orgId || typeof orgId !== 'string') {
-      return NextResponse.json({ error: 'orgId is required' }, { status: 400 })
+    const user = await prisma.user.findUnique({
+      where: { email: em },
+      include: { memberships: { select: { orgId: true, role: true } } },
+    })
+
+    if (!user || !user.passwordHash) {
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
-    const org = await prisma.organization.findUnique({ where: { id: orgId } })
-    if (!org) {
-      return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+
+    if (!compareSync(pwd, user.passwordHash)) {
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
-    if (!org.password) {
+
+    // Role lives on Membership; deny if the user has no memberships
+    const primary = primaryMembershipRole(user)
+
+    if (!primary) {
       return NextResponse.json(
-        { error: 'This organization has no password set. Contact your administrator.' },
+        { error: 'No organization membership — request an invitation' },
         { status: 403 },
       )
     }
-    if (!pwd || !compareSync(pwd, org.password)) {
-      return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
-    }
-    return issue('customer', org.id, { ok: true, role: 'customer', orgId: org.id, name: org.name })
+
+    return issue(user.id, primary.orgId, primary.role, {
+      ok: true,
+      userId: user.id,
+      orgId: primary.orgId,
+      role: primary.role,
+      name: user.name,
+    })
   } catch (err) {
     console.error('[Auth] login error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

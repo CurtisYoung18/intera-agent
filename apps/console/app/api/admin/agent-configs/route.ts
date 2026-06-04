@@ -1,156 +1,97 @@
-// GET /api/admin/agent-configs — list all agent config versions for the active org
-// POST /api/admin/agent-configs — create a new agent (name, v1, active) or fork (templateId → new version of same name, draft)
-// DELETE /api/admin/agent-configs?name=X — delete ALL versions of agent name X for the active org
+// GET + POST + DELETE /api/admin/agent-configs — List, create/fork, and bulk-delete agent configs
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 audit).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
+import { z } from 'zod'
+import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
+import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 
 const AGENT_CARD_SELECT = {
-  id: true,
-  name: true,
-  version: true,
-  isActive: true,
-  parentId: true,
-  model: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, name: true, version: true, isActive: true, parentId: true, model: true, createdAt: true, updatedAt: true,
 } as const
 
-export async function GET() {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const configs = await prisma.agentConfig.findMany({
-    where: { orgId },
-    orderBy: [{ name: 'asc' }, { version: 'asc' }],
-    select: AGENT_CARD_SELECT,
-  })
-
-  // Auto-create a default config if org has none
-  if (configs.length === 0) {
-    const created = await prisma.agentConfig.create({
-      data: {
-        orgId,
-        name: 'Default',
-        version: 1,
-        isActive: true,
-        systemPrompt: '',
-        memoryStrategy: '{}',
-        policyHooks: '{}',
-      },
-      select: AGENT_CARD_SELECT,
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ repo }) {
+    let configs = await repo.agentConfig.findMany({
+      orderBy: [{ name: 'asc' }, { version: 'asc' }], select: AGENT_CARD_SELECT,
     })
-    return NextResponse.json({ configs: [created] })
-  }
-
-  return NextResponse.json({ configs })
-}
-
-export async function POST(request: NextRequest) {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const body = await request.json().catch(() => ({}))
-  const templateId = body.templateId as string | undefined
-  const requestedName = (body.name as string)?.trim() || 'New Agent'
-
-  // ── Path 1: fork (templateId provided + valid) → new version of same name, isActive=false
-  if (templateId) {
-    const source = await prisma.agentConfig.findUnique({ where: { id: templateId } })
-    if (source && source.orgId === orgId) {
-      // Retry a few times to win the race against concurrent forks
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const max = await prisma.agentConfig.findFirst({
-          where: { orgId, name: source.name },
-          orderBy: { version: 'desc' },
-          select: { version: true },
-        })
-        const newVersion = (max?.version ?? 0) + 1
-        try {
-          const forked = await prisma.agentConfig.create({
-            data: {
-              orgId,
-              name: source.name,
-              version: newVersion,
-              isActive: false,
-              parentId: source.id,
-              model: source.model,
-              temperature: source.temperature,
-              thinkingBudget: source.thinkingBudget,
-              maxIterations: source.maxIterations,
-              maxOutputTokens: source.maxOutputTokens,
-              systemPrompt: source.systemPrompt,
-              coreSystemPrompt: source.coreSystemPrompt,
-              showThinking: source.showThinking,
-              memoryStrategy: source.memoryStrategy,
-              policyHooks: source.policyHooks,
-              gptbotsApiKey: source.gptbotsApiKey,
-              invariantCheck: source.invariantCheck,
-              resumePrompt: source.resumePrompt,
-              debugMode: source.debugMode,
-            },
-            select: AGENT_CARD_SELECT,
-          })
-          return NextResponse.json({ config: forked })
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            // Concurrent fork — try again with a fresh max
-            continue
-          }
-          throw err
-        }
-      }
-      return NextResponse.json(
-        { error: 'Could not allocate a new version after several attempts — please retry' },
-        { status: 409 },
-      )
+    if (configs.length === 0) {
+      await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
+      const created = await (repo.agentConfig.create as any)({
+        data: { name: 'Default', version: 1, isActive: true, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+        select: AGENT_CARD_SELECT,
+      })
+      return apiOk({ configs: [created] })
     }
-  }
+    return apiOk({ configs })
+  },
+})
 
-  // ── Path 2: create a new agent name (v1, active)
-  const created = await prisma.agentConfig.create({
-    data: {
-      orgId,
-      name: requestedName,
-      version: 1,
-      isActive: true,
-      parentId: null,
-      systemPrompt: '',
-      memoryStrategy: '{}',
-      policyHooks: '{}',
-    },
-    select: AGENT_CARD_SELECT,
-  })
-  return NextResponse.json({ config: created })
-}
+const postSchema = z.object({ name: z.string().optional(), templateId: z.string().optional() })
+type PostInput = z.infer<typeof postSchema>
 
-export async function DELETE(request: NextRequest) {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export const POST = defineRoute<PostInput>({
+  method: 'POST', inputSchema: postSchema,
+  async handler({ input, repo, audit }) {
+    const { templateId, name: requestedNameRaw } = input
+    const requestedName = requestedNameRaw?.trim() || 'Default'
+    await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
 
-  const name = request.nextUrl.searchParams.get('name')?.trim()
-  if (!name) {
-    return NextResponse.json({ error: 'name query param required' }, { status: 400 })
-  }
+    if (templateId) {
+      const source = await repo.agentConfig.findUnique({ where: { id: templateId } })
+      if (source) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const max = await repo.agentConfig.findFirst({ where: { name: source.name }, orderBy: { version: 'desc' }, select: { version: true } })
+          const newVersion = (max?.version ?? 0) + 1
+          try {
+            const forked = await (repo.agentConfig.create as any)({
+              data: {
+                name: source.name, version: newVersion, isActive: false, parentId: source.id,
+                model: source.model, temperature: source.temperature, thinkingBudget: source.thinkingBudget,
+                maxIterations: source.maxIterations, maxOutputTokens: source.maxOutputTokens,
+                systemPrompt: source.systemPrompt, coreSystemPrompt: source.coreSystemPrompt,
+                showThinking: source.showThinking, memoryStrategy: source.memoryStrategy,
+                policyHooks: source.policyHooks, gptbotsApiKey: source.gptbotsApiKey,
+                invariantCheck: source.invariantCheck, resumePrompt: source.resumePrompt, debugMode: source.debugMode,
+              },
+              select: AGENT_CARD_SELECT,
+            })
+            await audit({ action: 'agent_config.fork', target: `agent_config:${forked.id}`, after: forked as Record<string, unknown> })
+            return apiCreated({ config: forked })
+          } catch (err: unknown) {
+            if ((err as any)?.code === 'P2002') continue
+            throw err
+          }
+        }
+        throw new ValidationError('Could not allocate a new version after several attempts — please retry')
+      }
+    }
 
-  const { count } = await prisma.agentConfig.deleteMany({
-    where: { orgId, name },
-  })
+    try {
+      const created = await (repo.agentConfig.create as any)({
+        data: { name: requestedName, version: 1, isActive: true, parentId: null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+        select: AGENT_CARD_SELECT,
+      })
+      await audit({ action: 'agent_config.create', target: `agent_config:${created.id}`, after: created as Record<string, unknown> })
+      return apiCreated({ config: created })
+    } catch (err: unknown) {
+      if ((err as any)?.code === 'P2002') throw new ValidationError(`An agent named "${requestedName}" already exists`)
+      throw err
+    }
+  },
+})
 
-  if (count === 0) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
+const deleteSchema = z.object({ name: z.string().min(1) })
+type DeleteInput = z.infer<typeof deleteSchema>
 
-  return NextResponse.json({ ok: true, deleted: count })
-}
+export const DELETE = defineRoute<DeleteInput>({
+  method: 'DELETE', inputSchema: deleteSchema, parseQuery: true,
+  async handler({ input, repo, audit }) {
+    const { name } = input
+    const existing = await repo.agentConfig.findFirst({ where: { name }, select: { id: true, name: true } })
+    if (!existing) throw new NotFoundError(`No agent configs found with name "${name}"`)
+    const result = await repo.agentConfig.deleteMany({ where: { name } })
+    await audit({ action: 'agent_config.delete_bulk', target: `agent_config:${name}`, before: { name, count: result.count } })
+    return apiOk({ ok: true, deleted: result.count })
+  },
+})

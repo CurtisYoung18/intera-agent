@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Intera — Logo Animation</title>
+  <link rel="stylesheet" href="../colors_and_type.css">
+  <link rel="stylesheet" href="../assets/liquid-glass.css">
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:var(--void);-webkit-font-smoothing:antialiased}
+
+    /* Orb background */
+    .orb{position:fixed;border-radius:50%;filter:blur(80px);opacity:.55;pointer-events:none}
+    .o1{width:500px;height:500px;top:-10%;left:-5%;background:radial-gradient(circle,rgba(139,111,245,.14),transparent 70%);animation:float 9s ease-in-out infinite}
+    .o2{width:420px;height:420px;top:50%;right:-8%;background:radial-gradient(circle,rgba(91,184,247,.10),transparent 70%);animation:float 11s ease-in-out infinite 1.2s}
+    .o3{width:360px;height:360px;bottom:-8%;left:28%;background:radial-gradient(circle,rgba(184,148,76,.08),transparent 70%);animation:float 10s ease-in-out infinite 2.4s}
+    .grain{position:fixed;inset:0;opacity:.022;pointer-events:none;
+      background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E") repeat;
+      background-size:256px}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+
+    /* Stage */
+    .stage{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:44px}
+
+    /* Hero logo container */
+    .hero-logo{
+      font-family:var(--font-serif);
+      font-style:italic;
+      font-weight:500;
+      font-size:86px;
+      line-height:1;
+      letter-spacing:-.02em;
+      display:inline-flex;
+      align-items:baseline;
+      cursor:pointer;
+      user-select:none;
+    }
+    /* Each letter is a flex child; we animate max-width + opacity + transform */
+    .hero-logo .l{
+      display:inline-block;
+      overflow:hidden;
+      white-space:nowrap;
+    }
+
+    /* Phase label */
+    .plabel{font-family:var(--font-mono);font-size:12px;color:var(--smoke);letter-spacing:.06em;text-align:center;height:18px;transition:opacity .3s}
+
+    /* Controls */
+    .ctrls{display:flex;gap:10px}
+    .cb{padding:8px 18px;border-radius:10px;font-size:12.5px;font-weight:600;border:1px solid rgba(0,0,0,.07);
+      background:rgba(255,255,255,.65);backdrop-filter:blur(12px);color:var(--fog);cursor:pointer;
+      transition:all .18s cubic-bezier(.22,1,.36,1);font-family:var(--font-sans)}
+    .cb:hover{background:#fff;color:var(--mist);border-color:rgba(91,138,247,.25)}
+    .cb.on{background:rgba(91,138,247,.08);color:var(--indigo);border-color:rgba(91,138,247,.28)}
+
+    /* Sidebar demo */
+    .sd-wrap{display:flex;gap:12px;align-items:center}
+    .sd{overflow:hidden;background:rgba(255,255,255,.55);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.6);
+      border-radius:14px;padding:14px 12px;display:flex;flex-direction:column;gap:5px;
+      transition:width .44s cubic-bezier(.22,1,.36,1);width:52px}
+    .sd.open{width:178px}
+    .sd-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+    .sd-glyph{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(150deg,rgba(139,111,245,.18),rgba(91,138,247,.05));border:1px solid rgba(139,111,245,.2)}
+    .sd-glyph-text{font-family:var(--font-serif);font-style:italic;font-size:14px;line-height:1}
+    .sd-word{font-family:var(--font-serif);font-style:italic;font-size:18px;line-height:1;overflow:hidden;white-space:nowrap;flex:1}
+    .sd-row{height:27px;border-radius:8px;background:rgba(0,0,0,.03);flex-shrink:0;transition:opacity .35s}
+    .sd-row:first-child{background:rgba(91,138,247,.07)}
+    .sd-row-label{font-size:11.5px;color:var(--fog);padding:0 8px;line-height:27px;white-space:nowrap}
+
+    /* Sidebar word animation */
+    .sd-word .l{display:inline-block;overflow:hidden;white-space:nowrap}
+
+    /* Caption */
+    .caption{font-size:13px;color:var(--fog);opacity:.75;text-align:center;max-width:380px;line-height:1.65}
+  </style>
+</head>
+<body>
+  <div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="grain"></div>
+
+  <div class="stage">
+    <div id="hero" class="hero-logo" onclick="nextPhase()"></div>
+    <div class="plabel" id="plabel"></div>
+
+    <div class="ctrls">
+      <button class="cb on" id="btn-auto" onclick="toggleAuto()">Auto</button>
+      <button class="cb" onclick="setPhase(0)">Intera</button>
+      <button class="cb" onclick="setPhase(1)">IA</button>
+      <button class="cb" onclick="setPhase(2)">AI</button>
+    </div>
+
+    <div class="sd-wrap">
+      <div class="sd" id="sd">
+        <div class="sd-head">
+          <div class="sd-glyph"><span class="sd-glyph-text" id="sd-glyph-text">I</span></div>
+          <div class="sd-word" id="sd-word"></div>
+        </div>
+        <div class="sd-row"><span class="sd-row-label" id="sl0">Preview &amp; Debug</span></div>
+        <div class="sd-row"><span class="sd-row-label" id="sl1">Agent Config</span></div>
+        <div class="sd-row"><span class="sd-row-label" id="sl2">Guardrails</span></div>
+      </div>
+    </div>
+
+    <p class="caption">The wordmark flows <em>Intera → I·A → A·I</em> — pausing 10 seconds on each state. Click to step through.</p>
+  </div>
+
+  <script>
+  const E = (id) => document.getElementById(id);
+  const EASE = 'cubic-bezier(0.22,1,0.36,1)';
+  const LABELS = ['Intera', 'I · A', 'A · I'];
+
+  // ── Measure char width at a given font-size ──────────────────
+  function measure(ch, px) {
+    const s = document.createElement('span');
+    s.style.cssText = `font-family:'Cormorant Garamond','Noto Serif SC',serif;font-style:italic;font-weight:500;font-size:${px}px;position:fixed;visibility:hidden;top:0;left:0;white-space:nowrap`;
+    s.textContent = ch;
+    document.body.appendChild(s);
+    const w = s.getBoundingClientRect().width;
+    document.body.removeChild(s);
+    return w;
+  }
+
+  // ── Build hero DOM: order = I · A · n · t · e · r · a ───────
+  // We keep this order so "Intera" = I + (A hidden) + ntera
+  // "IA" = I + A + (ntera hidden)
+  // "AI" = I slides right, A slides left (visual swap)
+  const SIZE = 86;
+  let W = {};
+  function buildHero() {
+    W = {
+      I: measure('I', SIZE), A: measure('A', SIZE),
+      n: measure('n', SIZE), t: measure('t', SIZE),
+      e: measure('e', SIZE), r: measure('r', SIZE),
+      a: measure('a', SIZE),
+    };
+    // DOM: [I][A][n][t][e][r][a]
+    E('hero').innerHTML = [
+      `<span class="l" id="hI" style="flex-shrink:0">${'I'}</span>`,
+      `<span class="l" id="hA" style="max-width:0;opacity:0;flex-shrink:0">${'A'}</span>`,
+      `<span class="l" id="hn" style="max-width:${W.n}px;flex-shrink:0">n</span>`,
+      `<span class="l" id="ht" style="max-width:${W.t}px;flex-shrink:0">t</span>`,
+      `<span class="l" id="he" style="max-width:${W.e}px;flex-shrink:0">e</span>`,
+      `<span class="l" id="hr" style="max-width:${W.r}px;flex-shrink:0">r</span>`,
+      `<span class="l" id="ha" style="max-width:${W.a}px;flex-shrink:0">a</span>`,
+    ].join('');
+  }
+
+  // ── Animate a letter ─────────────────────────────────────────
+  function animL(el, {mw, op, tx = 0, d = '500ms', delay = 0}) {
+    if (!el) return;
+    const dd = delay + 'ms';
+    el.style.transition = [
+      mw !== undefined ? `max-width ${d} ${EASE} ${dd}` : '',
+      `opacity 330ms ease ${dd}`,
+      `transform ${d} ${EASE} ${dd}`,
+    ].filter(Boolean).join(', ');
+    requestAnimationFrame(() => {
+      if (mw !== undefined) el.style.maxWidth = mw + 'px';
+      if (op !== undefined) el.style.opacity = op;
+      el.style.transform = `translateX(${tx}px)`;
+    });
+  }
+
+  // ── Apply phase ───────────────────────────────────────────────
+  function apply(p, instant = false) {
+    const d = instant ? '0ms' : '500ms';
+    const hI = E('hI'), hA = E('hA');
+    const hn = E('hn'), ht = E('ht'), he = E('he'), hr = E('hr'), ha = E('ha');
+
+    if (p === 0) {
+      // INTERA: I·ntera — A hidden, ntera visible
+      animL(hI, {op: 1, tx: 0, d});
+      animL(hA, {mw: 0, op: 0, tx: 0, d});
+      animL(hn, {mw: W.n, op: 1, tx: 0, d, delay: instant ? 0 : 0});
+      animL(ht, {mw: W.t, op: 1, tx: 0, d, delay: instant ? 0 : 30});
+      animL(he, {mw: W.e, op: 1, tx: 0, d, delay: instant ? 0 : 55});
+      animL(hr, {mw: W.r, op: 1, tx: 0, d, delay: instant ? 0 : 80});
+      animL(ha, {mw: W.a, op: 1, tx: 0, d, delay: instant ? 0 : 105});
+      updateSidebar(true);
+    } else if (p === 1) {
+      // IA: I·A — ntera collapses, A expands (after I)
+      animL(hI, {op: 1, tx: 0, d, delay: instant ? 0 : 80});
+      animL(hA, {mw: W.A + 2, op: 1, tx: 0, d, delay: instant ? 0 : 110});
+      animL(hn, {mw: 0, op: 0, tx: 0, d, delay: instant ? 0 : 0});
+      animL(ht, {mw: 0, op: 0, tx: 0, d, delay: instant ? 0 : 20});
+      animL(he, {mw: 0, op: 0, tx: 0, d, delay: instant ? 0 : 38});
+      animL(hr, {mw: 0, op: 0, tx: 0, d, delay: instant ? 0 : 55});
+      animL(ha, {mw: 0, op: 0, tx: 0, d, delay: instant ? 0 : 70});
+      updateSidebar(false);
+    } else {
+      // AI: I moves right by W.A, A moves left by W.I → visual [A][I]
+      animL(hI, {op: 1, tx: W.A + 2, d, delay: instant ? 0 : 50});
+      animL(hA, {mw: W.A + 2, op: 1, tx: -(W.I + 2), d, delay: instant ? 0 : 50});
+      animL(hn, {mw: 0, op: 0, tx: 0, d});
+      animL(ht, {mw: 0, op: 0, tx: 0, d});
+      animL(he, {mw: 0, op: 0, tx: 0, d});
+      animL(hr, {mw: 0, op: 0, tx: 0, d});
+      animL(ha, {mw: 0, op: 0, tx: 0, d});
+      updateSidebar(false);
+    }
+    E('plabel').textContent = LABELS[p];
+  }
+
+  // ── Sidebar wordmark ──────────────────────────────────────────
+  function buildSidebar() {
+    const ws = 18; // sidebar font-size
+    const WS = { n: measure('n',ws), t: measure('t',ws), e: measure('e',ws), r: measure('r',ws), a: measure('a',ws) };
+    E('sd-word').innerHTML = [
+      `<span class="l" id="sdN" style="max-width:${WS.n}px">n</span>`,
+      `<span class="l" id="sdT" style="max-width:${WS.t}px">t</span>`,
+      `<span class="l" id="sdE" style="max-width:${WS.e}px">e</span>`,
+      `<span class="l" id="sdR" style="max-width:${WS.r}px">r</span>`,
+      `<span class="l" id="sdA" style="max-width:${WS.a}px">a</span>`,
+    ].join('');
+    window.WSIDE = WS;
+  }
+
+  function updateSidebar(open) {
+    const d = '420ms', EASE2 = EASE;
+    ['sdN','sdT','sdE','sdR','sdA'].forEach((id, i) => {
+      const el = E(id); if (!el) return;
+      const w = window.WSIDE ? Object.values(window.WSIDE)[i] : 20;
+      el.style.transition = `max-width ${d} ${EASE2} ${i*18}ms, opacity 300ms ease ${i*18}ms`;
+      requestAnimationFrame(() => {
+        el.style.maxWidth = open ? (w + 'px') : '0px';
+        el.style.opacity = open ? '1' : '0';
+      });
+    });
+    const labels = document.querySelectorAll('.sd-row-label');
+    labels.forEach(l => { l.style.transition = 'opacity .3s ease'; l.style.opacity = open ? '1' : '0'; });
+    const sd = E('sd');
+    if (sd) { open ? sd.classList.add('open') : sd.classList.remove('open'); }
+    // Glyph text: show AI or I based on phase
+    const g = E('sd-glyph-text');
+    if (g) g.textContent = open ? 'I' : 'AI';
+  }
+
+  // ── Phase controller ──────────────────────────────────────────
+  let phase = 2;
+  let autoOn = true;
+  let timer = null;
+
+  function setPhase(p, instant = false) {
+    phase = p;
+    apply(p, instant);
+    if (autoOn) restartTimer();
+  }
+
+  function nextPhase() { setPhase((phase + 1) % 3); }
+
+  function restartTimer() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(nextPhase, 10000);
+  }
+
+  function toggleAuto() {
+    autoOn = !autoOn;
+    E('btn-auto').classList.toggle('on', autoOn);
+    if (autoOn) restartTimer(); else { clearInterval(timer); timer = null; }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────
+  window.addEventListener('load', () => {
+    buildHero();
+    buildSidebar();
+    // Set AI instantly
+    setTimeout(() => {
+      apply(2, true);
+      // Start auto
+      setTimeout(() => { if (autoOn) restartTimer(); }, 400);
+    }, 100);
+  });
+  </script>
+</body>
+</html>

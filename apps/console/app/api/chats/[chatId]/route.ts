@@ -1,51 +1,43 @@
-// DELETE /api/chats/[chatId]
-// Removes every case that belongs to this chat session, cascading through all
-// dependent tables (messages, traces, memory, human tasks).
-//
-// Cases without an explicit chatId were stored with chatId = case.id as the
-// session key; a client that passes that key will delete just the one case.
+// DELETE /api/chats/[chatId] — Removes every case in a chat session.
+// Migrated to defineRoute + repoForOrg (Wave 1 G1/G2/G3).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ chatId: string }> },
-) {
-  const { chatId } = await params
-  const decoded = decodeURIComponent(chatId)
+export const DELETE = defineRoute<void, { chatId: string }>({
+  method: 'DELETE',
+  async handler({ params, repo, audit }) {
+    const decoded = decodeURIComponent(params.chatId)
 
-  try {
-    // Resolve all caseIds that belong to this chat session.
-    // A chatId may equal a case's own id for standalone (pre-chatId) sessions.
-    const cases = await prisma.case.findMany({
+    const cases = await repo.case.findMany({
       where: { chatId: decoded },
       select: { id: true },
     })
 
-    // Fallback: if no cases found by chatId field, try treating the chatId as
-    // a single caseId (backward-compat with sessions created before chatId column).
-    const caseIds =
+    const caseIds: string[] =
       cases.length > 0
-        ? cases.map((c) => c.id)
-        : await prisma.case
-            .findUnique({ where: { id: decoded }, select: { id: true } })
-            .then((c) => (c ? [c.id] : []))
+        ? cases.map((c: { id: string }) => c.id)
+        : await repo.case
+            .findFirst({ where: { id: decoded }, select: { id: true } })
+            .then((c: { id: string } | null) => (c ? [c.id] : []))
 
     if (caseIds.length === 0) {
-      return NextResponse.json({ error: 'Chat not found' }, { status: 404 })
+      throw new NotFoundError('Chat not found')
     }
 
-    // Delete in dependency order (no cascade configured in SQLite schema).
-    await prisma.humanTask.deleteMany({ where: { caseId: { in: caseIds } } })
-    await prisma.actionTrace.deleteMany({ where: { caseId: { in: caseIds } } })
-    await prisma.message.deleteMany({ where: { caseId: { in: caseIds } } })
-    await prisma.chatMemory.deleteMany({ where: { caseId: { in: caseIds } } })
-    await prisma.case.deleteMany({ where: { id: { in: caseIds } } })
+    // Clean up dependents via raw prisma (belt-and-suspenders with onDelete: Cascade)
+    await repo.raw.humanTask.deleteMany({ where: { caseId: { in: caseIds } } })
+    await repo.raw.actionTrace.deleteMany({ where: { caseId: { in: caseIds } } })
+    await repo.raw.message.deleteMany({ where: { caseId: { in: caseIds } } })
+    await repo.raw.chatMemory.deleteMany({ where: { caseId: { in: caseIds } } })
+    await repo.case.deleteMany({ where: { id: { in: caseIds } } })
 
-    return NextResponse.json({ ok: true, deleted: caseIds.length })
-  } catch (err) {
-    console.error('[API] Failed to delete chat:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    await audit({
+      action: 'chat.delete',
+      target: `chat:${decoded}`,
+      before: { caseIds },
+    })
+
+    return apiOk({ ok: true, deleted: caseIds.length })
+  },
+})

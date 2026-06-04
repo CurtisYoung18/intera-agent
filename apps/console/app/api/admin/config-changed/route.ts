@@ -1,16 +1,16 @@
 // POST /api/admin/config-changed — Invalidate AgentConfig cache
-// Called by Console admin after saving config, so changes take effect immediately.
+// Migrated to defineRoute (G1 contract seam).
 
-import { NextRequest, NextResponse } from 'next/server'
 import { clearConfigCache } from '@/lib/agent/config-cache'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json().catch(() => ({}))
-    const orgId = body.orgId || undefined
+export const POST = defineRoute({
+  method: 'POST',
+  async handler({ input }) {
+    const body = input as Record<string, unknown> | undefined
+    const orgId = (body?.orgId as string) || undefined
     clearConfigCache(orgId)
-    return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ success: true })
+  },
+})

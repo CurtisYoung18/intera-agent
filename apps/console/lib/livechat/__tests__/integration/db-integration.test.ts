@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 
-// These tests require a live PostgreSQL database.
-// Set DATABASE_URL env var before running.
+// These tests require a live PostgreSQL database (local, via docker compose).
+// The local DATABASE_URL is set below; make sure the schema is pushed first:
+//   npx prisma db push --schema=packages/shared/prisma/schema.prisma
+
+const LOCAL_DATABASE_URL = 'postgresql://intera:intera@localhost:5432/intera'
 
 const TEST_CHAT_ID = `test-chat-${Date.now()}`
 const TEST_CUSTOMER = 'default'
 
-describe('DB integration tests (PostgreSQL)', () => {
+const DATABASE_URL = process.env.DATABASE_URL || ''
+const hasLocalPostgres = DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1')
+
+describe.skipIf(!hasLocalPostgres)('DB integration tests (PostgreSQL)', () => {
   // Lazy imports to ensure env is loaded
   let getSession: typeof import('../../session-store').getSession
   let upsertSession: typeof import('../../session-store').upsertSession
@@ -23,6 +29,10 @@ describe('DB integration tests (PostgreSQL)', () => {
   let enqueueRetry: typeof import('../../retry-queue').enqueueRetry
 
   beforeAll(async () => {
+    // Force local DATABASE_URL so tests never touch a remote DB.
+    // The prisma singleton inside @intera/shared/prisma reads env on first import,
+    // so we set this BEFORE the lazy imports execute.
+    process.env.DATABASE_URL = LOCAL_DATABASE_URL
     const sessionMod = await import('../../session-store')
     getSession = sessionMod.getSession
     upsertSession = sessionMod.upsertSession

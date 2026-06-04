@@ -11,6 +11,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { apiClient } from '@/lib/api/client'
 
 interface CaseTypeItem {
   id: string

@@ -15,20 +15,22 @@ import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndi
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
+import { apiClient, ApiClientError } from '@/lib/api/client'
+import type { SkillsListResponse, SkillCreateResponse } from '@intera/shared/contracts/skills'
 
 interface SkillItem {
   id: string; name: string; description: string; mode: string
-  endpoint?: string; httpMethod?: string; timeoutMs?: number
-  inputSchema?: string; outputSchema?: string; headers?: string
-  mockFixture?: string; renderHints?: string; guardPhase?: string
-  toolCategory?: 'system_info' | 'operational'
+  endpoint?: string | null; httpMethod?: string | null; timeoutMs?: number | null
+  inputSchema?: string | null; outputSchema?: string | null; headers?: string | null
+  mockFixture?: string | null; renderHints?: string | null; guardPhase?: string | null
+  toolCategory?: string | null
   isConcurrencySafe: boolean; enabled: boolean
   isSystem?: boolean
   isChannel?: boolean
   isSpecial?: boolean
 }
 
-function parseJsonField(raw: string | undefined): { ok: true; value: unknown } | { ok: false; error: string } {
+function parseJsonField(raw: string | null | undefined): { ok: true; value: unknown } | { ok: false; error: string } {
   const trimmed = raw?.trim()
   if (!trimmed) return { ok: true, value: undefined }
   try {
@@ -113,17 +115,20 @@ export default function SkillsPage() {
   }, [loadKnowledgeSources])
 
   const load = useCallback(async () => {
-    const res = await fetch('/api/admin/skills')
-    const data = await res.json()
-    setSkills(data.skills || [])
+    try {
+      const result = await apiClient<SkillsListResponse>('/api/admin/skills')
+      setSkills(result.data.skills || [])
+    } catch { /* apiClient throws on envelope errors; fall back gracefully */ }
     setLoading(false)
   }, [])
 
   useEffect(() => { load(); loadKnowledgeSources() }, [load, loadKnowledgeSources])
 
   const toggleEnabled = useCallback(async (skill: SkillItem) => {
-    const url = `/api/admin/skills/${encodeURIComponent(skill.name)}`
-    await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !skill.enabled }) })
+    await apiClient(`/api/admin/skills/${encodeURIComponent(skill.name)}`, {
+      method: 'PUT',
+      body: { enabled: !skill.enabled },
+    })
     load()
   }, [load])
 
@@ -143,14 +148,16 @@ export default function SkillsPage() {
     const urlName = isNew ? editing.name : originalName
     const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
     try {
-      const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
-      if (!res.ok) {
-        setSaveError(t('common.saveError', { status: res.status }))
-        setSaveStatus('error')
-        return
+      await apiClient<SkillCreateResponse>(url, {
+        method: isNew ? 'POST' : 'PUT',
+        body: editing,
+      })
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setSaveError(err.envelope.error.message)
+      } else {
+        setSaveError(t('common.saveFailed'))
       }
-    } catch {
-      setSaveError(t('common.saveFailed'))
       setSaveStatus('error')
       return
     }
@@ -172,7 +179,7 @@ export default function SkillsPage() {
     const name = confirmDeleteName
     if (!name) return
     setConfirmDeleteName(null)
-    await fetch(`/api/admin/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    await apiClient(`/api/admin/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
     load()
   }, [confirmDeleteName, load])
 

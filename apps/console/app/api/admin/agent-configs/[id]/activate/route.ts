@@ -1,57 +1,23 @@
-// PUT /api/admin/agent-configs/[id]/activate — Promote a draft version to active for its (orgId, name).
-// Demotes the previous active version inside the same transaction. Invalidates cache for both ids.
-
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
+// PUT /api/admin/agent-configs/[id]/activate
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 import { clearConfigCache } from '@/lib/agent/config-cache'
-
-export async function PUT(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const { id } = await params
-
-  const target = await prisma.agentConfig.findUnique({ where: { id } })
-  if (!target || target.orgId !== orgId) {
-    return NextResponse.json({ error: 'Config not found' }, { status: 404 })
-  }
-
-  // Idempotent: if already active, just return it
-  if (target.isActive) {
-    return NextResponse.json({ config: { id: target.id, name: target.name, version: target.version, isActive: true } })
-  }
-
-  // Find the current active sibling (for cache invalidation)
-  const previousActive = await prisma.agentConfig.findFirst({
-    where: { orgId, name: target.name, isActive: true },
-    select: { id: true },
-  })
-
-  // Atomic: demote previous + promote this one
-  await prisma.$transaction([
-    prisma.agentConfig.updateMany({
-      where: { orgId, name: target.name, isActive: true },
-      data: { isActive: false },
-    }),
-    prisma.agentConfig.update({
-      where: { id: target.id },
-      data: { isActive: true },
-      select: { id: true, name: true, version: true, isActive: true },
-    }),
-  ])
-
-  // Cache invalidation for both the demoted and the promoted id — in-flight runs
-  // on the demoted config would otherwise read the stale row for up to 30s.
-  if (previousActive) clearConfigCache(orgId, previousActive.id)
-  clearConfigCache(orgId, target.id)
-  // Also invalidate the no-agentId lookup used by runtime consumers
-  clearConfigCache(orgId)
-
-  return NextResponse.json({ config: { id: target.id, name: target.name, version: target.version, isActive: true } })
-}
+interface AgentConfigParams { id: string }
+export const PUT = defineRoute<void, AgentConfigParams>({
+  method: 'PUT',
+  async handler({ params, repo, audit }) {
+    const { id } = params
+    const target = await repo.agentConfig.findUnique({ where: { id } })
+    if (!target) throw new NotFoundError('Config not found')
+    if (target.isActive) return apiOk({ config: { id: target.id, name: target.name, version: target.version, isActive: true } })
+    const previousActive = await repo.agentConfig.findFirst({ where: { name: target.name, isActive: true }, select: { id: true } })
+    await repo.raw.$transaction([
+      repo.raw.agentConfig.updateMany({ where: { orgId: repo.orgId, name: target.name, isActive: true }, data: { isActive: false } }),
+      repo.raw.agentConfig.update({ where: { id: target.id }, data: { isActive: true }, select: { id: true, name: true, version: true, isActive: true } }),
+    ])
+    if (previousActive) clearConfigCache(repo.orgId, previousActive.id)
+    clearConfigCache(repo.orgId, target.id); clearConfigCache(repo.orgId)
+    await audit({ action: 'agent_config.activate', target: `agent_config:${id}`, before: { previousActiveId: previousActive?.id }, after: { activeId: id } })
+    return apiOk({ config: { id: target.id, name: target.name, version: target.version, isActive: true } })
+  },
+})
