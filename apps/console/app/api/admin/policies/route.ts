@@ -15,7 +15,7 @@ export const GET = defineRoute({
     if (missing.length > 0) {
       await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
       for (const p of missing) {
-        await repo.policy.create({ data: { name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true } })
+        await repo.policy.create({ data: { name: p.name, description: p.description, hook: p.hook, rule: p.rule, guardrailConfig: p.guardrailConfig ?? null, enabled: true } })
       }
       policies = await repo.policy.findMany({ orderBy: { name: 'asc' } })
     }
@@ -28,6 +28,7 @@ const createSchema = z.object({
   description: z.string().nullable().optional(),
   hook: z.string().optional().default('preTool'),
   rule: z.union([z.string(), z.record(z.unknown())]).optional().default('{}'),
+  guardrailConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
   enabled: z.boolean().optional().default(true),
 })
 type CreateInput = z.infer<typeof createSchema>
@@ -36,8 +37,11 @@ export const POST = defineRoute<CreateInput>({
   method: 'POST', inputSchema: createSchema,
   async handler({ input, repo, audit }) {
     await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
+    const guardrailConfigStr = input.guardrailConfig
+      ? (typeof input.guardrailConfig === 'string' ? input.guardrailConfig : JSON.stringify(input.guardrailConfig))
+      : null
     const policy = await repo.policy.create({
-      data: { name: input.name, description: input.description ?? null, hook: input.hook ?? 'preTool', rule: typeof input.rule === 'string' ? input.rule : JSON.stringify(input.rule ?? {}), enabled: input.enabled ?? true },
+      data: { name: input.name, description: input.description ?? null, hook: input.hook ?? 'preTool', rule: typeof input.rule === 'string' ? input.rule : JSON.stringify(input.rule ?? {}), guardrailConfig: guardrailConfigStr, enabled: input.enabled ?? true },
     })
     await audit({ action: 'policy.create', target: `policy:${policy.name}`, after: policy as Record<string, unknown> })
     return apiCreated({ policy })

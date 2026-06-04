@@ -1,51 +1,54 @@
-// GET /api/admin/api-keys — list API keys for the active org
-// POST /api/admin/api-keys — generate a new API key
+// GET + POST /api/admin/api-keys — List and create API keys
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
+import { z } from 'zod'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import { generateApiKey } from '@/lib/api-auth'
 
-export async function GET() {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+const KEY_SELECT = {
+  id: true,
+  name: true,
+  prefix: true,
+  agentConfigId: true,
+  lastUsedAt: true,
+  createdAt: true,
+} as const
 
-  const keys = await prisma.apiKey.findMany({
-    where: { orgId, revokedAt: null },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      name: true,
-      prefix: true,
-      agentConfigId: true,
-      lastUsedAt: true,
-      createdAt: true,
-    },
-  })
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ repo }) {
+    const keys = await repo.apiKey.findMany({
+      where: { revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: KEY_SELECT,
+    })
+    return apiOk({ keys })
+  },
+})
 
-  return NextResponse.json({ keys })
-}
+const createSchema = z.object({
+  name: z.string().trim().optional().default('default'),
+  agentConfigId: z.string().trim().nullable().optional().default(null),
+})
+type CreateInput = z.infer<typeof createSchema>
 
-export async function POST(request: NextRequest) {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const body = await request.json().catch(() => ({}))
-  const name = (body.name as string)?.trim() || 'default'
-  const agentConfigId = (body.agentConfigId as string)?.trim() || null
-
-  const { plaintext, hash, prefix } = generateApiKey()
-
-  const key = await prisma.apiKey.create({
-    data: { orgId, name, hash, prefix, agentConfigId },
-    select: { id: true, name: true, prefix: true, agentConfigId: true, createdAt: true },
-  })
-
-  return NextResponse.json({ key, plaintext })
-}
+export const POST = defineRoute<CreateInput>({
+  method: 'POST',
+  inputSchema: createSchema,
+  requireRole: ['admin', 'owner'],
+  async handler({ input, session, repo, audit }) {
+    const { plaintext, hash, prefix } = generateApiKey()
+    const key = await repo.apiKey.create({
+      data: {
+        name: input.name,
+        hash,
+        prefix,
+        agentConfigId: input.agentConfigId,
+      } as any, // orgId auto-injected by repo proxy at runtime
+      select: KEY_SELECT,
+    })
+    await audit({ action: 'api_key.create', target: `api_key:${key.id}`, after: key as Record<string, unknown> })
+    return apiCreated({ key, plaintext })
+  },
+})

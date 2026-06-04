@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Plug, MessageCircle, ArrowRight, Send, Headset, Globe, Plus, Trash2, Copy, Check, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react'
+import { apiClient } from '@/lib/api/client'
 import { useConsoleLocale } from '@/components/locale-provider'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 // ── Channels types ─────────────────────────────────────────────────
 
@@ -154,6 +156,7 @@ function ApiKeysTab() {
   })
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(() => new Set())
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const persistRevealed = (list: Array<{ name: string; plaintext: string }>) => {
     setRevealedKeys(list)
@@ -190,10 +193,8 @@ function ApiKeysTab() {
     setLoading(true)
     setError('')
     try {
-      const r = await fetch('/api/admin/api-keys')
-      const d = await r.json()
-      if (!r.ok) { setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('common.failedLoad')); return }
-      setKeys(d.keys || [])
+      const r = await apiClient<{ keys: ApiKeyRow[] }>('/api/admin/api-keys')
+      setKeys(r.data.keys || [])
     } catch {
       setError(t('common.failedLoad'))
     } finally {
@@ -203,12 +204,11 @@ function ApiKeysTab() {
 
   const fetchAgents = useCallback(async () => {
     try {
-      const r = await fetch('/api/admin/agent-configs')
-      const d = await r.json()
-      if (r.ok && d.configs) {
+      const r = await apiClient<{ configs: AgentOption[] }>('/api/admin/agent-configs')
+      if (r.data.configs) {
         const seen = new Set<string>()
         const opts: AgentOption[] = []
-        for (const a of d.configs) {
+        for (const a of r.data.configs) {
           if (!seen.has(a.name)) {
             seen.add(a.name)
             opts.push(a)
@@ -228,14 +228,8 @@ function ApiKeysTab() {
     try {
       const body: Record<string, string> = { name }
       if (newAgentConfigId) body.agentConfigId = newAgentConfigId
-      const r = await fetch('/api/admin/api-keys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const d = await r.json()
-      if (!r.ok) { setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('common.failedSave', { status: String(r.status) })); return }
-      addRevealed(name, d.plaintext)
+      const r = await apiClient<{ plaintext: string }>('/api/admin/api-keys', { method: 'POST', body })
+      addRevealed(name, r.data.plaintext)
       setShowForm(false)
       setNewName('')
       setNewAgentConfigId('')
@@ -247,13 +241,18 @@ function ApiKeysTab() {
     }
   }
 
-  const handleRevoke = async (id: string) => {
-    if (!window.confirm(t('common.deleteConfirm', { name: 'this API key' }))) return
+  const handleRevoke = (id: string) => {
+    setConfirmDeleteId(id)
+  }
+
+  const confirmRevoke = async () => {
+    const id = confirmDeleteId
+    if (!id) return
+    setConfirmDeleteId(null)
     setBusyId(id)
     setError('')
     try {
-      const r = await fetch(`/api/admin/api-keys/${id}`, { method: 'DELETE' })
-      if (!r.ok) { const d = await r.json().catch(() => ({})); setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('common.failedLoad')); return }
+      await apiClient(`/api/admin/api-keys/${id}`, { method: 'DELETE' })
       await fetchKeys()
     } catch {
       setError(t('common.failedLoad'))
@@ -274,6 +273,7 @@ function ApiKeysTab() {
   }
 
   return (
+    <>
     <div className="max-w-4xl">
       {/* Error */}
       {error && (
@@ -497,6 +497,15 @@ function ApiKeysTab() {
         )}
       </div>
     </div>
+
+    <ConfirmDialog
+      open={!!confirmDeleteId}
+      title={t('common.deleteConfirm', { name: 'this API key' })}
+      message={confirmDeleteId ? t('common.permanentlyDelete', { name: `API key` }) : ''}
+      onConfirm={confirmRevoke}
+      onCancel={() => setConfirmDeleteId(null)}
+    />
+    </>
   )
 }
 

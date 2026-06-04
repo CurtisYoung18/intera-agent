@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ArrowRight } from 'lucide-react'
+import { apiClient } from '@/lib/api/client'
 import InteraLogo from '@intera/shared/ui/intera-logo'
 import styles from './login.module.css'
 
@@ -29,10 +30,9 @@ function LoginForm() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/health')
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((j) => {
-        if (!cancelled) setHealth(j?.status === 'ok' ? 'ok' : 'down')
+    apiClient<{ status: string }>('/api/health')
+      .then((r) => {
+        if (!cancelled) setHealth(r.data?.status === 'ok' ? 'ok' : 'down')
       })
       .catch(() => {
         if (!cancelled) setHealth('down')

@@ -16,15 +16,23 @@ const h = vi.hoisted(() => {
   return { users, issuedTokens }
 })
 
-// ── Mock prisma ──
+// ── Mock logger (defineRoute dependency) ──
+vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+
+// ── Mock prisma (Proxy so repoForOrg can access any model) ──
 vi.mock('@intera/shared/prisma', () => ({
-  prisma: {
+  prisma: new Proxy({
     user: {
       findUnique: vi.fn(async ({ where }: { where: { email: string } }) => {
         return h.users[where.email] ?? null
       }),
     },
-  },
+  }, {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return undefined
+      return (target as any)[prop] ?? {}
+    },
+  }),
 }))
 
 // ── Mock rate-limit (always allow) ──
@@ -47,12 +55,14 @@ vi.mock('@/lib/session', async (importOriginal) => {
   }
 })
 
+import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/auth/login/route'
 
 function makeRequest(body: Record<string, unknown>) {
-  return {
-    json: async () => body,
-  }
+  return new NextRequest('http://localhost/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 beforeEach(() => {
@@ -132,7 +142,7 @@ describe('Login — invalid credentials', () => {
 
     expect(res.status).toBe(401)
     const body = await res.json()
-    expect(body.error).toBe('Invalid email or password')
+    expect(body.error.message).toBe('Invalid email or password')
   })
 
   it('returns 401 for non-existent email', async () => {
@@ -141,7 +151,7 @@ describe('Login — invalid credentials', () => {
 
     expect(res.status).toBe(401)
     const body = await res.json()
-    expect(body.error).toBe('Invalid email or password')
+    expect(body.error.message).toBe('Invalid email or password')
   })
 
   it('returns 401 for user without passwordHash', async () => {
@@ -162,7 +172,7 @@ describe('Login — invalid credentials', () => {
 
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toBe('Email and password are required')
+    expect(body.error.code).toBe('validation')
   })
 })
 
@@ -185,6 +195,6 @@ describe('Login — user with no membership', () => {
     const body = await res.json()
 
     expect(res.status).toBe(403)
-    expect(body.error).toContain('membership')
+    expect(body.error.message).toContain('membership')
   })
 })

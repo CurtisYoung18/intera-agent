@@ -15,6 +15,7 @@ import type { ToolUse } from '@intera/shared/types'
 
 export type SynthesisReason =
   | 'policy_blocked'
+  | 'policy_escalated'
   | 'incomplete_tool_use'
   | 'stream_aborted'
   | 'loop_terminated'
@@ -23,6 +24,8 @@ export type SynthesisReason =
 const ERROR_MESSAGES: Record<SynthesisReason, string> = {
   policy_blocked:
     'Tool blocked by policy. See the follow-up message for details.',
+  policy_escalated:
+    'Tool escalated by guardrail policy. A human task has been created.',
   incomplete_tool_use:
     '<tool_use_error>Tool input was truncated by a connection error. Please re-invoke with complete input.</tool_use_error>',
   stream_aborted:

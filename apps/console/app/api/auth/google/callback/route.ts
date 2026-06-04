@@ -12,7 +12,9 @@
 // If the user has multiple orgs, redirects to /org-picker instead.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { prisma } from '@intera/shared/prisma'
+import { defineRoute } from '@/lib/api/define-route'
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE_S } from '@/lib/session'
 import {
   exchangeCodeForTokens,
@@ -86,15 +88,28 @@ function errorRedirect(message: string): NextResponse {
   return NextResponse.redirect(url)
 }
 
+const querySchema = z.object({
+  code: z.string().optional(),
+  state: z.string().optional(),
+  error: z.string().optional(),
+  error_description: z.string().optional(),
+})
+
 export async function GET(req: NextRequest) {
   try {
+    return await defineRoute<z.infer<typeof querySchema>>({
+      method: 'GET',
+      auth: 'none',
+      parseQuery: true,
+      inputSchema: querySchema,
+      async handler({ input }) {
     // 1. Extract query params
-    const code = req.nextUrl.searchParams.get('code')
-    const state = req.nextUrl.searchParams.get('state')
-    const error = req.nextUrl.searchParams.get('error')
+    const code = input.code
+    const state = input.state
+    const error = input.error
 
     if (error) {
-      const errorDesc = req.nextUrl.searchParams.get('error_description') || error
+      const errorDesc = input.error_description || error
       return errorRedirect(`Google authentication failed: ${errorDesc}`)
     }
 
@@ -331,6 +346,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
     }
     return redirectWithSession(token, '/ops/guide')
+      },
+    })(req)
   } catch (err) {
     console.error('[Google OAuth] Callback error:', err)
     return errorRedirect('Internal error during authentication')

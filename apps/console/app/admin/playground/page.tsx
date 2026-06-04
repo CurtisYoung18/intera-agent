@@ -98,6 +98,8 @@ function countGuardrails(s: string): number {
 export default function PlaygroundPage() {
   const { selectedAgentId, selectAgent } = useAgentContext()
   const [agentList, setAgentList] = useState<AgentListItem[]>([])
+  const [selectedIsActive, setSelectedIsActive] = useState(true)
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
@@ -126,11 +128,15 @@ export default function PlaygroundPage() {
     ]).then(([agentsData, modelsData]) => {
       setAgentList(agentsData.configs || [])
       setModels(modelsData.models || [])
-    })
+    }).catch(() => { /* non-critical; picker will retry */ })
   }, [])
 
   useEffect(() => {
     if (!selectedAgentId) return
+    // Track draft/active state
+    const selected = agentList.find(a => a.id === selectedAgentId)
+    setSelectedIsActive(selected?.isActive ?? false)
+    setSelectedVersion(selected?.version ?? null)
     // Reset traces on agent change
     setTurnTraces([])
     turnNumRef.current = 0
@@ -160,7 +166,7 @@ export default function PlaygroundPage() {
         setDebugMode(Boolean(raw.debugMode))
       })
       .catch(() => setSnapshot(null))
-  }, [selectedAgentId, models])
+  }, [selectedAgentId, models, agentList])
 
   /* ── Auto-scroll ── */
 
@@ -309,6 +315,16 @@ export default function PlaygroundPage() {
             onChange={(id) => selectAgent(id)}
             onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}
           />
+          {!selectedIsActive && selectedVersion && (
+            <span style={{
+              fontSize: 10, fontWeight: 600, color: 'var(--amber)',
+              padding: '2px 8px', borderRadius: 6,
+              background: 'rgba(212,145,46,0.10)', border: '1px solid rgba(212,145,46,0.20)',
+              flexShrink: 0,
+            }}>
+              测试草稿 v{selectedVersion}（未上线）
+            </span>
+          )}
         </div>
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />

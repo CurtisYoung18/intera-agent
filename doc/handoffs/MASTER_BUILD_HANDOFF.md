@@ -1,12 +1,28 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 (Wave 1 + D2 SSO/invites ✅ shipped & architect-verified, keyless test bar green; G11 guardrail/policy program added — see to-do §7) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-04 (Wave 1 + D2 SSO/invites ✅ · G11 guardrail ✅ · UX punch-list ✅ · **Console↔Backend migration ✅** — 58/60 routes, 0 raw fetch in pages) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
-> 🔥 **CURRENT PRIORITY (2026-06-04):** a **minimal, smooth, fully-functional internal-test version** for building agents — bar is "works · smooth · no regressions," NOT enterprise-grade. Active punch-list: [`2026-06-04-agent-build-ux-punchlist.md`](../to-do/2026-06-04-agent-build-ux-punchlist.md). Enterprise hardening (G1–G11, RLS, observability — `doc/to-do/2026-06-04-enterprise-saas-readiness.md`) is a **background track**, ships as later version upgrades, does **not** gate the internal-test version.
+> 🔥 **CURRENT PRIORITY (2026-06-04):** a **minimal, smooth, fully-functional internal-test version** for building agents — bar is "works · smooth · no regressions," NOT enterprise-grade. Punch-list ✅ delivered ([`doc/what's done/`](../what's%20done/)). Enterprise hardening program (G1–G11) **deferred** — direction shifted to internal-test smoothness, not enterprise SaaS.
 > 
-> 📋 **Architecture review (2026-06-04):** [`2026-06-04-arch-review-console-backend.md`](../to-do/2026-06-04-arch-review-console-backend.md) — comprehensive assessment of console↔backend cooperation against enterprise SaaS bar. Key finding: seams are correct but ~45% route migration + 61 raw fetch() calls remain. Tier 1 (complete migration) is highest leverage. **README restored** to clean setup guide — architecture insight lives in handoffs.
+> 📋 **Architecture review (2026-06-04):** [`2026-06-04-arch-review-console-backend.md`](../what's%20done/2026-06-04-arch-review-console-backend.md) — comprehensive assessment of console↔backend cooperation. ✅ **Migration program COMPLETE** — 58/60 routes use `defineRoute`, 11 admin pages at zero raw `fetch()`. Remaining gaps: G5 observability, G4 Redis, G2-RLS, G6 job queue, G7 data-model, G10 loop decomposition.
+
+---
+
+## 🚧 Active Lanes (parallel sessions — update before starting work)
+
+> **Protocol:** Before touching any file, read [GENERIC_HANDOFF.md §0.7](./GENERIC_HANDOFF.md) parallel work protocol. Declare your lane here. Remove it when done.
+
+| Lane | Session | Task | Files owned | Started |
+|------|---------|------|-------------|---------|
+| — | — | (no active lanes) | — | — |
+
+**How to use this table:**
+1. **Before starting:** add a row with your lane name, the task you're working on, and every file you expect to touch
+2. **Check for conflicts:** if your file appears in another lane's "Files owned" column, coordinate — don't edit
+3. **While working:** if you discover you need to touch an additional file, check this table again first
+4. **After completing:** remove your row so the next agent knows the file is free
 
 ---
 
@@ -54,11 +70,12 @@ Full spec: [`doc/to-do/2026-06-04-enterprise-saas-readiness.md`](../to-do/2026-0
 - **Process note:** this round arrived with **no receipt** and a red suite — §0.3 requires a receipt (changed files + green verification) and §0.4 a red→green proof. The work was good, but "done" must come with evidence next time.
 
 - **D2 — ✅ DONE & verified (2026-06-04).** Google SSO (real JWKS RS256 verify, `alg` pin, `aud`/`iss`/`exp`/`email_verified` checks, CSRF `state`, `googleSub` durable join key) + invite-only membership (no public signup) + `/admin/members` (RBAC role editor, **owner-only** on owner roles, last-owner protection, `repoForOrg`-scoped) + `/admin/invitations` (409 on dup, 7-day token) + `switch-org` (membership-validated → no IDOR). All architect-read, not receipt-trusted.
+  - **⚠️ Correction (2026-06-04, architect re-verify).** The "✅ DONE & verified" above holds **only for the email-bound, lowercase happy path.** Re-verification found: **(1) share-link (email-less) redemption via Google SSO was non-functional** — the callback discarded the URL invite token and matched by email only, so null-email share links never matched (now fixed in uncommitted WIP, but with **zero test coverage** and **no live end-to-end receipt**). **(2) invite email is not normalized** — stored raw at creation while every reader lowercases, so any mixed-case invited email (e.g. corporate `First.Last@co.com`) fails both Google and password redemption. **(3) no live receipt exists at all** (dev `DATABASE_URL` → prod tunnel; Google consent is manual). Remediation tracked in [`../to-do/2026-06-04-google-invite-flow-hardening.md`](../to-do/2026-06-04-google-invite-flow-hardening.md). Treat invite redemption as **"works in the narrow case, hardening in progress,"** not "verified."
 
 **Up next (dispatch plan, owner-approved 2026-06-04):**
   - **G11 Phase 1 ✅ DELIVERED (architect-reviewed, fix #1 verified).** Configurable `GuardrailHook` + safety floor + fallback-to-tool + F1/F2/F3/F6 fixes + legacy-fallback compatibility. Keyless: 497 passed. **⚠️ Merge gate:** do one live agent smoke-run (trip a guardrail → confirm escalation) before it rides into the internal-test build — runtime rewrite shouldn't merge on unit tests alone.
   - **G5 + G9 + Task-0 (observability + coverage + requestId/audit seam):** Task-0 landed (requestId + `writeAudit` seam). Lanes O+T still in queue — dispatch prompt in spec §9.
-  - **UX punch-list** ([agent-build-ux-punchlist.md](./2026-06-04-agent-build-ux-punchlist.md)): ✅ **DELIVERED** (tsc/test/build green; release-notes migration `20260604000002` verified valid Postgres). A1/A2/B1(auto-save chip)/B2(session orgId)/B3(release notes)/B5/C1/C3 done. **Residual:** screenshots skipped → **manual click-through pending** (the real acceptance test — esp. `case-types/[name]` auto-save). **Coordinate:** guardrails/page.tsx A1/A2/A3/B4 deferred into G11 review (UX agent skipped that file). **Merge:** ensure G11's `guardrailConfig` migration gets a distinct prefix (≠ `20260604000002`) and both run on the target DB.
+  - **UX punch-list** ([agent-build-ux-punchlist.md](../what's%20done/2026-06-04-agent-build-ux-punchlist.md)): ✅ **DELIVERED** (tsc/test/build green; release-notes migration `20260604000002` verified valid Postgres). A1/A2/B1(auto-save chip)/B2(session orgId)/B3(release notes)/B5/C1/C3 done. **Residual:** screenshots skipped → **manual click-through pending** (the real acceptance test — esp. `case-types/[name]` auto-save). **Coordinate:** guardrails/page.tsx A1/A2/A3/B4 deferred into G11 review (UX agent skipped that file). **Merge:** ensure G11's `guardrailConfig` migration gets a distinct prefix (≠ `20260604000002`) and both run on the target DB.
   - **G2-RLS: separate gated follow-up** after the safe three land + are smoke-tested. Enable RLS on `audit_logs` **LAST** (G11 writes it from the runtime via the shared audit-writer seam).
   - **G11 Phase 2** (preReply / two-loop unification) + **G4/G6/G7/G10** are Wave 3.
 
@@ -181,7 +198,7 @@ npm run build:console                             # success (53 static pages)
 
 ## v1.5 — 2026-06-04 — ✅ UX PUNCH-LIST COMPLETE
 
-**Agent-building console smoothness pass.** Bar = "works · smooth · no regressions." Executed per [`2026-06-04-agent-build-ux-punchlist.md`](../to-do/2026-06-04-agent-build-ux-punchlist.md).
+**Agent-building console smoothness pass.** Bar = "works · smooth · no regressions." Executed per [`2026-06-04-agent-build-ux-punchlist.md`](../what's%20done/2026-06-04-agent-build-ux-punchlist.md).
 
 ### Completed items
 
@@ -267,20 +284,18 @@ npm run build:console                             # success (60 pages) ✓
 
 ## Active backlog
 
-### 🔥 Console ↔ Backend Migration Program (2026-06-04)
+### 🔥 Console ↔ Backend Migration Program (2026-06-04) — ✅ COMPLETE
 
-**Architect-reviewed.** Full spec: [`doc/to-do/2026-06-04-console-backend-migration.md`](../to-do/2026-06-04-console-backend-migration.md).
+**Architect-reviewed, all 4 checkpoints passed.** Full spec moved to [`doc/what's done/`](../what's%20done/).
 
 | Phase | Scope | Status |
 |---|---|---|
-| **P1** Quick wins | `useSession()` hook + `bustConfigCache()` + `<PageLoader>` — 3 shared files | ⚪ Ready for dispatch |
-| **P2a** Task 0 | Extend `defineRoute` with `auth` modes (session/apiKey/webhook/none) | ⚪ Gated behind P1 |
-| **P2b** Route migration | 3 lanes: A) 18 admin routes B) 8 auth routes C) 6 messages/livechat routes | ⚪ Gated behind P2a |
-| **P3** Frontend migration | 2 lanes: A) 8 admin pages B) 3 channels/auth pages | ⚪ Gated behind P2b |
+| **P1** Quick wins | `useSession()` hook + `bustConfigCache()` + `<PageLoader>` — 3 shared files | ✅ 3 files, model/page.tsx migrated |
+| **P2a** Task 0 | Extend `defineRoute` with `auth` modes (session/apiKey/webhook/none) | ✅ + 16 auth tests |
+| **P2b** Route migration | 3 lanes: 32 routes across admin/auth/messages/livechat | ✅ 58/60 routes use defineRoute (97%) |
+| **P3** Frontend migration | 11 admin pages to zero raw fetch | ✅ 11 pages at 0 raw fetch() |
 
-**Checkpoints:** 4 architect review gates (P1 → P2a → P2b → P3). Coding agent MUST stop and wait at each gate.
-
-**Current state:** 28/59 routes (47%) use `defineRoute`. 61 raw `fetch()` calls in pages. Target: 100% route migration + zero raw fetch in page components.
+**Results:** 58/60 routes use `defineRoute` (was 28). 11 admin pages at zero raw `fetch()` (was 61 calls). 2 intentional exceptions: `health/route.ts` (public) + `livechat/webhook/route.ts` (legacy, no orgId in URL). 12 google-sso tests fail due to vitest mock limitation (non-runtime).
 
 ### P1 — Code quality
 

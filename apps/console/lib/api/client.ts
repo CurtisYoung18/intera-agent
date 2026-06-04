@@ -179,5 +179,18 @@ function useApi<T = unknown>(
   }
 }
 
-export { apiClient, ApiClientError, useApi }
+// ── bustConfigCache ──
+async function bustConfigCache(orgId: string): Promise<void> {
+  const res = await fetch('/api/admin/config-changed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orgId }),
+  })
+  if (!res.ok) {
+    console.error('Config cache bust failed:', res.status)
+    throw new Error('Failed to invalidate config cache')
+  }
+}
+
+export { apiClient, ApiClientError, bustConfigCache, useApi }
 export type { UseApiResult }

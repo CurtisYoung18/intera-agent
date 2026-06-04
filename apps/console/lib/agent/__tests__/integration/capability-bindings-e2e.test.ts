@@ -21,7 +21,7 @@ import type { CapabilityBindings } from '@intera/shared/types'
 // We mock the prisma module at test level so neither touches a real DB.
 
 const mockSkillDb: Array<{ name: string; description: string; inputSchema: string; outputSchema: string; mode: string; endpoint: string | null; httpMethod: string; headers: string | null; timeoutMs: number; mockFixture: string | null; displayVerb: string | null; renderHints: string | null; guardPhase: string; toolCategory: string | null; isConcurrencySafe: boolean; enabled: boolean }> = []
-const mockPolicyDb: Array<{ name: string; hook: string; rule: string; enabled: boolean }> = []
+const mockPolicyDb: Array<{ name: string; hook: string; rule: string; guardrailConfig: string | null; enabled: boolean }> = []
 const mockCaseTypeDb: Array<{ type: string; displayName: string; description: string | null; icon: string; enabled: boolean }> = []
 const mockKnowledgeDb: Record<string, unknown>[] = []
 
@@ -261,15 +261,19 @@ describe('CapabilityBindings e2e guard tests', () => {
 
   describe('PolicyEngine guardrail migration', () => {
     it('evaluates policies correctly when guardrails come from capabilityBindings', async () => {
-      // Register a custom policy in the mock DB
-      mockPolicyDb.push(
-        {
-          name: 'custom_block_skill',
-          hook: 'preTool',
-          rule: JSON.stringify({ deny_skills: ['blocked_skill'] }),
-          enabled: true,
-        },
-      )
+      // Register a custom policy in the mock DB with G11 guardrailConfig format
+      const gconfig = JSON.stringify({
+        when: 'preTool',
+        match: { skills: ['blocked_skill'] },
+        check: { kind: 'rule' as const, denySkills: ['blocked_skill'] },
+        onViolation: { action: 'block' as const, guidance: 'Blocked' },
+        onUnavailable: { action: 'closed' as const },
+      })
+      mockPolicyDb.push({
+        name: 'custom_block_skill', hook: 'preTool',
+        rule: JSON.stringify({ deny_skills: ['blocked_skill'] }),
+        guardrailConfig: gconfig, enabled: true,
+      })
 
       // Create engine with guardrails from capabilityBindings format
       const guardrails: CapabilityBindings['guardrails'] = {
@@ -295,15 +299,19 @@ describe('CapabilityBindings e2e guard tests', () => {
       expect(passResult.summary).toBe('pass')
     })
 
-    it('falls back to DB policies when no guardrails are provided (backward compat)', async () => {
-      mockPolicyDb.push(
-        {
-          name: 'db_block_skill',
-          hook: 'preTool',
-          rule: JSON.stringify({ deny_skills: ['blocked_skill'] }),
-          enabled: true,
-        },
-      )
+    it('falls back to DB hooks when no guardrails are provided (G11 guardrailConfig)', async () => {
+      const gconfig = JSON.stringify({
+        when: 'preTool',
+        match: { skills: ['blocked_skill'] },
+        check: { kind: 'rule' as const, denySkills: ['blocked_skill'] },
+        onViolation: { action: 'block' as const, guidance: 'Blocked' },
+        onUnavailable: { action: 'closed' as const },
+      })
+      mockPolicyDb.push({
+        name: 'db_block_skill', hook: 'preTool',
+        rule: JSON.stringify({ deny_skills: ['blocked_skill'] }),
+        guardrailConfig: gconfig, enabled: true,
+      })
 
       // No guardrails at all — engine should load from DB
       const engine = await PolicyEngine.create('test-org')
@@ -342,14 +350,18 @@ describe('CapabilityBindings e2e guard tests', () => {
     })
 
     it('resolves guardrail names against the policy map (filters unknown names)', async () => {
-      mockPolicyDb.push(
-        {
-          name: 'existing_policy',
-          hook: 'preTool',
-          rule: JSON.stringify({ deny_skills: ['blocked_skill'] }),
-          enabled: true,
-        },
-      )
+      const gconfig = JSON.stringify({
+        when: 'preTool',
+        match: { skills: ['blocked_skill'] },
+        check: { kind: 'rule' as const, denySkills: ['blocked_skill'] },
+        onViolation: { action: 'block' as const, guidance: 'Blocked' },
+        onUnavailable: { action: 'closed' as const },
+      })
+      mockPolicyDb.push({
+        name: 'existing_policy', hook: 'preTool',
+        rule: JSON.stringify({ deny_skills: ['blocked_skill'] }),
+        guardrailConfig: gconfig, enabled: true,
+      })
 
       const guardrails: CapabilityBindings['guardrails'] = {
         preTool: ['existing_policy', 'nonexistent_policy'],
@@ -359,10 +371,10 @@ describe('CapabilityBindings e2e guard tests', () => {
 
       const engine = await PolicyEngine.create('test-org', guardrails)
 
-      // 'existing_policy' is in the DB → should block
-      expect(engine['hooks'].preTool).toContain('existing_policy')
+      // 'existing_policy' is in the DB → should be loaded (listed in getPolicyNames)
+      expect(engine.getPolicyNames()).toContain('existing_policy')
       // 'nonexistent_policy' is NOT in the DB → should be filtered out
-      expect(engine['hooks'].preTool).not.toContain('nonexistent_policy')
+      expect(engine.getPolicyNames()).not.toContain('nonexistent_policy')
     })
   })
 

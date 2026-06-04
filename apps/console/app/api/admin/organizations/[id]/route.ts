@@ -1,32 +1,39 @@
-// PUT /api/admin/organizations/[id] — Update organization name (admin/owner only)
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getSession } from '@/lib/auth'
+// GET + PUT /api/admin/organizations/[id] — Organization settings
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params
-  const session = await getSession()
-  if (!session || (session.role !== 'admin' && session.role !== 'owner')) {
-    return NextResponse.json({ error: 'Admin or owner role required' }, { status: 403 })
-  }
+import { z } from 'zod'
+import { defineRoute, NotFoundError, RouteError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-  let body: { name?: string }
-  try { body = await request.json() } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
+export const GET = defineRoute<void, { id: string }>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const org = await repo.raw.organization.findUnique({
+      where: { id: params.id },
+      select: { id: true, name: true, createdAt: true, updatedAt: true },
+    })
+    if (!org) throw new NotFoundError('Organization not found')
+    return apiOk({ organization: org })
+  },
+})
 
-  const name = body.name?.trim()
-  if (!name || name.length > 100) {
-    return NextResponse.json({ error: 'name required (max 100 chars)' }, { status: 400 })
-  }
+const putSchema = z.object({
+  name: z.string().trim().min(1, 'name required').max(100, 'max 100 chars'),
+})
 
-  await prisma.organization.update({
-    where: { id },
-    data: { name },
-  })
+export const PUT = defineRoute<z.infer<typeof putSchema>, { id: string }>({
+  method: 'PUT',
+  inputSchema: putSchema,
+  requireRole: ['admin', 'owner'],
+  async handler({ input, params, repo, audit }) {
+    const existing = await repo.raw.organization.findUnique({ where: { id: params.id } })
+    if (!existing) throw new NotFoundError('Organization not found')
 
-  return NextResponse.json({ ok: true })
-}
+    await repo.raw.organization.update({
+      where: { id: params.id },
+      data: { name: input.name },
+    })
+    await audit({ action: 'organization.update', target: `organization:${params.id}`, before: { name: existing.name }, after: { name: input.name } })
+    return apiOk({ ok: true })
+  },
+})

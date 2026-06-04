@@ -47,6 +47,9 @@ function cuid(): string {
   return `test-${++idCounter}-${Date.now()}`
 }
 
+// ── Mock logger ──
+vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+
 // ── Mock prisma ──
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
@@ -160,6 +163,11 @@ vi.mock('@intera/shared/prisma', () => ({
       }
       return cb(tx)
     }),
+    // Stubs for models accessed by repoForOrg at construction time
+    skill: {}, agentConfig: {}, caseType: {}, policy: {}, knowledgeSource: {},
+    apiKey: {}, case: {}, userProfile: {}, liveChatConfig: {},
+    livechatPendingEvent: {}, channelHealth: {}, chatSession: {},
+    channelBinding: {}, externalConversation: {}, auditLog: {},
   },
 }))
 
@@ -176,6 +184,10 @@ vi.mock('@/lib/session', async (importOriginal) => {
     }),
   }
 })
+
+// ── Mock auth (defineRoute import chain) ──
+vi.mock('@/lib/auth', () => ({ getSession: vi.fn(), getActiveOrgId: vi.fn(), getActiveVendor: vi.fn() }))
+vi.mock('@/lib/api-auth', () => ({ resolveOrgFromApiKey: vi.fn(), isTrustedInternalCall: vi.fn() }))
 
 // ── Mock Google auth layer ──
 vi.mock('@/lib/auth/google', async (importOriginal) => {
@@ -214,6 +226,7 @@ vi.mock('@/lib/auth/google', async (importOriginal) => {
   }
 })
 
+import { NextRequest } from 'next/server'
 import { GET } from '@/app/api/auth/google/callback/route'
 
 // ── Helpers ──
@@ -223,12 +236,7 @@ function makeCallbackRequest(params: Record<string, string>) {
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value)
   }
-  return {
-    nextUrl: {
-      searchParams: url.searchParams,
-    },
-    headers: new Headers(),
-  }
+  return new NextRequest(url.toString())
 }
 
 function getLocation(res: Response): string | null {

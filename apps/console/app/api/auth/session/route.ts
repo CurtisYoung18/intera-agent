@@ -1,24 +1,20 @@
-// GET /api/auth/session — current Console session (from the verified signed cookie)
+// GET /api/auth/session — Current Console session
+// Migrated to defineRoute (G1 contract seam).
 
-import { NextResponse } from 'next/server'
-import { getActiveVendor } from '@/lib/auth'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function GET() {
-  try {
-    const vendor = await getActiveVendor()
-    if (!vendor || !vendor.isAuthed) {
-      return NextResponse.json({ isAuthenticated: false, role: null, orgId: null, customerName: null })
-    }
-    return NextResponse.json({
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ session, repo }) {
+    const org = await repo.raw.organization.findUnique({ where: { id: session.orgId } })
+    return apiOk({
       isAuthenticated: true,
-      userId: vendor.userId,
-      role: vendor.role,
-      canSwitch: true, // per-user auth: any authenticated user with multiple orgs can switch
-      orgId: vendor.id,
-      customerName: vendor.name,
+      userId: session.userId,
+      role: session.role,
+      canSwitch: true,
+      orgId: session.orgId,
+      customerName: org?.name ?? null,
     })
-  } catch (err) {
-    console.error('[Auth] session error:', err)
-    return NextResponse.json({ isAuthenticated: false, role: null, orgId: null, customerName: null })
-  }
-}
+  },
+})

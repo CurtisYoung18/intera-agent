@@ -9,7 +9,8 @@ import {
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { apiClient } from '@/lib/api/client'
+import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -76,6 +77,7 @@ export default function KnowledgePage() {
 
   // Edit panel
   const [editingSource, setEditingSource] = useState<Partial<KnowledgeSource> | null>(null)
+  const { orgId } = useSession()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -97,9 +99,8 @@ export default function KnowledgePage() {
 
   const fetchSources = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/knowledge/sources')
-      const data = await res.json()
-      setSources(data.sources || [])
+      const r = await apiClient<{ sources: KnowledgeSource[] }>('/api/admin/knowledge/sources')
+      setSources(r.data.sources || [])
     } catch {
       setError(t('knowledge.loadFailed'))
     } finally {
@@ -110,12 +111,11 @@ export default function KnowledgePage() {
   const fetchGptKbs = useCallback(async () => {
     setGptKbsLoading(true)
     try {
-      const res = await fetch('/api/admin/knowledge/gptbots')
-      const data = await res.json()
-      if (data.knowledge_base) {
-        setGptKbs(data.knowledge_base)
+      const r = await apiClient<{ knowledge_base?: GptBotKb[]; error?: string }>('/api/admin/knowledge/gptbots')
+      if (r.data.knowledge_base) {
+        setGptKbs(r.data.knowledge_base)
         setGptConnected(true)
-      } else if (data.error) {
+      } else {
         setGptConnected(false)
       }
     } catch {
@@ -147,19 +147,11 @@ export default function KnowledgePage() {
         : `/api/admin/knowledge/sources/${editingSource.id}`
       const method = isNew ? 'POST' : 'PUT'
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingSource),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        setSaveError(err.error || t('knowledge.saveFailed'))
-        return
-      }
+      await apiClient(url, { method, body: editingSource })
       setEditingSource(null)
       setSaveError(null)
       fetchSources()
+      await bustConfigCache(orgId).catch(() => {})
     } catch {
       setSaveError(t('knowledge.saveFailed'))
     } finally {
@@ -176,7 +168,7 @@ export default function KnowledgePage() {
     if (!id) return
     setConfirmDeleteId(null)
     try {
-      await fetch(`/api/admin/knowledge/sources/${id}`, { method: 'DELETE' })
+      await apiClient(`/api/admin/knowledge/sources/${id}`, { method: 'DELETE' })
       fetchSources()
     } catch {
       setError(t('knowledge.deleteFailed'))
@@ -185,10 +177,9 @@ export default function KnowledgePage() {
 
   const toggleSource = async (source: KnowledgeSource) => {
     try {
-      await fetch(`/api/admin/knowledge/sources/${source.id}`, {
+      await apiClient(`/api/admin/knowledge/sources/${source.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !source.enabled }),
+        body: { enabled: !source.enabled },
       })
       fetchSources()
     } catch {
@@ -204,22 +195,17 @@ export default function KnowledgePage() {
     setTestError(null)
     setTestResults(null)
     try {
-      const res = await fetch('/api/admin/knowledge/test', {
+      const res = await apiClient('/api/admin/knowledge/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           query: testQuery,
           sourceId: testSourceId || undefined,
           topK: 15,
-        }),
+        },
       })
-      const data = await res.json()
-      if (data.error) {
-        setTestError(typeof data.error === 'string' ? data.error : data.error?.message || 'Test failed')
-      } else {
-        setTestResults(data.list || [])
-        setTestTotal(data.total || 0)
-      }
+      const data = res.data as any
+      if (data.list) setTestResults(data.list)
+      if (data.total) setTestTotal(data.total)
     } catch {
       setTestError('Test request failed')
     } finally {
@@ -688,12 +674,7 @@ function ApiKeyInput({ onSaved }: { onSaved: () => void }) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const res = await fetch('/api/admin/knowledge/gptbots', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: key }),
-      })
-      if (!res.ok) throw new Error('save failed')
+      await apiClient('/api/admin/knowledge/gptbots', { method: 'PUT', body: { apiKey: key } })
       setStatus('saved')
       setTimeout(() => setStatus('idle'), 2000)
       onSaved()

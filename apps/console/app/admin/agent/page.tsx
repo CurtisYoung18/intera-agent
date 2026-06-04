@@ -55,7 +55,7 @@ function AgentConfigPage() {
           }
         }
       })
-      .catch(() => {})
+      .catch((err: Error) => setError(err.message || t('common.failedLoad')))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])

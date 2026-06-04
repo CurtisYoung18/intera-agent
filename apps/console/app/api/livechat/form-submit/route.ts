@@ -1,67 +1,42 @@
-// apps/chat/app/api/livechat/form-submit/route.ts
-// BUG-F fix: SDK-independent form-result delivery.
-//
-// The form webview is served from our own domain, so it can POST answers
-// straight here instead of relying on the LiveChat Moments SDK (which is not
-// available inside a plain `webview` button iframe). We look up the bridge
-// session by chatId, then drive the SAME path the webhook uses for
-// `intera_form_submit` — handleIncomingEvent → /api/messages (formResult) →
-// agent reply streamed back into the LiveChat chat via the bridge.
+// POST /api/livechat/form-submit — Anonymous form-result delivery
+// Migrated to defineRoute (G1 contract seam).
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { defineRoute } from '@/lib/api/define-route'
 import { getSession } from '@/lib/livechat/session-store'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 
-export async function POST(request: NextRequest) {
-  let body: { chatId?: unknown; caseId?: unknown; answers?: unknown }
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
+const formSchema = z.object({
+  chatId: z.string().min(1, 'chatId is required'),
+  caseId: z.string().optional().default(''),
+  answers: z.record(z.unknown()).refine(v => !Array.isArray(v), 'answers must be an object'),
+}).refine(data => JSON.stringify(data.answers).length <= 50_000, 'answers too large (max 50KB)')
 
-  const chatId = typeof body.chatId === 'string' ? body.chatId : ''
-  const caseId = typeof body.caseId === 'string' ? body.caseId : ''
-  const answers = body.answers
+export const POST = defineRoute<z.infer<typeof formSchema>>({
+  method: 'POST',
+  auth: 'none',
+  inputSchema: formSchema,
+  async handler({ input }) {
+    const normalized: Record<string, string> = {}
+    for (const [k, v] of Object.entries(input.answers)) {
+      if (v == null) continue
+      normalized[k] = String(v)
+    }
 
-  if (!chatId) {
-    return NextResponse.json({ error: 'chatId is required' }, { status: 400 })
-  }
-  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
-    return NextResponse.json({ error: 'answers must be an object' }, { status: 400 })
-  }
-  if (JSON.stringify(answers).length > 50_000) {
-    return NextResponse.json({ error: 'answers too large (max 50KB)' }, { status: 413 })
-  }
+    const session = await getSession(input.chatId)
+    if (!session) return NextResponse.json({ error: 'Session not found for chatId' }, { status: 404 })
 
-  // Normalize to Record<string, string>
-  const normalized: Record<string, string> = {}
-  for (const [k, v] of Object.entries(answers as Record<string, unknown>)) {
-    if (v == null) continue
-    normalized[k] = String(v)
-  }
+    const config = await getLiveChatConfig(session.orgId)
+    if (!config?.enabled) return NextResponse.json({ error: 'LiveChat channel not configured' }, { status: 404 })
 
-  const session = await getSession(chatId)
-  if (!session) {
-    return NextResponse.json({ error: 'Session not found for chatId' }, { status: 404 })
-  }
+    handleIncomingEvent(
+      input.chatId, session.orgId, session.userId,
+      { type: 'form_submit', form: { caseId: input.caseId || session.caseId, answers: normalized } },
+      config,
+    ).catch(err => console.error('[FormSubmit] bridge error:', err))
 
-  const config = await getLiveChatConfig(session.orgId)
-  if (!config?.enabled) {
-    return NextResponse.json({ error: 'LiveChat channel not configured' }, { status: 404 })
-  }
-
-  // Fire the bridge (same as webhook's intera_form_submit). Do NOT await the full
-  // agent turn — the reply streams back into the LiveChat chat via the bridge.
-  // We return as soon as delivery is accepted so the webview can close promptly.
-  handleIncomingEvent(
-    chatId,
-    session.orgId,
-    session.userId,
-    { type: 'form_submit', form: { caseId: caseId || session.caseId, answers: normalized } },
-    config,
-  ).catch((err) => console.error('[FormSubmit] bridge error:', err))
-
-  return NextResponse.json({ ok: true })
-}
+    return NextResponse.json({ ok: true })
+  },
+})

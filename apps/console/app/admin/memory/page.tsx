@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AlertCircle, CheckCircle2, Database, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { apiClient } from '@/lib/api/client'
+import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
+import { PageLoader } from '@/components/ui/page-loader'
 import { drawerFieldClass, DrawerCheckboxRail, DrawerSection, DrawerShell } from '@/components/admin/agent-config-drawer-ui'
 
 import type { MemoryStrategy as MemStrategy, ModelInfo } from '@/app/admin/agent/types'
@@ -59,6 +60,7 @@ export default function MemoryPage() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const memRef = useRef(memory)
+  const { orgId } = useSession()
 
   useEffect(() => {
     memRef.current = memory
@@ -68,37 +70,45 @@ export default function MemoryPage() {
     if (!agentId) return
     setLoading(true)
     Promise.all([
-      fetch(`/api/admin/agent?agentId=${agentId}`).then((r) => {
-        if (!r.ok) throw new Error(`Config: ${r.status}`)
-        return r.json()
-      }),
-      fetch('/api/admin/models').then((r) => {
-        if (!r.ok) throw new Error(`Models: ${r.status}`)
-        return r.json()
-      }),
+      apiClient(`/api/admin/agent?agentId=${agentId}`),
+      apiClient('/api/admin/models'),
     ])
-      .then(([agentData, modelsData]) => {
-        const raw = agentData.config || {}
+      .then(([agentResult, modelsResult]) => {
+        const raw = (agentResult.data as any).config || {}
         let memoryStrategy = DEFAULT_MEMORY
         try {
-          const parsed =
-            typeof raw.memoryStrategy === 'string'
-              ? JSON.parse(raw.memoryStrategy || '{}')
-              : raw.memoryStrategy || {}
+          const parsed = typeof raw.memoryStrategy === 'string'
+            ? JSON.parse(raw.memoryStrategy || '{}')
+            : raw.memoryStrategy || {}
           memoryStrategy = { ...DEFAULT_MEMORY, ...parsed }
           if (typeof memoryStrategy.compactableTools === 'string')
-            memoryStrategy.compactableTools = (memoryStrategy.compactableTools as string)
-              .split(',')
-              .map((s: string) => s.trim())
+            memoryStrategy.compactableTools = (memoryStrategy.compactableTools as string).split(',').map((s: string) => s.trim())
         } catch { /* ignore */ }
         setMemory(memoryStrategy)
         setMemoryTier(detectMemoryTier(memoryStrategy))
-        setMainModels(modelsData.models || [])
+        setMainModels((modelsResult.data as any).models || [])
         setError(null)
       })
       .catch((err: Error) => setError(err.message || t('common.failedLoad')))
       .finally(() => setLoading(false))
   }, [agentId, t])
+
+  // Flush pending save on unmount (navigation/blur)
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current)
+        const current = memRef.current
+        if (current && agentId) {
+          apiClient(`/api/admin/agent?agentId=${agentId}`, {
+            method: 'PUT',
+            body: { memoryStrategy: JSON.stringify(current) },
+          }).catch(() => {})
+          bustConfigCache(orgId).catch(() => {})
+        }
+      }
+    }
+  }, [agentId, orgId])
 
   const autoSave = useCallback(() => {
     if (!agentId) return
@@ -107,24 +117,18 @@ export default function MemoryPage() {
     saveTimer.current = setTimeout(async () => {
       const current = memRef.current
       try {
-        const res = await fetch(`/api/admin/agent?agentId=${agentId}`, {
+        await apiClient(`/api/admin/agent?agentId=${agentId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memoryStrategy: JSON.stringify(current) }),
+          body: { memoryStrategy: JSON.stringify(current) },
         })
-        if (!res.ok) throw new Error(`Save: ${res.status}`)
-        fetch('/api/admin/config-changed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orgId: 'default' }),
-        }).catch(() => {})
+        await bustConfigCache(orgId)
         setSyncStatus('synced')
         setTimeout(() => setSyncStatus('idle'), 2500)
       } catch {
         setSyncStatus('error')
       }
     }, 800)
-  }, [agentId])
+  }, [agentId, orgId])
 
   const updateMem = useCallback(
     (field: string, value: unknown) => {
@@ -177,38 +181,11 @@ export default function MemoryPage() {
     ['enableChatMemory', 'memory.toggleChatMemory', 'memory.hintChatMemory'],
   ]
 
-  if (loading) {
-    return (
-      <div>
-        <VersionContextBar />
-        <div className="p-8 space-y-4">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-[60vh] w-full rounded-2xl" />
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div>
-        <VersionContextBar />
-        <div className="p-8 max-w-lg mx-auto text-center mt-20 space-y-4">
-          <AlertCircle className="w-10 h-10 text-vermillion/60 mx-auto" />
-          <p className="text-[var(--fog)]">{error}</p>
-          <button type="button" onClick={() => window.location.reload()} className="px-5 py-2.5 rounded-xl bg-indigo/[0.08] border border-indigo/20 text-indigo">
-            {t('common.retry')}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div>
       <VersionContextBar />
-
-      <div className="px-8 py-8 animate-fade-up">
+      <PageLoader loading={loading} error={error} onRetry={() => window.location.reload()}>
+        <div className="px-8 py-8 animate-fade-up">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -224,18 +201,16 @@ export default function MemoryPage() {
 
         </div>
 
-        {/* Save status bar */}
-        {syncStatus !== 'idle' && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
-            {syncStatus === 'syncing' ? (
-              <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('memPage.saving')}</span></>
-            ) : syncStatus === 'synced' ? (
-              <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('memPage.saved')}</span></>
-            ) : syncStatus === 'error' ? (
-              <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
-            ) : null}
-          </div>
-        )}
+        {/* Save status bar — persistent */}
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
+          {syncStatus === 'syncing' ? (
+            <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('memPage.saving')}</span></>
+          ) : syncStatus === 'error' ? (
+            <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
+          ) : (
+            <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('memPage.saved')}</span></>
+          )}
+        </div>
 
         <DrawerShell>
           {/* ── Memory tier slider ── */}
@@ -371,6 +346,7 @@ export default function MemoryPage() {
           )}
         </DrawerShell>
       </div>
+      </PageLoader>
     </div>
   )
 }

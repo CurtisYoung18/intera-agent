@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, Code, Layout, BarChart3 } from 'lucide-react'
+import { Shield, Plus, Pencil, Trash2, AlertTriangle, Eye, CheckCircle, ToggleLeft, ToggleRight, Sparkles, BarChart3 } from 'lucide-react'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ImmersiveModal from '@/components/ui/immersive-modal'
@@ -12,128 +12,85 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { apiClient } from '@/lib/api/client'
+import type { GuardrailHook, GuardrailCheckpoint } from '@intera/shared/types'
 
-interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; enabled: boolean }
-interface RuleFields {
-  deny_skills: string[]
-  require_skills: string[]
-  require_skills_any: string[]
-  hook_skills: string[]
-  enableLlm: boolean
-  evaluationPrompt: string
-  guardrailType?: GuardrailType
+// ── Platform constants (mirrors policy.ts safety floor) ──────────────────
+
+const HIGH_RISK_SKILLS = ['refund_money', 'change_ban_status', 'delete_account']
+const SAFE_TOOLS = [
+  { value: 'create_human_task', label: 'Create Human Task (转人工)' },
+  { value: 'request_user_input', label: 'Request User Input' },
+]
+const CHECKPOINTS: { value: GuardrailCheckpoint; label: string }[] = [
+  { value: 'preTool', label: 'Before Tool' },
+  { value: 'postTool', label: 'After Tool' },
+  { value: 'preFinalize', label: 'Before Case Resolution' },
+]
+const CHECK_KINDS = [
+  { value: 'rule' as const, label: 'Rule (deterministic)' },
+  { value: 'ai' as const, label: 'AI Evaluation' },
+]
+const VIOLATION_ACTIONS = [
+  { value: 'warn' as const, label: 'Warn' },
+  { value: 'block' as const, label: 'Block' },
+  { value: 'invoke_tool' as const, label: 'Invoke Tool' },
+]
+const UNAVAILABLE_ACTIONS = [
+  { value: 'open' as const, label: 'Open (allow + warn)' },
+  { value: 'closed' as const, label: 'Closed (block)' },
+  { value: 'invoke_tool' as const, label: 'Invoke Tool' },
+]
+
+const PLACEHOLDERS = ['{{skill_name}}', '{{skill_input}}', '{{skill_output}}', '{{confirmed_facts}}', '{{skills_called}}']
+
+interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; guardrailConfig?: string | null; enabled: boolean }
+
+// ── Parse / build GuardrailHook ──────────────────────────────────────────
+
+function parseGuardrailConfig(raw: string | null | undefined): GuardrailHook | null {
+  if (!raw) return null
+  try { return JSON.parse(raw) as GuardrailHook } catch { return null }
 }
 
-const PLACEHOLDERS = ['{{skill_name}}', '{{skill_output}}', '{{confirmed_facts}}', '{{skills_called}}']
+function buildGuardrailConfig(hook: GuardrailHook): string {
+  return JSON.stringify(hook)
+}
 
-function parseRule(rule: string): RuleFields {
+function defaultGuardrailHook(): GuardrailHook {
+  return {
+    when: 'preTool',
+    match: { skills: [] },
+    check: { kind: 'rule' },
+    onViolation: { action: 'warn' },
+    onUnavailable: { action: 'closed' },
+  }
+}
+
+function summarizeHook(p: PolicyItem): string {
+  const gh = parseGuardrailConfig(p.guardrailConfig ?? null)
+  if (gh) {
+    const parts: string[] = []
+    const cpLabel = CHECKPOINTS.find(c => c.value === gh.when)?.label || gh.when
+    parts.push(cpLabel)
+    if (gh.match.skills.length) parts.push(`Skills: ${gh.match.skills.join(', ')}`)
+    parts.push(gh.check.kind === 'rule' ? 'Rule' : 'AI')
+    if (gh.onViolation.action !== 'warn') parts.push(`On violation: ${gh.onViolation.action}`)
+    return parts.join(' · ')
+  }
+  // Legacy fallback
   try {
-    const r = JSON.parse(rule || '{}')
-    return {
-      deny_skills: Array.isArray(r.deny_skills) ? r.deny_skills : [],
-      require_skills: Array.isArray(r.require_skills) ? r.require_skills : [],
-      require_skills_any: Array.isArray(r.require_skills_any) ? r.require_skills_any : [],
-      hook_skills: Array.isArray(r.hook_skills) ? r.hook_skills : [],
-      enableLlm: r.enableLlm !== false,
-      evaluationPrompt: r.evaluationPrompt || '',
-      guardrailType: r.guardrailType as GuardrailType | undefined,
-    }
-  } catch {
-    return { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
-  }
+    const r = JSON.parse(p.rule || '{}')
+    const parts: string[] = []
+    if (r.deny_skills?.length) parts.push(`Blocks: ${r.deny_skills.join(', ')}`)
+    if (r.require_skills?.length) parts.push(`Requires ALL: ${r.require_skills.join(', ')}`)
+    if (r.require_skills_any?.length) parts.push(`Requires ANY: ${r.require_skills_any.join(', ')}`)
+    if (r.evaluationPrompt) parts.push('AI eval')
+    return parts.length ? parts.join(' · ') : 'Legacy rule'
+  } catch { return 'No conditions' }
 }
 
-function buildRule(f: RuleFields): string {
-  const rule: Record<string, unknown> = {}
-  if (f.deny_skills.length) rule.deny_skills = f.deny_skills
-  if (f.require_skills.length) rule.require_skills = f.require_skills
-  if (f.require_skills_any.length) rule.require_skills_any = f.require_skills_any
-  if (f.hook_skills.length) rule.hook_skills = f.hook_skills
-  if (!f.enableLlm) rule.enableLlm = false
-  if (f.evaluationPrompt) rule.evaluationPrompt = f.evaluationPrompt
-  if (f.guardrailType) rule.guardrailType = f.guardrailType
-  return JSON.stringify(rule)
-}
-
-const HOOK_SLUGS = ['preTool', 'postTool', 'preFinalize'] as const
-
-type GuardrailType = 'must_call' | 'must_call_any' | 'never_allow' | 'ai_eval' | 'ai_eval_filtered'
-type PolicyFormMode = 'simple' | 'advanced'
-
-const GUARDRAIL_LABELS: Record<GuardrailType, string> = {
-  must_call: 'Must call (all)',
-  must_call_any: 'Must call (any one)',
-  never_allow: 'Never allow',
-  ai_eval: 'AI evaluation',
-  ai_eval_filtered: 'AI evaluation (filtered)',
-}
-
-const HOOK_SIMPLE_LABELS: Record<string, string> = {
-  preTool: 'Before any tool',
-  postTool: 'After any tool',
-  preFinalize: 'Before case resolution',
-}
-
-function detectGuardrailType(f: RuleFields): GuardrailType {
-  // Prefer the explicit stored field; fall back to field-based detection
-  if (f.guardrailType) return f.guardrailType
-  // Priority: deny > require_skills > require_skills_any > ai eval
-  if (f.deny_skills.length > 0) return 'never_allow'
-  if (f.require_skills.length > 0) return 'must_call'
-  if (f.require_skills_any.length > 0) return 'must_call_any'
-  if (f.evaluationPrompt && f.enableLlm) {
-    return f.hook_skills.length > 0 ? 'ai_eval_filtered' : 'ai_eval'
-  }
-  // Fallback: if nothing configured, default to must_call
-  return 'must_call'
-}
-
-function getGuardrailTargetSkills(f: RuleFields, type?: GuardrailType): string[] {
-  const gt = type || detectGuardrailType(f)
-  if (gt === 'never_allow') return f.deny_skills
-  if (gt === 'must_call') return f.require_skills
-  if (gt === 'must_call_any') return f.require_skills_any
-  return []
-}
-
-function summarizeRule(rule: string): string {
-  const f = parseRule(rule)
-  const parts: string[] = []
-  if (f.deny_skills.length) parts.push(`Blocks: ${f.deny_skills.join(', ')}`)
-  if (f.require_skills.length) parts.push(`Requires ALL: ${f.require_skills.join(', ')}`)
-  if (f.require_skills_any.length) parts.push(`Requires ANY: ${f.require_skills_any.join(', ')}`)
-  if (f.hook_skills.length) parts.push(`Trigger: ${f.hook_skills.join(', ')}`)
-  if (f.evaluationPrompt && f.enableLlm !== false) {
-    const preview = f.evaluationPrompt.length > 60 ? f.evaluationPrompt.slice(0, 60) + '…' : f.evaluationPrompt
-    parts.push(`AI: ${preview}`)
-  }
-  return parts.length ? parts.join(' · ') : 'No conditions configured'
-}
-
-function applyGuardrailToRule(f: RuleFields, type: GuardrailType, skills: string[], condition: string): RuleFields {
-  // Preserve existing fields — only modify what this guardrail type controls
-  const next = { ...f, guardrailType: type }
-  switch (type) {
-    case 'must_call':
-      next.require_skills = skills
-      break
-    case 'must_call_any':
-      next.require_skills_any = skills
-      break
-    case 'never_allow':
-      next.deny_skills = skills
-      break
-    case 'ai_eval':
-      next.evaluationPrompt = condition
-      next.enableLlm = true
-      break
-    case 'ai_eval_filtered':
-      next.evaluationPrompt = condition
-      next.enableLlm = true
-      // hook_skills is controlled separately via the filtered skills chip in UI
-      break
-  }
-  return next
+function isHighRiskHook(gh: GuardrailHook): boolean {
+  return gh.match.skills.some(s => HIGH_RISK_SKILLS.includes(s))
 }
 
 export default function PoliciesPage() {
@@ -141,14 +98,14 @@ export default function PoliciesPage() {
   const agentId = useSelectedAgentId()
   const { bindings, saveBindings } = useCapabilityBindings(agentId)
   const hookMeta = useMemo(
-    () =>
-      ({
-        preTool: { label: t('policy.hook.preTool'), icon: AlertTriangle, color: '#d4912e' },
-        postTool: { label: t('policy.hook.postTool'), icon: Eye, color: '#5b8af7' },
-        preFinalize: { label: t('policy.hook.preFinalize'), icon: CheckCircle, color: '#2ea04a' },
-      }) as Record<string, { label: string; icon: typeof Shield; color: string }>,
+    () => ({
+      preTool: { label: t('policy.hook.preTool'), icon: AlertTriangle, color: '#d4912e' },
+      postTool: { label: t('policy.hook.postTool'), icon: Eye, color: '#5b8af7' },
+      preFinalize: { label: t('policy.hook.preFinalize'), icon: CheckCircle, color: '#2ea04a' },
+    }) as Record<string, { label: string; icon: typeof Shield; color: string }>,
     [t],
   )
+
   const [items, setItems] = useState<PolicyItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<PolicyItem | null>(null)
@@ -157,10 +114,8 @@ export default function PoliciesPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [hitStats, setHitStats] = useState<Map<string, number>>(new Map())
   const [usedByAgent, setUsedByAgent] = useState<Set<string>>(new Set())
-  const defaultFields: RuleFields = { deny_skills: [], require_skills: [], require_skills_any: [], hook_skills: [], enableLlm: true, evaluationPrompt: '' }
-  const [ruleFields, setRuleFields] = useState<RuleFields>(defaultFields)
-  const [formMode, setFormMode] = useState<PolicyFormMode>('simple')
   const [allSkills, setAllSkills] = useState<string[]>([])
+  const [gh, setGh] = useState<GuardrailHook>(defaultGuardrailHook())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const load = useCallback(async () => {
@@ -172,7 +127,6 @@ export default function PoliciesPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Load which policies are currently assigned to the agent
   useEffect(() => {
     fetch('/api/admin/agent')
       .then((r) => r.json())
@@ -214,11 +168,10 @@ export default function PoliciesPage() {
     if (!ta) return
     const start = ta.selectionStart
     const end = ta.selectionEnd
-    const before = ruleFields.evaluationPrompt.slice(0, start)
-    const after = ruleFields.evaluationPrompt.slice(end)
+    const before = gh.check.evaluationPrompt?.slice(0, start) || ''
+    const after = gh.check.evaluationPrompt?.slice(end) || ''
     const next = before + ph + after
-    setRuleFields({ ...ruleFields, evaluationPrompt: next })
-    // Restore cursor after React re-render
+    setGh({ ...gh, check: { ...gh.check, evaluationPrompt: next } })
     requestAnimationFrame(() => {
       ta.focus()
       ta.selectionStart = ta.selectionEnd = start + ph.length
@@ -226,34 +179,74 @@ export default function PoliciesPage() {
   }
 
   const toggleEnabled = useCallback(async (p: PolicyItem) => {
-    const updated = { ...p, enabled: !p.enabled, rule: buildRule(parseRule(p.rule)) }
-    await fetch(`/api/admin/policies/${encodeURIComponent(p.name)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) })
+    await fetch(`/api/admin/policies/${encodeURIComponent(p.name)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !p.enabled }),
+    })
     load()
   }, [load])
 
-  const openEdit = (p: PolicyItem) => { setEditing({ ...p }); setIsNew(false); setRuleFields(parseRule(p.rule)); setFormMode('simple') }
-  const openNew = () => { setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true }); setIsNew(true); setRuleFields(defaultFields); setFormMode('simple') }
+  const openEdit = (p: PolicyItem) => {
+    setEditing({ ...p })
+    setIsNew(false)
+    const parsed = parseGuardrailConfig(p.guardrailConfig ?? null)
+    setGh(parsed || defaultGuardrailHook())
+  }
+
+  const openNew = () => {
+    setEditing({ id: '', name: '', description: '', hook: 'preTool', rule: '{}', enabled: true })
+    setIsNew(true)
+    setGh(defaultGuardrailHook())
+  }
 
   const handleSave = useCallback(async () => {
     if (!editing) return
     setSaveError(null)
 
-    // Validate: name is required
     if (!editing.name.trim()) {
       setSaveError('Name is required.')
       return
     }
-    // Validate: at least one rule condition is configured
-    const hasRule = ruleFields.deny_skills.length > 0
-      || ruleFields.require_skills.length > 0
-      || ruleFields.require_skills_any.length > 0
-      || (ruleFields.enableLlm && ruleFields.evaluationPrompt.trim().length > 0)
-    if (!hasRule) {
-      setSaveError('Configure at least one rule condition (deny skills, required skills, or an AI evaluation prompt).')
+
+    // Validate safety floor in UI
+    if (isHighRiskHook(gh) && gh.onUnavailable.action === 'open') {
+      setSaveError('onUnavailable cannot be "open" for hooks on high-risk skills (refund_money, change_ban_status, delete_account). Use "closed" or "invoke_tool".')
       return
     }
 
-    const payload = { ...editing, rule: buildRule(ruleFields) }
+    if (gh.onViolation.action === 'invoke_tool' && gh.onViolation.tool) {
+      if (!SAFE_TOOLS.some(t => t.value === gh.onViolation.tool)) {
+        setSaveError(`Invoke tool target must be one of: ${SAFE_TOOLS.map(t => t.label).join(', ')}.`)
+        return
+      }
+    }
+
+    if (gh.onUnavailable.action === 'invoke_tool' && gh.onUnavailable.tool) {
+      if (!SAFE_TOOLS.some(t => t.value === gh.onUnavailable.tool)) {
+        setSaveError(`Fallback tool target must be one of: ${SAFE_TOOLS.map(t => t.label).join(', ')}.`)
+        return
+      }
+    }
+
+    const guardrailConfig = buildGuardrailConfig(gh)
+    // Also keep legacy rule/hook for backward compat
+    const legacyRule = JSON.stringify({
+      hook_skills: gh.match.skills,
+      ...(gh.check.kind === 'rule' ? {
+        deny_skills: gh.check.denySkills,
+        require_skills: gh.check.requireSkills,
+        require_skills_any: gh.check.requireSkillsAny,
+      } : {
+        evaluationPrompt: gh.check.evaluationPrompt,
+      }),
+    })
+
+    const payload = {
+      ...editing,
+      hook: gh.when,
+      rule: legacyRule,
+      guardrailConfig,
+    }
     const url = isNew ? '/api/admin/policies' : `/api/admin/policies/${encodeURIComponent(editing.name)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     if (!res.ok) {
@@ -261,7 +254,7 @@ export default function PoliciesPage() {
       return
     }
     setEditing(null); load()
-  }, [editing, isNew, load, ruleFields])
+  }, [editing, isNew, load, gh])
 
   const handleDelete = useCallback(async (name: string) => {
     setConfirmDeleteName(name)
@@ -277,6 +270,8 @@ export default function PoliciesPage() {
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
+  const highRisk = isHighRiskHook(gh)
+
   return (
     <div>
       <VersionContextBar />
@@ -287,8 +282,11 @@ export default function PoliciesPage() {
       </div>
       {items.length === 0 ? <EmptyState icon={Shield} title={t('policies.noPolicies')} description={t('policies.noPoliciesDesc')} /> : (
         <div className="space-y-6">
-          {HOOK_SLUGS.map(hook => {
-            const hookItems = items.filter(p => p.hook === hook)
+          {(['preTool', 'postTool', 'preFinalize'] as const).map(hook => {
+            const hookItems = items.filter(p => {
+              const g = parseGuardrailConfig(p.guardrailConfig ?? null)
+              return g ? g.when === hook : p.hook === hook
+            })
             if (hookItems.length === 0) return null
             const hm = hookMeta[hook]
             const HIcon = hm.icon
@@ -317,7 +315,7 @@ export default function PoliciesPage() {
                             </button>
                           </div>
                           <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-1">{p.description || t('common.noDescription')}</p>
-                          <p className="text-[10px] text-[var(--smoke)] font-mono line-clamp-2 mb-3">{summarizeRule(p.rule)}</p>
+                          <p className="text-[10px] text-[var(--smoke)] font-mono line-clamp-2 mb-3">{summarizeHook(p)}</p>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
@@ -368,9 +366,7 @@ export default function PoliciesPage() {
               <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-black/[0.04] bg-white">
                 <div className="min-w-0">
                   <p className="text-[12px] font-medium text-[var(--mist)] truncate">{p.name}</p>
-                  <p className="text-[10px] text-[var(--fog)]">
-                    {p.hook === 'preTool' ? 'Before tool' : p.hook === 'postTool' ? 'After tool' : 'Before resolve'}
-                  </p>
+                  <p className="text-[10px] text-[var(--fog)]">{p.hook === 'preTool' ? 'Before tool' : p.hook === 'postTool' ? 'After tool' : 'Before resolve'}</p>
                 </div>
                 <div className="text-right flex-shrink-0 ml-3">
                   <p className="text-[16px] font-bold text-[var(--mist)]">{hitStats.get(p.name) ?? '—'}</p>
@@ -394,237 +390,170 @@ export default function PoliciesPage() {
         onCancel={() => setConfirmDeleteName(null)}
       />
 
+      {/* ── Edit/New Modal — six GuardrailHook fields ── */}
       <ImmersiveModal open={!!editing} onClose={() => { setEditing(null); setSaveError(null) }} title={isNew ? t('policies.newPolicy') : t('policies.editPolicy')}>
         {editing && (
           <div className="space-y-4">
-            {/* ── Mode toggle: Simple / Advanced ── */}
-            <div className="flex rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-0.5">
-              <button
-                type="button"
-                onClick={() => setFormMode('simple')}
-                className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all ${
-                  formMode === 'simple'
-                    ? 'bg-white shadow-sm text-[var(--mist)]'
-                    : 'text-[var(--fog)] hover:text-[var(--mist)]'
-                }`}
-              >
-                <Layout className="w-3 h-3" />
-                Simple
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormMode('advanced')}
-                className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all ${
-                  formMode === 'advanced'
-                    ? 'bg-white shadow-sm text-[var(--mist)]'
-                    : 'text-[var(--fog)] hover:text-[var(--mist)]'
-                }`}
-              >
-                <Code className="w-3 h-3" />
-                Advanced
-              </button>
-            </div>
-
+            {/* ── Name & Description ── */}
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.name')}</span><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="glass-input-console text-[13px] font-mono" disabled={!isNew} placeholder="e.g. investigate_before_escalation" />{!isNew && <p className="text-[10px] text-[var(--smoke)]">Name cannot be changed after creation.</p>}</label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span><input value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="glass-input-console text-[13px]" /></label>
 
-            {/* ── When dropdown (hook) ── */}
+            <div className="border-t border-[var(--border-subtle)] pt-3">
+              <span className="text-[11px] font-medium text-[var(--fog)]">Guardrail Configuration</span>
+              <p className="text-[10px] text-[var(--smoke)]">Answer six questions to define this guardrail hook.</p>
+            </div>
+
+            {/* ── 1. WHEN ── */}
             <label className="space-y-1.5 block">
-              <span className="text-[11px] text-[var(--fog)]">When</span>
-              <select
-                value={editing.hook}
-                onChange={e => setEditing({ ...editing, hook: e.target.value })}
-                className="glass-input-console text-[13px]"
-              >
-                {HOOK_SLUGS.map(h => (
-                  <option key={h} value={h}>{HOOK_SIMPLE_LABELS[h] || h}</option>
-                ))}
+              <span className="text-[11px] text-[var(--fog)] font-medium">1. When does it run?</span>
+              <select value={gh.when} onChange={e => setGh({ ...gh, when: e.target.value as GuardrailCheckpoint })} className="glass-input-console text-[13px]">
+                {CHECKPOINTS.map(c => (<option key={c.value} value={c.value}>{c.label}</option>))}
               </select>
             </label>
 
-            {/* ── Simple mode (Guardrails Builder) ── */}
-            {formMode === 'simple' && (() => {
-              const gt = detectGuardrailType(ruleFields)
-              const skills = getGuardrailTargetSkills(ruleFields)
-              return (
+            {/* ── 2. WHICH actions/outputs? ── */}
+            <div className="space-y-3 border border-[var(--border-subtle)] rounded-xl p-3 bg-black/[0.01]">
+              <span className="text-[11px] text-[var(--fog)] font-medium">2. Which actions/outputs?</span>
+
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">Match skills</span>
+                <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Skills that trigger this guardrail. Leave empty to match all skills at this checkpoint.</p>
+                <ChipInput values={gh.match.skills} onChange={v => setGh({ ...gh, match: { ...gh.match, skills: v } })} suggestions={allSkills} placeholder="Add skill..." />
+              </label>
+
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">ifPattern (optional)</span>
+                <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Cheap pre-filter on the payload (regex). Skip the expensive check when it can't apply.</p>
+                <input value={gh.match.ifPattern || ''} onChange={e => setGh({ ...gh, match: { ...gh.match, ifPattern: e.target.value || undefined } })} className="glass-input-console text-[13px] font-mono" placeholder="e.g. refund|compensation" />
+              </label>
+            </div>
+
+            {/* ── 3. HOW does it decide? ── */}
+            <div className="space-y-3 border border-[var(--border-subtle)] rounded-xl p-3 bg-black/[0.01]">
+              <span className="text-[11px] text-[var(--fog)] font-medium">3. How does it decide?</span>
+
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">Check kind</span>
+                <select value={gh.check.kind} onChange={e => setGh({ ...gh, check: { ...gh.check, kind: e.target.value as 'rule' | 'ai' } })} className="glass-input-console text-[13px]">
+                  {CHECK_KINDS.map(k => (<option key={k.value} value={k.value}>{k.label}</option>))}
+                </select>
+              </label>
+
+              {gh.check.kind === 'rule' ? (
                 <>
-                  <div className="border-t border-[var(--border-subtle)] pt-3">
-                    <span className="text-[11px] font-medium text-[var(--fog)]">Rule Type</span>
-                  </div>
-
                   <label className="space-y-1.5 block">
-                    <span className="text-[11px] text-[var(--fog)]">Guardrail type</span>
-                    <select
-                      value={gt}
-                      onChange={e => {
-                        const newType = e.target.value as GuardrailType
-                        setRuleFields(applyGuardrailToRule(ruleFields, newType, skills, ruleFields.evaluationPrompt))
-                      }}
-                      className="glass-input-console text-[13px]"
-                    >
-                      {(Object.keys(GUARDRAIL_LABELS) as GuardrailType[]).map(t => (
-                        <option key={t} value={t}>{GUARDRAIL_LABELS[t]}</option>
-                      ))}
-                    </select>
+                    <span className="text-[11px] text-[var(--fog)]">Deny Skills</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Skills the agent is never allowed to call.</p>
+                    <ChipInput values={gh.check.denySkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, denySkills: v.length ? v : undefined } })} suggestions={allSkills} placeholder="Add skill..." />
                   </label>
-
-                  {/* Target skills — shown for must_call, must_call_any, and never_allow */}
-                  {(gt === 'must_call' || gt === 'must_call_any' || gt === 'never_allow') && (
-                    <label className="space-y-1.5 block">
-                      <span className="text-[11px] text-[var(--fog)]">Target skills</span>
-                      <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
-                        {gt === 'never_allow'
-                          ? 'Skills the agent is never allowed to call'
-                          : gt === 'must_call_any'
-                            ? 'Skills the agent must call at least one of before proceeding'
-                            : 'Skills the agent must call (all of them) before this hook triggers'}
-                      </p>
-                      <ChipInput
-                        values={skills}
-                        onChange={v =>
-                          setRuleFields(applyGuardrailToRule(ruleFields, gt, v, ruleFields.evaluationPrompt))
-                        }
-                        suggestions={allSkills}
-                        placeholder={t('policies.addSkill')}
-                      />
-                    </label>
-                  )}
-
-                  {/* AI evaluation condition (for ai_eval and ai_eval_filtered) */}
-                  {(gt === 'ai_eval' || gt === 'ai_eval_filtered') && (
-                    <>
-                      <label className="space-y-1.5 block">
-                        <span className="text-[11px] text-[var(--fog)]">Evaluation condition</span>
-                        <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
-                          Describe what the AI should check for. Use {'{{skill_name}}'} and {'{{skill_output}}'} as placeholders.
-                        </p>
-                        <textarea
-                          ref={textareaRef}
-                          value={ruleFields.evaluationPrompt}
-                          onChange={e =>
-                            setRuleFields(applyGuardrailToRule(ruleFields, gt, [], e.target.value))
-                          }
-                          rows={5}
-                          className="glass-input-console text-[13px] resize-y"
-                          placeholder="e.g. Check if the agent verified the user's identity before resolving the case"
-                        />
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
-                          {PLACEHOLDERS.map(ph => (
-                            <button
-                              key={ph}
-                              type="button"
-                              onClick={() => insertPlaceholder(ph)}
-                              className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
-                              title={`Insert ${ph}`}
-                            >
-                              {ph}
-                            </button>
-                          ))}
-                        </div>
-                      </label>
-
-                      {/* Trigger skills (hook_skills) — only for ai_eval_filtered, or always shown when hook is postTool */}
-                      {gt === 'ai_eval_filtered' && (
-                        <label className="space-y-1.5 block">
-                          <span className="text-[11px] text-[var(--fog)]">Trigger skills (filter)</span>
-                          <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">
-                            Only evaluate this guardrail when these specific skills are called. Leave empty to evaluate on all skills.
-                          </p>
-                          <ChipInput
-                            values={ruleFields.hook_skills}
-                            onChange={v => setRuleFields({ ...ruleFields, hook_skills: v })}
-                            suggestions={allSkills}
-                            placeholder={t('policies.addSkill')}
-                          />
-                        </label>
-                      )}
-                    </>
-                  )}
-
-                  {/* Preview of generated JSON */}
-                  <div className="rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-2.5">
-                    <span className="text-[10px] font-medium text-[var(--fog)]/60">Generated policy JSON</span>
-                    <pre className="text-[10px] font-mono text-[var(--mist)] mt-1 whitespace-pre-wrap break-all">
-                      {JSON.stringify(JSON.parse(buildRule(ruleFields)), null, 2)}
-                    </pre>
-                  </div>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] text-[var(--fog)]">Require Skills (all)</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">All listed skills must have been called.</p>
+                    <ChipInput values={gh.check.requireSkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkills: v.length ? v : undefined } })} suggestions={allSkills} placeholder="Add skill..." />
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] text-[var(--fog)]">Require Skills (any)</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">At least one listed skill must have been called.</p>
+                    <ChipInput values={gh.check.requireSkillsAny || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkillsAny: v.length ? v : undefined } })} suggestions={allSkills} placeholder="Add skill..." />
+                  </label>
                 </>
-              )
-            })()}
-
-            {/* ── Advanced mode (raw JSON editor) ── */}
-            {formMode === 'advanced' && (
-              <>
-                <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('policies.ruleFields')}</span></div>
-
-                {/* ── Exact-match rules ──────────────────────── */}
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('policies.denySkills')}</span>
-                  <ChipInput values={ruleFields.deny_skills} onChange={v => setRuleFields({ ...ruleFields, deny_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-                </label>
-
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkills')}</span>
-                  <ChipInput values={ruleFields.require_skills} onChange={v => setRuleFields({ ...ruleFields, require_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-                </label>
-
-                <label className="space-y-1.5 block">
-                  <span className="text-[11px] text-[var(--fog)]">{t('policies.requireSkillsAny')}</span>
-                  <ChipInput values={ruleFields.require_skills_any} onChange={v => setRuleFields({ ...ruleFields, require_skills_any: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-                </label>
-
-                {/* ── postTool hook_skills ──────────────────── */}
-                {editing.hook === 'postTool' && (
+              ) : (
+                <>
                   <label className="space-y-1.5 block">
-                    <span className="text-[11px] text-[var(--fog)]">{t('policies.hookSkills')}</span>
-                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5 mb-0.5">{t('policies.hookSkillsDesc')}</p>
-                    <ChipInput values={ruleFields.hook_skills} onChange={v => setRuleFields({ ...ruleFields, hook_skills: v })} suggestions={allSkills} placeholder={t('policies.addSkill')} />
-                  </label>
-                )}
-
-                {/* ── LLM evaluation toggle ─────────────────── */}
-                <div className="border-t border-[var(--border-subtle)] pt-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={ruleFields.enableLlm} onChange={e => setRuleFields({ ...ruleFields, enableLlm: e.target.checked })} className="accent-indigo rounded" />
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-lavender" />
-                      <span className="text-[12px] font-medium text-[var(--mist)]">{t('policies.enableLlm')}</span>
-                    </span>
-                  </label>
-                  <p className="text-[10px] text-[var(--smoke)] mt-0.5 ml-6">{ruleFields.enableLlm ? t('policies.enableLlmDesc') : t('policies.llmDisabledHint')}</p>
-                </div>
-
-                {/* ── evaluationPrompt (LLM) ────────────────── */}
-                {ruleFields.enableLlm && (
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] text-[var(--fog)]">{t('policies.evaluationPrompt')}</span>
-                    <textarea
-                      ref={textareaRef}
-                      value={ruleFields.evaluationPrompt}
-                      onChange={e => setRuleFields({ ...ruleFields, evaluationPrompt: e.target.value })}
-                      rows={5}
-                      className="glass-input-console text-[13px] resize-y"
-                      placeholder={t('policies.phEvalPrompt')}
-                    />
+                    <span className="text-[11px] text-[var(--fog)]">Evaluation Prompt</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Describe what the AI should check. Use placeholders for dynamic values.</p>
+                    <textarea ref={textareaRef} value={gh.check.evaluationPrompt || ''} onChange={e => setGh({ ...gh, check: { ...gh.check, evaluationPrompt: e.target.value } })} rows={5} className="glass-input-console text-[13px] resize-y" placeholder="e.g. Check if the agent verified the user's identity before resolving the case" />
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span className="text-[10px] text-[var(--smoke)]">{t('policies.insertPlaceholder')}</span>
+                      <span className="text-[10px] text-[var(--smoke)]">Insert:</span>
                       {PLACEHOLDERS.map(ph => (
-                        <button
-                          key={ph}
-                          type="button"
-                          onClick={() => insertPlaceholder(ph)}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer"
-                          title={`Insert ${ph}`}
-                        >
-                          {ph}
-                        </button>
+                        <button key={ph} type="button" onClick={() => insertPlaceholder(ph)} className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-lavender/[0.06] border border-lavender/15 text-lavender hover:bg-lavender/[0.12] transition-colors cursor-pointer">{ph}</button>
                       ))}
                     </div>
                   </label>
-                )}
-              </>
-            )}
+                  <label className="space-y-1.5 block">
+                    <span className="text-[11px] text-[var(--fog)]">Model override (optional)</span>
+                    <input value={gh.check.model || ''} onChange={e => setGh({ ...gh, check: { ...gh.check, model: e.target.value || undefined } })} className="glass-input-console text-[13px] font-mono" placeholder="e.g. MiniMax-M2.7-highspeed" />
+                  </label>
+                </>
+              )}
+            </div>
+
+            {/* ── 4. WHAT on violation? ── */}
+            <div className="space-y-3 border border-[var(--border-subtle)] rounded-xl p-3 bg-black/[0.01]">
+              <span className="text-[11px] text-[var(--fog)] font-medium">4. What happens on violation?</span>
+
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">Action</span>
+                <select value={gh.onViolation.action} onChange={e => setGh({ ...gh, onViolation: { ...gh.onViolation, action: e.target.value as any } })} className="glass-input-console text-[13px]">
+                  {VIOLATION_ACTIONS.map(a => (<option key={a.value} value={a.value}>{a.label}</option>))}
+                </select>
+              </label>
+
+              {gh.onViolation.action === 'block' && (
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">Guidance message</span>
+                  <p className="text-[10px] text-[var(--smoke)] -mt-0.5">What the agent is told when blocked.</p>
+                  <textarea value={gh.onViolation.guidance || ''} onChange={e => setGh({ ...gh, onViolation: { ...gh.onViolation, guidance: e.target.value || undefined } })} rows={2} className="glass-input-console text-[13px] resize-y" placeholder="e.g. Complete the required investigation first." />
+                </label>
+              )}
+
+              {gh.onViolation.action === 'invoke_tool' && (
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">Tool to invoke</span>
+                  <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Only safe control-flow tools are allowed.</p>
+                  <select value={gh.onViolation.tool || ''} onChange={e => setGh({ ...gh, onViolation: { ...gh.onViolation, tool: e.target.value || undefined } })} className="glass-input-console text-[13px]">
+                    <option value="">Select a tool...</option>
+                    {SAFE_TOOLS.map(t => (<option key={t.value} value={t.value}>{t.label}</option>))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            {/* ── 5. FALLBACK if check can't run? ── */}
+            <div className="space-y-3 border border-[var(--border-subtle)] rounded-xl p-3 bg-black/[0.01]">
+              <span className="text-[11px] text-[var(--fog)] font-medium">5. Fallback if the check can't run?</span>
+              <p className="text-[10px] text-[var(--smoke)] -mt-1">What happens when the AI evaluation is unavailable (e.g. LLM outage).</p>
+
+              {highRisk && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-vermillion/[0.06] border border-vermillion/15">
+                  <AlertTriangle className="w-3.5 h-3.5 text-vermillion flex-shrink-0" />
+                  <span className="text-[10px] text-vermillion font-medium">This hook targets high-risk skills. "Open" (allow) is not available — the platform requires fail-closed safety.</span>
+                </div>
+              )}
+
+              <label className="space-y-1.5 block">
+                <span className="text-[11px] text-[var(--fog)]">On unavailable</span>
+                <select value={gh.onUnavailable.action} onChange={e => setGh({ ...gh, onUnavailable: { ...gh.onUnavailable, action: e.target.value as any } })} className="glass-input-console text-[13px]">
+                  {UNAVAILABLE_ACTIONS.filter(a => !(highRisk && a.value === 'open')).map(a => (<option key={a.value} value={a.value}>{a.label}</option>))}
+                </select>
+              </label>
+
+              {gh.onUnavailable.action === 'invoke_tool' && (
+                <label className="space-y-1.5 block">
+                  <span className="text-[11px] text-[var(--fog)]">Tool to invoke</span>
+                  <p className="text-[10px] text-[var(--smoke)] -mt-0.5">System tool to call when the check is unavailable.</p>
+                  <select value={gh.onUnavailable.tool || ''} onChange={e => setGh({ ...gh, onUnavailable: { ...gh.onUnavailable, tool: e.target.value || undefined } })} className="glass-input-console text-[13px]">
+                    <option value="">Select a tool...</option>
+                    {SAFE_TOOLS.map(t => (<option key={t.value} value={t.value}>{t.label}</option>))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            {/* ── 6. Guidance for the agent ── */}
+            <label className="space-y-1.5 block">
+              <span className="text-[11px] text-[var(--fog)] font-medium">6. What is the agent told?</span>
+              <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Free text injected as the next instruction when blocked. Leave empty to use the generated feedback.</p>
+              <textarea value={gh.guidance || ''} onChange={e => setGh({ ...gh, guidance: e.target.value || undefined })} rows={2} className="glass-input-console text-[13px] resize-y" placeholder="e.g. This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate." />
+            </label>
+
+            {/* ── Preview ── */}
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-2.5">
+              <span className="text-[10px] font-medium text-[var(--fog)]/60">Generated GuardrailHook JSON</span>
+              <pre className="text-[10px] font-mono text-[var(--mist)] mt-1 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                {JSON.stringify(gh, null, 2)}
+              </pre>
+            </div>
 
             <label className="flex items-center gap-2 cursor-pointer pt-2"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
 

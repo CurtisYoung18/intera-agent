@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, Eye, ChevronDown, Plug, BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import { ListSkeleton } from '@/components/ui/skeleton'
@@ -15,7 +15,8 @@ import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndi
 import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
-import { apiClient, ApiClientError } from '@/lib/api/client'
+import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
 import type { SkillsListResponse, SkillCreateResponse } from '@intera/shared/contracts/skills'
 
 interface SkillItem {
@@ -94,22 +95,21 @@ export default function SkillsPage() {
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const { orgId } = useSession()
 
   const loadKnowledgeSources = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/knowledge/sources')
-      const data = await res.json()
-      setKnowledgeSources(data.sources || [])
+      const r = await apiClient<{ sources: KnowledgeSourceRow[] }>('/api/admin/knowledge/sources')
+      setKnowledgeSources(r.data.sources || [])
     } catch { /* ignore */ }
     finally { setKbLoading(false) }
   }, [])
 
   const toggleKnowledgeSource = useCallback(async (src: KnowledgeSourceRow) => {
     const updated = { ...src, enabled: !src.enabled }
-    await fetch(`/api/admin/knowledge/sources/${encodeURIComponent(src.id)}`, {
+    await apiClient(`/api/admin/knowledge/sources/${encodeURIComponent(src.id)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: updated.enabled }),
+      body: { enabled: updated.enabled },
     })
     loadKnowledgeSources()
   }, [loadKnowledgeSources])
@@ -161,11 +161,7 @@ export default function SkillsPage() {
       setSaveStatus('error')
       return
     }
-    const cacheBody = JSON.stringify({ orgId: 'default' })
-    Promise.allSettled([
-      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
-      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cacheBody }),
-    ]).catch(() => {})
+    bustConfigCache(orgId).catch(() => {})
     setSaveStatus('saved')
     setTimeout(() => setSaveStatus('idle'), 2000)
     setEditing(null); load()
@@ -188,9 +184,8 @@ export default function SkillsPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await fetch('/api/admin/skills/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
-      const data = await res.json()
-      setTestResult(data)
+      const r = await apiClient('/api/admin/skills/test', { method: 'POST', body: editing })
+      setTestResult(r.data as any)
     } catch {
       setTestResult({ ok: false, status: 0, body: 'Connection failed' })
     }

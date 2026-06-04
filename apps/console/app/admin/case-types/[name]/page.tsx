@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -11,7 +11,9 @@ import {
 import StageConfigEditor from '@/components/admin/stage-config-editor'
 import ChipInput from '@/components/ui/chip-input'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
-import { apiClient } from '@/lib/api/client'
+import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
+import { PageLoader } from '@/components/ui/page-loader'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -61,13 +63,16 @@ export default function CaseTypeDetailPage() {
 
   const [ct, setCt] = useState<CaseTypeDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const ctRef = useRef(ct)
+  const loadedRef = useRef(false)
   const [allSkills, setAllSkills] = useState<string[]>([])
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [confirmExecMode, setConfirmExecMode] = useState<string | null>(null)
+  const { orgId } = useSession()
 
   // Form mode for JSON fields
   const [fieldsMode, setFieldsMode] = useState<Record<string, FormMode>>({
@@ -81,13 +86,9 @@ export default function CaseTypeDetailPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/case-types/${encodeURIComponent(name)}`)
-      if (!res.ok) {
-        router.replace('/admin/case-types')
-        return
-      }
-      const data = await res.json()
-      setCt(data.caseType)
+      const result = await apiClient<{ caseType: CaseTypeDetail }>(`/api/admin/case-types/${encodeURIComponent(name)}`)
+      setCt(result.data.caseType)
+      loadedRef.current = true
     } catch {
       router.replace('/admin/case-types')
     } finally {
@@ -99,24 +100,42 @@ export default function CaseTypeDetailPage() {
     load()
   }, [load])
 
+  const notifyConfigChanged = useCallback(() => {
+    bustConfigCache(orgId).catch(() => {})
+  }, [orgId])
+
+  useEffect(() => {
+    ctRef.current = ct
+    if (loadedRef.current && ct) {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      setSyncStatus('syncing')
+      saveTimer.current = setTimeout(async () => {
+        const current = ctRef.current
+        if (!current) return
+        try {
+          await apiClient(`/api/admin/case-types/${encodeURIComponent(current.type)}`, {
+            method: 'PUT',
+            body: current,
+          })
+          notifyConfigChanged()
+          setSyncStatus('synced')
+          setSaveError(null)
+        } catch {
+          setSaveError('Save failed')
+          setSyncStatus('error')
+        }
+      }, 800)
+    }
+  }, [ct, notifyConfigChanged])
+
   // Fetch skills and models
   useEffect(() => {
-    fetch('/api/admin/skills')
-      .then((r) => r.json())
-      .then((d) => setAllSkills((d.skills || []).map((s: { name: string }) => s.name)))
+    apiClient<{ skills?: Array<{ name: string }> }>('/api/admin/skills')
+      .then((r) => setAllSkills((r.data.skills || []).map((s) => s.name)))
       .catch(() => {})
-    fetch('/api/admin/models')
-      .then((r) => r.json())
-      .then((d) => setAvailableModels((d.models || []).map((m: { id: string }) => m.id)))
+    apiClient<{ models?: Array<{ id: string }> }>('/api/admin/models')
+      .then((r) => setAvailableModels((r.data.models || []).map((m) => m.id)))
       .catch(() => {})
-  }, [])
-
-  const notifyConfigChanged = useCallback(() => {
-    const body = JSON.stringify({ orgId: 'default' })
-    Promise.allSettled([
-      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
-      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
-    ]).catch(() => {})
   }, [])
 
   // Parse helpers
@@ -190,34 +209,6 @@ export default function CaseTypeDetailPage() {
     setConfirmExecMode(null)
   }
 
-  // Save
-  const handleSave = async () => {
-    if (!ct) return
-    setSaving(true)
-    setSaveStatus('saving')
-    setSaveError(null)
-    try {
-      const res = await fetch(`/api/admin/case-types/${encodeURIComponent(ct.type)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ct),
-      })
-      if (!res.ok) {
-        setSaveError(`Save failed (HTTP ${res.status})`)
-        setSaveStatus('error')
-        return
-      }
-      notifyConfigChanged()
-      setSaveStatus('saved')
-      setTimeout(() => setSaveStatus('idle'), 2000)
-    } catch {
-      setSaveError('Save failed')
-      setSaveStatus('error')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   // Delete
   const handleDelete = () => {
     if (!ct) return
@@ -227,7 +218,12 @@ export default function CaseTypeDetailPage() {
   const confirmDelete = async () => {
     if (!confirmDeleteName) return
     setConfirmDeleteName(null)
-    await fetch(`/api/admin/case-types/${encodeURIComponent(confirmDeleteName)}`, { method: 'DELETE' })
+    try {
+      await apiClient(`/api/admin/case-types/${encodeURIComponent(confirmDeleteName)}`, { method: 'DELETE' })
+    } catch {
+      setSaveError('Save failed')
+      return
+    }
     router.replace('/admin/case-types')
   }
 
@@ -337,31 +333,15 @@ export default function CaseTypeDetailPage() {
           </h1>
           <p className="text-[13px] text-[var(--fog)] mt-0.5 font-mono">{ct.type}</p>
         </div>
-        <div className="flex items-center gap-3">
-          {saveStatus === 'saving' && (
-            <span className="text-[11px] text-[var(--fog)] flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" /> Saving…
-            </span>
+        {/* Persistent save-state chip */}
+        <div className="flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2">
+          {syncStatus === 'syncing' ? (
+            <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">Saving…</span></>
+          ) : syncStatus === 'error' ? (
+            <><XCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">Failed</span></>
+          ) : (
+            <><CheckCircle className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">Saved</span></>
           )}
-          {saveStatus === 'saved' && (
-            <span className="text-[11px] text-malachite flex items-center gap-1">
-              <CheckCircle className="w-3 h-3" /> Saved
-            </span>
-          )}
-          {saveStatus === 'error' && (
-            <span className="text-[11px] text-vermillion flex items-center gap-1">
-              <XCircle className="w-3 h-3" /> Failed
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
         </div>
       </div>
 

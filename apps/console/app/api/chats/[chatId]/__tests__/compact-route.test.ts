@@ -4,18 +4,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mocks — hoisted so vi.mock can reference them
 // ---------------------------------------------------------------------------
 
-const { mockPrisma, mockCompactConversation } = vi.hoisted(() => ({
-  mockPrisma: {
-    case: { findMany: vi.fn() },
-    message: { findMany: vi.fn() },
-    agentConfig: { findFirst: vi.fn() },
-    chatMemory: { upsert: vi.fn() },
-  },
+const { mockCase, mockMessage, mockAgentConfig, mockChatMemory, mockCompactConversation } = vi.hoisted(() => ({
+  mockCase: { findMany: vi.fn(), findFirst: vi.fn() },
+  mockMessage: { findMany: vi.fn() },
+  mockAgentConfig: { findFirst: vi.fn() },
+  mockChatMemory: { upsert: vi.fn() },
   mockCompactConversation: vi.fn(),
 }))
 
+vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+vi.mock('@/lib/auth', () => ({ getSession: vi.fn() }))
 vi.mock('@intera/shared/prisma', () => ({
-  prisma: mockPrisma,
+  prisma: new Proxy({
+    case: mockCase,
+    message: mockMessage,
+    agentConfig: mockAgentConfig,
+    chatMemory: mockChatMemory,
+  }, {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return undefined
+      return (target as any)[prop] ?? {}
+    },
+  }),
 }))
 
 vi.mock('@/lib/agent/compact', () => ({
@@ -23,8 +33,11 @@ vi.mock('@/lib/agent/compact', () => ({
 }))
 
 // Import after mocks are set up
+import { getSession } from '@/lib/auth'
 import { POST } from '../compact/route'
 import { NextRequest } from 'next/server'
+
+const mockGetSession = getSession as ReturnType<typeof vi.fn>
 
 function makeReq(chatId: string): NextRequest {
   const url = `http://localhost:3001/api/chats/${encodeURIComponent(chatId)}/compact`
@@ -38,10 +51,11 @@ function makeReq(chatId: string): NextRequest {
 describe('POST /api/chats/[chatId]/compact', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
   })
 
   it('returns 404 when no cases are found for the chat', async () => {
-    mockPrisma.case.findMany.mockResolvedValue([])
+    mockCase.findMany.mockResolvedValue([])
 
     const res = await POST(makeReq('chat-nonexistent'), {
       params: Promise.resolve({ chatId: 'chat-nonexistent' }),
@@ -49,14 +63,14 @@ describe('POST /api/chats/[chatId]/compact', () => {
     const body = await res.json()
 
     expect(res.status).toBe(404)
-    expect(body.error).toContain('No cases found')
+    expect(body.error.message).toContain('No cases found')
   })
 
   it('returns 400 when the chat has cases but no messages', async () => {
-    mockPrisma.case.findMany.mockResolvedValue([
+    mockCase.findMany.mockResolvedValue([
       { id: 'case-1', userId: 'user-1', orgId: 'org-1' },
     ])
-    mockPrisma.message.findMany.mockResolvedValue([])
+    mockMessage.findMany.mockResolvedValue([])
 
     const res = await POST(makeReq('chat-empty'), {
       params: Promise.resolve({ chatId: 'chat-empty' }),
@@ -64,7 +78,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
     const body = await res.json()
 
     expect(res.status).toBe(400)
-    expect(body.error).toContain('No messages to compact')
+    expect(body.error.message).toContain('No messages to compact')
   })
 
   it('returns 200 with compaction result when messages exist', async () => {
@@ -74,12 +88,12 @@ describe('POST /api/chats/[chatId]/compact', () => {
       { id: 'm3', role: 'user', content: 'TX-12345', createdAt: new Date() },
     ]
 
-    mockPrisma.case.findMany.mockResolvedValue([
+    mockCase.findMany.mockResolvedValue([
       { id: 'case-1', userId: 'user-1', orgId: 'org-1' },
     ])
-    mockPrisma.message.findMany.mockResolvedValue(messages)
-    mockPrisma.agentConfig.findFirst.mockResolvedValue(null)
-    mockPrisma.chatMemory.upsert.mockResolvedValue({})
+    mockMessage.findMany.mockResolvedValue(messages)
+    mockAgentConfig.findFirst.mockResolvedValue(null)
+    mockChatMemory.upsert.mockResolvedValue({})
 
     mockCompactConversation.mockResolvedValue({
       summary: 'User reported a deposit issue with transaction ID TX-12345.',
@@ -94,11 +108,11 @@ describe('POST /api/chats/[chatId]/compact', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body.summary).toContain('TX-12345')
-    expect(body.compactModel).toBe('deepseek-v4-flash')
-    expect(body.beforeChars).toBeGreaterThan(0)
-    expect(body.afterChars).toBeGreaterThan(0)
-    expect(body.compactedAt).toBeDefined()
+    expect(body.data.summary).toContain('TX-12345')
+    expect(body.data.compactModel).toBe('deepseek-v4-flash')
+    expect(body.data.beforeChars).toBeGreaterThan(0)
+    expect(body.data.afterChars).toBeGreaterThan(0)
+    expect(body.data.compactedAt).toBeDefined()
   })
 
   it('returns 200 with error when compaction produces no summary', async () => {
@@ -106,11 +120,11 @@ describe('POST /api/chats/[chatId]/compact', () => {
       { id: 'm1', role: 'user', content: 'Hi', createdAt: new Date() },
     ]
 
-    mockPrisma.case.findMany.mockResolvedValue([
+    mockCase.findMany.mockResolvedValue([
       { id: 'case-1', userId: 'user-1', orgId: 'org-1' },
     ])
-    mockPrisma.message.findMany.mockResolvedValue(messages)
-    mockPrisma.agentConfig.findFirst.mockResolvedValue(null)
+    mockMessage.findMany.mockResolvedValue(messages)
+    mockAgentConfig.findFirst.mockResolvedValue(null)
 
     mockCompactConversation.mockResolvedValue({
       summary: null,
@@ -125,9 +139,9 @@ describe('POST /api/chats/[chatId]/compact', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body.error).toBe('Summary too short')
-    expect(body.compactModel).toBe('deepseek-v4-flash')
-    expect(body.afterChars).toBe(0)
+    expect(body.data.error).toBe('Summary too short')
+    expect(body.data.compactModel).toBe('deepseek-v4-flash')
+    expect(body.data.afterChars).toBe(0)
   })
 
   it('persists the summary to ChatMemory for every case in the chat', async () => {
@@ -135,13 +149,13 @@ describe('POST /api/chats/[chatId]/compact', () => {
       { id: 'm1', role: 'user', content: 'I need help', createdAt: new Date() },
     ]
 
-    mockPrisma.case.findMany.mockResolvedValue([
+    mockCase.findMany.mockResolvedValue([
       { id: 'case-a', userId: 'user-1', orgId: 'org-1' },
       { id: 'case-b', userId: 'user-1', orgId: 'org-1' },
     ])
-    mockPrisma.message.findMany.mockResolvedValue(messages)
-    mockPrisma.agentConfig.findFirst.mockResolvedValue(null)
-    mockPrisma.chatMemory.upsert.mockResolvedValue({})
+    mockMessage.findMany.mockResolvedValue(messages)
+    mockAgentConfig.findFirst.mockResolvedValue(null)
+    mockChatMemory.upsert.mockResolvedValue({})
 
     mockCompactConversation.mockResolvedValue({
       summary: 'A brief summary.',
@@ -154,17 +168,17 @@ describe('POST /api/chats/[chatId]/compact', () => {
     })
     expect(res.status).toBe(200)
 
-    expect(mockPrisma.chatMemory.upsert).toHaveBeenCalledTimes(2)
-    expect(mockPrisma.chatMemory.upsert).toHaveBeenCalledWith(
+    expect(mockChatMemory.upsert).toHaveBeenCalledTimes(2)
+    expect(mockChatMemory.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { caseId: 'case-a' } }),
     )
-    expect(mockPrisma.chatMemory.upsert).toHaveBeenCalledWith(
+    expect(mockChatMemory.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { caseId: 'case-b' } }),
     )
   })
 
   it('returns 500 when an unexpected error occurs', async () => {
-    mockPrisma.case.findMany.mockRejectedValue(new Error('DB connection lost'))
+    mockCase.findMany.mockRejectedValue(new Error('DB connection lost'))
 
     const res = await POST(makeReq('chat-db-error'), {
       params: Promise.resolve({ chatId: 'chat-db-error' }),
@@ -172,6 +186,6 @@ describe('POST /api/chats/[chatId]/compact', () => {
     const body = await res.json()
 
     expect(res.status).toBe(500)
-    expect(body.error).toBeDefined()
+    expect(body.error.message).toBeDefined()
   })
 })

@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle, X, Link } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, ApiClientError } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -118,39 +119,21 @@ function OrganizationPageInner() {
 
 function GeneralTab() {
   const { t } = useConsoleLocale()
-  const [orgId, setOrgId] = useState('')
+  const { orgId, userId, loading: sessionLoading } = useSession()
   const [name, setName] = useState('')
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/auth/session')
-      .then((r) => r.json())
-      .then((d) => {
-        setOrgId(d.orgId || '')
-        setName(d.customerName || '')
-      })
-      .catch(() => setError(t('common.failedLoad')))
-      .finally(() => setLoading(false))
-  }, [t])
 
   const handleSave = async () => {
     setSaving(true)
     setError('')
     setSaved(false)
     try {
-      const r = await fetch(`/api/admin/organizations/${orgId}`, {
+      await apiClient(`/api/admin/organizations/${orgId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim() }),
+        body: { name: name.trim() },
       })
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}))
-        setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('organization.nameSaveError'))
-        return
-      }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
@@ -160,7 +143,7 @@ function GeneralTab() {
     }
   }
 
-  if (loading) return <div className="text-[var(--fog)] text-sm">{t('common.loading')}</div>
+  if (sessionLoading) return <div className="text-[var(--fog)] text-sm">{t('common.loading')}</div>
 
   return (
     <div className="max-w-md">
@@ -198,6 +181,7 @@ function GeneralTab() {
 
 function MembersTab() {
   const { t } = useConsoleLocale()
+  const { userId } = useSession()
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>([])
@@ -219,14 +203,13 @@ function MembersTab() {
 
   const load = useCallback(async () => {
     try {
-      const [mRes, iRes, sRes] = await Promise.all([
+      const [mRes, iRes] = await Promise.all([
         apiClient<{ members: Member[] }>('/api/admin/members'),
         apiClient<{ invitations: Invitation[] }>('/api/admin/invitations'),
-        fetch('/api/auth/session').then(r => r.json()),
       ])
       setMembers(mRes.data.members)
       setInvitations(iRes.data.invitations)
-      setCurrentUserId(sRes.userId || null)
+      if (userId) setCurrentUserId(userId)
       setError(null)
     } catch {
       setError(t('common.failedLoad'))

@@ -1,12 +1,9 @@
-// GET /api/livechat/config — Anonymous widget-facing route.
-// Returns only non-sensitive fields (no secrets, no transfer routing).
-// orgId comes from the widget embed query param (no session required).
-//
-// B1 fix: PUT was moved to the gated /api/admin/livechat/config route.
-// This route no longer accepts writes.
+// GET /api/livechat/config — Anonymous widget-facing route
+// Returns only non-sensitive fields. Migrated to defineRoute (G1 contract seam).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { NextResponse } from 'next/server'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -14,33 +11,26 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
-function json(body: unknown, init?: ResponseInit) {
-  return NextResponse.json(body, {
-    ...init,
-    headers: { ...(init?.headers as Record<string, string> ?? {}), ...CORS },
-  })
-}
-
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS })
 }
 
-export async function GET(request: NextRequest) {
-  const orgId = request.nextUrl.searchParams.get('orgId') || 'default'
+export const GET = defineRoute({
+  method: 'GET',
+  auth: 'none',
+  async handler({ session, repo }) {
+    const row = await repo.liveChatConfig.findUnique({
+      where: { orgId: session.orgId },
+      select: { enabled: true, showSkillStatus: true, region: true },
+    })
 
-  const row = await prisma.liveChatConfig.findUnique({
-    where: { orgId },
-    select: { enabled: true, showSkillStatus: true, region: true },
-  })
-
-  // Widget-facing response: ONLY non-sensitive fields.
-  // Never expose botAccessToken, licenseId, webhookSecret, transfer config.
-  return json({
-    orgId,
-    enabled: row?.enabled ?? false,
-    showSkillStatus: row?.showSkillStatus ?? true,
-    region: row?.region ?? 'dal',
-  })
-}
+    return NextResponse.json({
+      orgId: session.orgId,
+      enabled: row?.enabled ?? false,
+      showSkillStatus: row?.showSkillStatus ?? true,
+      region: row?.region ?? 'dal',
+    }, { headers: CORS })
+  },
+})
 
 // PUT intentionally removed — writes are gated at /api/admin/livechat/config

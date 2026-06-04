@@ -4,6 +4,8 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ArrowRight, Building2 } from 'lucide-react'
 import InteraLogo from '@intera/shared/ui/intera-logo'
+import { apiClient } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
 
 interface Membership {
   orgId: string
@@ -27,25 +29,15 @@ function OrgPicker() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(errorParam || '')
   const [switching, setSwitching] = useState<string | null>(null)
+  const { userId } = useSession()
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/auth/session')
-      .then((r) => r.json())
-      .then((data) => {
+    apiClient<{ orgs: Membership[] }>('/api/auth/memberships')
+      .then((r) => {
         if (cancelled) return
-        if (!data.isAuthenticated) {
-          window.location.href = '/login'
-          return
-        }
-        // Fetch the list of orgs for the current user
-        return fetch('/api/auth/memberships')
-      })
-      .then((r) => (r ? r.json() : null))
-      .then((data) => {
-        if (cancelled) return
-        if (data?.orgs && Array.isArray(data.orgs)) {
-          setOrgs(data.orgs)
+        if (r.data?.orgs && Array.isArray(r.data.orgs)) {
+          setOrgs(r.data.orgs)
         } else {
           setError('Unable to load organizations')
         }
@@ -65,17 +57,7 @@ function OrgPicker() {
     setSwitching(orgId)
     setError('')
     try {
-      const res = await fetch('/api/auth/switch-org', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError((typeof data.error === 'string' ? data.error : data.error?.message) || 'Failed to switch organization')
-        setSwitching(null)
-        return
-      }
+      await apiClient('/api/auth/switch-org', { method: 'POST', body: { orgId } })
       window.location.href = '/ops/guide'
     } catch {
       setError('Network error — try again')

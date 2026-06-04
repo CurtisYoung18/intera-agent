@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { z } from 'zod'
+import { timingSafeEqual } from 'crypto'
 import {
   apiOk,
   apiErr,
@@ -20,6 +21,8 @@ import {
 import type { AuditWriter } from '@intera/shared/contracts/audit'
 import { repoForOrg, type RepoForOrg } from '@/lib/db/repo-for-org'
 import { getSession, type ActiveSession } from '@/lib/auth'
+import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
+import { prisma } from '@intera/shared/prisma'
 import { logger } from '@/lib/logger'
 
 // ── Typed errors handlers can throw ──
@@ -58,11 +61,16 @@ export class ValidationError extends RouteError {
   constructor(message: string, fields?: Record<string, string>) { super('validation', message, fields) }
 }
 
+// ── Auth mode ──
+export type AuthMode = 'session' | 'apiKey' | 'webhook' | 'none'
+
 // ── Handler context ──
 export interface RouteSession {
   orgId: string
-  role: ActiveSession['role']
-  userId?: string // present after Lane D (G3) adds User/Membership
+  role?: ActiveSession['role']
+  userId?: string
+  authMode: AuthMode
+  agentConfigId?: string // populated for apiKey mode
 }
 
 export interface RouteLogger {
@@ -97,9 +105,11 @@ interface RouteDef<Input, Params> {
   /** If true, parse query params instead of body (for GET with params). */
   parseQuery?: boolean
   /** Require at least one of these roles. Omit for session-only (any role ok).
-   *  Mutations typically want ['admin', 'owner']. */
+   *  Mutations typically want ['admin', 'owner']. Only takes effect when auth:'session'. */
   requireRole?: Role[]
-  handler: (ctx: RouteContext<Input, Params>) => Promise<ApiEnvelope<unknown>>
+  /** Auth mode — how orgId is resolved. Default: 'session'. */
+  auth?: AuthMode
+  handler: (ctx: RouteContext<Input, Params>) => Promise<ApiEnvelope<unknown> | NextResponse>
 }
 
 // ── Factory ──
@@ -110,17 +120,19 @@ interface RouteDef<Input, Params> {
 export function defineRoute<Input = void, Params = void>(
   def: RouteDef<Input, Params>,
 ): (req: NextRequest, ctx?: any) => Promise<NextResponse> {
+  const authMode = def.auth ?? 'session'
+
   return async function handler(
     req: NextRequest,
     routeCtx?: any,
   ): Promise<NextResponse> {
     try {
-      const session = await resolveSession()
-      const log = buildLogger(session)
       const params = (routeCtx?.params ? await routeCtx.params : undefined) as Params
+      const session = await resolveSession(authMode, params, req)
+      const log = buildLogger(session)
 
-      // 1a. Role gate (S1 — declarative authZ in the seam)
-      if (def.requireRole && !def.requireRole.includes(session.role as Role)) {
+      // 1a. Role gate — only for session-based auth
+      if (authMode === 'session' && def.requireRole && !def.requireRole.includes(session.role as Role)) {
         return envelopeResponse(
           apiErr('forbidden', `${def.requireRole.join(' or ')} role required`),
           403,
@@ -167,7 +179,10 @@ export function defineRoute<Input = void, Params = void>(
       }
       const result = await def.handler(ctx)
 
-      // 5. Serialize envelope — strip __status marker from body
+      // 5. Pass through raw NextResponse objects (SSE, redirects) without wrapping
+      if (result instanceof NextResponse) return result
+
+      // 6. Serialize envelope — strip __status marker from body
       if (result.ok) {
         const { __status, ...body } = result as any
         const status = __status === 201 ? 201 : 200
@@ -188,10 +203,57 @@ export function defineRoute<Input = void, Params = void>(
 
 // ── Helpers ──
 
-async function resolveSession(): Promise<RouteSession> {
-  const s = await getSession()
-  if (!s) throw new UnauthorizedError('No valid session')
-  return { orgId: s.orgId, role: s.role }
+async function resolveSession(
+  auth: AuthMode,
+  params: unknown,
+  req: NextRequest,
+): Promise<RouteSession> {
+  switch (auth) {
+    case 'session': {
+      const s = await getSession()
+      if (!s) throw new UnauthorizedError('No valid session')
+      return { orgId: s.orgId, role: s.role, userId: s.userId, authMode: 'session' }
+    }
+    case 'apiKey': {
+      const resolved = await resolveOrgFromApiKey(req)
+      if (!resolved) throw new UnauthorizedError('Invalid API key')
+      return { orgId: resolved.orgId, role: 'admin', authMode: 'apiKey', agentConfigId: resolved.agentConfigId ?? undefined }
+    }
+    case 'webhook': {
+      const p = params as Record<string, string> | undefined
+      const orgId = p?.orgId as string | undefined
+      if (!orgId) throw new UnauthorizedError('Missing orgId in webhook URL')
+
+      // Internal bridge calls are always trusted
+      if (isTrustedInternalCall(req)) {
+        return { orgId, role: 'admin', authMode: 'webhook' }
+      }
+
+      // External webhook: validate against org's webhookSecret in LiveChatConfig
+      const config = await prisma.liveChatConfig.findUnique({
+        where: { orgId },
+        select: { webhookSecret: true },
+      })
+      if (!config?.webhookSecret) throw new UnauthorizedError('Webhook not configured')
+
+      // Header-based secret validation
+      const secret = req.headers.get('x-webhook-secret')
+      if (secret) {
+        const a = Buffer.from(config.webhookSecret)
+        const b = Buffer.from(secret)
+        if (a.length !== b.length || !timingSafeEqual(a, b)) {
+          throw new UnauthorizedError('Invalid webhook secret')
+        }
+      }
+      // If no header secret, let the handler do body-based validation
+      return { orgId, role: 'admin', authMode: 'webhook' }
+    }
+    case 'none':
+    default: {
+      const orgId = req.nextUrl.searchParams.get('orgId') || 'default'
+      return { orgId, authMode: 'none' }
+    }
+  }
 }
 
 function buildLogger(session: RouteSession): RouteLogger {
