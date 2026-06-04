@@ -260,6 +260,9 @@ model UserProfile {
   /// Free-form Markdown maintained by the compact engine and operators
   profile  String @default("")
 
+  /// Structured JSON sections derived from profile Markdown (see contract.ts: ProfileSections)
+  sections String @default("{}")
+
   totalChats     Int @default(0)
   totalCases     Int @default(0)
   resolvedCases  Int @default(0)

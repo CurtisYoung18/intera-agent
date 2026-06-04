@@ -44,7 +44,6 @@ export interface CaseLoopServices {
   getMessages: () => Message[]
   addMessage: (msg: Message) => void
   makeUserMessage: (content: string) => Message
-  writeProfilerSnapshot: () => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -655,7 +654,6 @@ export class CaseAgentLoop {
       data: { reason: 'waiting_human', stage: this._currentStage },
       timestamp: new Date().toISOString(),
     })
-    await this.services.writeProfilerSnapshot()
     return {
       type: 'terminal',
       result: {
@@ -739,7 +737,6 @@ export class CaseAgentLoop {
     }
 
     sendEvent({ type: 'finalized', data: finalizedPayload, timestamp: new Date().toISOString() })
-    await this.services.writeProfilerSnapshot()
     return {
       type: 'terminal',
       result: {
@@ -782,7 +779,6 @@ export class CaseAgentLoop {
       data: { summary, resolution },
       timestamp: new Date().toISOString(),
     })
-    await this.services.writeProfilerSnapshot()
     return {
       type: 'terminal',
       result: {

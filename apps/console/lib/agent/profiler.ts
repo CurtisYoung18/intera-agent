@@ -2,16 +2,6 @@
 // Records key performance metrics per agent turn and writes a snapshot
 // to ActionTrace for observability in Console /ops/cases/[id] traces.
 
-export interface ProfilerSnapshot {
-  ttftMs: number           // Time to first token
-  totalDurationMs: number  // Total turn duration
-  toolExecutionMs: number  // Total tool execution time
-  compactionCount: number  // Number of compaction events
-  inputTokens?: number     // Total input tokens used
-  outputTokens?: number    // Total output tokens generated
-  iterationCount: number   // Number of LLM iterations in this turn
-}
-
 export class Profiler {
   private turnStart: number = 0
   private firstTokenAt: number | null = null
@@ -54,15 +44,4 @@ export class Profiler {
     this.outputTokens += output
   }
 
-  snapshot(): ProfilerSnapshot {
-    return {
-      ttftMs: this.firstTokenAt ? this.firstTokenAt - this.turnStart : 0,
-      totalDurationMs: Date.now() - this.turnStart,
-      toolExecutionMs: this.toolExecutionMs,
-      compactionCount: this.compactionCount,
-      inputTokens: this.inputTokens > 0 ? this.inputTokens : undefined,
-      outputTokens: this.outputTokens > 0 ? this.outputTokens : undefined,
-      iterationCount: this.iterationCount,
-    }
-  }
 }

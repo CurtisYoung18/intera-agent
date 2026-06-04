@@ -293,8 +293,21 @@ export interface MemoryStrategy {
   errorThresholdTokens: number
   blockingThresholdTokens: number
 
+
+  // ── Compaction thresholds (ratio-based — preferred, percentage of context window used) ──
+  /** Compact when used / window >= autocompactRatio (default 0.70, i.e. 70% of context window used). */
+  autocompactRatio?: number
+  /** Warn when used / window >= warningRatio (default 0.60, i.e. 60% of context window used). */
+  warningRatio?: number
+  /** Must compact when used / window >= blockingRatio (default 0.92, i.e. 92% of context window used). */
+  blockingRatio?: number
+  /** If set, trigger compaction every N user messages regardless of token threshold. undefined = disabled. */
+  compactEveryNMessages?: number
   // ── Compaction features ──
   compactModel: string
+  /** Model used for L3 cross-chat profile compaction (compactUserProfile).
+   *  Falls back to compactModel when unset. */
+  profileModel?: string
   enableSnip?: boolean
   enableMicrocompact?: boolean
   microcompactMinAgeMs?: number
@@ -316,6 +329,7 @@ export interface MemoryStrategy {
 
   // ── Fact extraction (LLM-based, replaces regex patterns) ──
   factExtractionPrompt?: string
+  factExtractionModel?: string
   keyEventMaxChars: number
 
   // ── Token estimation ──
@@ -395,6 +409,7 @@ export type SSEEventType =
   | 'retry_pending'
   | 'escalated'
   | 'trace'
+  | 'llm_request_start'
   | 'error'
 
 /** Option presented in an interaction card. */

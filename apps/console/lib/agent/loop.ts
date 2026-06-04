@@ -45,7 +45,6 @@ import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
 import { makeUserMessage, addToolResultMessages, buildApiMessages } from './message-builder'
-import { writeProfilerSnapshot } from './profiler-utils'
 import { runReActLoop } from './react-loop'
 import { processTodoTools } from './todo-processor'
 
@@ -100,6 +99,8 @@ export class AgentLoop {
   private iterationCount = 0
   private nudgeCount = 0
   private pendingEscalation = false
+  /** Counter for cadence-driven compaction (compactEveryNMessages). Reset after each compaction. */
+  private userMessagesSinceLastCompact = 0
   private abortController: AbortController
   private aborted = false
   private anthropicClient: Anthropic
@@ -154,7 +155,6 @@ export class AgentLoop {
       getMessages: () => this.messages,
       addMessage: (msg) => this.messages.push(msg),
       makeUserMessage: (content) => makeUserMessage(content),
-      writeProfilerSnapshot: () => this.writeProfilerSnapshot(),
     }
   }
 
@@ -201,6 +201,7 @@ export class AgentLoop {
     this.profiler.startTurn()
     const userMsg = makeUserMessage(userMessage, contentBlocks)
     this.messages.push(userMsg)
+    this.userMessagesSinceLastCompact++
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
     await this.traceWriter.writeAgentTreeNode(agentName, 0, chainId, 'run start')
 
@@ -290,7 +291,6 @@ export class AgentLoop {
             data: `Agent repeatedly violated policies (${maxPolicyHits} hits) — needs human intervention`,
             timestamp: new Date().toISOString(),
           })
-          await this.writeProfilerSnapshot()
           return {
             messages: this.messages,
             caseStatus: 'escalated',
@@ -471,7 +471,6 @@ export class AgentLoop {
         }
         if (err instanceof CannotRetryError && err.errorClass === 'aborted') {
           await this.traceWriter.write('loop_decision', 'Stream aborted', { iteration: this.iterationCount })
-          await this.writeProfilerSnapshot()
           return { messages: this.messages, caseStatus: this.currentStage as CaseStatus, transition: 'connection_lost', currentStage: this.currentStage, reason: 'connection_lost' }
         }
         const classified = err instanceof CannotRetryError ? err.errorClass : classifyError(err)
@@ -492,12 +491,24 @@ export class AgentLoop {
         })
       }
 
+      const apiMessagesForTrace = this.buildApiMessages()
+
       await this.traceWriter.writeLlmRequestStart(
         this.deps.config.model,
         this.messages.length,
         stagePrompt,
-        this.buildApiMessages(),
+        apiMessagesForTrace,
       )
+
+      sendEvent({
+        type: 'llm_request_start',
+        data: {
+          model: this.deps.config.model,
+          systemPrompt: stagePrompt,
+          messages: apiMessagesForTrace,
+        },
+        timestamp: new Date().toISOString(),
+      })
 
       try {
         const streamResult = await consumeStream(stream, blocks, {
@@ -578,7 +589,6 @@ export class AgentLoop {
           await this.traceWriter.write('loop_decision', 'Stream aborted (connection lost)', {
             iteration: this.iterationCount,
           })
-          await this.writeProfilerSnapshot()
           return {
             messages: this.messages,
             caseStatus: this.currentStage as CaseStatus,
@@ -627,7 +637,7 @@ export class AgentLoop {
 
       // Stream complete — finalize the assistant message
       if (!assistantMessage) {
-        throw new Error('No assistant message received')
+        throw new Error(`No assistant message received${streamFatalError ? `: ${streamFatalError}` : ''}`)
       }
       assistantMessage.content = fullText
       assistantMessage.isStreaming = false
@@ -714,7 +724,6 @@ export class AgentLoop {
           error: streamFatalError, iteration: this.iterationCount,
         })
         sendEvent({ type: 'error', data: `Stream error: ${streamFatalError}`, timestamp: new Date().toISOString() })
-        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: 'escalated',
@@ -880,8 +889,7 @@ export class AgentLoop {
                 data: { stage: this.currentStage, reason: 'max_nudges' },
                 timestamp: new Date().toISOString(),
               })
-              await this.writeProfilerSnapshot()
-              return {
+                  return {
                 messages: this.messages,
                 caseStatus: 'escalated',
                 transition: 'error',
@@ -953,7 +961,6 @@ export class AgentLoop {
           data: { reason: 'no_tools', stopReason, usage } as any,
           timestamp: new Date().toISOString(),
         })
-        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           // In consultation mode keep the case as waiting_human so the next request
@@ -1298,6 +1305,7 @@ export class AgentLoop {
           if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_user_profile result:')) {
             m.content = `Tool read_user_profile result: ${JSON.stringify({
               profile: dbProfile?.profile || null,
+              sections: dbProfile?.sections ? JSON.parse(dbProfile.sections) : null,
               stats: dbProfile ? {
                 totalChats: dbProfile.totalChats,
                 totalCases: dbProfile.totalCases,
@@ -1338,7 +1346,6 @@ export class AgentLoop {
           timestamp: new Date().toISOString(),
         })
 
-        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: this.currentStage as CaseStatus,
@@ -1378,7 +1385,6 @@ export class AgentLoop {
       if (this.pendingEscalation) {
         this.compactUserProfile().catch(() => {})
       this.persistChatSession().catch(() => {})
-        await this.writeProfilerSnapshot()
         return {
           messages: this.messages,
           caseStatus: 'escalated',
@@ -1406,8 +1412,7 @@ export class AgentLoop {
         : { reason: 'max_iterations', stopReason, stage: this.currentStage },
       timestamp: new Date().toISOString(),
     })
-    await this.writeProfilerSnapshot()
-    return {
+        return {
       messages: this.messages,
       caseStatus: shouldEscalate ? 'escalated' : (this.currentStage as CaseStatus),
       transition: shouldEscalate ? 'error' : 'next_turn',
@@ -1510,10 +1515,38 @@ export class AgentLoop {
       }
     }
 
+    // Cadence-driven compaction (compactEveryNMessages): trigger based on
+    // message count regardless of token thresholds. Default undefined = disabled.
+    const everyN = this.deps.config.memoryStrategy.compactEveryNMessages
+    const cadenceTriggered = everyN != null && everyN > 0 &&
+      this.userMessagesSinceLastCompact >= everyN
+
     const messageContents = this.messages.map((m) => typeof m.content === 'string' ? m.content : '')
     const estimatedTokens = this.chatMemory.estimateTokens(messageContents)
 
     const assessment = this.chatMemory.assessCompaction(estimatedTokens, this.messages.length)
+
+    if (cadenceTriggered) {
+      if (this.chatMemory.isCompactCircuitBroken()) {
+        return { shouldCompact: false, reason: 'circuit_breaker' }
+      }
+      try {
+        await this.performCompaction()
+        const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
+        if (this.deps.config.memoryStrategy.enableSnip !== false) {
+          this.messages = this.messages.slice(-keepCount)
+        }
+        this.userMessagesSinceLastCompact = 0
+        await this.traceWriter.write('loop_decision', 'Compacted', {
+          reason: 'cadence', kept: keepCount,
+          messagesSinceLast: everyN, percentLeft: assessment.percentLeft,
+        })
+        return { shouldCompact: true, reason: 'cadence' }
+      } catch {
+        this.chatMemory.recordCompactionFailure()
+        return { shouldCompact: false, reason: 'failed' }
+      }
+    }
 
     if (assessment.isBlocking) {
       if (this.chatMemory.isCompactCircuitBroken()) {
@@ -1525,6 +1558,7 @@ export class AgentLoop {
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
           this.messages = this.messages.slice(-keepCount)
         }
+        this.userMessagesSinceLastCompact = 0
         await this.traceWriter.write('loop_decision', 'Compacted', {
           reason: 'blocking', kept: keepCount, percentLeft: assessment.percentLeft,
         })
@@ -1545,6 +1579,7 @@ export class AgentLoop {
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
           this.messages = this.messages.slice(-keepCount)
         }
+        this.userMessagesSinceLastCompact = 0
         await this.traceWriter.write('loop_decision', 'Compacted', {
           reason: 'auto', kept: keepCount, percentLeft: assessment.percentLeft,
         })
@@ -1562,10 +1597,6 @@ export class AgentLoop {
     return { shouldCompact: false }
   }
 
-  /** Write profiler snapshot to ActionTrace for observability. */
-  private async writeProfilerSnapshot(): Promise<void> {
-    await writeProfilerSnapshot(this.profiler, this.traceWriter, this.deps.config, this.deps.caseId, this.messages)
-  }
 
   /** Persist chat-level memory to ChatSession table. */
   private async persistChatSession(): Promise<void> {
@@ -1599,7 +1630,7 @@ export class AgentLoop {
     if (!key) return
     try {
       const recentMessages = this.messages.slice(-50)
-      const result = await compactConversation(recentMessages, this.deps.config.memoryStrategy)
+      const result = await compactConversation(recentMessages, this.deps.config.memoryStrategy, { purpose: 'profile' })
       const summary = result.summary
       if (!summary) return
 
@@ -1608,14 +1639,14 @@ export class AgentLoop {
         select: { profile: true },
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
-      const merged = mergeProfile(existing?.profile ?? '', summary, maxTokens)
+      const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', summary, maxTokens)
       const stats = await recomputeProfileStats(prisma, key)
 
       if (!this.dryRun) {
         await prisma.userProfile.upsert({
           where: { userId: key },
-          create: { userId: key, profile: merged, ...stats },
-          update: { profile: merged, ...stats },
+          create: { userId: key, profile: merged, sections, ...stats },
+          update: { profile: merged, sections, ...stats },
         })
       }
     } catch (err) {
@@ -1628,7 +1659,7 @@ export class AgentLoop {
     const strategy = this.deps.config.memoryStrategy
 
     try {
-      const result = await compactConversation(this.messages, strategy)
+      const result = await compactConversation(this.messages, strategy, { purpose: 'case' })
       if (result.summary) {
         this.chatMemory.setSummary(result.summary)
         await this.traceWriter.write('loop_decision', 'LLM Compact', {

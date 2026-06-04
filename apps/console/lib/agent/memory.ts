@@ -6,6 +6,7 @@
 
 import type { KeyEvent, ChatMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import { withRetry } from './api/with-retry'
@@ -133,7 +134,7 @@ export class ChatMemoryManager {
   }
 
   private getExtractionClient(): Anthropic {
-    const model = process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed'
+    const model = process.env.FACT_EXTRACTION_MODEL || this.strategy.factExtractionModel || DEFAULT_MEMORY_MODEL
     return createAgentClient(model)
   }
 
@@ -186,14 +187,14 @@ export class ChatMemoryManager {
       const client = this.getExtractionClient()
       const msg = await withRetry(
         (retryClient) => retryClient.messages.create({
-          model: process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed',
+          model: process.env.FACT_EXTRACTION_MODEL || this.strategy.factExtractionModel || DEFAULT_MEMORY_MODEL,
           max_tokens: 256,
           temperature: 0,
           system: systemPrompt,
           tools: [extractTool as any],
           messages: [{ role: 'user', content: userPrompt }],
         }),
-        { querySource: 'compact', model: process.env.FACT_EXTRACTION_MODEL || 'MiniMax-M2.7-highspeed' },
+        { querySource: 'compact', model: process.env.FACT_EXTRACTION_MODEL || this.strategy.factExtractionModel || DEFAULT_MEMORY_MODEL },
         () => this.getExtractionClient(),
       )
 
@@ -278,26 +279,33 @@ export class ChatMemoryManager {
     this.missingFacts = this.missingFacts.filter((fact) => !this.confirmedFacts[fact])
   }
 
-  // ─── CC-style token-based compaction assessment ────────────
+  // ─── Ratio-based compaction assessment ─────────────────────
 
   /**
    * Estimates the token count of the conversation and determines compaction need.
-   * Uses CC's multi-tiered threshold approach:
-   *   - Blocking: < blockingThresholdTokens (default 15K) — MUST compact
-   *   - AutoCompact: < autocompactThresholdTokens (default 40K) — should compact
-   *   - Warning: < warningThresholdTokens (default 50K) — notify user
+   * Uses ratio-based thresholds (fraction of context window used):
+   *   - Blocking: used / window >= blockingRatio (default 0.92, i.e. 92% used) — MUST compact
+   *   - AutoCompact: used / window >= autocompactRatio (default 0.70, i.e. 70% used) — should compact
+   *   - Warning: used / window >= warningRatio (default 0.60, i.e. 60% used) — notify user
    */
   assessCompaction(estimatedMessageTokens: number, messageCount: number): CompactionResult {
     const ctxWindow = this.strategy.contextWindow ?? 200000
     const outReserved = this.strategy.outputTokensReserved ?? 20000
     const effectiveWindow = Math.max(1, ctxWindow - outReserved)
-    const tokensRemaining = effectiveWindow - estimatedMessageTokens
+    const used = estimatedMessageTokens
+    const usageRatio = used / effectiveWindow
+    const tokensRemaining = effectiveWindow - used
     let percentLeft = Math.max(0, (tokensRemaining / effectiveWindow) * 100)
     if (!Number.isFinite(percentLeft)) percentLeft = 0
 
-    const isBlocking = tokensRemaining <= this.strategy.blockingThresholdTokens
-    const shouldCompact = tokensRemaining <= this.strategy.autocompactThresholdTokens
-    const isWarning = tokensRemaining <= this.strategy.warningThresholdTokens
+    // Ratio-based thresholds (P0-1 fix: absolute-token thresholds were unreachable)
+    const acRatio = this.strategy.autocompactRatio ?? 0.70
+    const wRatio = this.strategy.warningRatio ?? 0.60
+    const bRatio = this.strategy.blockingRatio ?? 0.92
+
+    const isBlocking = usageRatio >= bRatio
+    const shouldCompact = usageRatio >= acRatio
+    const isWarning = usageRatio >= wRatio
 
     // enableContextCollapse=false → never signal compaction (messages are kept)
     const collapseEnabled = this.strategy.enableContextCollapse !== false

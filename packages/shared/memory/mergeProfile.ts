@@ -1,166 +1,231 @@
 // Shared UserProfile merge utilities — used by agent loop + Console compact route.
+// Structured against the contract in ./contract.ts (PROFILE_SECTIONS, ProfileSections).
+
+import {
+  PROFILE_SECTIONS,
+  type ProfileSection,
+  type ProfileSections,
+  emptyProfileSections,
+  sectionHeader,
+} from './contract'
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
 
 /**
- * Parse an existing profile into sections for intelligent merging.
- * Returns the sections and any unrecognized trailing content.
+ * Parse Markdown into structured ProfileSections.
+ * Splits by `## <Section>` headers matching PROFILE_SECTIONS from the contract.
+ * Within each section, extracts bullet-point lines (`- item` or `* item`).
+ *
+ * If the Markdown has no recognised section headers, the entire body is treated
+ * as Identity (backward-compat with old-format summaries).
  */
-function parseSections(profile: string): {
-  header: string
-  identity: string
-  contact: string
-  preferences: string
-  activity: string
-  history: string
-  tail: string
-} {
-  const sections = {
-    header: '',
-    identity: '',
-    contact: '',
-    preferences: '',
-    activity: '',
-    history: '',
-    tail: '',
-  }
+function parseProfile(markdown: string): ProfileSections {
+  const sections = emptyProfileSections()
+  if (!markdown) return sections
 
-  let current: keyof typeof sections = 'tail'
-  const lines = profile.split('\n')
+  const headerRe = /^## (.+)$/
+  let current: ProfileSection | null = null
 
-  for (const line of lines) {
-    if (/^# User Profile/i.test(line)) { sections.header = line; current = 'tail'; continue }
-    if (/^## Identity/i.test(line)) { current = 'identity'; sections.identity = line; continue }
-    if (/^## Contact/i.test(line)) { current = 'contact'; sections.contact = line; continue }
-    if (/^## Preference/i.test(line)) { current = 'preferences'; sections.preferences = line; continue }
-    if (/^## (Recent )?Activity/i.test(line)) { current = 'activity'; sections.activity = line; continue }
-    if (/^## (History|Past Cases)/i.test(line)) { current = 'history'; sections.history = line; continue }
-
-    // If we haven't hit any section yet and it's not the header, it's header content
-    if (current === 'tail' && !sections.header) {
-      sections.header = line
+  for (const line of markdown.split('\n')) {
+    const hdr = line.match(headerRe)
+    if (hdr) {
+      const text = hdr[1].trim()
+      const matched = PROFILE_SECTIONS.find((s) => s.toLowerCase() === text.toLowerCase())
+      if (matched) {
+        current = matched
+        continue
+      }
+      // Unknown header — stop assigning to a section
+      current = null
       continue
     }
 
-    const existing = sections[current]
-    sections[current] = existing ? `${existing}\n${line}` : line
+    if (current) {
+      const bullet = line.match(/^\s*[-*]\s+(.+)/)
+      if (bullet) {
+        sections[current].push(bullet[1].trim())
+      }
+    }
+  }
+
+  // Backward compat: if NO sections were populated and we have content,
+  // treat the whole body as Identity.
+  const totalItems = Object.values(sections).reduce((s, a) => s + a.length, 0)
+  if (totalItems === 0 && markdown.trim()) {
+    // Split into lines and take non-empty ones as Identity items.
+    // Drop obvious boilerplate like "# User Profile".
+    const lines = markdown
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/^#+\s/.test(l) && !/^[-*]\s/.test(l))
+    if (lines.length > 0) {
+      sections.Identity = lines.slice(0, 20) // cap at 20 lines for raw summaries
+    }
   }
 
   return sections
 }
 
-/** Build a fresh portrait from sections. Top = identity/contact/preferences, bottom = history. */
-function buildPortrait(sections: ReturnType<typeof parseSections>): string {
-  const parts: string[] = []
-  const header = sections.header || '# User Profile'
-  parts.push(header)
+// ---------------------------------------------------------------------------
+// Core merge logic
+// ---------------------------------------------------------------------------
 
-  const pushSection = (title: string, content: string) => {
-    const body = content.replace(new RegExp(`^## ${title}\n?`, 'i'), '').trim()
-    if (body) parts.push(`\n## ${title}\n${body}`)
+/**
+ * Merge two ProfileSections according to the contract rules:
+ * - Identity, Contact, Preferences: dedup (new items added, no duplicates)
+ * - Activity: replace (new Activity replaces old; old Activity rolls to History)
+ * - History: append (old History + superseded Activity + new History, deduped)
+ */
+function mergeProfileSections(
+  existing: ProfileSections,
+  incoming: ProfileSections,
+): ProfileSections {
+  const result = emptyProfileSections()
+
+  // Identity, Contact, Preferences — dedup merge
+  for (const sec of ['Identity', 'Contact', 'Preferences'] as ProfileSection[]) {
+    const seen = new Set(existing[sec])
+    result[sec] = [...existing[sec]]
+    for (const item of incoming[sec]) {
+      if (!seen.has(item)) {
+        result[sec].push(item)
+        seen.add(item)
+      }
+    }
   }
 
-  pushSection('Identity', sections.identity)
-  pushSection('Contact', sections.contact)
-  pushSection('Preferences', sections.preferences)
-  pushSection('Activity', sections.activity)
-  pushSection('History', sections.history)
-  if (sections.tail.trim()) parts.push(sections.tail.trim())
+  // Activity — replace (old rolls to History)
+  result.Activity = [...incoming.Activity]
+
+  // History — append
+  const historySet = new Set<string>()
+
+  // 1. Existing History
+  for (const item of existing.History) {
+    if (!historySet.has(item)) {
+      result.History.push(item)
+      historySet.add(item)
+    }
+  }
+
+  // 2. Superseded (old) Activity rolls into History
+  for (const item of existing.Activity) {
+    if (!historySet.has(item)) {
+      result.History.push(item)
+      historySet.add(item)
+    }
+  }
+
+  // 3. Incoming History
+  for (const item of incoming.History) {
+    if (!historySet.has(item)) {
+      result.History.push(item)
+      historySet.add(item)
+    }
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
+// Truncation
+// ---------------------------------------------------------------------------
+
+/**
+ * Truncate sections to stay within a line budget.
+ * Drops from History first, then Preferences, then Activity.
+ * Never drops from Identity or Contact.
+ */
+function truncateProfile(sections: ProfileSections, maxLines: number): ProfileSections {
+  const totalLines = (s: ProfileSections): number =>
+    Object.values(s).reduce((sum, arr) => sum + arr.length, 0)
+
+  if (totalLines(sections) <= maxLines) return sections
+
+  // Clone so we can mutate
+  const result: ProfileSections = {
+    Identity: [...sections.Identity],
+    Contact: [...sections.Contact],
+    Preferences: [...sections.Preferences],
+    Activity: [...sections.Activity],
+    History: [...sections.History],
+  }
+
+  // Drop order: History (oldest first), then Preferences (oldest first),
+  // then Activity (oldest first)
+  const dropOrder: ProfileSection[] = ['History', 'Preferences', 'Activity']
+
+  for (const sec of dropOrder) {
+    while (totalLines(result) > maxLines && result[sec].length > 0) {
+      result[sec].shift() // drop oldest (first in array)
+    }
+    if (totalLines(result) <= maxLines) break
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Render ProfileSections back to Markdown in contract order.
+ * Each section: `## <Section>\n- item1\n- item2\n...`
+ */
+function renderProfile(sections: ProfileSections): string {
+  const parts: string[] = ['# User Profile']
+
+  for (const sec of PROFILE_SECTIONS) {
+    const items = sections[sec]
+    if (items.length === 0) continue
+    parts.push('')
+    parts.push(sectionHeader(sec))
+    for (const item of items) {
+      parts.push(`- ${item}`)
+    }
+  }
 
   return parts.join('\n')
 }
 
-/** Extract structured facts from a compact summary and merge into the portrait.
- *  New facts update same-section content; absent sections are left as-is. */
-function mergeIntoPortrait(
-  oldProfile: string,
-  summary: string,
-): string {
-  const sections = parseSections(oldProfile)
-
-  // Extract structured fields from the summary
-  const extractField = (pattern: RegExp): string => {
-    const m = summary.match(pattern)
-    return m ? m[1].trim() : ''
-  }
-
-  // Identity: merge new facts, don't lose old ones
-  const newIdentity = extractField(/(?:Identity|Member)[:\s]*([^\n]+(?:\n\s*-[^\n]+)*)/i)
-  if (newIdentity) {
-    const existingIdentity = sections.identity.replace(/^## Identity\n?/i, '').trim()
-    const merged = existingIdentity
-      ? `${existingIdentity}\n${newIdentity}`
-      : newIdentity
-    sections.identity = `## Identity\n${merged}`
-  }
-
-  // Contact: keep existing unless new info appears
-  const newContact = extractField(/(?:Contact|Phone|Email)[:\s]*([^\n]+(?:\n\s*-[^\n]+)*)/i)
-  if (newContact) {
-    const existingContact = sections.contact.replace(/^## Contact\n?/i, '').trim()
-    sections.contact = `## Contact\n${existingContact ? `${existingContact}\n${newContact}` : newContact}`
-  }
-
-  // Preferences: accumulate over time
-  const newPrefs = extractField(/(?:Preference|Behavior|通常|偏好)[:\s]*([^\n]+(?:\n\s*-[^\n]+)*)/i)
-  if (newPrefs) {
-    const existingPrefs = sections.preferences.replace(/^## Preferences?\n?/i, '').trim()
-    sections.preferences = `## Preferences\n${existingPrefs ? `${existingPrefs}\n${newPrefs}` : newPrefs}`
-  }
-
-  // Activity: always replace with latest
-  const newActivity = extractField(/(?:Activity|Recent|Case State|Current)[:\s]*([^\n]+(?:\n\s*-[^\n]+)*)/i)
-  if (newActivity) {
-    sections.activity = `## Activity\n${newActivity}`
-  } else if (!sections.activity.trim()) {
-    // Use the full summary as activity if no structured field found
-    sections.activity = `## Activity\n${summary.slice(0, 500)}`
-  }
-
-  // History: accumulate compressed old activity
-  const oldActivity = sections.activity.replace(/^## Activity\n?/i, '').trim()
-  if (oldActivity && !sections.history.includes(oldActivity.slice(0, 50))) {
-    const existingHistory = sections.history.replace(/^## History\n?/i, '').trim()
-    const now = new Date().toISOString().slice(0, 10)
-    const entry = `- ${now}: ${oldActivity.slice(0, 300)}`
-    sections.history = `## History\n${existingHistory ? `${existingHistory}\n${entry}` : entry}`
-  }
-
-  return buildPortrait(sections)
-}
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
- * Merge a new compact summary into the existing UserProfile.
- * Produces a structured user portrait — NOT a chronological log.
- * Identity/Contact/Preferences stay at top; older activity rolls into History.
+ * Merge a new Markdown summary into the existing user profile.
+ *
+ * Returns both the rendered Markdown string (`profile`) and the structured
+ * JSON sections (`sections`) so callers can dual-write to the `UserProfile` row.
+ *
+ * @param existingMarkdown  Current profile Markdown from the DB (or empty string)
+ * @param newMarkdown       Incoming summary Markdown from the LLM
+ * @param maxTokens         Optional token budget for truncation (0 or undefined = no truncation)
  */
-export function mergeProfile(oldProfile: string, newSummary: string, maxTokens: number): string {
-  // Strip noisy tags from compaction output
-  let cleaned = newSummary
-    .replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<\/?summary>/gi, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+export function mergeProfile(
+  existingMarkdown: string,
+  newMarkdown: string,
+  maxTokens?: number,
+): { profile: string; sections: string } {
+  const existing = parseProfile(existingMarkdown)
+  const incoming = parseProfile(newMarkdown)
 
-  if (!cleaned) return oldProfile
+  let merged = mergeProfileSections(existing, incoming)
 
-  const portrait = oldProfile
-    ? mergeIntoPortrait(oldProfile, cleaned)
-    : `# User Profile\n\n## Identity\n${cleaned.slice(0, 400)}\n\n## Activity\n${cleaned.slice(0, 800)}`
-
-  // Token budget enforcement
-  if (maxTokens <= 0) return portrait
-  const estimatedTokens = portrait.length / 4
-  if (estimatedTokens <= maxTokens) return portrait
-
-  // Truncate History first, then older sections
-  const paragraphs = portrait.split(/\n\n+/)
-  const kept: string[] = []
-  let chars = 0
-  for (let i = paragraphs.length - 1; i >= 0; i--) {
-    const p = paragraphs[i]
-    if (chars + p.length > maxTokens * 4) break
-    kept.unshift(p)
-    chars += p.length + 2
+  if (maxTokens && maxTokens > 0) {
+    // Rough heuristic: each bullet line is ~4 tokens (chars/4 ≈ tokens)
+    // Use a floor of 10 lines so Identity/Contact always have room.
+    const maxLines = Math.max(10, Math.floor(maxTokens / 4))
+    merged = truncateProfile(merged, maxLines)
   }
-  return kept.join('\n\n').trim() || portrait
+
+  const rendered = renderProfile(merged)
+
+  return {
+    profile: rendered,
+    sections: JSON.stringify(merged),
+  }
 }

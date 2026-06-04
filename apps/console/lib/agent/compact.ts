@@ -11,33 +11,18 @@
 //   - Falls back to programmatic buildCompactionSummary on error
 
 import type { Message, MemoryStrategy } from '@intera/shared/types'
+import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import { withRetry, CannotRetryError } from './api/with-retry'
 import { getProviderConfig, createAgentClient } from './api/provider-config'
+import { CASE_COMPACT_PROMPT } from './case-compact-prompt'
+import { PROFILE_COMPACT_PROMPT } from './profile-compact-prompt'
 
-// Compact prompt — produces a user portrait aimed at long-term continuity.
-// Output feeds into mergeProfile which structures it as Identity / Contact /
-// Preferences / Activity / History. This prompt guides the model to prioritize
-// stable identity facts over ephemeral case details.
-export const COMPACT_SYSTEM_PROMPT = `Summarize this conversation as a user portrait. Structure it so that the most stable, reusable facts come first, and transient case details come last.
-
-Output in this order:
-
-1. Who: Everything known about this person — identifiers, affiliations, roles, status. Any stable attributes that persist across sessions. Put these FIRST.
-2. Contact: Any contact information or communication channels mentioned or confirmed.
-3. Preferences & Patterns: Recurring topics, preferred tone or format, common requests, language choices, behavioral patterns. Accumulate these across sessions.
-4. This Session: What happened in this specific conversation — the request, facts discovered, tools used, outcome. One line per fact.
-5. Errors & Open Items: Any unresolved issues, missing information, or mistakes to avoid repeating.
-6. Customer Messages: List every customer message verbatim or near-verbatim. This captures evolving intent.
-7. Next Step: One short recommendation.
-
-CRITICAL: Respond with TEXT ONLY — no tool calls, no analysis tags, no thinking blocks. Output just the sections above. Be concise. Stable identity facts are more important than ephemeral case details — if the token budget is tight, keep #1-3 and compress #4-7.
-
-COMPRESSION RULES:
-- Facts older than 7 days: one-line summary only.
-- Facts older than 30 days: merge into a single aggregate line.
-- Customer messages: never compress. Every utterance matters.
-- Duplicate facts: keep the most recent value.
-- If the budget is tight, prioritize sections 1-3 (stable portrait) over 4-7 (ephemeral case).`
+/**
+ * @deprecated Replaced by CASE_COMPACT_PROMPT (intra-case) and
+ * PROFILE_COMPACT_PROMPT (cross-chat profile). Kept for backward
+ * compatibility with custom compactPrompt overrides in MemoryStrategy.
+ */
+export const COMPACT_SYSTEM_PROMPT = CASE_COMPACT_PROMPT
 
 /** Clean up compact output — strip any leftover tags, trim whitespace. */
 export function formatCompactSummary(raw: string): string {
@@ -67,15 +52,22 @@ export interface CompactConversationResult {
 export async function compactConversation(
   messages: Message[],
   strategy: MemoryStrategy,
+  opts?: { purpose?: 'case' | 'profile' },
 ): Promise<CompactConversationResult> {
-  const model = strategy.compactModel || 'MiniMax-M2.5-highspeed'
+  const purpose = opts?.purpose ?? 'case'
+  const model =
+    purpose === 'profile'
+      ? (strategy.profileModel || strategy.compactModel || DEFAULT_MEMORY_MODEL)
+      : (strategy.compactModel || DEFAULT_MEMORY_MODEL)
   const { apiKey, baseURL, provider } = getProviderConfig(model)
 
   if (!apiKey) {
     return { summary: null, model, provider, error: `API key not configured for ${provider}` }
   }
 
-  const systemPrompt = strategy.compactPrompt || COMPACT_SYSTEM_PROMPT
+  const defaultPrompt =
+    purpose === 'profile' ? PROFILE_COMPACT_PROMPT : CASE_COMPACT_PROMPT
+  const systemPrompt = strategy.compactPrompt || defaultPrompt
 
   const apiMessages = messages
     .filter((m) => typeof m.content === 'string' && m.content.trim().length > 0)

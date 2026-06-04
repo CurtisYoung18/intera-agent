@@ -125,21 +125,6 @@ function computeMetrics(traces: TraceItem[]): Metrics {
         m.llmCalls++
       } catch { /* skip malformed */ }
     }
-    // Legacy: profiler snapshots written as loop_decision before llm_response was added
-    if (t.actionType === 'loop_decision' && t.payload) {
-      try {
-        const p = JSON.parse(t.payload) as Record<string, unknown>
-        m.toolPhaseMs += (p.toolPhaseMs as number) ?? 0
-        // Legacy profiler format: { iterations, totalTokens, totalWallMs, ... }
-        if (p.totalTokens && m.llmCalls === 0) {
-          m.totalTokens = (p.totalTokens as number) || 0
-          m.inputTokens = (p.inputTokens as number) || Math.floor((p.totalTokens as number) * 0.7)
-          m.outputTokens = (p.outputTokens as number) || Math.floor((p.totalTokens as number) * 0.3)
-          m.llmCalls = (p.iterations as number) || (p.llmCalls as number) || 1
-          m.turnWallMs = (p.totalWallMs as number) || m.turnWallMs
-        }
-      } catch { /* skip */ }
-    }
   }
   if (firstTs && lastTs && m.turnWallMs === 0) m.turnWallMs = lastTs - firstTs
   return m
@@ -391,9 +376,10 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h3 className="text-[13px] font-bold text-[var(--mist)]">Chat Memory</h3>
             <div className="flex gap-2 flex-wrap">
-              {/* Compact Chat — saves summary to ChatMemory.summary per case */}
+              {/* Compact Chat — generate a summary of this conversation */}
               <button onClick={handleCompact} disabled={compacting}
-                className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-teal/20 bg-teal/[0.06] text-teal hover:bg-teal/[0.12] disabled:opacity-50">
+                className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-teal/20 bg-teal/[0.06] text-teal hover:bg-teal/[0.12] disabled:opacity-50"
+                title="Generate a summary of this conversation">
                 <Zap className="w-3 h-3" />
                 {compacting ? 'Compacting…' : 'Compact Chat'}
               </button>

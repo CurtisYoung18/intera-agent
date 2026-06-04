@@ -17,6 +17,7 @@ export async function GET() {
   // MiniMax models (Anthropic-compatible endpoint)
   if (process.env.MINIMAX_API_KEY) {
     models.push(
+      { id: 'MiniMax-M3', name: 'MiniMax M3', provider: 'minimax', providerLabel: 'MiniMax (Anthropic)' },
       { id: 'MiniMax-M2.7-highspeed', name: 'MiniMax M2.7 Highspeed', provider: 'minimax', providerLabel: 'MiniMax (Anthropic)' },
       { id: 'MiniMax-M2.5-highspeed', name: 'MiniMax M2.5 Highspeed', provider: 'minimax', providerLabel: 'MiniMax (Anthropic)' },
     )

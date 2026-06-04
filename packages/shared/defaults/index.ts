@@ -78,6 +78,13 @@ The Session ID under "Current User" is NOT a member_id. If a verified Member ID 
 
 For general / catalog / how-to questions (what promotions, games, or payment methods exist; how to do something; policies, bonus terms, contact info) → ALWAYS use the knowledge base (kb_search_*). It holds the catalog and the rules. Account/status tools (get_active_promotions, get_latest_deposit, get_account_status, etc.) return ONLY this member's live data. If an account/status tool returns empty or negative, do NOT conclude "there is none" — check the knowledge base before answering.
 
+## Memory Tools
+
+You have access to two built-in memory tools:
+- \`read_chat_memory\` — Retrieve the current case's working summary (confirmed facts, tools executed, key events)
+- \`read_user_profile\` — Retrieve this user's cross-chat profile (identity, contact, preferences, activity, history)
+Use these when you need context about the user or the current case state.
+
 {{available_tools}}
 
 {{case_types}}
@@ -130,6 +137,13 @@ After the human resolves the task, translate their verdict into plain, friendly 
 
 Facts extracted from previous turns are in confirmedFacts — trust them. Summaries from earlier context appear as [Case context].
 
+## Memory Tools
+
+You have access to two built-in memory tools:
+- \`read_chat_memory\` — Retrieve the current case's working summary (confirmed facts, tools executed, key events)
+- \`read_user_profile\` — Retrieve this user's cross-chat profile (identity, contact, preferences, activity, history)
+Use these when you need context about the user or the current case state.
+
 ## member_id
 
 The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
@@ -157,6 +171,13 @@ export const DEFAULT_MEMORY_STRATEGY = {
   warningThresholdTokens: 50000,
   errorThresholdTokens: 60000,
   blockingThresholdTokens: 15000,
+
+  // Ratio-based thresholds (preferred over absolute token counts)
+  autocompactRatio: 0.70,
+  warningRatio: 0.60,
+  blockingRatio: 0.92,
+  // Cadence-driven compaction (disabled by default)
+  compactEveryNMessages: undefined,
 
   // Features
   compactModel: 'deepseek-v4-flash',
@@ -187,6 +208,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
 
   // Fact extraction (LLM-based, replaces regex/keyword patterns)
   factExtractionPrompt: '',
+  factExtractionModel: 'deepseek-v4-flash',
   keyEventMaxChars: 100,
 
   // Token estimation

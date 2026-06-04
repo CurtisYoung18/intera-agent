@@ -33,6 +33,15 @@ export interface TransitionEval {
 }
 
 export class StageExecutor {
+  /** Tools with toolCategory "system_info" — always allowed regardless of stage availableSkills whitelist. */
+  private static readonly SYSTEM_INFO_TOOLS = new Set([
+    'read_chat_memory',
+    'read_user_profile',
+    'read_case_history',
+    'search_delay_notice',
+    'get_current_time',
+  ])
+
   private stageConfigs: Record<string, StageConfig>
   private consecutiveEvalParseFailures = 0
   private bootstrapNewCase: boolean
@@ -142,7 +151,9 @@ export class StageExecutor {
         forced.add('finalize_case')
         forced.add('request_user_input')
         forced.add('finalize_consultation')
-        return allTools.filter((t) => forced.has(t.name))
+        // Always allow system_info tools even under nudge constraint
+        for (const name of StageExecutor.SYSTEM_INFO_TOOLS) forced.add(name)
+        return allTools.filter((t) => forced.has(t.name) || t.name.startsWith('kb_search_'))
       }
     }
 
@@ -160,7 +171,11 @@ export class StageExecutor {
       allowed.delete('dispatch_case_agent')
     }
 
-    return allTools.filter((t) => allowed.has(t.name))
+    return allTools.filter((t) =>
+      allowed.has(t.name) ||
+      StageExecutor.SYSTEM_INFO_TOOLS.has(t.name) ||
+      t.name.startsWith('kb_search_'),
+    )
   }
 
   // -----------------------------------------------------------------------

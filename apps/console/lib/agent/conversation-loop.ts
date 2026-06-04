@@ -32,6 +32,8 @@ export class ConversationLoop {
     'get_bet_history', 'get_withdraw_conditions', 'read_case_history',
     'dispatch_case_agent',
     'request_user_input',  // needed for asking member_id before creating a case
+    'read_chat_memory',    // memory injection — system_info
+    'read_user_profile',   // memory injection — system_info
   ])
 
   private static isAllowedTool(name: string): boolean {

@@ -22,6 +22,8 @@ export interface PlaygroundTraceStep {
   summary: string
   detail: [string, string][]
   json?: object
+  /** Full prompt data captured from llm_request_start (available for Model generation stage). */
+  promptData?: { systemPrompt: string; messages: unknown[] }
 }
 
 const STAGE_MAP: Record<string, { stage: TraceStage; source: TraceSource }> = {
@@ -123,6 +125,22 @@ export function aggregateTraces(
       ms,
       summary,
       detail,
+    }
+
+    // For Model generation, extract full prompt data from llm_request_start records
+    if (stage === 'Model generation') {
+      const llmReqRecord = records.find(r => r.actionType === 'llm_request_start')
+      if (llmReqRecord?.payload) {
+        try {
+          const parsed = JSON.parse(llmReqRecord.payload)
+          if (parsed.systemPrompt || parsed.messages) {
+            step.promptData = {
+              systemPrompt: parsed.systemPrompt || '',
+              messages: parsed.messages || [],
+            }
+          }
+        } catch { /* ignore parse errors */ }
+      }
     }
 
     if (debug) {

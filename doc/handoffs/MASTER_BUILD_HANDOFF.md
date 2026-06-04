@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-03 (v1.3 shipped) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-04 (v1.4 shipped — TODO-41 + TODO-42) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -84,6 +84,67 @@ npm run build:console                             # success, 53 static pages
 ---
 
 ## Active backlog
+
+## v1.4 — 2026-06-04 — ✅ SHIPPED
+
+**Memory three-layer redesign (TODO-41) + Trace cleanup (TODO-42).** Executed by 5 parallel coding agents (Task 0 + Lane A/B/C/D), zero merge conflicts.
+
+### TODO-41 — Memory / Compact three-layer redesign
+
+6 root defects fixed. Subsystem went from 0 → ~60 tests.
+
+- **Task 0:** `packages/shared/memory/contract.ts` — `PROFILE_SECTIONS`, `ProfileSections`, `DEFAULT_MEMORY_MODEL`
+- **Lane A:** `CASE_COMPACT_PROMPT` (working-state, L2) + `PROFILE_COMPACT_PROMPT` (portrait, L3, contract-bound) — fixes P0-2, producer-side P0-3
+- **Lane B:** Ratio-based `assessCompaction` (`0.70`/`0.60`/`0.92`) + cadence-driven `compactEveryNMessages` — fixes P0-1
+- **Lane C:** `UserProfile.sections` JSON column + `mergeProfile` contract rewrite (dedup, truncation History-first) + dual-write — fixes P0-3 consumer side, P1-2
+- **Lane D:** Inlined compact route (deleted dead proxy) + converged model names to `DEFAULT_MEMORY_MODEL` — fixes P1-1, P2
+- **C4:** System tools model (user chose Option B) — `read_chat_memory`/`read_user_profile` available in all stages, `system_info` auto-allow, structured `sections` returned, `## Memory Tools` prompt section
+
+### TODO-42 — Trace cleanup + observability
+
+5 items completed:
+
+| # | Item | Outcome |
+|---|---|---|
+| 1/2 | Profiler Snapshot | Removed entirely (user chose A) — `profiler-utils.ts` deleted, ~13 call sites removed |
+| 3 | "View conversation" button | KEPT — chat page has unique features (memory panel, filterable timeline) |
+| 4 | Tool call I/O visibility | `skill_result` cards + `ToolCallCard` default open (was 2 clicks → now visible) |
+| 5 | Playground LLM prompt | SSE event path → `memoryTraces` → `trace-aggregator` → `PromptViewer` component |
+
+→ [`2026-06-04-todo-41-memory-three-layer-redesign.md`](../what's%20done/2026-06-04-todo-41-memory-three-layer-redesign.md)
+→ [`2026-06-04-todo-42-trace-cleanup.md`](../what's%20done/2026-06-04-todo-42-trace-cleanup.md)
+
+### Verification (2026-06-04)
+```
+npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors
+npm test                                          # 36 passed, 1 known-fail (PostgreSQL), 328 tests
+npm run build:console                             # success
+```
+
+## Active backlog
+
+### P1 — Code quality
+
+| ID | Item | Status |
+|---|---|---|
+| TODO-17 | **`loop.ts` decomposition.** Core loop tightly coupled — needs dedicated planning session. | 🟡 2086 lines |
+
+### Design
+
+| ID | Item | Status |
+|---|---|---|
+| TODO-39 | **Agent drawer delete-button visibility.** Delete only shows when `versions.length > 1`. | 🟡 pending user decision |
+
+### Ops hardening (folded from PRODUCTION_READINESS_AUDIT, 2026-06-03)
+
+| ID | Item | Priority |
+|---|---|---|
+| M3 | No observability — add error tracking (Sentry) + health alerting | medium |
+| M6 | Confirm which TLS cert actually serves (`*.anytrans.ai` RapidSSL expires 2026-07-22 vs Caddy LE) | medium |
+| L3 | Rotate DB password (`Intera2026Pg!` weak/known) | low |
+
+### Deferred
+- **C5** Anonymous visitor identity key — needs separate exploration
 
 ## v1.3 — 2026-06-03 — ✅ SHIPPED
 
@@ -230,7 +291,7 @@ curl -s https://demo.anytrans.ai/api/health                            # expect 
 
 → [`doc/what's done/2026-06-03-remove-routing-human-ops-dead-config.md`](../what's%20done/2026-06-03-remove-routing-human-ops-dead-config.md)
 
-## Applied migrations (10)
+## Applied migrations (11)
 
 ```
 20260603000001_initial_baseline
@@ -243,6 +304,7 @@ curl -s https://demo.anytrans.ai/api/health                            # expect 
 20260603000008_remove_routing_table
 20260603000008_add_capability_bindings
 20260603000008_set_use_legacy_case_prompt_default
+20260603000009_add_user_profile_sections
 ```
 
 ## Ops hardening backlog (folded from PRODUCTION_READINESS_AUDIT, 2026-06-03)

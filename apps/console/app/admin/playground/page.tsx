@@ -885,6 +885,9 @@ export default function PlaygroundPage() {
                                     {step.title && step.title !== step.summary && (
                                       <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
                                     )}
+                                    {step.promptData && (
+                                      <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
+                                    )}
                                     {debugMode && step.json && (
                                       <details style={{ marginTop: 2 }}>
                                         <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6 }}>JSON</summary>
@@ -990,5 +993,67 @@ function SidebarEmpty({ children }: { children: React.ReactNode }) {
     }}>
       {children}
     </p>
+  )
+}
+
+function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messages: unknown[] }) {
+  return (
+    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {systemPrompt && (
+        <details style={{ fontSize: 10 }}>
+          <summary style={{
+            fontWeight: 600, color: 'var(--lavender)',
+            cursor: 'pointer', opacity: 0.8,
+          }}>
+            System prompt ({systemPrompt.length.toLocaleString()} chars)
+          </summary>
+          <pre style={{
+            maxWidth: 280, maxHeight: 160, overflow: 'auto',
+            fontSize: 9, color: 'var(--fog)',
+            background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
+            borderRadius: 8, padding: '6px 10px', marginTop: 4,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          }}>
+            {systemPrompt}
+          </pre>
+        </details>
+      )}
+      {messages.length > 0 && (
+        <details style={{ fontSize: 10 }}>
+          <summary style={{
+            fontWeight: 600, color: 'var(--lavender)',
+            cursor: 'pointer', opacity: 0.8,
+          }}>
+            Messages ({messages.length})
+          </summary>
+          <div style={{
+            maxWidth: 280, maxHeight: 200, overflow: 'auto',
+            display: 'flex', flexDirection: 'column', gap: 4,
+            background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
+            borderRadius: 8, padding: '6px 8px', marginTop: 4,
+          }}>
+            {messages.map((m: any, idx: number) => (
+              <div key={idx} style={{
+                padding: '3px 6px', borderRadius: 6,
+                background: m.role === 'user' ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
+                fontSize: 9,
+              }}>
+                <span style={{
+                  fontWeight: 600, color: 'var(--fog)',
+                  textTransform: 'uppercase', fontSize: 8,
+                  opacity: 0.5, marginRight: 6,
+                }}>
+                  {typeof m.role === 'string' ? m.role : 'unknown'}
+                </span>
+                <span style={{ color: 'var(--mist)' }}>
+                  {(typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).slice(0, 160)}
+                  {(typeof m.content === 'string' && m.content.length > 160) ? '...' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
   )
 }

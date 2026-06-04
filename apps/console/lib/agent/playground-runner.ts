@@ -93,7 +93,21 @@ export async function* runPlaygroundTurn(input: {
     if (event.type === 'text_delta') reply += event.data as string
 
     // Collect trace-relevant events into memoryTraces (for final aggregated `trace` payload)
-    if (['intent_classify', 'policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_request_start', 'llm_response'].includes(event.type as string)) {
+    if (event.type === 'llm_request_start') {
+      const d = event.data as any
+      memoryTraces.push({
+        caseId: turnId,
+        actionType: 'llm_request_start',
+        title: d?.model ? `LLM request: ${d.model}` : 'LLM request',
+        detail: `System prompt: ${(d?.systemPrompt || '').length} chars, ${(d?.messages || []).length} messages`,
+        payload: JSON.stringify({
+          systemPrompt: d?.systemPrompt,
+          messages: d?.messages,
+          model: d?.model,
+        }),
+        createdAt: new Date().toISOString(),
+      })
+    } else if (['intent_classify', 'policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_response'].includes(event.type as string)) {
       memoryTraces.push({
         caseId: turnId,
         actionType: event.type as string,
@@ -153,9 +167,9 @@ export async function* runPlaygroundTurn(input: {
     await new Promise<void>((resolve) => { resolveNext = resolve })
   }
 
-  // Add LLM request/response traces if not already captured
+  // Add LLM request/response traces if not already captured (fallback for error paths)
   if (!memoryTraces.some(t => t.actionType === 'llm_request_start')) {
-    memoryTraces.push({ caseId: turnId, actionType: 'llm_request_start', title: 'LLM request', createdAt: new Date().toISOString() })
+    memoryTraces.push({ caseId: turnId, actionType: 'llm_request_start', title: 'LLM request', detail: 'No prompt data captured', createdAt: new Date().toISOString() })
   }
   if (!memoryTraces.some(t => t.actionType === 'llm_response')) {
     memoryTraces.push({ caseId: turnId, actionType: 'llm_response', title: `LLM response: ${reply.length} chars`, detail: reply.slice(0, 200), createdAt: new Date().toISOString() })

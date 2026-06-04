@@ -58,7 +58,7 @@ export default function SubAgentForm({
   const defaultModels =
     availableModels.length > 0
       ? availableModels
-      : ['MiniMax-M2.7-highspeed', 'MiniMax-M2.5-highspeed']
+      : ['MiniMax-M3', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5-highspeed']
 
   const tc = value.taskChecklist || { requiredChecks: [], outputFormat: '', rules: [] }
 

@@ -371,7 +371,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 }
 
 function ToolCallCard({ toolCall: tc, t }: { toolCall: ToolCall; t: (key: string, vars?: Record<string, unknown>) => string }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   return (
     <div className="rounded-lg border border-black/[0.04] bg-white/40 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)}

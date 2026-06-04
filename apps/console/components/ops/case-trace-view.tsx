@@ -343,7 +343,7 @@ export function CaseTraceTimeline({
       Object.keys(payload).length > 0 &&
       !(isUser && userBody && Object.keys(payload).length <= 2)
 
-    const payloadDefaultOpen = !isNoisy && !isLlm && !isSkill
+    const payloadDefaultOpen = !isNoisy && !isLlm
 
     return (
       <li key={trace.id} className="relative pl-11">

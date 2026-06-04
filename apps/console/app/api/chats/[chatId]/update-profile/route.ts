@@ -59,13 +59,13 @@ export async function POST(
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 
     const existing = await prisma.userProfile.findUnique({ where: { userId: key }, select: { profile: true } }).catch(() => null)
-    const merged = mergeProfile(existing?.profile ?? '', combinedSummary, maxTokens)
+    const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', combinedSummary, maxTokens)
     const stats = await recomputeProfileStats(prisma, key)
 
     await prisma.userProfile.upsert({
       where: { userId: key },
-      create: { userId: key, profile: merged, ...stats },
-      update: { profile: merged, ...stats },
+      create: { userId: key, profile: merged, sections, ...stats },
+      update: { profile: merged, sections, ...stats },
     })
 
     return NextResponse.json({
