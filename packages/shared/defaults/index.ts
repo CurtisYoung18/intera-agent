@@ -357,11 +357,39 @@ export interface DefaultPolicySeed {
   description: string | null
   hook: string
   rule: string
+  /** G11: GuardrailHook JSON — superset of rule. When set, the engine prefers this. */
+  guardrailConfig?: string
 }
 
 export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
-  { name: 'no_high_risk_account_change', description: 'Block high-risk skills in preTool phase', hook: 'preTool', rule: '{"deny_skills":[]}' },
-  { name: 'investigate_before_escalation', description: 'Require investigative skills before escalating to human (create_human_task)', hook: 'preTool', rule: '{"hook_skills":["create_human_task"],"require_skills_any":["get_latest_deposit","get_withdraw_conditions","get_account_status","get_kyc_status"]}' },
+  {
+    name: 'no_high_risk_account_change',
+    description: 'Block high-risk skills in preTool phase',
+    hook: 'preTool',
+    rule: '{"deny_skills":[]}',
+    guardrailConfig: JSON.stringify({
+      when: 'preTool',
+      match: { skills: ['refund_money', 'change_ban_status', 'delete_account'] },
+      check: { kind: 'rule', denySkills: ['refund_money', 'change_ban_status', 'delete_account'] },
+      onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
+      onUnavailable: { action: 'closed' },
+      guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
+    }),
+  },
+  {
+    name: 'investigate_before_escalation',
+    description: 'Require investigative skills before escalating to human (create_human_task)',
+    hook: 'preTool',
+    rule: '{"hook_skills":["create_human_task"],"require_skills_any":["get_latest_deposit","get_withdraw_conditions","get_account_status","get_kyc_status"]}',
+    guardrailConfig: JSON.stringify({
+      when: 'preTool',
+      match: { skills: ['create_human_task'] },
+      check: { kind: 'rule', requireSkillsAny: ['get_latest_deposit', 'get_withdraw_conditions', 'get_account_status', 'get_kyc_status'] },
+      onViolation: { action: 'block', guidance: 'Complete the required investigation first before escalating.' },
+      onUnavailable: { action: 'closed' },
+      guidance: 'Investigation required before escalation. Call the required skills first.',
+    }),
+  },
   {
     name: 'conflict_requires_human',
     description: 'Detect conflict between system result and user report',
@@ -383,12 +411,42 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
         'If data is ambiguous or incomplete, hint.',
       ].join('\n'),
     }),
+    guardrailConfig: JSON.stringify({
+      when: 'postTool',
+      match: { skills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_account_status', 'get_kyc_status'] },
+      check: {
+        kind: 'ai',
+        evaluationPrompt: [
+          'Check whether the skill outputs contradict what the customer reported.',
+          '',
+          'Skill output: {{skill_output}}',
+          'Confirmed facts: {{confirmed_facts}}',
+          '',
+          'Escalate to human (result=escalated) when:',
+          '(1) the system shows a completed/successful transaction but the customer says funds are missing or not received,',
+          '(2) the system shows account status is normal but the customer reports access issues,',
+          '(3) the payment channel shows normal operation but the customer says the payment failed.',
+          '',
+          'If outputs are consistent with the customer issue, pass.',
+          'If data is ambiguous or incomplete, hint.',
+        ].join('\n'),
+      },
+      onViolation: { action: 'invoke_tool', tool: 'create_human_task' },
+      onUnavailable: { action: 'invoke_tool', tool: 'create_human_task' },
+    }),
   },
   {
     name: 'evidence_required_before_resolution',
     description: 'Require order or account verification skill before resolution',
     hook: 'preFinalize',
     rule: '{"require_skills_any":["get_latest_deposit","get_account_status","get_kyc_status"]}',
+    guardrailConfig: JSON.stringify({
+      when: 'preFinalize',
+      match: { skills: [] },
+      check: { kind: 'rule', requireSkillsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status'] },
+      onViolation: { action: 'block', guidance: 'Evidence required before resolution. Call at least one investigation skill first.' },
+      onUnavailable: { action: 'closed' },
+    }),
   },
   {
     name: 'no_compensation_promise',
@@ -405,6 +463,25 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
         'Pass if the conclusion explains findings, policy, or next steps without committing to pay the customer.',
         'Also pass if the agent only relays what a human operator already approved.',
       ].join('\n'),
+    }),
+    guardrailConfig: JSON.stringify({
+      when: 'preFinalize',
+      match: { skills: [] },
+      check: {
+        kind: 'ai',
+        evaluationPrompt: [
+          'Check whether the finalize conclusion promises or commits to any monetary compensation.',
+          '',
+          'Finalize output: {{skill_output}}',
+          'Confirmed facts: {{confirmed_facts}}',
+          '',
+          'Block (result=blocked) if the agent promises refund, cash reimbursement, voucher with cash value, or direct financial remedy — only human operators may authorize compensation.',
+          'Pass if the conclusion explains findings, policy, or next steps without committing to pay the customer.',
+          'Also pass if the agent only relays what a human operator already approved.',
+        ].join('\n'),
+      },
+      onViolation: { action: 'block', guidance: 'Only human operators may authorize compensation. Do not promise refunds or financial remedies.' },
+      onUnavailable: { action: 'invoke_tool', tool: 'create_human_task' },
     }),
   },
   {
@@ -427,6 +504,30 @@ export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
         'Block (result=blocked) if the conclusion makes claims without any factual grounding.',
         'Pass if evidence is properly cited and the reasoning is traceable to collected facts.',
       ].join('\n'),
+    }),
+    guardrailConfig: JSON.stringify({
+      when: 'preFinalize',
+      match: { skills: [] },
+      check: {
+        kind: 'ai',
+        evaluationPrompt: [
+          'Check whether the finalize conclusion references specific evidence gathered during case investigation.',
+          '',
+          'Finalize output: {{skill_output}}',
+          'Confirmed facts: {{confirmed_facts}}',
+          'Skills called: {{skills_called}}',
+          '',
+          'The conclusion must cite at least one of:',
+          '(1) a specific skill result (e.g. get_latest_deposit showed status=completed),',
+          '(2) confirmed facts collected from the user,',
+          '(3) a knowledge base article or policy reference.',
+          '',
+          'Block (result=blocked) if the conclusion makes claims without any factual grounding.',
+          'Pass if evidence is properly cited and the reasoning is traceable to collected facts.',
+        ].join('\n'),
+      },
+      onViolation: { action: 'block', guidance: 'Conclusions must cite specific evidence. Reference skill results, confirmed facts, or policy.' },
+      onUnavailable: { action: 'open' },
     }),
   },
 ]
