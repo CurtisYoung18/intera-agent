@@ -51,6 +51,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     fetchConfigs().then((configs) => {
       if (cancelled) return
+      setAgentConfigs(configs)
       const stored = (() => { try { return localStorage.getItem(LS_KEY) } catch { return null } })()
       if (configs.length > 0) {
         if (stored && configs.find((c) => c.id === stored)) {
@@ -72,18 +73,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const refreshConfigs = useCallback(async () => {
     const configs = await fetchConfigs()
-    if (configs) {
-      // If the current selection is no longer in the list, fall back
-      setSelectedAgentId((prev) => {
-        if (prev && configs.find((c) => c.id === prev)) return prev
-        const active = configs.find((c) => c.isActive) ?? configs[0]
-        if (active) {
-          try { localStorage.setItem(LS_KEY, active.id) } catch { /* */ }
-          return active.id
-        }
-        return prev
-      })
-    }
+    setAgentConfigs(configs)
+    // If the current selection is no longer in the list, fall back
+    setSelectedAgentId((prev) => {
+      if (prev && configs.find((c) => c.id === prev)) return prev
+      const active = configs.find((c) => c.isActive) ?? configs[0]
+      if (active) {
+        try { localStorage.setItem(LS_KEY, active.id) } catch { /* */ }
+        return active.id
+      }
+      return prev
+    })
   }, [fetchConfigs])
 
   return (
