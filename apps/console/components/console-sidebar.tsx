@@ -135,7 +135,8 @@ export default function ConsoleSidebar() {
       .catch(() => {})
   }, [])
 
-  // Load agent configs
+  // Load agent configs — re-sync on navigation so sidebar picker reflects
+  // localStorage changes made by AgentManagementDrawer.handleEdit.
   useEffect(() => {
     fetch('/api/admin/agent-configs')
       .then((r) => r.json())
@@ -151,7 +152,7 @@ export default function ConsoleSidebar() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [pathname])
 
   const handleAgentSelect = (id: string) => {
     setSelectedAgentId(id)

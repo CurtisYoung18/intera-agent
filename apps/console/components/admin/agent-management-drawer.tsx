@@ -269,7 +269,6 @@ export default function AgentManagementDrawer({
 
   const handleEdit = (v: AgentVersion) => {
     try { localStorage.setItem('intera-agent-id', v.id) } catch { /* */ }
-    onSelectAgent(v.id)
     router.push(`/admin/agent?agentId=${v.id}`)
     onClose()
   }
