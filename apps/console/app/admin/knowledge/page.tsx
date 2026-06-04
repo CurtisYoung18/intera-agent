@@ -230,7 +230,7 @@ export default function KnowledgePage() {
 
   return (
     <div>
-      <VersionContextBar />
+      <VersionContextBar onVersionChange={() => window.location.reload()} />
     <div className="flex flex-col h-full min-h-0 overflow-auto bg-transparent">
       {/* Header */}
       <div className="flex-shrink-0 px-8 pt-8 pb-6">

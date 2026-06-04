@@ -158,6 +158,10 @@ export default function ConsoleSidebar() {
     try { localStorage.setItem('intera-agent-id', id) } catch { /* ignore */ }
     if (pathname.startsWith('/admin/agent')) {
       router.push(`/admin/agent?agentId=${id}`)
+    } else if (pathname.startsWith('/admin/')) {
+      // Sub-pages read from localStorage via useSelectedAgentId() on mount only.
+      // Reload so they re-mount with the new value.
+      window.location.reload()
     }
   }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, ExternalLink, Eye, ChevronDown, Plug, BookOpen } from 'lucide-react'
+import { Puzzle, Plus, Pencil, Trash2, Search, Wand2, Zap, Globe, Box, ToggleLeft, ToggleRight, Lock, Eye, ChevronDown, Plug, BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
@@ -226,7 +226,7 @@ export default function SkillsPage() {
 
   return (
     <div>
-      <VersionContextBar />
+      <VersionContextBar onVersionChange={() => window.location.reload()} />
       <div className="px-8 py-8 animate-fade-up">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -280,14 +280,6 @@ export default function SkillsPage() {
 
                       {/* Description */}
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
-
-                      {/* Special skill configure links */}
-                      {s.name === 'create_human_task' && (
-                        <Link href="/admin/human-ops" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 text-[11px] text-amber hover:text-amber/80 mb-2 transition-colors">
-                          <ExternalLink className="w-3 h-3" />
-                          Configure in Human Ops
-                        </Link>
-                      )}
 
                       {/* Bottom: read-only hint slides up on hover */}
                       <div className="flex items-center justify-end translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
@@ -417,12 +409,6 @@ export default function SkillsPage() {
                         </button>
                       </div>
                       <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
-                      {s.name === 'create_human_task' && (
-                        <Link href="/admin/human-ops" className="inline-flex items-center gap-1 text-[11px] text-teal-500 hover:text-teal-600 transition-colors">
-                          <ExternalLink className="w-3 h-3" />
-                          Configure in Human Ops
-                        </Link>
-                      )}
                     </div>
                   </TiltCard>
                 ))}
@@ -556,12 +542,6 @@ export default function SkillsPage() {
 }, null, 2)}
               </pre>
             </div>
-            {/* Special configure links */}
-            {viewSkill.name === 'create_human_task' && (
-              <Link href="/admin/human-ops" onClick={() => setViewSkill(null)} className="inline-flex items-center gap-1.5 text-[12px] text-amber hover:text-amber/80 transition-colors">
-                <ExternalLink className="w-3.5 h-3.5" /> Configure escalation queues in Human Ops
-              </Link>
-            )}
             <div className="pt-4 border-t border-[var(--border-subtle)]">
               <button type="button" onClick={() => setViewSkill(null)} className="w-full py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">
                 Close

@@ -40,6 +40,7 @@ interface AgentVersionPickerProps {
 
 function formatModelShort(model: string | null): string {
   if (!model) return '—'
+  if (model.includes('MiniMax-M3')) return 'M3'
   if (model.includes('MiniMax-M2.7-highspeed')) return 'M2.7'
   if (model.includes('MiniMax-M2.5-highspeed')) return 'M2.5'
   if (model.includes('claude-haiku-4-5')) return 'Haiku 4.5'
@@ -248,6 +249,7 @@ export default function AgentVersionPicker({
 
   const handleOpenEditor = () => {
     if (!agentId) return
+    try { localStorage.setItem('intera-agent-id', agentId) } catch { /* */ }
     router.push(`/admin/agent?agentId=${agentId}`)
     setOpen(false)
   }
@@ -420,7 +422,7 @@ export default function AgentVersionPicker({
                 onSwitch={handleSwitch}
                 onActivate={handleActivate}
                 onDelete={handleDelete}
-                onOpenEditor={(id) => { router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
+                onOpenEditor={(id) => { try { localStorage.setItem('intera-agent-id', id) } catch { /* */ }; router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
                 busyId={busyId}
                 t={t}
               />
@@ -434,7 +436,7 @@ export default function AgentVersionPicker({
                   onSwitch={handleSwitch}
                   onActivate={handleActivate}
                   onDelete={handleDelete}
-                  onOpenEditor={(id) => { router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
+                  onOpenEditor={(id) => { try { localStorage.setItem('intera-agent-id', id) } catch { /* */ }; router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
                   busy={busyId === v.id}
                   t={t}
                 />
