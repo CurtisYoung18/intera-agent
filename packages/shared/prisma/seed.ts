@@ -48,7 +48,8 @@ const prisma = new PrismaClient()
 // ── Organization definitions ────────────────────────────────────────────
 
 const VENDORS = [
-  { id: 'default', name: 'Demo Org', password: null },
+  { id: 'default', name: 'Test', password: null },
+  { id: 'demo', name: 'Demo', password: null },
 ]
 
 // ── Seed helpers ────────────────────────────────────────────────────
@@ -136,8 +137,8 @@ async function seedVendorConfig(
   for (const p of DEFAULT_POLICIES) {
     await prisma.policy.upsert({
       where: { orgId_name: { orgId, name: p.name } },
-      update: { description: p.description, hook: p.hook, rule: p.rule, enabled: true },
-      create: { orgId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, enabled: true },
+      update: { description: p.description, hook: p.hook, rule: p.rule, guardrailConfig: p.guardrailConfig ?? null, enabled: true },
+      create: { orgId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, guardrailConfig: p.guardrailConfig ?? null, enabled: true },
     })
   }
   console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${orgId})`)

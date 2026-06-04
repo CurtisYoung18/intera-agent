@@ -6,7 +6,8 @@ import { prisma } from '@intera/shared/prisma'
 import { getSession } from '@/lib/auth'
 
 const BUILT_IN_CUSTOMERS = [
-  { id: 'default', name: 'Demo Org', password: null },
+  { id: 'default', name: 'Test', password: null },
+  { id: 'demo', name: 'Demo', password: null },
 ]
 
 export async function GET() {

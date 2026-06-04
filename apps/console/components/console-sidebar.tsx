@@ -110,7 +110,7 @@ export default function ConsoleSidebar() {
   // Session state
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
 
-  const [customerName, setCustomerName] = useState('Demo Org')
+  const [customerName, setCustomerName] = useState('Test')
   const [isStaff, setIsStaff] = useState(false)
   const [customers, setCustomers] = useState<CustomerInfo[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
