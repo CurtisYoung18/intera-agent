@@ -40,27 +40,25 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const fetchConfigs = useCallback(async () => {
     try {
       const r = await fetch('/api/admin/agent-configs')
+      if (!r.ok) return []
       const d = await r.json()
-      if (d.configs?.length) {
-        setAgentConfigs(d.configs)
-        return d.configs as AgentInfo[]
-      }
-    } catch { /* ignore */ }
-    return null
+      return (d.configs ?? []) as AgentInfo[]
+    } catch { return [] }
   }, [])
 
   // Initial load: fetch configs + resolve selected from localStorage
   useEffect(() => {
     let cancelled = false
     fetchConfigs().then((configs) => {
-      if (cancelled || !configs) return
+      if (cancelled) return
       const stored = (() => { try { return localStorage.getItem(LS_KEY) } catch { return null } })()
-      if (stored && configs.find((c) => c.id === stored)) {
-        setSelectedAgentId(stored)
-      } else if (configs.length > 0) {
-        // Fall back to active, then first
-        const active = configs.find((c) => c.isActive) ?? configs[0]
-        setSelectedAgentId(active.id)
+      if (configs.length > 0) {
+        if (stored && configs.find((c) => c.id === stored)) {
+          setSelectedAgentId(stored)
+        } else {
+          const active = configs.find((c) => c.isActive) ?? configs[0]
+          setSelectedAgentId(active.id)
+        }
       }
       setLoading(false)
     })
