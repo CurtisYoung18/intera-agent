@@ -12,17 +12,9 @@ const AGENT_CARD_SELECT = {
 export const GET = defineRoute({
   method: 'GET',
   async handler({ repo }) {
-    let configs = await repo.agentConfig.findMany({
+    const configs = await repo.agentConfig.findMany({
       orderBy: [{ name: 'asc' }, { version: 'asc' }], select: AGENT_CARD_SELECT,
     })
-    if (configs.length === 0) {
-      await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
-      const created = await (repo.agentConfig.create as any)({
-        data: { name: 'Default', version: 1, isActive: true, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
-        select: AGENT_CARD_SELECT,
-      })
-      return apiOk({ configs: [created] })
-    }
     return apiOk({ configs })
   },
 })
