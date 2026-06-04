@@ -181,9 +181,8 @@ model Policy {
 
   name        String
   description String?
-  hook        String // "preTool" | "postTool" | "preFinalize" — @deprecated, prefer guardrailConfig.when
-  rule        String // JSON: @deprecated PolicyRule — superseded by guardrailConfig (G11)
-  guardrailConfig String? // JSON: GuardrailHook (G11 configurable guardrail primitive)
+  hook        String // "preTool" | "postTool" | "preFinalize"
+  rule        String // JSON: PolicyRule
   enabled     Boolean @default(true)
 
   createdAt DateTime @default(now())

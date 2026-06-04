@@ -21,7 +21,6 @@ import type { AuditWriter } from '@intera/shared/contracts/audit'
 import { repoForOrg, type RepoForOrg } from '@/lib/db/repo-for-org'
 import { getSession, type ActiveSession } from '@/lib/auth'
 import { logger } from '@/lib/logger'
-import { writeAudit } from '@/lib/audit'
 
 // ── Typed errors handlers can throw ──
 export class RouteError extends Error {
@@ -115,17 +114,15 @@ export function defineRoute<Input = void, Params = void>(
     req: NextRequest,
     routeCtx?: any,
   ): Promise<NextResponse> {
-    const requestId = crypto.randomUUID()
     try {
       const session = await resolveSession()
-      const log = buildLogger(session, requestId)
+      const log = buildLogger(session)
       const params = (routeCtx?.params ? await routeCtx.params : undefined) as Params
 
       // 1a. Role gate (S1 — declarative authZ in the seam)
       if (def.requireRole && !def.requireRole.includes(session.role as Role)) {
         return envelopeResponse(
           apiErr('forbidden', `${def.requireRole.join(' or ')} role required`),
-          requestId,
           403,
         )
       }
@@ -143,7 +140,7 @@ export function defineRoute<Input = void, Params = void>(
             const key = issue.path.join('.') || '_root'
             fields[key] = issue.message
           }
-          return envelopeResponse(apiErr('validation', 'Invalid input', fields), requestId, 400)
+          return envelopeResponse(apiErr('validation', 'Invalid input', fields), 400)
         }
         input = parsed.data
       }
@@ -151,14 +148,12 @@ export function defineRoute<Input = void, Params = void>(
       // 2. Build tenant-scoped repo
       const repo = repoForOrg(session.orgId)
 
-      // 3. Build audit writer — writes AuditLog via the shared seam
-      //    so agent runtime (policy.ts) can use the same writeAudit().
+      // 3. Build audit writer — currently a no-op structured logger.
+      //    Lane D (G3 identity) will wire this to the AuditLog table.
+      //    route handlers call audit({action, target, before?, after?})
+      //    and defineRoute fills in actorUserId + orgId.
       const audit: AuditWriter = async (event) => {
-        await writeAudit({
-          ...event,
-          actorUserId: session.userId ?? 'unknown',
-          orgId: session.orgId,
-        })
+        log.info('audit', { ...event, actorUserId: session.userId ?? 'unknown', orgId: session.orgId })
       }
 
       // 4. Invoke handler
@@ -176,19 +171,17 @@ export function defineRoute<Input = void, Params = void>(
       if (result.ok) {
         const { __status, ...body } = result as any
         const status = __status === 201 ? 201 : 200
-        const res = NextResponse.json(body, { status })
-        res.headers.set('x-request-id', requestId)
-        return res
+        return NextResponse.json(body, { status })
       }
-      return envelopeResponse(result, requestId)
+      return envelopeResponse(result)
     } catch (err) {
       if (isRouteError(err)) {
         const re = err as RouteError
-        logger.warn('route error', { code: re.code, message: re.message, requestId })
-        return envelopeResponse(apiErr(re.code, re.message, re.fields), requestId, re.statusOverride)
+        logger.warn('route error', { code: re.code, message: re.message })
+        return envelopeResponse(apiErr(re.code, re.message, re.fields), re.statusOverride)
       }
-      logger.error('unhandled error', { message: (err as Error).message ?? String(err), requestId })
-      return envelopeResponse(apiErr('internal', 'Internal error'), requestId, 500)
+      logger.error('unhandled error', { message: (err as Error).message ?? String(err) })
+      return envelopeResponse(apiErr('internal', 'Internal error'), 500)
     }
   }
 }
@@ -198,11 +191,11 @@ export function defineRoute<Input = void, Params = void>(
 async function resolveSession(): Promise<RouteSession> {
   const s = await getSession()
   if (!s) throw new UnauthorizedError('No valid session')
-  return { orgId: s.orgId, role: s.role, userId: s.userId }
+  return { orgId: s.orgId, role: s.role }
 }
 
-function buildLogger(session: RouteSession, requestId: string): RouteLogger {
-  const base = { requestId, orgId: session.orgId, userId: session.userId }
+function buildLogger(session: RouteSession): RouteLogger {
+  const base = { orgId: session.orgId, userId: session.userId }
   return {
     info: (msg, ctx) => logger.info(msg, { ...base, ...ctx }),
     warn: (msg, ctx) => logger.warn(msg, { ...base, ...ctx }),
@@ -210,10 +203,8 @@ function buildLogger(session: RouteSession, requestId: string): RouteLogger {
   }
 }
 
-function envelopeResponse(envelope: ApiEnvelope<unknown>, requestId: string, statusOverride?: number): NextResponse {
+function envelopeResponse(envelope: ApiEnvelope<unknown>, statusOverride?: number): NextResponse {
   const status = statusOverride ?? (envelope.ok ? 200 : errorCodeToStatus[envelope.error.code])
-  const res = NextResponse.json(envelope, { status })
-  res.headers.set('x-request-id', requestId)
-  return res
+  return NextResponse.json(envelope, { status })
 }
 

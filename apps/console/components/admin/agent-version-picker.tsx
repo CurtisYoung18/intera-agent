@@ -145,7 +145,7 @@ export default function AgentVersionPicker({
       const r = await fetch('/api/admin/agent-configs')
       const d = await r.json()
       if (!r.ok) {
-        setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('agentDrawer.loadError'))
+        setError((d.error || d.data?.error) || t('agentDrawer.loadError'))
         return
       }
       setAllVersions(d.data?.configs || d.configs || [])
@@ -181,7 +181,7 @@ export default function AgentVersionPicker({
       const r = await fetch(`/api/admin/agent-configs/${id}/activate`, { method: 'PUT' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('agentVersion.activateError'))
+        setError((d.error || d.data?.error) || t('agentVersion.activateError'))
         return
       }
       await fetchAll()
@@ -203,7 +203,7 @@ export default function AgentVersionPicker({
       const r = await fetch(`/api/admin/agent-configs/${agentId}/fork`, { method: 'POST' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('agentVersion.forkError'))
+        setError((d.error || d.data?.error) || t('agentVersion.forkError'))
         return
       }
       const cfg = d.data?.config ?? d.config
@@ -228,7 +228,7 @@ export default function AgentVersionPicker({
       const r = await fetch(`/api/admin/agent-configs/${id}`, { method: 'DELETE' })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
-        setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('agentVersion.deleteBlockedChildren'))
+        setError((d.error || d.data?.error) || t('agentVersion.deleteBlockedChildren'))
         return
       }
       // If we deleted the one currently selected, fall back to the active sibling
