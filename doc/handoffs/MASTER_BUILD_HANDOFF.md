@@ -113,6 +113,16 @@ npm run build:console                             # success, 53 static pages
 
 → [`2026-06-04-todo-41-memory-three-layer-redesign.md`](../what's%20done/2026-06-04-todo-41-memory-three-layer-redesign.md)
 → [`2026-06-04-todo-42-trace-cleanup.md`](../what's%20done/2026-06-04-todo-42-trace-cleanup.md)
+→ [`2026-06-04-sub-agent-max-iterations-config.md`](../what's%20done/2026-06-04-sub-agent-max-iterations-config.md)
+
+### Sub-agent max-iterations per-stage config
+
+**Problem:** Sub-agents inherited main agent's `maxIterations` (20), far too high for focused investigation stages (typically 3–5 turns).
+
+**Fix:** 4 edits across 3 files:
+- [stage-config-editor.tsx](apps/console/components/admin/stage-config-editor.tsx): Added `maxIterations` field to `StageCfg` interface + number input in Model panel
+- [case-types/[name]/page.tsx](apps/console/app/admin/case-types/[name]/page.tsx): Added `maxIterations` to local `StageCfg` type
+- [loop.ts](apps/console/lib/agent/loop.ts): Derives sub-agent `maxIterations` from `Math.max(...stageConfigs.*.maxIterations)`, defaults to 5
 
 ### Verification (2026-06-04)
 ```
