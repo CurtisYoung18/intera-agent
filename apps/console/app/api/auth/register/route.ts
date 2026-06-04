@@ -2,9 +2,8 @@
 //
 // Body: { email, password, name, token }
 //
-// Only accepts registration if a valid (pending, non-expired) Invitation exists
-// for the given email and token. On success, creates the User + Membership,
-// marks the invitation as accepted, and issues a signed session.
+// Accepts both email-bound invitations and share links (email-less).
+// Share links allow any email and track usage via maxUses/useCount.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { hashSync } from 'bcryptjs'
@@ -52,7 +51,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid invitation token' }, { status: 404 })
     }
 
-    if (invitation.email !== em) {
+    const isShareLink = invitation.email === null
+
+    if (!isShareLink && invitation.email !== em) {
       return NextResponse.json({ error: 'Email does not match the invitation' }, { status: 403 })
     }
 
@@ -61,12 +62,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (new Date(invitation.expiresAt) < new Date()) {
-      // Mark as expired
       await prisma.invitation.update({
         where: { id: invitation.id },
         data: { state: 'expired' },
       })
       return NextResponse.json({ error: 'Invitation has expired' }, { status: 410 })
+    }
+
+    // Share link: check usage limits
+    if (isShareLink && invitation.maxUses != null && invitation.useCount >= invitation.maxUses) {
+      return NextResponse.json({ error: 'This share link has reached its maximum number of uses' }, { status: 410 })
     }
 
     // Check if a user with this email already exists
@@ -77,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = hashSync(pwd, 10)
 
-    // Create user, membership, and mark invitation as accepted in a transaction
+    // Create user, membership, mark invitation accepted (or increment useCount for share links)
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -95,9 +100,14 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      const newUseCount = invitation.useCount + 1
+      const reachedLimit = isShareLink && invitation.maxUses != null && newUseCount >= invitation.maxUses
+
       await tx.invitation.update({
         where: { id: invitation.id },
-        data: { state: 'accepted' },
+        data: isShareLink
+          ? { useCount: newUseCount, state: reachedLimit ? 'accepted' : 'pending' }
+          : { state: 'accepted' },
       })
 
       return user

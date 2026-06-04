@@ -69,7 +69,7 @@ model AgentConfig {
   parent   AgentConfig?  @relation("AgentVersions", fields: [parentId], references: [id], onDelete: SetNull)
   children AgentConfig[] @relation("AgentVersions")
 
-  model          String  @default("claude-sonnet-4-20250514")
+  model          String
   temperature    Float   @default(0.5)
   thinkingBudget Int     @default(4096)
   maxIterations  Int     @default(20)
@@ -89,6 +89,13 @@ model AgentConfig {
   capabilityBindings String? // JSON: CapabilityBindings (guardrails/tools/caseTypes/knowledge). Unified version-bound manifest.
   gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
   invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
+
+  /// Version release note — set when a version is published/activated
+  releaseNote  String?   @map("release_note")
+  /// When this version was published (made active)
+  publishedAt  DateTime? @map("published_at")
+  /// User ID of who published this version
+  publishedBy  String?   @map("published_by")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -181,8 +188,9 @@ model Policy {
 
   name        String
   description String?
-  hook        String // "preTool" | "postTool" | "preFinalize"
-  rule        String // JSON: PolicyRule
+  hook        String // "preTool" | "postTool" | "preFinalize" — @deprecated, prefer guardrailConfig.when
+  rule        String // JSON: @deprecated PolicyRule — superseded by guardrailConfig (G11)
+  guardrailConfig String? // JSON: GuardrailHook (G11 configurable guardrail primitive)
   enabled     Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -573,12 +581,14 @@ model AuditLog {
 // ============================================
 model Invitation {
   id        String   @id @default(cuid())
-  email     String
+  email     String?  // null = share link (anyone can use); non-null = email-bound invite
   orgId     String   @map("org_id")
   invitedBy String   @map("invited_by")
   role      String   @default("viewer") // owner|admin|operator|viewer
   token     String   @unique
   state     String   @default("pending") // pending|accepted|expired
+  maxUses   Int?     // null = unlimited (only meaningful for share links)
+  useCount  Int      @default(0)
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now())
 

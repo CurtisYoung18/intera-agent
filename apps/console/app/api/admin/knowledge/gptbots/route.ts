@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@intera/shared/prisma'
 import { getActiveOrgId } from '@/lib/auth'
+import { DEFAULT_MODEL } from '@intera/shared/defaults'
 
 const GPTBOTS_KB_API = 'https://api-sg.gptbots.ai/v1/bot/knowledge/base/page'
 
@@ -57,7 +58,7 @@ export async function PUT(req: NextRequest) {
       })
     } else {
       await prisma.agentConfig.create({
-        data: { orgId, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+        data: { orgId, model: DEFAULT_MODEL, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
       })
     }
     return NextResponse.json({ ok: true })

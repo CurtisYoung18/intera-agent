@@ -103,7 +103,7 @@ function LoginForm() {
             <h2 className={styles.formTitle}>{invite ? "You've been invited" : 'Welcome back'}</h2>
             <p className={styles.formDesc}>
               {invite
-                ? 'Sign in with your invited email to join the organization. Use the same email your admin sent the invitation to.'
+                ? "You've been invited to join an organization. Sign in to accept."
                 : 'Sign in to manage your agents and conversations.'}
             </p>
           </div>

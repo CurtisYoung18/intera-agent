@@ -9,6 +9,7 @@ import { PrismaClient } from '@prisma/client'
 
 import { hashSync } from 'bcryptjs'
 import {
+  DEFAULT_MODEL,
   DEFAULT_SYSTEM_PROMPT,
   CORE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
@@ -258,7 +259,7 @@ async function seed() {
   // ── Demo Org config ──
   console.log('\n── Demo Org ──')
   await seedVendorConfig('default', {
-    model: 'MiniMax-M2.7-highspeed',
+    model: DEFAULT_MODEL,
     temperature: 0.5,
     maxIterations: 20,
     showThinking: true,

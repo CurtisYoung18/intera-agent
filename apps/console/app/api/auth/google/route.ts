@@ -1,10 +1,11 @@
 // GET /api/auth/google — Initiate Google OAuth flow.
 // Redirects directly to Google's authorization page (302).
+// Accepts ?invite=<token> to pass through to callback for share-link acceptance.
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { signCsrfCookie } from '@/lib/auth/google'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const redirectUri = process.env.GOOGLE_REDIRECT_URI
 
@@ -15,6 +16,7 @@ export async function GET() {
     )
   }
 
+  const inviteToken = req.nextUrl.searchParams.get('invite')
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   const nonce = crypto.randomUUID()
 
@@ -28,8 +30,9 @@ export async function GET() {
 
   // Sign the CSRF state cookie first, then set state in the URL
   const state = crypto.randomUUID()
-  const csrfValue = await signCsrfCookie(state)
-  if (!csrfValue) {
+  const csrfValue = inviteToken ? `${state}:${inviteToken}` : state
+  const csrfSign = await signCsrfCookie(csrfValue)
+  if (!csrfSign) {
     return NextResponse.json(
       { error: 'Server session secret not configured' },
       { status: 500 },
@@ -40,7 +43,7 @@ export async function GET() {
 
   // Redirect to Google with the CSRF cookie set
   const res = NextResponse.redirect(authUrl.toString())
-  res.cookies.set('google_oauth_state', csrfValue, {
+  res.cookies.set('google_oauth_state', csrfSign, {
     path: '/api/auth/google',
     httpOnly: true,
     secure: true,

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
-import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle, X } from 'lucide-react'
+import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle, X, Link } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, ApiClientError } from '@/lib/api/client'
 
@@ -20,10 +20,12 @@ interface Member {
 
 interface Invitation {
   id: string
-  email: string
+  email: string | null
   role: string
   state: string
   token: string
+  maxUses: number | null
+  useCount: number
   expiresAt: string
   createdAt: string
   inviter: { email: string; name: string | null } | null
@@ -206,6 +208,7 @@ function GeneralTab() {
 
 function MembersTab() {
   const { t } = useConsoleLocale()
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [loading, setLoading] = useState(true)
@@ -216,17 +219,24 @@ function MembersTab() {
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState(false)
   const [inviteToken, setInviteToken] = useState<string | null>(null)
+  const [showShareLink, setShowShareLink] = useState(false)
+  const [shareRole, setShareRole] = useState<string>('viewer')
+  const [shareMaxUses, setShareMaxUses] = useState<string>('')
+  const [shareLinkError, setShareLinkError] = useState<string | null>(null)
+  const [shareLinkToken, setShareLinkToken] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const [mRes, iRes] = await Promise.all([
+      const [mRes, iRes, sRes] = await Promise.all([
         apiClient<{ members: Member[] }>('/api/admin/members'),
         apiClient<{ invitations: Invitation[] }>('/api/admin/invitations'),
+        fetch('/api/auth/session').then(r => r.json()),
       ])
       setMembers(mRes.data.members)
       setInvitations(iRes.data.invitations)
+      setCurrentUserId(sRes.userId || null)
       setError(null)
     } catch {
       setError(t('common.failedLoad'))
@@ -260,6 +270,34 @@ function MembersTab() {
     setInviteSuccess(false)
     setInviteToken(null)
     setCopiedLink(false)
+  }
+
+  const handleCreateShareLink = async () => {
+    setShareLinkError(null)
+    try {
+      const body: Record<string, unknown> = { role: shareRole }
+      if (shareMaxUses.trim()) {
+        const n = parseInt(shareMaxUses, 10)
+        if (isNaN(n) || n < 1) { setShareLinkError('Max uses must be at least 1'); return }
+        body.maxUses = n
+      }
+      const res = await apiClient<{ invitation: { token: string } }>('/api/admin/invitations', {
+        method: 'POST',
+        body,
+      })
+      setShareLinkToken(res.data.invitation.token)
+      load()
+    } catch (err) {
+      setShareLinkError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to create share link')
+    }
+  }
+
+  const handleCloseShareLink = () => {
+    setShowShareLink(false)
+    setShareRole('viewer')
+    setShareMaxUses('')
+    setShareLinkError(null)
+    setShareLinkToken(null)
   }
 
   const handleRevoke = async (id: string) => {
@@ -309,12 +347,20 @@ function MembersTab() {
         <p className="text-[13px] text-[var(--fog)]">
           {members.length} member{members.length !== 1 ? 's' : ''} · {invitations.length} pending invitation{invitations.length !== 1 ? 's' : ''}
         </p>
-        <button
-          onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(false); setInviteToken(null); setCopiedLink(false) }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 transition-all shadow-sm"
-        >
-          <UserPlus className="w-4 h-4" /> Invite Member
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowShareLink(true); setShareLinkError(null); setShareLinkToken(null) }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border border-indigo/20 text-indigo hover:bg-indigo/[0.04] transition-all"
+          >
+            <Link className="w-4 h-4" /> Share Link
+          </button>
+          <button
+            onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(false); setInviteToken(null); setCopiedLink(false) }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 transition-all shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" /> Invite Member
+          </button>
+        </div>
       </div>
 
       {/* Members table */}
@@ -335,10 +381,10 @@ function MembersTab() {
                   <div className="text-xs text-[var(--fog)] mt-0.5">{m.user.email}</div>
                 </td>
                 <td className="px-5 py-3.5">
-                  {m.role === 'owner' ? (
-                    <span className="inline-flex items-center gap-1.5 text-[var(--mist)] bg-amber-50 border border-amber-200/50 px-2.5 py-1 rounded-lg">
-                      <Shield className="w-3.5 h-3.5 text-amber-500" />
-                      <span className="text-[12px] font-medium">Owner</span>
+                  {m.role === 'owner' || m.user.id === currentUserId ? (
+                    <span className={`inline-flex items-center gap-1.5 text-[var(--mist)] px-2.5 py-1 rounded-lg border ${m.role === 'owner' ? 'bg-amber-50 border-amber-200/50' : 'bg-slate-50 border-slate-200/50'}`}>
+                      <Shield className={`w-3.5 h-3.5 ${m.role === 'owner' ? 'text-amber-500' : 'text-slate-400'}`} />
+                      <span className="text-[12px] font-medium">{ROLE_LABELS[m.role] || m.role}</span>
                     </span>
                   ) : (
                     <select
@@ -386,9 +432,22 @@ function MembersTab() {
                 {invitations.map((inv) => (
                   <tr key={inv.id} className="border-b border-black/[0.03] last:border-0">
                     <td className="px-5 py-3.5">
-                      <div className="text-[var(--mist)] font-medium">{inv.email}</div>
-                      {inv.inviter && (
-                        <div className="text-xs text-[var(--fog)] mt-0.5">Invited by {inv.inviter.name || inv.inviter.email}</div>
+                      {inv.email ? (
+                        <>
+                          <div className="text-[var(--mist)] font-medium">{inv.email}</div>
+                          {inv.inviter && (
+                            <div className="text-xs text-[var(--fog)] mt-0.5">Invited by {inv.inviter.name || inv.inviter.email}</div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <Link className="w-3.5 h-3.5 text-indigo" />
+                          <span className="text-[var(--mist)] font-medium">Share Link</span>
+                          <span className="text-[11px] text-[var(--fog)]">({ROLE_LABELS[inv.role] || inv.role})</span>
+                          {inv.maxUses != null && (
+                            <span className="text-[11px] text-[var(--fog)]">{inv.useCount}/{inv.maxUses} used</span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-5 py-3.5">
@@ -422,6 +481,98 @@ function MembersTab() {
             </table>
           </GlassCard>
         </>
+      )}
+
+      {/* Share Link modal */}
+      {showShareLink && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={handleCloseShareLink}>
+          <div
+            className="bg-white/90 backdrop-blur-xl rounded-2xl border border-white/30 shadow-2xl p-6 w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-[16px] font-semibold text-[var(--mist)]">Create Share Link</h3>
+              <button onClick={handleCloseShareLink} className="p-1.5 rounded-lg hover:bg-black/[0.04] text-[var(--fog)] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {shareLinkToken ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-green-600 text-sm py-2">
+                  <Check className="w-4 h-4" />
+                  <span className="font-medium">Share link created</span>
+                </div>
+                <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-200/50">
+                  <p className="text-[11px] font-semibold text-indigo-800 uppercase tracking-wider mb-2">Share this link</p>
+                  <p className="text-[11px] text-indigo-700 mb-3 leading-relaxed">
+                    Anyone with this link can join the organization as <strong>{ROLE_LABELS[shareRole] || shareRole}</strong>.
+                    {shareMaxUses.trim() && <span> Limited to {shareMaxUses} use{parseInt(shareMaxUses) !== 1 ? 's' : ''}.</span>}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-[11px] font-mono text-indigo-900 bg-white/60 px-3 py-2 rounded-lg border border-indigo-200/50 break-all select-all">
+                      {window.location.origin}/login?invite={shareLinkToken}
+                    </code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/login?invite=${shareLinkToken}`)
+                        setCopiedLink(true)
+                        setTimeout(() => setCopiedLink(false), 3000)
+                      }}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold bg-indigo text-white hover:bg-indigo/90 transition-all"
+                    >
+                      {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedLink ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+                <button onClick={handleCloseShareLink} className="w-full py-2.5 rounded-xl text-[13px] font-medium border border-black/10 text-[var(--fog)] hover:bg-black/[0.02] transition-colors">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--smoke)] mb-1.5 uppercase tracking-wider">Role</label>
+                  <select
+                    value={shareRole}
+                    onChange={(e) => setShareRole(e.target.value)}
+                    className="glass-input-console text-[14px] w-full"
+                  >
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[var(--smoke)] mb-1.5 uppercase tracking-wider">
+                    Max Uses <span className="text-[var(--fog)] font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={shareMaxUses}
+                    onChange={(e) => setShareMaxUses(e.target.value)}
+                    placeholder="No limit"
+                    className="glass-input-console text-[14px] w-full"
+                    min="1"
+                  />
+                </div>
+                {shareLinkError && (
+                  <div className="text-red-500 text-xs bg-red-50 px-3 py-2 rounded-lg">{shareLinkError}</div>
+                )}
+                <div className="flex gap-3 pt-2">
+                  <button onClick={handleCloseShareLink} className="flex-1 py-2.5 rounded-xl text-[13px] font-medium border border-black/[0.08] text-[var(--fog)] hover:bg-black/[0.02] transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={handleCreateShareLink} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 transition-all shadow-sm">
+                    Create Link
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Invite modal — rendered via portal for proper centering */}

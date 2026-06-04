@@ -4,9 +4,11 @@
 import { z } from 'zod'
 import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
+import { DEFAULT_MODEL } from '@intera/shared/defaults'
 
 const AGENT_CARD_SELECT = {
   id: true, name: true, version: true, isActive: true, parentId: true, model: true, createdAt: true, updatedAt: true,
+  releaseNote: true, publishedAt: true, publishedBy: true,
 } as const
 
 export const GET = defineRoute({
@@ -61,7 +63,7 @@ export const POST = defineRoute<PostInput>({
 
     try {
       const created = await (repo.agentConfig.create as any)({
-        data: { name: requestedName, version: 1, isActive: true, parentId: null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+        data: { name: requestedName, version: 1, isActive: true, parentId: null, model: DEFAULT_MODEL, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
         select: AGENT_CARD_SELECT,
       })
       await audit({ action: 'agent_config.create', target: `agent_config:${created.id}`, after: created as Record<string, unknown> })
