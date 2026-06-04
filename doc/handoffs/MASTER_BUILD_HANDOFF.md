@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 (v1.4 shipped — TODO-41 + TODO-42) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-04 (v1.4 shipped — TODO-41 + TODO-42; `doc/to-do/` specs referenced into backlog) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -87,7 +87,7 @@ npm run build:console                             # success, 53 static pages
 
 ## v1.4 — 2026-06-04 — ✅ SHIPPED
 
-**Memory three-layer redesign (TODO-41) + Trace cleanup (TODO-42).** Executed by 5 parallel coding agents (Task 0 + Lane A/B/C/D), zero merge conflicts.
+**Memory three-layer redesign (TODO-41) + Trace cleanup (TODO-42) + Sub-agent max-iterations config.** Executed by 5 parallel coding agents (Task 0 + Lane A/B/C/D), zero merge conflicts.
 
 ### TODO-41 — Memory / Compact three-layer redesign
 
@@ -116,9 +116,9 @@ npm run build:console                             # success, 53 static pages
 
 ### Verification (2026-06-04)
 ```
-npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors
+npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors ✓
 npm test                                          # 36 passed, 1 known-fail (PostgreSQL), 328 tests
-npm run build:console                             # success
+npm run build:console                             # success (53 static pages)
 ```
 
 ## Active backlog
@@ -145,6 +145,16 @@ npm run build:console                             # success
 
 ### Deferred
 - **C5** Anonymous visitor identity key — needs separate exploration
+
+### Planned specs in [`doc/to-do/`](../to-do/) (for coding-team pickup)
+
+Architect-authored specs. Status verified in code 2026-06-04.
+
+| Spec | Scope | Status | Coding-team action |
+|---|---|---|---|
+| [`sub-agent-max-iterations-config.md`](../to-do/sub-agent-max-iterations-config.md) | Per-stage `maxIterations` for sub-agents (UI field → `stageConfigs` JSON → `loop.ts` builder). | 🟢 **SHIPPED 2026-06-04.** 4 edits: `stage-config-editor.tsx` (type + UI), `case-types/[name]/page.tsx` (type), `loop.ts` (builder). | ✅ Done. |
+| [`2026-06-01-multi-agent-multi-org-plan.md`](../to-do/2026-06-01-multi-agent-multi-org-plan.md) | Phase C: 1 org → N AgentConfig, User table + multi-org membership/login. | 🟡 **Partially shipped.** C1 (AgentConfig 1:N) ✅ v1.3, C2 (ApiKey.agentConfigId) ✅ v1.1. C3 (User table) + C4 (membership/invite) **unbuilt** — no `User` model. | Only C3/C4 remain. C3 changes the login model (org-password → email/User) — needs architect sign-off before build. Doc reconciled with reality 2026-06-04. |
+| [`2026-06-03-version-bound-config-blueprint-redesign.md`](../to-do/2026-06-03-version-bound-config-blueprint-redesign.md) | Version-bound `capabilityBindings` + library/blueprint redesign (4 architecture decisions D1–D6). | ⚪ **Already SHIPPED as v1.3 / TODO-40.** This is the *source plan*, not backlog. | **Do NOT re-execute.** Move to [`doc/what's done/`](../what's%20done/); kept here only as design reference. |
 
 ## v1.3 — 2026-06-03 — ✅ SHIPPED
 

@@ -1180,6 +1180,15 @@ export class AgentLoop {
                 ? `[Case Agent: ${ctRow.displayName}]\n\n## SOP\n${sopDoc}\n\n## Goal\n${casePrompt}\n\nFollow the SOP. Use todo_write to plan, then execute each step. Call finalize_case when done.`
                 : `[Case Agent: ${ctRow.displayName}]\n\n## Goal\n${casePrompt}\n\nInvestigate through these stages: ${stages.join(' → ')}. Call finalize_case when resolved.`
 
+              // Resolve maxIterations from stage configs: use the max across all stages, default 5
+              let subAgentMaxIterations = 5
+              const stageMaxIterValues = Object.values(stageConfigs)
+                .map((sc) => (sc as Record<string, unknown>).maxIterations)
+                .filter((v): v is number => typeof v === 'number' && v > 0)
+              if (stageMaxIterValues.length > 0) {
+                subAgentMaxIterations = Math.max(...stageMaxIterValues)
+              }
+
               const subAgentConfig: import('@intera/shared/types').SubAgentConfig = {
                 name: `case_agent_${caseType}`,
                 model: this.deps.config.model,
@@ -1187,7 +1196,7 @@ export class AgentLoop {
                 skills: Array.from(stageSkillNames),
                 taskTemplate: taskPrompt,
                 parallel: true,
-                maxIterations: this.deps.config.maxIterations,
+                maxIterations: subAgentMaxIterations,
                 fallbackModel: this.deps.config.fallbackModel,
               }
 

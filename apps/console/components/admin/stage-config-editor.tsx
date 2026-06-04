@@ -39,6 +39,7 @@ interface StageCfg {
   systemPrompt?: string
   temperature?: number
   thinkingBudget?: number
+  maxIterations?: number
   requiredSkills?: string[]
   availableSkills?: string[]
   guardrails?: StageGuardrail[]
@@ -270,7 +271,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
               </div>
               {expandedSections.model && (
                 <div className="px-4 pb-4 space-y-3 border-t border-[var(--border-subtle)]/50 pt-3">
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-5 gap-3">
                     <label className="space-y-1 col-span-2">
                       <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Model</span>
                       <select
@@ -306,6 +307,19 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                         value={cfg.thinkingBudget ?? ''}
                         onChange={(e) => updateStage(activeStage, { thinkingBudget: e.target.value ? parseInt(e.target.value) : undefined }, stageConfigs, onChange)}
                         placeholder="4096"
+                        className="glass-input-console text-[12px] py-1.5"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Max Iterations</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        step={1}
+                        value={cfg.maxIterations ?? ''}
+                        onChange={(e) => updateStage(activeStage, { maxIterations: e.target.value ? parseInt(e.target.value) : undefined }, stageConfigs, onChange)}
+                        placeholder="5"
                         className="glass-input-console text-[12px] py-1.5"
                       />
                     </label>

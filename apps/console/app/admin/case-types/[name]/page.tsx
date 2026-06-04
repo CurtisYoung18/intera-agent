@@ -41,6 +41,7 @@ interface StageCfg {
   systemPrompt?: string
   temperature?: number
   thinkingBudget?: number
+  maxIterations?: number
   requiredSkills?: string[]
   availableSkills?: string[]
   guardrails?: unknown[]
