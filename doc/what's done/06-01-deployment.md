@@ -1,7 +1,7 @@
 # Ubuntu 自建部署 + 鉴权 + Phase B
 
 > **来源合并**: `2026-06-01-deploy-ubuntu.md` + `2026-06-01-deploy-auth-checklist.md` + `2026-06-01-workorder-local-validation-and-phase-b.md`
-> **方案**: 放弃 Railway，自建 Ubuntu 单机部署。`apps/chat` 已废弃，Console 为唯一 SaaS 应用。
+> **方案**: 自建 Ubuntu 单机部署。`apps/chat` 已废弃，Console 为唯一 SaaS 应用。
 > **状态**: 鉴权 Phase A 已完成（commit `9899c74`）。Ubuntu 部署卡在 TLS/域名/安全组，Phase B UI 待办。
 
 ---

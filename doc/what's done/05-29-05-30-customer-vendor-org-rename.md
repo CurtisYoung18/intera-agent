@@ -45,7 +45,7 @@ Phase 5: Chat API Routes (messages, livechat/webhook, cases)
 Phase 6: Console Auth + API (auth routes, admin routes, ops routes)
 Phase 7: Console UI (sidebar, admin pages, ops pages, i18n)
 Phase 8: Chat UI + Worker
-Phase 9: Environment (.env, Railway variables)
+Phase 9: Environment (.env, environment variables)
 Phase 10: Tests + Deploy
 ```
 
@@ -124,6 +124,6 @@ ALTER TABLE skills RENAME COLUMN "customerId" TO "org_id";
 2. `npx tsc --noEmit -p apps/chat && npx tsc --noEmit -p apps/console` clean
 3. `npm run build -w apps/chat && npm run build -w apps/console` 通过
 4. 单测全过
-5. Railway 部署正常
+5. 部署正常
 6. Console 侧边栏显示「Demo Org」
 7. LiveChat webhook 新 URL 正常处理

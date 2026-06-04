@@ -45,7 +45,7 @@
 → Done 2026-06-02. All routes+migrations complete, deployed to production.
 
 ### 10. Cert renewal strategy ✅ (documented)
-→ Strategy in `doc/railway-deployment.md` §10. Manual cert valid until 2026-07-22. Durable cron monitoring active.
+→ Manual cert valid until 2026-07-22. Durable cron monitoring active.
 
 ---
 
