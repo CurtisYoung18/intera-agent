@@ -347,6 +347,7 @@ model KnowledgeSource {
   topK           Int     @default(5)
   rerankVersion  String? // "Jina-reranker-v2-base-multilingual" | "BGE-Rerank" | etc.
   docCorrelation Float? // 相关性阈值 0.1-0.95
+  modelControlTopK Boolean @default(false) // 是否允许模型自行控制 topK
 
   // 可选：关联到某个 caseType（如 deposit_issue）
   caseTypeTag String?
