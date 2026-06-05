@@ -4,11 +4,12 @@
 
 import { defineRoute, ConflictError, RouteError } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
+import { emailNormalized } from '@intera/shared/contracts/auth'
 import { z } from 'zod'
 import { randomBytes } from 'node:crypto'
 
 const createInviteSchema = z.object({
-  email: z.string().email().optional(),
+  email: emailNormalized.optional(),
   role: z.enum(['admin', 'operator', 'viewer']),
   maxUses: z.number().int().min(1).max(500).optional(),
 })
