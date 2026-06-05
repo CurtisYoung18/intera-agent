@@ -21,15 +21,20 @@ vi.mock('@/lib/api-auth', () => ({
 vi.mock('@intera/shared/prisma', () => {
   // Use Proxy so repoForOrg can access any model property without crashing
   const findUniqueMock = vi.fn()
+  const findFirstMock = vi.fn()
+  // Default no-op proxy for any unlisted model — returns itself for chaining
+  const noopModel = new Proxy({}, { get: () => vi.fn() })
   return {
     prisma: new Proxy(
-      { liveChatConfig: { findUnique: findUniqueMock } },
+      {
+        liveChatConfig: { findUnique: findUniqueMock },
+        channelBinding: { findFirst: findFirstMock },
+      },
       {
         get(target, prop) {
           if (typeof prop === 'symbol') return undefined
           if (prop in target) return (target as any)[prop]
-          // Dummy model for any property repoForOrg might access
-          return {}
+          return noopModel
         },
       },
     ),

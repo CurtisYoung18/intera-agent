@@ -1,9 +1,12 @@
 // GET /api/livechat/config — Anonymous widget-facing route
-// Returns only non-sensitive fields. Migrated to defineRoute (G1 contract seam).
+// Returns only non-sensitive fields. Reads from channel_bindings (primary)
+// with livechat_configs fallback. Does NOT use getLiveChatConfig because
+// this route must return the config even when enabled=false.
+// Migrated to defineRoute (G1 contract seam).
 
 import { NextResponse } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
-import { apiOk } from '@intera/shared/contracts/envelope'
+import { prisma } from '@intera/shared/prisma'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,17 +21,35 @@ export async function OPTIONS() {
 export const GET = defineRoute({
   method: 'GET',
   auth: 'none',
-  async handler({ session, repo }) {
-    const row = await repo.liveChatConfig.findUnique({
+  async handler({ session }) {
+    // Read directly (bypass config-store enabled filter)
+    const cbRow = await prisma.channelBinding.findFirst({
+      where: { orgId: session.orgId, channel: 'livechat', agentName: null },
+      select: { enabled: true, credentials: true },
+    })
+
+    if (cbRow) {
+      let creds: Record<string, unknown> = {}
+      try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
+      return NextResponse.json({
+        orgId: session.orgId,
+        enabled: cbRow.enabled,
+        showSkillStatus: (creds.showSkillStatus as boolean) ?? true,
+        region: (creds.region as string) ?? 'dal',
+      }, { headers: CORS })
+    }
+
+    // Fall back to livechat_configs
+    const lcRow = await prisma.liveChatConfig.findUnique({
       where: { orgId: session.orgId },
       select: { enabled: true, showSkillStatus: true, region: true },
     })
 
     return NextResponse.json({
       orgId: session.orgId,
-      enabled: row?.enabled ?? false,
-      showSkillStatus: row?.showSkillStatus ?? true,
-      region: row?.region ?? 'dal',
+      enabled: lcRow?.enabled ?? false,
+      showSkillStatus: lcRow?.showSkillStatus ?? true,
+      region: lcRow?.region ?? 'dal',
     }, { headers: CORS })
   },
 })

@@ -18,6 +18,7 @@ const h = vi.hoisted(() => {
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 // Mock prisma (Proxy so repoForOrg can access any model)
+const noopModel = new Proxy({}, { get: () => vi.fn() })
 vi.mock('@intera/shared/prisma', () => ({
   prisma: new Proxy({
     liveChatConfig: {
@@ -25,8 +26,11 @@ vi.mock('@intera/shared/prisma', () => ({
         h.configs[where.orgId] ?? null,
       ),
     },
+    channelBinding: {
+      findFirst: vi.fn(async () => null), // fall through to livechat_configs
+    },
   }, {
-    get(target, prop) { if (typeof prop === 'symbol') return undefined; return (target as any)[prop] ?? {} },
+    get(target, prop) { if (typeof prop === 'symbol') return undefined; return (target as any)[prop] ?? noopModel },
   }),
 }))
 

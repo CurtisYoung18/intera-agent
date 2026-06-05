@@ -7,6 +7,7 @@ import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { sendTextMessage, deactivateChat } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
+import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import type { InteraInteractionSubmit } from '@/lib/livechat/types'
 
 function getChatPresence(body: Record<string, unknown>): string[] {
@@ -29,10 +30,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
   return defineRoute<void, { orgId: string }>({
     method: 'POST',
     auth: 'webhook',
-    async handler({ params, repo }) {
-      // Body-based secret_key validation (defineRoute only checks headers)
-      const config = await repo.liveChatConfig.findUnique({ where: { orgId: params.orgId } }) as { webhookSecret?: string | null; enabled: boolean; botAccessToken: string; licenseId: string; region: string; authType: string; accountId?: string | null; agentAccountId?: string | null; transferGroupId?: number | null; transferMessage?: string | null } | null
+    async handler({ params }) {
+      // Load config from channel_bindings (primary) with livechat_configs fallback
+      const config = await getLiveChatConfig(params.orgId)
       if (!config?.enabled) return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
+
+      // Body-based secret_key validation (defineRoute only checks headers)
       if (config.webhookSecret) {
         const payloadKey = body.secret_key as string | undefined
         if (!payloadKey || payloadKey !== config.webhookSecret) {

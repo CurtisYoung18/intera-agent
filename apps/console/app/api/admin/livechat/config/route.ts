@@ -4,6 +4,7 @@
 
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
 import { z } from 'zod'
 
 const livechatConfigSchema = z.object({
@@ -22,8 +23,8 @@ const livechatConfigSchema = z.object({
 
 export const GET = defineRoute({
   method: 'GET',
-  async handler({ session, repo }) {
-    const config = await repo.liveChatConfig.findUnique({ where: { orgId: session.orgId } })
+  async handler({ session }) {
+    const config = await getLiveChatConfig(session.orgId)
     if (!config) {
       return apiOk({ config: { orgId: session.orgId, enabled: false } })
     }
@@ -41,51 +42,17 @@ export const PUT = defineRoute({
   method: 'PUT',
   inputSchema: livechatConfigSchema,
   requireRole: ['admin', 'owner'],
-  async handler({ input, session, repo, audit }) {
-    let tokenToSave = input.botAccessToken
-    let secretToSave = input.webhookSecret ?? ''
-
+  async handler({ input, session, audit }) {
     // Preserve existing secrets when masked value is sent
     if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {
-      const existing = await repo.raw.liveChatConfig.findUnique({
-        where: { orgId: session.orgId },
-        select: { botAccessToken: true, webhookSecret: true },
-      })
-      if (input.botAccessToken === '••••••••') tokenToSave = existing?.botAccessToken ?? ''
-      if (input.webhookSecret === '••••••••') secretToSave = existing?.webhookSecret ?? ''
+      const existing = await getLiveChatConfig(session.orgId)
+      if (existing) {
+        if (input.botAccessToken === '••••••••') input.botAccessToken = existing.botAccessToken
+        if (input.webhookSecret === '••••••••') input.webhookSecret = existing.webhookSecret ?? ''
+      }
     }
 
-    await repo.liveChatConfig.upsert({
-      where: { orgId: session.orgId },
-      create: {
-        orgId: session.orgId,
-        botAccessToken: tokenToSave,
-        licenseId: input.licenseId,
-        webhookSecret: secretToSave,
-        region: input.region ?? 'dal',
-        authType: input.authType ?? 'auto',
-        accountId: input.accountId ?? null,
-        agentAccountId: input.agentAccountId ?? null,
-        showSkillStatus: input.showSkillStatus,
-        enabled: input.enabled,
-        transferGroupId: input.transferGroupId ?? null,
-        transferMessage: input.transferMessage ?? null,
-      },
-      update: {
-        botAccessToken: tokenToSave,
-        licenseId: input.licenseId,
-        webhookSecret: secretToSave,
-        region: input.region ?? 'dal',
-        authType: input.authType ?? 'auto',
-        accountId: input.accountId ?? null,
-        agentAccountId: input.agentAccountId ?? null,
-        showSkillStatus: input.showSkillStatus,
-        enabled: input.enabled,
-        transferGroupId: input.transferGroupId ?? null,
-        transferMessage: input.transferMessage ?? null,
-      },
-    })
-
+    await upsertLiveChatConfig(session.orgId, input)
     await audit({ action: 'livechat.config.update', target: `org:${session.orgId}` })
 
     return apiOk({ ok: true })

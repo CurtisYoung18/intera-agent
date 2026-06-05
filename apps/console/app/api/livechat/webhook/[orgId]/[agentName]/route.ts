@@ -1,5 +1,7 @@
 // POST /api/livechat/webhook/[orgId]/[agentName] — Per-agent LiveChat webhook
 // Migrated to defineRoute (G1 contract seam).
+// Loads per-agent channel binding (with org-default fallback) and passes
+// agentConfigId to the bridge for per-agent brain routing.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { defineRoute, UnauthorizedError, NotFoundError } from '@/lib/api/define-route'
@@ -7,6 +9,7 @@ import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { sendTextMessage, deactivateChat } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import type { InteraInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
 
 function getChatPresence(body: Record<string, unknown>): string[] {
@@ -37,7 +40,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
       })
       if (!agentConfig) throw new NotFoundError(`Agent "${decodedName}" not found or not active`)
 
-      const config = await repo.liveChatConfig.findUnique({ where: { orgId: params.orgId } }) as { webhookSecret?: string | null; enabled: boolean; botAccessToken: string; licenseId: string; region: string; authType: string; accountId?: string | null; agentAccountId?: string | null; transferGroupId?: number | null; transferMessage?: string | null } | null
+      // Load per-agent channel binding, falling back to org default
+      const config = await getLiveChatConfig(params.orgId, decodedName)
       if (!config?.enabled) return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
 
       if (config.webhookSecret) {
@@ -61,7 +65,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
       }
 
       if (action === 'incoming_chat' || action === 'incoming_event') {
-        (handleIncomingEvent as any)(chatId, params.orgId, `livechat-${chatId}`, { type: 'chat_started', presence: getChatPresence(body) }, config as any).catch(() => {})
+        (handleIncomingEvent as any)(chatId, params.orgId, `livechat-${chatId}`, { type: 'chat_started', presence: getChatPresence(body) }, config, agentConfig.id).catch(() => {})
         return NextResponse.json({ ok: true })
       }
 
@@ -76,20 +80,20 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
 
       if (eventType === 'filled_form') {
         const form = (event.form ?? event.properties ?? {}) as Record<string, unknown>
-        (handleIncomingEvent as any)(chatId, params.orgId, msgAuthor.id as string ?? `livechat-${chatId}`, { type: 'form_submit', form }, config as any).catch(() => {})
+        (handleIncomingEvent as any)(chatId, params.orgId, msgAuthor.id as string ?? `livechat-${chatId}`, { type: 'form_submit', form }, config, agentConfig.id).catch(() => {})
         return NextResponse.json({ ok: true })
       }
 
       const userMessage = event.text as string | undefined
       if (!userMessage || typeof userMessage !== 'string' || userMessage.trim().length === 0) {
-        if (action === 'incoming_chat') (handleIncomingEvent as any)(chatId, params.orgId, `livechat-${chatId}`, { type: 'chat_started', presence: getChatPresence(body) }, config as any).catch(() => {})
+        if (action === 'incoming_chat') (handleIncomingEvent as any)(chatId, params.orgId, `livechat-${chatId}`, { type: 'chat_started', presence: getChatPresence(body) }, config, agentConfig.id).catch(() => {})
         else await (sendTextMessage as any)(chatId, 'Sorry, I can only process text messages.', config as any)
         return NextResponse.json({ ok: true })
       }
 
       (handleIncomingEvent as any)(chatId, params.orgId, msgAuthor.id as string ?? `livechat-${chatId}`, {
         type: 'user_message', message: userMessage, conversationId: chatId,
-      }, config as any).catch(() => {})
+      }, config, agentConfig.id).catch(() => {})
 
       return NextResponse.json({ ok: true })
     },

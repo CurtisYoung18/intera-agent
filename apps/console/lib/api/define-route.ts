@@ -237,17 +237,30 @@ async function resolveSession(
         return { orgId, role: 'admin', authMode: 'webhook' }
       }
 
-      // External webhook: validate against org's webhookSecret in LiveChatConfig
-      const config = await prisma.liveChatConfig.findUnique({
-        where: { orgId },
-        select: { webhookSecret: true },
+      // External webhook: validate against org's webhookSecret.
+      // Read from channel_bindings (primary), fall back to livechat_configs.
+      let webhookSecret: string | null | undefined
+      const cbRow = await prisma.channelBinding.findFirst({
+        where: { orgId, channel: 'livechat', agentName: null },
+        select: { credentials: true },
       })
-      if (!config?.webhookSecret) throw new UnauthorizedError('Webhook not configured')
+      if (cbRow) {
+        let creds: Record<string, unknown> = {}
+        try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
+        webhookSecret = creds.webhookSecret as string | null | undefined
+      } else {
+        const lcRow = await prisma.liveChatConfig.findUnique({
+          where: { orgId },
+          select: { webhookSecret: true },
+        })
+        webhookSecret = lcRow?.webhookSecret
+      }
+      if (!webhookSecret) throw new UnauthorizedError('Webhook not configured')
 
       // Header-based secret validation
       const secret = req.headers.get('x-webhook-secret')
       if (secret) {
-        const a = Buffer.from(config.webhookSecret)
+        const a = Buffer.from(webhookSecret)
         const b = Buffer.from(secret)
         if (a.length !== b.length || !timingSafeEqual(a, b)) {
           throw new UnauthorizedError('Invalid webhook secret')

@@ -55,6 +55,9 @@ vi.mock('@intera/shared/prisma', () => ({
         return h.configs[where.orgId] ?? null
       }),
     },
+    channelBinding: {
+      findFirst: vi.fn(async () => null), // fall through to livechat_configs
+    },
   },
 }))
 
@@ -62,6 +65,9 @@ vi.mock('@/lib/auth', () => ({ getSession: h.mockGetSession }))
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@/lib/livechat/config-store', () => ({
   getLiveChatConfig: vi.fn(async (orgId: string) => h.configs[orgId] ?? null),
+  upsertLiveChatConfig: vi.fn(async (orgId: string, data: Record<string, unknown>) => {
+    h.configs[orgId] = { ...h.configs[orgId], ...data }
+  }),
   invalidateLiveChatConfig: vi.fn(),
 }))
 
