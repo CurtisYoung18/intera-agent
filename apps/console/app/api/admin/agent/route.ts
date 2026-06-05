@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 
 const getQuerySchema = z.object({
   agentId: z.string().optional(),
@@ -43,7 +44,7 @@ export const GET = defineRoute({
       })
     }
 
-    return apiOk({ config })
+    return apiOk({ config, resolvedModel: resolveEffectiveModel(config) })
   },
 })
 
