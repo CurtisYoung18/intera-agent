@@ -28,6 +28,12 @@ export interface PlaygroundTraceStep {
   promptData?: { systemPrompt: string; messages: unknown[] }
 }
 
+/** Bookkeeping actionTypes — excluded from stage bucketing, kept aside for F4 timing + debug JSON. */
+const BOOKKEEPING: ReadonlySet<string> = new Set([
+  'user_message', 'stream_event', 'loop_decision', 'agent_tree_node',
+  'stream_request_start', 'microcompact', 'queue_message_enqueued', 'queue_message_consumed',
+])
+
 const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; source: TraceSource }>> = {
   policy_hit: { stage: 'Guardrails', source: 'guardrails' },
   // kb_search_* tools
@@ -110,8 +116,10 @@ export function aggregateTraces(
   applicableStages?: string[],
 ): PlaygroundTraceStep[] {
   const stageMap = new Map<string, { records: TraceRecord[]; earliest: number }>()
+  const bookkeeping: TraceRecord[] = []
 
   for (const t of traces) {
+    if (BOOKKEEPING.has(t.actionType)) { bookkeeping.push(t); continue }
     const actionType = t.actionType
     let mapping = STAGE_MAP[actionType as ActionType | 'kb_search']
 
@@ -194,6 +202,18 @@ export function aggregateTraces(
             }
           }
         } catch { /* ignore parse errors */ }
+      }
+
+      // F4: Read real LLM wall-time from Iteration Snapshot payloads
+      const iterationSnapshots = bookkeeping.filter(r => r.actionType === 'loop_decision')
+      const realLlmMs = iterationSnapshots.reduce((sum, r) => {
+        try {
+          const p = JSON.parse(r.payload ?? '{}')
+          return sum + (typeof p?.llmWallMs === 'number' ? p.llmWallMs : 0)
+        } catch { return sum }
+      }, 0)
+      if (realLlmMs > 0) {
+        step.ms = realLlmMs
       }
 
       // Extract usage from llm_response

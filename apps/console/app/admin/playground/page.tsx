@@ -9,6 +9,7 @@ import {
   ChevronDown, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import type { LifecycleNotice } from '@intera/shared/types'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { apiClient } from '@/lib/api/client'
@@ -95,7 +96,7 @@ export default function PlaygroundPage() {
   const [debugMode, setDebugMode] = useState(false)
 
   const [message, setMessage] = useState('')
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string; thinking?: string; images?: AttachedImage[] }>>([])
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent' | 'system'; content: string; thinking?: string; images?: AttachedImage[]; notice?: LifecycleNotice }>>([])
   const [reply, setReply] = useState('')
   const [showThinking, setShowThinking] = useState(false)
   const thinkingAccRef = useRef('')
@@ -114,6 +115,12 @@ export default function PlaygroundPage() {
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // Refs that mirror mutable values read inside runTurn (stale-closure fix)
+  const attachedImagesRef = useRef<AttachedImage[]>([])
+  useEffect(() => { attachedImagesRef.current = attachedImages }, [attachedImages])
+  const showThinkingRef = useRef(showThinking)
+  useEffect(() => { showThinkingRef.current = showThinking }, [showThinking])
 
   /* ── Data loading ── */
 
@@ -255,19 +262,23 @@ export default function PlaygroundPage() {
     setFormRequest(null)
     setError('')
     setResponding(true)
-    const currentImages = attachedImages
+    const currentImages = attachedImagesRef.current
     setAttachedImages([])
     setChatMessages(prev => [...prev, { role: 'user' as const, content: msg, images: currentImages.length > 0 ? currentImages : undefined }])
 
     try {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
-      body.config = { debug: debugMode, showThinking }
+      body.config = { debug: debugMode, showThinking: showThinkingRef.current }
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({
           type: 'image',
           source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
         }))
+      }
+
+      const pushNotice = (notice: LifecycleNotice) => {
+        setChatMessages(prev => [...prev, { role: 'system' as const, content: '', notice }])
       }
 
       const res = await fetch('/api/admin/playground/run', {
@@ -300,16 +311,9 @@ export default function PlaygroundPage() {
             }
             else if (event.type === 'error') {
               const errData = event.data
-              if (typeof errData === 'string') {
-                try {
-                  const parsed = JSON.parse(errData)
-                  setError(`API error: ${parsed?.error?.message || parsed?.message || errData}`)
-                } catch { setError(errData) }
-              } else if (errData && typeof errData === 'object') {
-                setError((errData as any)?.error?.message || (errData as any)?.message || JSON.stringify(errData))
-              } else {
-                setError(String(errData))
-              }
+              if (typeof errData === 'string') setError(errData)
+              else if (errData && typeof errData === 'object') setError((errData as any)?.message ?? 'Unknown error')
+              else setError(String(errData))
             }
             else if (event.type === 'tool_executing') {
               const d = event.data as any
@@ -350,6 +354,11 @@ export default function PlaygroundPage() {
                 return next
               })
             }
+            else if (event.type === 'escalated') pushNotice({ kind: 'escalated', label: 'Agent escalated to a human', detail: (event.data as any)?.reason })
+            else if (event.type === 'case_created') pushNotice({ kind: 'case_created', label: `Case created: ${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` })
+            else if (event.type === 'sub_agent_start') pushNotice({ kind: 'sub_agent', label: `Sub-agent dispatched: ${(event.data as any)?.agentName ?? ''}` })
+            else if (event.type === 'human_task_created') pushNotice({ kind: 'human_task', label: 'Human task created' })
+            else if (event.type === 'retry_pending') pushNotice({ kind: 'retry', label: `Retrying (${(event.data as any)?.errorClass ?? 'transient'})…` })
           } catch { /* */ }
         }
       }
@@ -598,8 +607,29 @@ export default function PlaygroundPage() {
 
             {/* ── Chat messages ── */}
             {chatMessages.map((m, i) => (
-              <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+              <div key={i} style={{ alignSelf: m.role === 'system' ? 'center' : m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: m.role === 'system' ? '100%' : '85%' }}>
+                {m.role === 'system' && m.notice && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '6px 14px', borderRadius: 20,
+                      background: 'rgba(139,111,245,0.06)',
+                      border: '1px solid rgba(139,111,245,0.1)',
+                      fontSize: 11, color: 'var(--fog)',
+                    }}>
+                      {m.notice.kind === 'escalated' && <AlertCircle size={12} color="var(--amber)" />}
+                      {m.notice.kind === 'case_created' && <CheckCircle2 size={12} color="var(--malachite)" />}
+                      {m.notice.kind === 'sub_agent' && <Activity size={12} color="var(--indigo)" />}
+                      {m.notice.kind === 'human_task' && <Clock size={12} color="var(--amber)" />}
+                      {m.notice.kind === 'retry' && <XCircle size={12} color="var(--vermillion)" />}
+                      <span>{m.notice.label}</span>
+                      {m.notice.detail && <span style={{ opacity: 0.5 }}>— {m.notice.detail}</span>}
+                    </div>
+                  </div>
+                )}
                 {/* Per-message thinking (above agent bubble, collapsed, survives turns) */}
+                {m.role !== 'system' && (
+                  <>
                 {showThinking && m.role === 'agent' && m.thinking && (
                   <details style={{
                     padding: '10px 14px', borderRadius: 12,
@@ -672,6 +702,8 @@ export default function PlaygroundPage() {
                     </>
                   )}
                 </div>
+                  </>
+                )}
               </div>
             ))}
 

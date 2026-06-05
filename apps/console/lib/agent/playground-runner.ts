@@ -11,6 +11,7 @@ import { resolvePrompt, buildPromptContext } from './prompt-resolver'
 import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
 import { generateCaseId } from '@/lib/utils'
+import { buildModelList } from './build-model-list'
 
 /** Lightweight overrides for playground runs. Real AgentConfig is loaded from DB. */
 export interface PlaygroundConfig {
@@ -114,8 +115,9 @@ export async function* runPlaygroundTurn(input: {
     (b) => b.type === 'image' || (b as any).source?.type === 'base64',
   )
   if (hasImageBlock) {
-    const nonVisionPrefixes = ['deepseek-', 'MiniMax-']
-    const supportsVision = !nonVisionPrefixes.some((p) => resolvedModel.startsWith(p))
+    const models = buildModelList()
+    const model = models.find(m => m.name === resolvedModel || m.id === resolvedModel)
+    const supportsVision = model?.supportsVision ?? false // unknown model → block (fail-safe)
     if (!supportsVision) {
       yield {
         type: 'error',
@@ -132,7 +134,7 @@ export async function* runPlaygroundTurn(input: {
     try {
       await agentLoop.run(message, sendEvent, input.contentBlocks)
     } catch (err) {
-      pending.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
+      pending.push({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Agent loop failed' }, timestamp: new Date().toISOString() })
     } finally {
       runDone = true
       wake()

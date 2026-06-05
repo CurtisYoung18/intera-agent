@@ -44,4 +44,34 @@ describe('aggregateTraces', () => {
     expect(out).toHaveLength(5)
     expect(out.every(s => s.fired === false)).toBe(true)
   })
+
+  it('excludes bookkeeping actionTypes from Skills & tools stage (AC-C1)', () => {
+    const t0 = Date.now()
+    const traces = [
+      { caseId: 'c', actionType: 'user_message', title: 'run start', detail: '', createdAt: new Date(t0).toISOString() },
+      { caseId: 'c', actionType: 'stream_event', title: 'stream', detail: '', createdAt: new Date(t0 + 10).toISOString() },
+      { caseId: 'c', actionType: 'loop_decision', title: 'Iteration Snapshot', payload: JSON.stringify({ llmWallMs: 1200, iterationWallMs: 1500 }), detail: '', createdAt: new Date(t0 + 20).toISOString() },
+      { caseId: 'c', actionType: 'skill_result', title: 'Skill: kb_search', detail: 'ok', createdAt: new Date(t0 + 50).toISOString() },
+    ]
+    const result = aggregateTraces(traces as any, t0, false, ['Skills & tools', 'Model generation'])
+    const tools = result.find(s => s.stage === 'Skills & tools')
+    expect(tools?.fired).toBe(true)
+    // Only kb_search should appear in the summary, not Iteration Snapshot or run start
+    expect(tools?.summary).toContain('kb_search')
+    expect(tools?.summary).not.toContain('Iteration Snapshot')
+    expect(tools?.summary).not.toContain('run start')
+  })
+
+  it('uses real llmWallMs from Iteration Snapshot for Model generation ms (AC-C2)', () => {
+    const t0 = Date.now()
+    const traces = [
+      { caseId: 'c', actionType: 'loop_decision', title: 'Iteration Snapshot', payload: JSON.stringify({ llmWallMs: 1200, iterationWallMs: 1500 }), detail: '', createdAt: new Date(t0).toISOString() },
+      { caseId: 'c', actionType: 'llm_request_start', title: 'LLM request', detail: null, createdAt: new Date(t0 + 10).toISOString() },
+      { caseId: 'c', actionType: 'llm_response', title: 'LLM response', detail: JSON.stringify({ usage: { input_tokens: 100, output_tokens: 20 } }), createdAt: new Date(t0 + 200).toISOString() },
+    ]
+    const result = aggregateTraces(traces as any, t0, false, ['Model generation'])
+    const model = result.find(s => s.stage === 'Model generation')
+    expect(model?.fired).toBe(true)
+    expect(model?.ms).toBe(1200) // from llmWallMs, NOT from createdAt span
+  })
 })

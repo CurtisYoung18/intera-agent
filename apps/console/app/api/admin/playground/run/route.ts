@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       try {
         for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks: body.contentBlocks })) { send(event) }
       } catch (err) {
-        send({ type: 'error', data: err instanceof Error ? err.message : 'Internal error', timestamp: new Date().toISOString() })
+        send({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Internal error' }, timestamp: new Date().toISOString() })
       } finally { try { controller.close() } catch { /* ignore */ } }
     },
   })
