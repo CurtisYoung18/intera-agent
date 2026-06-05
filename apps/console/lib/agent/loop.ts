@@ -204,7 +204,8 @@ export class AgentLoop {
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
     await this.traceWriter.writeAgentTreeNode(agentName, 0, chainId, 'run start')
 
-    // 2. ReAct loop
+    // 2. ReAct loop — CC pattern: first LLM call runs unconditionally,
+    // end_turn exits immediately, only tool_use enters the follow-up loop.
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
     // S1 tool-result invariant: track why each tool_use didn't produce a real result
@@ -212,7 +213,7 @@ export class AgentLoop {
     const pendingPolicyFeedback: string[] = []
     const invariantCheckEnabled = this.deps.config.invariantCheck === true || (typeof process !== 'undefined' && process.env.INTERA_INVARIANT_CHECK === '1')
 
-    while (this.iterationCount < this.deps.config.maxIterations) {
+    do {
       this.iterationCount++
       this.profiler.incrementIteration()
 
@@ -1379,7 +1380,11 @@ export class AgentLoop {
           reason: 'auto_escalated_by_policy',
         }
       }
-    }
+    } while (
+      this.iterationCount < this.deps.config.maxIterations &&
+      stopReason !== 'end_turn' &&
+      stopReason !== 'max_tokens'
+    )
 
     // Max iterations reached
     await this.traceWriter.write('loop_decision', 'Exit: max iterations', {
