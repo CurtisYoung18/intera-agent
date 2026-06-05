@@ -294,10 +294,10 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
 }
 
 function TurnSection({
-  turnIdx, steps, turnMs, isExpanded, isLatest, expandedTools, onToggleTool, tb,
+  turnIdx, steps, turnMs, isExpanded, isLatest, isResponding, expandedTools, onToggleTool, tb,
 }: {
   turnIdx: number; steps: PlaygroundTraceStep[]; turnMs: number
-  isExpanded: boolean; isLatest: boolean
+  isExpanded: boolean; isLatest: boolean; isResponding: boolean
   expandedTools: Set<string>; onToggleTool: (key: string) => void
   tb: (k: string) => string
 }) {
@@ -337,7 +337,7 @@ function TurnSection({
         }}>
           Turn {turnIdx + 1}
         </span>
-        {isLatest && (
+        {isLatest && isResponding && (
           <Loader2 size={12} style={{
             color: 'var(--indigo)', animation: 'spin 1s linear infinite', flexShrink: 0,
           }} />
@@ -543,6 +543,7 @@ export default function TraceSidebar({
                 turnMs={turnTotalMs[turnIdx] || 0}
                 isExpanded={expandedTurns.has(turnIdx)}
                 isLatest={turnIdx === turnTraces.length - 1}
+                isResponding={responding}
                 expandedTools={expandedTools}
                 onToggleTool={onToggleTool}
                 tb={tb}

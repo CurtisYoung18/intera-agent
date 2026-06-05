@@ -47,8 +47,15 @@ export async function* runPlaygroundTurn(input: {
   const startTime = Date.now()
 
   // ── Persistence (Prisma, messages written through port) ──
-  const persistence = createPrismaPersistence()
   const traces: TraceRecord[] = []
+  const basePersistence = createPrismaPersistence()
+  const persistence: typeof basePersistence = {
+    ...basePersistence,
+    async saveTrace(record: TraceRecord) {
+      traces.push(record)
+      await basePersistence.saveTrace(record)
+    },
+  }
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId, input.configId)
