@@ -67,7 +67,7 @@ export async function loadAgentConfig(
   try {
     const dbConfig = agentConfigId
       ? await prisma.agentConfig.findUnique({ where: { id: agentConfigId } })
-      : await prisma.agentConfig.findFirst({ where: { orgId, isActive: true } })
+      : await prisma.agentConfig.findFirst({ where: { orgId, name: 'Default', isActive: true } })
 
     if (dbConfig) {
       const r = dbConfig as Record<string, unknown>

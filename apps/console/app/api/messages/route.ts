@@ -182,6 +182,7 @@ export async function POST(request: NextRequest) {
           formResult,
           interactionResult,
           caseId,
+          configId: bodyConfigId,
           orgId,
           userId,
           userLabel,
@@ -189,6 +190,10 @@ export async function POST(request: NextRequest) {
           caseType: bodyCaseType,
           bootstrapNewCase: rawBootstrapNewCase,
         } = body
+
+        // Session-based requests (web/playground) pass agentConfigId via body;
+        // API-key and internal calls get it from the auth layer.
+        const resolvedAgentConfigId = authAgentConfigId || (typeof bodyConfigId === 'string' ? bodyConfigId : null)
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
 
@@ -314,7 +319,7 @@ export async function POST(request: NextRequest) {
             resolvedUserId = task.case.userId
 
             const resumeTmpl =
-              (await loadAgentConfig(resolvedOrgId, authAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+              (await loadAgentConfig(resolvedOrgId, resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
             const parts = ['[Human task resolved — operator closed the case]']
             if (task.verdict) parts.push(`Operator verdict: ${task.verdict.replace(/_/g, ' ')}`)
             if (task.expectedEta) parts.push(`Expected resolution time: ${task.expectedEta}`)
@@ -531,7 +536,7 @@ export async function POST(request: NextRequest) {
                   orderBy: { resolvedAt: 'desc' },
                 })
                 if (resolvedTask) {
-                  const resumeTmpl = (await loadAgentConfig(resolvedOrgId, authAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+                  const resumeTmpl = (await loadAgentConfig(resolvedOrgId, resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
                   const parts = ['[Human task resolved — operator reviewed your case]']
                   if (resolvedTask.verdict) parts.push(`Operator verdict: ${resolvedTask.verdict.replace(/_/g, ' ')}`)
                   if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
@@ -630,7 +635,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const agentConfig = await loadAgentConfig(resolvedOrgId, authAgentConfigId)
+        const agentConfig = await loadAgentConfig(resolvedOrgId, resolvedAgentConfigId)
 
         // Load tool summaries for {{available_tools}} template var
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
