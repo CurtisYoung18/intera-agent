@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
-  Shield, Brain, Search, Puzzle, ExternalLink, Wrench, Activity,
+  Shield, Brain, Search, Puzzle, ExternalLink, Activity,
   ChevronDown, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
@@ -995,178 +995,108 @@ export default function PlaygroundPage() {
           overflow: 'hidden',
         }}>
           <SidebarSection
-            title="Live activity"
-            icon={<Wrench size={11} />}
-            count={liveTools.length}
-            maxHeight={260}
+            title="Trace"
+            icon={<Activity size={11} />}
+            count={liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)}
           >
-            {/* Aggregate token/timing summary — always visible */}
+            {/* ── Aggregate summary bar ── */}
             {(() => {
-              let totalInput = 0, totalOutput = 0
+              let totalInput = 0, totalOutput = 0, totalTools = 0
               for (const steps of turnTraces) {
                 for (const step of steps) {
                   if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
+                  if (step.stage === 'Skills & tools') totalTools++
                 }
               }
               const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)
-              if (totalInput > 0 || totalOutput > 0) {
-                return (
-                  <div style={{ fontSize: 9, color: 'var(--fog)', padding: '4px 0', fontVariantNumeric: 'tabular-nums', display: 'flex', gap: 6 }}>
-                    <span>↑{totalInput} ↓{totalOutput}</span><span style={{opacity:0.3}}>·</span><span>{totalMs}ms</span><span style={{opacity:0.3}}>·</span><span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
-                  </div>
-                )
-              }
-              return null
+              if (totalInput === 0 && totalOutput === 0 && totalTools === 0) return null
+              return (
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: '4px 10px',
+                  padding: '6px 8px', borderRadius: 8,
+                  background: 'rgba(139,111,245,0.04)', border: '1px solid rgba(139,111,245,0.08)',
+                  fontSize: 9, color: 'var(--fog)', fontVariantNumeric: 'tabular-nums',
+                }}>
+                  <span>↑{totalInput} ↓{totalOutput} tokens</span>
+                  <span style={{ opacity: 0.3 }}>·</span>
+                  <span>{totalMs}ms</span>
+                  {totalTools > 0 && (<><span style={{ opacity: 0.3 }}>·</span><span>{totalTools} tools</span></>)}
+                  <span style={{ opacity: 0.3 }}>·</span>
+                  <span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
+                </div>
+              )
             })()}
 
-            {liveTools.length === 0 ? (
-              <SidebarEmpty>Tools called by the agent will appear here.</SidebarEmpty>
+            {/* ── Timeline entries ── */}
+            {turnTraces.length === 0 && liveTools.length === 0 ? (
+              <SidebarEmpty>Send a message to see the trace.</SidebarEmpty>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* Live tools (during streaming) */}
                 {liveTools.map((t, i) => {
                   const toolKey = `tool-${i}`
                   const expanded = !collapsedTraces.has(toolKey)
                   return (
-                  <div key={toolKey}>
-                    <div
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '8px 10px', borderRadius: 10,
-                        background: 'rgba(255,255,255,0.55)',
-                        border: '1px solid var(--border-subtle)',
-                        cursor: (t.status === 'done' || t.status === 'error') ? 'pointer' : 'default',
-                      }}
-                      onClick={() => {
-                        if (t.status === 'done' || t.status === 'error') {
-                          setCollapsedTraces(prev => {
-                            const next = new Set(prev)
-                            if (next.has(toolKey)) { next.delete(toolKey) } else { next.add(toolKey) }
-                            return next
-                          })
-                        }
-                      }}
-                    >
-                    {t.status === 'running' ? (
-                      <OrganicLoader icon="spin" size={14} className="text-indigo" />
-                    ) : (
-                      <StatusDot status={t.status === 'error' ? 'error' : 'ok'} size={10} />
-                    )}
-                    <span style={{
-                      fontSize: 11, fontWeight: 500, color: 'var(--mist)', flex: 1,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>
-                      {t.name}
-                    </span>
-                    <span style={{
-                      fontSize: 9, color: 'var(--smoke)',
-                      fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-                    }}>
-                      {t.status === 'running'
-                        ? 'running…'
-                        : t.finishedAt
-                          ? `${t.finishedAt - t.startedAt}ms`
-                          : ''}
-                    </span>
-                  </div>
-                  {expanded && (t.status === 'done' || t.status === 'error') && t.result !== undefined && (
-                    <div style={{
-                      marginLeft: 28, marginTop: 2, marginBottom: 4,
-                      padding: '6px 10px', borderRadius: 8,
-                      background: 'rgba(0,0,0,0.03)',
-                      border: '1px solid var(--border-subtle)',
-                      fontSize: 10, color: 'var(--fog)',
-                      maxHeight: 160, overflow: 'auto',
-                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                      fontFamily: 'monospace',
-                    }}>
-                      {typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)}
+                    <div key={toolKey}>
+                      <div
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '8px 10px', borderRadius: 10,
+                          background: 'rgba(255,255,255,0.55)',
+                          border: '1px solid var(--border-subtle)',
+                          cursor: (t.status === 'done' || t.status === 'error') ? 'pointer' : 'default',
+                        }}
+                        onClick={() => {
+                          if (t.status === 'done' || t.status === 'error') {
+                            setCollapsedTraces(prev => {
+                              const next = new Set(prev)
+                              if (next.has(toolKey)) { next.delete(toolKey) } else { next.add(toolKey) }
+                              return next
+                            })
+                          }
+                        }}
+                      >
+                        {t.status === 'running' ? (
+                          <OrganicLoader icon="spin" size={14} className="text-indigo" />
+                        ) : (
+                          <StatusDot status={t.status === 'error' ? 'error' : 'ok'} size={10} />
+                        )}
+                        <span style={{
+                          fontSize: 11, fontWeight: 500, color: 'var(--mist)', flex: 1,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {t.name}
+                        </span>
+                        <span style={{
+                          fontSize: 9, color: 'var(--smoke)',
+                          fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+                        }}>
+                          {t.status === 'running'
+                            ? 'running…'
+                            : t.finishedAt
+                              ? `${t.finishedAt - t.startedAt}ms`
+                              : ''}
+                        </span>
+                      </div>
+                      {expanded && (t.status === 'done' || t.status === 'error') && t.result !== undefined && (
+                        <div style={{
+                          marginLeft: 28, marginTop: 2, marginBottom: 4,
+                          padding: '6px 10px', borderRadius: 8,
+                          background: 'rgba(0,0,0,0.03)',
+                          border: '1px solid var(--border-subtle)',
+                          fontSize: 10, color: 'var(--fog)',
+                          maxHeight: 160, overflow: 'auto',
+                          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                          fontFamily: 'monospace',
+                        }}>
+                          {typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  </div>
-                )})}
-                {/* ── RenderHint display for completed tools ── */}
-                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
-                  const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.["web-chat"] || null
-                  if (!hint) return null
-                  return (
-                    <RenderHintCard
-                      key={`hint-${i}`}
-                      hint={hint}
-                      result={t.result}
-                      onSubmit={(values) => {
-                        const msg = JSON.stringify(values, null, 2)
-                        runTurn(msg)
-                      }}
-                    />
                   )
                 })}
-              </div>
-            )}
-          </SidebarSection>
 
-          <SidebarSection
-            title="Behavior trace"
-            icon={<Activity size={11} />}
-            count={turnTraces.reduce((sum, t) => sum + t.length, 0)}
-            flex={1}
-          >
-            {turnTraces.length === 0 || turnTraces.every(t => t.length === 0) ? (
-              <SidebarEmpty>Send a message to see the behavior trace.</SidebarEmpty>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {/* ── Aggregate stats summary ── */}
-                {(() => {
-                  let totalInput = 0, totalOutput = 0, totalTools = 0
-                  for (const steps of turnTraces) {
-                    for (const step of steps) {
-                      if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
-                      if (step.stage === 'Skills & tools') totalTools++
-                    }
-                  }
-                  const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)
-                  if (totalInput === 0 && totalOutput === 0 && totalTools === 0) return null
-                  return (
-                    <div style={{
-                      display: 'flex', flexWrap: 'wrap', gap: '4px 10px',
-                      padding: '6px 8px', borderRadius: 8,
-                      background: 'rgba(139,111,245,0.04)', border: '1px solid rgba(139,111,245,0.08)',
-                      fontSize: 9, color: 'var(--fog)', fontVariantNumeric: 'tabular-nums',
-                    }}>
-                      <span>↑{totalInput} ↓{totalOutput} tokens</span>
-                      <span style={{ opacity: 0.3 }}>·</span>
-                      <span>{totalMs}ms</span>
-                      {totalTools > 0 && (<><span style={{ opacity: 0.3 }}>·</span><span>{totalTools} tools</span></>)}
-                      <span style={{ opacity: 0.3 }}>·</span>
-                      <span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
-                    </div>
-                  )
-                })()}
-
-                {/* ── Show skipped toggle ── */}
-                {(() => {
-                  let totalSkipped = 0
-                  for (const steps of turnTraces) {
-                    for (const step of steps) {
-                      if (step.fired === false) totalSkipped++
-                    }
-                  }
-                  if (totalSkipped === 0) return null
-                  return (
-                    <button
-                      onClick={() => setShowSkipped(v => !v)}
-                      style={{
-                        fontSize: 9, fontWeight: 500, color: showSkipped ? 'var(--lavender)' : 'var(--fog)',
-                        background: showSkipped ? 'rgba(139,111,245,0.06)' : 'transparent',
-                        border: showSkipped ? '1px solid rgba(139,111,245,0.12)' : '1px solid transparent',
-                        padding: '2px 8px', borderRadius: 6,
-                        cursor: 'pointer', alignSelf: 'flex-start',
-                      }}
-                    >
-                      {showSkipped ? 'Hide skipped' : `Show skipped (${totalSkipped})`}
-                    </button>
-                  )
-                })()}
-
+                {/* Trace steps (after turn completes) */}
                 {turnTraces.map((steps, turnIdx) => {
                   const filteredSteps = steps.filter((s: any) => showSkipped || s.fired !== false)
                   if (filteredSteps.length === 0) return null
@@ -1266,6 +1196,48 @@ export default function PlaygroundPage() {
                         )
                       })}
                     </div>
+                  )
+                })}
+
+                {/* ── Show skipped toggle ── */}
+                {(() => {
+                  let totalSkipped = 0
+                  for (const steps of turnTraces) {
+                    for (const step of steps) {
+                      if (step.fired === false) totalSkipped++
+                    }
+                  }
+                  if (totalSkipped === 0) return null
+                  return (
+                    <button
+                      onClick={() => setShowSkipped(v => !v)}
+                      style={{
+                        fontSize: 9, fontWeight: 500, color: showSkipped ? 'var(--lavender)' : 'var(--fog)',
+                        background: showSkipped ? 'rgba(139,111,245,0.06)' : 'transparent',
+                        border: showSkipped ? '1px solid rgba(139,111,245,0.12)' : '1px solid transparent',
+                        padding: '2px 8px', borderRadius: 6,
+                        cursor: 'pointer', alignSelf: 'flex-start',
+                      }}
+                    >
+                      {showSkipped ? 'Hide skipped' : `Show skipped (${totalSkipped})`}
+                    </button>
+                  )
+                })()}
+
+                {/* ── RenderHint display for completed tools ── */}
+                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
+                  const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.["web-chat"] || null
+                  if (!hint) return null
+                  return (
+                    <RenderHintCard
+                      key={`hint-${i}`}
+                      hint={hint}
+                      result={t.result}
+                      onSubmit={(values) => {
+                        const msg = JSON.stringify(values, null, 2)
+                        runTurn(msg)
+                      }}
+                    />
                   )
                 })}
               </div>
