@@ -47,11 +47,13 @@ export function getProviderConfig(model?: string): ProviderConfig {
       provider: 'openrouter',
     }
   }
-  // Default: Anthropic (or Anthropic-compatible proxy — currently MiniMax)
+  // Default: DeepSeek (same key as DEFAULT_MEMORY_MODEL).
+  // All known model prefixes (claude-, deepseek-, MiniMax-, provider/) are
+  // matched above. This fallback only catches unknown/unprefixed models.
   return {
-    apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
-    baseURL: process.env.ANTHROPIC_BASE_URL,
-    provider: 'anthropic',
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/anthropic',
+    provider: 'deepseek',
   }
 }
 
