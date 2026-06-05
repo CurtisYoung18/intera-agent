@@ -118,6 +118,7 @@ import { runPlaygroundTurn } from '@/lib/agent/playground-runner'
 import { TraceWriter } from '@/lib/agent/trace'
 import { SkillRouter } from '@/lib/agent/skills'
 import { OrchestratorAgent } from '@/lib/agent/orchestrator'
+import { createMemoryPersistence } from '@/lib/agent/persistence-port'
 
 async function drainPlayground(message: string) {
   const events: unknown[] = []
@@ -168,18 +169,30 @@ describe('Playground isolation (end-to-end, dry-run)', () => {
   })
 })
 
-describe('TraceWriter dry-run gate', () => {
-  it('does NOT write actionTrace when dryRun=true', async () => {
+describe('TraceWriter persistence-port gate', () => {
+  it('does NOT write actionTrace to DB when using memory persistence', async () => {
     h.writes.length = 0
-    const w = new TraceWriter('case1', true)
+    const { port } = createMemoryPersistence()
+    const w = new TraceWriter('case1', port)
     await w.write('loop_decision', 'test')
     await new Promise((r) => setTimeout(r, 5))
     expect(h.writes).toHaveLength(0)
   })
 
-  it('DOES write actionTrace when dryRun=false', async () => {
+  it('DOES write actionTrace when using prisma-backed persistence', async () => {
     h.writes.length = 0
-    const w = new TraceWriter('case1', false)
+    // Simulate the Prisma persistence path by writing a port that calls the
+    // mocked prisma (same as createPrismaPersistence does in production).
+    const { prisma } = await import('@intera/shared/prisma')
+    const port = {
+      ensureCase: async () => {},
+      saveMemory: async () => {},
+      saveMessages: async () => {},
+      saveTrace: async (record: any) => { await (prisma as any).actionTrace.create({ data: record }) },
+      createHumanTask: async () => {},
+      flush: async () => {},
+    }
+    const w = new TraceWriter('case1', port)
     await w.write('loop_decision', 'test')
     await new Promise((r) => setTimeout(r, 5))
     expect(h.writes).toContain('actionTrace.create')

@@ -1,10 +1,11 @@
 // Intera Harness - Trace Writer
 // Based on architecture doc: Trace / 可观测性
 //
-// Writes all agent actions to ActionTrace table via Prisma.
-// Fire-and-forget pattern: DB writes never block the agent loop.
+// Writes all agent actions through the PersistencePort seam.
+// Production → Prisma, Playground → in-memory. Fire-and-forget.
+// Single contract: payload is JSON.stringify'd (matches Prisma column shape).
 
-import { prisma } from '@intera/shared/prisma'
+import type { PersistencePort } from './persistence-port'
 
 export type ActionType =
   | 'user_message'
@@ -49,14 +50,7 @@ export interface TraceEntry {
 export class TraceWriter {
   private chatId: string | null = null
 
-  /**
-   * @param caseId  Case this writer traces.
-   * @param dryRun  When true (playground), trace entries are returned to callers
-   *                but NEVER persisted to the DB. The playground collects its
-   *                timeline from the SSE event stream instead, so DB actionTrace
-   *                rows must not be written for dry-run turns.
-   */
-  constructor(private caseId: string, private dryRun: boolean = false) {}
+  constructor(private caseId: string, private persistence: PersistencePort) {}
 
   /** Set the chatId for all subsequent trace writes. */
   setChatId(chatId: string | null): void {
@@ -82,24 +76,16 @@ export class TraceWriter {
       entry.payload = detailOrPayload as Record<string, unknown>
     }
 
-    // Dry-run (playground): never persist trace rows to the DB.
-    if (this.dryRun) return entry
-
-    // Fire-and-forget: never block the agent loop on trace writes
-    prisma.actionTrace
-      .create({
-        data: {
-          caseId: entry.caseId,
-          chatId: this.chatId,
-          actionType: entry.actionType,
-          title: entry.title,
-          detail: entry.detail || null,
-          payload: entry.payload ? JSON.stringify(entry.payload) : null,
-        },
-      })
-      .catch((err) =>
-        console.error(`[TraceWriter] DB write failed (${actionType}):`, err),
-      )
+    // Single seam: prod → Prisma, playground → in-memory. Fire-and-forget (never block the loop).
+    this.persistence.saveTrace({
+      id: entry.id,
+      caseId: entry.caseId,
+      chatId: this.chatId,
+      actionType: entry.actionType,
+      title: entry.title,
+      detail: entry.detail ?? null,
+      payload: entry.payload ? JSON.stringify(entry.payload) : null,
+    }).catch((err) => console.error(`[TraceWriter] saveTrace failed (${actionType}):`, err))
 
     return entry
   }

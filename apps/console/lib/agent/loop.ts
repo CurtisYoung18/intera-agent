@@ -115,12 +115,13 @@ export class AgentLoop {
   constructor(private deps: AgentLoopDeps) {
     this.chatMemory = new ChatMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.skillRouter = new SkillRouter(deps.orgId)
-    this.traceWriter = new TraceWriter(deps.caseId, deps.dryRun ?? false)
-    if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.abortController = new AbortController()
     this.anthropicClient = createAgentClient(deps.config.model)
-    // Persistence port — defaults to Prisma if not injected (playground injects memory port)
+    // Persistence port — defaults to Prisma if not injected (playground injects memory port).
+    // Must be assigned BEFORE TraceWriter so the writer can route through the port.
     this.persistence = deps.persistence || (() => { const { createPrismaPersistence } = require('./persistence-port'); return createPrismaPersistence() })()
+    this.traceWriter = new TraceWriter(deps.caseId, this.persistence)
+    if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.dryRun = deps.dryRun ?? false
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
