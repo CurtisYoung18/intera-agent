@@ -56,7 +56,6 @@ const QUICK_STARTS = [
 ]
 
 const TRACE_ICONS: Record<string, typeof AlertCircle> = {
-  intent_classify: Brain,
   policy_hit: Shield,
   skill_called: Puzzle,
   skill_result: CheckCircle2,
@@ -116,6 +115,7 @@ export default function PlaygroundPage() {
   const [turnTraces, setTurnTraces] = useState<any[][]>([])
   const turnNumRef = useRef(0)
   const [collapsedTraces, setCollapsedTraces] = useState<Set<string>>(new Set())
+  const [showSkipped, setShowSkipped] = useState(false)
   const [error, setError] = useState('')
 
   const composerRef = useRef<HTMLInputElement>(null)
@@ -243,21 +243,10 @@ export default function PlaygroundPage() {
             }
             else if (event.type === 'trace') {
               const t = event.data.trace || []
-              const turnKey = turnNumRef.current
               setTurnTraces(prev => {
                 const next = [...prev]
                 if (next.length > 0) next[next.length - 1] = t
                 return next
-              })
-              // Auto-collapse items with no events (0ms, empty summary)
-              const empty = new Set<string>()
-              t.forEach((item: any, i: number) => {
-                if (!item.ms && (!item.summary || item.summary === '(no events)')) empty.add(`${turnKey}-${i}`)
-              })
-              setCollapsedTraces(prev => {
-                const merged = new Set(prev)
-                for (const k of empty) merged.add(k)
-                return merged
               })
             }
           } catch { /* */ }
@@ -831,8 +820,34 @@ export default function PlaygroundPage() {
               <SidebarEmpty>Send a message to see the behavior trace.</SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* ── Show skipped toggle ── */}
+                {(() => {
+                  let totalSkipped = 0
+                  for (const steps of turnTraces) {
+                    for (const step of steps) {
+                      if (step.fired === false) totalSkipped++
+                    }
+                  }
+                  if (totalSkipped === 0) return null
+                  return (
+                    <button
+                      onClick={() => setShowSkipped(v => !v)}
+                      style={{
+                        fontSize: 9, fontWeight: 500, color: showSkipped ? 'var(--lavender)' : 'var(--fog)',
+                        background: showSkipped ? 'rgba(139,111,245,0.06)' : 'transparent',
+                        border: showSkipped ? '1px solid rgba(139,111,245,0.12)' : '1px solid transparent',
+                        padding: '2px 8px', borderRadius: 6,
+                        cursor: 'pointer', alignSelf: 'flex-start',
+                      }}
+                    >
+                      {showSkipped ? 'Hide skipped' : `Show skipped (${totalSkipped})`}
+                    </button>
+                  )
+                })()}
+
                 {turnTraces.map((steps, turnIdx) => {
-                  if (steps.length === 0) return null
+                  const filteredSteps = steps.filter((s: any) => showSkipped || s.fired !== false)
+                  if (filteredSteps.length === 0) return null
                   const turnKey = turnIdx + 1
                   return (
                     <div key={turnIdx}>
@@ -844,9 +859,9 @@ export default function PlaygroundPage() {
                       }}>
                         Turn {turnKey}
                       </div>
-                      {steps.map((step: any, i: number) => {
+                      {filteredSteps.map((step: any, i: number) => {
                         const Icon = TRACE_ICONS[step.actionType] || Puzzle
-                        const isEmpty = !step.ms && (!step.summary || step.summary === '(no events)')
+                        const skipping = step.status === 'skipped' || step.fired === false
                         const ck = `${turnKey}-${i}`
                         const collapsed = collapsedTraces.has(ck)
                         return (
@@ -858,7 +873,7 @@ export default function PlaygroundPage() {
                                 borderRadius: 8,
                                 fontSize: 12,
                                 cursor: 'pointer',
-                                opacity: collapsed ? 0.45 : 1,
+                                opacity: collapsed ? 0.45 : skipping ? 0.4 : 1,
                                 transition: 'all 0.15s',
                               }}
                               onClick={() => {
@@ -869,7 +884,7 @@ export default function PlaygroundPage() {
                                 })
                               }}
                               onMouseEnter={e => { if (collapsed) e.currentTarget.style.opacity = '0.7' }}
-                              onMouseLeave={e => { if (collapsed) e.currentTarget.style.opacity = '0.45' }}
+                              onMouseLeave={e => { if (collapsed) e.currentTarget.style.opacity = skipping ? '0.4' : '0.45' }}
                             >
                               <div style={{
                                 width: collapsed ? 16 : 22, height: collapsed ? 16 : 22, borderRadius: 6,
@@ -890,38 +905,34 @@ export default function PlaygroundPage() {
                                 color: 'var(--fog)', flex: 1, fontSize: 11,
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               }}>
-                                {collapsed ? (isEmpty ? '(no events)' : step.summary || step.title) : (step.summary || step.title)}
+                                {collapsed
+                                  ? (skipping ? 'skipped' : step.summary || step.title)
+                                  : (step.summary || step.title || (skipping ? 'skipped' : ''))}
                               </span>
                               <span style={{ fontSize: 9, color: 'var(--smoke)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                                 {step.usage ? `↑${step.usage.inputTokens} ↓${step.usage.outputTokens} · ` : ''}{step.ms}ms
                               </span>
                             </div>
-                            {!collapsed && (
+                            {!collapsed && !skipping && (
                               <div style={{ padding: '0 10px 4px 38px' }}>
-                                {isEmpty ? (
-                                  <span style={{ fontSize: 10, color: 'var(--fog)', opacity: 0.4 }}>(no events)</span>
-                                ) : (
-                                  <>
-                                    {step.title && step.title !== step.summary && (
-                                      <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
-                                    )}
-                                    {step.promptData && (
-                                      <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
-                                    )}
-                                    {debugMode && step.json && (
-                                      <details style={{ marginTop: 2 }}>
-                                        <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6 }}>JSON</summary>
-                                        <pre style={{
-                                          maxWidth: 280, maxHeight: 160, overflow: 'auto',
-                                          fontSize: 9, color: 'var(--fog)',
-                                          background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
-                                          borderRadius: 8, padding: '6px 10px',
-                                        }}>
-                                          {JSON.stringify(step.json, null, 2)}
-                                        </pre>
-                                      </details>
-                                    )}
-                                  </>
+                                {step.title && step.title !== step.summary && (
+                                  <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
+                                )}
+                                {step.promptData && (
+                                  <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
+                                )}
+                                {debugMode && step.json && (
+                                  <details style={{ marginTop: 2 }}>
+                                    <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6 }}>JSON</summary>
+                                    <pre style={{
+                                      maxWidth: 280, maxHeight: 160, overflow: 'auto',
+                                      fontSize: 9, color: 'var(--fog)',
+                                      background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
+                                      borderRadius: 8, padding: '6px 10px',
+                                    }}>
+                                      {JSON.stringify(step.json, null, 2)}
+                                    </pre>
+                                  </details>
                                 )}
                               </div>
                             )}
