@@ -67,7 +67,7 @@ function policyOutcome(payload?: string | null): 'block' | 'warn' | null {
 }
 
 function deriveStatus(record: TraceRecord): TraceStatus {
-  const { actionType, detail } = record
+  const { actionType, detail, title } = record
   if (actionType === 'policy_hit') {
     // Structured payload is authoritative (TraceWriter stores the eval object there);
     // legacy/string callers used `detail`. Check payload first.
@@ -78,8 +78,16 @@ function deriveStatus(record: TraceRecord): TraceStatus {
     return 'ok'
   }
   if (actionType === 'skill_result') {
+    // system_info tools (read_chat_memory, read_user_profile) always return empty
+    // mock data in playground — never treat as error.
+    const name = (title || '').toLowerCase()
+    if (name.includes('read_chat_memory') || name.includes('read_user_profile') ||
+        record.payload?.includes('read_chat_memory') || record.payload?.includes('read_user_profile')) {
+      return 'info'
+    }
     const blob = `${detail ?? ''} ${record.payload ?? ''}`
-    if (/"ok"\s*:\s*false|error|failed/i.test(blob)) return 'warn'
+    if (/"ok"\s*:\s*false/i.test(blob)) return 'warn'
+    if (/error|failed/i.test(blob)) return 'warn'
     return 'ok'
   }
   if (actionType === 'skill_called') {

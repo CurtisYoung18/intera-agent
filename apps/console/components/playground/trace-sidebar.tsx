@@ -143,7 +143,7 @@ function ToolCallCard({
   toolKey: string; actionType: string; detailText: string; toolName: string
   isExpanded: boolean; onToggle: () => void
 }) {
-  const isError = detailText.includes('ok:false') || detailText.includes('"ok":false') || /error|failed/i.test(detailText)
+  const isError = /"ok"\s*:\s*false|"ok":\s*false|ok:\s*false/i.test(detailText)
 
   const lines = detailText.split('\n')
   const inputLines: string[] = []
@@ -298,6 +298,7 @@ function PromptSection({ label, data, color }: { label: string; data: string; co
 
 function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceStep; isExpanded: boolean; tb: (k: string) => string }) {
   const hasPromptData = !!step.promptData && (!!step.promptData.systemPrompt || (step.promptData.messages?.length ?? 0) > 0)
+  const [showPromptData, setShowPromptData] = useState(false)
 
   const formatMessages = (msgs: unknown[]): string => {
     try {
@@ -332,27 +333,41 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
       </div>
       {isExpanded && (
         <div style={{ margin: '0 14px 8px 26px' }}>
-          {hasPromptData ? (
+          {step.summary && step.summary !== '(no summary)' && (
+            <div style={{
+              padding: '8px 10px', marginBottom: hasPromptData ? 6 : 0,
+              background: 'var(--surface)',
+              borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
+              fontSize: 11, color: 'var(--mist)', lineHeight: 1.6,
+              maxHeight: 80, overflowY: 'auto',
+            }}>
+              {step.summary}
+            </div>
+          )}
+          {hasPromptData && (
             <>
-              {step.promptData!.systemPrompt && (
-                <PromptSection label="System Prompt" data={step.promptData!.systemPrompt} color="var(--indigo)" />
-              )}
-              {(step.promptData!.messages?.length ?? 0) > 0 && (
-                <PromptSection label="Messages (IN)" data={formatMessages(step.promptData!.messages)} color="var(--indigo)" />
+              <button onClick={() => setShowPromptData(!showPromptData)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 10, fontWeight: 600, color: 'var(--indigo)',
+                padding: '2px 0', display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <ChevronDown size={10} style={{
+                  transition: 'transform 150ms ease',
+                  transform: showPromptData ? 'rotate(0deg)' : 'rotate(-90deg)',
+                }} />
+                {showPromptData ? 'Hide' : 'Show'} prompt data
+              </button>
+              {showPromptData && (
+                <div style={{ marginTop: 6 }}>
+                  {step.promptData!.systemPrompt && (
+                    <PromptSection label="System Prompt" data={step.promptData!.systemPrompt} color="var(--indigo)" />
+                  )}
+                  {(step.promptData!.messages?.length ?? 0) > 0 && (
+                    <PromptSection label="Messages (IN)" data={formatMessages(step.promptData!.messages)} color="var(--indigo)" />
+                  )}
+                </div>
               )}
             </>
-          ) : (
-            step.summary && step.summary !== '(no summary)' && (
-              <div style={{
-                padding: '8px 10px',
-                background: 'var(--surface)',
-                borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
-                fontSize: 11, color: 'var(--mist)', lineHeight: 1.6,
-                maxHeight: 80, overflowY: 'auto',
-              }}>
-                {step.summary}
-              </div>
-            )
           )}
         </div>
       )}
