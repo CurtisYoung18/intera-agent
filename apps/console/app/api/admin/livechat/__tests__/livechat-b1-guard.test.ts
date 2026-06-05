@@ -31,17 +31,7 @@ vi.mock('@/lib/db/repo-for-org', () => ({
     const config = h.configs[orgId]
     return {
       orgId,
-      liveChatConfig: {
-        findUnique: vi.fn(async () => config),
-        upsert: vi.fn(async (args: any) => {
-          h.configs[orgId] = { ...h.configs[orgId], ...args.create, ...args.update }
-          return h.configs[orgId]
-        }),
-      },
       raw: {
-        liveChatConfig: {
-          findUnique: vi.fn(async (args: any) => h.configs[args.where.orgId] ?? null),
-        },
       },
     } as any
   },
@@ -50,13 +40,18 @@ vi.mock('@/lib/db/repo-for-org', () => ({
 // Mock prisma for the anonymous widget route (doesn't use repoForOrg)
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
-    liveChatConfig: {
-      findUnique: vi.fn(async ({ where }: { where: { orgId: string } }) => {
-        return h.configs[where.orgId] ?? null
-      }),
-    },
     channelBinding: {
-      findFirst: vi.fn(async () => null), // fall through to livechat_configs
+      findFirst: vi.fn(async ({ where }: { where: { orgId: string } }) => {
+        const config = h.configs[where.orgId]
+        if (!config) return null
+        return {
+          enabled: config.enabled,
+          credentials: JSON.stringify({
+            showSkillStatus: config.showSkillStatus,
+            region: config.region,
+          }),
+        }
+      }),
     },
   },
 }))

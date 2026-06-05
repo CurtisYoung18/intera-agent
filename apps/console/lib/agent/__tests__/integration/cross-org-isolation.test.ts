@@ -21,13 +21,18 @@ vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 const noopModel = new Proxy({}, { get: () => vi.fn() })
 vi.mock('@intera/shared/prisma', () => ({
   prisma: new Proxy({
-    liveChatConfig: {
-      findUnique: vi.fn(async ({ where }: { where: { orgId: string } }) =>
-        h.configs[where.orgId] ?? null,
-      ),
-    },
     channelBinding: {
-      findFirst: vi.fn(async () => null), // fall through to livechat_configs
+      findFirst: vi.fn(async ({ where }: { where: { orgId: string } }) => {
+        const config = h.configs[where.orgId]
+        if (!config) return null
+        return {
+          enabled: config.enabled,
+          credentials: JSON.stringify({
+            showSkillStatus: config.showSkillStatus,
+            region: config.region,
+          }),
+        }
+      }),
     },
   }, {
     get(target, prop) { if (typeof prop === 'symbol') return undefined; return (target as any)[prop] ?? noopModel },
