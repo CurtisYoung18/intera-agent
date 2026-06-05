@@ -25,6 +25,7 @@ interface KnowledgeSource {
   topK: number
   rerankVersion: string | null
   docCorrelation: number | null
+  modelControlTopK: boolean
   caseTypeTag: string | null
   enabled: boolean
 }
@@ -741,12 +742,28 @@ export default function KnowledgePage() {
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Top-K</label>
-                    <input
-                      type="number" min={1} max={50}
-                      value={editingSource.topK ?? 15}
-                      onChange={(e) => setEditingSource({ ...editingSource, topK: parseInt(e.target.value) || 15 })}
-                      className="glass-input-console"
-                    />
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number" min={1} max={50}
+                        value={editingSource.topK ?? 15}
+                        onChange={(e) => setEditingSource({ ...editingSource, topK: parseInt(e.target.value) || 15 })}
+                        className="glass-input-console flex-1"
+                      />
+                      <label className="flex items-center gap-1.5 text-[11px] text-[var(--mist)] cursor-pointer select-none whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={editingSource.modelControlTopK ?? false}
+                          onChange={(e) => setEditingSource({ ...editingSource, modelControlTopK: e.target.checked })}
+                          className="accent-[var(--indigo)]"
+                        />
+                        Allow model to control
+                      </label>
+                    </div>
+                    {editingSource.modelControlTopK && (
+                      <p className="text-[10px] text-[var(--fog)] mt-1 opacity-60">
+                        Model may request 1–30 results. Configured value ({editingSource.topK ?? 15}) is fallback.
+                      </p>
+                    )}
                   </div>
                 </div>
 
