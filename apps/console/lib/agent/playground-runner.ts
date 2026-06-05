@@ -6,7 +6,7 @@ import { AgentLoop } from './loop'
 import { createMemoryPersistence, type TraceRecord } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
 import type { SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
-import { DEFAULT_SYSTEM_PROMPT, CORE_SYSTEM_PROMPT, CASE_SYSTEM_PROMPT } from '@intera/shared/defaults'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext } from './prompt-resolver'
 import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
@@ -20,11 +20,12 @@ export interface PlaygroundConfig {
 
 export interface PlaygroundResult {
   turnId: string
-  intent: string
   caseType: string
   reply: string
   blocked: boolean
   trace: PlaygroundTraceStep[]
+  resolvedModel: string
+  applicableStages: string[]
 }
 
 /** Run a single playground turn using the REAL AgentLoop pipeline. */
@@ -107,7 +108,7 @@ export async function* runPlaygroundTurn(input: {
         }),
         createdAt: new Date().toISOString(),
       })
-    } else if (['intent_classify', 'policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_response'].includes(event.type as string)) {
+    } else if (['policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_response'].includes(event.type as string)) {
       memoryTraces.push({
         caseId: turnId,
         actionType: event.type as string,
@@ -175,12 +176,43 @@ export async function* runPlaygroundTurn(input: {
     memoryTraces.push({ caseId: turnId, actionType: 'llm_response', title: `LLM response: ${reply.length} chars`, detail: reply.slice(0, 200), createdAt: new Date().toISOString() })
   }
 
+  // ── Derive applicable pipeline stages from agent config ──
+  const resolvedModel = agentConfig.model || DEFAULT_MODEL
+
+  const guardsConfigured = (() => {
+    try {
+      const hooks = typeof agentConfig.policyHooks === 'string'
+        ? JSON.parse(agentConfig.policyHooks)
+        : (agentConfig.policyHooks || {})
+      const keys = Object.keys(hooks)
+      if (keys.length > 0) {
+        // Also check if any hook array is non-empty
+        return keys.some(k => {
+          const arr = hooks[k]
+          return Array.isArray(arr) && arr.length > 0
+        })
+      }
+      return false
+    } catch { return false }
+  })()
+
+  const bindings = agentConfig.capabilityBindings
+  const toolsConfigured = !!(bindings?.tools?.length)
+  const knowledgeConfigured = !!(bindings?.knowledge?.length)
+  const stageConfigured = false // playground always has caseSchema: null → no stage configs
+
+  const applicableStages: string[] = ['Guardrails', 'Model generation']
+  if (knowledgeConfigured) applicableStages.push('Knowledge retrieval')
+  if (toolsConfigured) applicableStages.push('Skills & tools')
+  if (stageConfigured) applicableStages.push('Stage SOP')
+  // Guardrails always included in base — but only fire if guardsConfigured
+  // (fired=false when no guardrail events occur, which is correct)
+
   // ── Aggregate traces ──
-  const trace = aggregateTraces(memoryTraces, startTime, pc.debug ?? agentConfig.debugMode ?? false)
-  const intent = reply ? 'general' : 'none'
+  const trace = aggregateTraces(memoryTraces, startTime, pc.debug ?? agentConfig.debugMode ?? false, applicableStages)
   const caseType = ''
 
-  const result: PlaygroundResult = { turnId, intent, caseType, reply, blocked, trace }
+  const result: PlaygroundResult = { turnId, caseType, reply, blocked, trace, resolvedModel, applicableStages }
   yield { type: 'trace', data: result, timestamp: new Date().toISOString() }
   yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
 }
