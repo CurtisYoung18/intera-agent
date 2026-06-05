@@ -1036,71 +1036,7 @@ export default function PlaygroundPage() {
               <SidebarEmpty>Send a message to see the trace.</SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {/* Live tools (during streaming) */}
-                {liveTools.map((t, i) => {
-                  const toolKey = `tool-${i}`
-                  const expanded = !collapsedTraces.has(toolKey)
-                  return (
-                    <div key={toolKey}>
-                      <div
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '8px 10px', borderRadius: 10,
-                          background: 'rgba(255,255,255,0.55)',
-                          border: '1px solid var(--border-subtle)',
-                          cursor: (t.status === 'done' || t.status === 'error') ? 'pointer' : 'default',
-                        }}
-                        onClick={() => {
-                          if (t.status === 'done' || t.status === 'error') {
-                            setCollapsedTraces(prev => {
-                              const next = new Set(prev)
-                              if (next.has(toolKey)) { next.delete(toolKey) } else { next.add(toolKey) }
-                              return next
-                            })
-                          }
-                        }}
-                      >
-                        {t.status === 'running' ? (
-                          <OrganicLoader icon="spin" size={14} className="text-indigo" />
-                        ) : (
-                          <StatusDot status={t.status === 'error' ? 'error' : 'ok'} size={10} />
-                        )}
-                        <span style={{
-                          fontSize: 11, fontWeight: 500, color: 'var(--mist)', flex: 1,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>
-                          {t.name}
-                        </span>
-                        <span style={{
-                          fontSize: 9, color: 'var(--smoke)',
-                          fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-                        }}>
-                          {t.status === 'running'
-                            ? 'running…'
-                            : t.finishedAt
-                              ? `${t.finishedAt - t.startedAt}ms`
-                              : ''}
-                        </span>
-                      </div>
-                      {expanded && (t.status === 'done' || t.status === 'error') && t.result !== undefined && (
-                        <div style={{
-                          marginLeft: 28, marginTop: 2, marginBottom: 4,
-                          padding: '6px 10px', borderRadius: 8,
-                          background: 'rgba(0,0,0,0.03)',
-                          border: '1px solid var(--border-subtle)',
-                          fontSize: 10, color: 'var(--fog)',
-                          maxHeight: 160, overflow: 'auto',
-                          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                          fontFamily: 'monospace',
-                        }}>
-                          {typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-
-                {/* Trace steps (after turn completes) */}
+                {/* Completed turns */}
                 {turnTraces.map((steps, turnIdx) => {
                   const filteredSteps = steps.filter((s: any) => showSkipped || s.fired !== false)
                   if (filteredSteps.length === 0) return null
@@ -1119,6 +1055,7 @@ export default function PlaygroundPage() {
                         const skipping = step.status === 'skipped' || step.fired === false
                         const ck = `${turnKey}-${i}`
                         const collapsed = collapsedTraces.has(ck)
+                        const isTools = step.stage === 'Skills & tools' && step.detail?.length > 0
                         return (
                           <div key={ck}>
                             <div
@@ -1172,7 +1109,23 @@ export default function PlaygroundPage() {
                                 {step.title && step.title !== step.summary && (
                                   <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
                                 )}
-                                {step.promptData && (
+                                {/* Expand individual tool calls for Skills & tools stage */}
+                                {isTools && !collapsed && step.detail.map(([actionType, detail]: [string, string], di: number) => (
+                                  <div key={di} style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '3px 8px', marginTop: 2, borderRadius: 6,
+                                    background: 'rgba(139,111,245,0.03)',
+                                    border: '1px solid rgba(139,111,245,0.06)',
+                                    fontSize: 10, color: 'var(--mist)',
+                                  }}>
+                                    <StatusDot status={actionType === 'skill_result' ? 'ok' : 'info'} size={7} />
+                                    <span style={{ fontWeight: 500, flexShrink: 0 }}>{actionType === 'skill_called' ? 'call' : 'result'}</span>
+                                    <span style={{ color: 'var(--fog)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {detail}
+                                    </span>
+                                  </div>
+                                ))}
+                                {!isTools && step.promptData && (
                                   <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
                                 )}
                                 {debugMode && step.json && (() => {
@@ -1202,6 +1155,82 @@ export default function PlaygroundPage() {
                     </div>
                   )
                 })}
+
+                {/* Current turn in progress (during streaming) */}
+                {responding && liveTools.length > 0 && (
+                  <div>
+                    <div style={{
+                      fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.08em', color: 'var(--fog)', opacity: 0.45,
+                      padding: '6px 10px 2px',
+                      borderTop: turnTraces.length > 0 ? '1px solid var(--border-subtle)' : undefined,
+                      marginTop: turnTraces.length > 0 ? 6 : 0,
+                    }}>
+                      Turn {turnTraces.length + 1}
+                      <span style={{ fontWeight: 400, opacity: 0.6, marginLeft: 4 }}>(in progress)</span>
+                    </div>
+                    {liveTools.map((t, i) => {
+                      const toolKey = `live-${i}`
+                      const expanded = !collapsedTraces.has(toolKey)
+                      return (
+                        <div key={toolKey}>
+                          <div
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '6px 10px', borderRadius: 8,
+                              cursor: (t.status === 'done' || t.status === 'error') ? 'pointer' : 'default',
+                            }}
+                            onClick={() => {
+                              if (t.status === 'done' || t.status === 'error') {
+                                setCollapsedTraces(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(toolKey)) { next.delete(toolKey) } else { next.add(toolKey) }
+                                  return next
+                                })
+                              }
+                            }}
+                          >
+                            {t.status === 'running' ? (
+                              <OrganicLoader icon="spin" size={12} className="text-indigo" />
+                            ) : (
+                              <StatusDot status={t.status === 'error' ? 'error' : 'ok'} size={8} />
+                            )}
+                            <span style={{
+                              fontSize: 11, fontWeight: 500, color: 'var(--mist)', flex: 1,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {t.name}
+                            </span>
+                            <span style={{
+                              fontSize: 9, color: 'var(--smoke)',
+                              fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+                            }}>
+                              {t.status === 'running'
+                                ? 'running…'
+                                : t.finishedAt
+                                  ? `${t.finishedAt - t.startedAt}ms`
+                                  : ''}
+                            </span>
+                          </div>
+                          {expanded && (t.status === 'done' || t.status === 'error') && t.result !== undefined && (
+                            <div style={{
+                              marginLeft: 28, marginTop: 2, marginBottom: 4,
+                              padding: '6px 10px', borderRadius: 8,
+                              background: 'rgba(0,0,0,0.03)',
+                              border: '1px solid var(--border-subtle)',
+                              fontSize: 10, color: 'var(--fog)',
+                              maxHeight: 160, overflow: 'auto',
+                              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                              fontFamily: 'monospace',
+                            }}>
+                              {typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {/* ── Show skipped toggle ── */}
                 {(() => {
