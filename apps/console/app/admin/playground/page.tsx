@@ -6,7 +6,7 @@ import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
   Shield, Brain, Search, Puzzle, ExternalLink, Wrench, Activity,
-  ChevronDown,
+  ChevronDown, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
@@ -22,6 +22,13 @@ import { StatusDot, statusColor } from '@/components/chat/status-accents'
 
 interface ModelInfo {
   id: string; name: string; provider: string; providerLabel: string
+  supportsVision?: boolean
+}
+
+interface AttachedImage {
+  base64: string
+  mimeType: string
+  name: string
 }
 
 interface AgentListItem {
@@ -87,7 +94,7 @@ export default function PlaygroundPage() {
   const [debugMode, setDebugMode] = useState(false)
 
   const [message, setMessage] = useState('')
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string; thinking?: string }>>([])
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string; thinking?: string; images?: AttachedImage[] }>>([])
   const [reply, setReply] = useState('')
   const [showThinking, setShowThinking] = useState(false)
   const thinkingAccRef = useRef('')
@@ -98,6 +105,8 @@ export default function PlaygroundPage() {
   const [collapsedTraces, setCollapsedTraces] = useState<Set<string>>(new Set())
   const [showSkipped, setShowSkipped] = useState(false)
   const [error, setError] = useState('')
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
+  const [toastMessage, setToastMessage] = useState('')
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -159,6 +168,43 @@ export default function PlaygroundPage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [reply, turnTraces])
 
+  /* ── Vision gate ── */
+
+  const supportsVision = (() => {
+    if (!snapshot) return false
+    // Find the resolved model in the models list
+    const model = models.find(m => m.name === snapshot.resolvedModel || m.id === snapshot.resolvedModel)
+    return model?.supportsVision ?? false
+  })()
+
+  /* ── Image helpers ── */
+
+  const handleImageAttach = useCallback(async (files: FileList | File[]) => {
+    if (!supportsVision) {
+      setToastMessage(`${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+      setTimeout(() => setToastMessage(''), 4000)
+      return
+    }
+    const limit = 5 * 1024 * 1024 // 5MB
+    const newImages: AttachedImage[] = []
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue
+      if (file.size > limit) { setToastMessage(`"${file.name}" exceeds 5MB limit`); setTimeout(() => setToastMessage(''), 3000); continue }
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      newImages.push({ base64, mimeType: file.type, name: file.name })
+    }
+    setAttachedImages(prev => [...prev, ...newImages])
+  }, [supportsVision, snapshot?.resolvedModel])
+
+  const removeImage = useCallback((idx: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== idx))
+  }, [])
+
   /* ── Run turn ── */
 
   const runTurn = useCallback(async (msg: string) => {
@@ -169,12 +215,20 @@ export default function PlaygroundPage() {
     setLiveTools([])
     setError('')
     setResponding(true)
-    setChatMessages(prev => [...prev, { role: 'user' as const, content: msg }])
+    const currentImages = attachedImages
+    setAttachedImages([])
+    setChatMessages(prev => [...prev, { role: 'user' as const, content: msg, images: currentImages.length > 0 ? currentImages : undefined }])
 
     try {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
       if (debugMode) body.config = { debug: true }
+      if (currentImages.length > 0) {
+        body.contentBlocks = currentImages.map(img => ({
+          type: 'image',
+          source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+        }))
+      }
 
       const res = await fetch('/api/admin/playground/run', {
         method: 'POST',
@@ -497,12 +551,31 @@ export default function PlaygroundPage() {
                   {m.role === 'agent' ? (
                     <MessageContent content={m.content} />
                   ) : (
-                    <div style={{
-                      fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
-                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                    }}>
-                      {m.content}
-                    </div>
+                    <>
+                      {m.images && m.images.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                          {m.images.map((img, idx) => (
+                            <img
+                              key={idx}
+                              src={`data:${img.mimeType};base64,${img.base64}`}
+                              alt={img.name}
+                              title={img.name}
+                              style={{
+                                maxWidth: 120, maxHeight: 80,
+                                borderRadius: 8, objectFit: 'cover',
+                                border: '1px solid rgba(139,111,245,0.12)',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <div style={{
+                        fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      }}>
+                        {m.content}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -569,6 +642,38 @@ export default function PlaygroundPage() {
             position: 'relative', zIndex: 1, flexShrink: 0,
             width: '100%', maxWidth: 680, padding: '12px 24px 12px',
           }}>
+            {/* ── Attached image previews ── */}
+            {attachedImages.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {attachedImages.map((img, idx) => (
+                  <div key={idx} style={{ position: 'relative' }}>
+                    <img
+                      src={`data:${img.mimeType};base64,${img.base64}`}
+                      alt={img.name}
+                      title={img.name}
+                      style={{
+                        width: 56, height: 56, borderRadius: 8,
+                        objectFit: 'cover', border: '1px solid var(--border-subtle)',
+                      }}
+                    />
+                    <button
+                      onClick={() => removeImage(idx)}
+                      style={{
+                        position: 'absolute', top: -4, right: -4,
+                        width: 16, height: 16, borderRadius: '50%',
+                        background: 'var(--vermillion)', color: 'white',
+                        border: 'none', cursor: 'pointer', fontSize: 9,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        lineHeight: 1,
+                      }}
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{
               display: 'flex', gap: 8,
               background: 'rgba(255,255,255,0.55)',
@@ -589,12 +694,57 @@ export default function PlaygroundPage() {
               if (el) { el.style.borderColor = 'var(--border-subtle)'; el.style.boxShadow = 'var(--shadow-card)' }
             }}
             >
+              {/* ── Attach button ── */}
+              <label
+                title={supportsVision ? 'Attach image' : `${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 36, height: 36, borderRadius: 12,
+                  background: supportsVision ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
+                  border: supportsVision ? '1px solid rgba(139,111,245,0.12)' : '1px solid rgba(0,0,0,0.06)',
+                  cursor: supportsVision ? 'pointer' : 'not-allowed',
+                  opacity: supportsVision ? 1 : 0.35,
+                  transition: 'all 0.15s',
+                  flexShrink: 0,
+                }}
+              >
+                <ImageIcon size={14} color={supportsVision ? 'var(--lavender)' : 'var(--fog)'} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  disabled={!supportsVision}
+                  onChange={e => { if (e.target.files) { handleImageAttach(e.target.files); e.target.value = '' } }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+
               <input
                 ref={composerRef}
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && message.trim() && !responding) { const msg = message.trim(); setMessage(''); runTurn(msg) } }}
+                onPaste={e => {
+                  const items = e.clipboardData?.items
+                  if (!items) return
+                  const imageFiles: File[] = []
+                  for (const item of Array.from(items)) {
+                    if (item.type.startsWith('image/')) {
+                      const file = item.getAsFile()
+                      if (file) imageFiles.push(file)
+                    }
+                  }
+                  if (imageFiles.length > 0) {
+                    e.preventDefault()
+                    if (!supportsVision) {
+                      setToastMessage(`${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+                      setTimeout(() => setToastMessage(''), 4000)
+                      return
+                    }
+                    handleImageAttach(imageFiles)
+                  }
+                }}
                 placeholder="Type a test message…"
                 disabled={responding}
                 style={{
@@ -622,6 +772,20 @@ export default function PlaygroundPage() {
                 <Send size={14} color="white" />
               </button>
             </div>
+
+            {/* ── Toast ── */}
+            {toastMessage && (
+              <div style={{
+                position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                padding: '8px 16px', borderRadius: 10,
+                background: 'var(--vermillion)', color: 'white',
+                fontSize: 11, fontWeight: 500,
+                whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(230,69,57,0.3)',
+                marginBottom: 8,
+              }}>
+                {toastMessage}
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
               <label style={{
