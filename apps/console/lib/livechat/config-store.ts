@@ -51,15 +51,14 @@ function hydrateFromChannelBinding(row: {
 export async function getLiveChatConfig(
   orgId: string,
   agentName?: string | null,
-  fallbackToOrgDefault = true,
 ): Promise<LiveChatConfig | null> {
   const key = cacheKey(orgId, agentName)
   const cached = cache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.config
 
   try {
-    // 1. Per-agent binding (when agentName provided)
     if (agentName) {
+      // Per-agent: only return that agent's own binding, never fall back
       const cbRow = await prisma.channelBinding.findFirst({
         where: { orgId, channel: 'livechat', agentName },
       })
@@ -74,11 +73,10 @@ export async function getLiveChatConfig(
         cache.set(key, { config, expiresAt: Date.now() + TTL_MS })
         return config
       }
-      // Strict mode: no per-agent binding → null, never fall back
-      if (!fallbackToOrgDefault) return null
+      return null
     }
 
-    // 2. Org-default binding (agent_name IS NULL)
+    // No agentName: org-default binding (legacy webhook compatibility)
     const cbRow = await prisma.channelBinding.findFirst({
       where: { orgId, channel: 'livechat', agentName: null },
     })

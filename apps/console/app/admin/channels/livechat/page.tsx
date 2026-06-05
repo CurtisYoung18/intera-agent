@@ -94,7 +94,7 @@ export default function LiveChatDetailPage() {
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionErrorCode, setConnectionErrorCode] = useState<string | null>(null)
   const [agentList, setAgentList] = useState<Array<{ id: string; name: string; isActive: boolean }>>([])
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null) // null = org default
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const selectedAgentRef = useRef(selectedAgent)
   const [showAgentList, setShowAgentList] = useState(false)
   const connState = getConnectionState(config, connectionTested)
@@ -159,7 +159,16 @@ export default function LiveChatDetailPage() {
     fetchConfig(selectedAgent)
     // Fetch agent list for per-agent webhook URLs (only once)
     apiClient<{ configs?: Array<{ id: string; name: string; isActive: boolean }> }>('/api/admin/agent-configs')
-      .then(r => { if (r.data.configs) setAgentList(r.data.configs.filter(a => a.isActive)) }).catch(() => {})
+      .then(r => {
+        if (r.data.configs) {
+          const active = r.data.configs.filter(a => a.isActive)
+          setAgentList(active)
+          if (active.length > 0 && !selectedAgentRef.current) {
+            setSelectedAgent(active[0].name)
+            selectedAgentRef.current = active[0].name
+          }
+        }
+      }).catch(() => {})
   }, [orgId, selectedAgent, fetchConfig])
 
   const handleReset = () => { if (origConfig) setConfig({ ...origConfig }) }
@@ -199,9 +208,9 @@ export default function LiveChatDetailPage() {
 
   const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
-  const webhookUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/livechat/webhook/${orgId}${selectedAgent ? `/${encodeURIComponent(selectedAgent)}` : ''}`
-    : `/api/livechat/webhook/${orgId}${selectedAgent ? `/${encodeURIComponent(selectedAgent)}` : ''}`
+  const webhookUrl = typeof window !== 'undefined' && selectedAgent
+    ? `${window.location.origin}/api/livechat/webhook/${orgId}/${encodeURIComponent(selectedAgent)}`
+    : selectedAgent ? `/api/livechat/webhook/${orgId}/${encodeURIComponent(selectedAgent)}` : ''
 
   return (
     <div className="p-8 max-w-5xl">
@@ -248,22 +257,20 @@ export default function LiveChatDetailPage() {
         <div className="flex items-center gap-3 mb-4 px-4 py-3 rounded-xl border border-black/[0.06] bg-white/50">
           <label className="text-[12px] font-semibold text-[var(--mist)] flex-shrink-0">{t('livechat.agentSelect')}:</label>
           <select
-            value={selectedAgent ?? '__org_default__'}
+            value={selectedAgent ?? ''}
             onChange={e => {
               const v = e.target.value
-              setSelectedAgent(v === '__org_default__' ? null : v)
-              loadedRef.current = false
+              if (v) {
+                setSelectedAgent(v)
+                loadedRef.current = false
+              }
             }}
             className="w-48 px-3 py-1.5 text-[13px] border border-black/[0.08] rounded-lg bg-white outline-none focus:border-indigo/30"
           >
-            <option value="__org_default__">{t('livechat.agentDefault')}</option>
             {agentList.map(a => (
               <option key={a.id} value={a.name}>{a.name}</option>
             ))}
           </select>
-          {selectedAgent && (
-            <span className="text-[10px] font-medium text-indigo bg-indigo/[0.06] px-2 py-0.5 rounded">{t('livechat.perAgentConfig')}</span>
-          )}
           <div className="flex-1 flex items-center gap-2 ml-2">
             <code className="text-[11px] text-[var(--fog)] bg-black/[0.02] px-3 py-1.5 rounded-lg border border-black/[0.04] truncate">{webhookUrl}</code>
             <button onClick={() => handleCopy(webhookUrl)} className="flex-shrink-0 p-1.5 rounded-lg hover:bg-indigo/[0.06] text-[var(--fog)] hover:text-indigo transition-colors" title="Copy">
@@ -366,7 +373,7 @@ export default function LiveChatDetailPage() {
                   {copied ? <CheckCircle2 className="w-4 h-4 text-malachite" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[10px] text-[var(--fog)] mt-1 opacity-60">{t('livechat.webhookRouteNote')}</p>
+              <p className="text-[10px] text-[var(--fog)] mt-1 opacity-60">{t('livechat.webhookRouteNotePerAgent')}</p>
             </div>
 
             {/* Per-agent webhook URLs (collapsible) */}

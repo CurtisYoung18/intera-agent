@@ -1317,10 +1317,8 @@ export const en: Record<string, string> = {
   // ── LiveChat webhook sections ──────────────────────────────────
   'livechat.perAgentWebhooks': 'Per-Agent Webhooks',
   'livechat.perAgentWebhooksHint': 'Each agent gets its own webhook URL. Events route to that specific agent regardless of which is active.',
-  'livechat.webhookRouteNote': 'All events route to the org\'s active agent.',
+  'livechat.webhookRouteNotePerAgent': 'This webhook URL routes events to this specific agent.',
   'livechat.agentSelect': 'Agent',
-  'livechat.agentDefault': 'Org default',
-  'livechat.perAgentConfig': 'Per-agent',
   'livechat.momentPreview': 'Moment Preview',
   'livechat.momentPreviewHint': 'Form fields via URL params — same as webview button opens',
   'livechat.momentPreviewDesc': 'Click a preset to load the form Moment. Fields are passed as URL query params, matching how the renderer builds the webview button URL.',
@@ -2781,10 +2779,8 @@ export const zh: Record<string, string> = {
   // ── LiveChat webhook sections ──────────────────────────────────
   'livechat.perAgentWebhooks': 'Per-Agent Webhooks',
   'livechat.perAgentWebhooksHint': '每个 Agent 有独立的 Webhook 地址。事件将路由到对应 Agent，与当前 active 状态无关。',
-  'livechat.webhookRouteNote': '所有事件路由到组织当前 active Agent。',
+  'livechat.webhookRouteNotePerAgent': '此 Webhook 地址将事件路由到对应 Agent。',
   'livechat.agentSelect': 'Agent',
-  'livechat.agentDefault': '组织默认',
-  'livechat.perAgentConfig': '每代理配置',
   'livechat.momentPreview': 'Moment 预览',
   'livechat.momentPreviewHint': '表单字段通过 URL 参数传入 — 与 webview 按钮一致',
   'livechat.momentPreviewDesc': '点击预设加载表单 Moment。字段通过 URL query 参数传递，与 renderer 生成 webview 按钮 URL 的方式一致。',
