@@ -112,6 +112,17 @@ export async function* runPlaygroundTurn(input: {
     caseId = effectiveChatId
   }
 
+  // Persist Case before AgentLoop sees it (loop.ts ensureCase only fires on escalation,
+  // which requires caseSchema ≠ null — playground always uses caseSchema: null).
+  await persistence.ensureCase({
+    id: caseId,
+    orgId,
+    userId,
+    type: 'playground',
+    status: 'open',
+    chatId: effectiveChatId,
+  })
+
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
     caseId,
