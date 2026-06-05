@@ -40,13 +40,16 @@ export async function GET(request: NextRequest) {
     method: 'GET',
     async handler({ session, repo }) {
       const resolvedName = agentName ? await resolveAgentName(repo, session.orgId, agentName) : null
-      const config = await getLiveChatConfig(session.orgId, resolvedName)
+      const config = await getLiveChatConfig(session.orgId, resolvedName, false)
 
       if (!config) {
         return apiOk({
           config: {
             orgId: session.orgId,
             agentName: resolvedName ?? undefined,
+            botAccessToken: '',
+            licenseId: '',
+            showSkillStatus: true,
             enabled: false,
           },
         })
@@ -75,7 +78,7 @@ export async function PUT(request: NextRequest) {
 
       // Preserve existing secrets when masked value is sent
       if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {
-        const existing = await getLiveChatConfig(session.orgId, resolvedName)
+        const existing = await getLiveChatConfig(session.orgId, resolvedName, false)
         if (existing) {
           if (input.botAccessToken === '••••••••') input.botAccessToken = existing.botAccessToken
           if (input.webhookSecret === '••••••••') input.webhookSecret = existing.webhookSecret ?? ''
