@@ -91,6 +91,7 @@ export default function PlaygroundPage() {
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
+  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(null)
   const [debugMode, setDebugMode] = useState(false)
 
   const [message, setMessage] = useState('')
@@ -248,6 +249,7 @@ export default function PlaygroundPage() {
     turnNumRef.current += 1
     setTurnTraces(prev => [...prev, []])
     setLiveTools([])
+    setFormRequest(null)
     setError('')
     setResponding(true)
     const currentImages = attachedImages
@@ -322,6 +324,15 @@ export default function PlaygroundPage() {
                   ? { ...t, status: d?.ok === false ? 'error' : 'done', finishedAt: Date.now(), result: d?.result, renderHints: d?.renderHints }
                   : t
               ))
+            }
+            else if (event.type === 'form_request') {
+              const d = event.data as any
+              setFormRequest({
+                title: d?.title || 'Information Needed',
+                description: d?.description,
+                fields: d?.fields || [],
+                skillCallId: d?.skillCallId || '',
+              })
             }
             else if (event.type === 'trace') {
               const t = event.data.trace || []
@@ -709,6 +720,68 @@ export default function PlaygroundPage() {
               </div>
             )}
 
+            {/* ── Form request (request_user_input) ── */}
+            {formRequest && (
+              <div style={{
+                padding: '16px 20px', borderRadius: 14,
+                marginBottom: 8,
+                background: 'rgba(255,255,255,0.7)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(139,111,245,0.2)',
+                boxShadow: '0 4px 16px rgba(139,111,245,0.08)',
+                alignSelf: 'flex-start',
+                maxWidth: '420px',
+                width: '100%',
+              }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--mist)', margin: '0 0 2px' }}>{formRequest.title}</p>
+                {formRequest.description && (
+                  <p style={{ fontSize: 11, color: 'var(--fog)', margin: '0 0 12px', opacity: 0.7 }}>{formRequest.description}</p>
+                )}
+                <form onSubmit={e => {
+                  e.preventDefault()
+                  const formData = new FormData(e.currentTarget)
+                  const answers: Record<string, string> = {}
+                  formData.forEach((v, k) => { answers[k] = String(v) })
+                  const answerText = Object.entries(answers)
+                    .filter(([, v]) => v.trim())
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join('\n')
+                  setFormRequest(null)
+                  if (answerText) runTurn(`[Form submission]\n${answerText}`)
+                }} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {formRequest.fields.map(f => (
+                    <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--mist)' }}>
+                        {f.label}{f.required ? ' *' : ''}
+                      </label>
+                      {f.type === 'select' ? (
+                        <select name={f.key} required={f.required}
+                          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', background: '#fff', outline: 'none' }}>
+                          <option value="">--</option>
+                          {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      ) : f.type === 'textarea' ? (
+                        <textarea name={f.key} required={f.required} placeholder={f.placeholder}
+                          rows={2} style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', resize: 'vertical', outline: 'none' }} />
+                      ) : (
+                        <input name={f.key} type={f.type === 'number' ? 'number' : 'text'} required={f.required} placeholder={f.placeholder}
+                          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', outline: 'none' }} />
+                      )}
+                    </div>
+                  ))}
+                  <button type="submit"
+                    style={{
+                      marginTop: 4, padding: '8px 16px', fontSize: 12, fontWeight: 600,
+                      borderRadius: 8, border: 'none', cursor: 'pointer',
+                      background: 'var(--indigo)', color: '#fff',
+                    }}>
+                    Submit
+                  </button>
+                </form>
+              </div>
+            )}
+
             <div ref={chatEndRef} />
           </div>
 
@@ -868,31 +941,6 @@ export default function PlaygroundPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-              <label style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                fontSize: 10, color: 'var(--fog)', opacity: 0.5,
-                cursor: 'pointer', userSelect: 'none',
-              }}>
-                Show raw JSON
-                <button
-                  onClick={() => setDebugMode(!debugMode)}
-                  style={{
-                    width: 32, height: 18, borderRadius: 9,
-                    border: 'none', cursor: 'pointer',
-                    background: debugMode ? 'var(--indigo)' : 'rgba(0,0,0,0.1)',
-                    position: 'relative', transition: 'background 0.2s',
-                  }}
-                >
-                  <span style={{
-                    position: 'absolute', top: 2, width: 14, height: 14, borderRadius: '50%',
-                    background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-                    left: debugMode ? 16 : 2,
-                    transition: 'left 0.2s ease',
-                  }} />
-                </button>
-              </label>
-            </div>
           </div>
         </div>
 
