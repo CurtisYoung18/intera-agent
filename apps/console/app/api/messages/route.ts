@@ -101,7 +101,7 @@ async function resolveCaseByIntent(
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
 ): Promise<string> {
-  const model = process.env.HUB_ROUTING_MODEL || 'MiniMax-M2.7-highspeed'
+  const model = process.env.HUB_ROUTING_MODEL || 'deepseek-v4-flash'
 
   const caseList = activeCases
     .map((c) => `- id: "${c.id}", type: ${c.type}`)

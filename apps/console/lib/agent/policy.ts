@@ -125,7 +125,7 @@ export class PolicyEngine {
 
   constructor(orgId: string, _guardrails?: CapabilityBindings['guardrails']) {
     this.orgId = orgId
-    this.policyModel = process.env.POLICY_EVAL_MODEL || 'MiniMax-M2.7-highspeed'
+    this.policyModel = process.env.POLICY_EVAL_MODEL || 'deepseek-v4-flash'
     this.llmClient = createAgentClient(this.policyModel)
   }
 
