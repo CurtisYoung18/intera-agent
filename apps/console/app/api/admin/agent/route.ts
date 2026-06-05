@@ -1,9 +1,10 @@
-// GET + PUT /api/admin/agent — Agent config CRUD (upsert)
+// GET + PUT + POST /api/admin/agent — Agent config CRUD (upsert)
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
+// POST is an alias for PUT (apiClient defaults to POST when body is present).
 
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
@@ -23,7 +24,6 @@ export const GET = defineRoute({
       ? await repo.agentConfig.findUnique({ where: { id: agentId } })
       : await repo.agentConfig.findFirst({ where: { isActive: true } })
 
-    // Lazy init: create from defaults if DB is empty
     if (!config) {
       await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
       config = await repo.agentConfig.create({
@@ -73,8 +73,7 @@ function toJsonIfObject(v: unknown): string | undefined {
   return typeof v === 'string' ? v : JSON.stringify(v)
 }
 
-export async function PUT(req: NextRequest) {
-  const agentId = req.nextUrl.searchParams.get('agentId')
+function agentUpdateHandler(agentId: string | null) {
   return defineRoute<PutInput>({
     method: 'PUT',
     inputSchema: putSchema,
@@ -100,7 +99,6 @@ export async function PUT(req: NextRequest) {
     if (input.invariantCheck !== undefined) data.invariantCheck = input.invariantCheck
     if (input.capabilityBindings !== undefined) data.capabilityBindings = toJsonIfObject(input.capabilityBindings)
 
-    // Resolve the config to upsert
     const existing = agentId
       ? await repo.agentConfig.findUnique({ where: { id: agentId } })
       : await repo.agentConfig.findFirst({ where: { isActive: true } })
@@ -130,5 +128,15 @@ export async function PUT(req: NextRequest) {
 
     return apiOk({ config })
   },
-})(req)
+})
+}
+
+export async function PUT(req: NextRequest) {
+  const agentId = req.nextUrl.searchParams.get('agentId')
+  return agentUpdateHandler(agentId)(req)
+}
+
+export async function POST(req: NextRequest) {
+  const agentId = req.nextUrl.searchParams.get('agentId')
+  return agentUpdateHandler(agentId)(req)
 }
