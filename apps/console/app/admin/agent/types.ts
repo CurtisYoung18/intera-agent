@@ -91,7 +91,7 @@ export const DEFAULT_MEMORY: MemoryStrategy = {
   compactTemperature: 0.3,
   compactMaxTokensCap: 4096,
   compactMinSummaryLength: 100,
-  compactionKeepMin: 6,
+  compactionKeepMin: 10,
   compactionKeepRatio: 0.65,
   compactableTools: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'ocr_receipt'],
   factExtractionPrompt: '',
