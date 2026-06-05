@@ -124,6 +124,8 @@ export default function PlaygroundPage() {
   useEffect(() => { attachedImagesRef.current = attachedImages }, [attachedImages])
   const showThinkingRef = useRef(showThinking)
   useEffect(() => { showThinkingRef.current = showThinking }, [showThinking])
+  const chatIdRef = useRef<string | null>(null)
+  useEffect(() => { chatIdRef.current = chatId }, [chatId])
 
   // ── Message queue (allow typing while responding) ──
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
@@ -326,7 +328,7 @@ export default function PlaygroundPage() {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
       body.config = { debug: debugMode, showThinking: showThinkingRef.current }
-      if (chatId) body.chatId = chatId
+      if (chatIdRef.current) body.chatId = chatIdRef.current
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({
           type: 'image',
@@ -368,7 +370,7 @@ export default function PlaygroundPage() {
             }
             else if (event.type === 'session_init') {
               const d = event.data as { chatId: string; caseId: string }
-              if (d?.chatId && !chatId) {
+              if (d?.chatId && !chatIdRef.current) {
                 setChatId(d.chatId)
               }
             }
