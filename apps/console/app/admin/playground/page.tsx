@@ -129,6 +129,7 @@ export default function PlaygroundPage() {
   const prevAgentIdRef = useRef<string | null>(null)
   const hasRestoredRef = useRef(false)
   const isRestoringRef = useRef(false)
+  const hasLoadedAgentConfigRef = useRef(false)
 
   // ── Message queue (allow typing while responding) ──
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
@@ -299,14 +300,15 @@ export default function PlaygroundPage() {
     const selected = agentList.find(a => a.id === selectedAgentId)
     setSelectedIsActive(selected?.isActive ?? false)
     setSelectedVersion(selected?.version ?? null)
-    // Reset traces only on actual agent switch (not on initial mount when agentList loads)
-    if (hasRestoredRef.current) {
+    // Reset traces only on actual agent switch (not on first agent-config load)
+    if (hasLoadedAgentConfigRef.current) {
       setTurnTraces([])
       setTurnTotalMs([])
       turnNumRef.current = 0
       setExpandedTurns(new Set())
       setExpandedTools(new Set())
     }
+    hasLoadedAgentConfigRef.current = true
 
     fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
       .then(r => r.json())
