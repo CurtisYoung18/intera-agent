@@ -94,7 +94,7 @@ export class TraceWriter {
     skillName: string,
     input: Record<string, unknown>,
   ): Promise<void> {
-    await this.write('skill_called', `Skill called: ${skillName}`, {
+    await this.write('skill_called', `Tool called: ${skillName}`, {
       skillName,
       input,
     })

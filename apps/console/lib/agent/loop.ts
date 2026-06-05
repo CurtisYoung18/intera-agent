@@ -975,7 +975,7 @@ export class AgentLoop {
         await this.chatMemory.applySkillResult(result.name, payload)
         await this.traceWriter.write(
           'skill_result',
-          `Skill: ${result.name}`,
+          `Tool: ${result.name}`,
           { output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, skillName: result.name, input: result.toolUse?.input },
         )
       }

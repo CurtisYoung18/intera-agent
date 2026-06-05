@@ -122,6 +122,7 @@ export default function PlaygroundPage() {
   const chatIdRef = useRef<string | null>(null)
   useEffect(() => { chatIdRef.current = chatId }, [chatId])
   const prevAgentIdRef = useRef<string | null>(null)
+  const hasRestoredRef = useRef(false)
 
   // ── Message queue (allow typing while responding) ──
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
@@ -143,7 +144,8 @@ export default function PlaygroundPage() {
   useEffect(() => {
     // On mount, if chatId exists from localStorage, restore that session directly.
     // On agent switch (selectedAgentId changes), clear and search for latest session.
-    const isAgentSwitch = prevAgentIdRef.current !== null && prevAgentIdRef.current !== selectedAgentId
+    const isAgentSwitch = hasRestoredRef.current && prevAgentIdRef.current !== selectedAgentId
+    hasRestoredRef.current = true
     prevAgentIdRef.current = selectedAgentId
 
     if (isAgentSwitch) {
