@@ -86,7 +86,9 @@ export default function PlaygroundPage() {
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
-  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(null)
+  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(() => {
+    try { const s = localStorage.getItem('pg_formRequest'); return s ? JSON.parse(s) : null } catch { return null }
+  })
   const [debugMode, setDebugMode] = useState(false)
 
   const [message, setMessage] = useState('')
@@ -234,6 +236,7 @@ export default function PlaygroundPage() {
         })
 
         setTurnTraces(restoredTraces)
+        prevTurnCountRef.current = restoredTraces.length
         setTurnTotalMs(restoredTraces.map((steps) => {
           const msArr = steps.filter(s => s.fired && s.ms > 0).map(s => s.ms)
           return msArr.length > 0 ? msArr.reduce((a, b) => a + b, 0) : 0
@@ -264,20 +267,30 @@ export default function PlaygroundPage() {
     return () => { if (isAgentSwitch) cancelled = true }
   }, [selectedAgentId])
 
-  // Auto-expand latest turn; error tools default expanded
+  // Auto-expand latest turn; collapse older turns when a NEW turn starts; error tools default expanded
+  const prevTurnCountRef = useRef(0)
   useEffect(() => {
     if (turnTraces.length === 0) return
-    setExpandedTurns(prev => {
-      const next = new Set(prev)
-      next.add(turnTraces.length - 1)
-      return next
-    })
-    const latestSteps = turnTraces[turnTraces.length - 1] || []
+    const latestIdx = turnTraces.length - 1
+    // Only collapse older turns when a new turn is added (count increased)
+    if (turnTraces.length > prevTurnCountRef.current) {
+      setExpandedTurns(new Set([latestIdx]))
+    } else {
+      // Same turn — just ensure latest is expanded
+      setExpandedTurns(prev => {
+        if (prev.has(latestIdx)) return prev
+        const next = new Set(prev)
+        next.add(latestIdx)
+        return next
+      })
+    }
+    prevTurnCountRef.current = turnTraces.length
+    const latestSteps = turnTraces[latestIdx] || []
     latestSteps.forEach((step: any, toolIdx: number) => {
       if (step.status === 'warn' || step.status === 'block') {
         setExpandedTools(prev => {
           const next = new Set(prev)
-          next.add(`${turnTraces.length - 1}-${toolIdx}`)
+          next.add(`${latestIdx}-${toolIdx}`)
           return next
         })
       }
@@ -308,6 +321,7 @@ export default function PlaygroundPage() {
       setTurnTraces([])
       setTurnTotalMs([])
       turnNumRef.current = 0
+      prevTurnCountRef.current = 0
       setExpandedTurns(new Set())
       setExpandedTools(new Set())
     }
@@ -427,6 +441,7 @@ export default function PlaygroundPage() {
     setTurnTotalMs(prev => [...prev, 0])
     setLiveTools([])
     setFormRequest(null)
+    try { localStorage.removeItem('pg_formRequest') } catch {}
     setError('')
     setResponding(true)
     setSidebarCollapsed(false)
@@ -510,12 +525,14 @@ export default function PlaygroundPage() {
             }
             else if (event.type === 'form_request') {
               const d = event.data as any
-              setFormRequest({
+              const fr = {
                 title: d?.title || 'Information Needed',
                 description: d?.description,
                 fields: d?.fields || [],
                 skillCallId: d?.skillCallId || '',
-              })
+              }
+              setFormRequest(fr)
+              try { localStorage.setItem('pg_formRequest', JSON.stringify(fr)) } catch {}
             }
             else if (event.type === 'trace') {
               const t = event.data.trace || []
@@ -677,12 +694,13 @@ export default function PlaygroundPage() {
                 setChatMessages([])
                 setTurnTraces([])
                 setTurnTotalMs([])
+                prevTurnCountRef.current = 0
                 setReply('')
                 setError('')
                 setLiveTools([])
                 setSavedChatId(null)
                 setFormRequest(null)
-                try { localStorage.removeItem('pg_chatId') } catch {}
+                try { localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
               }}
               disabled={!chatId}
               title="Reset session"
