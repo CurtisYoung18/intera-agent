@@ -12,6 +12,7 @@ import { useAgentContext } from '@/lib/agent/agent-context'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { apiClient } from '@/lib/api/client'
+import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 
 /* ── Types ── */
 
@@ -28,7 +29,7 @@ interface AgentListItem {
 
 interface AgentSnapshot {
   name: string
-  modelLabel: string
+  resolvedModel: string
   systemPromptPreview: string
   memoryTierLabel: string
   guardrailCount: number
@@ -151,13 +152,15 @@ export default function PlaygroundPage() {
         try { memoryStrategy = typeof raw.memoryStrategy === 'string' ? JSON.parse(raw.memoryStrategy || '{}') : raw.memoryStrategy || {} } catch { /* */ }
         try { policyHooks = typeof raw.policyHooks === 'string' ? raw.policyHooks : JSON.stringify(raw.policyHooks || {}, null, 2) } catch { policyHooks = '{}' }
 
-        const modelId = raw.model || ''
-        const modelInfo = models.find(m => m.id === modelId)
         const sp = raw.systemPrompt || ''
+
+        // Resolved model: prefer the API-resolved name, fall back to modelInfo lookup, then raw model id
+        const resolvedModel: string = data.resolvedModel || data.config?.resolvedModel ||
+          (models.find(m => m.id === raw.model)?.name || raw.model || resolveEffectiveModel({ model: raw.model }))
 
         setSnapshot({
           name: raw.name || 'Default',
-          modelLabel: modelInfo ? modelInfo.name : (modelId || 'Unknown'),
+          resolvedModel,
           systemPromptPreview: sp.length > 120 ? sp.slice(0, 120) + '…' : sp,
           memoryTierLabel: detectMemoryTier(memoryStrategy),
           guardrailCount: countGuardrails(policyHooks),
@@ -331,7 +334,7 @@ export default function PlaygroundPage() {
 
         {snapshot && (
           <>
-            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.modelLabel} />
+            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.resolvedModel} />
             <ConfigPill icon={<span style={{ fontSize: 10, fontWeight: 600 }}>&#123;t&#125;</span>} label={`Temp ${snapshot.temperature}`} />
             <ConfigPill icon={<Clock size={11} />} label={snapshot.memoryTierLabel} />
             <ConfigPill icon={<Shield size={11} />} label={`${snapshot.guardrailCount} rule${snapshot.guardrailCount !== 1 ? 's' : ''}`} />
@@ -395,7 +398,7 @@ export default function PlaygroundPage() {
                   textAlign: 'center', lineHeight: 1.6,
                 }}>
                   {snapshot
-                    ? `Testing "${snapshot.name}" · ${snapshot.modelLabel}`
+                    ? `Testing "${snapshot.name}" · ${snapshot.resolvedModel}`
                     : 'Select an agent and send a message to test its behaviour.'}
                 </p>
 
