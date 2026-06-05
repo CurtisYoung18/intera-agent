@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 
-type GlassVariant = 'chat-user' | 'chat-assistant' | 'admin' | 'pill'
+type GlassVariant = 'chat-user' | 'chat-assistant' | 'admin' | 'pill' | 'dark'
 
 interface GlassCardProps {
   variant: GlassVariant
@@ -21,6 +21,8 @@ const VARIANT_STYLES: Record<GlassVariant, string> = {
     'glass-admin p-6',
   'pill':
     'glass-pill px-4 py-2',
+  'dark':
+    'glass-card-dark p-5',
 }
 
 export default function GlassCard({
