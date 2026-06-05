@@ -699,7 +699,23 @@ export default function PlaygroundPage() {
             maxHeight={260}
           >
             {liveTools.length === 0 ? (
-              <SidebarEmpty>Tools called by the agent will appear here.</SidebarEmpty>
+              <SidebarEmpty>
+                {(() => {
+                  // Compute token + timing summary from latest turn traces
+                  const lastTurn = turnTraces[turnTraces.length - 1]
+                  if (!lastTurn || lastTurn.length === 0) return 'Tools called by the agent will appear here.'
+                  let totalInput = 0, totalOutput = 0, totalMs = 0
+                  for (const step of lastTurn) {
+                    if (step.usage) {
+                      totalInput += step.usage.inputTokens || 0
+                      totalOutput += step.usage.outputTokens || 0
+                    }
+                    totalMs += step.ms || 0
+                  }
+                  if (totalInput === 0 && totalOutput === 0) return 'Tools called by the agent will appear here.'
+                  return `↑${totalInput} ↓${totalOutput} tokens · ${totalMs}ms total`
+                })()}
+              </SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {liveTools.map((t, i) => (
@@ -877,7 +893,7 @@ export default function PlaygroundPage() {
                                 {collapsed ? (isEmpty ? '(no events)' : step.summary || step.title) : (step.summary || step.title)}
                               </span>
                               <span style={{ fontSize: 9, color: 'var(--smoke)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                                {step.ms}ms
+                                {step.usage ? `↑${step.usage.inputTokens} ↓${step.usage.outputTokens} · ` : ''}{step.ms}ms
                               </span>
                             </div>
                             {!collapsed && (
