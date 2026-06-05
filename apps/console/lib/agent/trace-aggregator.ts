@@ -124,8 +124,18 @@ export function aggregateTraces(
     let mapping = STAGE_MAP[actionType as ActionType | 'kb_search']
 
     // kb_search_* tools → Knowledge retrieval
-    if (!mapping && (actionType.startsWith('kb_search') || t.title?.startsWith('kb_search'))) {
-      mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
+    // Covers: actionType starting with kb_search, title starting with kb_search,
+    // or skill_called/skill_result whose payload skillName starts with kb_search_
+    if (!mapping) {
+      const isKbSkill =
+        actionType.startsWith('kb_search') ||
+        t.title?.startsWith('kb_search') ||
+        ((actionType === 'skill_called' || actionType === 'skill_result') &&
+          typeof (t.payload as any)?.skillName === 'string' &&
+          (t.payload as any).skillName.startsWith('kb_search_'))
+      if (isKbSkill) {
+        mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
+      }
     }
 
     // Default: Skills & tools
@@ -176,7 +186,19 @@ export function aggregateTraces(
       : 'ok'
 
     const summary = records.map((r) => r.title).filter(Boolean).join(' → ') || '(no summary)'
-    const detail: [string, string][] = records.slice(0, 10).map((r) => [r.actionType, r.detail || r.title || ''])
+    const detail: [string, string][] = records.slice(0, 10).map((r) => {
+      // For skill records, show input/output from payload
+      if ((r.actionType === 'skill_called' || r.actionType === 'skill_result') && r.payload) {
+        try {
+          const p = JSON.parse(r.payload)
+          const label = r.actionType === 'skill_called'
+            ? (p.input ? JSON.stringify(p.input) : r.title || '')
+            : (p.output ? JSON.stringify(p.output) : r.title || '')
+          return [r.actionType, label]
+        } catch { /* fall through */ }
+      }
+      return [r.actionType, r.detail || r.title || '']
+    })
 
     const step: PlaygroundTraceStep = {
       stage,
