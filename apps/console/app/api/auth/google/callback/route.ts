@@ -165,8 +165,14 @@ export async function GET(req: NextRequest) {
       // Sweep: accept pending invites and create missing Memberships for existing users
       await sweepPendingInvites(email, user.id)
 
+      // Re-fetch memberships after sweep (sweep may have created new ones)
+      const freshMemberships = await prisma.membership.findMany({
+        where: { userId: user.id },
+        select: { orgId: true, role: true },
+      })
+
       // Existing user via googleSub — sign session with primary membership
-      const sorted = [...user.memberships].sort((a, b) => {
+      const sorted = [...freshMemberships].sort((a, b) => {
         const rank: Record<string, number> = { owner: 4, admin: 3, operator: 2, viewer: 1 }
         return (rank[b.role] ?? 0) - (rank[a.role] ?? 0)
       })
@@ -177,7 +183,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Check if user has multiple orgs → redirect to org-picker
-      if (user.memberships.length > 1) {
+      if (freshMemberships.length > 1) {
         const token = await issueSession(user.id, primary.orgId, primary.role)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
@@ -202,13 +208,19 @@ export async function GET(req: NextRequest) {
       // Sweep pending invites for existing user
       await sweepPendingInvites(email, user.id)
 
+      // Re-fetch memberships after sweep (sweep may have created new ones)
+      const freshMemberships = await prisma.membership.findMany({
+        where: { userId: user.id },
+        select: { orgId: true, role: true },
+      })
+
       // Update existing user with googleSub (link Google account)
       await prisma.user.update({
         where: { id: user.id },
         data: { googleSub },
       })
 
-      const sorted = [...user.memberships].sort((a, b) => {
+      const sorted = [...freshMemberships].sort((a, b) => {
         const rank: Record<string, number> = { owner: 4, admin: 3, operator: 2, viewer: 1 }
         return (rank[b.role] ?? 0) - (rank[a.role] ?? 0)
       })
@@ -218,7 +230,7 @@ export async function GET(req: NextRequest) {
         return errorRedirect('No organization membership — request an invitation from your admin')
       }
 
-      if (user.memberships.length > 1) {
+      if (freshMemberships.length > 1) {
         const token = await issueSession(user.id, primary.orgId, primary.role)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
