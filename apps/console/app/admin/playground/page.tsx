@@ -15,6 +15,7 @@ import { apiClient } from '@/lib/api/client'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
+import RenderHintCard from '@/components/chat/render-hint-card'
 
 /* ── Types ── */
 
@@ -744,69 +745,17 @@ export default function PlaygroundPage() {
                   </div>
                 ))}
                 {/* ── RenderHint display for completed tools ── */}
-                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
-                  const hint = t.renderHints!
-                  const result = t.result as Record<string, unknown> | undefined
-                  if (hint.kind === 'form') {
-                    // Show form fields from request_user_input result
-                    const fields = (result?.fields as Array<{ key: string; label: string; type: string; required?: boolean }>) ?? []
-                    const title = (result?.title as string) || (hint.submitLabel as string) || 'Form'
-                    if (!fields.length) return null
-                    return (
-                      <div key={`hint-${i}`} style={{
-                        padding: '10px 12px', borderRadius: 10,
-                        background: 'rgba(139,111,245,0.04)', border: '1px solid rgba(139,111,245,0.12)',
-                        marginTop: 2,
-                      }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--lavender)', marginBottom: 6 }}>{title}</div>
-                        {fields.map((f) => (
-                          <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 10 }}>
-                            <span style={{ color: 'var(--fog)', minWidth: 60 }}>{f.label}</span>
-                            <span style={{ color: 'var(--smoke)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-                              {f.type}{f.required ? ' *' : ''}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  }
-                  if (hint.kind === 'card') {
-                    return (
-                      <div key={`hint-${i}`} style={{
-                        padding: '10px 12px', borderRadius: 10,
-                        background: 'rgba(91,138,247,0.05)', border: '1px solid rgba(91,138,247,0.12)',
-                        marginTop: 2,
-                      }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--indigo)', marginBottom: 4 }}>
-                          {String((result as any)?.[(hint.titleField as string)] ?? hint.titleOverride ?? 'Card')}
-                        </div>
-                        {(hint.subtitleField as string) && (
-                          <div style={{ fontSize: 10, color: 'var(--fog)' }}>
-                            {String((result as any)?.[(hint.subtitleField as string)] ?? '')}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  }
-                  if (hint.kind === 'quick_replies') {
-                    const options = (result?.[(hint.optionsField as string)] as Array<Record<string, unknown>>) ?? []
-                    if (!options.length) return null
-                    return (
-                      <div key={`hint-${i}`} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
-                        {options.map((opt, j) => (
-                          <span key={j} style={{
-                            padding: '3px 8px', borderRadius: 999,
-                            background: 'rgba(139,111,245,0.08)', border: '1px solid rgba(139,111,245,0.15)',
-                            fontSize: 10, color: 'var(--lavender)',
-                          }}>
-                            {String(opt[(hint.optionLabelField as string)] ?? opt[(hint.optionIdField as string)] ?? '')}
-                          </span>
-                        ))}
-                      </div>
-                    )
-                  }
-                  return null
-                })}
+                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => (
+                  <RenderHintCard
+                    key={`hint-${i}`}
+                    hint={t.renderHints as any}
+                    result={t.result}
+                    onSubmit={(values) => {
+                      const msg = JSON.stringify(values, null, 2)
+                      runTurn(msg)
+                    }}
+                  />
+                ))}
               </div>
             )}
           </SidebarSection>
