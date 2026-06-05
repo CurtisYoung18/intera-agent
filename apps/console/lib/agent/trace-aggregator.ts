@@ -124,6 +124,13 @@ export function aggregateTraces(
   const stageMap = new Map<string, { records: TraceRecord[]; earliest: number }>()
   const bookkeeping: TraceRecord[] = []
 
+  // DEBUG: log all non-bookkeeping records
+  for (const t of traces) {
+    if (!BOOKKEEPING.has(t.actionType)) {
+      console.log('[trace-aggregator] record:', JSON.stringify({ actionType: t.actionType, title: t.title, hasPayload: !!t.payload, payloadLen: t.payload?.length, detail: t.detail }))
+    }
+  }
+
   for (const t of traces) {
     if (BOOKKEEPING.has(t.actionType)) { bookkeeping.push(t); continue }
     const actionType = t.actionType
@@ -133,12 +140,18 @@ export function aggregateTraces(
     // Covers: actionType starting with kb_search, title starting with kb_search,
     // or skill_called/skill_result whose payload skillName starts with kb_search_
     if (!mapping) {
-      const isKbSkill =
+      let isKbSkill =
         actionType.startsWith('kb_search') ||
-        t.title?.startsWith('kb_search') ||
-        ((actionType === 'skill_called' || actionType === 'skill_result') &&
-          typeof (t.payload as any)?.skillName === 'string' &&
-          (t.payload as any).skillName.startsWith('kb_search_'))
+        t.title?.startsWith('kb_search')
+
+      // payload is stored as JSON string — parse before checking skillName
+      if (!isKbSkill && (actionType === 'skill_called' || actionType === 'skill_result') && t.payload) {
+        try {
+          const p = JSON.parse(t.payload)
+          isKbSkill = typeof p?.skillName === 'string' && p.skillName.startsWith('kb_search_')
+        } catch { /* not valid JSON */ }
+      }
+
       if (isKbSkill) {
         mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
       }
@@ -197,6 +210,7 @@ export function aggregateTraces(
       if ((r.actionType === 'skill_called' || r.actionType === 'skill_result') && r.payload) {
         try {
           const p = JSON.parse(r.payload)
+          console.log('[trace-aggregator] skill record payload:', JSON.stringify({ actionType: r.actionType, title: r.title, hasInput: !!p.input, hasOutput: !!p.output, skillName: p.skillName, payloadType: typeof r.payload }))
           if (r.actionType === 'skill_called') {
             return [r.actionType, p.input ? JSON.stringify(p.input) : r.title || '']
           }

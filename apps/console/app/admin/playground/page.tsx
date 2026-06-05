@@ -1100,7 +1100,7 @@ export default function PlaygroundPage() {
                         const skipping = step.status === 'skipped' || step.fired === false
                         const ck = `${turnKey}-${i}`
                         const collapsed = collapsedTraces.has(ck)
-                        const isTools = step.stage === 'Skills & tools' && step.detail?.length > 0
+                        const isTools = (step.stage === 'Skills & tools' || step.stage === 'Knowledge retrieval') && step.detail?.length > 0
                         return (
                           <div key={ck}>
                             <div
