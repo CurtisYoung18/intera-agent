@@ -201,31 +201,30 @@ export default function PlaygroundPage() {
         }
         if (currentGroup.length > 0) turnGroups.push(currentGroup)
 
-          // Aggregate each turn's traces
-          const restoredTraces = turnGroups.map((group) => {
-            const startTime = new Date(group[0].createdAt).getTime()
-            return aggregateTraces(
-              group.map(t => ({
-                id: t.id,
-                caseId: '',
-                actionType: t.actionType,
-                title: t.title,
-                detail: t.detail,
-                payload: t.payload,
-                createdAt: t.createdAt,
-              })),
-              startTime,
-              false,
-            )
-          })
+        // Aggregate each turn's traces
+        const restoredTraces = turnGroups.map((group) => {
+          const startTime = new Date(group[0].createdAt).getTime()
+          return aggregateTraces(
+            group.map(t => ({
+              id: t.id,
+              caseId: '',
+              actionType: t.actionType,
+              title: t.title,
+              detail: t.detail,
+              payload: t.payload,
+              createdAt: t.createdAt,
+            })),
+            startTime,
+            false,
+          )
+        })
 
-          setTurnTraces(restoredTraces)
-          setTurnTotalMs(restoredTraces.map((steps) => {
-            const msArr = steps.filter(s => s.fired && s.ms > 0).map(s => s.ms)
-            return msArr.length > 0 ? msArr.reduce((a, b) => a + b, 0) : 0
-          }))
-        }
-      } catch { /* session restore is best-effort */ }
+        setTurnTraces(restoredTraces)
+        setTurnTotalMs(restoredTraces.map((steps) => {
+          const msArr = steps.filter(s => s.fired && s.ms > 0).map(s => s.ms)
+          return msArr.length > 0 ? msArr.reduce((a, b) => a + b, 0) : 0
+        }))
+      }
     }
 
     async function restore() {
