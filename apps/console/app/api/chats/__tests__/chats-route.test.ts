@@ -46,7 +46,7 @@ describe('chats contract schemas', () => {
     it('validates a proper session object', () => {
       const session = {
         chatId: 'chat-1', userId: 'u1',
-        cases: [{ id: 'case-1', type: 'deposit', status: 'resolved', goal: null, createdAt: '2026-01-01', updatedAt: '2026-01-02', _count: { messages: 5 } }],
+        cases: [{ id: 'case-1', type: 'deposit', status: 'resolved', goal: null, source: 'live', createdAt: '2026-01-01', updatedAt: '2026-01-02', _count: { messages: 5 } }],
         messageCount: 5, lastActivity: '2026-01-02T00:00:00.000Z', hasHumanTask: false,
       }
       expect(() => ChatSessionSchema.parse(session)).not.toThrow()
