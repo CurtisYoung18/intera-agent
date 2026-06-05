@@ -49,6 +49,9 @@
   --font-sans: 'Inter', 'Noto Sans SC', sans-serif;
   --font-serif: 'Cormorant Garamond', Georgia, serif;
   --font-mono: 'JetBrains Mono', monospace;
+
+  --ease-glass: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-slow: 300ms;
 }
 
 /* ── Global Base ── */
