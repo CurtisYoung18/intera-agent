@@ -11,21 +11,25 @@ import { resolve } from 'node:path'
 function loadEnvLayered(): void {
   const rootEnv: string[] = []
   const appLocal: string[] = []
+  const testLocal: string[] = []
   let dir = resolve(process.cwd())
   for (let i = 0; i < 10; i++) {
     const local = resolve(dir, '.env.local')
+    const test = resolve(dir, '.env.test.local')
     const plain = resolve(dir, '.env')
     if (existsSync(local)) appLocal.push(local)
+    if (existsSync(test)) testLocal.push(test)
     if (existsSync(plain)) rootEnv.push(plain)
     const parent = resolve(dir, '..')
     if (parent === dir) break
     dir = parent
   }
-  // Load lowest precedence first (root .env), highest last (nearest .env.local
+  // Load lowest precedence first (root .env), highest last (nearest .env.test.local
   // with override). Walking up means furthest = deepest in array — load in
   // reverse so the monorepo root .env is applied first.
   for (const path of rootEnv.reverse()) loadDotEnv({ path })
   for (const path of appLocal.reverse()) loadDotEnv({ path, override: true })
+  for (const path of testLocal.reverse()) loadDotEnv({ path, override: true })
 }
 loadEnvLayered()
 
