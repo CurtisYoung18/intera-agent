@@ -197,8 +197,7 @@ export function defineRoute<Input = void, Params = void>(
       }
       const message = (err as Error).message ?? String(err)
       logger.error('unhandled error', { message })
-      const detail = process.env.NODE_ENV !== 'production' ? message : undefined
-      return envelopeResponse(apiErr('internal', 'Internal error', detail ? { _detail: detail } : undefined), 500)
+      return envelopeResponse(apiErr('internal', `Internal error: ${message}`), 500)
     }
   }
 }
