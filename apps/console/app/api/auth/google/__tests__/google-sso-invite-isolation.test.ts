@@ -50,9 +50,9 @@ function cuid(): string {
 // ── Mock logger ──
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
-// ── Mock prisma ──
+// ── Mock prisma (Proxy with fallback {} so repoForOrg can access any model) ──
 vi.mock('@intera/shared/prisma', () => ({
-  prisma: {
+  prisma: new Proxy({
     user: {
       findUnique: vi.fn(async (args: { where: Record<string, unknown>; include?: Record<string, unknown> }) => {
         const where = args.where
@@ -118,12 +118,18 @@ vi.mock('@intera/shared/prisma', () => ({
       }),
       findFirst: vi.fn(async (args: { where: Record<string, unknown> }) => {
         const where = args.where
-        // Match by email, state=pending, expiresAt > now
         for (const inv of Object.values(h.invitations)) {
           if (inv.email !== where.email) continue
           if (where.state && inv.state !== where.state) continue
           if (inv.expiresAt <= new Date()) continue
           return inv
+        }
+        return null
+      }),
+      findUnique: vi.fn(async (args: { where: Record<string, unknown> }) => {
+        const where = args.where
+        if (where.token) {
+          return Object.values(h.invitations).find((inv) => inv.token === where.token) ?? null
         }
         return null
       }),
@@ -136,7 +142,6 @@ vi.mock('@intera/shared/prisma', () => ({
     },
     // Mock $transaction to run the callback against the mock stores
     $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
-      // Create a simple transaction proxy that delegates to the mock prisma
       const tx = {
         user: {
           create: async (args: { data: Record<string, unknown> }) => {
@@ -163,12 +168,12 @@ vi.mock('@intera/shared/prisma', () => ({
       }
       return cb(tx)
     }),
-    // Stubs for models accessed by repoForOrg at construction time
-    skill: {}, agentConfig: {}, caseType: {}, policy: {}, knowledgeSource: {},
-    apiKey: {}, case: {}, userProfile: {}, liveChatConfig: {},
-    livechatPendingEvent: {}, channelHealth: {}, chatSession: {},
-    channelBinding: {}, externalConversation: {}, auditLog: {},
-  },
+  }, {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return undefined
+      return (target as any)[prop] ?? {}
+    },
+  }),
 }))
 
 // ── Mock session ──
