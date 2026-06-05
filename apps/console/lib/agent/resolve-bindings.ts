@@ -73,12 +73,20 @@ export function resolveBindings(
   // Deduplicate guardrail missing names
   missing.guardrails = [...new Set(missing.guardrails)]
 
-  // Tools
-  for (const name of (bindings.tools || [])) {
-    if (library.skillNames.has(name)) {
+  // Tools — when `tools` key is absent from bindings, include ALL library tools
+  // (no explicit tool curation). Only filter when the key is present (even if empty).
+  if (bindings.tools) {
+    for (const name of bindings.tools) {
+      if (library.skillNames.has(name)) {
+        bound.tools.push(name)
+      } else {
+        missing.tools.push(name)
+      }
+    }
+  } else {
+    // No tools key → bind all enabled skills
+    for (const name of library.skillNames) {
       bound.tools.push(name)
-    } else {
-      missing.tools.push(name)
     }
   }
 

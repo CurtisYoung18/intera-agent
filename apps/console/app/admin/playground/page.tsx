@@ -123,6 +123,7 @@ export default function PlaygroundPage() {
   useEffect(() => { chatIdRef.current = chatId }, [chatId])
   const prevAgentIdRef = useRef<string | null>(null)
   const hasRestoredRef = useRef(false)
+  const isRestoringRef = useRef(false)
 
   // ── Message queue (allow typing while responding) ──
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
@@ -147,6 +148,9 @@ export default function PlaygroundPage() {
     const isAgentSwitch = hasRestoredRef.current && prevAgentIdRef.current !== selectedAgentId
     hasRestoredRef.current = true
     prevAgentIdRef.current = selectedAgentId
+
+    // Skip if restore is already in-flight (context loaded while fetch is running)
+    if (!isAgentSwitch && isRestoringRef.current) return
 
     if (isAgentSwitch) {
       setChatId(null)
@@ -246,8 +250,10 @@ export default function PlaygroundPage() {
         await loadSession(latestSession.chatId)
       } catch { /* session restore is best-effort */ }
     }
-    restore()
-    return () => { cancelled = true }
+    restore().finally(() => { isRestoringRef.current = false })
+    // Only cancel in-flight fetch when actually switching agents,
+    // not when context loads and re-runs the effect during initial restore.
+    return () => { if (isAgentSwitch) cancelled = true }
   }, [selectedAgentId])
 
   // Auto-expand latest turn; error tools default expanded
