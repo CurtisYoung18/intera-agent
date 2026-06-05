@@ -4,13 +4,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { compareSync } from 'bcryptjs'
+import { emailNormalized } from '@intera/shared/contracts/auth'
 import { prisma } from '@intera/shared/prisma'
 import { defineRoute, UnauthorizedError, ForbiddenError, RouteError } from '@/lib/api/define-route'
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE_S } from '@/lib/session'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 
 const loginSchema = z.object({
-  email: z.string().min(1).transform(e => e.trim().toLowerCase()),
+  email: emailNormalized,
   password: z.string().min(1),
 })
 type LoginInput = z.infer<typeof loginSchema>
