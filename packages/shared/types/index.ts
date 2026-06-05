@@ -482,6 +482,13 @@ export interface InteractionOption {
   inputPlaceholder?: string
 }
 
+/** Canonical error payload for SSE `error` events. */
+export interface SSEErrorData { code: string; message: string }
+
+/** Lifecycle notices the playground renders as system bubbles. */
+export type LifecycleKind = 'escalated' | 'case_created' | 'sub_agent' | 'human_task' | 'retry'
+export interface LifecycleNotice { kind: LifecycleKind; label: string; detail?: string }
+
 export interface SSEEvent {
   type: SSEEventType
   data: unknown
