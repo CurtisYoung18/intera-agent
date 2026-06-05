@@ -45,6 +45,7 @@ export const GET = defineRoute({
         id: c.id,
         type: c.type,
         status: c.status,
+        source: c.source,
         goal: c.goal,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),

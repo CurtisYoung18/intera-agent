@@ -26,6 +26,7 @@ export const CaseSummaryInChatSchema = z.object({
   id: z.string(),
   type: z.string(),
   status: z.string(),
+  source: z.string(),
   goal: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
