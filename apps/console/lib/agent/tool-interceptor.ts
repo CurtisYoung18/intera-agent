@@ -257,12 +257,7 @@ async function handleReadChatMemory(ctx: ToolInterceptorContext): Promise<void> 
   // No additional processing needed — the chatMemory summary is available
   // to the model through the tool_result content block.
   //
-  // Previously this replaced mock text in assistant messages, but that format
-  // is no longer used after the unified tool result format fix (Phase 1).
-  await ctx.traceWriter.write('skill_result', 'Read chat memory', {
-    skillName: 'read_chat_memory',
-    iteration: 0,
-  })
+  // Trace is already written by loop.ts (Tool: read_chat_memory).
 }
 
 // ---------------------------------------------------------------------------
@@ -272,12 +267,7 @@ async function handleReadChatMemory(ctx: ToolInterceptorContext): Promise<void> 
 async function handleReadUserProfile(ctx: ToolInterceptorContext): Promise<void>
 {
   // Same as read_chat_memory — the tool result is already in the stream.
-  // Previously this did a DB lookup and replaced mock text, but the mock text
-  // format is no longer used after Phase 1.
-  await ctx.traceWriter.write('skill_result', 'Read user profile', {
-    skillName: 'read_user_profile',
-    iteration: 0,
-  })
+  // Trace is already written by loop.ts (Tool: read_user_profile).
 }
 
 // ---------------------------------------------------------------------------
