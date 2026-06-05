@@ -8,6 +8,7 @@ ALTER TABLE "channel_bindings" ADD COLUMN IF NOT EXISTS "license_id" TEXT;
 
 -- 2. Replace unique constraint: (org_id, channel) → (org_id, agent_name, channel)
 ALTER TABLE "channel_bindings" DROP CONSTRAINT IF EXISTS "channel_bindings_org_id_channel_key";
+DROP INDEX IF EXISTS "channel_bindings_org_id_channel_key";
 ALTER TABLE "channel_bindings" ADD CONSTRAINT "channel_bindings_org_id_agent_name_channel_key"
   UNIQUE ("org_id", "agent_name", "channel");
 
