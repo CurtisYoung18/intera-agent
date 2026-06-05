@@ -1022,6 +1022,11 @@ export class SkillRouter {
                 buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open', type: 'url', url: '$.url' }],
               },
             },
+            "web-chat": {
+              kind: 'form',
+              layout: 'single',
+              submitLabel: 'Submit',
+            },
           },
         })
       }
