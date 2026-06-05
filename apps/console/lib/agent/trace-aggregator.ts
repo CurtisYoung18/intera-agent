@@ -20,7 +20,7 @@ export interface PlaygroundTraceStep {
   status: TraceStatus | 'skipped'
   fired: boolean
   ms: number
-  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   summary: string
   detail: [string, string][]
   json?: object
@@ -90,7 +90,7 @@ function deriveStatus(record: TraceRecord): TraceStatus {
 }
 
 /** Extract usage from an llm_response record's detail or payload JSON. */
-function extractUsage(record: TraceRecord): { inputTokens: number; outputTokens: number; totalTokens: number } | undefined {
+function extractUsage(record: TraceRecord): PlaygroundTraceStep['usage'] {
   const raw = record.detail || record.payload
   if (!raw) return undefined
   try {
@@ -99,7 +99,13 @@ function extractUsage(record: TraceRecord): { inputTokens: number; outputTokens:
     if (u && (typeof u.input_tokens === 'number' || typeof u.output_tokens === 'number')) {
       const inputTokens = Number(u.input_tokens ?? 0)
       const outputTokens = Number(u.output_tokens ?? 0)
-      return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens }
+      return {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        cacheReadTokens: typeof u.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : undefined,
+        cacheWriteTokens: typeof u.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : undefined,
+      }
     }
   } catch { /* ignore parse errors */ }
   return undefined
