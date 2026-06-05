@@ -23,7 +23,6 @@ export type ActionType =
   | 'llm_response'
   | 'microcompact'
   | 'stage_eval'
-  | 'intent_classify'
   // ── LiveChat / multi-agent trace ──
   | 'incoming_chat'
   | 'chat_deactivated'
