@@ -124,13 +124,6 @@ export function aggregateTraces(
   const stageMap = new Map<string, { records: TraceRecord[]; earliest: number }>()
   const bookkeeping: TraceRecord[] = []
 
-  // DEBUG: log all non-bookkeeping records
-  for (const t of traces) {
-    if (!BOOKKEEPING.has(t.actionType)) {
-      console.log('[trace-aggregator] record:', JSON.stringify({ actionType: t.actionType, title: t.title, hasPayload: !!t.payload, payloadLen: t.payload?.length, detail: t.detail }))
-    }
-  }
-
   for (const t of traces) {
     if (BOOKKEEPING.has(t.actionType)) { bookkeeping.push(t); continue }
     const actionType = t.actionType
@@ -210,7 +203,6 @@ export function aggregateTraces(
       if ((r.actionType === 'skill_called' || r.actionType === 'skill_result') && r.payload) {
         try {
           const p = JSON.parse(r.payload)
-          console.log('[trace-aggregator] skill record payload:', JSON.stringify({ actionType: r.actionType, title: r.title, hasInput: !!p.input, hasOutput: !!p.output, skillName: p.skillName, payloadType: typeof r.payload }))
           if (r.actionType === 'skill_called') {
             return [r.actionType, p.input ? JSON.stringify(p.input) : r.title || '']
           }
