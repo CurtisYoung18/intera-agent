@@ -3,7 +3,7 @@
 
 import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
-import { createMemoryPersistence, type TraceRecord } from './persistence-port'
+import { type TraceRecord, createPrismaPersistence } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
 import type { SSEEvent, CaseSchemaConfig, ContentBlock } from '@intera/shared/types'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
@@ -20,6 +20,8 @@ export interface PlaygroundConfig {
   /** Override agentConfig.showThinking to force thinking output for this turn. */
   showThinking?: boolean
 }
+
+const MAX_PLAYGROUND_SESSIONS = 5
 
 export interface PlaygroundResult {
   turnId: string
@@ -42,8 +44,9 @@ export async function* runPlaygroundTurn(input: {
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
 
-  // ── Memory persistence (zero DB writes) ──
-  const { port: persistence, traces } = createMemoryPersistence()
+  // ── Persistence (Prisma, messages written through port) ──
+  const persistence = createPrismaPersistence()
+  const traces: TraceRecord[] = []
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId, input.configId)
@@ -66,23 +69,86 @@ export async function* runPlaygroundTurn(input: {
     availableTools: [],
   })
 
-  // ── Create the REAL AgentLoop with injected port + dryRun ──
-  const caseId = turnId
-  const chatId = `pg_chat_${Date.now()}`
+  // ── Resolve or create Case for this session ──
+  let caseId: string
+  let effectiveChatId: string
+  let bootstrapNewCase: boolean
+
+  const userId = 'playground' // replaced with real userId in Task 4
+
+  if (inputChatId) {
+    const existingCase = await prisma.case.findFirst({
+      where: { chatId: inputChatId, type: 'playground', userId },
+      select: { id: true },
+    })
+    if (!existingCase) {
+      effectiveChatId = inputChatId
+      bootstrapNewCase = true
+      caseId = effectiveChatId
+    } else {
+      effectiveChatId = inputChatId
+      bootstrapNewCase = false
+      caseId = existingCase.id
+    }
+  } else {
+    // First turn — check per-account cap
+    const sessionCount = await prisma.case.count({
+      where: { userId, type: 'playground' },
+    })
+    if (sessionCount >= MAX_PLAYGROUND_SESSIONS) {
+      const oldestCases = await prisma.case.findMany({
+        where: { userId, type: 'playground' },
+        orderBy: { createdAt: 'asc' },
+        take: sessionCount - MAX_PLAYGROUND_SESSIONS + 1,
+        select: { id: true },
+      })
+      await prisma.case.deleteMany({
+        where: { id: { in: oldestCases.map(c => c.id) } },
+      })
+    }
+    effectiveChatId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    bootstrapNewCase = true
+    caseId = effectiveChatId
+  }
 
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
     caseId,
     orgId,
-    userId: 'playground',
+    userId,
     systemPrompt: assembled.prompt,
     coreSystemPrompt: assembled.basePrompt,
     caseSchema: null,
-    chatId,
-    bootstrapNewCase: true,
-    persistence,     // ← memory port: no DB writes
+    chatId: effectiveChatId,
+    bootstrapNewCase,
+    persistence,     // ← Prisma port
     dryRun: true,    // ← operational tools mocked, system_info allowed
   })
+
+  // ── Load conversation history from DB ──
+  const priorMessages = await prisma.message.findMany({
+    where: { caseId },
+    orderBy: { createdAt: 'asc' },
+    take: 40,
+  })
+  if (priorMessages.length > 0) {
+    agentLoop.loadMessages(
+      priorMessages.map((m) => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        contentBlocks: (m as any).contentBlocks ?? undefined,
+        createdAt: m.createdAt,
+      })),
+    )
+  }
+
+  // ── Handshake: tell UI the chatId ──
+  yield {
+    type: 'session_init' as const,
+    data: { chatId: effectiveChatId, caseId },
+    timestamp: new Date().toISOString(),
+  }
 
   // ── Collect events from real pipeline and stream them as they fire ──
   let reply = ''
