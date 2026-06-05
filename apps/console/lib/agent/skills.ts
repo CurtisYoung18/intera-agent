@@ -830,13 +830,21 @@ export class SkillRouter {
         where: { orgId },
       })
 
+      const VALID_MODES = new Set(['static', 'http', 'engine_managed', 'channel'])
       for (const s of dbSkills) {
+        const dbMode = s.mode || 'static'
+        // Preserve the built-in mode when DB has an invalid mode value (e.g. 'mock'
+        // from old console saves). The built-in definition is authoritative for mode.
+        const builtinMode = router.skills.get(s.name)?.mode
+        const mode = VALID_MODES.has(dbMode)
+          ? (dbMode as 'static' | 'http' | 'engine_managed' | 'channel')
+          : (builtinMode as 'static' | 'http' | 'engine_managed' | 'channel') || 'static'
         router.skills.set(s.name, {
           name: s.name,
           description: s.description,
           inputSchema: JSON.parse(s.inputSchema || '{}'),
           outputSchema: s.outputSchema ? JSON.parse(s.outputSchema) : undefined,
-          mode: (s.mode as 'static' | 'http' | 'engine_managed' | 'channel') || 'static',
+          mode,
           endpoint: s.endpoint || undefined,
           httpMethod: (s.httpMethod as 'GET' | 'POST') || 'POST',
           headers: s.headers ? JSON.parse(s.headers) : undefined,
