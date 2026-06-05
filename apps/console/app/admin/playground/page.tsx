@@ -16,6 +16,7 @@ import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
 import RenderHintCard from '@/components/chat/render-hint-card'
+import { StatusDot, statusColor } from '@/components/chat/status-accents'
 
 /* ── Types ── */
 
@@ -58,29 +59,6 @@ const QUICK_STARTS = [
   { label: "This isn't working, I'm furious", hint: 'Escalation test' },
 ]
 
-const TRACE_ICONS: Record<string, typeof AlertCircle> = {
-  policy_hit: Shield,
-  skill_called: Puzzle,
-  skill_result: CheckCircle2,
-  stage_eval: Clock,
-  llm_request_start: Sparkles,
-  llm_response: Sparkles,
-}
-
-const TRACE_COLORS: Record<string, string> = {
-  ok: 'bg-emerald-400', info: 'bg-sky-400', warn: 'bg-amber-400',
-  block: 'bg-red-400', neutral: 'bg-black/10',
-}
-
-const STATUS_RGB: Record<string, string> = {
-  ok: '46,160,74', info: '91,184,247', warn: '212,145,46',
-  block: '230,69,57', neutral: '0,0,0',
-}
-
-const STATUS_ICON_COLOR: Record<string, string> = {
-  ok: 'var(--malachite)', info: 'var(--sky)', warn: 'var(--amber)',
-  block: 'var(--vermillion)', neutral: 'var(--fog)',
-}
 
 /* ── Helpers ── */
 
@@ -721,10 +699,8 @@ export default function PlaygroundPage() {
                   >
                     {t.status === 'running' ? (
                       <OrganicLoader icon="spin" size={14} className="text-indigo" />
-                    ) : t.status === 'error' ? (
-                      <XCircle size={14} color="var(--vermillion)" />
                     ) : (
-                      <CheckCircle2 size={14} color="var(--malachite)" />
+                      <StatusDot status={t.status === 'error' ? 'error' : 'ok'} size={10} />
                     )}
                     <span style={{
                       fontSize: 11, fontWeight: 500, color: 'var(--mist)', flex: 1,
@@ -810,7 +786,6 @@ export default function PlaygroundPage() {
                         Turn {turnKey}
                       </div>
                       {filteredSteps.map((step: any, i: number) => {
-                        const Icon = TRACE_ICONS[step.actionType] || Puzzle
                         const skipping = step.status === 'skipped' || step.fired === false
                         const ck = `${turnKey}-${i}`
                         const collapsed = collapsedTraces.has(ck)
@@ -839,13 +814,12 @@ export default function PlaygroundPage() {
                               <div style={{
                                 width: collapsed ? 16 : 22, height: collapsed ? 16 : 22, borderRadius: 6,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: `rgba(${STATUS_RGB[step.status] ?? '0,0,0'}, 0.08)`,
                                 flexShrink: 0,
                                 transition: 'all 0.15s',
                               }}>
                                 {collapsed
                                   ? <ChevronDown size={9} color="var(--fog)" style={{ transform: 'rotate(-90deg)' }} />
-                                  : <Icon size={11} color={STATUS_ICON_COLOR[step.status] ?? 'var(--fog)'} />
+                                  : <StatusDot status={step.status} size={10} />
                                 }
                               </div>
                               <span style={{ fontWeight: 500, color: 'var(--mist)', minWidth: 84, fontSize: 11, flexShrink: 0 }}>
