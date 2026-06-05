@@ -6,7 +6,7 @@ import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
   Shield, Brain, Search, Puzzle, ExternalLink, Activity,
-  ChevronDown, ImageIcon,
+  ChevronDown, ChevronLeft, ChevronRight, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import type { LifecycleNotice } from '@intera/shared/types'
@@ -107,6 +107,7 @@ export default function PlaygroundPage() {
   const turnNumRef = useRef(0)
   const [collapsedTraces, setCollapsedTraces] = useState<Set<string>>(new Set())
   const [showSkipped, setShowSkipped] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [error, setError] = useState('')
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [toastMessage, setToastMessage] = useState('')
@@ -521,7 +522,7 @@ export default function PlaygroundPage() {
         }}>
           <div className="pg-chat-scroll" style={{
             flex: 1, width: '100%', maxWidth: 680,
-            padding: '32px 32px 0 24px',
+            padding: '32px 0 0 24px',
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
@@ -634,18 +635,18 @@ export default function PlaygroundPage() {
                   <details style={{
                     padding: '10px 14px', borderRadius: 12,
                     marginBottom: 6,
-                    background: '#1e1e2e',
-                    border: '1px solid rgba(139,111,245,0.2)',
+                    background: 'rgba(139,111,245,0.04)',
+                    border: '1px solid rgba(139,111,245,0.1)',
                     fontSize: 12,
                   }}>
                     <summary style={{
-                      fontWeight: 600, color: '#c4b5fd',
+                      fontWeight: 600, color: 'var(--lavender)',
                       cursor: 'pointer', marginBottom: 6,
                     }}>
                       Thinking
                     </summary>
                     <div style={{
-                      color: '#cdd6f4', lineHeight: 1.7,
+                      color: 'var(--mist)', lineHeight: 1.7,
                       whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                       fontFamily: 'var(--font-serif), serif', fontStyle: 'italic',
                       fontSize: 12,
@@ -985,6 +986,7 @@ export default function PlaygroundPage() {
         </div>
 
         {/* ── Sidebar (right) ── */}
+        {!sidebarCollapsed && (
         <aside style={{
           width: 340, flexShrink: 0,
           borderLeft: '1px solid var(--border-subtle)',
@@ -998,6 +1000,8 @@ export default function PlaygroundPage() {
             title="Trace"
             icon={<Activity size={11} />}
             count={liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)}
+            onCollapse={() => setSidebarCollapsed(true)}
+            collapsed={sidebarCollapsed}
           >
             {/* ── Aggregate summary bar ── */}
             {(() => {
@@ -1244,6 +1248,23 @@ export default function PlaygroundPage() {
             )}
           </SidebarSection>
         </aside>
+        )}
+        {sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            style={{
+              width: 32, flexShrink: 0,
+              borderLeft: '1px solid var(--border-subtle)',
+              background: 'rgba(255,255,255,0.4)',
+              backdropFilter: 'blur(20px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0,
+            }}
+            title="Expand trace panel"
+          >
+            <ChevronLeft size={14} color="var(--fog)" />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -1267,13 +1288,15 @@ function ConfigPill({ icon, label }: { icon: React.ReactNode; label: string }) {
 }
 
 function SidebarSection({
-  title, icon, count, maxHeight, flex, children,
+  title, icon, count, maxHeight, flex, onCollapse, collapsed, children,
 }: {
   title: string
   icon: React.ReactNode
   count?: number
   maxHeight?: number
   flex?: number
+  onCollapse?: () => void
+  collapsed?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -1301,6 +1324,20 @@ function SidebarSection({
           }}>
             {count}
           </span>
+        )}
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 20, height: 20, borderRadius: 6,
+              border: '1px solid var(--border-subtle)', background: 'rgba(255,255,255,0.6)',
+              cursor: 'pointer', padding: 0, flexShrink: 0,
+            }}
+            title={collapsed ? 'Expand trace panel' : 'Collapse trace panel'}
+          >
+            {collapsed ? <ChevronLeft size={10} color="var(--fog)" /> : <ChevronRight size={10} color="var(--fog)" />}
+          </button>
         )}
       </div>
       <div style={{
