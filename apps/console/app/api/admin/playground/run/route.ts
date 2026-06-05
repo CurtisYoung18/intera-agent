@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const send = (event: SSEEvent) => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)) } catch { /* client disconnected */ } }
       try {
-        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks: body.contentBlocks, chatId: body.chatId })) { send(event) }
+        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks: body.contentBlocks, chatId: body.chatId, userId: vendor.userId ?? 'playground' })) { send(event) }
       } catch (err) {
         send({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Internal error' }, timestamp: new Date().toISOString() })
       } finally { try { controller.close() } catch { /* ignore */ } }

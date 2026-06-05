@@ -39,8 +39,9 @@ export async function* runPlaygroundTurn(input: {
   orgId: string; message: string; playgroundConfig: PlaygroundConfig; configId?: string | null
   contentBlocks?: ContentBlock[]
   chatId?: string
+  userId?: string
 }): AsyncGenerator<SSEEvent> {
-  const { orgId, message, playgroundConfig: pc, chatId: inputChatId } = input
+  const { orgId, message, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId } = input
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
 
@@ -74,7 +75,7 @@ export async function* runPlaygroundTurn(input: {
   let effectiveChatId: string
   let bootstrapNewCase: boolean
 
-  const userId = 'playground' // replaced with real userId in Task 4
+  const userId = inputUserId || 'playground'
 
   if (inputChatId) {
     const existingCase = await prisma.case.findFirst({
