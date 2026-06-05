@@ -43,7 +43,7 @@ export default function DotMatrixNumber({
     const rows = 7
     const contentW = chars.length * (cols * gap) - gap
     const contentH = rows * gap
-    const pad = dotSize
+    const pad = dotSize * 2
     const totalW = contentW + pad * 2
     const totalH = contentH + pad * 2
     const circles: string[] = []
