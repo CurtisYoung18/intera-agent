@@ -819,6 +819,18 @@ body {
 .pg-colbody::-webkit-scrollbar { width: 5px; }
 .pg-colbody::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 3px; }
 
+/* Playground chat area — glass scrollbar */
+.pg-chat-scroll { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.12) transparent; }
+.pg-chat-scroll::-webkit-scrollbar { width: 5px; }
+.pg-chat-scroll::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
+.pg-chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.1);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.6);
+  backdrop-filter: blur(4px);
+}
+.pg-chat-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.18); }
+
 /* Config knobs */
 .cfg-block { margin-bottom: 18px; }
 .cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; }
