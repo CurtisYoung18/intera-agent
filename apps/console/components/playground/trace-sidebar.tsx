@@ -376,11 +376,11 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
 }
 
 function TurnSection({
-  turnIdx, steps, turnMs, isExpanded, isLatest, isResponding, expandedTools, onToggleTool, onToggleTurn, tb,
+  turnIdx, steps, turnMs, isExpanded, isLatest, isResponding, liveTools, expandedTools, onToggleTool, onToggleTurn, tb,
 }: {
   turnIdx: number; steps: PlaygroundTraceStep[]; turnMs: number
   isExpanded: boolean; isLatest: boolean; isResponding: boolean
-  expandedTools: Set<string>; onToggleTool: (key: string) => void; onToggleTurn: (idx: number) => void
+  liveTools: LiveTool[]; expandedTools: Set<string>; onToggleTool: (key: string) => void; onToggleTurn: (idx: number) => void
   tb: (k: string) => string
 }) {
   let turnInput = 0, turnOutput = 0, cacheRead = 0
@@ -393,6 +393,8 @@ function TurnSection({
   const cachePct = (turnInput + cacheRead) > 0 ? Math.round(cacheRead / (turnInput + cacheRead) * 100) : 0
   const toolSteps = steps.filter((s) => s.stage === 'Skills & tools' || s.stage === 'Knowledge retrieval')
   const toolCount = toolSteps.reduce((sum, s) => sum + (s.detail?.length || 0), 0)
+  const hasLiveTools = isLatest && isResponding && liveTools.length > 0
+  const hasTraceData = steps.length > 0
 
   const chevronStyle: React.CSSProperties = {
     transition: 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
@@ -419,7 +421,7 @@ function TurnSection({
         }}>
           Turn {turnIdx + 1}
         </span>
-        {isLatest && isResponding && (
+        {hasLiveTools && (
           <Loader2 size={12} style={{
             color: 'var(--indigo)', animation: 'spin 1s linear infinite', flexShrink: 0,
           }} />
@@ -434,12 +436,14 @@ function TurnSection({
           </span>
         )}
         <span style={{
-          fontSize: 11, color: 'var(--fog)',
+          fontSize: 11, color: hasLiveTools && !hasTraceData ? 'var(--indigo)' : 'var(--fog)',
           whiteSpace: 'nowrap', marginLeft: 'auto',
           fontFamily: 'var(--font-mono)',
         }}>
-          {turnMs >= 1000 ? (turnMs / 1000).toFixed(1) + 's' : turnMs + 'ms'}
-          {toolCount > 0 ? ` / ${toolCount} tool${toolCount !== 1 ? 's' : ''}` : ''}
+          {hasLiveTools && !hasTraceData
+            ? tb('trace.running')
+            : <>{turnMs >= 1000 ? (turnMs / 1000).toFixed(1) + 's' : turnMs + 'ms'}{toolCount > 0 ? ` / ${toolCount} tool${toolCount !== 1 ? 's' : ''}` : ''}</>
+          }
         </span>
         <ChevronDown size={14} style={chevronStyle} />
       </div>
@@ -495,62 +499,39 @@ function TurnSection({
 
             return null
           })}
+
+          {/* Live tools during streaming — rendered inside the current turn */}
+          {hasLiveTools && liveTools.map((t, i) => (
+            <div key={`live-${i}`} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 14px 7px 26px',
+            }}>
+              {t.status === 'running' ? (
+                <Loader2 size={12} style={{
+                  color: 'var(--amber)', animation: 'spin 1s linear infinite', flexShrink: 0,
+                }} />
+              ) : t.status === 'error' ? (
+                <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
+              ) : (
+                <CheckCircle2 size={12} style={{ color: 'var(--malachite)', flexShrink: 0 }} />
+              )}
+              <span style={{
+                fontSize: 12, fontWeight: 500,
+                color: t.status === 'error' ? 'var(--vermillion)' : 'var(--mist)',
+                fontFamily: 'var(--font-mono)',
+              }}>
+                {t.name}
+              </span>
+              <span style={{
+                fontSize: 11, color: t.status === 'running' ? 'var(--amber)' : t.status === 'error' ? 'var(--vermillion)' : 'var(--smoke)',
+                marginLeft: 'auto', fontFamily: 'var(--font-mono)',
+              }}>
+                {t.status === 'running' ? 'running...' : t.status === 'error' ? 'failed' : t.finishedAt && t.startedAt ? `${t.finishedAt - t.startedAt}ms` : 'done'}
+              </span>
+            </div>
+          ))}
         </div>
       )}
-    </div>
-  )
-}
-
-function LiveTurnSection({ liveTools, turnNumber, tb }: { liveTools: LiveTool[]; turnNumber: number; tb: (k: string) => string }) {
-  return (
-    <div>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
-      }}>
-        <div style={{
-          width: 3, height: 22, borderRadius: 2, flexShrink: 0,
-          background: 'var(--indigo)',
-        }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--mist)' }}>
-          Turn {turnNumber}
-        </span>
-        <Loader2 size={12} style={{
-          color: 'var(--indigo)', animation: 'spin 1s linear infinite', flexShrink: 0,
-        }} />
-        <span style={{ fontSize: 10, color: 'var(--indigo)', marginLeft: 'auto' }}>
-          {tb('trace.running')}
-        </span>
-      </div>
-      {liveTools.map((t, i) => (
-        <div key={`live-${i}`} style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '7px 14px 7px 26px',
-        }}>
-          {t.status === 'running' ? (
-            <Loader2 size={12} style={{
-              color: 'var(--amber)', animation: 'spin 1s linear infinite', flexShrink: 0,
-            }} />
-          ) : t.status === 'error' ? (
-            <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
-          ) : (
-            <CheckCircle2 size={12} style={{ color: 'var(--malachite)', flexShrink: 0 }} />
-          )}
-          <span style={{
-            fontSize: 12, fontWeight: 500,
-            color: t.status === 'error' ? 'var(--vermillion)' : 'var(--mist)',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            {t.name}
-          </span>
-          <span style={{
-            fontSize: 11, color: t.status === 'running' ? 'var(--amber)' : t.status === 'error' ? 'var(--vermillion)' : 'var(--smoke)',
-            marginLeft: 'auto', fontFamily: 'var(--font-mono)',
-          }}>
-            {t.status === 'running' ? 'running' : t.status === 'error' ? 'failed' : t.finishedAt && t.startedAt ? `${t.finishedAt - t.startedAt}ms` : 'done'}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }
@@ -616,31 +597,28 @@ export default function TraceSidebar({
               <SessionMetricsGrid metrics={sessionMetrics} tb={tb} />
             )}
 
-            {/* Completed turns */}
-            {turnTraces.map((steps, turnIdx) => (
-              <TurnSection
-                key={turnIdx}
-                turnIdx={turnIdx}
-                steps={steps}
-                turnMs={turnTotalMs[turnIdx] || 0}
-                isExpanded={expandedTurns.has(turnIdx)}
-                isLatest={turnIdx === turnTraces.length - 1}
-                isResponding={responding}
-                expandedTools={expandedTools}
-                onToggleTool={onToggleTool}
-                onToggleTurn={onToggleTurn}
-                tb={tb}
-              />
-            ))}
-
-            {/* Live turn during streaming */}
-            {responding && liveTools.length > 0 && (
-              <LiveTurnSection
-                liveTools={liveTools}
-                turnNumber={turnTraces.length + 1}
-                tb={tb}
-              />
-            )}
+            {/* Completed turns + live turn (merged) */}
+            {turnTraces.map((steps, turnIdx) => {
+              const isLatest = turnIdx === turnTraces.length - 1
+              // Show live tools on the latest turn when responding
+              const live = (isLatest && responding) ? liveTools : []
+              return (
+                <TurnSection
+                  key={turnIdx}
+                  turnIdx={turnIdx}
+                  steps={steps}
+                  turnMs={turnTotalMs[turnIdx] || 0}
+                  isExpanded={expandedTurns.has(turnIdx)}
+                  isLatest={isLatest}
+                  isResponding={responding}
+                  liveTools={live}
+                  expandedTools={expandedTools}
+                  onToggleTool={onToggleTool}
+                  onToggleTurn={onToggleTurn}
+                  tb={tb}
+                />
+              )
+            })}
 
             {/* Render hints for completed tools */}
             {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
