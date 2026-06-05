@@ -1,34 +1,33 @@
-// GET + PUT /api/admin/agent — Agent config CRUD (upsert)
+// GET + PUT + POST /api/admin/agent — Agent config CRUD (upsert)
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
+// POST is an alias for PUT (apiClient defaults to POST when body is present).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma, ensureSqliteSchemaCompat, ensureDefaultOrg } from '@intera/shared/prisma'
+import { NextRequest } from 'next/server'
+import { z } from 'zod'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 
-import { getActiveOrgId } from '@/lib/auth'
+const getQuerySchema = z.object({
+  agentId: z.string().optional(),
+})
 
-async function resolveAgentConfig(orgId: string, agentId: string | null) {
-  if (agentId) {
-    const config = await prisma.agentConfig.findUnique({ where: { id: agentId } })
-    if (config && config.orgId === orgId) {
-      return config
-    }
-  }
-  return prisma.agentConfig.findFirst({ where: { orgId, isActive: true } })
-}
+export const GET = defineRoute({
+  method: 'GET',
+  parseQuery: true,
+  inputSchema: getQuerySchema,
+  async handler({ input, repo }) {
+    const agentId = input.agentId ?? null
 
-export async function GET(request: NextRequest) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureSqliteSchemaCompat(prisma)
-    const agentId = request.nextUrl.searchParams.get('agentId')
-    let config = await resolveAgentConfig(ORG_ID, agentId)
+    let config = agentId
+      ? await repo.agentConfig.findUnique({ where: { id: agentId } })
+      : await repo.agentConfig.findFirst({ where: { isActive: true } })
 
-    // Lazy init: create from defaults if DB is empty
     if (!config) {
-      await ensureDefaultOrg(ORG_ID)
-      config = await prisma.agentConfig.create({
+      await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
+      config = await repo.agentConfig.create({
         data: {
-          orgId: ORG_ID,
           systemPrompt: DEFAULT_SYSTEM_PROMPT,
           model: DEFAULT_MODEL,
           temperature: 0.5,
@@ -37,87 +36,107 @@ export async function GET(request: NextRequest) {
           maxOutputTokens: 4096,
           showThinking: false,
           caseAddendum: null,
-          useLegacyCasePrompt: false, // new configs use base+append by default
+          useLegacyCasePrompt: false,
           resumePrompt: null,
           memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
           policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
-        },
+        } as any,
       })
     }
 
-    return NextResponse.json({ config })
-  } catch (err) {
-    console.error('[Admin] GET agent config:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+    return apiOk({ config, resolvedModel: resolveEffectiveModel(config) })
+  },
+})
+
+const putSchema = z.object({
+  model: z.string().optional(),
+  temperature: z.number().optional(),
+  thinkingBudget: z.number().optional(),
+  maxIterations: z.number().optional(),
+  maxOutputTokens: z.number().optional(),
+  systemPrompt: z.string().optional(),
+  coreSystemPrompt: z.string().nullable().optional(),
+  caseAddendum: z.string().nullable().optional(),
+  useLegacyCasePrompt: z.boolean().optional(),
+  showThinking: z.boolean().optional(),
+  memoryStrategy: z.union([z.string(), z.record(z.unknown())]).optional(),
+  policyHooks: z.union([z.string(), z.record(z.unknown())]).optional(),
+  resumePrompt: z.string().nullable().optional(),
+  debugMode: z.boolean().optional(),
+  invariantCheck: z.boolean().optional(),
+  capabilityBindings: z.union([z.string(), z.record(z.unknown())]).optional(),
+})
+type PutInput = z.infer<typeof putSchema>
+
+function toJsonIfObject(v: unknown): string | undefined {
+  if (v === undefined) return undefined
+  return typeof v === 'string' ? v : JSON.stringify(v)
+}
+
+function agentUpdateHandler(agentId: string | null) {
+  return defineRoute<PutInput>({
+    method: 'PUT',
+    inputSchema: putSchema,
+    requireRole: ['admin', 'owner'],
+    async handler({ input, repo }) {
+    await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
+
+    const data: Record<string, unknown> = {}
+    if (input.model !== undefined) data.model = input.model
+    if (input.temperature !== undefined) data.temperature = input.temperature
+    if (input.thinkingBudget !== undefined) data.thinkingBudget = input.thinkingBudget
+    if (input.maxIterations !== undefined) data.maxIterations = input.maxIterations
+    if (input.maxOutputTokens !== undefined) data.maxOutputTokens = input.maxOutputTokens
+    if (input.systemPrompt !== undefined) data.systemPrompt = input.systemPrompt
+    if (input.coreSystemPrompt !== undefined) data.coreSystemPrompt = input.coreSystemPrompt
+    if (input.caseAddendum !== undefined) data.caseAddendum = input.caseAddendum
+    if (input.useLegacyCasePrompt !== undefined) data.useLegacyCasePrompt = input.useLegacyCasePrompt
+    if (input.showThinking !== undefined) data.showThinking = input.showThinking
+    if (input.memoryStrategy !== undefined) data.memoryStrategy = toJsonIfObject(input.memoryStrategy)
+    if (input.policyHooks !== undefined) data.policyHooks = toJsonIfObject(input.policyHooks)
+    if (input.resumePrompt !== undefined) data.resumePrompt = input.resumePrompt
+    if (input.debugMode !== undefined) data.debugMode = input.debugMode
+    if (input.invariantCheck !== undefined) data.invariantCheck = input.invariantCheck
+    if (input.capabilityBindings !== undefined) data.capabilityBindings = toJsonIfObject(input.capabilityBindings)
+
+    const existing = agentId
+      ? await repo.agentConfig.findUnique({ where: { id: agentId } })
+      : await repo.agentConfig.findFirst({ where: { isActive: true } })
+    let config
+    if (existing) {
+      config = await repo.agentConfig.update({ where: { id: existing.id }, data: data as any })
+    } else {
+      config = await repo.agentConfig.create({
+        data: {
+          systemPrompt: input.systemPrompt || '',
+          coreSystemPrompt: input.coreSystemPrompt ?? null,
+          caseAddendum: input.caseAddendum ?? null,
+          useLegacyCasePrompt: input.useLegacyCasePrompt ?? false,
+          model: input.model || DEFAULT_MODEL,
+          temperature: input.temperature ?? 0.5,
+          thinkingBudget: input.thinkingBudget ?? 4096,
+          maxIterations: input.maxIterations ?? 20,
+          maxOutputTokens: input.maxOutputTokens ?? 4096,
+          showThinking: input.showThinking ?? false,
+          resumePrompt: input.resumePrompt ?? null,
+          debugMode: input.debugMode ?? false,
+          memoryStrategy: input.memoryStrategy ? toJsonIfObject(input.memoryStrategy) || JSON.stringify({}) : JSON.stringify(DEFAULT_MEMORY_STRATEGY),
+          policyHooks: input.policyHooks ? toJsonIfObject(input.policyHooks) || JSON.stringify({}) : JSON.stringify(DEFAULT_POLICY_HOOKS),
+        } as any,
+      })
+    }
+
+    return apiOk({ config })
+  },
+})
 }
 
 export async function PUT(req: NextRequest) {
-  try {
-    const ORG_ID = await getActiveOrgId()
-    await ensureSqliteSchemaCompat(prisma)
-    const body = await req.json()
-    const {
-      model, temperature, thinkingBudget, maxIterations, maxOutputTokens,
-      systemPrompt, coreSystemPrompt, caseAddendum, useLegacyCasePrompt,
-      showThinking, memoryStrategy, policyHooks,
-      resumePrompt,
-      debugMode, invariantCheck,
-      capabilityBindings,
-    } = body
+  const agentId = req.nextUrl.searchParams.get('agentId')
+  return agentUpdateHandler(agentId)(req)
+}
 
-    const data: Record<string, unknown> = {}
-    if (model !== undefined) data.model = model
-    if (temperature !== undefined) data.temperature = temperature
-    if (thinkingBudget !== undefined) data.thinkingBudget = thinkingBudget
-    if (maxIterations !== undefined) data.maxIterations = maxIterations
-    if (maxOutputTokens !== undefined) data.maxOutputTokens = maxOutputTokens
-    if (systemPrompt !== undefined) data.systemPrompt = systemPrompt
-    if (coreSystemPrompt !== undefined) data.coreSystemPrompt = coreSystemPrompt
-    if (caseAddendum !== undefined) data.caseAddendum = caseAddendum
-    if (useLegacyCasePrompt !== undefined) data.useLegacyCasePrompt = useLegacyCasePrompt
-    if (showThinking !== undefined) data.showThinking = showThinking
-    if (memoryStrategy !== undefined) data.memoryStrategy = typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy)
-    if (policyHooks !== undefined) data.policyHooks = typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks)
-    if (resumePrompt !== undefined) data.resumePrompt = resumePrompt
-    if (debugMode !== undefined) data.debugMode = debugMode
-    if (invariantCheck !== undefined) data.invariantCheck = invariantCheck
-    if (capabilityBindings !== undefined) data.capabilityBindings = typeof capabilityBindings === 'string' ? capabilityBindings : JSON.stringify(capabilityBindings)
-
-    await ensureDefaultOrg(ORG_ID)
-    const agentId = req.nextUrl.searchParams.get('agentId')
-    const existing = await resolveAgentConfig(ORG_ID, agentId)
-    let config
-    if (existing) {
-      config = await prisma.agentConfig.update({
-        where: { id: existing.id },
-        data,
-      })
-    } else {
-      config = await prisma.agentConfig.create({
-        data: {
-          orgId: ORG_ID,
-          systemPrompt: systemPrompt || '',
-          coreSystemPrompt: coreSystemPrompt ?? null,
-          caseAddendum: caseAddendum ?? null,
-          useLegacyCasePrompt: useLegacyCasePrompt ?? false, // new configs use base+append
-          model: model || DEFAULT_MODEL,
-          temperature: temperature ?? 0.5,
-          thinkingBudget: thinkingBudget ?? 4096,
-          maxIterations: maxIterations ?? 20,
-          maxOutputTokens: maxOutputTokens ?? 4096,
-          showThinking: showThinking ?? false,
-          resumePrompt: resumePrompt ?? null,
-          debugMode: debugMode ?? false,
-          memoryStrategy: typeof memoryStrategy === 'string' ? memoryStrategy : JSON.stringify(memoryStrategy || {}),
-          policyHooks: typeof policyHooks === 'string' ? policyHooks : JSON.stringify(policyHooks || {}),
-        },
-      })
-    }
-
-    return NextResponse.json({ config })
-  } catch (err) {
-    console.error('[Admin] PUT agent config:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+export async function POST(req: NextRequest) {
+  const agentId = req.nextUrl.searchParams.get('agentId')
+  return agentUpdateHandler(agentId)(req)
 }

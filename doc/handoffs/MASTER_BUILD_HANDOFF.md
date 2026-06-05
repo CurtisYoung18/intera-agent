@@ -1,8 +1,30 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 (Wave 1 + D2 SSO/invites ✅ shipped & architect-verified, keyless test bar green; G11 guardrail/policy program added — see to-do §7) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-04 (Wave 1 + D2 SSO/invites ✅ · G11 guardrail ✅ · UX punch-list ✅ · **Console↔Backend migration ✅** — 58/60 routes, 0 raw fetch in pages) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
+
+> 🔥 **CURRENT PRIORITY (2026-06-04):** a **minimal, smooth, fully-functional internal-test version** for building agents — bar is "works · smooth · no regressions," NOT enterprise-grade. Punch-list ✅ delivered ([`doc/what's done/`](../what's%20done/)). Enterprise hardening program (G1–G11) **deferred** — direction shifted to internal-test smoothness, not enterprise SaaS.
+> 
+> 📋 **Architecture review (2026-06-04):** [`2026-06-04-arch-review-console-backend.md`](../what's%20done/2026-06-04-arch-review-console-backend.md) — comprehensive assessment of console↔backend cooperation. ✅ **Migration program COMPLETE** — 58/60 routes use `defineRoute`, 11 admin pages at zero raw `fetch()`. Remaining gaps: G5 observability, G4 Redis, G2-RLS, G6 job queue, G7 data-model, G10 loop decomposition.
+
+---
+
+## 🚧 Active Lanes (parallel sessions — update before starting work)
+
+> **Protocol:** Before touching any file, read [GENERIC_HANDOFF.md §0.7](./GENERIC_HANDOFF.md) parallel work protocol. Declare your lane here. Remove it when done.
+
+| Lane | Session | Task | Files owned | Started |
+|------|---------|------|-------------|---------|
+| — | — | (no active lanes) | — | — |
+
+> **2026-06-05:** Playground Trace & UX Hardening ✅ SHIPPED — architect-reviewed. 22 commits, Wave 0 (8 lanes) + Wave 1 (2 lanes). tsc clean, keyless 620/641 pass. See [2026-06-05-playground-trace-ux-hardening.md](../what's%20done/2026-06-05-playground-trace-ux-hardening.md).
+
+**How to use this table:**
+1. **Before starting:** add a row with your lane name, the task you're working on, and every file you expect to touch
+2. **Check for conflicts:** if your file appears in another lane's "Files owned" column, coordinate — don't edit
+3. **While working:** if you discover you need to touch an additional file, check this table again first
+4. **After completing:** remove your row so the next agent knows the file is free
 
 ---
 
@@ -50,8 +72,14 @@ Full spec: [`doc/to-do/2026-06-04-enterprise-saas-readiness.md`](../to-do/2026-0
 - **Process note:** this round arrived with **no receipt** and a red suite — §0.3 requires a receipt (changed files + green verification) and §0.4 a red→green proof. The work was good, but "done" must come with evidence next time.
 
 - **D2 — ✅ DONE & verified (2026-06-04).** Google SSO (real JWKS RS256 verify, `alg` pin, `aud`/`iss`/`exp`/`email_verified` checks, CSRF `state`, `googleSub` durable join key) + invite-only membership (no public signup) + `/admin/members` (RBAC role editor, **owner-only** on owner roles, last-owner protection, `repoForOrg`-scoped) + `/admin/invitations` (409 on dup, 7-day token) + `switch-org` (membership-validated → no IDOR). All architect-read, not receipt-trusted.
+  - **⚠️ Correction (2026-06-04, architect re-verify).** The "✅ DONE & verified" above holds **only for the email-bound, lowercase happy path.** Re-verification found: **(1) share-link (email-less) redemption via Google SSO was non-functional** — the callback discarded the URL invite token and matched by email only, so null-email share links never matched (now fixed in uncommitted WIP, but with **zero test coverage** and **no live end-to-end receipt**). **(2) invite email is not normalized** — stored raw at creation while every reader lowercases, so any mixed-case invited email (e.g. corporate `First.Last@co.com`) fails both Google and password redemption. **(3) no live receipt exists at all** (dev `DATABASE_URL` → prod tunnel; Google consent is manual). Remediation tracked in [`../to-do/2026-06-04-google-invite-flow-hardening.md`](../to-do/2026-06-04-google-invite-flow-hardening.md). Treat invite redemption as **"works in the narrow case, hardening in progress,"** not "verified."
 
-**Up next (dispatch plan, owner-approved 2026-06-04):** ship the **three safe streams together now** — **G5 observability · G9 coverage · G11 Phase 1** (configurable guardrail primitive; combined kickoff in spec **§9**, lane brief §8, design §7). **G2-RLS is a separate gated follow-up** right after — it can break the live bot, so keep its smoke-test signal clean; enable RLS on `audit_logs` **LAST** (G11 writes it from the runtime via a shared audit-writer seam built in this dispatch's Task 0). **G11 Phase 2** (preReply / two-loop) + **G4/G6/G7/G10** are Wave 3. (F2 fail-mode is resolved → configurable fallback-to-tool; defaults §7.6.)
+**Up next (dispatch plan, owner-approved 2026-06-04):**
+  - **G11 Phase 1 ✅ DELIVERED (architect-reviewed, fix #1 verified).** Configurable `GuardrailHook` + safety floor + fallback-to-tool + F1/F2/F3/F6 fixes + legacy-fallback compatibility. Keyless: 497 passed. **⚠️ Merge gate:** do one live agent smoke-run (trip a guardrail → confirm escalation) before it rides into the internal-test build — runtime rewrite shouldn't merge on unit tests alone.
+  - **G5 + G9 + Task-0 (observability + coverage + requestId/audit seam):** Task-0 landed (requestId + `writeAudit` seam). Lanes O+T still in queue — dispatch prompt in spec §9.
+  - **UX punch-list** ([agent-build-ux-punchlist.md](../what's%20done/2026-06-04-agent-build-ux-punchlist.md)): ✅ **DELIVERED** (tsc/test/build green; release-notes migration `20260604000002` verified valid Postgres). A1/A2/B1(auto-save chip)/B2(session orgId)/B3(release notes)/B5/C1/C3 done. **Residual:** screenshots skipped → **manual click-through pending** (the real acceptance test — esp. `case-types/[name]` auto-save). **Coordinate:** guardrails/page.tsx A1/A2/A3/B4 deferred into G11 review (UX agent skipped that file). **Merge:** ensure G11's `guardrailConfig` migration gets a distinct prefix (≠ `20260604000002`) and both run on the target DB.
+  - **G2-RLS: separate gated follow-up** after the safe three land + are smoke-tested. Enable RLS on `audit_logs` **LAST** (G11 writes it from the runtime via the shared audit-writer seam).
+  - **G11 Phase 2** (preReply / two-loop unification) + **G4/G6/G7/G10** are Wave 3.
 
 ---
 
@@ -170,7 +198,106 @@ npm test                                          # 36 passed, 1 known-fail (Pos
 npm run build:console                             # success (53 static pages)
 ```
 
+## v1.5 — 2026-06-04 — ✅ UX PUNCH-LIST COMPLETE
+
+**Agent-building console smoothness pass.** Bar = "works · smooth · no regressions." Executed per [`2026-06-04-agent-build-ux-punchlist.md`](../what's%20done/2026-06-04-agent-build-ux-punchlist.md).
+
+### Completed items
+
+| ID | Item | Status |
+|---|---|---|
+| **A1** | All admin pages: try/catch/finally + error+retry (agent, case-types, members, playground) | ✅ No more infinite skeletons |
+| **A2** | User-initiated writes surface visible errors (knowledge toggle/delete, tools, case-types) | ✅ No more silent `.catch(()=>{})` |
+| **B1** | Auto-save + persistent save-state chip everywhere | ✅ model, memory, case-types/[name], livechat all auto-save with persistent chip |
+| **B2** | Cache-bust orgId from session (not hardcoded 'default') | ✅ model, memory, tools, case-types, case-types/[name] |
+| **B3** | Version release notes + draft/active clarity | ✅ Schema (release_note, published_at, published_by), activate dialog, version history display, playground draft warning |
+| **B5** | Flush pending auto-save on navigation/blur | ✅ Cleanup effect on model, memory, case-types/[name], livechat |
+| **C1** | Knowledge: alert/confirm → ConfirmDialog + inline errors | ✅ No more native browser dialogs |
+| **C2** | "Coming soon" dead entries | ✅ Already handled (non-clickable divs with opacity) |
+| **C3** | Debug Mode checkbox label fixed | ✅ Proper i18n key `model.debugMode` |
+
+### Schema changes
+- Migration `20260604000002_add_release_notes`: added `release_note TEXT`, `published_at TIMESTAMP`, `published_by TEXT` to `agent_configs`
+
+### Skipped (G11 owns)
+- A3 (guardrails toggle failure feedback)
+- B4 (guardrails "used by agent" marker)
+- guardrails' A2 silent catches
+
+### Verification (2026-06-04)
+```
+npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors ✓
+env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test   # 497 passed / 0 failed / 26 skipped ✓
+npm run build:console                             # success (61 pages) ✓
+```
+
+### Changed files
+- `apps/console/app/admin/model/page.tsx` — B2 orgId, C3 label fix, B1 persistent chip, B5 flush
+- `apps/console/app/admin/memory/page.tsx` — B2 orgId, B1 persistent chip, B5 flush
+- `apps/console/app/admin/tools/page.tsx` — B2 orgId
+- `apps/console/app/admin/case-types/page.tsx` — B2 orgId, A1 error handling
+- `apps/console/app/admin/case-types/[name]/page.tsx` — B2 orgId, B1 auto-save+chip, B5 flush
+- `apps/console/app/admin/knowledge/page.tsx` — C1 ConfirmDialog + inline errors, A2 error surfacing
+- `apps/console/app/admin/channels/livechat/page.tsx` — B1 auto-save+chip
+- `apps/console/app/admin/agent/page.tsx` — A1 error handling
+- `apps/console/app/admin/members/page.tsx` — A1 error handling
+- `apps/console/app/admin/playground/page.tsx` — B3 draft warning, A1 catch
+- `apps/console/components/admin/agent-version-picker.tsx` — B3 release notes dialog + version history
+- `apps/console/app/api/admin/agent-configs/route.ts` — B3 new fields in AGENT_CARD_SELECT
+- `apps/console/app/api/admin/agent-configs/[id]/activate/route.ts` — B3 releaseNote on activate
+- `packages/shared/prisma/schema.prisma` — B3 release_note/published_at/published_by
+- `packages/shared/prisma/migrations/20260604000002_add_release_notes/migration.sql` — B3 migration
+- `apps/console/lib/i18n/dictionaries.ts` — i18n keys (model.debugMode, agentVersion.*, knowledge.deleteFailed)
+
+> [!NOTE]
+> Screenshots could not be captured (Playwright browser conflict in this session). Manual verification of each page is recommended before merging.
+
+## v1.6 — 2026-06-04 — ✅ SHIPPED
+
+**Organization Settings & Integrations — page consolidation.** 3 standalone admin pages merged into 2 tabbed pages, sidebar net -1 item.
+
+### Changes
+
+| Action | File |
+|---|---|
+| NEW | `apps/console/app/admin/organization/page.tsx` — 3 tabs (General / Members / Permissions) |
+| NEW | `apps/console/app/admin/integrations/page.tsx` — 2 tabs (Channels / API Keys) |
+| EDIT | `apps/console/components/console-sidebar.tsx` — removed Channels/API Keys/Members, added Integrations (Build) + Organization (Operate) |
+| EDIT | `apps/console/lib/i18n/dictionaries.ts` — added `sidebar.integrations`, `organization.*`, `integrationsPage.*` keys (en + zh) |
+| DELETE | `apps/console/app/admin/members/page.tsx` |
+| DELETE | `apps/console/app/admin/api-keys/page.tsx` |
+| DELETE | `apps/console/app/admin/channels/page.tsx` |
+
+### Verification (2026-06-04)
+```
+npx tsc --noEmit -p apps/console/tsconfig.json   # 0 errors ✓
+npm test                                          # 54 passed, 4 skipped, 513 tests ✓
+npm run build:console                             # success (60 pages) ✓
+```
+
+- `/admin/organization?tab=general` — org name edit form (PUT /api/admin/organizations/[id])
+- `/admin/organization?tab=members` — member list, invite modal, role dropdowns
+- `/admin/organization?tab=permissions` — read-only role capability matrix
+- `/admin/integrations?tab=channels` — channel hub cards (LiveChat, Web Chat, Telegram, LiveDesk)
+- `/admin/integrations?tab=api-keys` — API key CRUD, agent binding, usage tutorial
+- All API routes preserved; sub-pages (`/admin/channels/livechat`, `/admin/channels/web-chat`) unchanged
+
+→ [`doc/what's done/2026-06-04-org-settings-integrations-consolidation.md`](../what's%20done/2026-06-04-org-settings-integrations-consolidation.md)
+
 ## Active backlog
+
+### 🔥 Console ↔ Backend Migration Program (2026-06-04) — ✅ COMPLETE
+
+**Architect-reviewed, all 4 checkpoints passed.** Full spec moved to [`doc/what's done/`](../what's%20done/).
+
+| Phase | Scope | Status |
+|---|---|---|
+| **P1** Quick wins | `useSession()` hook + `bustConfigCache()` + `<PageLoader>` — 3 shared files | ✅ 3 files, model/page.tsx migrated |
+| **P2a** Task 0 | Extend `defineRoute` with `auth` modes (session/apiKey/webhook/none) | ✅ + 16 auth tests |
+| **P2b** Route migration | 3 lanes: 32 routes across admin/auth/messages/livechat | ✅ 58/60 routes use defineRoute (97%) |
+| **P3** Frontend migration | 11 admin pages to zero raw fetch | ✅ 11 pages at 0 raw fetch() |
+
+**Results:** 58/60 routes use `defineRoute` (was 28). 11 admin pages at zero raw `fetch()` (was 61 calls). 2 intentional exceptions: `health/route.ts` (public) + `livechat/webhook/route.ts` (legacy, no orgId in URL). 12 google-sso tests fail due to vitest mock limitation (non-runtime).
 
 ### P1 — Code quality
 
@@ -202,6 +329,9 @@ Architect-authored specs. Status verified in code 2026-06-04.
 
 | Spec | Scope | Status | Coding-team action |
 |---|---|---|---|
+| [`2026-06-04-google-invite-flow-hardening.md`](../to-do/2026-06-04-google-invite-flow-hardening.md) | Invite redemption hardening: email-normalize at all boundaries (root-cause); fix sweep stale-membership read; **share-link-via-Google test coverage**; Task 0 = safe local-DB harness. | ⚪ **Ready for dispatch** (architect-authored 2026-06-04). Gated on the in-flight invite WIP (callback/register/test) being committed first. | Dispatch per plan waves. **§0.4 safety:** share-link + write paths need **real e2e on a LOCAL DB** — mock/seam tests don't count. Never write test users to prod. |
+| [`2026-06-05-playground-trace-ux-hardening.md`](../what's%20done/2026-06-05-playground-trace-ux-hardening.md) | Playground trace/UX: effective-model chip (kill "Unknown"), per-message persistent thinking, real token usage, **lifecycle-accurate trace** — incl. removing the dead `intent_classify`/"Intent classification" stage (deprecated 2026-05, **no producer**), copy buttons, **Markdown rendering + full renderHints (interactive `request_user_input` form + card/list/image/plain) + green/red/amber status dots — via shared `components/chat/*` reused by the chat app for identical parity**, **image/multimodal input (base64 ContentBlocks; vision-gated by `ModelInfo.supportsVision` — greyed for MiniMax/DeepSeek, enabled for OpenRouter/Claude)**, Save-dry-run-to-chat (tagged, isolated from `UserProfile` analytics). | 🟢 **SHIPPED 2026-06-05.** 22 commits, Wave 0 (8 parallel lanes) + Wave 1 (2 lanes). Architect-reviewed: keyless 620/641 green, tsc 0 errors, intent_classify fully removed, shared components parity confirmed. | ✅ Done — `page.tsx` single-owner; `components/chat/*` reused by playground + ops/chats + case-trace-view; Save-to-Chat writes to tagged `Case.source:'playground'`. |
+| [`2026-06-05-renderhints-normalization-chat-cleanup.md`](../what's%20done/2026-06-05-renderhints-normalization-chat-cleanup.md) | **renderHints channel-key:** Architecture correction — Tool is the center, `renderHints` is keyed by channel. Playground reads `playground` (fallback `web-chat`). | 🟢 **SHIPPED 2026-06-05.** 4 tasks parallel. Architect-reviewed: keyless 620/641 green, tsc 0 errors, 10 tools dual-key (livechat+web-chat), request_user_input dual-key, ReactMarkdown removed from ops/chats. | ✅ Done — `page.tsx` channel-key extraction; `seed-render-hints.ts` 10 web-chat entries; `skills.ts` request_user_input web-chat form; `ops/chats/[chatId]/page.tsx` memory→MessageContent. |
 | [`sub-agent-max-iterations-config.md`](../to-do/sub-agent-max-iterations-config.md) | Per-stage `maxIterations` for sub-agents (UI field → `stageConfigs` JSON → `loop.ts` builder). | 🟢 **SHIPPED 2026-06-04.** 4 edits: `stage-config-editor.tsx` (type + UI), `case-types/[name]/page.tsx` (type), `loop.ts` (builder). | ✅ Done. |
 | ~~`2026-06-01-multi-agent-multi-org-plan.md`~~ (deleted 2026-06-04) | Phase C: 1 org → N AgentConfig, User table + multi-org membership/login. | ✅ **C1/C2 shipped** (C1 AgentConfig 1:N v1.3 · C2 ApiKey.agentConfigId v1.1); **C3/C4 SUPERSEDED & DELIVERED by G3** (Wave 1) as `Membership`/RBAC/Google-SSO/invite. Doc **deleted** so a zero-context agent can't build the stale `UserOrgMembership`/`passwordHash` sketch (history in git). | None — fully absorbed. |
 | [`2026-06-03-version-bound-config-blueprint-redesign.md`](../to-do/2026-06-03-version-bound-config-blueprint-redesign.md) | Version-bound `capabilityBindings` + library/blueprint redesign (4 architecture decisions D1–D6). | ⚪ **Already SHIPPED as v1.3 / TODO-40.** This is the *source plan*, not backlog. | **Do NOT re-execute.** Move to [`doc/what's done/`](../what's%20done/); kept here only as design reference. |

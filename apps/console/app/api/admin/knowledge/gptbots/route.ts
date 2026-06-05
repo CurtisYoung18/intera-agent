@@ -1,68 +1,56 @@
-// GET /api/admin/knowledge/gptbots — Proxy GPTBots knowledge base list
-// PUT /api/admin/knowledge/gptbots — Set per-customer GPTBots API key
+// GET + PUT /api/admin/knowledge/gptbots — Proxy GPTBots knowledge base list + API key management
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId } from '@/lib/auth'
+import { z } from 'zod'
+import { defineRoute, RouteError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
+import { DEFAULT_MODEL } from '@intera/shared/defaults'
 
 const GPTBOTS_KB_API = 'https://api-sg.gptbots.ai/v1/bot/knowledge/base/page'
 
-async function getApiKey(orgId: string): Promise<string | null> {
-  // Try per-customer key first, fall back to env var
+async function getApiKey(repo: any): Promise<string | null> {
   try {
-    const config = await prisma.agentConfig.findFirst({ where: { orgId, isActive: true }, select: { gptbotsApiKey: true } })
+    const config = await repo.agentConfig.findFirst({ where: { isActive: true }, select: { gptbotsApiKey: true } })
     if (config?.gptbotsApiKey) return config.gptbotsApiKey
   } catch { /* DB may not be ready */ }
   return process.env.GPTBOTS_API_KEY ?? null
 }
 
-export async function GET() {
-  try {
-    const orgId = await getActiveOrgId()
-    const apiKey = await getApiKey(orgId)
-
-    if (!apiKey) {
-      return NextResponse.json({ data: [], total: 0, note: 'GPTBots API key not configured' })
-    }
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ repo }) {
+    const apiKey = await getApiKey(repo)
+    if (!apiKey) return apiOk({ data: [], total: 0, note: 'GPTBots API key not configured' })
 
     const response = await fetch(GPTBOTS_KB_API, {
       headers: { 'Authorization': `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(10000),
     })
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `GPTBots API error: ${response.status}` },
-        { status: 502 },
-      )
-    }
+    if (!response.ok) throw new RouteError('internal', `GPTBots API error: ${response.status}`, undefined, 502)
 
     const data = await response.json()
-    return NextResponse.json(data)
-  } catch (err) {
-    console.error('[Admin] GET gptbots KB list:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk(data)
+  },
+})
 
-export async function PUT(req: NextRequest) {
-  try {
-    const orgId = await getActiveOrgId()
-    const { apiKey } = await req.json()
-    const existing = await prisma.agentConfig.findFirst({ where: { orgId, isActive: true } })
+const putSchema = z.object({ apiKey: z.string().nullable().optional() })
+
+export const PUT = defineRoute({
+  method: 'PUT',
+  inputSchema: putSchema,
+  requireRole: ['admin', 'owner'],
+  async handler({ input, repo }) {
+    const existing = await repo.agentConfig.findFirst({ where: { isActive: true } })
     if (existing) {
-      await prisma.agentConfig.update({
+      await repo.agentConfig.update({
         where: { id: existing.id },
-        data: { gptbotsApiKey: apiKey || null },
+        data: { gptbotsApiKey: input.apiKey || null } as any,
       })
     } else {
-      await prisma.agentConfig.create({
-        data: { orgId, gptbotsApiKey: apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' },
+      await repo.agentConfig.create({
+        data: { model: DEFAULT_MODEL, gptbotsApiKey: input.apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' } as any,
       })
     }
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    console.error('[Admin] PUT gptbots key:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ ok: true })
+  },
+})

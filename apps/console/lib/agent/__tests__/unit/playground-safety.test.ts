@@ -144,13 +144,13 @@ describe('Playground safety invariants', () => {
 
   it('StreamingToolExecutor accepts dryRun in constructor', () => {
     const skill = makeSkill({ name: 'query_order', mode: 'static', toolCategory: 'operational' })
-    const executor = new StreamingToolExecutor([skill], undefined, true)
+    const executor = new StreamingToolExecutor([skill], undefined, true, 'test-org')
     expect(executor).toBeDefined()
   })
 
   it('StreamingToolExecutor with dryRun + system_info tool', () => {
     const skill = makeSkill({ name: 'read_chat_memory', mode: 'static', toolCategory: 'system_info' })
-    const executor = new StreamingToolExecutor([skill], undefined, true)
+    const executor = new StreamingToolExecutor([skill], undefined, true, 'test-org')
     expect(executor).toBeDefined()
   })
 

@@ -5,8 +5,8 @@ import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
 import { createMemoryPersistence, type TraceRecord } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
-import type { SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
-import { DEFAULT_SYSTEM_PROMPT, CORE_SYSTEM_PROMPT, CASE_SYSTEM_PROMPT } from '@intera/shared/defaults'
+import type { SSEEvent, CaseSchemaConfig, ContentBlock } from '@intera/shared/types'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext } from './prompt-resolver'
 import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
@@ -16,20 +16,24 @@ import { generateCaseId } from '@/lib/utils'
 export interface PlaygroundConfig {
   /** Override agentConfig.debugMode for trace detail. */
   debug?: boolean
+  /** Override agentConfig.showThinking to force thinking output for this turn. */
+  showThinking?: boolean
 }
 
 export interface PlaygroundResult {
   turnId: string
-  intent: string
   caseType: string
   reply: string
   blocked: boolean
   trace: PlaygroundTraceStep[]
+  resolvedModel: string
+  applicableStages: string[]
 }
 
 /** Run a single playground turn using the REAL AgentLoop pipeline. */
 export async function* runPlaygroundTurn(input: {
   orgId: string; message: string; playgroundConfig: PlaygroundConfig; configId?: string | null
+  contentBlocks?: ContentBlock[]
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc } = input
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -40,6 +44,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId, input.configId)
+  if (pc.showThinking !== undefined) { (agentConfig as any).showThinking = pc.showThinking }
   const systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
 
   // ── Unified prompt assembly (matches production messages/route.ts) ──
@@ -107,7 +112,17 @@ export async function* runPlaygroundTurn(input: {
         }),
         createdAt: new Date().toISOString(),
       })
-    } else if (['intent_classify', 'policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_response'].includes(event.type as string)) {
+    } else if (event.type === 'llm_response') {
+      const d = event.data as any
+      const usageData = d?.usage || {}
+      memoryTraces.push({
+        caseId: turnId,
+        actionType: 'llm_response',
+        title: `LLM response: ${d?.stopReason || 'complete'}`,
+        detail: JSON.stringify({ usage: { input_tokens: usageData.input_tokens, output_tokens: usageData.output_tokens } }),
+        createdAt: new Date().toISOString(),
+      })
+    } else if (['policy_hit', 'skill_called', 'skill_result', 'stage_eval'].includes(event.type as string)) {
       memoryTraces.push({
         caseId: turnId,
         actionType: event.type as string,
@@ -146,10 +161,32 @@ export async function* runPlaygroundTurn(input: {
     wake()
   }
 
+  // ── Resolve effective model (used by guard + result) ──
+  const resolvedModel = agentConfig.model || DEFAULT_MODEL
+
+  // ── Non-vision guard (defense-in-depth) ──
+  // UI should gate this first (Task 0h + Task 1), but if bypassed, fail clearly.
+  const hasImageBlock = input.contentBlocks?.some(
+    (b) => b.type === 'image' || (b as any).source?.type === 'base64',
+  )
+  if (hasImageBlock) {
+    const nonVisionPrefixes = ['deepseek-', 'MiniMax-']
+    const supportsVision = !nonVisionPrefixes.some((p) => resolvedModel.startsWith(p))
+    if (!supportsVision) {
+      yield {
+        type: 'error',
+        data: { code: 'unsupported_media', message: `${resolvedModel} does not support image input` },
+        timestamp: new Date().toISOString(),
+      }
+      yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
+      return
+    }
+  }
+
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
-      await agentLoop.run(message, sendEvent)
+      await agentLoop.run(message, sendEvent, undefined, input.contentBlocks)
     } catch (err) {
       pending.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
     } finally {
@@ -175,12 +212,42 @@ export async function* runPlaygroundTurn(input: {
     memoryTraces.push({ caseId: turnId, actionType: 'llm_response', title: `LLM response: ${reply.length} chars`, detail: reply.slice(0, 200), createdAt: new Date().toISOString() })
   }
 
+  // ── Derive applicable pipeline stages from agent config ──
+
+  const guardsConfigured = (() => {
+    try {
+      const hooks = typeof agentConfig.policyHooks === 'string'
+        ? JSON.parse(agentConfig.policyHooks)
+        : (agentConfig.policyHooks || {})
+      const keys = Object.keys(hooks)
+      if (keys.length > 0) {
+        // Also check if any hook array is non-empty
+        return keys.some(k => {
+          const arr = hooks[k]
+          return Array.isArray(arr) && arr.length > 0
+        })
+      }
+      return false
+    } catch { return false }
+  })()
+
+  const bindings = agentConfig.capabilityBindings
+  const toolsConfigured = !!(bindings?.tools?.length)
+  const knowledgeConfigured = !!(bindings?.knowledge?.length)
+  const stageConfigured = false // playground always has caseSchema: null → no stage configs
+
+  const applicableStages: string[] = ['Guardrails', 'Model generation']
+  if (knowledgeConfigured) applicableStages.push('Knowledge retrieval')
+  if (toolsConfigured) applicableStages.push('Skills & tools')
+  if (stageConfigured) applicableStages.push('Stage SOP')
+  // Guardrails always included in base — but only fire if guardsConfigured
+  // (fired=false when no guardrail events occur, which is correct)
+
   // ── Aggregate traces ──
-  const trace = aggregateTraces(memoryTraces, startTime, pc.debug ?? agentConfig.debugMode ?? false)
-  const intent = reply ? 'general' : 'none'
+  const trace = aggregateTraces(memoryTraces, startTime, pc.debug ?? agentConfig.debugMode ?? false, applicableStages)
   const caseType = ''
 
-  const result: PlaygroundResult = { turnId, intent, caseType, reply, blocked, trace }
+  const result: PlaygroundResult = { turnId, caseType, reply, blocked, trace, resolvedModel, applicableStages }
   yield { type: 'trace', data: result, timestamp: new Date().toISOString() }
   yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
 }

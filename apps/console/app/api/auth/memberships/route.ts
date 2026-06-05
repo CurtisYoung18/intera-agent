@@ -1,22 +1,16 @@
-// GET /api/auth/memberships — List all org memberships for the current user.
-//
-// Returns { orgs: Array<{ orgId, role, name }> }
-// Used by the org-picker page to show available organizations.
+// GET /api/auth/memberships — List org memberships for current user
+// Migrated to defineRoute (G1 contract seam).
 
-import { NextResponse } from 'next/server'
-import { getSession, getUserOrgs } from '@/lib/auth'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function GET() {
-  try {
-    const session = await getSession()
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const orgs = await getUserOrgs(session.userId)
-    return NextResponse.json({ orgs })
-  } catch (err) {
-    console.error('[Auth] memberships error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ session, repo }) {
+    const orgs = await repo.raw.membership.findMany({
+      where: { userId: session.userId },
+      include: { org: { select: { id: true, name: true } } },
+    })
+    return apiOk({ orgs: orgs.map(m => ({ orgId: m.orgId, role: m.role, name: m.org.name })) })
+  },
+})

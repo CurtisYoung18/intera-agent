@@ -1,5 +1,8 @@
-import { prisma } from '@intera/shared/prisma'
+// GET /api/cases/[id]/export — Export case as markdown
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
+
 import { NextResponse } from 'next/server'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 
 function safeJson(raw: string | null | undefined): unknown {
   if (!raw) return null
@@ -21,141 +24,117 @@ function formatValue(v: unknown, indent = 0): string {
   return String(v)
 }
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params
+export const GET = defineRoute<void, { id: string }>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const [caseData, messages, traces, humanTasks, memory] = await Promise.all([
+      repo.case.findUnique({ where: { id: params.id } }),
+      repo.raw.message.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'asc' } }),
+      repo.raw.actionTrace.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'asc' } }),
+      repo.raw.humanTask.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'asc' } }),
+      repo.raw.chatMemory.findUnique({ where: { caseId: params.id } }),
+    ])
 
-  const [caseData, messages, traces, humanTasks, memory] = await Promise.all([
-    prisma.case.findUnique({ where: { id } }),
-    prisma.message.findMany({ where: { caseId: id }, orderBy: { createdAt: 'asc' } }),
-    prisma.actionTrace.findMany({ where: { caseId: id }, orderBy: { createdAt: 'asc' } }),
-    prisma.humanTask.findMany({ where: { caseId: id }, orderBy: { createdAt: 'asc' } }),
-    prisma.chatMemory.findUnique({ where: { caseId: id } }),
-  ])
+    if (!caseData) throw new NotFoundError('Case not found')
 
-  if (!caseData) {
-    return NextResponse.json({ error: 'Case not found' }, { status: 404 })
-  }
+    const agentConfig = await repo.agentConfig.findFirst({ where: { isActive: true } })
 
-  const agentConfig = await prisma.agentConfig.findFirst({
-    where: { orgId: caseData.orgId, isActive: true },
-  })
-
-  const sections: string[] = []
-
-  // ── Header ──
-  sections.push(`# Intera Case Export — ${id}`)
-  sections.push(`Exported at: ${new Date().toISOString()}`)
-  sections.push('')
-
-  // ── Case Metadata ──
-  sections.push('## Case Metadata')
-  sections.push(`- **ID**: ${caseData.id}`)
-  sections.push(`- **Type**: ${caseData.type}`)
-  sections.push(`- **Status**: ${caseData.status}`)
-  sections.push(`- **User**: ${caseData.userId}`)
-  sections.push(`- **Goal**: ${caseData.goal || '—'}`)
-  sections.push(`- **Blocker**: ${caseData.blocker || '—'}`)
-  sections.push(`- **Created**: ${caseData.createdAt.toISOString()}`)
-  sections.push(`- **Updated**: ${caseData.updatedAt.toISOString()}`)
-  if (caseData.resolvedAt) sections.push(`- **Resolved**: ${(caseData.resolvedAt as Date).toISOString()}`)
-  sections.push('')
-
-  // ── Agent Config ──
-  if (agentConfig) {
-    sections.push('## Agent Config')
-    sections.push(`- **Model**: ${agentConfig.model}`)
-    sections.push(`- **Temperature**: ${agentConfig.temperature}`)
-    sections.push(`- **Thinking Budget**: ${agentConfig.thinkingBudget}`)
-    sections.push(`- **Max Iterations**: ${agentConfig.maxIterations}`)
-    sections.push(`- **Show Thinking**: ${agentConfig.showThinking}`)
+    const sections: string[] = []
+    sections.push(`# Intera Case Export — ${params.id}`)
+    sections.push(`Exported at: ${new Date().toISOString()}`)
     sections.push('')
-  }
 
-  // ── Conversation ──
-  sections.push('## Conversation')
-  sections.push(`Total messages: ${messages.length}`)
-  sections.push('')
-  for (const msg of messages) {
-    const roleLabel = msg.role === 'user' ? '用户' : msg.role === 'assistant' ? '助手' : msg.role
-    const time = new Date(msg.createdAt).toLocaleTimeString('zh-CN', { hour12: false })
-    sections.push(`### ${roleLabel} · ${time}`)
-    sections.push(msg.content || '(empty)')
+    sections.push('## Case Metadata')
+    sections.push(`- **ID**: ${caseData.id}`)
+    sections.push(`- **Type**: ${caseData.type}`)
+    sections.push(`- **Status**: ${caseData.status}`)
+    sections.push(`- **User**: ${caseData.userId}`)
+    sections.push(`- **Goal**: ${caseData.goal || '—'}`)
+    sections.push(`- **Blocker**: ${caseData.blocker || '—'}`)
+    sections.push(`- **Created**: ${caseData.createdAt.toISOString()}`)
+    sections.push(`- **Updated**: ${caseData.updatedAt.toISOString()}`)
+    if (caseData.resolvedAt) sections.push(`- **Resolved**: ${(caseData.resolvedAt as Date).toISOString()}`)
     sections.push('')
-  }
 
-  // ── Action Traces ──
-  sections.push('## Action Traces')
-  sections.push(`Total traces: ${traces.length}`)
-  sections.push('')
-  for (const trace of traces) {
-    const time = new Date(trace.createdAt).toLocaleTimeString('zh-CN', { hour12: false })
-    const payload = safeJson(trace.payload as string)
-    sections.push(`### ${trace.actionType} — ${trace.title}`)
-    sections.push(`**Time**: ${time}`)
-    if (trace.detail) sections.push(`**Detail**: ${trace.detail}`)
-    if (payload && typeof payload === 'object') {
-      sections.push('**Payload**:')
-      for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
-        if (typeof v === 'object') {
-          sections.push(`- **${k}**: ${JSON.stringify(v)}`)
-        } else {
-          sections.push(`- **${k}**: ${v}`)
+    if (agentConfig) {
+      sections.push('## Agent Config')
+      sections.push(`- **Model**: ${agentConfig.model}`)
+      sections.push(`- **Temperature**: ${agentConfig.temperature}`)
+      sections.push(`- **Thinking Budget**: ${agentConfig.thinkingBudget}`)
+      sections.push(`- **Max Iterations**: ${agentConfig.maxIterations}`)
+      sections.push(`- **Show Thinking**: ${agentConfig.showThinking}`)
+      sections.push('')
+    }
+
+    sections.push('## Conversation')
+    sections.push(`Total messages: ${messages.length}`)
+    sections.push('')
+    for (const msg of messages) {
+      const roleLabel = msg.role === 'user' ? '用户' : msg.role === 'assistant' ? '助手' : msg.role
+      const time = new Date(msg.createdAt).toLocaleTimeString('zh-CN', { hour12: false })
+      sections.push(`### ${roleLabel} · ${time}`)
+      sections.push(msg.content || '(empty)')
+      sections.push('')
+    }
+
+    sections.push('## Action Traces')
+    sections.push(`Total traces: ${traces.length}`)
+    sections.push('')
+    for (const trace of traces) {
+      const time = new Date(trace.createdAt).toLocaleTimeString('zh-CN', { hour12: false })
+      const payload = safeJson(trace.payload as string)
+      sections.push(`### ${trace.actionType} — ${trace.title}`)
+      sections.push(`**Time**: ${time}`)
+      if (trace.detail) sections.push(`**Detail**: ${trace.detail}`)
+      if (payload && typeof payload === 'object') {
+        sections.push('**Payload**:')
+        for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
+          sections.push(`- **${k}**: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
         }
       }
-    }
-    sections.push('')
-  }
-
-  // ── Case Memory ──
-  if (memory) {
-    sections.push('## Case Memory')
-    const facts = safeJson(memory.confirmedFacts)
-    const missing = safeJson(memory.missingFacts)
-    const skills = safeJson(memory.skillsCalled)
-    const results = safeJson(memory.skillResults)
-
-    sections.push('### Confirmed Facts')
-    sections.push(formatValue(facts))
-    sections.push('')
-    sections.push('### Missing Facts')
-    sections.push(formatValue(missing))
-    sections.push('')
-    sections.push('### Skills Called')
-    sections.push(formatValue(skills))
-    sections.push('')
-    sections.push('### Skill Results')
-    sections.push(formatValue(results))
-    sections.push('')
-    if (memory.summary) {
-      sections.push('### Summary')
-      sections.push(memory.summary)
       sections.push('')
     }
-  }
 
-  // ── Human Tasks ──
-  if (humanTasks.length > 0) {
-    sections.push('## Human Tasks')
-    for (const ht of humanTasks) {
-      sections.push(`- **ID**: ${ht.id}`)
-      sections.push(`  - Queue: ${ht.queue}`)
-      sections.push(`  - Status: ${ht.status}`)
-      sections.push(`  - Question: ${ht.question}`)
-      if (ht.verdict) sections.push(`  - Verdict: ${ht.verdict}`)
-      if (ht.notes) sections.push(`  - Notes: ${ht.notes}`)
+    if (memory) {
+      sections.push('## Case Memory')
+      sections.push('### Confirmed Facts')
+      sections.push(formatValue(safeJson(memory.confirmedFacts)))
       sections.push('')
+      sections.push('### Missing Facts')
+      sections.push(formatValue(safeJson(memory.missingFacts)))
+      sections.push('')
+      sections.push('### Skills Called')
+      sections.push(formatValue(safeJson(memory.skillsCalled)))
+      sections.push('')
+      sections.push('### Skill Results')
+      sections.push(formatValue(safeJson(memory.skillResults)))
+      sections.push('')
+      if (memory.summary) {
+        sections.push('### Summary')
+        sections.push(memory.summary)
+        sections.push('')
+      }
     }
-  }
 
-  const markdown = sections.join('\n')
+    if (humanTasks.length > 0) {
+      sections.push('## Human Tasks')
+      for (const ht of humanTasks) {
+        sections.push(`- **ID**: ${ht.id}`)
+        sections.push(`  - Queue: ${ht.queue}`)
+        sections.push(`  - Status: ${ht.status}`)
+        sections.push(`  - Question: ${ht.question}`)
+        if (ht.verdict) sections.push(`  - Verdict: ${ht.verdict}`)
+        if (ht.notes) sections.push(`  - Notes: ${ht.notes}`)
+        sections.push('')
+      }
+    }
 
-  return new NextResponse(markdown, {
-    headers: {
-      'Content-Type': 'text/markdown; charset=utf-8',
-      'Content-Disposition': `attachment; filename="case-${id.slice(0, 8)}-export.md"`,
-    },
-  })
-}
+    const markdown = sections.join('\n')
+    return new NextResponse(markdown, {
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="case-${params.id.slice(0, 8)}-export.md"`,
+      },
+    })
+  },
+})

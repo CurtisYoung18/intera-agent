@@ -22,6 +22,7 @@ interface CaseSummary {
   id: string
   type: string
   status: string
+  source: string
   goal: string | null
   createdAt: string
   updatedAt: string
@@ -107,13 +108,26 @@ function ChatCard({
         {/* Cases chips */}
         <div className="mt-3 flex flex-wrap gap-1.5">
           {session.cases.map((c) => (
-            <span
-              key={c.id}
-              className="inline-flex items-center gap-1 rounded-full border border-black/[0.05] bg-white/80 px-2 py-0.5 text-[10px] font-medium"
-              style={{ color: STATUS_COLOR[c.status] ?? '#a09888' }}
-            >
-              <StatusDot status={c.status} />
-              {c.type.replace(/_/g, ' ')}
+            <span key={c.id} className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-black/[0.05] bg-white/80 px-2 py-0.5 text-[10px] font-medium"
+                style={{ color: STATUS_COLOR[c.status] ?? '#a09888' }}
+              >
+                <StatusDot status={c.status} />
+                {c.type.replace(/_/g, ' ')}
+              </span>
+              {c.source === 'playground' && (
+                <span
+                  className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                  style={{
+                    background: '#d4912e22',
+                    color: '#d4912e',
+                    border: '1px solid #d4912e44',
+                  }}
+                >
+                  test
+                </span>
+              )}
             </span>
           ))}
         </div>

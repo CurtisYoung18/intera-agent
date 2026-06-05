@@ -17,7 +17,6 @@ import {
   HandPlatter,
   Users2,
   FlaskConical,
-  Key,
   GitBranch,
   Settings,
   Brain,
@@ -29,7 +28,7 @@ import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 
-type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'model' | 'memory' | 'members'
+type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'model' | 'memory' | 'members' | 'integrations' | 'organization'
 
 interface NavItem {
   href: string
@@ -77,8 +76,7 @@ const BUILD_ITEMS: NavItem[] = [
   { href: '/admin/tools', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
   { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
   { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
-  { href: '/admin/channels', slug: 'channels', icon: Plug, color: '#7c3aed' },
-  { href: '/admin/api-keys', slug: 'apiKeys', icon: Key, color: '#d4912e' },
+  { href: '/admin/integrations', slug: 'integrations' as NavSlug, icon: Plug, color: '#7c3aed' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
@@ -86,7 +84,7 @@ const OPERATE_ITEMS: NavItem[] = [
   { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
   { href: '/ops/users', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/ops/users' },
   { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
-  { href: '/admin/members', slug: 'members', icon: Users2, color: '#6366f1' },
+  { href: '/admin/organization', slug: 'organization' as NavSlug, icon: Building2, color: '#6366f1' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -128,8 +126,9 @@ export default function ConsoleSidebar() {
     fetch('/api/auth/session')
       .then((r) => r.json())
       .then((d) => {
-        if (d.customerName) setCustomerName(d.customerName)
-        setIsStaff(d.isAuthenticated === true)
+        const p = d.data || d
+        if (p.customerName) setCustomerName(p.customerName)
+        setIsStaff(p.isAuthenticated === true)
       })
       .catch(() => {})
   }, [])
@@ -145,8 +144,7 @@ export default function ConsoleSidebar() {
   const loadCustomers = useCallback(async () => {
     setCustomersLoading(true)
     try {
-      const res = await fetch('/api/admin/customers')
-      const data = await res.json()
+      const data = await fetch('/api/admin/customers').then(r => r.json()).then(d => d.data || d)
       setCustomers(data.customers || [])
     } catch {
       // ignore

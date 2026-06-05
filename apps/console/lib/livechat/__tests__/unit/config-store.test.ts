@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockFindUnique = vi.fn()
+const mockFindFirst = vi.fn()
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
     liveChatConfig: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
+    },
+    channelBinding: {
+      findFirst: (...args: unknown[]) => mockFindFirst(...args),
     },
   },
 }))
@@ -19,12 +23,15 @@ describe('config-store', () => {
 
   describe('getLiveChatConfig', () => {
     it('returns null when config not found', async () => {
+      mockFindFirst.mockResolvedValue(null)
       mockFindUnique.mockResolvedValue(null)
       const config = await getLiveChatConfig('cust-a')
       expect(config).toBeNull()
     })
 
-    it('returns config when found', async () => {
+    it('returns config when found (channel_bindings fallback to livechat_configs)', async () => {
+      // channel_bindings query returns null — fallback to livechat_configs
+      mockFindFirst.mockResolvedValue(null)
       mockFindUnique.mockResolvedValue({
         orgId: 'cust-b',
         botAccessToken: 'tok123',
@@ -43,7 +50,7 @@ describe('config-store', () => {
     })
 
     it('returns null on prisma error', async () => {
-      mockFindUnique.mockRejectedValue(new Error('DB down'))
+      mockFindFirst.mockRejectedValue(new Error('DB down'))
       const config = await getLiveChatConfig('cust-c')
       expect(config).toBeNull()
     })

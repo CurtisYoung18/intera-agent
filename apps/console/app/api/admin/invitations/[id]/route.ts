@@ -13,9 +13,8 @@ export const DELETE = defineRoute<void, { id: string }>({
     })
     if (!invitation) throw new NotFoundError('Invitation not found')
 
-    await repo.invitation.update({
+    await repo.invitation.delete({
       where: { id: params.id },
-      data: { state: 'expired' },
     })
 
     await audit({ action: 'invitation.revoke', target: `invitation:${invitation.email}`, before: { email: invitation.email, role: (invitation as any).role } })

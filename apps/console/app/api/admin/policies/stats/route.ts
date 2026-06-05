@@ -1,14 +1,15 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId } from '@/lib/auth'
+// GET /api/admin/policies/stats — Policy usage statistics (7-day window)
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-export async function GET() {
-  try {
-    const orgId = await getActiveOrgId()
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-    const traces = await prisma.actionTrace.findMany({
+export const GET = defineRoute({
+  method: 'GET',
+  async handler({ repo }) {
+    const traces = await repo.raw.actionTrace.findMany({
       where: {
-        case: { orgId },
+        case: { orgId: repo.orgId },
         actionType: 'policy_hit',
         createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       },
@@ -20,9 +21,7 @@ export async function GET() {
       try {
         const data = t.payload ? JSON.parse(t.payload) : null
         const name = data?.policyName
-        if (name) {
-          counts.set(name, (counts.get(name) || 0) + 1)
-        }
+        if (name) counts.set(name, (counts.get(name) || 0) + 1)
       } catch { /* skip malformed payloads */ }
     }
 
@@ -30,9 +29,6 @@ export async function GET() {
       .map(([name, hits]) => ({ name, hits }))
       .sort((a, b) => b.hits - a.hits)
 
-    return NextResponse.json({ stats })
-  } catch (err) {
-    console.error('[policy-stats] Failed:', err)
-    return NextResponse.json({ stats: [] })
-  }
-}
+    return apiOk({ stats })
+  },
+})

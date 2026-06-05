@@ -2,14 +2,14 @@
 // POST /api/messages — Main entry point for user messages
 // Supports resumeTrigger for human task resolution
 
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
 import { enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { prisma } from '@intera/shared/prisma'
 import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
-import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
+import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
@@ -141,21 +141,19 @@ async function resolveCaseByIntent(
 }
 
 export async function POST(request: NextRequest) {
-  // ── Auth gate (before stream — must return 401, not SSE error event) ──
-  const resolved = await resolveOrgFromApiKey(request)
-  const authOrgId = resolved?.orgId ?? null
-  const authAgentConfigId = resolved?.agentConfigId ?? null
-  const isInternal = !authOrgId && isTrustedInternalCall(request)
-  if (!authOrgId && !isInternal) {
-    return new Response('Unauthorized', { status: 401 })
-  }
-
   // Rate limit: 120 requests per minute per IP
   const ip = clientIp(request)
   const rl = checkRateLimit({ key: `messages:${ip}`, max: 120, windowSec: 60 })
   if (!rl.allowed) {
     return new Response('Too Many Requests', { status: 429 })
   }
+
+  return defineRoute({
+    method: 'POST',
+    auth: 'apiKey',
+    async handler({ session, repo }) {
+      const authOrgId = session.orgId
+      const authAgentConfigId = session.agentConfigId
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -975,7 +973,7 @@ export async function POST(request: NextRequest) {
     },
   })
 
-  return new Response(stream, {
+  return new NextResponse(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -983,4 +981,6 @@ export async function POST(request: NextRequest) {
       'X-Accel-Buffering': 'no',
     },
   })
+},
+})(request)
 }

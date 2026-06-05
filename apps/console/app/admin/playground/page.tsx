@@ -6,17 +6,29 @@ import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
   Shield, Brain, Search, Puzzle, ExternalLink, Wrench, Activity,
-  ChevronDown,
+  ChevronDown, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { apiClient } from '@/lib/api/client'
+import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
+import CopyButton from '@/components/ui/copy-button'
+import MessageContent from '@/components/chat/message-content'
+import RenderHintCard from '@/components/chat/render-hint-card'
+import { StatusDot, statusColor } from '@/components/chat/status-accents'
 
 /* ── Types ── */
 
 interface ModelInfo {
   id: string; name: string; provider: string; providerLabel: string
+  supportsVision?: boolean
+}
+
+interface AttachedImage {
+  base64: string
+  mimeType: string
+  name: string
 }
 
 interface AgentListItem {
@@ -28,7 +40,7 @@ interface AgentListItem {
 
 interface AgentSnapshot {
   name: string
-  modelLabel: string
+  resolvedModel: string
   systemPromptPreview: string
   memoryTierLabel: string
   guardrailCount: number
@@ -54,30 +66,6 @@ const QUICK_STARTS = [
   { label: "This isn't working, I'm furious", hint: 'Escalation test' },
 ]
 
-const TRACE_ICONS: Record<string, typeof AlertCircle> = {
-  intent_classify: Brain,
-  policy_hit: Shield,
-  skill_called: Puzzle,
-  skill_result: CheckCircle2,
-  stage_eval: Clock,
-  llm_request_start: Sparkles,
-  llm_response: Sparkles,
-}
-
-const TRACE_COLORS: Record<string, string> = {
-  ok: 'bg-emerald-400', info: 'bg-sky-400', warn: 'bg-amber-400',
-  block: 'bg-red-400', neutral: 'bg-black/10',
-}
-
-const STATUS_RGB: Record<string, string> = {
-  ok: '46,160,74', info: '91,184,247', warn: '212,145,46',
-  block: '230,69,57', neutral: '0,0,0',
-}
-
-const STATUS_ICON_COLOR: Record<string, string> = {
-  ok: 'var(--malachite)', info: 'var(--sky)', warn: 'var(--amber)',
-  block: 'var(--vermillion)', neutral: 'var(--fog)',
-}
 
 /* ── Helpers ── */
 
@@ -98,21 +86,29 @@ function countGuardrails(s: string): number {
 export default function PlaygroundPage() {
   const { selectedAgentId, selectAgent } = useAgentContext()
   const [agentList, setAgentList] = useState<AgentListItem[]>([])
+  const [selectedIsActive, setSelectedIsActive] = useState(true)
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
   const [debugMode, setDebugMode] = useState(false)
 
   const [message, setMessage] = useState('')
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string }>>([])
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string; thinking?: string; images?: AttachedImage[] }>>([])
   const [reply, setReply] = useState('')
-  const [thinking, setThinking] = useState('')
+  const [showThinking, setShowThinking] = useState(false)
+  const thinkingAccRef = useRef('')
   const [responding, setResponding] = useState(false)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([])
   const [turnTraces, setTurnTraces] = useState<any[][]>([])
   const turnNumRef = useRef(0)
   const [collapsedTraces, setCollapsedTraces] = useState<Set<string>>(new Set())
+  const [showSkipped, setShowSkipped] = useState(false)
   const [error, setError] = useState('')
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
+  const [toastMessage, setToastMessage] = useState('')
+  const [savingToChat, setSavingToChat] = useState(false)
+  const [savedChatId, setSavedChatId] = useState<string | null>(null)
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -121,16 +117,20 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/admin/agent-configs').then(r => r.json()),
-      fetch('/api/admin/models').then(r => r.json()),
+      fetch('/api/admin/agent-configs').then(r => r.json()).then(d => d.data || d),
+      fetch('/api/admin/models').then(r => r.json()).then(d => d.data || d),
     ]).then(([agentsData, modelsData]) => {
       setAgentList(agentsData.configs || [])
       setModels(modelsData.models || [])
-    })
+    }).catch(() => { /* non-critical; picker will retry */ })
   }, [])
 
   useEffect(() => {
     if (!selectedAgentId) return
+    // Track draft/active state
+    const selected = agentList.find(a => a.id === selectedAgentId)
+    setSelectedIsActive(selected?.isActive ?? false)
+    setSelectedVersion(selected?.version ?? null)
     // Reset traces on agent change
     setTurnTraces([])
     turnNumRef.current = 0
@@ -139,28 +139,31 @@ export default function PlaygroundPage() {
     fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
       .then(r => r.json())
       .then(data => {
-        const raw = data.config || {}
+        const raw = data.data?.config || data.config || {}
         let memoryStrategy = {}
         let policyHooks = '{}'
         try { memoryStrategy = typeof raw.memoryStrategy === 'string' ? JSON.parse(raw.memoryStrategy || '{}') : raw.memoryStrategy || {} } catch { /* */ }
         try { policyHooks = typeof raw.policyHooks === 'string' ? raw.policyHooks : JSON.stringify(raw.policyHooks || {}, null, 2) } catch { policyHooks = '{}' }
 
-        const modelId = raw.model || ''
-        const modelInfo = models.find(m => m.id === modelId)
         const sp = raw.systemPrompt || ''
+
+        // Resolved model: prefer the API-resolved name, fall back to modelInfo lookup, then raw model id
+        const resolvedModel: string = data.data?.resolvedModel || data.resolvedModel || data.data?.config?.resolvedModel || data.config?.resolvedModel ||
+          (models.find(m => m.id === raw.model)?.name || raw.model || resolveEffectiveModel({ model: raw.model }))
 
         setSnapshot({
           name: raw.name || 'Default',
-          modelLabel: modelInfo ? modelInfo.name : (modelId || 'Unknown'),
+          resolvedModel,
           systemPromptPreview: sp.length > 120 ? sp.slice(0, 120) + '…' : sp,
           memoryTierLabel: detectMemoryTier(memoryStrategy),
           guardrailCount: countGuardrails(policyHooks),
           temperature: raw.temperature ?? 0.5,
         })
         setDebugMode(Boolean(raw.debugMode))
+        if (raw.showThinking !== undefined) setShowThinking(Boolean(raw.showThinking))
       })
       .catch(() => setSnapshot(null))
-  }, [selectedAgentId, models])
+  }, [selectedAgentId, models, agentList])
 
   /* ── Auto-scroll ── */
 
@@ -168,22 +171,99 @@ export default function PlaygroundPage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [reply, turnTraces])
 
+  /* ── Vision gate ── */
+
+  const supportsVision = (() => {
+    if (!snapshot) return false
+    // Find the resolved model in the models list
+    const model = models.find(m => m.name === snapshot.resolvedModel || m.id === snapshot.resolvedModel)
+    return model?.supportsVision ?? false
+  })()
+
+  /* ── Image helpers ── */
+
+  const handleImageAttach = useCallback(async (files: FileList | File[]) => {
+    if (!supportsVision) {
+      setToastMessage(`${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+      setTimeout(() => setToastMessage(''), 4000)
+      return
+    }
+    const limit = 5 * 1024 * 1024 // 5MB
+    const newImages: AttachedImage[] = []
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue
+      if (file.size > limit) { setToastMessage(`"${file.name}" exceeds 5MB limit`); setTimeout(() => setToastMessage(''), 3000); continue }
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      newImages.push({ base64, mimeType: file.type, name: file.name })
+    }
+    setAttachedImages(prev => [...prev, ...newImages])
+  }, [supportsVision, snapshot?.resolvedModel])
+
+  const removeImage = useCallback((idx: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== idx))
+  }, [])
+
+  /* ── Save to Chat ── */
+
+  const handleSaveToChat = useCallback(async () => {
+    if (chatMessages.length === 0) return
+    setSavingToChat(true)
+    try {
+      const res = await fetch('/api/admin/playground/save-to-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId: selectedAgentId,
+          messages: chatMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+            thinking: m.thinking,
+          })),
+          traces: turnTraces,
+        }),
+      })
+      if (!res.ok) { setToastMessage(`Save failed: HTTP ${res.status}`); setTimeout(() => setToastMessage(''), 4000); return }
+      const data = await res.json(); const p = data.data || data
+      setSavedChatId(p.chatId)
+      setToastMessage('Saved to Chat!')
+      setTimeout(() => setToastMessage(''), 4000)
+    } catch (err) {
+      setToastMessage('Save failed: network error')
+      setTimeout(() => setToastMessage(''), 4000)
+    } finally {
+      setSavingToChat(false)
+    }
+  }, [chatMessages, turnTraces, selectedAgentId])
+
   /* ── Run turn ── */
 
   const runTurn = useCallback(async (msg: string) => {
     setReply('')
-    setThinking('')
+    thinkingAccRef.current = ''
     turnNumRef.current += 1
     setTurnTraces(prev => [...prev, []])
     setLiveTools([])
     setError('')
     setResponding(true)
-    setChatMessages(prev => [...prev, { role: 'user' as const, content: msg }])
+    const currentImages = attachedImages
+    setAttachedImages([])
+    setChatMessages(prev => [...prev, { role: 'user' as const, content: msg, images: currentImages.length > 0 ? currentImages : undefined }])
 
     try {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
-      if (debugMode) body.config = { debug: true }
+      body.config = { debug: debugMode, showThinking }
+      if (currentImages.length > 0) {
+        body.contentBlocks = currentImages.map(img => ({
+          type: 'image',
+          source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+        }))
+      }
 
       const res = await fetch('/api/admin/playground/run', {
         method: 'POST',
@@ -210,8 +290,22 @@ export default function PlaygroundPage() {
           try {
             const event = JSON.parse(line.slice(6))
             if (event.type === 'text_delta') setReply(r => r + event.data)
-            else if (event.type === 'thinking_delta') setThinking(t => t + event.data)
-            else if (event.type === 'error') setError(String(event.data))
+            else if (event.type === 'thinking_delta') {
+              thinkingAccRef.current += event.data
+            }
+            else if (event.type === 'error') {
+              const errData = event.data
+              if (typeof errData === 'string') {
+                try {
+                  const parsed = JSON.parse(errData)
+                  setError(`API error: ${parsed?.error?.message || parsed?.message || errData}`)
+                } catch { setError(errData) }
+              } else if (errData && typeof errData === 'object') {
+                setError((errData as any)?.error?.message || (errData as any)?.message || JSON.stringify(errData))
+              } else {
+                setError(String(errData))
+              }
+            }
             else if (event.type === 'tool_executing') {
               const d = event.data as any
               const name = d?.name || 'tool'
@@ -231,21 +325,10 @@ export default function PlaygroundPage() {
             }
             else if (event.type === 'trace') {
               const t = event.data.trace || []
-              const turnKey = turnNumRef.current
               setTurnTraces(prev => {
                 const next = [...prev]
                 if (next.length > 0) next[next.length - 1] = t
                 return next
-              })
-              // Auto-collapse items with no events (0ms, empty summary)
-              const empty = new Set<string>()
-              t.forEach((item: any, i: number) => {
-                if (!item.ms && (!item.summary || item.summary === '(no events)')) empty.add(`${turnKey}-${i}`)
-              })
-              setCollapsedTraces(prev => {
-                const merged = new Set(prev)
-                for (const k of empty) merged.add(k)
-                return merged
               })
             }
           } catch { /* */ }
@@ -255,8 +338,9 @@ export default function PlaygroundPage() {
       setError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setResponding(false)
+      const archivedThinking = thinkingAccRef.current
       setReply(r => {
-        if (r) setChatMessages(prev => [...prev, { role: 'agent' as const, content: r }])
+        if (r) setChatMessages(prev => [...prev, { role: 'agent' as const, content: r, thinking: archivedThinking || undefined }])
         return ''
       })
     }
@@ -309,18 +393,71 @@ export default function PlaygroundPage() {
             onChange={(id) => selectAgent(id)}
             onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}
           />
+          {!selectedIsActive && selectedVersion && (
+            <span style={{
+              fontSize: 10, fontWeight: 600, color: 'var(--amber)',
+              padding: '2px 8px', borderRadius: 6,
+              background: 'rgba(212,145,46,0.10)', border: '1px solid rgba(212,145,46,0.20)',
+              flexShrink: 0,
+            }}>
+              测试草稿 v{selectedVersion}（未上线）
+            </span>
+          )}
         </div>
 
         <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />
 
         {snapshot && (
           <>
-            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.modelLabel} />
+            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.resolvedModel} />
             <ConfigPill icon={<span style={{ fontSize: 10, fontWeight: 600 }}>&#123;t&#125;</span>} label={`Temp ${snapshot.temperature}`} />
             <ConfigPill icon={<Clock size={11} />} label={snapshot.memoryTierLabel} />
             <ConfigPill icon={<Shield size={11} />} label={`${snapshot.guardrailCount} rule${snapshot.guardrailCount !== 1 ? 's' : ''}`} />
 
             <div style={{ flex: 1 }} />
+
+            <button
+              onClick={() => setShowThinking(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 10, fontWeight: 500, color: showThinking ? 'var(--lavender)' : 'var(--fog)',
+                background: showThinking ? 'rgba(139,111,245,0.08)' : 'transparent',
+                border: showThinking ? '1px solid rgba(139,111,245,0.15)' : '1px solid transparent',
+                padding: '3px 8px', borderRadius: 8,
+                cursor: 'pointer', transition: 'all 0.15s',
+                flexShrink: 0,
+              }}
+            >
+              <Brain size={11} /> Thinking
+            </button>
+
+            <button
+              onClick={handleSaveToChat}
+              disabled={chatMessages.length === 0 || savingToChat}
+              title={savedChatId ? `Saved — open chat /ops/chats/${savedChatId}` : chatMessages.length === 0 ? 'Send a message first' : 'Save transcript to Chat'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 10, fontWeight: 500, color: savedChatId ? 'var(--malachite)' : 'var(--fog)',
+                background: savedChatId ? 'rgba(46,160,74,0.08)' : 'transparent',
+                border: savedChatId ? '1px solid rgba(46,160,74,0.15)' : '1px solid transparent',
+                padding: '3px 8px', borderRadius: 8,
+                cursor: chatMessages.length === 0 ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s',
+                flexShrink: 0,
+                opacity: chatMessages.length === 0 ? 0.35 : 1,
+              }}
+            >
+              {savingToChat ? 'Saving…' : savedChatId ? (
+                <Link
+                  href={`/ops/chats/${savedChatId}`}
+                  target="_blank"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <ExternalLink size={10} /> View Chat
+                </Link>
+              ) : 'Save to Chat'}
+            </button>
 
             <Link
               href={`/admin/agent?agentId=${selectedAgentId}`}
@@ -379,7 +516,7 @@ export default function PlaygroundPage() {
                   textAlign: 'center', lineHeight: 1.6,
                 }}>
                   {snapshot
-                    ? `Testing "${snapshot.name}" · ${snapshot.modelLabel}`
+                    ? `Testing "${snapshot.name}" · ${snapshot.resolvedModel}`
                     : 'Select an agent and send a message to test its behaviour.'}
                 </p>
 
@@ -442,32 +579,79 @@ export default function PlaygroundPage() {
 
             {/* ── Chat messages ── */}
             {chatMessages.map((m, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: '12px 16px', borderRadius: 14,
-                  marginBottom: 8,
-                  background: m.role === 'user'
-                    ? 'rgba(139,111,245,0.06)'
-                    : 'rgba(255,255,255,0.55)',
-                  backdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
-                  WebkitBackdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
-                  border: m.role === 'agent' ? '1px solid var(--border-subtle)' : '1px solid rgba(139,111,245,0.1)',
-                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '85%',
-                }}
-              >
-                <div style={{
-                  fontSize: 11, fontWeight: 600, color: 'var(--fog)',
-                  marginBottom: 4, opacity: 0.5,
-                }}>
-                  {m.role === 'user' ? 'You' : snapshot?.name || 'Agent'}
-                </div>
-                <div style={{
-                  fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {m.content}
+              <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                {/* Per-message thinking (above agent bubble, collapsed, survives turns) */}
+                {showThinking && m.role === 'agent' && m.thinking && (
+                  <details style={{
+                    padding: '10px 14px', borderRadius: 12,
+                    marginBottom: 6,
+                    background: '#1e1e2e',
+                    border: '1px solid rgba(139,111,245,0.2)',
+                    fontSize: 12,
+                  }}>
+                    <summary style={{
+                      fontWeight: 600, color: '#c4b5fd',
+                      cursor: 'pointer', marginBottom: 6,
+                    }}>
+                      Thinking
+                    </summary>
+                    <div style={{
+                      color: '#cdd6f4', lineHeight: 1.7,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      fontFamily: 'var(--font-serif), serif', fontStyle: 'italic',
+                      fontSize: 12,
+                    }}>
+                      {m.thinking}
+                    </div>
+                  </details>
+                )}
+                <div
+                  style={{
+                    padding: '12px 16px', borderRadius: 14,
+                    marginBottom: 8,
+                    background: m.role === 'user'
+                      ? 'rgba(139,111,245,0.06)'
+                      : 'rgba(255,255,255,0.55)',
+                    backdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
+                    WebkitBackdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
+                    border: m.role === 'agent' ? '1px solid var(--border-subtle)' : '1px solid rgba(139,111,245,0.1)',
+                  }}
+                >
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--fog)',
+                    marginBottom: 4, opacity: 0.5,
+                  }}>
+                    {m.role === 'user' ? 'You' : snapshot?.name || 'Agent'}
+                  </div>
+                  {m.role === 'agent' ? (
+                    <MessageContent content={m.content} />
+                  ) : (
+                    <>
+                      {m.images && m.images.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                          {m.images.map((img, idx) => (
+                            <img
+                              key={idx}
+                              src={`data:${img.mimeType};base64,${img.base64}`}
+                              alt={img.name}
+                              title={img.name}
+                              style={{
+                                maxWidth: 120, maxHeight: 80,
+                                borderRadius: 8, objectFit: 'cover',
+                                border: '1px solid rgba(139,111,245,0.12)',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <div style={{
+                        fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      }}>
+                        {m.content}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -503,33 +687,6 @@ export default function PlaygroundPage() {
               </div>
             )}
 
-            {/* ── Thinking stream (collapsible, only when showThinking is on) ── */}
-            {thinking && (
-              <details style={{
-                padding: '10px 14px', borderRadius: 12,
-                marginBottom: 6,
-                background: 'rgba(139,111,245,0.04)',
-                border: '1px solid rgba(139,111,245,0.12)',
-                alignSelf: 'flex-start',
-                maxWidth: '85%',
-                fontSize: 12,
-              }} open>
-                <summary style={{
-                  fontWeight: 600, color: 'var(--lavender)',
-                  cursor: 'pointer', marginBottom: 6,
-                }}>
-                  Thinking…
-                </summary>
-                <div style={{
-                  color: 'var(--fog)', lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  fontFamily: 'var(--font-serif)', fontStyle: 'italic',
-                }}>
-                  {thinking}
-                </div>
-              </details>
-            )}
-
             {/* ── Streaming agent reply ── */}
             {reply && (
               <div style={{
@@ -548,12 +705,7 @@ export default function PlaygroundPage() {
                 }}>
                   {snapshot?.name || 'Agent'}
                 </div>
-                <div style={{
-                  fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {reply}
-                </div>
+                <MessageContent content={reply} />
               </div>
             )}
 
@@ -565,6 +717,38 @@ export default function PlaygroundPage() {
             position: 'relative', zIndex: 1, flexShrink: 0,
             width: '100%', maxWidth: 680, padding: '12px 24px 12px',
           }}>
+            {/* ── Attached image previews ── */}
+            {attachedImages.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {attachedImages.map((img, idx) => (
+                  <div key={idx} style={{ position: 'relative' }}>
+                    <img
+                      src={`data:${img.mimeType};base64,${img.base64}`}
+                      alt={img.name}
+                      title={img.name}
+                      style={{
+                        width: 56, height: 56, borderRadius: 8,
+                        objectFit: 'cover', border: '1px solid var(--border-subtle)',
+                      }}
+                    />
+                    <button
+                      onClick={() => removeImage(idx)}
+                      style={{
+                        position: 'absolute', top: -4, right: -4,
+                        width: 16, height: 16, borderRadius: '50%',
+                        background: 'var(--vermillion)', color: 'white',
+                        border: 'none', cursor: 'pointer', fontSize: 9,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        lineHeight: 1,
+                      }}
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{
               display: 'flex', gap: 8,
               background: 'rgba(255,255,255,0.55)',
@@ -585,12 +769,57 @@ export default function PlaygroundPage() {
               if (el) { el.style.borderColor = 'var(--border-subtle)'; el.style.boxShadow = 'var(--shadow-card)' }
             }}
             >
+              {/* ── Attach button ── */}
+              <label
+                title={supportsVision ? 'Attach image' : `${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 36, height: 36, borderRadius: 12,
+                  background: supportsVision ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
+                  border: supportsVision ? '1px solid rgba(139,111,245,0.12)' : '1px solid rgba(0,0,0,0.06)',
+                  cursor: supportsVision ? 'pointer' : 'not-allowed',
+                  opacity: supportsVision ? 1 : 0.35,
+                  transition: 'all 0.15s',
+                  flexShrink: 0,
+                }}
+              >
+                <ImageIcon size={14} color={supportsVision ? 'var(--lavender)' : 'var(--fog)'} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  disabled={!supportsVision}
+                  onChange={e => { if (e.target.files) { handleImageAttach(e.target.files); e.target.value = '' } }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+
               <input
                 ref={composerRef}
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && message.trim() && !responding) { const msg = message.trim(); setMessage(''); runTurn(msg) } }}
+                onPaste={e => {
+                  const items = e.clipboardData?.items
+                  if (!items) return
+                  const imageFiles: File[] = []
+                  for (const item of Array.from(items)) {
+                    if (item.type.startsWith('image/')) {
+                      const file = item.getAsFile()
+                      if (file) imageFiles.push(file)
+                    }
+                  }
+                  if (imageFiles.length > 0) {
+                    e.preventDefault()
+                    if (!supportsVision) {
+                      setToastMessage(`${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+                      setTimeout(() => setToastMessage(''), 4000)
+                      return
+                    }
+                    handleImageAttach(imageFiles)
+                  }
+                }}
                 placeholder="Type a test message…"
                 disabled={responding}
                 style={{
@@ -618,6 +847,26 @@ export default function PlaygroundPage() {
                 <Send size={14} color="white" />
               </button>
             </div>
+
+            {/* ── Toast ── */}
+            {toastMessage && (
+              <div style={{
+                position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                padding: '8px 16px', borderRadius: 10,
+                background: savedChatId ? 'var(--malachite)' : toastMessage.includes('failed') || toastMessage.includes('exceeds') ? 'var(--vermillion)' : 'var(--malachite)',
+                color: 'white',
+                fontSize: 11, fontWeight: 500,
+                whiteSpace: 'nowrap', boxShadow: savedChatId ? '0 4px 12px rgba(46,160,74,0.3)' : '0 4px 12px rgba(230,69,57,0.3)',
+                marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                {toastMessage}
+                {savedChatId && toastMessage === 'Saved to Chat!' && (
+                  <Link href={`/ops/chats/${savedChatId}`} target="_blank" style={{ color: 'white', fontWeight: 600, textDecoration: 'underline', fontSize: 11 }}>
+                    View Chat
+                  </Link>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
               <label style={{
@@ -663,26 +912,56 @@ export default function PlaygroundPage() {
             count={liveTools.length}
             maxHeight={260}
           >
+            {/* Aggregate token/timing summary — always visible */}
+            {(() => {
+              let totalInput = 0, totalOutput = 0, totalMs = 0
+              for (const steps of turnTraces) {
+                for (const step of steps) {
+                  if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
+                  totalMs += step.ms || 0
+                }
+              }
+              if (totalInput > 0 || totalOutput > 0) {
+                return (
+                  <div style={{ fontSize: 9, color: 'var(--fog)', padding: '4px 0', fontVariantNumeric: 'tabular-nums', display: 'flex', gap: 6 }}>
+                    <span>↑{totalInput} ↓{totalOutput}</span><span style={{opacity:0.3}}>·</span><span>{totalMs}ms</span><span style={{opacity:0.3}}>·</span><span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
             {liveTools.length === 0 ? (
               <SidebarEmpty>Tools called by the agent will appear here.</SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {liveTools.map((t, i) => (
-                  <div
-                    key={`${t.name}-${i}`}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '8px 10px', borderRadius: 10,
-                      background: 'rgba(255,255,255,0.55)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
+                {liveTools.map((t, i) => {
+                  const toolKey = `tool-${i}`
+                  const expanded = !collapsedTraces.has(toolKey)
+                  return (
+                  <div key={toolKey}>
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 10px', borderRadius: 10,
+                        background: 'rgba(255,255,255,0.55)',
+                        border: '1px solid var(--border-subtle)',
+                        cursor: (t.status === 'done' || t.status === 'error') ? 'pointer' : 'default',
+                      }}
+                      onClick={() => {
+                        if (t.status === 'done' || t.status === 'error') {
+                          setCollapsedTraces(prev => {
+                            const next = new Set(prev)
+                            if (next.has(toolKey)) { next.delete(toolKey) } else { next.add(toolKey) }
+                            return next
+                          })
+                        }
+                      }}
+                    >
                     {t.status === 'running' ? (
                       <OrganicLoader icon="spin" size={14} className="text-indigo" />
-                    ) : t.status === 'error' ? (
-                      <XCircle size={14} color="var(--vermillion)" />
                     ) : (
-                      <CheckCircle2 size={14} color="var(--malachite)" />
+                      <StatusDot status={t.status === 'error' ? 'error' : 'ok'} size={10} />
                     )}
                     <span style={{
                       fontSize: 11, fontWeight: 500, color: 'var(--mist)', flex: 1,
@@ -701,70 +980,37 @@ export default function PlaygroundPage() {
                           : ''}
                     </span>
                   </div>
-                ))}
+                  {expanded && (t.status === 'done' || t.status === 'error') && t.result !== undefined && (
+                    <div style={{
+                      marginLeft: 28, marginTop: 2, marginBottom: 4,
+                      padding: '6px 10px', borderRadius: 8,
+                      background: 'rgba(0,0,0,0.03)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: 10, color: 'var(--fog)',
+                      maxHeight: 160, overflow: 'auto',
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      fontFamily: 'monospace',
+                    }}>
+                      {typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)}
+                    </div>
+                  )}
+                  </div>
+                )})}
                 {/* ── RenderHint display for completed tools ── */}
                 {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
-                  const hint = t.renderHints!
-                  const result = t.result as Record<string, unknown> | undefined
-                  if (hint.kind === 'form') {
-                    // Show form fields from request_user_input result
-                    const fields = (result?.fields as Array<{ key: string; label: string; type: string; required?: boolean }>) ?? []
-                    const title = (result?.title as string) || (hint.submitLabel as string) || 'Form'
-                    if (!fields.length) return null
-                    return (
-                      <div key={`hint-${i}`} style={{
-                        padding: '10px 12px', borderRadius: 10,
-                        background: 'rgba(139,111,245,0.04)', border: '1px solid rgba(139,111,245,0.12)',
-                        marginTop: 2,
-                      }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--lavender)', marginBottom: 6 }}>{title}</div>
-                        {fields.map((f) => (
-                          <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 10 }}>
-                            <span style={{ color: 'var(--fog)', minWidth: 60 }}>{f.label}</span>
-                            <span style={{ color: 'var(--smoke)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-                              {f.type}{f.required ? ' *' : ''}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  }
-                  if (hint.kind === 'card') {
-                    return (
-                      <div key={`hint-${i}`} style={{
-                        padding: '10px 12px', borderRadius: 10,
-                        background: 'rgba(91,138,247,0.05)', border: '1px solid rgba(91,138,247,0.12)',
-                        marginTop: 2,
-                      }}>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--indigo)', marginBottom: 4 }}>
-                          {String((result as any)?.[(hint.titleField as string)] ?? hint.titleOverride ?? 'Card')}
-                        </div>
-                        {(hint.subtitleField as string) && (
-                          <div style={{ fontSize: 10, color: 'var(--fog)' }}>
-                            {String((result as any)?.[(hint.subtitleField as string)] ?? '')}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  }
-                  if (hint.kind === 'quick_replies') {
-                    const options = (result?.[(hint.optionsField as string)] as Array<Record<string, unknown>>) ?? []
-                    if (!options.length) return null
-                    return (
-                      <div key={`hint-${i}`} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
-                        {options.map((opt, j) => (
-                          <span key={j} style={{
-                            padding: '3px 8px', borderRadius: 999,
-                            background: 'rgba(139,111,245,0.08)', border: '1px solid rgba(139,111,245,0.15)',
-                            fontSize: 10, color: 'var(--lavender)',
-                          }}>
-                            {String(opt[(hint.optionLabelField as string)] ?? opt[(hint.optionIdField as string)] ?? '')}
-                          </span>
-                        ))}
-                      </div>
-                    )
-                  }
-                  return null
+                  const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.["web-chat"] || null
+                  if (!hint) return null
+                  return (
+                    <RenderHintCard
+                      key={`hint-${i}`}
+                      hint={hint}
+                      result={t.result}
+                      onSubmit={(values) => {
+                        const msg = JSON.stringify(values, null, 2)
+                        runTurn(msg)
+                      }}
+                    />
+                  )
                 })}
               </div>
             )}
@@ -780,8 +1026,62 @@ export default function PlaygroundPage() {
               <SidebarEmpty>Send a message to see the behavior trace.</SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* ── Aggregate stats summary ── */}
+                {(() => {
+                  let totalInput = 0, totalOutput = 0, totalMs = 0, totalTools = 0
+                  for (const steps of turnTraces) {
+                    for (const step of steps) {
+                      if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
+                      totalMs += step.ms || 0
+                      if (step.stage === 'Skills & tools') totalTools++
+                    }
+                  }
+                  if (totalInput === 0 && totalOutput === 0 && totalTools === 0) return null
+                  return (
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', gap: '4px 10px',
+                      padding: '6px 8px', borderRadius: 8,
+                      background: 'rgba(139,111,245,0.04)', border: '1px solid rgba(139,111,245,0.08)',
+                      fontSize: 9, color: 'var(--fog)', fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      <span>↑{totalInput} ↓{totalOutput} tokens</span>
+                      <span style={{ opacity: 0.3 }}>·</span>
+                      <span>{totalMs}ms</span>
+                      {totalTools > 0 && (<><span style={{ opacity: 0.3 }}>·</span><span>{totalTools} tools</span></>)}
+                      <span style={{ opacity: 0.3 }}>·</span>
+                      <span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )
+                })()}
+
+                {/* ── Show skipped toggle ── */}
+                {(() => {
+                  let totalSkipped = 0
+                  for (const steps of turnTraces) {
+                    for (const step of steps) {
+                      if (step.fired === false) totalSkipped++
+                    }
+                  }
+                  if (totalSkipped === 0) return null
+                  return (
+                    <button
+                      onClick={() => setShowSkipped(v => !v)}
+                      style={{
+                        fontSize: 9, fontWeight: 500, color: showSkipped ? 'var(--lavender)' : 'var(--fog)',
+                        background: showSkipped ? 'rgba(139,111,245,0.06)' : 'transparent',
+                        border: showSkipped ? '1px solid rgba(139,111,245,0.12)' : '1px solid transparent',
+                        padding: '2px 8px', borderRadius: 6,
+                        cursor: 'pointer', alignSelf: 'flex-start',
+                      }}
+                    >
+                      {showSkipped ? 'Hide skipped' : `Show skipped (${totalSkipped})`}
+                    </button>
+                  )
+                })()}
+
                 {turnTraces.map((steps, turnIdx) => {
-                  if (steps.length === 0) return null
+                  const filteredSteps = steps.filter((s: any) => showSkipped || s.fired !== false)
+                  if (filteredSteps.length === 0) return null
                   const turnKey = turnIdx + 1
                   return (
                     <div key={turnIdx}>
@@ -793,9 +1093,8 @@ export default function PlaygroundPage() {
                       }}>
                         Turn {turnKey}
                       </div>
-                      {steps.map((step: any, i: number) => {
-                        const Icon = TRACE_ICONS[step.actionType] || Puzzle
-                        const isEmpty = !step.ms && (!step.summary || step.summary === '(no events)')
+                      {filteredSteps.map((step: any, i: number) => {
+                        const skipping = step.status === 'skipped' || step.fired === false
                         const ck = `${turnKey}-${i}`
                         const collapsed = collapsedTraces.has(ck)
                         return (
@@ -807,7 +1106,7 @@ export default function PlaygroundPage() {
                                 borderRadius: 8,
                                 fontSize: 12,
                                 cursor: 'pointer',
-                                opacity: collapsed ? 0.45 : 1,
+                                opacity: collapsed ? 0.45 : skipping ? 0.4 : 1,
                                 transition: 'all 0.15s',
                               }}
                               onClick={() => {
@@ -818,18 +1117,17 @@ export default function PlaygroundPage() {
                                 })
                               }}
                               onMouseEnter={e => { if (collapsed) e.currentTarget.style.opacity = '0.7' }}
-                              onMouseLeave={e => { if (collapsed) e.currentTarget.style.opacity = '0.45' }}
+                              onMouseLeave={e => { if (collapsed) e.currentTarget.style.opacity = skipping ? '0.4' : '0.45' }}
                             >
                               <div style={{
                                 width: collapsed ? 16 : 22, height: collapsed ? 16 : 22, borderRadius: 6,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: `rgba(${STATUS_RGB[step.status] ?? '0,0,0'}, 0.08)`,
                                 flexShrink: 0,
                                 transition: 'all 0.15s',
                               }}>
                                 {collapsed
                                   ? <ChevronDown size={9} color="var(--fog)" style={{ transform: 'rotate(-90deg)' }} />
-                                  : <Icon size={11} color={STATUS_ICON_COLOR[step.status] ?? 'var(--fog)'} />
+                                  : <StatusDot status={step.status} size={10} />
                                 }
                               </div>
                               <span style={{ fontWeight: 500, color: 'var(--mist)', minWidth: 84, fontSize: 11, flexShrink: 0 }}>
@@ -839,39 +1137,41 @@ export default function PlaygroundPage() {
                                 color: 'var(--fog)', flex: 1, fontSize: 11,
                                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               }}>
-                                {collapsed ? (isEmpty ? '(no events)' : step.summary || step.title) : (step.summary || step.title)}
+                                {collapsed
+                                  ? (skipping ? 'skipped' : step.summary || step.title)
+                                  : (step.summary || step.title || (skipping ? 'skipped' : ''))}
                               </span>
                               <span style={{ fontSize: 9, color: 'var(--smoke)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                                {step.ms}ms
+                                {step.usage ? `↑${step.usage.inputTokens} ↓${step.usage.outputTokens} · ` : ''}{step.ms}ms
                               </span>
                             </div>
-                            {!collapsed && (
+                            {!collapsed && !skipping && (
                               <div style={{ padding: '0 10px 4px 38px' }}>
-                                {isEmpty ? (
-                                  <span style={{ fontSize: 10, color: 'var(--fog)', opacity: 0.4 }}>(no events)</span>
-                                ) : (
-                                  <>
-                                    {step.title && step.title !== step.summary && (
-                                      <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
-                                    )}
-                                    {step.promptData && (
-                                      <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
-                                    )}
-                                    {debugMode && step.json && (
-                                      <details style={{ marginTop: 2 }}>
-                                        <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6 }}>JSON</summary>
-                                        <pre style={{
-                                          maxWidth: 280, maxHeight: 160, overflow: 'auto',
-                                          fontSize: 9, color: 'var(--fog)',
-                                          background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
-                                          borderRadius: 8, padding: '6px 10px',
-                                        }}>
-                                          {JSON.stringify(step.json, null, 2)}
-                                        </pre>
-                                      </details>
-                                    )}
-                                  </>
+                                {step.title && step.title !== step.summary && (
+                                  <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
                                 )}
+                                {step.promptData && (
+                                  <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
+                                )}
+                                {debugMode && step.json && (() => {
+                                  const jsonText = JSON.stringify(step.json, null, 2)
+                                  return (
+                                    <details style={{ marginTop: 2 }}>
+                                      <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        JSON
+                                        <CopyButton text={jsonText} label="Copy debug JSON" />
+                                      </summary>
+                                      <pre style={{
+                                        maxWidth: 280, maxHeight: 160, overflow: 'auto',
+                                        fontSize: 9, color: 'var(--fog)',
+                                        background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
+                                        borderRadius: 8, padding: '6px 10px',
+                                      }}>
+                                        {jsonText}
+                                      </pre>
+                                    </details>
+                                  )
+                                })()}
                               </div>
                             )}
                           </div>
@@ -973,8 +1273,10 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
           <summary style={{
             fontWeight: 600, color: 'var(--lavender)',
             cursor: 'pointer', opacity: 0.8,
+            display: 'flex', alignItems: 'center', gap: 4,
           }}>
             System prompt ({systemPrompt.length.toLocaleString()} chars)
+            <CopyButton text={systemPrompt} label="Copy system prompt" />
           </summary>
           <pre style={{
             maxWidth: 280, maxHeight: 160, overflow: 'auto',
@@ -1007,13 +1309,16 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
                 background: m.role === 'user' ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
                 fontSize: 9,
               }}>
-                <span style={{
-                  fontWeight: 600, color: 'var(--fog)',
-                  textTransform: 'uppercase', fontSize: 8,
-                  opacity: 0.5, marginRight: 6,
-                }}>
-                  {typeof m.role === 'string' ? m.role : 'unknown'}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                  <span style={{
+                    fontWeight: 600, color: 'var(--fog)',
+                    textTransform: 'uppercase', fontSize: 8,
+                    opacity: 0.5,
+                  }}>
+                    {typeof m.role === 'string' ? m.role : 'unknown'}
+                  </span>
+                  <CopyButton text={typeof m.content === 'string' ? m.content : JSON.stringify(m.content)} label={`Copy ${typeof m.role === 'string' ? m.role : 'unknown'} message`} />
+                </div>
                 <span style={{ color: 'var(--mist)' }}>
                   {(typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).slice(0, 160)}
                   {(typeof m.content === 'string' && m.content.length > 160) ? '...' : ''}

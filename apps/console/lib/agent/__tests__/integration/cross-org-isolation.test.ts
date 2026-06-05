@@ -15,15 +15,23 @@ const h = vi.hoisted(() => {
   return { configs }
 })
 
-// Mock prisma for the anonymous widget route
+vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+
+// Mock prisma (Proxy so repoForOrg can access any model)
+const noopModel = new Proxy({}, { get: () => vi.fn() })
 vi.mock('@intera/shared/prisma', () => ({
-  prisma: {
+  prisma: new Proxy({
     liveChatConfig: {
       findUnique: vi.fn(async ({ where }: { where: { orgId: string } }) =>
         h.configs[where.orgId] ?? null,
       ),
     },
-  },
+    channelBinding: {
+      findFirst: vi.fn(async () => null), // fall through to livechat_configs
+    },
+  }, {
+    get(target, prop) { if (typeof prop === 'symbol') return undefined; return (target as any)[prop] ?? noopModel },
+  }),
 }))
 
 import { GET as configGet } from '@/app/api/livechat/config/route'

@@ -1,10 +1,9 @@
-// 6-stage trace aggregator for Playground.
+// 5-stage trace aggregator for Playground.
 // Maps fine-grained ActionType events → PlaygroundTraceStep with timing + status.
 
 import type { TraceRecord } from './persistence-port'
 
 export type TraceStage =
-  | 'Intent classification'
   | 'Guardrails'
   | 'Knowledge retrieval'
   | 'Skills & tools'
@@ -17,8 +16,10 @@ export type TraceSource = 'caseTypes' | 'guardrails' | 'knowledge' | 'tools' | '
 export interface PlaygroundTraceStep {
   stage: string
   source: TraceSource
-  status: TraceStatus
+  status: TraceStatus | 'skipped'
+  fired: boolean
   ms: number
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
   summary: string
   detail: [string, string][]
   json?: object
@@ -27,7 +28,6 @@ export interface PlaygroundTraceStep {
 }
 
 const STAGE_MAP: Record<string, { stage: TraceStage; source: TraceSource }> = {
-  intent_classify: { stage: 'Intent classification', source: 'caseTypes' },
   policy_hit: { stage: 'Guardrails', source: 'guardrails' },
   // kb_search_* tools
   kb_search: { stage: 'Knowledge retrieval', source: 'knowledge' },
@@ -53,13 +53,38 @@ function deriveStatus(actionType: string, detail?: string | null): TraceStatus {
   return 'ok'
 }
 
-/** Aggregate raw TraceRecord[] into 6 Playground stages with timing. */
+/** Extract usage from an llm_response record's detail JSON. */
+function extractUsage(record: TraceRecord): { inputTokens: number; outputTokens: number; totalTokens: number } | undefined {
+  if (!record.detail) return undefined
+  try {
+    const parsed = JSON.parse(record.detail)
+    const u = parsed?.usage
+    if (u && (typeof u.input_tokens === 'number' || typeof u.output_tokens === 'number')) {
+      const inputTokens = Number(u.input_tokens ?? 0)
+      const outputTokens = Number(u.output_tokens ?? 0)
+      return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens }
+    }
+  } catch { /* ignore parse errors */ }
+  return undefined
+}
+
+/** All 5 stages in fixed order — used as fallback when applicableStages is not provided. */
+const allStages: { stage: TraceStage; source: TraceSource }[] = [
+  { stage: 'Guardrails', source: 'guardrails' },
+  { stage: 'Knowledge retrieval', source: 'knowledge' },
+  { stage: 'Skills & tools', source: 'tools' },
+  { stage: 'Stage SOP', source: 'agent' },
+  { stage: 'Model generation', source: 'agent' },
+]
+
+/** Aggregate raw TraceRecord[] into Playground stages with timing. */
 export function aggregateTraces(
   traces: TraceRecord[],
   startTime: number,
   debug: boolean,
+  applicableStages?: string[],
 ): PlaygroundTraceStep[] {
-  const stageMap = new Map<TraceStage, { records: TraceRecord[]; earliest: number }>()
+  const stageMap = new Map<string, { records: TraceRecord[]; earliest: number }>()
 
   for (const t of traces) {
     const actionType = t.actionType
@@ -84,31 +109,45 @@ export function aggregateTraces(
     }
   }
 
-  // All 6 stages in order
-  const allStages: { stage: TraceStage; source: TraceSource }[] = [
-    { stage: 'Intent classification', source: 'caseTypes' },
-    { stage: 'Guardrails', source: 'guardrails' },
-    { stage: 'Knowledge retrieval', source: 'knowledge' },
-    { stage: 'Skills & tools', source: 'tools' },
-    { stage: 'Stage SOP', source: 'agent' },
-    { stage: 'Model generation', source: 'agent' },
-  ]
+  // Determine which stages to emit
+  const stagesToEmit: { stage: string; source: TraceSource }[] = applicableStages
+    ? applicableStages.map((s) => {
+        const found = allStages.find((as) => as.stage === s)
+        return { stage: s, source: found?.source ?? 'agent' as TraceSource }
+      })
+    : allStages
 
-  return allStages.map(({ stage, source }) => {
+  return stagesToEmit.map(({ stage, source }) => {
     const entry = stageMap.get(stage)
-    if (!entry || entry.records.length === 0) {
-      return {
+    const fired = !!(entry && entry.records.length > 0)
+
+    if (!fired) {
+      const step: PlaygroundTraceStep = {
         stage,
         source,
-        status: 'neutral' as TraceStatus,
+        status: 'skipped',
+        fired: false,
         ms: 0,
         summary: '(no events)',
-        detail: [] as [string, string][],
+        detail: [],
       }
+      return step
     }
 
-    const records = entry.records
-    const ms = Math.max(1, Math.round((Date.now() - entry.earliest) / 100) * 100) // rough timing
+    const records = entry!.records
+
+    // Use earliest record time for ms offset
+    const ms = (() => {
+      if (startTime && records.length > 0) {
+        const firstCreatedAt = records[0].createdAt
+        if (firstCreatedAt) {
+          const t = new Date(firstCreatedAt).getTime()
+          return Math.max(1, t - startTime)
+        }
+      }
+      return 1
+    })()
+
     const statuses = records.map((r) => deriveStatus(r.actionType, r.detail))
     const worstStatus = statuses.includes('block') ? 'block'
       : statuses.includes('warn') ? 'warn'
@@ -122,6 +161,7 @@ export function aggregateTraces(
       stage,
       source,
       status: worstStatus as TraceStatus,
+      fired: true,
       ms,
       summary,
       detail,
@@ -140,6 +180,12 @@ export function aggregateTraces(
             }
           }
         } catch { /* ignore parse errors */ }
+      }
+
+      // Extract usage from llm_response
+      const llmRespRecord = records.find(r => r.actionType === 'llm_response')
+      if (llmRespRecord) {
+        step.usage = extractUsage(llmRespRecord)
       }
     }
 

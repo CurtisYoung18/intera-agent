@@ -216,6 +216,7 @@ export interface HumanTaskData {
 export type PolicyHook = 'preTool' | 'postTool' | 'preFinalize'
 export type PolicyResult = 'pass' | 'blocked' | 'hint' | 'escalated'
 
+/** @deprecated — superseded by GuardrailHook. Kept for backward-compat with legacy DB rows. */
 export interface PolicyRule {
   /** Block specific skills by exact name match (preTool only) */
   deny_skills?: string[]
@@ -230,6 +231,56 @@ export interface PolicyRule {
   /** Natural-language evaluation prompt for LLM-based policy checks.
    * Supports placeholders: {{skill_name}} {{skill_output}} {{confirmed_facts}} {{skills_called}} */
   evaluationPrompt?: string
+}
+
+// ============================================
+// G11 — GuardrailHook (configurable guardrail primitive)
+// ============================================
+
+/** Platform-owned lifecycle checkpoints. Phase 1: preTool, postTool, preFinalize.
+ *  preReply arrives in Phase 2 (G10 loop.ts decomposition). */
+export type GuardrailCheckpoint = 'preTool' | 'postTool' | 'preFinalize'
+
+export interface GuardrailMatch {
+  /** Skills that trigger this hook. Supports exact names; empty = all skills. */
+  skills: string[]
+  /** Optional cheap pre-filter on the payload (regex or substring match). */
+  ifPattern?: string
+}
+
+export interface GuardrailCheck {
+  kind: 'rule' | 'ai'
+  // ── rule (deterministic) ──
+  denySkills?: string[]
+  requireSkills?: string[]
+  requireSkillsAny?: string[]
+  // ── ai (LLM evaluation) ──
+  evaluationPrompt?: string
+  model?: string
+}
+
+export type GuardrailAction = 'warn' | 'block' | 'invoke_tool'
+export type GuardrailUnavailableAction = 'open' | 'closed' | 'invoke_tool'
+
+export interface GuardrailOutcome {
+  action: GuardrailAction
+  guidance?: string
+  tool?: string
+}
+
+export interface GuardrailUnavailable {
+  action: GuardrailUnavailableAction
+  tool?: string
+}
+
+/** The single configurable primitive — a guardrail IS a hook. */
+export interface GuardrailHook {
+  when: GuardrailCheckpoint
+  match: GuardrailMatch
+  check: GuardrailCheck
+  onViolation: GuardrailOutcome
+  onUnavailable: GuardrailUnavailable
+  guidance?: string
 }
 
 export interface PolicyCheckResult {
@@ -247,6 +298,15 @@ export interface PolicyEvaluationResult {
   summary: PolicyResult
   /** Human-readable feedback ready to inject into the agent's message stream. */
   feedbackMessage?: string
+  /** System tool calls to enqueue (when a hook resolves to invoke_tool). */
+  pendingToolCalls?: PendingGuardrailToolCall[]
+}
+
+/** A tool call that the loop should enqueue as a result of guardrail evaluation. */
+export interface PendingGuardrailToolCall {
+  tool: string
+  reason: string
+  hookName: string
 }
 
 // ============================================
@@ -410,6 +470,7 @@ export type SSEEventType =
   | 'escalated'
   | 'trace'
   | 'llm_request_start'
+  | 'llm_response'
   | 'error'
 
 /** Option presented in an interaction card. */

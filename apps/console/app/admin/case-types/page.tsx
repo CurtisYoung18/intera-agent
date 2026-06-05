@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Layers, Plus, Search, Wand2, ArrowRight, Settings2, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Layers, Plus, Search, Wand2, ArrowRight, Settings2, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle } from 'lucide-react'
 
-import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import TiltCard from '@/components/ui/tilt-card'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { apiClient } from '@/lib/api/client'
+import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
+import { PageLoader } from '@/components/ui/page-loader'
 
 interface CaseTypeItem {
   id: string
@@ -40,24 +41,24 @@ export default function CaseTypesPage() {
   const router = useRouter()
   const [items, setItems] = useState<CaseTypeItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
-  const notifyConfigChanged = useCallback(() => {
-    const body = JSON.stringify({ orgId: 'default' })
-    Promise.allSettled([
-      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
-      fetch('/api/admin/config-changed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }),
-    ]).catch(() => {})
-  }, [])
+  const { orgId } = useSession()
 
   const load = useCallback(async () => {
-    const res = await fetch('/api/admin/case-types')
-    const data = await res.json()
-    const raw = (data.types || []) as CaseTypeItem[]
-    setItems(raw.map((ct) => ({ ...ct, enabled: ct.enabled !== false })))
-    setLoading(false)
+    try {
+      const result = await apiClient<{ types: CaseTypeItem[] }>('/api/admin/case-types')
+      const raw = (result.data.types || []) as CaseTypeItem[]
+      setItems(raw.map((ct) => ({ ...ct, enabled: ct.enabled !== false })))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load')
+    } finally {
+      setLoading(false)
+    }
   }, [])
   useEffect(() => {
     load()
@@ -91,16 +92,8 @@ export default function CaseTypesPage() {
     setSaveStatus('saving')
     const draft = emptyItem()
     try {
-      const res = await fetch('/api/admin/case-types', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft),
-      })
-      if (!res.ok) {
-        setSaveStatus('error')
-        return
-      }
-      notifyConfigChanged()
+      await apiClient('/api/admin/case-types', { method: 'POST', body: draft })
+      await bustConfigCache(orgId)
       setSaveStatus('saved')
       router.push(`/admin/case-types/${encodeURIComponent(draft.type)}`)
     } catch {
@@ -111,22 +104,15 @@ export default function CaseTypesPage() {
   const toggleEnabled = useCallback(
     async (ct: CaseTypeItem) => {
       const updated = { ...ct, enabled: !ct.enabled }
-      const res = await fetch(`/api/admin/case-types/${encodeURIComponent(ct.type)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      })
-      if (!res.ok) return
-      notifyConfigChanged()
+      await apiClient(`/api/admin/case-types/${encodeURIComponent(ct.type)}`, { method: 'PUT', body: updated }).catch(() => {})
+      await bustConfigCache(orgId)
       load()
     },
-    [load, notifyConfigChanged],
+    [load, orgId],
   )
 
   const handleDelete = useCallback(
-    async (type: string) => {
-      setConfirmDeleteName(type)
-    },
+    async (type: string) => { setConfirmDeleteName(type) },
     [],
   )
 
@@ -134,11 +120,10 @@ export default function CaseTypesPage() {
     const name = confirmDeleteName
     if (!name) return
     setConfirmDeleteName(null)
-    const res = await fetch(`/api/admin/case-types/${encodeURIComponent(name)}`, { method: 'DELETE' })
-    if (!res.ok) return
-    notifyConfigChanged()
+    await apiClient(`/api/admin/case-types/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {})
+    await bustConfigCache(orgId)
     load()
-  }, [confirmDeleteName, load, notifyConfigChanged])
+  }, [confirmDeleteName, load, orgId])
 
   const filtered = items.filter(
     (ct) =>
@@ -154,17 +139,11 @@ export default function CaseTypesPage() {
     }
   }
 
-  if (loading)
-    return (
-      <div className="p-8">
-        <ListSkeleton />
-      </div>
-    )
-
   return (
     <div>
       <VersionContextBar />
-    <div className="px-8 py-8 animate-fade-up">
+      <PageLoader loading={loading} error={error} onRetry={() => window.location.reload()}>
+        <div className="px-8 py-8 animate-fade-up">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('caseTypes.title')}</h1>
@@ -328,7 +307,8 @@ export default function CaseTypesPage() {
         onConfirm={confirmDelete}
         onCancel={() => setConfirmDeleteName(null)}
       />
+        </div>
+      </PageLoader>
     </div>
-  </div>
   )
 }

@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AlertCircle, Brain, CheckCircle2, Loader2 } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { CORE_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { drawerFieldClass, DrawerCheckboxRail, DrawerSection, DrawerShell } from '@/components/admin/agent-config-drawer-ui'
-import { apiClient } from '@/lib/api/client'
+import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
+import { PageLoader } from '@/components/ui/page-loader'
 import type { ModelInfo } from '@/app/admin/agent/types'
 
 interface ModelConfig {
@@ -36,6 +37,7 @@ export default function ModelPage() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const configRef = useRef(config)
+  const { orgId } = useSession()
 
   useEffect(() => {
     configRef.current = config
@@ -72,6 +74,22 @@ export default function ModelPage() {
       .finally(() => setLoading(false))
   }, [agentId, t])
 
+  // Flush pending save on unmount (navigation/blur)
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current)
+        const current = configRef.current
+        if (current && agentId) {
+          apiClient(`/api/admin/agent?agentId=${agentId}`, {
+            body: current,
+          }).catch(() => {})
+          bustConfigCache(orgId).catch(() => {})
+        }
+      }
+    }
+  }, [agentId, orgId])
+
   const autoSave = useCallback(() => {
     if (!agentId) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -83,17 +101,14 @@ export default function ModelPage() {
         await apiClient(`/api/admin/agent?agentId=${agentId}`, {
           body: current,
         })
-        apiClient('/api/admin/config-changed', {
-          method: 'POST',
-          body: { orgId: 'default' },
-        }).catch(() => {})
+        await bustConfigCache(orgId)
         setSyncStatus('synced')
         setTimeout(() => setSyncStatus('idle'), 2500)
       } catch {
         setSyncStatus('error')
       }
     }, 800)
-  }, [agentId])
+  }, [agentId, orgId])
 
   const update = useCallback(
     (field: string, value: unknown) => {
@@ -117,47 +132,26 @@ export default function ModelPage() {
     ))
   }
 
-  if (loading) {
+  const displayError = error || (!loading && !config ? t('common.failedLoad') : null)
+
+  if (!config) {
     return (
       <div>
         <VersionContextBar />
-        <div className="p-8 space-y-4">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-[60vh] w-full rounded-2xl" />
-        </div>
+        <PageLoader loading={loading} error={displayError} onRetry={() => window.location.reload()}>
+          <></>
+        </PageLoader>
       </div>
     )
   }
-
-  if (error || !config) {
-    return (
-      <div>
-        <VersionContextBar />
-        <div className="p-8 max-w-lg mx-auto text-center mt-20 space-y-4">
-          <AlertCircle className="w-10 h-10 text-vermillion/60 mx-auto" />
-          <p className="text-[var(--fog)]">{error || t('common.failedLoad')}</p>
-          <button type="button" onClick={() => window.location.reload()} className="px-5 py-2.5 rounded-xl bg-indigo/[0.08] border border-indigo/20 text-indigo">
-            {t('common.retry')}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const modelCheckboxes: Array<[keyof ModelConfig, string]> = [
-    ['showThinking', 'model.showThinking'],
-    ['invariantCheck', 'model.invariantCheck'],
-    ['debugMode', 'agent.showThinking'],
-    // debugMode doesn't have a specific label, keep it as a checkbox
-  ]
 
   return (
     <div>
       <VersionContextBar />
-
-      <div className="px-8 py-8 animate-fade-up">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+      <PageLoader loading={false} error={null} onRetry={() => window.location.reload()}>
+        <div className="px-8 py-8 animate-fade-up">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2.5 mb-1">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center"
@@ -171,18 +165,16 @@ export default function ModelPage() {
 
         </div>
 
-        {/* Save status bar */}
-        {syncStatus !== 'idle' && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
-            {syncStatus === 'syncing' ? (
-              <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('model.saving')}</span></>
-            ) : syncStatus === 'synced' ? (
-              <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('model.saved')}</span></>
-            ) : syncStatus === 'error' ? (
-              <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
-            ) : null}
-          </div>
-        )}
+        {/* Save status bar — persistent */}
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
+          {syncStatus === 'syncing' ? (
+            <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('model.saving')}</span></>
+          ) : syncStatus === 'error' ? (
+            <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
+          ) : (
+            <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('model.saved')}</span></>
+          )}
+        </div>
 
         <DrawerShell>
           {/* ── Model sub-section ── */}
@@ -261,7 +253,7 @@ export default function ModelPage() {
                   onChange={(e) => update('debugMode', e.target.checked)}
                   className="accent-indigo rounded"
                 />
-                <span className="text-[12px] text-[var(--mist)]">Debug Mode</span>
+                <span className="text-[12px] text-[var(--mist)]">{t('model.debugMode')}</span>
               </label>
             </DrawerCheckboxRail>
           </DrawerSection>
@@ -335,6 +327,7 @@ export default function ModelPage() {
           </DrawerSection>
         </DrawerShell>
       </div>
+      </PageLoader>
     </div>
   )
 }

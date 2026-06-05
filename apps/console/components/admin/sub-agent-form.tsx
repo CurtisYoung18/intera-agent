@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronRight, Trash2, ClipboardList, Bot, Shield, ShieldOff } from 'lucide-react'
 import ChipInput from '@/components/ui/chip-input'
+import { DEFAULT_MODEL } from '@intera/shared/defaults'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ export default function SubAgentForm({
   const defaultModels =
     availableModels.length > 0
       ? availableModels
-      : ['MiniMax-M3', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5-highspeed']
+      : [DEFAULT_MODEL]
 
   const tc = value.taskChecklist || { requiredChecks: [], outputFormat: '', rules: [] }
 
@@ -270,8 +271,7 @@ function GuardrailsSection({ value, onChange }: Pick<Props, 'value' | 'onChange'
 
   useEffect(() => {
     if (!expanded || loaded) return
-    fetch('/api/admin/policies')
-      .then((r) => r.json())
+    fetch('/api/admin/policies').then(r => r.json()).then(d => d.data || d)
       .then((d) => setGlobalPolicies((d.policies || []) as PolicyItem[]))
       .catch(() => {})
       .finally(() => setLoaded(true))

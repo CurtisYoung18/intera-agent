@@ -17,8 +17,7 @@ import {
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MessageContent from '@/components/chat/message-content'
 // Trace timeline rendered inline below
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
@@ -91,8 +90,7 @@ function MessageRow({ msg }: { msg: MsgItem }) {
           isUser ? 'bg-indigo/[0.12] text-[var(--mist)] rounded-tr-sm'
           : isToolResult ? 'bg-black/[0.04] font-mono text-[11px] text-[var(--fog)] rounded-tl-sm border border-black/[0.05]'
           : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'}`}>
-          {isToolResult ? <pre className="whitespace-pre-wrap break-words">{msg.content}</pre>
-          : <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>}
+          <MessageContent content={msg.content} />
         </div>
         <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt)}</span>
       </div>
@@ -435,7 +433,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
                   <p className="text-[10px] text-[var(--fog)]/50 mb-2">Case {mem.caseId.slice(0, 8)} · v{mem.dashboardVersion}</p>
                   {mem.summary ? (
                     <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[240px] overflow-auto">
-                      <ReactMarkdown>{mem.summary.slice(0, 3000)}</ReactMarkdown>
+                      <MessageContent content={mem.summary.slice(0, 3000)} />
                     </div>
                   ) : (
                     <p className="text-[11px] text-[var(--fog)]/50 italic">No summary yet — click "Compact Chat" to generate one.</p>
@@ -455,7 +453,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
                 <div className="rounded-xl border border-indigo/[0.08] bg-indigo/[0.03] p-3">
                   <p className="text-[10px] font-medium text-indigo/70 mb-2">User Profile (cross-chat)</p>
                   <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[160px] overflow-auto">
-                    <ReactMarkdown>{memoryData.profile.profile.slice(0, 1500)}</ReactMarkdown>
+                    <MessageContent content={memoryData.profile.profile.slice(0, 1500)} />
                   </div>
                 </div>
               )}

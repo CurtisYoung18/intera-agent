@@ -32,6 +32,11 @@ export const PUT = defineRoute({
     })
     if (!membership) throw new NotFoundError('Member not found')
 
+    // Cannot change your own role.
+    if (membership.userId === session.userId) {
+      throw new ForbiddenError('You cannot change your own role')
+    }
+
     // Only owners can modify owner roles.
     const currentRole: string = (membership as any).role
     if (currentRole === 'owner' && session.role !== 'owner') {

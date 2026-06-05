@@ -1,89 +1,73 @@
-# Intera — AI 客服产品
+# Intera — AI 客服 SaaS 平台
 
-Intera 是一个以 AI Agent 为核心的智能客服 SaaS 平台。Next.js monorepo（`apps/console` + `packages/shared`），自托管 Ubuntu，服务 `demo.anytrans.ai`。
+Intera 是一个以 **AI Agent 为核心**的多租户智能客服 SaaS。客户发起对话 → 自治 Agent 把问题当作一个 *case* 调查：检索知识、调用技能/工具、追问澄清、触发护栏时升级人工、端到端解决。
+
+**技术栈**：Next.js 15 monorepo（`apps/console` + `packages/shared`）· TypeScript · Prisma 6 + PostgreSQL · 自托管 Ubuntu，服务 `demo.anytrans.ai`。
+
+> 架构细节、当前状态与路线图见 [`doc/handoffs/MASTER_BUILD_HANDOFF.md`](doc/handoffs/MASTER_BUILD_HANDOFF.md)。
 
 ## 本地运行
 
-需要 Node.js 18+ 和 npm。
+需要 **Node.js 18+**、npm、Docker（本地 Postgres）。
 
 ### 1. 安装依赖
-
 ```bash
 npm install
 ```
 
-### 2. 配置环境变量
+### 2. 起本地数据库（Postgres 16）
+```bash
+docker compose up -d        # postgres:16，用户/密码/库均为 intera
+```
 
+### 3. 配置环境变量
 ```bash
 cp .env.example .env
 cp apps/console/.env.example apps/console/.env.local
 ```
+至少填：
+- `DATABASE_URL=postgresql://intera:intera@localhost:5432/intera`
+- `SESSION_SECRET=`（session 签名密钥）
+- 至少一个 LLM key + 其 base URL：`ANTHROPIC_AUTH_TOKEN` / `MINIMAX_API_KEY` / `DEEPSEEK_API_KEY`
+- `STAFF_PASSWORD=`（破窗 / bootstrap 登录）
 
-编辑根目录 `.env`，填入 `ANTHROPIC_AUTH_TOKEN`、`MINIMAX_API_KEY`、`DEEPSEEK_API_KEY`。
+> Google SSO + 邀请制为可选，需额外的 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` / `INVITE_TOKEN_SECRET`。完整清单以 `.env.example` 为准。
 
-### 3. 初始化数据库
-
+### 4. 建表 + 种子
 ```bash
-npm run db:push    # 建表（基于 prisma/schema.prisma）
-npm run db:seed    # 写入默认 Customer / AgentConfig / Skills / Policies / CaseTypes
+npm run db:push    # 按 schema 建表
+npm run db:seed    # 写入 default Organization + 演示 Agent 配置 / Skills / Policies / CaseTypes
 ```
+> `db:seed` 不是可选：它提供 `id='default'` 的组织和完整演示数据。
 
-> `db:seed` 不是可选步骤。Customer 表需要 `id='default'` 记录，否则 Console admin 路由在首次写入时会撞外键。各 admin 路由内置兜底，但 seed 才能拿到完整演示数据。
-
-### 4. 启动开发服务
-
+### 5. 启动
 ```bash
-npm run dev:console   # 管理控制台 (localhost:3001)
+npm run dev:console   # 控制台 (localhost:3001)
 ```
 
 ## 构建 & 部署
-
 ```bash
-npm run build:console          # 生产构建
-git push deploy main           # 推送到生产服务器（post-receive hook → deploy.sh）
-```
-
-## 项目结构
-
-```
-apps/console/             ← 唯一的应用（原 apps/chat 已删除）
-  app/api/messages/       ← 主 SSE 入口（LiveChat + 外部 API）
-  app/api/admin/          ← Console 管理 CRUD + agent-configs + playground
-  app/api/auth/           ← 登录 / session / 切换 org
-  lib/agent/              ← 核心 AI 引擎（AgentLoop, skills, policy, trace, memory）
-  lib/livechat/           ← LiveChat bridge（webhook → /api/messages → SSE）
-  middleware.ts           ← Edge gate（/admin /ops + 被保护的 /api/*）
-  components/             ← React（sidebar, docked-preview, admin editors）
-
-packages/shared/
-  prisma/schema.prisma    ← ~21 models（Organization, AgentConfig, Case, ApiKey, …）
-  types/index.ts          ← SSEEvent, SkillDefinition, AgentConfigData, …
-  defaults/index.ts       ← 默认 system prompts, memory strategies, policy hooks
+npm run build:console
+git push deploy main           # post-receive hook → scripts/deploy.sh
 ```
 
 ## 调试功能
 
 ### Debug Mode
-
 在 Console 的 Agent Config 页面开启 `Debug Mode`，每次 LLM 调用的完整 request/response payload 写入 `debug-logs/<caseId>/`。无需重启，实时生效。
 
 ### Case 导出
-
 ```bash
 curl http://localhost:3001/api/cases/{caseId}/export -o case-export.md
 ```
-
 也可在 Console 的 Case 详情页找到导出入口。
 
-## API 鉴权
+## 外部 API
 
-外部 API 调用使用 Bearer token：
-
+Bearer token 鉴权（在 `/admin/api-keys` 创建管理）：
 ```bash
 curl https://demo.anytrans.ai/api/messages \
   -H "Authorization: Bearer intera_sk_live_…" \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello","userId":"u_1"}'
 ```
-
-在 Console `/admin/api-keys` 页面创建和管理 API keys。

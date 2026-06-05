@@ -74,6 +74,9 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
 
     const executor = new StreamingToolExecutor(
       router.getToolDefinitions(),
+      undefined,
+      undefined,
+      'api',
     )
 
     // Use executeAll to call the tool synchronously

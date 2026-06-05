@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ── Types for hoisted state ──
 type UserRecord = { id: string; email: string; name: string | null; googleSub: string | null; passwordHash: string | null }
 type MembershipRecord = { id: string; userId: string; orgId: string; role: string }
-type InvitationRecord = { id: string; email: string; orgId: string; invitedBy: string; role: string; token: string; state: string; expiresAt: Date }
+type InvitationRecord = { id: string; email: string | null; orgId: string; invitedBy: string; role: string; token: string; state: string; expiresAt: Date; maxUses?: number; useCount?: number }
 type TokenRecord = { userId: string; orgId: string; role: string }
 type ClaimsRecord = { sub: string; email: string; email_verified: boolean; name?: string }
 
@@ -47,9 +47,12 @@ function cuid(): string {
   return `test-${++idCounter}-${Date.now()}`
 }
 
-// ── Mock prisma ──
+// ── Mock logger ──
+vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+
+// ── Mock prisma (Proxy with fallback {} so repoForOrg can access any model) ──
 vi.mock('@intera/shared/prisma', () => ({
-  prisma: {
+  prisma: new Proxy({
     user: {
       findUnique: vi.fn(async (args: { where: Record<string, unknown>; include?: Record<string, unknown> }) => {
         const where = args.where
@@ -115,12 +118,18 @@ vi.mock('@intera/shared/prisma', () => ({
       }),
       findFirst: vi.fn(async (args: { where: Record<string, unknown> }) => {
         const where = args.where
-        // Match by email, state=pending, expiresAt > now
         for (const inv of Object.values(h.invitations)) {
           if (inv.email !== where.email) continue
           if (where.state && inv.state !== where.state) continue
           if (inv.expiresAt <= new Date()) continue
           return inv
+        }
+        return null
+      }),
+      findUnique: vi.fn(async (args: { where: Record<string, unknown> }) => {
+        const where = args.where
+        if (where.token) {
+          return Object.values(h.invitations).find((inv) => inv.token === where.token) ?? null
         }
         return null
       }),
@@ -133,7 +142,6 @@ vi.mock('@intera/shared/prisma', () => ({
     },
     // Mock $transaction to run the callback against the mock stores
     $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
-      // Create a simple transaction proxy that delegates to the mock prisma
       const tx = {
         user: {
           create: async (args: { data: Record<string, unknown> }) => {
@@ -160,7 +168,12 @@ vi.mock('@intera/shared/prisma', () => ({
       }
       return cb(tx)
     }),
-  },
+  }, {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return undefined
+      return (target as any)[prop] ?? {}
+    },
+  }),
 }))
 
 // ── Mock session ──
@@ -176,6 +189,10 @@ vi.mock('@/lib/session', async (importOriginal) => {
     }),
   }
 })
+
+// ── Mock auth (defineRoute import chain) ──
+vi.mock('@/lib/auth', () => ({ getSession: vi.fn(), getActiveOrgId: vi.fn(), getActiveVendor: vi.fn() }))
+vi.mock('@/lib/api-auth', () => ({ resolveOrgFromApiKey: vi.fn(), isTrustedInternalCall: vi.fn() }))
 
 // ── Mock Google auth layer ──
 vi.mock('@/lib/auth/google', async (importOriginal) => {
@@ -214,6 +231,7 @@ vi.mock('@/lib/auth/google', async (importOriginal) => {
   }
 })
 
+import { NextRequest } from 'next/server'
 import { GET } from '@/app/api/auth/google/callback/route'
 
 // ── Helpers ──
@@ -223,12 +241,7 @@ function makeCallbackRequest(params: Record<string, string>) {
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value)
   }
-  return {
-    nextUrl: {
-      searchParams: url.searchParams,
-    },
-    headers: new Headers(),
-  }
+  return new NextRequest(url.toString())
 }
 
 function getLocation(res: Response): string | null {
@@ -597,5 +610,323 @@ describe('Google returns error', () => {
     const location = getLocation(res)
     expect(location).toContain('/login')
     expect(location).toContain('error=')
+  })
+})
+
+// ════════════════════════════════════════════════════════════════
+// Task 2: Existing user with 0 memberships + pending invite → logs in
+// (Stale-membership read after sweepPendingInvites fix)
+// ════════════════════════════════════════════════════════════════
+describe('Task 2: Existing user with 0 memberships + pending invite succeeds (stale read fix)', () => {
+  it('googleSub match: existing user with no memberships + 1 pending invite logs in', async () => {
+    // User exists by googleSub but has 0 memberships
+    h.users['stale-gsub@example.com'] = {
+      id: 'user-stale-gsub',
+      email: 'stale-gsub@example.com',
+      name: 'Stale GSub User',
+      googleSub: 'google-sub-stale',
+      passwordHash: null,
+    }
+    // 0 memberships — user is orphaned until sweep creates one
+    // Create 1 pending email-bound invitation
+    h.invitations['inv-stale-gsub'] = {
+      id: 'inv-stale-gsub',
+      email: 'stale-gsub@example.com',
+      orgId: 'org-acme',
+      invitedBy: 'owner-1',
+      role: 'operator',
+      token: 'token-stale-gsub',
+      state: 'pending',
+      expiresAt: new Date(Date.now() + 86400000),
+    }
+
+    h.mockClaims = {
+      sub: 'google-sub-stale',
+      email: 'stale-gsub@example.com',
+      email_verified: true,
+      name: 'Stale GSub User',
+    }
+
+    const req = makeCallbackRequest({ code: 'auth-code-stale-gsub', state: 'valid-csrf-state' })
+    const res = await GET(req as any)
+
+    // Must succeed (307 → /ops/guide), NOT error with "No organization membership"
+    expect(res.status).toBe(307)
+    const location = getLocation(res)
+    expect(location).toBe('http://localhost:3001/ops/guide')
+
+    const cookie = getSetCookie(res)
+    expect(cookie).toContain('intera_session=mock-token-')
+
+    // Session issued with the swept org + role
+    expect(h.issuedTokens.length).toBe(1)
+    expect(h.issuedTokens[0].userId).toBe('user-stale-gsub')
+    expect(h.issuedTokens[0].orgId).toBe('org-acme')
+    expect(h.issuedTokens[0].role).toBe('operator')
+
+    // Membership was created by the sweep
+    const mems = h.memberships.filter((m) => m.userId === 'user-stale-gsub')
+    expect(mems.length).toBe(1)
+    expect(mems[0].orgId).toBe('org-acme')
+    expect(mems[0].role).toBe('operator')
+
+    // Invitation was marked accepted
+    expect(h.invitations['inv-stale-gsub'].state).toBe('accepted')
+  })
+
+  it('email match: existing user with no memberships + 1 pending invite logs in, googleSub linked', async () => {
+    // User exists by email but has 0 memberships and no googleSub
+    h.users['stale-email@example.com'] = {
+      id: 'user-stale-email',
+      email: 'stale-email@example.com',
+      name: 'Stale Email User',
+      googleSub: null,
+      passwordHash: 'some-hash',
+    }
+    // 0 memberships
+    // Create 1 pending email-bound invitation
+    h.invitations['inv-stale-email'] = {
+      id: 'inv-stale-email',
+      email: 'stale-email@example.com',
+      orgId: 'org-acme',
+      invitedBy: 'owner-1',
+      role: 'operator',
+      token: 'token-stale-email',
+      state: 'pending',
+      expiresAt: new Date(Date.now() + 86400000),
+    }
+
+    h.mockClaims = {
+      sub: 'new-google-sub-xyz',
+      email: 'stale-email@example.com',
+      email_verified: true,
+      name: 'Stale Email User',
+    }
+
+    const req = makeCallbackRequest({ code: 'auth-code-stale-email', state: 'valid-csrf-state' })
+    const res = await GET(req as any)
+
+    expect(res.status).toBe(307)
+    const location = getLocation(res)
+    expect(location).toBe('http://localhost:3001/ops/guide')
+
+    const cookie = getSetCookie(res)
+    expect(cookie).toContain('intera_session=mock-token-')
+
+    // Session issued
+    expect(h.issuedTokens.length).toBe(1)
+    expect(h.issuedTokens[0].userId).toBe('user-stale-email')
+    expect(h.issuedTokens[0].orgId).toBe('org-acme')
+    expect(h.issuedTokens[0].role).toBe('operator')
+
+    // Membership was created by the sweep
+    const mems = h.memberships.filter((m) => m.userId === 'user-stale-email')
+    expect(mems.length).toBe(1)
+    expect(mems[0].orgId).toBe('org-acme')
+    expect(mems[0].role).toBe('operator')
+
+    // googleSub was linked to the existing user
+    expect(h.users['stale-email@example.com'].googleSub).toBe('new-google-sub-xyz')
+
+    // Invitation was marked accepted
+    expect(h.invitations['inv-stale-email'].state).toBe('accepted')
+  })
+})
+
+// ════════════════════════════════════════════════════════════════
+// Task 3: Share-link via Google redemption (S8–S11)
+// ════════════════════════════════════════════════════════════════
+
+// S8 — share link, new user
+describe('S8: Share link — new user registers via Google', () => {
+  beforeEach(() => {
+    // Share-link invitation: email=null, limited uses, not yet consumed
+    h.invitations['inv-share-1'] = {
+      id: 'inv-share-1',
+      email: null,
+      orgId: 'org-acme',
+      invitedBy: 'owner-1',
+      role: 'viewer',
+      token: 'share-1',
+      state: 'pending',
+      expiresAt: new Date(Date.now() + 7 * 86400000), // +7d
+      maxUses: 2,
+      useCount: 0,
+    }
+    // CSRF cookie carries the token after colon
+    h.mockCsrfState = 'valid-csrf-state:share-1'
+    // Brand-new email not in any user
+    h.mockClaims = {
+      sub: 'google-sub-new-user',
+      email: 'brand-new@example.com',
+      email_verified: true,
+      name: 'Brand New User',
+    }
+  })
+
+  it('creates User + Membership with viewer role, increments useCount, redirects /ops/guide', async () => {
+    const req = makeCallbackRequest({ code: 'auth-code-s8', state: 'valid-csrf-state' })
+    const res = await GET(req as any)
+
+    // Success redirect
+    expect(res.status).toBe(307)
+    const location = getLocation(res)
+    expect(location).toBe('http://localhost:3001/ops/guide')
+
+    // Session issued
+    const cookie = getSetCookie(res)
+    expect(cookie).toContain('intera_session=mock-token-')
+
+    // User was created
+    const user = h.users['brand-new@example.com']
+    expect(user).toBeTruthy()
+    expect(user.email).toBe('brand-new@example.com')
+    expect(user.googleSub).toBe('google-sub-new-user')
+
+    // Membership created with viewer role in org-acme
+    const mem = h.memberships.find((m) => m.userId === user.id)
+    expect(mem).toBeTruthy()
+    expect(mem!.orgId).toBe('org-acme')
+    expect(mem!.role).toBe('viewer')
+
+    // useCount incremented
+    expect(h.invitations['inv-share-1'].useCount).toBe(1)
+    // State stays pending (not yet at max)
+    expect(h.invitations['inv-share-1'].state).toBe('pending')
+
+    // Session token carries correct role
+    expect(h.issuedTokens.length).toBe(1)
+    expect(h.issuedTokens[0].userId).toBe(user.id)
+    expect(h.issuedTokens[0].orgId).toBe('org-acme')
+    expect(h.issuedTokens[0].role).toBe('viewer')
+  })
+})
+
+// S9 — share link at max uses
+describe('S9: Share link — at max uses, rejects', () => {
+  beforeEach(() => {
+    h.invitations['inv-share-1'] = {
+      id: 'inv-share-1',
+      email: null,
+      orgId: 'org-acme',
+      invitedBy: 'owner-1',
+      role: 'viewer',
+      token: 'share-1',
+      state: 'pending',
+      expiresAt: new Date(Date.now() + 7 * 86400000),
+      maxUses: 2,
+      useCount: 2,
+    }
+    h.mockCsrfState = 'valid-csrf-state:share-1'
+    h.mockClaims = {
+      sub: 'google-sub-maxed',
+      email: 'maxed@example.com',
+      email_verified: true,
+      name: 'Maxed User',
+    }
+  })
+
+  it('returns error redirect "maximum number of uses", no User created', async () => {
+    const userCountBefore = Object.keys(h.users).length
+    const req = makeCallbackRequest({ code: 'auth-code-s9', state: 'valid-csrf-state' })
+    const res = await GET(req as any)
+
+    expect(res.status).toBe(307)
+    const location = getLocation(res)
+    expect(location).toContain('/login')
+    expect(location).toContain('error=')
+    expect(location).toContain('maximum')
+
+    // No user created
+    expect(Object.keys(h.users).length).toBe(userCountBefore)
+    expect(h.issuedTokens.length).toBe(0)
+  })
+})
+
+// S10 — share link last use flips state
+describe('S10: Share link — last use flips state to accepted', () => {
+  beforeEach(() => {
+    h.invitations['inv-share-1'] = {
+      id: 'inv-share-1',
+      email: null,
+      orgId: 'org-acme',
+      invitedBy: 'owner-1',
+      role: 'viewer',
+      token: 'share-1',
+      state: 'pending',
+      expiresAt: new Date(Date.now() + 7 * 86400000),
+      maxUses: 2,
+      useCount: 1,
+    }
+    h.mockCsrfState = 'valid-csrf-state:share-1'
+    h.mockClaims = {
+      sub: 'google-sub-last-use',
+      email: 'last-use@example.com',
+      email_verified: true,
+      name: 'Last Use User',
+    }
+  })
+
+  it('increments useCount to 2 and flips state to accepted', async () => {
+    const req = makeCallbackRequest({ code: 'auth-code-s10', state: 'valid-csrf-state' })
+    const res = await GET(req as any)
+
+    expect(res.status).toBe(307)
+    const location = getLocation(res)
+    expect(location).toBe('http://localhost:3001/ops/guide')
+
+    // useCount incremented to 2
+    expect(h.invitations['inv-share-1'].useCount).toBe(2)
+    // State flipped to accepted (reached limit)
+    expect(h.invitations['inv-share-1'].state).toBe('accepted')
+
+    // User + Membership created
+    const user = h.users['last-use@example.com']
+    expect(user).toBeTruthy()
+    const mem = h.memberships.find((m) => m.userId === user.id)
+    expect(mem).toBeTruthy()
+    expect(mem!.role).toBe('viewer')
+  })
+})
+
+// S11 — email-bound invite reached by token, wrong email
+describe('S11: Email-bound invite by token — mismatched email rejects', () => {
+  beforeEach(() => {
+    // Email-bound invitation for a@x.com, with token e-1
+    h.invitations['inv-e1'] = {
+      id: 'inv-e1',
+      email: 'a@x.com',
+      orgId: 'org-acme',
+      invitedBy: 'owner-1',
+      role: 'operator',
+      token: 'e-1',
+      state: 'pending',
+      expiresAt: new Date(Date.now() + 7 * 86400000),
+    }
+    // CSRF cookie carries token e-1
+    h.mockCsrfState = 'valid-csrf-state:e-1'
+    // User signs in with a different email b@x.com
+    h.mockClaims = {
+      sub: 'google-sub-b',
+      email: 'b@x.com',
+      email_verified: true,
+      name: 'Wrong Email User',
+    }
+  })
+
+  it('returns error redirect "Email does not match", no User created', async () => {
+    const userCountBefore = Object.keys(h.users).length
+    const req = makeCallbackRequest({ code: 'auth-code-s11', state: 'valid-csrf-state' })
+    const res = await GET(req as any)
+
+    expect(res.status).toBe(307)
+    const location = getLocation(res)
+    expect(location).toContain('/login')
+    expect(location).toContain('error=')
+    expect(location).toContain('Email')
+
+    // No user created
+    expect(Object.keys(h.users).length).toBe(userCountBefore)
+    expect(h.issuedTokens.length).toBe(0)
   })
 })

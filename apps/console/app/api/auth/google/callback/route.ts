@@ -12,7 +12,9 @@
 // If the user has multiple orgs, redirects to /org-picker instead.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { prisma } from '@intera/shared/prisma'
+import { defineRoute } from '@/lib/api/define-route'
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE_S } from '@/lib/session'
 import {
   exchangeCodeForTokens,
@@ -86,15 +88,28 @@ function errorRedirect(message: string): NextResponse {
   return NextResponse.redirect(url)
 }
 
+const querySchema = z.object({
+  code: z.string().optional(),
+  state: z.string().optional(),
+  error: z.string().optional(),
+  error_description: z.string().optional(),
+})
+
 export async function GET(req: NextRequest) {
   try {
+    return await defineRoute<z.infer<typeof querySchema>>({
+      method: 'GET',
+      auth: 'none',
+      parseQuery: true,
+      inputSchema: querySchema,
+      async handler({ input }) {
     // 1. Extract query params
-    const code = req.nextUrl.searchParams.get('code')
-    const state = req.nextUrl.searchParams.get('state')
-    const error = req.nextUrl.searchParams.get('error')
+    const code = input.code
+    const state = input.state
+    const error = input.error
 
     if (error) {
-      const errorDesc = req.nextUrl.searchParams.get('error_description') || error
+      const errorDesc = input.error_description || error
       return errorRedirect(`Google authentication failed: ${errorDesc}`)
     }
 
@@ -106,9 +121,15 @@ export async function GET(req: NextRequest) {
       return errorRedirect('Missing state parameter')
     }
 
-    // 2. Validate CSRF state
-    const storedState = await getCsrfStateCookie()
-    if (!storedState || storedState !== state) {
+    // 2. Validate CSRF state (may include :inviteToken suffix for share links)
+    const storedFull = await getCsrfStateCookie()
+    if (!storedFull) {
+      return errorRedirect('Invalid state parameter — possible CSRF attack')
+    }
+    const colonIdx = storedFull.indexOf(':')
+    const storedState = colonIdx === -1 ? storedFull : storedFull.substring(0, colonIdx)
+    const stateInviteToken = colonIdx === -1 ? null : storedFull.substring(colonIdx + 1) || null
+    if (storedState !== state) {
       return errorRedirect('Invalid state parameter — possible CSRF attack')
     }
 
@@ -144,8 +165,14 @@ export async function GET(req: NextRequest) {
       // Sweep: accept pending invites and create missing Memberships for existing users
       await sweepPendingInvites(email, user.id)
 
+      // Re-fetch memberships after sweep (sweep may have created new ones)
+      const freshMemberships = await prisma.membership.findMany({
+        where: { userId: user.id },
+        select: { orgId: true, role: true },
+      })
+
       // Existing user via googleSub — sign session with primary membership
-      const sorted = [...user.memberships].sort((a, b) => {
+      const sorted = [...freshMemberships].sort((a, b) => {
         const rank: Record<string, number> = { owner: 4, admin: 3, operator: 2, viewer: 1 }
         return (rank[b.role] ?? 0) - (rank[a.role] ?? 0)
       })
@@ -156,7 +183,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Check if user has multiple orgs → redirect to org-picker
-      if (user.memberships.length > 1) {
+      if (freshMemberships.length > 1) {
         const token = await issueSession(user.id, primary.orgId, primary.role)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
@@ -181,13 +208,19 @@ export async function GET(req: NextRequest) {
       // Sweep pending invites for existing user
       await sweepPendingInvites(email, user.id)
 
+      // Re-fetch memberships after sweep (sweep may have created new ones)
+      const freshMemberships = await prisma.membership.findMany({
+        where: { userId: user.id },
+        select: { orgId: true, role: true },
+      })
+
       // Update existing user with googleSub (link Google account)
       await prisma.user.update({
         where: { id: user.id },
         data: { googleSub },
       })
 
-      const sorted = [...user.memberships].sort((a, b) => {
+      const sorted = [...freshMemberships].sort((a, b) => {
         const rank: Record<string, number> = { owner: 4, admin: 3, operator: 2, viewer: 1 }
         return (rank[b.role] ?? 0) - (rank[a.role] ?? 0)
       })
@@ -197,7 +230,7 @@ export async function GET(req: NextRequest) {
         return errorRedirect('No organization membership — request an invitation from your admin')
       }
 
-      if (user.memberships.length > 1) {
+      if (freshMemberships.length > 1) {
         const token = await issueSession(user.id, primary.orgId, primary.role)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
@@ -212,7 +245,46 @@ export async function GET(req: NextRequest) {
       return redirectWithSession(token, '/ops/guide')
     }
 
-    // 5c. No existing user — sweep ALL pending invitations for this email
+    // 5c. No existing user — check invite token first (passed through state cookie from /api/auth/google?invite=)
+    // Check for share link by token (email=null, anyone can join)
+    if (stateInviteToken) {
+      const shareLink = await prisma.invitation.findUnique({ where: { token: stateInviteToken } })
+      if (shareLink && shareLink.email === null && shareLink.state === 'pending' && new Date(shareLink.expiresAt) > new Date()) {
+        if (shareLink.maxUses != null && shareLink.useCount >= shareLink.maxUses) {
+          return errorRedirect('This share link has reached its maximum number of uses')
+        }
+
+        const newUseCount = shareLink.useCount + 1
+        const reachedLimit = shareLink.maxUses != null && newUseCount >= shareLink.maxUses
+
+        const result = await prisma.$transaction(async (tx) => {
+          const newUser = await tx.user.create({
+            data: { email, name: name || null, googleSub },
+          })
+          await tx.membership.create({
+            data: { userId: newUser.id, orgId: shareLink.orgId, role: shareLink.role },
+          })
+          await tx.invitation.update({
+            where: { id: shareLink.id },
+            data: { useCount: newUseCount, state: reachedLimit ? 'accepted' : 'pending' },
+          })
+          return newUser
+        })
+
+        const token = await issueSession(result.id, shareLink.orgId, shareLink.role)
+        if (!token) {
+          return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
+        }
+        return redirectWithSession(token, '/ops/guide')
+      }
+
+      // Also check email-bound invite by token
+      if (shareLink && shareLink.email !== null && shareLink.email !== email) {
+        return errorRedirect('Email does not match the invitation')
+      }
+    }
+
+    // Sweep pending email-bound invitations
     const pendingInvites = await prisma.invitation.findMany({
       where: {
         email,
@@ -286,6 +358,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
     }
     return redirectWithSession(token, '/ops/guide')
+      },
+    })(req)
   } catch (err) {
     console.error('[Google OAuth] Callback error:', err)
     return errorRedirect('Internal error during authentication')

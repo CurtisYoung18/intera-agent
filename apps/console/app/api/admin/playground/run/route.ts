@@ -4,7 +4,7 @@
 import { NextRequest } from 'next/server'
 import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
 import { runPlaygroundTurn, type PlaygroundConfig } from '@/lib/agent/playground-runner'
-import type { SSEEvent } from '@intera/shared/types'
+import type { SSEEvent, ContentBlock } from '@intera/shared/types'
 
 const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = { debug: false }
 
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       status: 401, headers: { 'Content-Type': 'application/json' },
     })
   }
-  let body: { message?: string; config?: Partial<PlaygroundConfig>; configId?: string | null }
+  let body: { message?: string; config?: Partial<PlaygroundConfig>; configId?: string | null; contentBlocks?: ContentBlock[] }
   try { body = await request.json() } catch {
     return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'Invalid JSON body' } }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const send = (event: SSEEvent) => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)) } catch { /* client disconnected */ } }
       try {
-        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined })) { send(event) }
+        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks: body.contentBlocks })) { send(event) }
       } catch (err) {
         send({ type: 'error', data: err instanceof Error ? err.message : 'Internal error', timestamp: new Date().toISOString() })
       } finally { try { controller.close() } catch { /* ignore */ } }

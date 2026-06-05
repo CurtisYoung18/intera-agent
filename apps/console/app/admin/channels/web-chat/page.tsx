@@ -1,20 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Globe, Copy, CheckCircle2 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useSession } from '@/lib/hooks/use-session'
 
 export default function WebChatDetailPage() {
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
-  const [orgId, setOrgId] = useState('default')
+  const { orgId } = useSession()
   const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/auth/session').then(r => r.json()).then((d: { orgId?: string }) => {
-      if (d.orgId) setOrgId(d.orgId)
-    }).catch(() => {})
-  }, [])
 
   const embedScript = `<script>
   (function(w,d,s,o,f,js,fjs){
@@ -36,7 +31,6 @@ export default function WebChatDetailPage() {
     return map[key]?.[locale as 'en' | 'zh'] ?? map[key]?.en ?? key
   }
 
-  const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
 
   return (

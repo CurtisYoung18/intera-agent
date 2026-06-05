@@ -1,46 +1,43 @@
 // GET /api/chats/[chatId]/traces — Traces for a chat (by chatId + linked cases)
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { z } from 'zod'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ chatId: string }> },
-) {
-  const { chatId } = await params
-  const { searchParams } = new URL(req.url)
-  const limit = Math.min(parseInt(searchParams.get('limit') || '200'), 500)
-  const actionType = searchParams.get('actionType')
+const querySchema = z.object({
+  limit: z.string().optional().default('200'),
+  offset: z.string().optional().default('0'),
+  actionType: z.string().optional(),
+})
 
-  try {
-    // Find case IDs linked to this chat for traces that don't yet have chatId set
-    const linkedCases = await prisma.case.findMany({
-      where: { chatId },
+export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
+  method: 'GET',
+  parseQuery: true,
+  inputSchema: querySchema,
+  async handler({ input, params, repo }) {
+    const limit = Math.min(parseInt(input.limit), 500)
+    const offset = parseInt(input.offset)
+
+    const linkedCases = await repo.raw.case.findMany({
+      where: { chatId: params.chatId },
       select: { id: true },
     })
-    const caseIds = linkedCases.map((c) => c.id)
+    const caseIds = linkedCases.map(c => c.id)
 
     const where: Record<string, unknown> = {
       OR: [
-        { chatId },
+        { chatId: params.chatId },
         ...(caseIds.length > 0 ? [{ caseId: { in: caseIds } }] : []),
       ],
     }
-    if (actionType) where.actionType = actionType
+    if (input.actionType) where.actionType = input.actionType
 
     const [traces, total] = await Promise.all([
-      prisma.actionTrace.findMany({
-        where,
-        orderBy: { createdAt: 'asc' },
-        take: limit,
-        skip: parseInt(searchParams.get('offset') || '0'),
-      }),
-      prisma.actionTrace.count({ where }),
+      repo.raw.actionTrace.findMany({ where, orderBy: { createdAt: 'asc' }, take: limit, skip: offset }),
+      repo.raw.actionTrace.count({ where }),
     ])
 
-    return NextResponse.json({ traces: traces.slice(0, limit), total })
-  } catch (err) {
-    console.error('[API] Failed to list chat traces:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ traces: traces.slice(0, limit), total })
+  },
+})

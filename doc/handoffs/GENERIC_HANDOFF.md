@@ -1,6 +1,6 @@
 # Generic Handoff — Intera Agent
 
-**Last updated:** 2026-06-02 | **Branch:** `main` @ `d2def3a` | **Audience:** any coding agent picking up this project cold.
+**Last updated:** 2026-06-04 | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
 
 > **Two handoffs live in this folder, and only two:**
 > 1. **`GENERIC_HANDOFF.md`** (this file) — stable project context. Changes rarely.
@@ -14,10 +14,62 @@
 
 1. **This file = context. `MASTER_BUILD_HANDOFF.md` = the plan. `doc/to-do/*` = the steps.** Don't duplicate task detail into the handoffs; put it in a `doc/to-do/` guide and link it from the master build handoff.
 2. **Every time you finish a `doc/to-do/` item:** (a) move the guide to `doc/what's done/`, and (b) update `MASTER_BUILD_HANDOFF.md` — flip the item's status, note the commit, and re-state what's now unblocked. **The master build handoff must never lie about current state.**
-3. **Receipt required for every task:** list changed files + paste verification output (`npx tsc --noEmit -p apps/console/tsconfig.json` + `npm test` + `npm run build:console`). UI changes need browser screenshots.
+3. **Receipt required for every task:** Two-phase verification (both must pass):
+
+   **Phase 1 — Local gate (before commit):**
+   - `npx tsc --noEmit -p apps/console/tsconfig.json` → 0 errors
+   - `env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test` → all passing (keyless gate; known-fail db-integration excluded)
+   - `npm run build:console` → success
+   - List all changed files
+
+   **Phase 2 — Production verification (after deploy):**
+   - Deploy: `git push deploy main` → wait for health check `curl -s https://demo.anytrans.ai/api/health` → `{"status":"ok"}`
+   - Open production site with Playwright MCP and log in (credentials in §6)
+   - **Verify every changed page/feature** through the browser — click the golden path, test edge cases, confirm error states don't crash
+   - Take screenshots of key interactions as evidence
+   - Paste the verification log: pages visited, actions taken, results observed, screenshots captured
+
+   **Why two phases:** Phase 1 catches compile/logic errors. Phase 2 catches the bugs static checks miss — UI state bugs, interaction failures, cross-page consistency breaks, and runtime crashes in production. If a coding agent claims "done" without Phase 2, it's not done.
+
 4. **Every safety/isolation change ships an e2e guard test with red→green proof.** Tests that exercise mocks/constructors ("seam tests") don't count — drive the real entry point.
-5. **Minimize deployments.** Test locally first; deploy at a meaningful-release cadence via `git push deploy main`, not per-commit.
+5. **Deploy freely during internal-test phase.** The app serves zero real customers — deploy per-task and verify immediately. The old "minimize deployments" rule is suspended until launch. However: never deploy a broken build (Phase 1 must pass first), and never leave the site broken (if production verification fails, fix it immediately).
 6. **Handoffs may be stale — verify before relying.** The branch SHA in the header tells you how old this is; `git log` tells you what landed since.
+7. **Assume parallel work by default.** You are never the only coding session working on this project. Other agents are editing files, committing, and deploying right now — you do not need to be told this. Act accordingly. **When you encounter a file conflict or are unsure whether your changes will collide with another active lane, stop and ask the user before proceeding.** Guessing wrong wastes everyone's time; a 30-second confirmation does not.
+
+### Parallel work protocol
+
+You are one of several coding sessions running at the same time. This is the default state — no one will warn you. Follow this protocol every time you start a task. **The rule is simple: declare files before touching them, and escalate uncertainty to the user.**
+
+**Before starting work:**
+
+1. **Read `MASTER_BUILD_HANDOFF.md`** — check the "Active Lanes" section. Note which files each active lane owns. Assume the table is up to date.
+2. **Identify the files you'll touch** — skim the task spec and list every file you expect to edit.
+3. **Check for conflicts** — do any of your files appear in another active lane's file list?
+   - **No conflict →** declare your lane (add a row to the Active Lanes table), then start work.
+   - **Conflict →** do not guess. Do not try to "work around" it silently. **Ask the user.** Tell them which files overlap and let them decide: wait for that lane, reassign files, or proceed sequentially.
+4. **The same file cannot be owned by two lanes simultaneously.** If two tasks legitimately need the same file, only the user can decide how to sequence them.
+
+**While working:**
+
+- **Stick to your declared files.** If you discover you need to touch an additional file, check the Active Lanes table again. If it's owned by another lane: ask the user.
+- **Any time you're unsure about a potential conflict → ask the user.** "I need to edit X but Lane B declared it — ok to proceed or should I wait?" Costs 30 seconds. A merge conflict costs much more.
+- **Dictionaries (`dictionaries.ts`) are a shared hotspot.** This file is frequently touched by multiple lanes for i18n keys. Two rules:
+  - Pre-declare ALL the i18n keys your task will add, and list them in your lane's Active Lanes entry
+  - If another lane is adding keys, add yours in a **non-overlapping section** (separated by blank lines), so git can merge without conflict
+- **Schema (`schema.prisma`) is read-only for most lanes.** Only the lane explicitly tasked with schema changes may touch it. Other lanes: read the schema, do not edit it.
+
+**Before committing:**
+
+```
+git pull --rebase origin main          # integrate other lanes' commits
+```
+
+**If `git pull --rebase` produces a conflict → stop and ask the user.** Do not resolve merge conflicts on your own unless you are certain you understand both sides of the change.
+
+**After completing:**
+
+- Remove your lane from the Active Lanes table in `MASTER_BUILD_HANDOFF.md`
+- Your commit is now on `main` — other lanes will pick it up on their next `git pull --rebase`
 
 ---
 
@@ -109,18 +161,54 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 ## 5. Build / test / deploy
 
 ```bash
-# Local gate (run before every commit)
+# Phase 1 — Local gate (run before every commit)
 npx tsc --noEmit -p apps/console/tsconfig.json   # must be 0 errors
-npm test                                          # see note below
+env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test   # keyless gate
 npm run build:console                             # must succeed
 
 # Deploy (push-to-deploy; post-receive hook → scripts/deploy.sh)
 git remote add deploy ssh://intera@43.134.51.138/var/git/intera.git   # one-time
 git push deploy main
 #   → checkout -f → npm ci → db:generate → build:console → cp static → systemctl restart → health check
+
+# Wait for deploy to complete
+curl -s https://demo.anytrans.ai/api/health   # expect {"status":"ok","db":"connected"}
 ```
 
 **Test note:** `lib/livechat/__tests__/integration/db-integration.test.ts` fails locally — it targets a PostgreSQL instance not available from local dev. Pre-existing, unrelated; everything else should be green.
+
+### Phase 2 — Production verification procedure
+
+After every deploy, verify the changes work on the live site. Use Playwright MCP (`mcp__playwright__*` tools) to automate browser verification.
+
+**Step-by-step:**
+
+```
+1. browser_navigate → https://demo.anytrans.ai/
+2. Verify login page loads (brand logo, two-panel layout, "Staff" tab)
+3. Click "Staff" tab → fill email: test@intera.dev, password: intera123 → submit
+4. Verify redirect to /admin → sidebar visible, agent list loaded
+5. Navigate to each changed page. For each page:
+   a. Verify page renders without crash (no white screen, no infinite spinner)
+   b. Verify data loads (no stuck skeleton, actual content visible)
+   c. Exercise the changed interaction (click buttons, fill forms, toggle switches)
+   d. Verify feedback states (loading spinner → success confirmation → updated data)
+   e. Test error path: what happens with empty input / invalid value?
+6. Take screenshots at key moments as evidence
+7. Paste the verification log in your receipt
+```
+
+**Verification log template (paste in your receipt):**
+
+```
+## Production verification
+- Deploy health: {"status":"ok","db":"connected"}
+- Login: ✓ test@intera.dev → /admin
+- Page: /admin/XXX — ✓ renders, ✓ data loads, ✓ interaction works
+- Edge cases: [list what you tested]
+- Screenshots: [list file paths]
+- Verdict: ✓ all pages functional / ✗ issues found: [describe]
+```
 
 ### Server quick reference
 ```bash
@@ -135,6 +223,7 @@ cd ~/intera-agent && ./scripts/deploy.sh     # manual deploy if hook fails
 
 ## 6. Credentials & secrets
 
+- **Production test account:** `test@intera.dev` / `intera123` — admin on `default` org (Test). Use this for all production verification. This user has role `admin` (not `owner`), so some owner-only operations (e.g., changing owner roles) require the owner account.
 - **SSH:** `ssh ubuntu@43.134.51.138`. The password is stored in the team password manager. **Do NOT change the SSH password, do NOT rotate it, do NOT switch to key-only auth.** Use it as-is, always. This is a standing explicit user instruction — the SSH credential must remain untouched.
 - **TLS bundle:** `/Users/curtis/Desktop/scs1751876232493_.anytrans.ai`.
 - **Server env:** `/etc/intera/console.env`.

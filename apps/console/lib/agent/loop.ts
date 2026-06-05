@@ -365,6 +365,7 @@ export class AgentLoop {
           })
         },
         this.dryRun,
+        this.deps.orgId,
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
@@ -474,7 +475,8 @@ export class AgentLoop {
           return { messages: this.messages, caseStatus: this.currentStage as CaseStatus, transition: 'connection_lost', currentStage: this.currentStage, reason: 'connection_lost' }
         }
         const classified = err instanceof CannotRetryError ? err.errorClass : classifyError(err)
-        sendEvent({ type: 'error', data: `LLM API error (${classified})`, timestamp: new Date().toISOString() })
+        const detail = (err as any)?.message || (err as any)?.error?.message || String(err)
+        sendEvent({ type: 'error', data: `LLM API error (${classified}): ${detail}`, timestamp: new Date().toISOString() })
         return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: `llm_error:${classified}` }
       }
 
@@ -559,6 +561,34 @@ export class AgentLoop {
               return
             }
 
+            // G11: preTool escalated with pendingToolCalls (e.g. onUnavailable→invoke_tool)
+            if (preToolEval.pendingToolCalls && preToolEval.pendingToolCalls.length > 0) {
+              for (const r of preToolEval.results) {
+                if (r.result !== 'pass') this.chatMemory.recordPolicyHit(r.policyName)
+              }
+              await this.traceWriter.write(
+                'policy_hit',
+                `Escalated (preTool): ${toolUse.name}`,
+                preToolEval as unknown as Record<string, unknown>,
+              )
+              sendEvent({
+                type: 'policy_blocked',
+                data: { toolName: toolUse.name, policyNames: preToolEval.results.filter(r => r.result === 'escalated').map(r => r.policyName) },
+                timestamp: new Date().toISOString(),
+              })
+              missingReasons.set(toolUse.id, 'policy_escalated')
+              if (preToolEval.feedbackMessage) {
+                pendingPolicyFeedback.push(preToolEval.feedbackMessage)
+              }
+              if (!assistantPushed && am) {
+                this.messages.push(am)
+                assistantPushed = true
+              }
+              // Process the escalation
+              await this.processPendingGuardrailToolCalls(preToolEval, sendEvent)
+              return
+            }
+
             // Enqueue — starts executing immediately.
             // text/thinking blocks that follow will stream to the
             // frontend concurrently while this tool runs.
@@ -629,6 +659,11 @@ export class AgentLoop {
           })
         }
         await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames, this.deps.config.model)
+        sendEvent({
+          type: 'llm_response',
+          data: { stopReason, usage, iteration: this.iterationCount, model: this.deps.config.model, textPreview: fullText.slice(0, 3000) },
+          timestamp: new Date().toISOString(),
+        })
         this.profiler.addTokens(
           Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
           Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
@@ -1016,54 +1051,18 @@ export class AgentLoop {
           this.messages.push(makeUserMessage(postToolEval.feedbackMessage))
         }
 
-        // Auto-escalate on escalated: create human task immediately.
-        // The loop continues so the LLM can respond naturally to the user,
-        // then the pendingEscalation flag triggers the waiting_human return.
-        if (postToolEval.summary === 'escalated') {
-          const escalatedReasons = postToolEval.results
-            .filter((r) => r.result === 'escalated')
-            .map((r) => `${r.policyName}: ${r.reason || 'conflict detected'}`)
-            .join('; ')
+        // G11: Process pending tool calls from guardrail hooks (generalized escalate path).
+        // Each pendingToolCall represents a hook resolving to invoke_tool (e.g. create_human_task).
+        // Reuses the existing auto-escalate infrastructure (pendingEscalation → waiting_human return).
+        if (postToolEval.pendingToolCalls && postToolEval.pendingToolCalls.length > 0) {
+          await this.processPendingGuardrailToolCalls(postToolEval, sendEvent)
+        }
 
-          await this.traceWriter.write('loop_decision', 'Auto-escalate from postTool policy', {
-            policyNames: postToolEval.results.filter((r) => r.result === 'escalated').map((r) => r.policyName),
-            reasons: escalatedReasons,
-          })
-
-          try {
-            const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-            await this.persistence.ensureCase({
-              id: this.deps.caseId,
-              orgId: this.deps.orgId,
-              userId: this.deps.userId,
-              type: resolvedCaseType,
-              status: 'escalated',
-              blocker: `Policy escalation: ${escalatedReasons}`,
-              chatId: this.deps.chatId ?? this.deps.caseId,
-            })
-            await this.persistence.createHumanTask({
-              caseId: this.deps.caseId,
-              queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-              question: `Auto-escalated by policy conflict_requires_human. ${escalatedReasons}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
-              status: 'pending',
-            })
-          } catch (err) {
-            console.error('[AgentLoop] Failed to auto-create human task from postTool:', err)
+        // Legacy: auto-escalate on escalated summary (backward compat for hooks without invoke_tool).
+        if (!postToolEval.pendingToolCalls || postToolEval.pendingToolCalls.length === 0) {
+          if (postToolEval.summary === 'escalated') {
+            await this.processPendingGuardrailToolCalls(postToolEval, sendEvent)
           }
-
-          // Customer-facing fallback before silent policy escalation
-          sendEvent({
-            type: 'text_delta',
-            data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
-            timestamp: new Date().toISOString(),
-          })
-          sendEvent({
-            type: 'escalated',
-            data: { stage: this.currentStage, reason: escalatedReasons },
-            timestamp: new Date().toISOString(),
-          })
-
-          this.pendingEscalation = true
         }
         } catch (policyErr) {
           console.error('[AgentLoop] PostTool evaluation failed:', policyErr)
@@ -1441,6 +1440,93 @@ export class AgentLoop {
    */
   private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
     return processTodoTools(results, this.chatMemory)
+  }
+
+  /**
+   * G11: Process pending guardrail tool calls from policy evaluation.
+   * Reuses the existing auto-escalate infrastructure (pendingEscalation →
+   * waiting_human return). For Phase 1, the only expected tool is create_human_task.
+   */
+  private async processPendingGuardrailToolCalls(
+    policyEval: import('@intera/shared/types').PolicyEvaluationResult,
+    sendEvent: (event: import('@intera/shared/types').SSEEvent) => void,
+  ): Promise<void> {
+    const escalatedResults = policyEval.results.filter((r) => r.result === 'escalated')
+    const escalatedReasons = escalatedResults
+      .map((r) => `${r.policyName}: ${r.reason || 'guardrail escalation'}`)
+      .join('; ')
+
+    await this.traceWriter.write('loop_decision', 'Auto-escalate from guardrail policy', {
+      policyNames: escalatedResults.map((r) => r.policyName),
+      reasons: escalatedReasons,
+      pendingToolCalls: policyEval.pendingToolCalls,
+    })
+
+    // Process each pending tool call — for Phase 1, only create_human_task is expected
+    const pendingCalls = policyEval.pendingToolCalls || []
+    for (const ptc of pendingCalls) {
+      if (ptc.tool === 'create_human_task') {
+        try {
+          const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+          await this.persistence.ensureCase({
+            id: this.deps.caseId,
+            orgId: this.deps.orgId,
+            userId: this.deps.userId,
+            type: resolvedCaseType,
+            status: 'escalated',
+            blocker: `Guardrail escalation (${ptc.hookName}): ${ptc.reason}`,
+            chatId: this.deps.chatId ?? this.deps.caseId,
+          })
+          await this.persistence.createHumanTask({
+            caseId: this.deps.caseId,
+            queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+            question: `Auto-escalated by guardrail "${ptc.hookName}". ${ptc.reason}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
+            status: 'pending',
+          })
+        } catch (err) {
+          console.error('[AgentLoop] Failed to auto-create human task from guardrail:', err)
+        }
+      }
+    }
+
+    // Legacy fallback: if there are escalated results but no pendingToolCalls,
+    // still create a human task (backward compat).
+    if (pendingCalls.length === 0 && escalatedResults.length > 0) {
+      try {
+        const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+        await this.persistence.ensureCase({
+          id: this.deps.caseId,
+          orgId: this.deps.orgId,
+          userId: this.deps.userId,
+          type: resolvedCaseType,
+          status: 'escalated',
+          blocker: `Policy escalation: ${escalatedReasons}`,
+          chatId: this.deps.chatId ?? this.deps.caseId,
+        })
+        await this.persistence.createHumanTask({
+          caseId: this.deps.caseId,
+          queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+          question: `Auto-escalated by policy. ${escalatedReasons}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
+          status: 'pending',
+        })
+      } catch (err) {
+        console.error('[AgentLoop] Failed to auto-create human task from legacy escalation:', err)
+      }
+    }
+
+    // Customer-facing fallback
+    sendEvent({
+      type: 'text_delta',
+      data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
+      timestamp: new Date().toISOString(),
+    })
+    sendEvent({
+      type: 'escalated',
+      data: { stage: this.currentStage, reason: escalatedReasons },
+      timestamp: new Date().toISOString(),
+    })
+
+    this.pendingEscalation = true
   }
 
   /**

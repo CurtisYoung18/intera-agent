@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { MessageCircle, Eye, EyeOff, Save, CheckCircle2, ExternalLink, Globe, Monitor, UserCheck, Copy, RotateCcw, AlertCircle } from 'lucide-react'
 
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -78,10 +79,12 @@ export default function LiveChatDetailPage() {
   const [config, setConfig] = useState<LiveChatConfig>({ botAccessToken: '', licenseId: '', showSkillStatus: true, enabled: false, webhookSecret: '', region: 'dal', authType: 'auto', accountId: '', agentAccountId: '' })
   const [origConfig, setOrigConfig] = useState<LiveChatConfig | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const configRef = useRef(config)
+  const loadedRef = useRef(false)
   const [showToken, setShowToken] = useState(false)
-  const [orgId, setCustomerId] = useState('')
+  const { orgId } = useSession()
   const [activeTab, setActiveTab] = useState<string>('connection')
   const [selectedMomentLabel, setSelectedMomentLabel] = useState('')
   const [momentPreviewUrl, setMomentPreviewUrl] = useState('')
@@ -93,18 +96,31 @@ export default function LiveChatDetailPage() {
   const [agentList, setAgentList] = useState<Array<{ id: string; name: string; isActive: boolean }>>([])
   const connState = getConnectionState(config, connectionTested)
 
-  const hasChanges = JSON.stringify(config) !== JSON.stringify(origConfig)
-
-  // beforeunload guard for unsaved changes
+  // Sync config ref + auto-save on changes
   useEffect(() => {
-    if (!hasChanges) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
+    configRef.current = config
+    if (loadedRef.current && origConfig) {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      setSyncStatus('syncing')
+      saveTimer.current = setTimeout(async () => {
+        const current = configRef.current
+        try {
+          await apiClient('/api/admin/livechat/config', { method: 'PUT', body: current })
+          setSyncStatus('synced')
+          setOrigConfig({ ...current })
+        } catch {
+          setSyncStatus('error')
+        }
+      }, 800)
     }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [hasChanges])
+  }, [config])
+
+  // Flush pending save on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
+  }, [])
 
   const testConnection = async () => {
     setTestingConnection(true)
@@ -123,36 +139,20 @@ export default function LiveChatDetailPage() {
   }
 
   useEffect(() => {
-    fetch('/api/auth/session').then(r => r.json()).then((d: { orgId?: string }) => { if (d.orgId) setCustomerId(d.orgId) }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
     if (!orgId) return
     setLoading(true)
     // B1 fix: use gated admin route (orgId from session, not query param)
     apiClient<{ config: LiveChatConfig }>('/api/admin/livechat/config')
-      .then(r => { setConfig(r.data.config); setOrigConfig(r.data.config) }).catch(() => {}).finally(() => setLoading(false))
+      .then(r => { setConfig(r.data.config); setOrigConfig(r.data.config); loadedRef.current = true }).catch(() => {}).finally(() => setLoading(false))
     // Fetch available groups for escalation tab
     apiClient<{ groups?: LiveChatGroup[] }>('/api/admin/livechat/groups')
       .then(r => { if (r.data.groups) setGroups(r.data.groups) }).catch(() => {})
     // Fetch agent list for per-agent webhook URLs
-    fetch('/api/admin/agent-configs')
-      .then(r => r.json()).then((d: { configs?: Array<{ id: string; name: string; isActive: boolean }> }) => {
-        if (d.configs) setAgentList(d.configs.filter(a => a.isActive))
-      }).catch(() => {})
+    apiClient<{ configs?: Array<{ id: string; name: string; isActive: boolean }> }>('/api/admin/agent-configs')
+      .then(r => { if (r.data.configs) setAgentList(r.data.configs.filter(a => a.isActive)) }).catch(() => {})
   }, [orgId])
 
-  const handleSave = async () => {
-    setSaving(true); setSaveStatus('idle')
-    try {
-      // B1 fix: use gated admin route, orgId from session (NOT body)
-      await apiClient('/api/admin/livechat/config', { method: 'PUT', body: config })
-      setSaveStatus('saved'); setOrigConfig({ ...config })
-      setTimeout(() => setSaveStatus('idle'), 3000)
-    } catch { setSaveStatus('error') } finally { setSaving(false) }
-  }
-
-  const handleReset = () => { if (origConfig) setConfig({ ...origConfig }); setSaveStatus('idle') }
+  const handleReset = () => { if (origConfig) setConfig({ ...origConfig }) }
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -170,14 +170,6 @@ export default function LiveChatDetailPage() {
     setMomentPreviewUrl(`?${params.toString()}`)
   }
 
-  // Derive save status label from four-state logic
-  const saveLabel = (() => {
-    if (saving) return t('livechat.saveSaving')
-    if (saveStatus === 'saved') return t('livechat.saveSaved')
-    if (saveStatus === 'error') return t('livechat.saveFailed')
-    if (hasChanges) return t('livechat.saveUnsaved')
-    return t('livechat.saved')
-  })()
 
   const TABS = [
     { id: 'connection', label: t('livechat.tab.connection'), icon: Globe },
@@ -450,28 +442,23 @@ export default function LiveChatDetailPage() {
         </div>
       )}
 
-      {/* Bottom action bar — four-state save semantics */}
+      {/* Bottom action bar — persistent save-state chip */}
       <div className="mt-8 pt-4 border-t border-black/[0.05] flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={handleReset} disabled={!hasChanges}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[12px] font-medium text-[var(--fog)] border border-black/[0.08] hover:border-black/[0.15] disabled:opacity-30 transition-all">
+          <button onClick={handleReset}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[12px] font-medium text-[var(--fog)] border border-black/[0.08] hover:border-black/[0.15] transition-all">
             <RotateCcw className="w-3.5 h-3.5" /> {t('livechat.reset')}
           </button>
-          <span className={`text-[11px] ${
-            saveStatus === 'error' ? 'text-vermillion' :
-            saveStatus === 'saved' ? 'text-malachite' :
-            hasChanges ? 'text-amber' : 'text-[var(--fog)]/50'
-          }`}>
-            {saveStatus === 'saved' && <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />}
-            {saveLabel}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => { void handleSave() }} disabled={saving || !hasChanges}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo text-white text-[13px] font-semibold rounded-xl hover:bg-indigo/90 disabled:opacity-40 transition-colors">
-            {saving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
-            {t('livechat.save')}
-          </button>
+          {/* Persistent save-state chip */}
+          <div className="flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2">
+            {syncStatus === 'syncing' ? (
+              <><span className="w-3 h-3 border-2 border-amber/30 border-t-amber rounded-full animate-spin" /><span className="text-[11px] font-medium text-amber">{t('livechat.saveSaving')}</span></>
+            ) : syncStatus === 'error' ? (
+              <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('livechat.saveFailed')}</span></>
+            ) : (
+              <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('livechat.saved')}</span></>
+            )}
+          </div>
         </div>
       </div>
     </div>

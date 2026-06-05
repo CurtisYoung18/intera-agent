@@ -1,16 +1,14 @@
-// GET /api/users/[userId]/chats
+// GET /api/users/[userId]/chats — User chat history
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ userId: string }> },
-) {
-  const { userId } = await params
-  try {
-    const cases = await prisma.case.findMany({
-      where: { userId },
+export const GET = defineRoute<void, { userId: string }>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const cases = await repo.raw.case.findMany({
+      where: { userId: params.userId },
       select: { chatId: true, userId: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -26,14 +24,7 @@ export async function GET(
       }
     }
 
-    const chats = Array.from(chatMap.entries()).map(([chatId, data]) => ({
-      chatId,
-      ...data,
-    }))
-
-    return NextResponse.json({ chats })
-  } catch (err) {
-    console.error('[API] GET user chats:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    const chats = Array.from(chatMap.entries()).map(([chatId, data]) => ({ chatId, ...data }))
+    return apiOk({ chats })
+  },
+})

@@ -1,11 +1,11 @@
-// GET /api/livechat/config — Anonymous widget-facing route.
-// Returns only non-sensitive fields (no secrets, no transfer routing).
-// orgId comes from the widget embed query param (no session required).
-//
-// B1 fix: PUT was moved to the gated /api/admin/livechat/config route.
-// This route no longer accepts writes.
+// GET /api/livechat/config — Anonymous widget-facing route
+// Returns only non-sensitive fields. Reads from channel_bindings (primary)
+// with livechat_configs fallback. Does NOT use getLiveChatConfig because
+// this route must return the config even when enabled=false.
+// Migrated to defineRoute (G1 contract seam).
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import { defineRoute } from '@/lib/api/define-route'
 import { prisma } from '@intera/shared/prisma'
 
 const CORS = {
@@ -14,33 +14,44 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
-function json(body: unknown, init?: ResponseInit) {
-  return NextResponse.json(body, {
-    ...init,
-    headers: { ...(init?.headers as Record<string, string> ?? {}), ...CORS },
-  })
-}
-
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS })
 }
 
-export async function GET(request: NextRequest) {
-  const orgId = request.nextUrl.searchParams.get('orgId') || 'default'
+export const GET = defineRoute({
+  method: 'GET',
+  auth: 'none',
+  async handler({ session }) {
+    // Read directly (bypass config-store enabled filter)
+    const cbRow = await prisma.channelBinding.findFirst({
+      where: { orgId: session.orgId, channel: 'livechat', agentName: null },
+      select: { enabled: true, credentials: true },
+    })
 
-  const row = await prisma.liveChatConfig.findUnique({
-    where: { orgId },
-    select: { enabled: true, showSkillStatus: true, region: true },
-  })
+    if (cbRow) {
+      let creds: Record<string, unknown> = {}
+      try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
+      return NextResponse.json({
+        orgId: session.orgId,
+        enabled: cbRow.enabled,
+        showSkillStatus: (creds.showSkillStatus as boolean) ?? true,
+        region: (creds.region as string) ?? 'dal',
+      }, { headers: CORS })
+    }
 
-  // Widget-facing response: ONLY non-sensitive fields.
-  // Never expose botAccessToken, licenseId, webhookSecret, transfer config.
-  return json({
-    orgId,
-    enabled: row?.enabled ?? false,
-    showSkillStatus: row?.showSkillStatus ?? true,
-    region: row?.region ?? 'dal',
-  })
-}
+    // Fall back to livechat_configs
+    const lcRow = await prisma.liveChatConfig.findUnique({
+      where: { orgId: session.orgId },
+      select: { enabled: true, showSkillStatus: true, region: true },
+    })
+
+    return NextResponse.json({
+      orgId: session.orgId,
+      enabled: lcRow?.enabled ?? false,
+      showSkillStatus: lcRow?.showSkillStatus ?? true,
+      region: lcRow?.region ?? 'dal',
+    }, { headers: CORS })
+  },
+})
 
 // PUT intentionally removed — writes are gated at /api/admin/livechat/config

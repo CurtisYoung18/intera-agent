@@ -30,6 +30,9 @@ interface AgentVersion {
   model: string | null
   createdAt: string
   updatedAt: string
+  releaseNote?: string | null
+  publishedAt?: string | null
+  publishedBy?: string | null
 }
 
 interface AgentVersionPickerProps {
@@ -75,6 +78,8 @@ export default function AgentVersionPicker({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [activateTarget, setActivateTarget] = useState<string | null>(null)
+  const [activateNote, setActivateNote] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -174,11 +179,23 @@ export default function AgentVersionPicker({
     setOpen(false)
   }
 
-  const handleActivate = async (id: string) => {
+  const handleActivate = (id: string) => {
+    setActivateTarget(id)
+    setActivateNote('')
+  }
+
+  const confirmActivate = async () => {
+    const id = activateTarget
+    if (!id) return
+    setActivateTarget(null)
     setBusyId(id)
     setError('')
     try {
-      const r = await fetch(`/api/admin/agent-configs/${id}/activate`, { method: 'PUT' })
+      const r = await fetch(`/api/admin/agent-configs/${id}/activate`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ releaseNote: activateNote.trim() || undefined }),
+      })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) {
         setError((typeof d.error === 'string' ? d.error : d.error?.message) || t('agentVersion.activateError'))
@@ -234,7 +251,7 @@ export default function AgentVersionPicker({
       // If we deleted the one currently selected, fall back to the active sibling
       // of the same name (or any other row).
       if (id === agentId) {
-        const list = await fetch('/api/admin/agent-configs').then(r => r.json())
+        const resp = await fetch('/api/admin/agent-configs').then(r => r.json()); const list = resp.data || resp
         const all: AgentVersion[] = list.configs || []
         const fallback =
           (currentName ? all.find(v => v.name === currentName && v.isActive) : null) ??
@@ -501,6 +518,73 @@ export default function AgentVersionPicker({
         </div>,
         document.body
       )}
+
+      {/* ── Activate release note dialog ── */}
+      {activateTarget && createPortal(
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.2)', backdropFilter: 'blur(4px)',
+          }}
+          onClick={() => setActivateTarget(null)}
+        >
+          <div
+            style={{
+              background: '#fff', borderRadius: 16,
+              border: '1px solid var(--border-subtle)',
+              boxShadow: '0 20px 60px -12px rgba(15,23,42,0.35)',
+              padding: 20, width: 380, maxWidth: 'calc(100vw - 32px)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--mist)', margin: '0 0 4px' }}>
+              {t('agentVersion.activateTitle')}
+            </h3>
+            <p style={{ fontSize: 11, color: 'var(--fog)', margin: '0 0 14px', lineHeight: 1.5 }}>
+              {t('agentVersion.activateDesc')}
+            </p>
+            <textarea
+              value={activateNote}
+              onChange={e => setActivateNote(e.target.value)}
+              placeholder={t('agentVersion.releaseNotePlaceholder')}
+              rows={3}
+              style={{
+                width: '100%', padding: '8px 10px', borderRadius: 10,
+                border: '1px solid var(--border-subtle)', outline: 'none',
+                fontSize: 12, color: 'var(--mist)', resize: 'vertical',
+                fontFamily: 'inherit',
+              }}
+              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) confirmActivate() }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setActivateTarget(null)}
+                style={{
+                  padding: '7px 16px', borderRadius: 10, fontSize: 12, fontWeight: 500,
+                  color: 'var(--fog)', border: '1px solid var(--border-subtle)',
+                  background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmActivate}
+                style={{
+                  padding: '7px 20px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+                  color: '#fff', background: 'var(--malachite)', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {t('agentVersion.activate')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </>
   )
 }
@@ -534,73 +618,89 @@ function VersionRow({
         padding: '7px 8px', borderRadius: 8,
         background: isCurrent ? 'rgba(91,138,247,0.06)' : 'transparent',
         border: isCurrent ? '1px solid rgba(91,138,247,0.18)' : '1px solid transparent',
-        display: 'flex', alignItems: 'center', gap: 8,
         marginBottom: 2,
         transition: 'background 0.12s',
       }}
       onMouseEnter={e => { if (!isCurrent) e.currentTarget.style.background = 'rgba(0,0,0,0.025)' }}
       onMouseLeave={e => { if (!isCurrent) e.currentTarget.style.background = 'transparent' }}
     >
-      <button
-        type="button"
-        onClick={() => onSwitch(v.id)}
-        disabled={busy}
-        style={{
-          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
-          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-          textAlign: 'left', fontFamily: 'inherit',
-        }}
-      >
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mist)', fontVariantNumeric: 'tabular-nums' }}>
-          v{v.version}
-        </span>
-        {v.isActive ? (
-          <span style={{
-            fontSize: 9, fontWeight: 700, color: 'var(--malachite)',
-            padding: '1px 5px', borderRadius: 4,
-            background: 'rgba(46,160,74,0.10)', textTransform: 'uppercase', letterSpacing: '0.04em',
-          }}>
-            {t('agentVersion.active')}
-          </span>
-        ) : (
-          <span style={{
-            fontSize: 9, fontWeight: 700, color: 'var(--fog)',
-            padding: '1px 5px', borderRadius: 4,
-            background: 'rgba(0,0,0,0.05)', textTransform: 'uppercase', letterSpacing: '0.04em',
-          }}>
-            {t('agentVersion.draft')}
-          </span>
-        )}
-        <span style={{ fontSize: 10, color: 'var(--fog)', opacity: 0.6, marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
-          {formatModelShort(v.model)} · {formatDateShort(v.updatedAt)}
-        </span>
-      </button>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-        {!v.isActive && (
-          <IconBtn
-            icon={Play}
-            title={t('agentVersion.activate')}
-            onClick={() => onActivate(v.id)}
-            disabled={busy}
-          />
-        )}
-        <IconBtn
-          icon={ExternalLink}
-          title={t('agentVersion.openEditor')}
-          onClick={() => onOpenEditor(v.id)}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => onSwitch(v.id)}
           disabled={busy}
-        />
-        {canDelete && (
+          style={{
+            flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            textAlign: 'left', fontFamily: 'inherit',
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mist)', fontVariantNumeric: 'tabular-nums' }}>
+            v{v.version}
+          </span>
+          {v.isActive ? (
+            <span style={{
+              fontSize: 9, fontWeight: 700, color: '#fff',
+              padding: '2px 6px', borderRadius: 4,
+              background: 'var(--malachite)',
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+              boxShadow: '0 0 0 2px rgba(46,160,74,0.20)',
+            }}>
+              {t('agentVersion.active')}
+            </span>
+          ) : (
+            <span style={{
+              fontSize: 9, fontWeight: 600, color: 'var(--fog)',
+              padding: '2px 6px', borderRadius: 4,
+              background: 'rgba(0,0,0,0.06)', textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>
+              {t('agentVersion.draft')}
+            </span>
+          )}
+          <span style={{ fontSize: 10, color: 'var(--fog)', opacity: 0.6, marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+            {formatModelShort(v.model)} · {formatDateShort(v.updatedAt)}
+          </span>
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+          {!v.isActive && (
+            <IconBtn
+              icon={Play}
+              title={t('agentVersion.activate')}
+              onClick={() => onActivate(v.id)}
+              disabled={busy}
+            />
+          )}
           <IconBtn
-            icon={Trash2}
-            title={t('common.delete')}
-            onClick={() => onDelete(v.id)}
+            icon={ExternalLink}
+            title={t('agentVersion.openEditor')}
+            onClick={() => onOpenEditor(v.id)}
             disabled={busy}
-            danger
           />
-        )}
+          {canDelete && (
+            <IconBtn
+              icon={Trash2}
+              title={t('common.delete')}
+              onClick={() => onDelete(v.id)}
+              disabled={busy}
+              danger
+            />
+          )}
+        </div>
       </div>
+      {/* Release note + publish info */}
+      {v.releaseNote && (
+        <div style={{ marginTop: 3, paddingLeft: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 10, color: 'var(--fog)', lineHeight: 1.3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {v.releaseNote}
+          </span>
+          {v.publishedAt && (
+            <span style={{ fontSize: 9, color: 'var(--fog)', opacity: 0.45, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+              {formatDateShort(v.publishedAt)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,31 +1,21 @@
-// DELETE /api/admin/api-keys/[id] — revoke an API key
+// DELETE /api/admin/api-keys/[id] — Revoke an API key
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
-import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const orgId = await getActiveOrgId()
-  const vendor = await getActiveVendor()
-  if (!vendor?.isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export const DELETE = defineRoute<void, { id: string }>({
+  method: 'DELETE',
+  requireRole: ['admin', 'owner'],
+  async handler({ params, repo, audit }) {
+    const key = await repo.apiKey.findUnique({ where: { id: params.id } })
+    if (!key) throw new NotFoundError('Key not found')
 
-  const { id } = await params
-
-  // Verify key belongs to this org before revoking
-  const key = await prisma.apiKey.findUnique({ where: { id } })
-  if (!key || key.orgId !== orgId) {
-    return NextResponse.json({ error: 'Key not found' }, { status: 404 })
-  }
-
-  await prisma.apiKey.update({
-    where: { id },
-    data: { revokedAt: new Date() },
-  })
-
-  return NextResponse.json({ ok: true })
-}
+    await repo.apiKey.update({
+      where: { id: params.id },
+      data: { revokedAt: new Date() },
+    })
+    await audit({ action: 'api_key.revoke', target: `api_key:${key.id}`, before: { prefix: key.prefix, name: key.name } as Record<string, unknown> })
+    return apiOk({ ok: true })
+  },
+})

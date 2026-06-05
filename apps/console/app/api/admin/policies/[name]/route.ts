@@ -18,7 +18,7 @@ export const GET = defineRoute<void, PolicyParams>({
 
 const updateSchema = z.object({
   name: z.string().optional(), description: z.string().nullable().optional(), hook: z.string().optional(),
-  rule: z.union([z.string(), z.record(z.unknown())]).optional(), enabled: z.boolean().optional(),
+  rule: z.union([z.string(), z.record(z.unknown())]).optional(), guardrailConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(), enabled: z.boolean().optional(),
 })
 type UpdateInput = z.infer<typeof updateSchema>
 
@@ -33,6 +33,7 @@ export const PUT = defineRoute<UpdateInput, PolicyParams>({
     if (input.enabled !== undefined) data.enabled = input.enabled
     if (input.name !== undefined) data.name = input.name
     if (input.rule !== undefined) data.rule = typeof input.rule === 'string' ? input.rule : JSON.stringify(input.rule)
+    if (input.guardrailConfig !== undefined) data.guardrailConfig = input.guardrailConfig === null ? null : (typeof input.guardrailConfig === 'string' ? input.guardrailConfig : JSON.stringify(input.guardrailConfig))
     const policy = await repo.policy.update({ where: { orgId_name: { orgId: repo.orgId, name: params.name } }, data })
     await audit({ action: 'policy.update', target: `policy:${policy.name}`, before: existing as Record<string, unknown>, after: policy as Record<string, unknown> })
     return apiOk({ policy })

@@ -1,9 +1,13 @@
 // GET + PUT /api/admin/livechat/config — Gated admin route.
 // orgId is STRICTLY from the verified session (never from body or query param).
-// Replaces the unauthenticated /api/livechat/config PUT (B1 fix).
+// Optional ?agentName=<name> scopes to a specific agent's LiveChat config.
+// Without agentName: org-default config. Replaces the unauthenticated
+// /api/livechat/config PUT (B1 fix).
 
+import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
 import { z } from 'zod'
 
 const livechatConfigSchema = z.object({
@@ -20,74 +24,71 @@ const livechatConfigSchema = z.object({
   transferMessage: z.string().optional(),
 })
 
-export const GET = defineRoute({
-  method: 'GET',
-  async handler({ session, repo }) {
-    const config = await repo.liveChatConfig.findUnique({ where: { orgId: session.orgId } })
-    if (!config) {
-      return apiOk({ config: { orgId: session.orgId, enabled: false } })
-    }
-    return apiOk({
-      config: {
-        ...config,
-        botAccessToken: config.botAccessToken ? '••••••••' : '',
-        webhookSecret: config.webhookSecret ? '••••••••' : '',
-      },
-    })
-  },
-})
+async function resolveAgentName(repo: any, orgId: string, agentName: string | null) {
+  if (!agentName) return null
+  const agentConfig = await repo.agentConfig.findFirst({
+    where: { name: agentName, isActive: true },
+    select: { id: true, name: true },
+  })
+  return agentConfig?.name ?? null
+}
 
-export const PUT = defineRoute({
-  method: 'PUT',
-  inputSchema: livechatConfigSchema,
-  requireRole: ['admin', 'owner'],
-  async handler({ input, session, repo, audit }) {
-    let tokenToSave = input.botAccessToken
-    let secretToSave = input.webhookSecret ?? ''
+export async function GET(request: NextRequest) {
+  const agentName = request.nextUrl.searchParams.get('agentName')
 
-    // Preserve existing secrets when masked value is sent
-    if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {
-      const existing = await repo.raw.liveChatConfig.findUnique({
-        where: { orgId: session.orgId },
-        select: { botAccessToken: true, webhookSecret: true },
+  return defineRoute({
+    method: 'GET',
+    async handler({ session, repo }) {
+      const resolvedName = agentName ? await resolveAgentName(repo, session.orgId, agentName) : null
+      const config = await getLiveChatConfig(session.orgId, resolvedName)
+
+      if (!config) {
+        return apiOk({
+          config: {
+            orgId: session.orgId,
+            agentName: resolvedName ?? undefined,
+            enabled: false,
+          },
+        })
+      }
+      return apiOk({
+        config: {
+          ...config,
+          agentName: resolvedName ?? undefined,
+          botAccessToken: config.botAccessToken ? '••••••••' : '',
+          webhookSecret: config.webhookSecret ? '••••••••' : '',
+        },
       })
-      if (input.botAccessToken === '••••••••') tokenToSave = existing?.botAccessToken ?? ''
-      if (input.webhookSecret === '••••••••') secretToSave = existing?.webhookSecret ?? ''
-    }
+    },
+  })(request)
+}
 
-    await repo.liveChatConfig.upsert({
-      where: { orgId: session.orgId },
-      create: {
-        orgId: session.orgId,
-        botAccessToken: tokenToSave,
-        licenseId: input.licenseId,
-        webhookSecret: secretToSave,
-        region: input.region ?? 'dal',
-        authType: input.authType ?? 'auto',
-        accountId: input.accountId ?? null,
-        agentAccountId: input.agentAccountId ?? null,
-        showSkillStatus: input.showSkillStatus,
-        enabled: input.enabled,
-        transferGroupId: input.transferGroupId ?? null,
-        transferMessage: input.transferMessage ?? null,
-      },
-      update: {
-        botAccessToken: tokenToSave,
-        licenseId: input.licenseId,
-        webhookSecret: secretToSave,
-        region: input.region ?? 'dal',
-        authType: input.authType ?? 'auto',
-        accountId: input.accountId ?? null,
-        agentAccountId: input.agentAccountId ?? null,
-        showSkillStatus: input.showSkillStatus,
-        enabled: input.enabled,
-        transferGroupId: input.transferGroupId ?? null,
-        transferMessage: input.transferMessage ?? null,
-      },
-    })
+export async function PUT(request: NextRequest) {
+  const agentName = request.nextUrl.searchParams.get('agentName')
 
-    await audit({ action: 'livechat.config.update', target: `org:${session.orgId}` })
+  return defineRoute({
+    method: 'PUT',
+    inputSchema: livechatConfigSchema,
+    requireRole: ['admin', 'owner'],
+    async handler({ input, session, repo, audit }) {
+      const resolvedName = agentName ? await resolveAgentName(repo, session.orgId, agentName) : null
 
-    return apiOk({ ok: true })
-  },
-})
+      // Preserve existing secrets when masked value is sent
+      if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {
+        const existing = await getLiveChatConfig(session.orgId, resolvedName)
+        if (existing) {
+          if (input.botAccessToken === '••••••••') input.botAccessToken = existing.botAccessToken
+          if (input.webhookSecret === '••••••••') input.webhookSecret = existing.webhookSecret ?? ''
+        }
+      }
+
+      await upsertLiveChatConfig(session.orgId, input, resolvedName)
+      await audit({
+        action: 'livechat.config.update',
+        target: `org:${session.orgId}/agent:${resolvedName ?? '_default'}`,
+      })
+
+      return apiOk({ ok: true })
+    },
+  })(request)
+}

@@ -1,24 +1,23 @@
-// GET/PUT/DELETE /api/users/[userId]/profile
+// GET/PUT/DELETE /api/users/[userId]/profile — User profile CRUD
+// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@intera/shared/prisma'
+import { z } from 'zod'
+import { defineRoute } from '@/lib/api/define-route'
+import { apiOk } from '@intera/shared/contracts/envelope'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ userId: string }> },
-) {
-  const { userId } = await params
-  const decoded = decodeURIComponent(userId)
-  try {
-    // Query real-time stats from DB, not stale cached counts
+export const GET = defineRoute<void, { userId: string }>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const decoded = decodeURIComponent(params.userId)
+
     const [cases, profile, chats] = await Promise.all([
-      prisma.case.findMany({
+      repo.raw.case.findMany({
         where: { userId: decoded },
         select: { status: true, type: true, updatedAt: true, createdAt: true },
         orderBy: { updatedAt: 'desc' },
       }),
-      prisma.userProfile.findUnique({ where: { userId: decoded } }),
-      prisma.case.findMany({
+      repo.raw.userProfile.findUnique({ where: { userId: decoded } }),
+      repo.raw.case.findMany({
         where: { userId: decoded },
         select: { chatId: true },
         orderBy: { createdAt: 'desc' },
@@ -27,77 +26,63 @@ export async function GET(
     ])
 
     const totalCases = cases.length
-    const resolvedCases = cases.filter((c) => c.status === 'resolved').length
-    const escalatedCases = cases.filter((c) => c.status === 'escalated' || c.status === 'waiting_human').length
+    const resolvedCases = cases.filter(c => c.status === 'resolved').length
+    const escalatedCases = cases.filter(c => c.status === 'escalated' || c.status === 'waiting_human').length
     const lastCase = cases[0]
-    const lastCaseType = lastCase?.type ?? null
     const firstSeenAt = cases.length > 0
       ? cases.reduce((earliest, c) => c.createdAt < earliest ? c.createdAt : earliest, cases[0].createdAt)
       : null
     const lastSeenAt = lastCase?.updatedAt?.toISOString() ?? lastCase?.createdAt?.toISOString() ?? null
 
-    // Count unique chats
-    const chatIds = new Set(chats.map((c) => c.chatId).filter(Boolean) as string[])
-    const totalChats = chatIds.size
+    const chatIds = new Set(chats.map(c => c.chatId).filter(Boolean) as string[])
 
-    return NextResponse.json({
+    return apiOk({
       profile: {
         userId: decoded,
         profile: profile?.profile ?? '',
-        totalChats,
+        totalChats: chatIds.size,
         totalCases,
         resolvedCases,
         escalatedCases,
-        lastCaseType,
+        lastCaseType: lastCase?.type ?? null,
         firstSeenAt: firstSeenAt?.toISOString() ?? null,
         lastSeenAt,
         updatedAt: profile?.updatedAt?.toISOString() ?? new Date().toISOString(),
       },
     })
-  } catch (err) {
-    console.error('[API] GET user profile:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+  },
+})
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ userId: string }> },
-) {
-  const { userId } = await params
-  const decoded = decodeURIComponent(userId)
-  try {
-    const body = await req.json()
-    const profile = await prisma.userProfile.upsert({
+const putSchema = z.object({ profile: z.string().optional().default('') })
+
+export const PUT = defineRoute<z.infer<typeof putSchema>, { userId: string }>({
+  method: 'PUT',
+  inputSchema: putSchema,
+  requireRole: ['admin', 'owner'],
+  async handler({ input, params, repo }) {
+    const decoded = decodeURIComponent(params.userId)
+    const profile = await repo.raw.userProfile.upsert({
       where: { userId: decoded },
-      create: { userId: decoded, profile: body.profile ?? '' },
-      update: { profile: body.profile },
+      create: { userId: decoded, profile: input.profile },
+      update: { profile: input.profile },
     })
-    return NextResponse.json({ profile })
-  } catch (err) {
-    console.error('[API] PUT user profile:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ profile })
+  },
+})
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ userId: string }> },
-) {
-  const { userId } = await params
-  const decoded = decodeURIComponent(userId)
-  try {
-    // Delete all stored data for this user: cases cascade to messages/memory/traces,
-    // external conversations, and the user profile itself.
+export const DELETE = defineRoute<void, { userId: string }>({
+  method: 'DELETE',
+  requireRole: ['admin', 'owner'],
+  async handler({ params, repo }) {
+    const decoded = decodeURIComponent(params.userId)
+    const caseIds = (await repo.raw.case.findMany({ where: { userId: decoded }, select: { id: true } })).map(c => c.id)
+
     await Promise.all([
-      prisma.case.deleteMany({ where: { userId: decoded } }),
-      prisma.externalConversation.deleteMany({ where: { internalCaseId: { in: (await prisma.case.findMany({ where: { userId: decoded }, select: { id: true } })).map(c => c.id) } } }),
-      prisma.userProfile.deleteMany({ where: { userId: decoded } }),
+      repo.raw.case.deleteMany({ where: { userId: decoded } }),
+      caseIds.length > 0 ? repo.raw.externalConversation.deleteMany({ where: { internalCaseId: { in: caseIds } } }) : Promise.resolve(),
+      repo.raw.userProfile.deleteMany({ where: { userId: decoded } }),
     ])
 
-    return NextResponse.json({ ok: true, deleted: decoded })
-  } catch (err) {
-    console.error('[API] DELETE user data:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+    return apiOk({ ok: true, deleted: decoded })
+  },
+})
