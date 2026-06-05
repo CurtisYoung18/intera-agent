@@ -13,6 +13,7 @@ import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { apiClient } from '@/lib/api/client'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
+import CopyButton from '@/components/ui/copy-button'
 
 /* ── Types ── */
 
@@ -921,19 +922,25 @@ export default function PlaygroundPage() {
                                 {step.promptData && (
                                   <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
                                 )}
-                                {debugMode && step.json && (
-                                  <details style={{ marginTop: 2 }}>
-                                    <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6 }}>JSON</summary>
-                                    <pre style={{
-                                      maxWidth: 280, maxHeight: 160, overflow: 'auto',
-                                      fontSize: 9, color: 'var(--fog)',
-                                      background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
-                                      borderRadius: 8, padding: '6px 10px',
-                                    }}>
-                                      {JSON.stringify(step.json, null, 2)}
-                                    </pre>
-                                  </details>
-                                )}
+                                {debugMode && step.json && (() => {
+                                  const jsonText = JSON.stringify(step.json, null, 2)
+                                  return (
+                                    <details style={{ marginTop: 2 }}>
+                                      <summary style={{ fontSize: 9, color: 'var(--indigo)', cursor: 'pointer', opacity: 0.6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        JSON
+                                        <CopyButton text={jsonText} label="Copy debug JSON" />
+                                      </summary>
+                                      <pre style={{
+                                        maxWidth: 280, maxHeight: 160, overflow: 'auto',
+                                        fontSize: 9, color: 'var(--fog)',
+                                        background: 'rgba(255,255,255,0.95)', border: '1px solid var(--border-subtle)',
+                                        borderRadius: 8, padding: '6px 10px',
+                                      }}>
+                                        {jsonText}
+                                      </pre>
+                                    </details>
+                                  )
+                                })()}
                               </div>
                             )}
                           </div>
@@ -1035,8 +1042,10 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
           <summary style={{
             fontWeight: 600, color: 'var(--lavender)',
             cursor: 'pointer', opacity: 0.8,
+            display: 'flex', alignItems: 'center', gap: 4,
           }}>
             System prompt ({systemPrompt.length.toLocaleString()} chars)
+            <CopyButton text={systemPrompt} label="Copy system prompt" />
           </summary>
           <pre style={{
             maxWidth: 280, maxHeight: 160, overflow: 'auto',
@@ -1069,13 +1078,16 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
                 background: m.role === 'user' ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
                 fontSize: 9,
               }}>
-                <span style={{
-                  fontWeight: 600, color: 'var(--fog)',
-                  textTransform: 'uppercase', fontSize: 8,
-                  opacity: 0.5, marginRight: 6,
-                }}>
-                  {typeof m.role === 'string' ? m.role : 'unknown'}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                  <span style={{
+                    fontWeight: 600, color: 'var(--fog)',
+                    textTransform: 'uppercase', fontSize: 8,
+                    opacity: 0.5,
+                  }}>
+                    {typeof m.role === 'string' ? m.role : 'unknown'}
+                  </span>
+                  <CopyButton text={typeof m.content === 'string' ? m.content : JSON.stringify(m.content)} label={`Copy ${typeof m.role === 'string' ? m.role : 'unknown'} message`} />
+                </div>
                 <span style={{ color: 'var(--mist)' }}>
                   {(typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).slice(0, 160)}
                   {(typeof m.content === 'string' && m.content.length > 160) ? '...' : ''}
