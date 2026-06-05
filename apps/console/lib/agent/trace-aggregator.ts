@@ -32,6 +32,12 @@ export interface PlaygroundTraceStep {
 const BOOKKEEPING: ReadonlySet<string> = new Set([
   'user_message', 'stream_event', 'loop_decision', 'agent_tree_node',
   'stream_request_start', 'microcompact', 'queue_message_enqueued', 'queue_message_consumed',
+  // Lifecycle / multi-agent events — not user-facing pipeline stages
+  'case_created', 'fact_extracted', 'cron_tick',
+  'human_task_created', 'human_task_resolved', 'final_resolution',
+  'incoming_chat', 'chat_deactivated',
+  'fork_dispatch', 'case_merged', 'sub_agent_dispatched', 'sub_agent_merged',
+  'message_bus_send', 'message_bus_receive',
 ])
 
 const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; source: TraceSource }>> = {
