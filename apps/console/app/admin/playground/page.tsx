@@ -107,6 +107,8 @@ export default function PlaygroundPage() {
   const [error, setError] = useState('')
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [toastMessage, setToastMessage] = useState('')
+  const [savingToChat, setSavingToChat] = useState(false)
+  const [savedChatId, setSavedChatId] = useState<string | null>(null)
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -204,6 +206,38 @@ export default function PlaygroundPage() {
   const removeImage = useCallback((idx: number) => {
     setAttachedImages(prev => prev.filter((_, i) => i !== idx))
   }, [])
+
+  /* ── Save to Chat ── */
+
+  const handleSaveToChat = useCallback(async () => {
+    if (chatMessages.length === 0) return
+    setSavingToChat(true)
+    try {
+      const res = await fetch('/api/admin/playground/save-to-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId: selectedAgentId,
+          messages: chatMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+            thinking: m.thinking,
+          })),
+          traces: turnTraces,
+        }),
+      })
+      if (!res.ok) { setToastMessage(`Save failed: HTTP ${res.status}`); setTimeout(() => setToastMessage(''), 4000); return }
+      const data = await res.json()
+      setSavedChatId(data.chatId)
+      setToastMessage('Saved to Chat!')
+      setTimeout(() => setToastMessage(''), 4000)
+    } catch (err) {
+      setToastMessage('Save failed: network error')
+      setTimeout(() => setToastMessage(''), 4000)
+    } finally {
+      setSavingToChat(false)
+    }
+  }, [chatMessages, turnTraces, selectedAgentId])
 
   /* ── Run turn ── */
 
@@ -382,6 +416,34 @@ export default function PlaygroundPage() {
               }}
             >
               <Brain size={11} /> Thinking
+            </button>
+
+            <button
+              onClick={handleSaveToChat}
+              disabled={chatMessages.length === 0 || savingToChat}
+              title={savedChatId ? `Saved — open chat /ops/chats/${savedChatId}` : chatMessages.length === 0 ? 'Send a message first' : 'Save transcript to Chat'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 10, fontWeight: 500, color: savedChatId ? 'var(--malachite)' : 'var(--fog)',
+                background: savedChatId ? 'rgba(46,160,74,0.08)' : 'transparent',
+                border: savedChatId ? '1px solid rgba(46,160,74,0.15)' : '1px solid transparent',
+                padding: '3px 8px', borderRadius: 8,
+                cursor: chatMessages.length === 0 ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s',
+                flexShrink: 0,
+                opacity: chatMessages.length === 0 ? 0.35 : 1,
+              }}
+            >
+              {savingToChat ? 'Saving…' : savedChatId ? (
+                <Link
+                  href={`/ops/chats/${savedChatId}`}
+                  target="_blank"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <ExternalLink size={10} /> View Chat
+                </Link>
+              ) : 'Save to Chat'}
             </button>
 
             <Link
@@ -778,12 +840,18 @@ export default function PlaygroundPage() {
               <div style={{
                 position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
                 padding: '8px 16px', borderRadius: 10,
-                background: 'var(--vermillion)', color: 'white',
+                background: savedChatId ? 'var(--malachite)' : toastMessage.includes('failed') || toastMessage.includes('exceeds') ? 'var(--vermillion)' : 'var(--malachite)',
+                color: 'white',
                 fontSize: 11, fontWeight: 500,
-                whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(230,69,57,0.3)',
-                marginBottom: 8,
+                whiteSpace: 'nowrap', boxShadow: savedChatId ? '0 4px 12px rgba(46,160,74,0.3)' : '0 4px 12px rgba(230,69,57,0.3)',
+                marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 {toastMessage}
+                {savedChatId && toastMessage === 'Saved to Chat!' && (
+                  <Link href={`/ops/chats/${savedChatId}`} target="_blank" style={{ color: 'white', fontWeight: 600, textDecoration: 'underline', fontSize: 11 }}>
+                    View Chat
+                  </Link>
+                )}
               </div>
             )}
 
