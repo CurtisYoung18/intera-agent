@@ -127,28 +127,26 @@ export function aggregateTraces(
   for (const t of traces) {
     if (BOOKKEEPING.has(t.actionType)) { bookkeeping.push(t); continue }
     const actionType = t.actionType
-    let mapping = STAGE_MAP[actionType as ActionType | 'kb_search']
 
-    // kb_search_* tools → Knowledge retrieval
-    // Covers: actionType starting with kb_search, title starting with kb_search,
-    // or skill_called/skill_result whose payload skillName starts with kb_search_
-    if (!mapping) {
-      let isKbSkill =
-        actionType.startsWith('kb_search') ||
-        t.title?.startsWith('kb_search')
+    // kb_search_* → Knowledge retrieval (must run before STAGE_MAP lookup,
+    // since skill_called/skill_result have their own mappings)
+    let mapping: { stage: TraceStage; source: TraceSource } | undefined
 
-      // payload is stored as JSON string — parse before checking skillName
-      if (!isKbSkill && (actionType === 'skill_called' || actionType === 'skill_result') && t.payload) {
+    if (actionType.startsWith('kb_search') || t.title?.startsWith('kb_search')) {
+      mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
+    } else if (actionType === 'skill_called' || actionType === 'skill_result') {
+      // Check payload for kb_search skill name
+      if (t.payload) {
         try {
           const p = JSON.parse(t.payload)
-          isKbSkill = typeof p?.skillName === 'string' && p.skillName.startsWith('kb_search_')
+          if (typeof p?.skillName === 'string' && p.skillName.startsWith('kb_search_')) {
+            mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
+          }
         } catch { /* not valid JSON */ }
       }
-
-      if (isKbSkill) {
-        mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
-      }
     }
+
+    mapping ??= STAGE_MAP[actionType as ActionType | 'kb_search']
 
     // Default: Skills & tools
     if (!mapping) {
