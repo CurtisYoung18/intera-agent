@@ -65,7 +65,7 @@ export default function DotMatrixNumber({
     <svg
       viewBox={`0 0 ${width} ${height}`}
       className={`block ${className}`}
-      style={{ maxWidth: '100%', height: 'auto' }}
+      style={{ maxWidth: '100%', maxHeight: '60px' }}
       aria-label={value}
       role="img"
       dangerouslySetInnerHTML={{ __html: svg }}
