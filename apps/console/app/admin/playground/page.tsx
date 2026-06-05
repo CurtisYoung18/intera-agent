@@ -141,12 +141,24 @@ export default function PlaygroundPage() {
     respondingRef.current = responding
   }, [responding])
 
-  // ── Restore session on mount ──
+  // ── Restore session on mount + agent switch ──
   useEffect(() => {
+    // Clear current session before restoring new agent's session
+    setChatId(null)
+    setChatMessages([])
+    setTurnTraces([])
+    setTurnTotalMs([])
+    setReply('')
+    setError('')
+    setLiveTools([])
+    setSavedChatId(null)
+
+    const configId = selectedAgentId
     let cancelled = false
     async function restore() {
       try {
-        const res = await fetch('/api/admin/playground/sessions')
+        const params = configId ? `?configId=${encodeURIComponent(configId)}` : ''
+        const res = await fetch(`/api/admin/playground/sessions${params}`)
         if (!res.ok || cancelled) return
         const { data } = await res.json() as { data: { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> } }
         const latestSession = data.sessions?.[0]
@@ -164,7 +176,7 @@ export default function PlaygroundPage() {
     }
     restore()
     return () => { cancelled = true }
-  }, [])
+  }, [selectedAgentId])
 
   /* ── Data loading ── */
 

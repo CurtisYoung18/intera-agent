@@ -1,5 +1,5 @@
 // Playground turn runner — uses the REAL AgentLoop pipeline with injected
-// memory persistence + dry-run tool execution. No DB writes.
+// Prisma persistence (messages written through port) + dry-run tool execution.
 
 import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
@@ -42,6 +42,7 @@ export async function* runPlaygroundTurn(input: {
   userId?: string
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId } = input
+  const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
 
@@ -66,7 +67,7 @@ export async function* runPlaygroundTurn(input: {
     hasActiveCase: true, // playground always simulates a case
     caseSchema: null,
     caseState: null,
-    sessionBinding: { userId: 'playground' },
+    sessionBinding: { userId },
     availableTools: [],
   })
 
@@ -74,8 +75,6 @@ export async function* runPlaygroundTurn(input: {
   let caseId: string
   let effectiveChatId: string
   let bootstrapNewCase: boolean
-
-  const userId = inputUserId || 'playground'
 
   if (inputChatId) {
     const existingCase = await prisma.case.findFirst({
@@ -107,7 +106,7 @@ export async function* runPlaygroundTurn(input: {
         where: { id: { in: oldestCases.map(c => c.id) } },
       })
     }
-    effectiveChatId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    effectiveChatId = `pg_${input.configId || 'default'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     bootstrapNewCase = true
     caseId = effectiveChatId
   }
