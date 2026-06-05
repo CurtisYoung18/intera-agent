@@ -54,11 +54,12 @@ function deriveStatus(actionType: string, detail?: string | null): TraceStatus {
   return 'ok'
 }
 
-/** Extract usage from an llm_response record's detail JSON. */
+/** Extract usage from an llm_response record's detail or payload JSON. */
 function extractUsage(record: TraceRecord): { inputTokens: number; outputTokens: number; totalTokens: number } | undefined {
-  if (!record.detail) return undefined
+  const raw = record.detail || record.payload
+  if (!raw) return undefined
   try {
-    const parsed = JSON.parse(record.detail)
+    const parsed = JSON.parse(raw)
     const u = parsed?.usage
     if (u && (typeof u.input_tokens === 'number' || typeof u.output_tokens === 'number')) {
       const inputTokens = Number(u.input_tokens ?? 0)
