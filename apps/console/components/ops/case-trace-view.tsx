@@ -2,22 +2,12 @@
 
 import { useMemo, useState, type ReactNode } from 'react'
 import type { TranslateFn } from '@/lib/i18n/types'
+import { ACCENTS } from '@/components/chat/status-accents'
 import {
-  Bot,
   ChevronDown,
-  Cpu,
-  GitBranch,
   MessageSquare,
-  Radio,
-  Scale,
-  ScrollText,
-  Sparkles,
-  Timer,
-  User,
-  Wrench,
   Zap,
   Clock,
-  type LucideIcon,
 } from 'lucide-react'
 
 export interface TraceRow {
@@ -29,21 +19,6 @@ export interface TraceRow {
   createdAt: string
 }
 
-const ACCENTS: Record<string, { stroke: string; fill: string; icon: LucideIcon }> = {
-  user_message: { stroke: '#5b8af7', fill: 'rgba(91, 138, 247, 0.08)', icon: User },
-  case_created: { stroke: '#a09888', fill: 'rgba(160, 152, 136, 0.08)', icon: ScrollText },
-  fact_extracted: { stroke: '#d4912e', fill: 'rgba(212, 145, 46, 0.10)', icon: Sparkles },
-  policy_hit: { stroke: '#e64539', fill: 'rgba(230, 69, 57, 0.08)', icon: Scale },
-  skill_called: { stroke: '#d4912e', fill: 'rgba(212, 145, 46, 0.10)', icon: Wrench },
-  skill_result: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.08)', icon: Cpu },
-  human_task_created: { stroke: '#d4912e', fill: 'rgba(212, 145, 46, 0.12)', icon: Timer },
-  human_task_resolved: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.10)', icon: Timer },
-  final_resolution: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.10)', icon: ScrollText },
-  loop_decision: { stroke: '#6b6758', fill: 'rgba(107, 103, 88, 0.06)', icon: GitBranch },
-  stream_event: { stroke: '#8b6ff5', fill: 'rgba(139, 111, 245, 0.07)', icon: Radio },
-  llm_request_start: { stroke: '#5b8af7', fill: 'rgba(91, 138, 247, 0.09)', icon: Cpu },
-  llm_response: { stroke: '#5b8af7', fill: 'rgba(91, 138, 247, 0.10)', icon: Bot },
-}
 
 function parsePayload(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null
