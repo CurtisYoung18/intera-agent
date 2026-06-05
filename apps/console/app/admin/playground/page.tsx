@@ -123,6 +123,22 @@ export default function PlaygroundPage() {
   const showThinkingRef = useRef(showThinking)
   useEffect(() => { showThinkingRef.current = showThinking }, [showThinking])
 
+  // ── Message queue (allow typing while responding) ──
+  const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
+  const queuedMessagesRef = useRef<Array<{ text: string; images: AttachedImage[] }>>([])
+  useEffect(() => { queuedMessagesRef.current = queuedMessages }, [queuedMessages])
+
+  // Auto-send next queued message when current turn finishes
+  const respondingRef = useRef(false)
+  useEffect(() => {
+    if (!responding && respondingRef.current && queuedMessagesRef.current.length > 0) {
+      const next = queuedMessagesRef.current[0]
+      setQueuedMessages(prev => prev.slice(1))
+      runTurn(next.text, next.images)
+    }
+    respondingRef.current = responding
+  }, [responding])
+
   /* ── Data loading ── */
 
   useEffect(() => {
@@ -253,7 +269,7 @@ export default function PlaygroundPage() {
 
   /* ── Run turn ── */
 
-  const runTurn = useCallback(async (msg: string) => {
+  const runTurn = useCallback(async (msg: string, queuedImages?: AttachedImage[]) => {
     setReply('')
     thinkingAccRef.current = ''
     turnNumRef.current += 1
@@ -263,7 +279,7 @@ export default function PlaygroundPage() {
     setFormRequest(null)
     setError('')
     setResponding(true)
-    const currentImages = attachedImagesRef.current
+    const currentImages = queuedImages ?? attachedImagesRef.current
     setAttachedImages([])
     setChatMessages(prev => [...prev, { role: 'user' as const, content: msg, images: currentImages.length > 0 ? currentImages : undefined }])
 
@@ -521,7 +537,8 @@ export default function PlaygroundPage() {
           overflow: 'hidden',
         }}>
           <div className="pg-chat-scroll" style={{
-            flex: 1, width: '100%', maxWidth: 680,
+            flex: 1, width: '100%',
+            ...(sidebarCollapsed ? {} : { maxWidth: 680 }),
             padding: '32px 0 0 24px',
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
@@ -829,7 +846,7 @@ export default function PlaygroundPage() {
           {/* ── Composer ── */}
           <div style={{
             position: 'relative', zIndex: 1, flexShrink: 0,
-            width: '100%', maxWidth: 680, padding: '12px 24px 12px',
+            width: '100%', ...(sidebarCollapsed ? {} : { maxWidth: 680 }), padding: '12px 24px 12px',
           }}>
             {/* ── Attached image previews ── */}
             {attachedImages.length > 0 && (
@@ -913,7 +930,7 @@ export default function PlaygroundPage() {
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && message.trim() && !responding) { const msg = message.trim(); setMessage(''); runTurn(msg) } }}
+                onKeyDown={e => { if (e.key === 'Enter' && message.trim()) { const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
                 onPaste={e => {
                   const items = e.clipboardData?.items
                   if (!items) return
@@ -934,8 +951,7 @@ export default function PlaygroundPage() {
                     handleImageAttach(imageFiles)
                   }
                 }}
-                placeholder="Type a test message…"
-                disabled={responding}
+                placeholder={responding ? 'Type to queue next message…' : 'Type a test message…'}
                 style={{
                   flex: 1, border: 'none', background: 'transparent',
                   fontSize: 13, color: 'var(--mist)',
@@ -944,16 +960,18 @@ export default function PlaygroundPage() {
                 }}
               />
               <button
-                onClick={() => { if (message.trim() && !responding) { const msg = message.trim(); setMessage(''); runTurn(msg) } }}
-                disabled={responding || !message.trim()}
+                onClick={() => { if (message.trim()) { const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
+                disabled={!message.trim()}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 36, height: 36, borderRadius: 12,
-                  background: message.trim() && !responding
-                    ? 'linear-gradient(135deg, #5b8af7, #8b6ff5)'
+                  background: message.trim()
+                    ? responding
+                      ? 'linear-gradient(135deg, #8b6ff5, #d491e6)'
+                      : 'linear-gradient(135deg, #5b8af7, #8b6ff5)'
                     : 'rgba(0,0,0,0.06)',
-                  border: 'none', cursor: message.trim() && !responding ? 'pointer' : 'default',
-                  opacity: message.trim() && !responding ? 1 : 0.4,
+                  border: 'none', cursor: message.trim() ? 'pointer' : 'default',
+                  opacity: message.trim() ? 1 : 0.4,
                   transition: 'all 0.15s',
                   flexShrink: 0,
                 }}
@@ -961,6 +979,22 @@ export default function PlaygroundPage() {
                 <Send size={14} color="white" />
               </button>
             </div>
+
+            {/* ── Queue indicator ── */}
+            {queuedMessages.length > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '4px 0', fontSize: 11, color: 'var(--lavender)',
+                fontWeight: 500, gap: 4,
+              }}>
+                <div style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: 'var(--lavender)', opacity: 0.6,
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                }} />
+                {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
+              </div>
+            )}
 
             {/* ── Toast ── */}
             {toastMessage && (

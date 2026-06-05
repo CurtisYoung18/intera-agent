@@ -699,6 +699,12 @@ body {
   }
 }
 
+/* ── Generic pulse for queue indicator ── */
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
 /* ── Ops harness guide ── animated flow readability */
 @keyframes guide-node-pulse {
   0%, 100% {
