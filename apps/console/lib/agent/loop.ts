@@ -365,6 +365,7 @@ export class AgentLoop {
           })
         },
         this.dryRun,
+        this.deps.orgId,
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────

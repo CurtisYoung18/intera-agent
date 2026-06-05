@@ -59,6 +59,7 @@ export class StreamingToolExecutor {
     private toolDefinitions: SkillDefinition[],
     private onStatusChange?: StatusCallback,
     private dryRun?: boolean,
+    private orgId?: string,
   ) {}
 
   /**
@@ -134,8 +135,9 @@ export class StreamingToolExecutor {
     toolUses: ToolUse[],
     onStatusChange?: StatusCallback,
     dryRun?: boolean,
+    orgId?: string,
   ): Promise<ToolExecutionResult[]> {
-    const executor = new StreamingToolExecutor(toolDefinitions, onStatusChange, dryRun)
+    const executor = new StreamingToolExecutor(toolDefinitions, onStatusChange, dryRun, orgId)
     for (const toolUse of toolUses) {
       executor.enqueue(toolUse)
     }
@@ -376,7 +378,7 @@ export class StreamingToolExecutor {
         if (definition.name.startsWith('kb_search_')) {
           const sourceName = definition.name.slice('kb_search_'.length)
           const source = await prisma.knowledgeSource.findFirst({
-            where: { name: sourceName, enabled: true },
+            where: { orgId: this.orgId ?? '', name: sourceName, enabled: true },
           })
           if (source) sources = [source]
         }
