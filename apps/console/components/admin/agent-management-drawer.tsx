@@ -91,6 +91,8 @@ export default function AgentManagementDrawer({
 
   const [busyId, setBusyId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [creatingName, setCreatingName] = useState('')
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
@@ -142,14 +144,41 @@ export default function AgentManagementDrawer({
     })
   }
 
+  const suggestNextAgentName = useCallback(() => {
+    const existingNames = new Set(groups.map(g => g.name))
+    let n = 1
+    while (existingNames.has(`Agent ${n}`)) n++
+    return `Agent ${n}`
+  }, [groups])
+
+  const beginCreate = () => {
+    setCreatingName(suggestNextAgentName())
+    setIsCreating(true)
+    setError('')
+  }
+
+  const cancelCreate = () => {
+    setIsCreating(false)
+    setCreatingName('')
+  }
+
   const handleCreate = async () => {
+    const name = creatingName.trim()
+    if (!name) {
+      setError(t('agentDrawer.createError'))
+      return
+    }
+    if (groups.some(g => g.name === name)) {
+      setError(`An agent named "${name}" already exists`)
+      return
+    }
     setCreating(true)
     setError('')
     try {
       const r = await fetch('/api/admin/agent-configs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: `Agent ${groups.length + 1}` }),
+        body: JSON.stringify({ name }),
       })
       const d = await r.json()
       if (!r.ok) {
@@ -161,11 +190,12 @@ export default function AgentManagementDrawer({
       const config = d.data?.config ?? d.config
       if (config?.id) {
         onSelectAgent(config.id)
-        // Auto-expand the new group
         if (config.name) {
           setExpandedGroups(prev => new Set(prev).add(config.name))
         }
       }
+      setIsCreating(false)
+      setCreatingName('')
     } catch {
       setError(t('agentDrawer.createError'))
     } finally {
@@ -331,15 +361,49 @@ export default function AgentManagementDrawer({
           <p className="text-[12px] text-[var(--fog)]">
             {t('agentDrawer.subtitle', { n: groups.length })}
           </p>
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={creating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo/10 px-3 py-1.5 text-[12px] font-semibold text-indigo hover:bg-indigo/15 disabled:opacity-50 transition-colors"
-          >
-            {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.25} />}
-            {t('agentDrawer.newAgent')}
-          </button>
+          {!isCreating ? (
+            <button
+              type="button"
+              onClick={beginCreate}
+              disabled={creating}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo/10 px-3 py-1.5 text-[12px] font-semibold text-indigo hover:bg-indigo/15 disabled:opacity-50 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={2.25} />
+              {t('agentDrawer.newAgent')}
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={creatingName}
+                onChange={(e) => setCreatingName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreate()
+                  else if (e.key === 'Escape') cancelCreate()
+                }}
+                disabled={creating}
+                placeholder={t('agentDrawer.newAgent')}
+                className="w-36 rounded-lg border border-indigo/30 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-[var(--mist)] focus:outline-none focus:ring-2 focus:ring-indigo/25"
+              />
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={creating || !creatingName.trim()}
+                className="inline-flex items-center gap-1 rounded-lg bg-indigo/10 px-2.5 py-1.5 text-[12px] font-semibold text-indigo hover:bg-indigo/15 disabled:opacity-50 transition-colors"
+              >
+                {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" strokeWidth={2.5} />}
+                {t('common.save')}
+              </button>
+              <button
+                type="button"
+                onClick={cancelCreate}
+                disabled={creating}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold text-[var(--fog)] hover:bg-black/5 transition-colors"
+              >
+                <X className="w-3 h-3" strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
         </div>
 
         {error && (
