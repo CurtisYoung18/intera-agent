@@ -394,6 +394,7 @@ export class AgentLoop {
               system: stagePrompt,
               messages: apiMessages,
               tools: stageTools,
+              tool_choice: { type: 'auto', disable_parallel_tool_use: false },
               ...(this.deps.config.showThinking ? {
                 thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
               } : {}),
