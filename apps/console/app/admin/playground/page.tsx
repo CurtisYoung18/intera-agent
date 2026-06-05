@@ -294,16 +294,6 @@ export default function PlaygroundPage() {
           source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
         }))
       }
-      // Send conversation history so the model has multi-turn context.
-      // Filter out system notices — only user and agent messages matter.
-      body.messages = chatMessages
-        .filter((m) => m.role === 'user' || m.role === 'agent')
-        .map((m) => ({
-          id: crypto.randomUUID(),
-          role: m.role === 'agent' ? 'assistant' : 'user',
-          content: m.content,
-          createdAt: new Date().toISOString(),
-        }))
 
       const pushNotice = (notice: LifecycleNotice) => {
         setChatMessages(prev => [...prev, { role: 'system' as const, content: '', notice }])

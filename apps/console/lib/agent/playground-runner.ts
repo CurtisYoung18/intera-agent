@@ -5,7 +5,7 @@ import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
 import { createMemoryPersistence, type TraceRecord } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
-import type { SSEEvent, CaseSchemaConfig, ContentBlock, Message } from '@intera/shared/types'
+import type { SSEEvent, CaseSchemaConfig, ContentBlock } from '@intera/shared/types'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext } from './prompt-resolver'
 import { buildModePrompt } from './buildModePrompt'
@@ -36,9 +36,9 @@ export interface PlaygroundResult {
 export async function* runPlaygroundTurn(input: {
   orgId: string; message: string; playgroundConfig: PlaygroundConfig; configId?: string | null
   contentBlocks?: ContentBlock[]
-  previousMessages?: Message[]
+  chatId?: string
 }): AsyncGenerator<SSEEvent> {
-  const { orgId, message, playgroundConfig: pc, previousMessages } = input
+  const { orgId, message, playgroundConfig: pc, chatId: inputChatId } = input
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
 
@@ -83,11 +83,6 @@ export async function* runPlaygroundTurn(input: {
     persistence,     // ← memory port: no DB writes
     dryRun: true,    // ← operational tools mocked, system_info allowed
   })
-
-  // ── Load conversation history (multi-turn context) ──
-  if (previousMessages && previousMessages.length > 0) {
-    agentLoop.loadMessages(previousMessages)
-  }
 
   // ── Collect events from real pipeline and stream them as they fire ──
   let reply = ''
