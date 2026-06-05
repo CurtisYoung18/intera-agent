@@ -767,7 +767,7 @@ export async function POST(request: NextRequest) {
           }
         } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
 
-        let result = await agentLoop.run(userMessage, sendEvent, formAnswers, contentBlocks)
+        let result = await agentLoop.run(userMessage, sendEvent, contentBlocks)
 
         // P0-2: Drain queued messages that arrived during the run but after the last iteration's drain.
         // BUG-C: followup results must be persisted — capture the last run's result for DB writes.
@@ -803,7 +803,7 @@ export async function POST(request: NextRequest) {
           } catch (_) { /* non-critical */ }
           // Re-load memory from the master loop
           followup.loadMemory(agentLoop.getMemorySummary())
-          result = await followup.run(next.content, sendEvent, next.formAnswers, next.contentBlocks)
+          result = await followup.run(next.content, sendEvent, next.contentBlocks)
           // Persist followup messages immediately so the next drain iteration sees them
           const followupMem = followup.getMemorySummary()
           if (result.messages.length > 0) {

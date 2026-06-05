@@ -186,7 +186,7 @@ export async function* runPlaygroundTurn(input: {
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
-      await agentLoop.run(message, sendEvent, undefined, input.contentBlocks)
+      await agentLoop.run(message, sendEvent, input.contentBlocks)
     } catch (err) {
       pending.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
     } finally {

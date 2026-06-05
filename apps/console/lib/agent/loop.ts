@@ -173,7 +173,6 @@ export class AgentLoop {
   async run(
     userMessage: string,
     rawSendEvent: (event: SSEEvent) => void,
-    preIngestedFacts?: Record<string, string>,
     contentBlocks?: import('@intera/shared/types').ContentBlock[],
   ): Promise<LoopResult> {
     // One-time log on first run
@@ -205,28 +204,7 @@ export class AgentLoop {
     await this.traceWriter.write('user_message', 'User sent message', userMessage)
     await this.traceWriter.writeAgentTreeNode(agentName, 0, chainId, 'run start')
 
-    // 2. Ingest facts into Case Memory (LLM-based extraction)
-    const requiredFacts = this.deps.caseSchema?.requiredFacts
-    await this.chatMemory.ingestUserMessageFacts(userMessage, requiredFacts)
-
-    // Re-apply structured form answers so they always beat LLM-extracted facts.
-    // LLM extraction may miss fields or overwrite structured data with guesses
-    // (e.g. date: "yesterday" instead of date: "昨天上午10点").
-    if (preIngestedFacts) {
-      this.chatMemory.ingestFormAnswers(preIngestedFacts)
-    }
-
-    sendEvent({
-      type: 'memory_update',
-      data: this.chatMemory.getSummary(),
-      timestamp: new Date().toISOString(),
-    })
-
-    // 2.5 [DEPRECATED] Per-stage sub-agent dispatch removed.
-    // Case agents now run via dispatch_case_agent → Orchestrator background dispatch.
-    // Kept as no-op for backward compat with stream route.
-
-    // 3. ReAct loop
+    // 2. ReAct loop
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
     // S1 tool-result invariant: track why each tool_use didn't produce a real result
