@@ -1,10 +1,12 @@
 'use client'
 
+import { useState } from 'react'
 import {
   Activity, ChevronDown, ChevronLeft,
   CheckCircle2, XCircle, Loader2, Brain,
 } from 'lucide-react'
 import RenderHintCard from '@/components/chat/render-hint-card'
+import CopyButton from '@/components/ui/copy-button'
 import type { PlaygroundTraceStep } from '@/lib/agent/trace-aggregator'
 
 /* ── Types ── */
@@ -254,7 +256,57 @@ function ToolCallCard({
   )
 }
 
+function PromptSection({ label, data, color }: { label: string; data: string; color: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const truncated = data.length > 200 && !expanded
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+          textTransform: 'uppercase', color,
+        }}>{label}</span>
+        <CopyButton text={data} label={`Copy ${label}`} />
+      </div>
+      <div
+        onClick={() => truncated && setExpanded(true)}
+        style={{
+          padding: '8px 10px', borderRadius: 'var(--radius-sm)',
+          background: 'rgba(91,138,247,0.05)',
+          border: '1px solid rgba(91,138,247,0.12)',
+          fontSize: 11, fontFamily: 'var(--font-mono)',
+          color: 'var(--mist)', lineHeight: 1.6,
+          maxHeight: expanded ? 400 : 120, overflowY: 'auto',
+          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          cursor: truncated ? 'pointer' : undefined,
+        }}
+      >
+        {truncated ? data.slice(0, 200) + '…' : data}
+      </div>
+      {truncated && (
+        <button onClick={() => setExpanded(true)} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 10, color: 'var(--indigo)', padding: '2px 0',
+          fontWeight: 600,
+        }}>
+          Show all ({data.length.toLocaleString()} chars)
+        </button>
+      )}
+    </div>
+  )
+}
+
 function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceStep; isExpanded: boolean; tb: (k: string) => string }) {
+  const hasPromptData = !!step.promptData && (!!step.promptData.systemPrompt || (step.promptData.messages?.length ?? 0) > 0)
+
+  const formatMessages = (msgs: unknown[]): string => {
+    try {
+      return JSON.stringify(msgs, null, 2)
+    } catch {
+      return String(msgs)
+    }
+  }
+
   return (
     <div>
       <div style={{
@@ -278,15 +330,30 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
           </span>
         )}
       </div>
-      {isExpanded && step.summary && step.summary !== '(no summary)' && (
-        <div style={{
-          margin: '0 14px 8px 26px', padding: '8px 10px',
-          background: 'var(--surface)',
-          borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
-          fontSize: 11, color: 'var(--mist)', lineHeight: 1.6,
-          maxHeight: 80, overflowY: 'auto',
-        }}>
-          {step.summary}
+      {isExpanded && (
+        <div style={{ margin: '0 14px 8px 26px' }}>
+          {hasPromptData ? (
+            <>
+              {step.promptData!.systemPrompt && (
+                <PromptSection label="System Prompt" data={step.promptData!.systemPrompt} color="var(--indigo)" />
+              )}
+              {(step.promptData!.messages?.length ?? 0) > 0 && (
+                <PromptSection label="Messages (IN)" data={formatMessages(step.promptData!.messages)} color="var(--indigo)" />
+              )}
+            </>
+          ) : (
+            step.summary && step.summary !== '(no summary)' && (
+              <div style={{
+                padding: '8px 10px',
+                background: 'var(--surface)',
+                borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
+                fontSize: 11, color: 'var(--mist)', lineHeight: 1.6,
+                maxHeight: 80, overflowY: 'auto',
+              }}>
+                {step.summary}
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
@@ -294,11 +361,11 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
 }
 
 function TurnSection({
-  turnIdx, steps, turnMs, isExpanded, isLatest, isResponding, expandedTools, onToggleTool, tb,
+  turnIdx, steps, turnMs, isExpanded, isLatest, isResponding, expandedTools, onToggleTool, onToggleTurn, tb,
 }: {
   turnIdx: number; steps: PlaygroundTraceStep[]; turnMs: number
   isExpanded: boolean; isLatest: boolean; isResponding: boolean
-  expandedTools: Set<string>; onToggleTool: (key: string) => void
+  expandedTools: Set<string>; onToggleTool: (key: string) => void; onToggleTurn: (idx: number) => void
   tb: (k: string) => string
 }) {
   let turnInput = 0, turnOutput = 0, cacheRead = 0
@@ -325,7 +392,7 @@ function TurnSection({
         padding: '10px 14px', cursor: 'pointer',
         borderBottom: isExpanded ? 'none' : '1px solid var(--border-subtle)',
       }}
-        onClick={() => {/* toggled by parent */}}
+        onClick={() => onToggleTurn(turnIdx)}
       >
         <div style={{
           width: 3, height: 22, borderRadius: 2, flexShrink: 0,
@@ -546,6 +613,7 @@ export default function TraceSidebar({
                 isResponding={responding}
                 expandedTools={expandedTools}
                 onToggleTool={onToggleTool}
+                onToggleTurn={onToggleTurn}
                 tb={tb}
               />
             ))}

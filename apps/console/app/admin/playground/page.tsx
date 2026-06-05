@@ -445,6 +445,9 @@ export default function PlaygroundPage() {
       setError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setResponding(false)
+      // Clean up trailing empty turns (race condition: trace event may arrive after responding=false)
+      setTurnTraces(prev => prev.length > 0 && prev[prev.length - 1].length === 0 ? prev.slice(0, -1) : prev)
+      setTurnTotalMs(prev => prev.length > 0 && prev[prev.length - 1] === 0 ? prev.slice(0, -1) : prev)
       const archivedThinking = thinkingAccRef.current
       setReply(r => {
         if (r) setChatMessages(prev => [...prev, { role: 'agent' as const, content: r, thinking: archivedThinking || undefined }])
