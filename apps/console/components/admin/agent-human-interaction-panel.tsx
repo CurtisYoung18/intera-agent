@@ -30,8 +30,7 @@ export default function AgentHumanInteractionPanel({
     : []
 
   useEffect(() => {
-    fetch('/api/admin/skills')
-      .then((r) => r.json())
+    fetch('/api/admin/skills').then(r => r.json()).then(d => d.data || d)
       .then((data) => {
         const skills = Array.isArray(data.skills) ? data.skills : []
         setAvailableSkills(skills.filter((s: SkillRow) => s.enabled))

@@ -54,8 +54,7 @@ export default function GuardrailSummaryList({ policyHooks }: Props) {
   const [loadErr, setLoadErr] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin/policies')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
+    fetch('/api/admin/policies').then(r => r.ok ? r.json().then(d => d.data || d) : Promise.reject(new Error()))
       .then((d) => setCatalog((d.policies || []) as PolicyRow[]))
       .catch(() => setLoadErr(true))
   }, [])

@@ -33,7 +33,7 @@ export function useCapabilityBindings(agentId: string | null) {
     setLoading(true)
     try {
       const r = await fetch(`/api/admin/agent?agentId=${agentId}`)
-      const d = await r.json()
+      const resp = await r.json(); const d = resp.data || resp
       if (d.config) {
         const raw = d.config.capabilityBindings
         if (typeof raw === 'string') {
@@ -85,8 +85,7 @@ export function useAllVersionBindings(agentId: string | null) {
 
   useEffect(() => {
     if (!agentId) { setLoading(false); return }
-    fetch('/api/admin/agent-configs')
-      .then(r => r.json())
+    fetch('/api/admin/agent-configs').then(r => r.json()).then(d => d.data || d)
       .then(d => {
         const map = new Map<string, { guardrails: Set<string>; tools: Set<string>; caseTypes: Set<string>; knowledge: Set<string> }>()
         if (d.configs?.length) {

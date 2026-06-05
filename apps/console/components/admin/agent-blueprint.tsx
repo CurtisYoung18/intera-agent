@@ -38,8 +38,7 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
   // Fetch agent config (model, memory, capabilityBindings)
   useEffect(() => {
     if (!agentId) return
-    fetch(`/api/admin/agent?agentId=${agentId}`)
-      .then(r => r.json())
+    fetch(`/api/admin/agent?agentId=${agentId}`).then(r => r.json()).then(d => d.data || d)
       .then(d => {
         const cfg = d.config || {}
         if (cfg.model) setAgentModel(cfg.model)
@@ -67,10 +66,10 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
   // Fetch library data for drift detection
   useEffect(() => {
     Promise.all([
-      fetch('/api/admin/policies').then(r => r.ok ? r.json() : null),
-      fetch('/api/admin/skills').then(r => r.ok ? r.json() : null),
-      fetch('/api/admin/case-types').then(r => r.ok ? r.json() : null),
-      fetch('/api/admin/knowledge/sources').then(r => r.ok ? r.json() : null),
+      fetch('/api/admin/policies').then(r => r.ok ? r.json().then(d => d.data || d) : null),
+      fetch('/api/admin/skills').then(r => r.ok ? r.json().then(d => d.data || d) : null),
+      fetch('/api/admin/case-types').then(r => r.ok ? r.json().then(d => d.data || d) : null),
+      fetch('/api/admin/knowledge/sources').then(r => r.ok ? r.json().then(d => d.data || d) : null),
     ])
       .then(([policiesData, skillsData, caseTypesData, knowledgeData]) => {
         const policyNames = new Set<string>((policiesData?.policies || []).map((p: { name: string }) => p.name))
@@ -113,8 +112,7 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
 
   // Fetch case-type info for sub-agent preview
   useEffect(() => {
-    fetch('/api/admin/case-types')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
+    fetch('/api/admin/case-types').then(r => r.ok ? r.json().then(d => d.data || d) : Promise.reject(new Error()))
       .then((d) => {
         const types = (d.types || []) as Array<{
           type: string; displayName: string; enabled: boolean; stageConfigs: string | null

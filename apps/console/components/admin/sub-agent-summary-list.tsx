@@ -29,8 +29,7 @@ export default function SubAgentSummaryList() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/admin/case-types')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    fetch('/api/admin/case-types').then(r => r.ok ? r.json().then(d => d.data || d) : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((d) => setCaseTypes((d.types || []) as CaseTypeRow[]))
       .catch((e) => setError(e.message || 'Failed to load'))
       .finally(() => setLoading(false))

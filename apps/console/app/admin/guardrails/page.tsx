@@ -121,7 +121,7 @@ export default function PoliciesPage() {
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/policies')
     const data = await res.json()
-    setItems(data.policies || [])
+    setItems((data.data || data).policies || [])
     setLoading(false)
   }, [])
 
@@ -131,8 +131,9 @@ export default function PoliciesPage() {
     fetch('/api/admin/agent')
       .then((r) => r.json())
       .then((d) => {
+        const p = d.data || d
         try {
-          const hooks = typeof d.config?.policyHooks === 'string' ? JSON.parse(d.config.policyHooks) : d.config?.policyHooks
+          const hooks = typeof p.config?.policyHooks === 'string' ? JSON.parse(p.config.policyHooks) : p.config?.policyHooks
           const names = new Set<string>()
           for (const key of ['preTool', 'postTool', 'preFinalize']) {
             if (Array.isArray(hooks?.[key])) {
@@ -149,8 +150,9 @@ export default function PoliciesPage() {
     fetch('/api/admin/policies/stats')
       .then((r) => r.json())
       .then((d) => {
+        const p = d.data || d
         const m = new Map<string, number>()
-        for (const s of d.stats || []) m.set(s.name, s.hits)
+        for (const s of p.stats || []) m.set(s.name, s.hits)
         setHitStats(m)
       })
       .catch(() => {})
@@ -159,7 +161,7 @@ export default function PoliciesPage() {
   useEffect(() => {
     fetch('/api/admin/skills')
       .then((r) => r.json())
-      .then((d) => setAllSkills((d.skills || []).map((s: { name: string }) => s.name)))
+      .then((d) => { const p = d.data || d; setAllSkills((p.skills || []).map((s: { name: string }) => s.name)) })
       .catch(() => {})
   }, [])
 

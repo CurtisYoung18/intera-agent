@@ -251,7 +251,7 @@ export default function AgentVersionPicker({
       // If we deleted the one currently selected, fall back to the active sibling
       // of the same name (or any other row).
       if (id === agentId) {
-        const list = await fetch('/api/admin/agent-configs').then(r => r.json())
+        const resp = await fetch('/api/admin/agent-configs').then(r => r.json()); const list = resp.data || resp
         const all: AgentVersion[] = list.configs || []
         const fallback =
           (currentName ? all.find(v => v.name === currentName && v.isActive) : null) ??

@@ -126,8 +126,9 @@ export default function ConsoleSidebar() {
     fetch('/api/auth/session')
       .then((r) => r.json())
       .then((d) => {
-        if (d.customerName) setCustomerName(d.customerName)
-        setIsStaff(d.isAuthenticated === true)
+        const p = d.data || d
+        if (p.customerName) setCustomerName(p.customerName)
+        setIsStaff(p.isAuthenticated === true)
       })
       .catch(() => {})
   }, [])
@@ -143,8 +144,7 @@ export default function ConsoleSidebar() {
   const loadCustomers = useCallback(async () => {
     setCustomersLoading(true)
     try {
-      const res = await fetch('/api/admin/customers')
-      const data = await res.json()
+      const data = await fetch('/api/admin/customers').then(r => r.json()).then(d => d.data || d)
       setCustomers(data.customers || [])
     } catch {
       // ignore

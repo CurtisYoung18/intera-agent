@@ -227,8 +227,8 @@ export default function PlaygroundPage() {
         }),
       })
       if (!res.ok) { setToastMessage(`Save failed: HTTP ${res.status}`); setTimeout(() => setToastMessage(''), 4000); return }
-      const data = await res.json()
-      setSavedChatId(data.chatId)
+      const data = await res.json(); const p = data.data || data
+      setSavedChatId(p.chatId)
       setToastMessage('Saved to Chat!')
       setTimeout(() => setToastMessage(''), 4000)
     } catch (err) {

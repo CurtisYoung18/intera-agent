@@ -225,7 +225,7 @@ export default function AgentManagementDrawer({
       }
       // If the deleted agent was the active one, fall back to first remaining
       if (groups.find(g => g.name === name)?.active?.id === activeAgentId) {
-        const list = await fetch('/api/admin/agent-configs').then(r => r.json())
+        const resp = await fetch('/api/admin/agent-configs').then(r => r.json()); const list = resp.data || resp
         const all = (list.configs || []) as AgentVersion[]
         const fallback = all[0]
         if (fallback) onSelectAgent(fallback.id)
@@ -255,7 +255,7 @@ export default function AgentManagementDrawer({
       // If we deleted the active one, fall back to the first remaining (the
       // server already auto-promoted a sibling inside the same transaction).
       if (v.id === activeAgentId) {
-        const list = await fetch('/api/admin/agent-configs').then(r => r.json())
+        const resp = await fetch('/api/admin/agent-configs').then(r => r.json()); const list = resp.data || resp
         const all = (list.configs || []) as AgentVersion[]
         const sameActive = all.find(x => x.name === v.name && x.isActive)
         const fallback = sameActive ?? all[0]

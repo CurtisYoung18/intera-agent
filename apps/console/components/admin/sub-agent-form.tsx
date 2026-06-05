@@ -271,8 +271,7 @@ function GuardrailsSection({ value, onChange }: Pick<Props, 'value' | 'onChange'
 
   useEffect(() => {
     if (!expanded || loaded) return
-    fetch('/api/admin/policies')
-      .then((r) => r.json())
+    fetch('/api/admin/policies').then(r => r.json()).then(d => d.data || d)
       .then((d) => setGlobalPolicies((d.policies || []) as PolicyItem[]))
       .catch(() => {})
       .finally(() => setLoaded(true))
