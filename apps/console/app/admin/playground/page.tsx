@@ -130,7 +130,7 @@ export default function PlaygroundPage() {
   const prevAgentIdRef = useRef<string | null>(null)
   const hasRestoredRef = useRef(false)
   const isRestoringRef = useRef(false)
-  const hasLoadedAgentConfigRef = useRef(false)
+  const prevAgentConfigIdRef = useRef<string | null>(null)
 
   // ── Message queue (allow typing while responding) ──
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
@@ -152,7 +152,9 @@ export default function PlaygroundPage() {
   useEffect(() => {
     // On mount, if chatId exists from localStorage, restore that session directly.
     // On agent switch (selectedAgentId changes), clear and search for latest session.
-    const isAgentSwitch = hasRestoredRef.current && prevAgentIdRef.current !== selectedAgentId
+    // prevAgentIdRef starts null → null !== anything is true, so guard with != null
+    // to skip the initial context load (undefined → realId).
+    const isAgentSwitch = hasRestoredRef.current && prevAgentIdRef.current != null && prevAgentIdRef.current !== selectedAgentId
     hasRestoredRef.current = true
     prevAgentIdRef.current = selectedAgentId
 
@@ -162,7 +164,6 @@ export default function PlaygroundPage() {
     if (isAgentSwitch) {
       setChatId(null)
       setChatMessages([])
-      setTurnTraces([])
       setTurnTotalMs([])
       setReply('')
       setError('')
@@ -302,14 +303,15 @@ export default function PlaygroundPage() {
     setSelectedIsActive(selected?.isActive ?? false)
     setSelectedVersion(selected?.version ?? null)
     // Reset traces only on actual agent switch (not on first agent-config load)
-    if (hasLoadedAgentConfigRef.current) {
+    const isAgentSwitch = prevAgentConfigIdRef.current !== null && prevAgentConfigIdRef.current !== selectedAgentId
+    if (isAgentSwitch) {
       setTurnTraces([])
       setTurnTotalMs([])
       turnNumRef.current = 0
       setExpandedTurns(new Set())
       setExpandedTools(new Set())
     }
-    hasLoadedAgentConfigRef.current = true
+    prevAgentConfigIdRef.current = selectedAgentId
 
     fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
       .then(r => r.json())
