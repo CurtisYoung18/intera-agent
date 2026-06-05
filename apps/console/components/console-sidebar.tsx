@@ -196,16 +196,16 @@ export default function ConsoleSidebar() {
     <>
       <aside
         className={`relative z-20 flex min-h-0 flex-shrink-0 flex-col overflow-hidden transition-[width] duration-300 ease-out
-          glass-sidebar-dark
+          bg-white/50 backdrop-blur-2xl border-r border-black/5
           ${collapsed ? 'w-14' : 'w-56'} h-full`}
       >
-        <div className="relative z-30 flex-shrink-0 border-b border-white/[0.06] pb-3 pt-3">
+        <div className="relative z-30 flex-shrink-0 border-b border-black/[0.05] pb-3 pt-3">
           {collapsed ? (
             <div className="flex flex-col items-center px-2">
               <button
                 type="button"
                 onClick={() => setCollapsed(false)}
-                className="flex w-full flex-col items-center gap-2 rounded-xl p-3 text-[var(--fog)] transition-colors hover:bg-white/[0.06] hover:text-indigo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25 focus-visible:ring-offset-2"
+                className="flex w-full flex-col items-center gap-2 rounded-xl p-3 text-[var(--fog)] transition-colors hover:bg-black/[0.04] hover:text-indigo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25 focus-visible:ring-offset-2"
                 aria-label={t('sidebar.expandAria')}
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
@@ -234,7 +234,7 @@ export default function ConsoleSidebar() {
 
         {/* Agent switcher — always visible below logo */}
         {!collapsed && (
-          <div className="flex-shrink-0 px-3 py-2 border-b border-white/[0.06]">
+          <div className="flex-shrink-0 px-3 py-2 border-b border-black/[0.04]">
             <div className="flex items-center gap-1.5">
               <div className="flex-1 min-w-0">
                 <AgentVersionPicker
@@ -246,7 +246,7 @@ export default function ConsoleSidebar() {
               <button
                 type="button"
                 onClick={() => setAgentDrawerOpen(true)}
-                className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/[0.08] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
+                className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-black/[0.05] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
                 title={t('sidebar.openAgents')}
               >
                 <Settings className="w-3.5 h-3.5" />
@@ -260,14 +260,14 @@ export default function ConsoleSidebar() {
           <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
         </nav>
 
-        <div className="border-t border-white/[0.06]">
+        <div className="border-t border-black/5">
           {/* Controls panel — opens upward from bottom */}
           {avatarOpen && !collapsed && (
-            <div className="px-3 pt-2 pb-1 space-y-0.5 border-b border-white/[0.06]">
+            <div className="px-3 pt-2 pb-1 space-y-0.5 border-b border-black/[0.04]">
               <button
                 type="button"
                 onClick={() => toggleLocale()}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-white/[0.06] rounded-lg transition-all"
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
               >
                 <Languages className="w-3 h-3 flex-shrink-0" />
                 <span className="truncate">{langButtonLabel}</span>
@@ -277,14 +277,14 @@ export default function ConsoleSidebar() {
               <button
                 type="button"
                 onClick={handleSwitchClick}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-white/[0.06] rounded-lg transition-all"
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
               >
                 <Building2 className="w-3 h-3 flex-shrink-0" /> {t('sidebar.switchProject')}
               </button>
               )}
 
               {isStaff && switchOpen && (
-                <div className="ml-4 py-1 space-y-0.5 border-l border-white/[0.08] pl-2">
+                <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
                   {customersLoading ? (
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--fog)] py-1">
                       <Loader2 className="w-3 h-3 animate-spin" /> Loading…
@@ -295,7 +295,7 @@ export default function ConsoleSidebar() {
                         key={c.id}
                         type="button"
                         onClick={() => handleCustomerSelect(c)}
-                        className="w-full flex items-center gap-2 px-2 py-1 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-white/[0.05] rounded-md transition-all text-left"
+                        className="w-full flex items-center gap-2 px-2 py-1 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03] rounded-md transition-all text-left"
                       >
                         {c.hasPassword ? (
                           <Lock className="w-3 h-3 text-amber flex-shrink-0" />
@@ -312,7 +312,7 @@ export default function ConsoleSidebar() {
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-vermillion hover:bg-vermillion/10 rounded-lg transition-all"
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-vermillion hover:bg-vermillion/5 rounded-lg transition-all"
               >
                 <LogOut className="w-3 h-3 flex-shrink-0" /> {t('sidebar.signOut')}
               </button>
@@ -323,7 +323,7 @@ export default function ConsoleSidebar() {
           <button
             type="button"
             onClick={() => { setAvatarOpen(!avatarOpen); setSwitchOpen(false) }}
-            className={`w-full flex items-center gap-2.5 px-3 transition-all ${collapsed ? 'justify-center py-2.5' : 'py-2 hover:bg-white/[0.04]'}`}
+            className={`w-full flex items-center gap-2.5 px-3 transition-all ${collapsed ? 'justify-center py-2.5' : 'py-2 hover:bg-black/[0.02]'}`}
             aria-expanded={avatarOpen}
           >
             <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
@@ -338,7 +338,7 @@ export default function ConsoleSidebar() {
           </button>
 
           {!collapsed && (
-            <p className="text-[9px] text-[var(--smoke)] font-mono px-3 pb-2">{t('shell.version')}</p>
+            <p className="text-[9px] text-[var(--fog)]/40 font-mono px-3 pb-2">{t('shell.version')}</p>
           )}
         </div>
       </aside>
@@ -370,7 +370,7 @@ function NavGroup({
   return (
     <div>
       {!collapsed && (
-        <p className="px-2.5 mb-1 text-[9px] font-semibold tracking-[0.12em] uppercase text-[var(--smoke)]">
+        <p className="px-2.5 mb-1 text-[9px] font-semibold tracking-[0.12em] uppercase text-[var(--fog)]/40">
           {label}
         </p>
       )}
@@ -387,8 +387,8 @@ function NavGroup({
                 collapsed ? 'justify-center py-2.5 px-0' : 'gap-2.5 px-2.5 py-2'
               } ${
                 active
-                  ? 'nav-item-active-dark'
-                  : 'hover:bg-white/[0.05]'
+                  ? 'bg-black/[0.04]'
+                  : 'hover:bg-black/[0.02]'
               }`}
             >
               {active && (
@@ -408,7 +408,7 @@ function NavGroup({
                 }`}>
                   {itemLabel}
                   {item.badge && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-indigo/15 px-1.5 py-0.5 text-[9px] font-semibold text-indigo">
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-indigo/10 px-1.5 py-0.5 text-[9px] font-semibold text-indigo">
                       {item.badge}
                     </span>
                   )}
