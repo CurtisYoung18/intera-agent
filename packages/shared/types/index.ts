@@ -467,6 +467,7 @@ export type SSEEventType =
   | 'core_agent_progress'
   | 'policy_blocked'
   | 'retry_pending'
+  | 'session_init'
   | 'escalated'
   | 'trace'
   | 'llm_request_start'
