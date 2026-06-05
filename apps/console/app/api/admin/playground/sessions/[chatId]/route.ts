@@ -26,6 +26,13 @@ export const GET = defineRoute<void, { chatId: string }>({
       select: { id: true, role: true, content: true, contentBlocks: true, createdAt: true },
     })
 
+    // Load traces for this case
+    const traces = await repo.raw.actionTrace.findMany({
+      where: { caseId: c.id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, actionType: true, title: true, detail: true, payload: true, createdAt: true },
+    })
+
     return apiOk({
       chatId: params.chatId,
       messages: messages.map((m) => ({
@@ -34,6 +41,14 @@ export const GET = defineRoute<void, { chatId: string }>({
         content: m.content,
         contentBlocks: m.contentBlocks,
         createdAt: m.createdAt.toISOString(),
+      })),
+      traces: traces.map((t) => ({
+        id: t.id,
+        actionType: t.actionType,
+        title: t.title,
+        detail: t.detail,
+        payload: t.payload,
+        createdAt: t.createdAt.toISOString(),
       })),
     })
   },
