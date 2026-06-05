@@ -102,6 +102,7 @@ export default function PlaygroundPage() {
   const [responding, setResponding] = useState(false)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([])
   const [turnTraces, setTurnTraces] = useState<any[][]>([])
+  const [turnTotalMs, setTurnTotalMs] = useState<number[]>([])
   const turnNumRef = useRef(0)
   const [collapsedTraces, setCollapsedTraces] = useState<Set<string>>(new Set())
   const [showSkipped, setShowSkipped] = useState(false)
@@ -134,6 +135,7 @@ export default function PlaygroundPage() {
     setSelectedVersion(selected?.version ?? null)
     // Reset traces on agent change
     setTurnTraces([])
+    setTurnTotalMs([])
     turnNumRef.current = 0
     setCollapsedTraces(new Set())
 
@@ -248,6 +250,7 @@ export default function PlaygroundPage() {
     thinkingAccRef.current = ''
     turnNumRef.current += 1
     setTurnTraces(prev => [...prev, []])
+    setTurnTotalMs(prev => [...prev, 0])
     setLiveTools([])
     setFormRequest(null)
     setError('')
@@ -339,6 +342,11 @@ export default function PlaygroundPage() {
               setTurnTraces(prev => {
                 const next = [...prev]
                 if (next.length > 0) next[next.length - 1] = t
+                return next
+              })
+              setTurnTotalMs(prev => {
+                const next = [...prev]
+                if (next.length > 0) next[next.length - 1] = (event.data as any).totalMs ?? 0
                 return next
               })
             }
@@ -962,13 +970,13 @@ export default function PlaygroundPage() {
           >
             {/* Aggregate token/timing summary — always visible */}
             {(() => {
-              let totalInput = 0, totalOutput = 0, totalMs = 0
+              let totalInput = 0, totalOutput = 0
               for (const steps of turnTraces) {
                 for (const step of steps) {
                   if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
-                  totalMs += step.ms || 0
                 }
               }
+              const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)
               if (totalInput > 0 || totalOutput > 0) {
                 return (
                   <div style={{ fontSize: 9, color: 'var(--fog)', padding: '4px 0', fontVariantNumeric: 'tabular-nums', display: 'flex', gap: 6 }}>
@@ -1076,14 +1084,14 @@ export default function PlaygroundPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {/* ── Aggregate stats summary ── */}
                 {(() => {
-                  let totalInput = 0, totalOutput = 0, totalMs = 0, totalTools = 0
+                  let totalInput = 0, totalOutput = 0, totalTools = 0
                   for (const steps of turnTraces) {
                     for (const step of steps) {
                       if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
-                      totalMs += step.ms || 0
                       if (step.stage === 'Skills & tools') totalTools++
                     }
                   }
+                  const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)
                   if (totalInput === 0 && totalOutput === 0 && totalTools === 0) return null
                   return (
                     <div style={{
