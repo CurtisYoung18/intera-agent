@@ -112,7 +112,17 @@ export async function* runPlaygroundTurn(input: {
         }),
         createdAt: new Date().toISOString(),
       })
-    } else if (['policy_hit', 'skill_called', 'skill_result', 'stage_eval', 'llm_response'].includes(event.type as string)) {
+    } else if (event.type === 'llm_response') {
+      const d = event.data as any
+      const usageData = d?.usage || {}
+      memoryTraces.push({
+        caseId: turnId,
+        actionType: 'llm_response',
+        title: `LLM response: ${d?.stopReason || 'complete'}`,
+        detail: JSON.stringify({ usage: { input_tokens: usageData.input_tokens, output_tokens: usageData.output_tokens } }),
+        createdAt: new Date().toISOString(),
+      })
+    } else if (['policy_hit', 'skill_called', 'skill_result', 'stage_eval'].includes(event.type as string)) {
       memoryTraces.push({
         caseId: turnId,
         actionType: event.type as string,

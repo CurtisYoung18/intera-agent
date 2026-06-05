@@ -470,6 +470,7 @@ export type SSEEventType =
   | 'escalated'
   | 'trace'
   | 'llm_request_start'
+  | 'llm_response'
   | 'error'
 
 /** Option presented in an interaction card. */

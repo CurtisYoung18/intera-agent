@@ -659,6 +659,11 @@ export class AgentLoop {
           })
         }
         await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames, this.deps.config.model)
+        sendEvent({
+          type: 'llm_response',
+          data: { stopReason, usage, iteration: this.iterationCount, model: this.deps.config.model, textPreview: fullText.slice(0, 3000) },
+          timestamp: new Date().toISOString(),
+        })
         this.profiler.addTokens(
           Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
           Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),

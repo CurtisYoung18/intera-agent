@@ -912,36 +912,52 @@ export default function PlaygroundPage() {
             count={liveTools.length}
             maxHeight={260}
           >
+            {/* Aggregate token/timing summary — always visible */}
+            {(() => {
+              let totalInput = 0, totalOutput = 0, totalMs = 0
+              for (const steps of turnTraces) {
+                for (const step of steps) {
+                  if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
+                  totalMs += step.ms || 0
+                }
+              }
+              if (totalInput > 0 || totalOutput > 0) {
+                return (
+                  <div style={{ fontSize: 9, color: 'var(--fog)', padding: '4px 0', fontVariantNumeric: 'tabular-nums', display: 'flex', gap: 6 }}>
+                    <span>↑{totalInput} ↓{totalOutput}</span><span style={{opacity:0.3}}>·</span><span>{totalMs}ms</span><span style={{opacity:0.3}}>·</span><span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
             {liveTools.length === 0 ? (
-              <SidebarEmpty>
-                {(() => {
-                  // Compute token + timing summary from latest turn traces
-                  const lastTurn = turnTraces[turnTraces.length - 1]
-                  if (!lastTurn || lastTurn.length === 0) return 'Tools called by the agent will appear here.'
-                  let totalInput = 0, totalOutput = 0, totalMs = 0
-                  for (const step of lastTurn) {
-                    if (step.usage) {
-                      totalInput += step.usage.inputTokens || 0
-                      totalOutput += step.usage.outputTokens || 0
-                    }
-                    totalMs += step.ms || 0
-                  }
-                  if (totalInput === 0 && totalOutput === 0) return 'Tools called by the agent will appear here.'
-                  return `↑${totalInput} ↓${totalOutput} tokens · ${totalMs}ms total`
-                })()}
-              </SidebarEmpty>
+              <SidebarEmpty>Tools called by the agent will appear here.</SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {liveTools.map((t, i) => (
-                  <div
-                    key={`${t.name}-${i}`}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '8px 10px', borderRadius: 10,
-                      background: 'rgba(255,255,255,0.55)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
+                {liveTools.map((t, i) => {
+                  const toolKey = `tool-${i}`
+                  const expanded = !collapsedTraces.has(toolKey)
+                  return (
+                  <div key={toolKey}>
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 10px', borderRadius: 10,
+                        background: 'rgba(255,255,255,0.55)',
+                        border: '1px solid var(--border-subtle)',
+                        cursor: (t.status === 'done' || t.status === 'error') ? 'pointer' : 'default',
+                      }}
+                      onClick={() => {
+                        if (t.status === 'done' || t.status === 'error') {
+                          setCollapsedTraces(prev => {
+                            const next = new Set(prev)
+                            if (next.has(toolKey)) { next.delete(toolKey) } else { next.add(toolKey) }
+                            return next
+                          })
+                        }
+                      }}
+                    >
                     {t.status === 'running' ? (
                       <OrganicLoader icon="spin" size={14} className="text-indigo" />
                     ) : (
@@ -964,7 +980,22 @@ export default function PlaygroundPage() {
                           : ''}
                     </span>
                   </div>
-                ))}
+                  {expanded && (t.status === 'done' || t.status === 'error') && t.result !== undefined && (
+                    <div style={{
+                      marginLeft: 28, marginTop: 2, marginBottom: 4,
+                      padding: '6px 10px', borderRadius: 8,
+                      background: 'rgba(0,0,0,0.03)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: 10, color: 'var(--fog)',
+                      maxHeight: 160, overflow: 'auto',
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      fontFamily: 'monospace',
+                    }}>
+                      {typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2)}
+                    </div>
+                  )}
+                  </div>
+                )})}
                 {/* ── RenderHint display for completed tools ── */}
                 {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
                   const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.["web-chat"] || null
