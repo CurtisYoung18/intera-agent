@@ -22,6 +22,11 @@ export const en: Record<string, string> = {
   'sidebar.memory': 'Memory',
   'sidebar.members': 'Members',
 
+  'playground.resetSession': 'Reset',
+  'playground.resetSessionHint': 'Clear current session and start fresh',
+  'playground.noSessions': 'No sessions yet. Send a message to start.',
+  'playground.sessionRestored': 'Previous session restored',
+
   'guide.hero.eyebrow': 'Intera',
   'guide.hero.title': 'How Intera runs',
   'guide.hero.lead':
@@ -1510,6 +1515,10 @@ export const zh: Record<string, string> = {
   'sidebar.operate': '运营',
   'sidebar.playground': '预览与调试',
   'sidebar.chats': '对话',
+  'playground.resetSession': '重置',
+  'playground.resetSessionHint': '清除当前会话，重新开始',
+  'playground.noSessions': '暂无会话，发送消息开始',
+  'playground.sessionRestored': '已恢复上次会话',
   'sidebar.users': '用户',
   'sidebar.dashboards': '仪表盘',
   'sidebar.cases': '案例',

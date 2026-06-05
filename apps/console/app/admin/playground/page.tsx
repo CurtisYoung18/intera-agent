@@ -114,6 +114,7 @@ export default function PlaygroundPage() {
   const [toastMessage, setToastMessage] = useState('')
   const [savingToChat, setSavingToChat] = useState(false)
   const [savedChatId, setSavedChatId] = useState<string | null>(null)
+  const [chatId, setChatId] = useState<string | null>(null)
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -139,6 +140,31 @@ export default function PlaygroundPage() {
     }
     respondingRef.current = responding
   }, [responding])
+
+  // ── Restore session on mount ──
+  useEffect(() => {
+    let cancelled = false
+    async function restore() {
+      try {
+        const res = await fetch('/api/admin/playground/sessions')
+        if (!res.ok || cancelled) return
+        const data = await res.json() as { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> }
+        const latestSession = data.sessions?.[0]
+        if (!latestSession) return
+        const detailRes = await fetch(`/api/admin/playground/sessions/${latestSession.chatId}`)
+        if (!detailRes.ok || cancelled) return
+        const detail = await detailRes.json() as { chatId: string; messages: Array<{ id: string; role: string; content: string; contentBlocks?: unknown; createdAt: string }> }
+        if (cancelled) return
+        setChatId(detail.chatId)
+        setChatMessages(detail.messages.map((m) => ({
+          role: m.role === 'assistant' ? 'agent' as const : 'user' as const,
+          content: m.content,
+        })))
+      } catch { /* session restore is best-effort */ }
+    }
+    restore()
+    return () => { cancelled = true }
+  }, [])
 
   /* ── Data loading ── */
 
@@ -288,6 +314,7 @@ export default function PlaygroundPage() {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
       body.config = { debug: debugMode, showThinking: showThinkingRef.current }
+      if (chatId) body.chatId = chatId
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({
           type: 'image',
@@ -326,6 +353,12 @@ export default function PlaygroundPage() {
             if (event.type === 'text_delta') setReply(r => r + event.data)
             else if (event.type === 'thinking_delta') {
               thinkingAccRef.current += event.data
+            }
+            else if (event.type === 'session_init') {
+              const d = event.data as { chatId: string; caseId: string }
+              if (d?.chatId && !chatId) {
+                setChatId(d.chatId)
+              }
             }
             else if (event.type === 'error') {
               const errData = event.data
@@ -475,6 +508,38 @@ export default function PlaygroundPage() {
               }}
             >
               <Brain size={11} /> Thinking
+            </button>
+
+            <button
+              onClick={async () => {
+                if (!chatId) return
+                try {
+                  await fetch(`/api/admin/playground/sessions/${chatId}`, { method: 'DELETE' })
+                } catch { /* best-effort */ }
+                setChatId(null)
+                setChatMessages([])
+                setTurnTraces([])
+                setTurnTotalMs([])
+                setReply('')
+                setError('')
+                setLiveTools([])
+                setSavedChatId(null)
+              }}
+              disabled={!chatId}
+              title="Reset session"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 10, fontWeight: 500, color: chatId ? 'var(--coral)' : 'var(--fog)',
+                background: 'transparent',
+                border: '1px solid transparent',
+                padding: '3px 8px', borderRadius: 8,
+                cursor: chatId ? 'pointer' : 'default',
+                transition: 'all 0.15s',
+                flexShrink: 0,
+                opacity: chatId ? 1 : 0.35,
+              }}
+            >
+              <XCircle size={11} /> Reset
             </button>
 
             <button
