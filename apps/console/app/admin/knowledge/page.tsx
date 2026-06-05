@@ -7,7 +7,7 @@ import {
   Eye, EyeOff, Key, Bot,
 } from 'lucide-react'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
-import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
+import { useCapabilityBindings, toggleItemBinding } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
@@ -64,6 +64,13 @@ const CASE_TYPE_OPTIONS = [
 
 function parseGroupIds(groupIds: string): string[] {
   try { return JSON.parse(groupIds) } catch { return [] }
+}
+
+function parseBoundKnowledge(bindings: string): string[] {
+  try {
+    const cb = JSON.parse(bindings || '{}')
+    return Array.isArray(cb.knowledge) ? cb.knowledge : []
+  } catch { return [] }
 }
 
 // ── Tab Bar ─────────────────────────────────────────────────────────────
@@ -158,16 +165,13 @@ function GptBotsConnection({ gptConnected, gptKbs, gptKbsLoading, onRefresh, onK
 
 // ── Source Card ─────────────────────────────────────────────────────────
 
-function SourceCard({ source, toolName, gptKbs, bindings, onToggle, onEdit, onDelete, onBind, agentId }: {
+function SourceCard({ source, toolName, gptKbs, onToggle, onEdit, onDelete }: {
   source: KnowledgeSource
   toolName: string
   gptKbs: GptBotKb[]
-  bindings: string
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
-  onBind: () => void
-  agentId: string | null
 }) {
   const groupIds = parseGroupIds(source.groupIds)
 
@@ -229,17 +233,6 @@ function SourceCard({ source, toolName, gptKbs, bindings, onToggle, onEdit, onDe
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
-        {agentId && (() => {
-          const stats = checkItemBinding(bindings, 'knowledge', source.name)
-          return (
-            <BindingIndicator
-              isBound={stats.isBound}
-              isDrift={stats.isDrift}
-              otherVersionsBound={stats.otherVersionsBound}
-              onToggle={onBind}
-            />
-          )
-        })()}
       </div>
     </div>
   )
@@ -353,6 +346,9 @@ export default function KnowledgePage() {
   const [gptKbsLoading, setGptKbsLoading] = useState(false)
   const [gptConnected, setGptConnected] = useState<boolean | null>(null)
 
+  // Add source picker
+  const [showAddPicker, setShowAddPicker] = useState(false)
+
   // Test state
   const [testQuery, setTestQuery] = useState('')
   const [testSourceId, setTestSourceId] = useState('')
@@ -399,6 +395,12 @@ export default function KnowledgePage() {
   // ── Tool name helper ───────────────────────────────────────────────
 
   const getToolName = (name: string) => `kb_search_${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+
+  // ── Binding-based filtering ────────────────────────────────────────
+
+  const boundNames = parseBoundKnowledge(bindings)
+  const boundSources = sources.filter(s => boundNames.includes(s.name))
+  const boundEnabledCount = boundSources.filter(s => s.enabled).length
 
   // ── Source CRUD ────────────────────────────────────────────────────
 
@@ -452,6 +454,14 @@ export default function KnowledgePage() {
       setError(t('knowledge.saveFailed'))
     }
   }
+
+  const bindSource = (source: KnowledgeSource) => {
+    const newB = toggleItemBinding(bindings, 'knowledge', source.name)
+    saveBindings(newB)
+    setShowAddPicker(false)
+  }
+
+  const unboundSources = sources.filter(s => !boundNames.includes(s.name))
 
   // ── Test search ────────────────────────────────────────────────────
 
@@ -509,8 +519,8 @@ export default function KnowledgePage() {
               <Bot className="w-4 h-4 text-[var(--indigo)]" />
               <span className="text-[12px] font-semibold text-[var(--indigo)]">
                 {gptConnected
-                  ? <>{sources.filter(s => s.enabled).length} tools active</>
-                  : <>{sources.filter(s => s.enabled).length} sources configured</>
+                  ? <>{boundEnabledCount} tools active</>
+                  : <>{boundEnabledCount} sources configured</>
                 }
               </span>
             </div>
@@ -528,7 +538,7 @@ export default function KnowledgePage() {
           />
 
           {/* Tabs */}
-          <KnowledgeTabs activeTab={activeTab} onTabChange={setActiveTab} sourceCount={sources.length} />
+          <KnowledgeTabs activeTab={activeTab} onTabChange={setActiveTab} sourceCount={boundSources.length} />
 
           {/* Tab content */}
           {activeTab === 'sources' ? (
@@ -536,14 +546,10 @@ export default function KnowledgePage() {
               {/* Sources header */}
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[13px] font-semibold text-[var(--mist)]">
-                  Knowledge Sources ({sources.length})
+                  Knowledge Sources ({boundSources.length})
                 </h2>
                 <button
-                  onClick={() => setEditingSource({
-                    name: '', description: '', groupIds: '[]',
-                    embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank',
-                    docCorrelation: 0.3, caseTypeTag: '', enabled: true,
-                  })}
+                  onClick={() => setShowAddPicker(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card text-[12px] font-semibold text-[var(--malachite)] hover:opacity-80 transition-opacity"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Source
@@ -554,27 +560,23 @@ export default function KnowledgePage() {
                 <div className="flex items-center gap-2 text-[13px] text-[var(--fog)] py-8 justify-center">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading...
                 </div>
-              ) : sources.length === 0 ? (
+              ) : boundSources.length === 0 ? (
                 <div className="glass-card text-center py-12 text-[13px] text-[var(--fog)]">
-                  No knowledge sources configured. Click "Add Source" to connect a GPTBots knowledge base.
+                  {sources.length === 0
+                    ? 'No knowledge sources in your organization. Create a source first.'
+                    : 'No sources bound to this agent. Click "Add Source" to bind one.'}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {sources.map((s) => (
+                  {boundSources.map((s) => (
                     <SourceCard
                       key={s.id}
                       source={s}
                       toolName={getToolName(s.name)}
                       gptKbs={gptKbs}
-                      bindings={bindings}
                       onToggle={() => toggleSource(s)}
                       onEdit={() => setEditingSource({ ...s })}
                       onDelete={() => handleDelete(s.id)}
-                      onBind={() => {
-                        const newB = toggleItemBinding(bindings, 'knowledge', s.name)
-                        saveBindings(newB)
-                      }}
-                      agentId={agentId}
                     />
                   ))}
                 </div>
@@ -795,6 +797,47 @@ export default function KnowledgePage() {
           onConfirm={confirmDelete}
           onCancel={() => setConfirmDeleteId(null)}
         />
+
+        {/* Add Source Picker */}
+        {showAddPicker && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black/20 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowAddPicker(false) }}>
+            <div className="w-full max-w-lg mx-4 glass-card rounded-2xl shadow-2xl max-h-[80vh] overflow-auto">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-subtle)]">
+                <h3 className="text-[15px] font-bold text-[var(--mist)]">Add Source to Agent</h3>
+                <button onClick={() => setShowAddPicker(false)} className="p-1 rounded-lg hover:bg-black/[0.04]">
+                  <XCircle className="w-5 h-5 text-[var(--fog)]" />
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                {unboundSources.length === 0 ? (
+                  <p className="text-[13px] text-[var(--fog)] py-8 text-center">
+                    All organization sources are already bound to this agent.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {unboundSources.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-3 glass-card px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</p>
+                          {s.description && (
+                            <p className="text-[11px] text-[var(--fog)] mt-0.5 line-clamp-1">{s.description}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => bindSource(s)}
+                          className="px-3 py-1.5 rounded-xl bg-[var(--indigo)] text-white text-[11px] font-semibold hover:opacity-90 transition-opacity flex-shrink-0"
+                        >
+                          Bind
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
