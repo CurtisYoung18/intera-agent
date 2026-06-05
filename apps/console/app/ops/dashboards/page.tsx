@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
 import RingProgress from '@/components/ui/ring-progress'
-import WaveChart from '@/components/ui/wave-chart'
 import DotMatrixNumber from '@/components/ui/dot-matrix-number'
 import AnimatedCounter from '@/components/ui/animated-counter'
 
@@ -24,9 +23,9 @@ interface DashboardData {
 const L = {
   title: { en: 'Dashboard', zh: '运营仪表盘' },
   subtitle: { en: 'System overview and health monitoring', zh: '系统概览与健康监控' },
-  messages24h: { en: 'Messages 24h', zh: '24h 消息' },
+  messages24h: { en: 'Messages 24h', zh: '24H 消息' },
   activeCases: { en: 'Active Cases', zh: '活跃案例' },
-  avgResolution: { en: 'Avg Resolution', zh: '平均解决' },
+  avgResolution: { en: 'Avg Resolution', zh: '平均响应' },
   guardrailHits: { en: 'Guardrail Hits', zh: '护栏命中' },
   guardrailHits24h: { en: 'Guardrail Hits (24h)', zh: '护栏命中 (24h)' },
   channelHealth: { en: 'Channel Health', zh: '渠道健康' },
@@ -40,9 +39,6 @@ const L = {
   loading: { en: 'Loading…', zh: '加载中…' },
   noGuardrails: { en: 'No guardrail activity yet.', zh: '暂无护栏活动' },
   viewAll: { en: 'View all', zh: '查看全部' },
-  resolutionRate: { en: 'Resolution Rate', zh: '解决率' },
-  compliance: { en: 'Compliance', zh: '合规率' },
-  messageTrend: { en: 'Message Trend (24h)', zh: '消息趋势 (24h)' },
 } as const
 
 function useL() {
@@ -63,8 +59,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-const sampleTrend = [12, 28, 15, 42, 35, 58, 45, 72, 68, 85, 78, 92, 88, 95, 90, 82, 75, 68, 55, 48, 42, 38, 30, 22]
-
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -82,8 +76,6 @@ export default function DashboardPage() {
 
   const { overview, guardrailHits, channelHealth, recentCases } = data
   const totalGuardrail = guardrailHits.reduce((s, g) => s + g.hits, 0)
-  const resolvedCases = recentCases.filter((c) => c.status === 'resolved').length
-  const resolutionRate = recentCases.length > 0 ? Math.round((resolvedCases / recentCases.length) * 100) : 0
 
   return (
     <div className="p-6 max-w-6xl space-y-6">
@@ -95,75 +87,79 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Halix-style visual widgets ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Resolution Rate Ring */}
-        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 flex flex-col items-center transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
-          <RingProgress
-            value={resolutionRate}
-            size={160}
-            strokeWidth={8}
-            color="var(--malachite)"
-            label={l('resolutionRate')}
-          />
-        </div>
-
-        {/* Compliance Ring */}
-        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 flex flex-col items-center transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
-          <RingProgress
-            value={totalGuardrail > 0 ? Math.max(0, 100 - Math.min(totalGuardrail, 100)) : 100}
-            size={160}
-            strokeWidth={8}
-            color="var(--lavender)"
-            label={l('compliance')}
-          />
-        </div>
-
-        {/* Message Trend Wave */}
-        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm sm:col-span-2 lg:col-span-1">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[var(--sky)]/10">
-              <TrendingUp className="w-4 h-4 text-[var(--sky)]" />
-            </div>
-            <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('messageTrend')}</span>
-          </div>
-          <WaveChart
-            data={sampleTrend}
-            height={90}
-            gradientFrom="var(--malachite)"
-            gradientTo="var(--sky)"
-          />
-        </div>
-      </div>
-
-      {/* ── Enhanced 4-metric grid with dot-matrix ── */}
+      {/* ── Top metrics: 4-column ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {([
-          { label: l('messages24h'), value: overview.messages24h, icon: MessageSquare, color: '#6366f1', suffix: '' },
-          { label: l('activeCases'), value: overview.activeCases, icon: Briefcase, color: '#f59e0b', suffix: '' },
-          { label: l('avgResolution'), value: overview.avgResolutionMin ?? 0, icon: Clock, color: '#14b8a6', suffix: overview.avgResolutionMin != null ? ` ${l('min')}` : '' },
-          { label: l('guardrailHits'), value: totalGuardrail, icon: Shield, color: '#8b6ff5', suffix: '' },
-        ]).map(({ label, value, icon: Icon, color, suffix }) => (
-          <div
-            key={label}
-            className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center icon-pulse" style={{ background: `${color}10` }}>
-                <Icon className="w-4 h-4" style={{ color }} />
-              </div>
-              <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{label}</span>
+        {/* 24H Messages */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#6366f1]/10 icon-pulse">
+              <MessageSquare className="w-4 h-4 text-[#6366f1]" />
             </div>
-            <AnimatedCounter target={value} duration={1400}>
-              {(v) => (
-                <div className="dot-enter flex items-baseline gap-1">
-                  <DotMatrixNumber value={v} dotSize={1.8} gap={4} color="var(--mist)" />
-                  {suffix && <span className="text-[11px] text-[var(--fog)]">{suffix}</span>}
-                </div>
-              )}
-            </AnimatedCounter>
+            <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('messages24h')}</span>
           </div>
-        ))}
+          <AnimatedCounter target={overview.messages24h} duration={1400}>
+            {(v) => (
+              <div className="dot-enter">
+                <DotMatrixNumber value={v} dotSize={1.8} gap={4} color="var(--mist)" />
+              </div>
+            )}
+          </AnimatedCounter>
+        </div>
+
+        {/* Active Cases */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#f59e0b]/10 icon-pulse">
+              <Briefcase className="w-4 h-4 text-[#f59e0b]" />
+            </div>
+            <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('activeCases')}</span>
+          </div>
+          <AnimatedCounter target={overview.activeCases} duration={1400}>
+            {(v) => (
+              <div className="dot-enter">
+                <DotMatrixNumber value={v} dotSize={1.8} gap={4} color="var(--mist)" />
+              </div>
+            )}
+          </AnimatedCounter>
+        </div>
+
+        {/* Avg Resolution — Ring */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 flex flex-col items-center transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <RingProgress
+            value={overview.avgResolutionMin != null ? Math.min(100, Math.max(0, 100 - overview.avgResolutionMin)) : 0}
+            size={130}
+            strokeWidth={7}
+            color="var(--malachite)"
+            label={`${overview.avgResolutionMin ?? '—'} ${l('min')}`}
+          />
+        </div>
+
+        {/* Guardrail Hits */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#8b6ff5]/10 icon-pulse">
+              <Shield className="w-4 h-4 text-[#8b6ff5]" />
+            </div>
+            <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('guardrailHits')}</span>
+          </div>
+          <AnimatedCounter target={totalGuardrail} duration={1400}>
+            {(v) => (
+              <div className="dot-enter">
+                <DotMatrixNumber value={v} dotSize={1.8} gap={4} color="var(--mist)" />
+              </div>
+            )}
+          </AnimatedCounter>
+          {guardrailHits.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {guardrailHits.slice(0, 3).map((g) => (
+                <div key={g.name} className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--fog)] truncate max-w-[120px]">{g.name}</span>
+                  <span className="text-[10px] font-mono text-[var(--fog)]/60">{g.hits}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Two-column row ── */}
