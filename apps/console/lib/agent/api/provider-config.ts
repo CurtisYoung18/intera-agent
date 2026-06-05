@@ -78,8 +78,6 @@ function createOpenRouterFetch(apiKey: string): typeof fetch {
 export function createAgentClient(model?: string): Anthropic {
   const config = getProviderConfig(model)
 
-  console.log(`[Provider] model="${model}" → ${config.provider} key=...${(config.apiKey ?? '').slice(-8)} url=${config.baseURL}`)
-
   if (!config.apiKey) {
     throw new Error(`API key not configured for provider "${config.provider}" (model: ${model ?? 'default'})`)
   }
