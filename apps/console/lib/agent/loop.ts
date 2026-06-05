@@ -388,7 +388,7 @@ export class AgentLoop {
       try {
         stream = await withRetry(
           async (_client, ctx) => {
-            const requestParams = {
+            return this.anthropicClient.messages.stream({
               model: ctx.model,
               max_tokens: ctx.maxTokensOverride ?? (this.deps.config.maxOutputTokens ?? 4096),
               system: stagePrompt,
@@ -398,9 +398,7 @@ export class AgentLoop {
               ...(this.deps.config.showThinking ? {
                 thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
               } : {}),
-            }
-            console.log('[loop] stream request tool_choice:', JSON.stringify(requestParams.tool_choice))
-            return this.anthropicClient.messages.stream(requestParams, { signal: this.abortController.signal })
+            }, { signal: this.abortController.signal })
           },
           {
             querySource: 'main_loop',
