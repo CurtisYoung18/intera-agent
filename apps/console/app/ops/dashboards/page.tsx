@@ -1,10 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { BarChart3, MessageSquare, Briefcase, Clock, Shield, Activity, ArrowRight, ArrowUp, ArrowDown } from 'lucide-react'
+import { MessageSquare, Briefcase, Clock, Shield, ArrowRight, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { apiClient, ApiClientError } from '@/lib/api/client'
+import { apiClient } from '@/lib/api/client'
+import RingProgress from '@/components/ui/ring-progress'
+import WaveChart from '@/components/ui/wave-chart'
+import DotMatrixNumber from '@/components/ui/dot-matrix-number'
+import AnimatedCounter from '@/components/ui/animated-counter'
 
 interface DashboardData {
   overview: {
@@ -36,6 +40,9 @@ const L = {
   loading: { en: 'Loading…', zh: '加载中…' },
   noGuardrails: { en: 'No guardrail activity yet.', zh: '暂无护栏活动' },
   viewAll: { en: 'View all', zh: '查看全部' },
+  resolutionRate: { en: 'Resolution Rate', zh: '解决率' },
+  compliance: { en: 'Compliance', zh: '合规率' },
+  messageTrend: { en: 'Message Trend (24h)', zh: '消息趋势 (24h)' },
 } as const
 
 function useL() {
@@ -56,6 +63,8 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+const sampleTrend = [12, 28, 15, 42, 35, 58, 45, 72, 68, 85, 78, 92, 88, 95, 90, 82, 75, 68, 55, 48, 42, 38, 30, 22]
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -72,6 +81,9 @@ export default function DashboardPage() {
   if (!data) return <div className="p-8 text-[13px] text-[var(--fog)]">{l('noData')}</div>
 
   const { overview, guardrailHits, channelHealth, recentCases } = data
+  const totalGuardrail = guardrailHits.reduce((s, g) => s + g.hits, 0)
+  const resolvedCases = recentCases.filter((c) => c.status === 'resolved').length
+  const resolutionRate = recentCases.length > 0 ? Math.round((resolvedCases / recentCases.length) * 100) : 0
 
   return (
     <div className="p-6 max-w-6xl space-y-6">
@@ -83,30 +95,78 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4-metric grid */}
+      {/* ── Halix-style visual widgets ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Resolution Rate Ring */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 flex flex-col items-center transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <RingProgress
+            value={resolutionRate}
+            size={160}
+            strokeWidth={8}
+            color="var(--malachite)"
+            label={l('resolutionRate')}
+          />
+        </div>
+
+        {/* Compliance Ring */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 flex flex-col items-center transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <RingProgress
+            value={totalGuardrail > 0 ? Math.max(0, 100 - Math.min(totalGuardrail, 100)) : 100}
+            size={160}
+            strokeWidth={8}
+            color="var(--lavender)"
+            label={l('compliance')}
+          />
+        </div>
+
+        {/* Message Trend Wave */}
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm sm:col-span-2 lg:col-span-1">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[var(--sky)]/10">
+              <TrendingUp className="w-4 h-4 text-[var(--sky)]" />
+            </div>
+            <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('messageTrend')}</span>
+          </div>
+          <WaveChart
+            data={sampleTrend}
+            height={90}
+            gradientFrom="var(--malachite)"
+            gradientTo="var(--sky)"
+          />
+        </div>
+      </div>
+
+      {/* ── Enhanced 4-metric grid with dot-matrix ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {([
-          { label: l('messages24h'), value: overview.messages24h.toLocaleString(), icon: MessageSquare, color: '#6366f1', delta: null },
-          { label: l('activeCases'), value: overview.activeCases.toLocaleString(), icon: Briefcase, color: '#f59e0b', delta: null },
-          { label: l('avgResolution'), value: overview.avgResolutionMin != null ? `${overview.avgResolutionMin} ${l('min')}` : '—', icon: Clock, color: '#14b8a6', delta: null },
-          { label: l('guardrailHits'), value: guardrailHits.reduce((s, g) => s + g.hits, 0).toLocaleString(), icon: Shield, color: '#8b6ff5', delta: null },
-        ]).map(({ label, value, icon: Icon, color }) => (
+          { label: l('messages24h'), value: overview.messages24h, icon: MessageSquare, color: '#6366f1', suffix: '' },
+          { label: l('activeCases'), value: overview.activeCases, icon: Briefcase, color: '#f59e0b', suffix: '' },
+          { label: l('avgResolution'), value: overview.avgResolutionMin ?? 0, icon: Clock, color: '#14b8a6', suffix: overview.avgResolutionMin != null ? ` ${l('min')}` : '' },
+          { label: l('guardrailHits'), value: totalGuardrail, icon: Shield, color: '#8b6ff5', suffix: '' },
+        ]).map(({ label, value, icon: Icon, color, suffix }) => (
           <div
             key={label}
             className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm"
           >
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${color}10` }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center icon-pulse" style={{ background: `${color}10` }}>
                 <Icon className="w-4 h-4" style={{ color }} />
               </div>
               <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{label}</span>
             </div>
-            <p className="text-[28px] font-bold text-[var(--mist)] tracking-[-0.02em]">{value}</p>
+            <AnimatedCounter target={value} duration={1400}>
+              {(v) => (
+                <div className="dot-enter flex items-baseline gap-1">
+                  <DotMatrixNumber value={v} dotSize={1.8} gap={4} color="var(--mist)" />
+                  {suffix && <span className="text-[11px] text-[var(--fog)]">{suffix}</span>}
+                </div>
+              )}
+            </AnimatedCounter>
           </div>
         ))}
       </div>
 
-      {/* Two-column row */}
+      {/* ── Two-column row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Recent Cases */}
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
@@ -133,7 +193,6 @@ export default function DashboardPage() {
 
         {/* Channel Health + Guardrail Hits */}
         <div className="space-y-4">
-          {/* Channel Health */}
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
             <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('channelHealth')}</h2>
             {channelHealth.length === 0 ? (
@@ -152,7 +211,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Guardrail Hits */}
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
             <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('guardrailHits24h')}</h2>
             {guardrailHits.length === 0 ? (
