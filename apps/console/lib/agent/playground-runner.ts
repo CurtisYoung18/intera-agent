@@ -28,6 +28,7 @@ export interface PlaygroundResult {
   trace: PlaygroundTraceStep[]
   resolvedModel: string
   applicableStages: string[]
+  totalMs: number
 }
 
 /** Run a single playground turn using the REAL AgentLoop pipeline. */
@@ -40,7 +41,7 @@ export async function* runPlaygroundTurn(input: {
   const startTime = Date.now()
 
   // ── Memory persistence (zero DB writes) ──
-  const { port: persistence, traces: memoryTraces } = createMemoryPersistence()
+  const { port: persistence, traces } = createMemoryPersistence()
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId, input.configId)
@@ -97,63 +98,6 @@ export async function* runPlaygroundTurn(input: {
     // Collect text for reply
     if (event.type === 'text_delta') reply += event.data as string
 
-    // Collect trace-relevant events into memoryTraces (for final aggregated `trace` payload)
-    if (event.type === 'llm_request_start') {
-      const d = event.data as any
-      memoryTraces.push({
-        caseId: turnId,
-        actionType: 'llm_request_start',
-        title: d?.model ? `LLM request: ${d.model}` : 'LLM request',
-        detail: `System prompt: ${(d?.systemPrompt || '').length} chars, ${(d?.messages || []).length} messages`,
-        payload: JSON.stringify({
-          systemPrompt: d?.systemPrompt,
-          messages: d?.messages,
-          model: d?.model,
-        }),
-        createdAt: new Date().toISOString(),
-      })
-    } else if (event.type === 'llm_response') {
-      const d = event.data as any
-      const usageData = d?.usage || {}
-      memoryTraces.push({
-        caseId: turnId,
-        actionType: 'llm_response',
-        title: `LLM response: ${d?.stopReason || 'complete'}`,
-        detail: JSON.stringify({ usage: { input_tokens: usageData.input_tokens, output_tokens: usageData.output_tokens } }),
-        createdAt: new Date().toISOString(),
-      })
-    } else if (['policy_hit', 'skill_called', 'skill_result', 'stage_eval'].includes(event.type as string)) {
-      memoryTraces.push({
-        caseId: turnId,
-        actionType: event.type as string,
-        title: typeof event.data === 'string' ? event.data : JSON.stringify(event.data).slice(0, 200),
-        detail: typeof event.data === 'string' ? event.data : undefined,
-        createdAt: new Date().toISOString(),
-      })
-    }
-
-    if (event.type === 'tool_executing') {
-      const d = event.data as any
-      memoryTraces.push({
-        caseId: turnId,
-        actionType: 'skill_called',
-        title: d?.name ? `${d.name} executing` : 'tool executing',
-        detail: d?.dryRun ? 'dry-run' : 'executing',
-        createdAt: new Date().toISOString(),
-      })
-    }
-
-    if (event.type === 'skill_result') {
-      const d = event.data as any
-      memoryTraces.push({
-        caseId: turnId,
-        actionType: 'skill_result',
-        title: d?.name ? `${d.name} result` : 'tool result',
-        detail: d?.dryRun ? 'dry-run result' : 'result',
-        createdAt: new Date().toISOString(),
-      })
-    }
-
     if (event.type === 'policy_blocked') blocked = true
 
     // Stream out in real-time (was buffered until end-of-run previously)
@@ -204,14 +148,6 @@ export async function* runPlaygroundTurn(input: {
     await new Promise<void>((resolve) => { resolveNext = resolve })
   }
 
-  // Add LLM request/response traces if not already captured (fallback for error paths)
-  if (!memoryTraces.some(t => t.actionType === 'llm_request_start')) {
-    memoryTraces.push({ caseId: turnId, actionType: 'llm_request_start', title: 'LLM request', detail: 'No prompt data captured', createdAt: new Date().toISOString() })
-  }
-  if (!memoryTraces.some(t => t.actionType === 'llm_response')) {
-    memoryTraces.push({ caseId: turnId, actionType: 'llm_response', title: `LLM response: ${reply.length} chars`, detail: reply.slice(0, 200), createdAt: new Date().toISOString() })
-  }
-
   // ── Derive applicable pipeline stages from agent config ──
 
   const guardsConfigured = (() => {
@@ -244,10 +180,11 @@ export async function* runPlaygroundTurn(input: {
   // (fired=false when no guardrail events occur, which is correct)
 
   // ── Aggregate traces ──
-  const trace = aggregateTraces(memoryTraces, startTime, pc.debug ?? agentConfig.debugMode ?? false, applicableStages)
+  const totalMs = Date.now() - startTime
+  const trace = aggregateTraces(traces, startTime, pc.debug ?? agentConfig.debugMode ?? false, applicableStages)
   const caseType = ''
 
-  const result: PlaygroundResult = { turnId, caseType, reply, blocked, trace, resolvedModel, applicableStages }
-  yield { type: 'trace', data: result, timestamp: new Date().toISOString() }
+  const result: PlaygroundResult = { turnId, caseType, reply, blocked, trace, resolvedModel, applicableStages, totalMs }
+  yield { type: 'trace', data: { ...result, totalMs }, timestamp: new Date().toISOString() }
   yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
 }
