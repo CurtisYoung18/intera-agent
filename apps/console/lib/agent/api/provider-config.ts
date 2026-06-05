@@ -39,7 +39,15 @@ export function getProviderConfig(model?: string): ProviderConfig {
       provider: 'openrouter',
     }
   }
-  // Default: Anthropic (or Anthropic-compatible proxy)
+  // Claude models route through OpenRouter (not Anthropic direct)
+  if (model?.startsWith('claude-')) {
+    return {
+      apiKey: process.env.OPENROUTER_API_KEY,
+      baseURL: 'https://openrouter.ai/api',
+      provider: 'openrouter',
+    }
+  }
+  // Default: Anthropic (or Anthropic-compatible proxy — currently MiniMax)
   return {
     apiKey: process.env.ANTHROPIC_AUTH_TOKEN,
     baseURL: process.env.ANTHROPIC_BASE_URL,
