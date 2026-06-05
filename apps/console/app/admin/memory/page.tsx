@@ -28,9 +28,9 @@ interface TierPreset {
 }
 
 const TIER_PRESETS: Record<Exclude<MemoryTier, 'custom'>, TierPreset> = {
-  short: { autocompactThresholdTokens: 20000, compactionKeepMin: 4, l1MaxMessages: 8 },
-  balanced: { autocompactThresholdTokens: 40000, compactionKeepMin: 8, l1MaxMessages: 20 },
-  long: { autocompactThresholdTokens: 80000, compactionKeepMin: 16, l1MaxMessages: 40 },
+  short: { autocompactThresholdTokens: 20000, compactionKeepMin: 10, l1MaxMessages: 10 },
+  balanced: { autocompactThresholdTokens: 40000, compactionKeepMin: 20, l1MaxMessages: 20 },
+  long: { autocompactThresholdTokens: 80000, compactionKeepMin: 30, l1MaxMessages: 30 },
 }
 
 function detectMemoryTier(ms: MemStrategy): MemoryTier {
