@@ -124,14 +124,22 @@ export default function DashboardPage() {
         </div>
 
         {/* Avg Resolution — Ring */}
-        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 flex flex-col items-center transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
-          <RingProgress
-            value={overview.avgResolutionMin != null ? Math.min(100, Math.max(0, 100 - overview.avgResolutionMin)) : 0}
-            size={130}
-            strokeWidth={7}
-            color="var(--malachite)"
-            label={`${overview.avgResolutionMin ?? '—'} ${l('min')}`}
-          />
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#14b8a6]/10 icon-pulse">
+              <Clock className="w-4 h-4 text-[#14b8a6]" />
+            </div>
+            <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('avgResolution')}</span>
+          </div>
+          <div className="flex justify-center">
+            <RingProgress
+              value={overview.avgResolutionMin != null ? Math.min(100, Math.max(0, 100 - overview.avgResolutionMin)) : 0}
+              size={110}
+              strokeWidth={6}
+              color="var(--malachite)"
+              label={`${overview.avgResolutionMin ?? '—'} ${l('min')}`}
+            />
+          </div>
         </div>
 
         {/* Guardrail Hits */}

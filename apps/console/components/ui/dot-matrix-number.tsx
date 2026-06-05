@@ -37,12 +37,15 @@ export default function DotMatrixNumber({
   color = 'var(--mist)',
   className = '',
 }: DotMatrixNumberProps) {
-  const { svg, width, height } = useMemo(() => {
+  const { svg, viewBox } = useMemo(() => {
     const chars = value.split('')
     const cols = 5
     const rows = 7
-    const totalW = chars.length * (cols * gap) - gap
-    const totalH = rows * gap
+    const contentW = chars.length * (cols * gap) - gap
+    const contentH = rows * gap
+    const pad = dotSize
+    const totalW = contentW + pad * 2
+    const totalH = contentH + pad * 2
     const circles: string[] = []
 
     chars.forEach((ch, ci) => {
@@ -51,19 +54,19 @@ export default function DotMatrixNumber({
       const ox = ci * (cols * gap)
       grid.forEach((v, i) => {
         if (v) {
-          const cx = ox + (i % cols) * gap + gap / 2
-          const cy = Math.floor(i / cols) * gap + gap / 2
+          const cx = pad + ox + (i % cols) * gap + gap / 2
+          const cy = pad + Math.floor(i / cols) * gap + gap / 2
           circles.push(`<circle cx="${cx}" cy="${cy}" r="${dotSize}" fill="${color}"/>`)
         }
       })
     })
 
-    return { svg: circles.join(''), width: totalW, height: totalH }
+    return { svg: circles.join(''), viewBox: `0 0 ${totalW} ${totalH}` }
   }, [value, dotSize, gap, color])
 
   return (
     <svg
-      viewBox={`0 0 ${width} ${height}`}
+      viewBox={viewBox}
       className={`block ${className}`}
       style={{ maxWidth: '100%', maxHeight: '60px' }}
       aria-label={value}
