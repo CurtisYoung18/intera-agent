@@ -53,9 +53,6 @@ vi.mock('@intera/shared/prisma', () => ({
         }
       }),
     },
-    channelBinding: {
-      findFirst: vi.fn(async () => null), // fall through to livechat_configs
-    },
   },
 }))
 
