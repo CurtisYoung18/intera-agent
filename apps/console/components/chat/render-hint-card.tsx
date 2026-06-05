@@ -21,180 +21,245 @@ function resolveJsonPath(data: any, path: string): any {
   return current
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles (Warm Craft) ─────────────────────────────────────────────────────
+
+const WC_SANS = "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif"
+const WC_SERIF = "'Literata', Georgia, serif"
 
 const styles = {
   card: {
-    padding: '10px 12px',
-    borderRadius: 10,
-    background: 'rgba(91,138,247,0.05)',
-    border: '1px solid rgba(91,138,247,0.12)',
+    padding: 24,
+    borderRadius: 16,
+    background: '#fffcf9',
+    border: '1px solid rgba(0,0,0,0.06)',
+    boxShadow: '0 1px 2px rgba(60,40,20,0.04), 0 4px 12px rgba(60,40,20,0.03)',
   } as React.CSSProperties,
   cardTitle: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: 'var(--indigo, #5b8af7)',
+    fontSize: 17,
+    fontWeight: 700,
+    letterSpacing: '-0.01em',
+    color: '#2d2926',
     marginBottom: 4,
+    fontFamily: WC_SANS,
   } as React.CSSProperties,
   cardSubtitle: {
-    fontSize: 10,
-    color: 'var(--fog, #8b8b8b)',
+    fontSize: 13.5,
+    fontWeight: 400,
+    color: '#8a7e74',
     marginBottom: 4,
+    lineHeight: 1.55,
+    fontFamily: WC_SANS,
   } as React.CSSProperties,
   cardImage: {
     width: '100%',
-    maxWidth: 200,
-    borderRadius: 6,
+    maxWidth: 280,
+    borderRadius: 12,
     marginBottom: 4,
     display: 'block',
   } as React.CSSProperties,
   buttonRow: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 6,
+    gap: 8,
+    marginTop: 14,
   } as React.CSSProperties,
   button: {
-    padding: '4px 10px',
-    borderRadius: 999,
-    fontSize: 10,
-    fontWeight: 500,
-    border: '1px solid rgba(91,138,247,0.2)',
-    background: 'rgba(91,138,247,0.08)',
-    color: 'var(--indigo, #5b8af7)',
+    padding: '9px 20px',
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 600,
+    border: '1.5px solid rgba(0,0,0,0.08)',
+    background: 'transparent',
+    color: '#8a7e74',
     cursor: 'pointer',
+    fontFamily: WC_SANS,
+    transition: 'all 0.25s ease',
   } as React.CSSProperties,
   buttonPrimary: {
-    padding: '4px 10px',
-    borderRadius: 999,
-    fontSize: 10,
-    fontWeight: 500,
-    border: '1px solid rgba(91,138,247,0.3)',
-    background: 'rgba(91,138,247,0.15)',
-    color: 'var(--indigo, #5b8af7)',
+    padding: '9px 20px',
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 600,
+    border: 'none',
+    background: '#3d3833',
+    color: '#fffcf9',
     cursor: 'pointer',
+    boxShadow: '0 1px 2px rgba(60,40,20,0.15)',
+    fontFamily: WC_SANS,
+    transition: 'all 0.25s ease',
   } as React.CSSProperties,
   buttonDanger: {
-    padding: '4px 10px',
-    borderRadius: 999,
-    fontSize: 10,
-    fontWeight: 500,
-    border: '1px solid rgba(230,69,57,0.2)',
-    background: 'rgba(230,69,57,0.08)',
-    color: '#e64539',
+    padding: '9px 20px',
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 600,
+    border: '1.5px solid rgba(212,118,78,0.2)',
+    background: 'rgba(212,118,78,0.06)',
+    color: '#b87347',
     cursor: 'pointer',
+    fontFamily: WC_SANS,
+    transition: 'all 0.25s ease',
   } as React.CSSProperties,
   pill: {
-    padding: '3px 8px',
+    padding: '7px 16px',
     borderRadius: 999,
-    background: 'rgba(139,111,245,0.08)',
-    border: '1px solid rgba(139,111,245,0.15)',
-    fontSize: 10,
-    color: 'var(--lavender, #8b6ff5)',
+    background: '#faf8f5',
+    border: '1.5px solid rgba(0,0,0,0.06)',
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#6b5e54',
+    fontFamily: WC_SANS,
   } as React.CSSProperties,
   formField: {
-    marginBottom: 8,
+    marginBottom: 14,
   } as React.CSSProperties,
   formLabel: {
     display: 'block',
-    fontSize: 10,
-    fontWeight: 500,
-    color: 'var(--fog, #8b8b8b)',
-    marginBottom: 2,
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#8a7e74',
+    marginBottom: 6,
+    letterSpacing: '0.02em',
+    fontFamily: WC_SANS,
   } as React.CSSProperties,
   formInput: {
     width: '100%',
-    padding: '4px 8px',
-    borderRadius: 6,
-    border: '1px solid rgba(91,138,247,0.15)',
-    background: 'rgba(91,138,247,0.04)',
-    fontSize: 12,
-    color: 'var(--ink, #1a1a1a)',
+    padding: '11px 14px',
+    borderRadius: 10,
+    border: '1.5px solid rgba(0,0,0,0.08)',
+    background: '#faf8f5',
+    fontSize: 14,
+    color: '#3d3833',
     outline: 'none',
     boxSizing: 'border-box' as const,
+    fontFamily: WC_SANS,
+    transition: 'all 0.25s ease',
   },
   formSelect: {
     width: '100%',
-    padding: '4px 8px',
-    borderRadius: 6,
-    border: '1px solid rgba(91,138,247,0.15)',
-    background: 'rgba(91,138,247,0.04)',
-    fontSize: 12,
-    color: 'var(--ink, #1a1a1a)',
+    padding: '11px 14px',
+    borderRadius: 10,
+    border: '1.5px solid rgba(0,0,0,0.08)',
+    background: '#faf8f5',
+    fontSize: 14,
+    color: '#3d3833',
     outline: 'none',
     boxSizing: 'border-box' as const,
+    fontFamily: WC_SANS,
+    transition: 'all 0.25s ease',
+    appearance: 'none' as const,
+    cursor: 'pointer',
   },
   formTextarea: {
     width: '100%',
-    padding: '4px 8px',
-    borderRadius: 6,
-    border: '1px solid rgba(91,138,247,0.15)',
-    background: 'rgba(91,138,247,0.04)',
-    fontSize: 12,
-    color: 'var(--ink, #1a1a1a)',
+    padding: '11px 14px',
+    borderRadius: 10,
+    border: '1.5px solid rgba(0,0,0,0.08)',
+    background: '#faf8f5',
+    fontSize: 14,
+    color: '#3d3833',
     outline: 'none',
-    minHeight: 60,
+    minHeight: 80,
     resize: 'vertical' as const,
     boxSizing: 'border-box' as const,
+    fontFamily: WC_SANS,
+    transition: 'all 0.25s ease',
   },
   submitButton: {
-    padding: '5px 14px',
-    borderRadius: 999,
-    fontSize: 11,
+    padding: '11px 28px',
+    borderRadius: 10,
+    fontSize: 14,
     fontWeight: 600,
     border: 'none',
-    background: 'linear-gradient(135deg, #5b8af7, #8b6ff5)',
+    background: 'linear-gradient(135deg, #d4764e, #c9884a)',
     color: '#fff',
     cursor: 'pointer',
-    marginTop: 4,
+    marginTop: 8,
+    fontFamily: WC_SANS,
+    boxShadow: '0 1px 2px rgba(212,118,78,0.25)',
+    transition: 'all 0.25s ease',
   } as React.CSSProperties,
   blockquote: {
-    borderLeft: '2px solid rgba(91,138,247,0.25)',
-    paddingLeft: 10,
-    margin: '4px 0',
-    fontSize: 11,
-    color: 'var(--fog, #8b8b8b)',
-    fontStyle: 'italic',
+    borderLeft: '3px solid #d4764e',
+    paddingLeft: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    margin: 0,
+    fontSize: 14,
+    fontFamily: WC_SERIF,
+    fontStyle: 'italic' as const,
+    color: '#8a7e74',
+    lineHeight: 1.65,
   } as React.CSSProperties,
   pre: {
-    padding: '8px 10px',
-    borderRadius: 6,
-    background: 'rgba(139,111,245,0.06)',
-    border: '1px solid rgba(139,111,245,0.1)',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    color: 'var(--ink, #1a1a1a)',
+    padding: '16px 18px',
+    borderRadius: 12,
+    background: '#f5f0eb',
+    border: '1px solid rgba(0,0,0,0.05)',
+    fontSize: 13,
+    fontFamily: "'SF Mono', 'Fira Code', monospace",
+    color: '#5a524b',
     overflowX: 'auto' as const,
     whiteSpace: 'pre-wrap' as const,
+    lineHeight: 1.6,
   } as React.CSSProperties,
   list: {
-    paddingLeft: 18,
-    margin: '4px 0',
-    fontSize: 11,
-    color: 'var(--ink, #1a1a1a)',
+    paddingLeft: 0,
+    margin: 0,
+    listStyle: 'none',
+    fontSize: 14,
+    color: '#3d3833',
   } as React.CSSProperties,
   listItem: {
-    marginBottom: 2,
+    padding: '12px 18px',
+    borderBottom: '1px solid rgba(0,0,0,0.04)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
   } as React.CSSProperties,
   plainText: {
-    fontSize: 11,
-    color: 'var(--ink, #1a1a1a)',
+    fontSize: 14,
+    color: '#5a524b',
     whiteSpace: 'pre-wrap' as const,
+    lineHeight: 1.6,
+    fontFamily: WC_SANS,
   } as React.CSSProperties,
   imageDisplay: {
     maxWidth: '100%',
-    borderRadius: 8,
+    borderRadius: 12,
     display: 'block',
   } as React.CSSProperties,
   checkboxRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: 10,
+    marginBottom: 12,
   } as React.CSSProperties,
   checkboxLabel: {
-    fontSize: 11,
-    color: 'var(--ink, #1a1a1a)',
+    fontSize: 13.5,
+    color: '#5a524b',
+    fontFamily: WC_SANS,
+  } as React.CSSProperties,
+  listItemNum: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    background: 'rgba(212,118,78,0.08)',
+    color: '#b87347',
+    fontSize: 12,
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  } as React.CSSProperties,
+  listItemDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: '#d4764e',
+    opacity: 0.5,
+    flexShrink: 0,
   } as React.CSSProperties,
 }
 
@@ -378,24 +443,26 @@ export default function RenderHintCard({ hint, result, onSubmit }: RenderHintCar
 
     if (hint.showIndex) {
       return (
-        <ol style={styles.list}>
+        <div style={styles.list}>
           {items.map((item, i) => (
-            <li key={i} style={styles.listItem}>
-              {typeof item === 'string' ? item : String(item.label ?? item.title ?? item)}
-            </li>
+            <div key={i} style={styles.listItem}>
+              <span style={styles.listItemNum}>{i + 1}</span>
+              <span>{typeof item === 'string' ? item : String(item.label ?? item.title ?? item)}</span>
+            </div>
           ))}
-        </ol>
+        </div>
       )
     }
 
     return (
-      <ul style={styles.list}>
+      <div style={styles.list}>
         {items.map((item, i) => (
-          <li key={i} style={styles.listItem}>
-            {typeof item === 'string' ? item : String(item.label ?? item.title ?? item)}
-          </li>
+          <div key={i} style={styles.listItem}>
+            <span style={styles.listItemDot} />
+            <span>{typeof item === 'string' ? item : String(item.label ?? item.title ?? item)}</span>
+          </div>
         ))}
-      </ul>
+      </div>
     )
   }
 

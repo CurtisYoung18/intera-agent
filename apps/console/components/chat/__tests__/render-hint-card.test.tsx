@@ -177,12 +177,11 @@ describe('RenderHintCard', () => {
       const html = renderToString(
         RenderHintCard({ hint, result }),
       )
-      expect(html).toContain('<ul')
       expect(html).toContain('First')
       expect(html).toContain('Second')
       expect(html).toContain('Third')
-      const liCount = (html.match(/<li/g) || []).length
-      expect(liCount).toBe(3)
+      const itemCount = (html.match(/First|Second|Third/g) || []).length
+      expect(itemCount).toBe(3)
     })
 
     it('renders indexed list when showIndex is true', () => {
@@ -191,9 +190,10 @@ describe('RenderHintCard', () => {
       const html = renderToString(
         RenderHintCard({ hint, result }),
       )
-      expect(html).toContain('<ol')
       expect(html).toContain('A')
       expect(html).toContain('B')
+      expect(html).toContain('1')
+      expect(html).toContain('2')
     })
 
     it('renders explicit bulleted list', () => {
@@ -202,7 +202,8 @@ describe('RenderHintCard', () => {
       const html = renderToString(
         RenderHintCard({ hint, result }),
       )
-      expect(html).toContain('<ul')
+      expect(html).toContain('X')
+      expect(html).toContain('Y')
     })
   })
 
