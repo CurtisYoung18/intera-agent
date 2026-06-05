@@ -14,6 +14,7 @@ import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { apiClient } from '@/lib/api/client'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import CopyButton from '@/components/ui/copy-button'
+import MessageContent from '@/components/chat/message-content'
 
 /* ── Types ── */
 
@@ -514,12 +515,16 @@ export default function PlaygroundPage() {
                   }}>
                     {m.role === 'user' ? 'You' : snapshot?.name || 'Agent'}
                   </div>
-                  <div style={{
-                    fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  }}>
-                    {m.content}
-                  </div>
+                  {m.role === 'agent' ? (
+                    <MessageContent content={m.content} />
+                  ) : (
+                    <div style={{
+                      fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {m.content}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -573,12 +578,7 @@ export default function PlaygroundPage() {
                 }}>
                   {snapshot?.name || 'Agent'}
                 </div>
-                <div style={{
-                  fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {reply}
-                </div>
+                <MessageContent content={reply} />
               </div>
             )}
 
