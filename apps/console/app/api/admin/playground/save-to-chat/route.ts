@@ -44,6 +44,25 @@ export const POST = defineRoute({
       })
     }
 
+    // Persist ActionTrace rows from the dry-run traces so the chat detail page shows stats
+    if (input.traces) {
+      for (const turnTraces of input.traces) {
+        for (const step of turnTraces) {
+          if (!step || !step.stage) continue
+          await repo.raw.actionTrace.create({
+            data: {
+              caseId: newCase.id,
+              chatId,
+              actionType: step.stage,
+              title: step.summary || step.stage,
+              detail: step.fired === false ? 'skipped' : `${step.ms}ms${step.usage ? ` · ↑${step.usage.inputTokens}↓${step.usage.outputTokens}` : ''}`,
+              payload: step.usage ? JSON.stringify({ usage: step.usage, ms: step.ms, fired: step.fired }) : null,
+            },
+          })
+        }
+      }
+    }
+
     return apiOk({ caseId: newCase.id, chatId })
   },
 })

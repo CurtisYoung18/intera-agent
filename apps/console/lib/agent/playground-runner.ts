@@ -16,6 +16,8 @@ import { generateCaseId } from '@/lib/utils'
 export interface PlaygroundConfig {
   /** Override agentConfig.debugMode for trace detail. */
   debug?: boolean
+  /** Override agentConfig.showThinking to force thinking output for this turn. */
+  showThinking?: boolean
 }
 
 export interface PlaygroundResult {
@@ -42,6 +44,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(orgId, input.configId)
+  if (pc.showThinking !== undefined) { (agentConfig as any).showThinking = pc.showThinking }
   const systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
 
   // ── Unified prompt assembly (matches production messages/route.ts) ──

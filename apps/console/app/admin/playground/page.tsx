@@ -160,6 +160,7 @@ export default function PlaygroundPage() {
           temperature: raw.temperature ?? 0.5,
         })
         setDebugMode(Boolean(raw.debugMode))
+        if (raw.showThinking !== undefined) setShowThinking(Boolean(raw.showThinking))
       })
       .catch(() => setSnapshot(null))
   }, [selectedAgentId, models, agentList])
@@ -256,7 +257,7 @@ export default function PlaygroundPage() {
     try {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
-      if (debugMode) body.config = { debug: true }
+      body.config = { debug: debugMode, showThinking }
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({
           type: 'image',
@@ -982,6 +983,34 @@ export default function PlaygroundPage() {
               <SidebarEmpty>Send a message to see the behavior trace.</SidebarEmpty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* ── Aggregate stats summary ── */}
+                {(() => {
+                  let totalInput = 0, totalOutput = 0, totalMs = 0, totalTools = 0
+                  for (const steps of turnTraces) {
+                    for (const step of steps) {
+                      if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0 }
+                      totalMs += step.ms || 0
+                      if (step.stage === 'Skills & tools') totalTools++
+                    }
+                  }
+                  if (totalInput === 0 && totalOutput === 0 && totalTools === 0) return null
+                  return (
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', gap: '4px 10px',
+                      padding: '6px 8px', borderRadius: 8,
+                      background: 'rgba(139,111,245,0.04)', border: '1px solid rgba(139,111,245,0.08)',
+                      fontSize: 9, color: 'var(--fog)', fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      <span>↑{totalInput} ↓{totalOutput} tokens</span>
+                      <span style={{ opacity: 0.3 }}>·</span>
+                      <span>{totalMs}ms</span>
+                      {totalTools > 0 && (<><span style={{ opacity: 0.3 }}>·</span><span>{totalTools} tools</span></>)}
+                      <span style={{ opacity: 0.3 }}>·</span>
+                      <span>{turnTraces.length} turn{turnTraces.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )
+                })()}
+
                 {/* ── Show skipped toggle ── */}
                 {(() => {
                   let totalSkipped = 0

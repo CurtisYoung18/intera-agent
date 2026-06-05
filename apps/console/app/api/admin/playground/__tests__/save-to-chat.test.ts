@@ -4,10 +4,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => {
   const mockCaseCreate = vi.fn()
   const mockMessageCreate = vi.fn()
+  const mockActionTraceCreate = vi.fn()
   const mockUserProfileUpdate = vi.fn()
   const mockGetSession = vi.fn()
 
-  return { mockCaseCreate, mockMessageCreate, mockUserProfileUpdate, mockGetSession }
+  return { mockCaseCreate, mockMessageCreate, mockActionTraceCreate, mockUserProfileUpdate, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
@@ -20,6 +21,9 @@ vi.mock('@/lib/db/repo-for-org', () => ({
       raw: {
         message: {
           create: h.mockMessageCreate,
+        },
+        actionTrace: {
+          create: h.mockActionTraceCreate,
         },
         userProfile: {
           update: h.mockUserProfileUpdate,
@@ -142,6 +146,28 @@ describe('POST /api/admin/playground/save-to-chat', () => {
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('validation')
     expect(res.status).toBe(400)
+  })
+
+  it('persists ActionTrace rows when traces are provided', async () => {
+    const input = {
+      agentId: 'agent-1',
+      messages: [{ role: 'user', content: 'Hello' }],
+      traces: [[
+        { stage: 'Model generation', summary: 'LLM request', ms: 2700, fired: true, usage: { inputTokens: 120, outputTokens: 40, totalTokens: 160 } },
+        { stage: 'Guardrails', summary: 'no events', ms: 0, fired: false },
+      ]],
+    }
+
+    await POST(makeRequest(input))
+
+    // Should create 1 trace row (fired=true only? Actually we save all)
+    expect(h.mockActionTraceCreate).toHaveBeenCalledTimes(2)
+    // Check first call has token info in detail
+    const firstCall = h.mockActionTraceCreate.mock.calls[0][0]
+    expect(firstCall.data.actionType).toBe('Model generation')
+    expect(firstCall.data.detail).toContain('2700ms')
+    expect(firstCall.data.detail).toContain('↑120↓40')
+    expect(firstCall.data.payload).toContain('"inputTokens":120')
   })
 
   it('returns 200 with correct response shape', async () => {
