@@ -132,7 +132,7 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 
 | File | Role |
 |---|---|
-| `apps/console/lib/agent/loop.ts` | Core AgentLoop (~2,160 lines). Persistence port + dryRun injected at constructor. |
+| `apps/console/lib/agent/loop.ts` | Core AgentLoop (~1,819 lines). Persistence port + dryRun injected at constructor. |
 | `apps/console/lib/agent/streaming-tool-executor.ts` | Tool dispatch. `dryRun` chokepoint at `runTrackedTool`. |
 | `apps/console/lib/agent/persistence-port.ts` | `PersistencePort` interface + `PrismaPersistence` + `MemoryPersistence`. |
 | `apps/console/lib/agent/playground-runner.ts` | `runPlaygroundTurn()` — accepts optional `configId` for multi-agent. |
@@ -156,7 +156,7 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
 4. **SSE + Caddy:** `flush_interval -1` is critical or SSE buffers.
 5. **Cert renewal:** manual RapidSSL wildcard (`*.anytrans.ai`) expires 2026-07-22; Caddy auto-renews Let's Encrypt for `demo.anytrans.ai`. Which one actually serves is unconfirmed (see master build handoff M6).
 6. **README is partly stale:** it still references `apps/chat/.env.example`, which no longer exists. Don't trust setup docs blindly.
-7. **Channel-config endpoints take org from a client param — exception to §2's "session-only" rule.** `/api/livechat/config` (GET) and `/api/livechat/groups` resolve `orgId` from `searchParams.get('orgId') ?? 'default'`, NOT from the verified session, and sit *outside* the middleware gate (they're widget/webhook-facing with CORS). §2's "orgId from session, NEVER from request" holds for `/api/messages`, `/api/admin/*` (via `getActiveOrgId()`), and Bearer-key resolution — but NOT these two. Consequence: any caller can read another org's livechat config by passing/omitting `orgId` (omit → `'default'`). Console code must pass the *session* orgId explicitly when calling them (the livechat admin page does; T6 readiness did not — see master handoff BLK-1). Latent multi-tenant leak; candidate to harden (resolve from session for authenticated callers). **→ ✅ RESOLVED 2026-06-04 (G2/B1 — the description above is now historical).** Admin read/write for BOTH `config` and `groups` moved to **gated** `/api/admin/livechat/{config,groups}` (`defineRoute` + `repoForOrg`, `orgId` STRICTLY from session, `requireRole:['admin','owner']` on writes). The anonymous `/api/livechat/config` has **no PUT** and its GET returns only non-sensitive fields; the anonymous `/api/livechat/groups` no longer reads `orgId` from the query. Guard: `app/api/admin/livechat/__tests__/livechat-b1-guard.test.ts`.
+7. **Channel-config endpoints (livechat `config`/`groups`) once took org from a query param — ✅ RESOLVED 2026-06-04 (G2/B1).** Admin read/write moved to gated `/api/admin/livechat/{config,groups}` (`defineRoute` + `repoForOrg`, orgId strictly from session, `requireRole:['admin','owner']` on writes). Anonymous `/api/livechat/config` has no PUT and returns only non-sensitive fields; anonymous `/api/livechat/groups` no longer reads orgId from the query. Guard: `app/api/admin/livechat/__tests__/livechat-b1-guard.test.ts`.
 
 ## 5. Build / test / deploy
 
