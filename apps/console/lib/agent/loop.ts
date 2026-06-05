@@ -7,7 +7,6 @@
 // from naive "wait for full response then execute" approaches.
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
@@ -18,8 +17,6 @@ import { SkillRouter, SOP_INTERNAL_SKILLS } from './skills'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
-import { OrchestratorAgent } from './orchestrator'
-import { generateCaseId } from '@/lib/utils'
 import { microCompact } from './microCompact'
 import { synthesizeMissingToolResults, assertToolResultInvariant } from './tool-result-invariant'
 import { classifyError } from './api/error-classifier'
@@ -29,7 +26,6 @@ import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
 import type { ExecutionStrategy } from './strategies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
-import { isInvestigableCaseType } from './case-type-slugs'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
 import { profileKey } from './identity'
@@ -44,7 +40,10 @@ import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 // ---------------------------------------------------------------------------
 
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
-import { makeUserMessage, addToolResultMessages, buildApiMessages } from './message-builder'
+import { makeUserMessage, buildApiMessages } from './message-builder'
+import { selectPromptAndTools } from './prompt-selector'
+import { buildToolResultMessageFromSynthesis, buildPolicyFeedbackMessage } from './tool-result-manager'
+import { interceptToolResults, processPendingGuardrailToolCalls as guardrailToolCalls, processDispatchSubagent as dispatchSubagent, type ToolInterceptorContext } from './tool-interceptor'
 import { runReActLoop } from './react-loop'
 import { processTodoTools } from './todo-processor'
 
@@ -349,41 +348,18 @@ export class AgentLoop {
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
-      // Core mode  → no active case: conversational discovery.
-      // Case/Stage → case past "created": stage-driven execution, tools filtered.
-      // Case/SOP   → SOP-driven: todo tools + full skill set, prompt includes SOP doc + todos.
-      const allTools = this.skillRouter.getTools()
-      let stagePrompt: string
-      let stageTools: Tool[]
-
-      if (!isCaseActive) {
-        stagePrompt = this.conversationLoop.buildPrompt()
-        stageTools = this.conversationLoop.filterTools(allTools)
-      } else if (isConsultation) {
-        // Customer sent a message while the case is under human specialist review.
-        // Acknowledge briefly — no investigation tools allowed.
-        stagePrompt = [
-          `[INTERA MODE: WAITING_HUMAN | type: ${this.deps.caseSchema?.type || 'unknown'} | stage: ${this.currentStage}]`,
-          'This case is currently under review by a human specialist. A human task has been created.',
-          '',
-          'Your ONLY job: acknowledge the customer\'s message warmly, confirm their case is being reviewed,',
-          'and ask them to wait. Do NOT call any tools. Do NOT run any investigation.',
-          'Do NOT make promises about outcomes. Keep the response brief (1-2 sentences).',
-          '',
-          this.deps.systemPrompt,
-        ].join('\n')
-        stageTools = []  // No tools — pure text acknowledgement only
-      } else if (this.deps.caseSchema?.executionMode === 'cc') {
-        stagePrompt = this.caseLoop!.buildSopPrompt(
-          this.deps.systemPrompt,
-          this.chatMemory.getTodos(),
-          this.chatMemory.getConfirmedFacts(),
-        )
-        stageTools = this.caseLoop!.filterSopTools(allTools)
-      } else {
-        stagePrompt = this.caseLoop!.buildPrompt(this.deps.systemPrompt)
-        stageTools = this.caseLoop!.filterTools(allTools, this.nudgeCount)
-      }
+      const { prompt: stagePrompt, tools: stageTools } = selectPromptAndTools({
+        isCaseActive,
+        isConsultation,
+        caseSchema: this.deps.caseSchema,
+        systemPrompt: this.deps.systemPrompt,
+        currentStage: this.currentStage,
+        nudgeCount: this.nudgeCount,
+        conversationLoop: this.conversationLoop,
+        caseLoop: this.caseLoop,
+        chatMemory: this.chatMemory,
+        allTools: this.skillRouter.getTools(),
+      })
 
       const blocks = new Map<number, StreamContentBlock>()
       let assistantMessage: AssistantMessage | null = null
@@ -565,7 +541,7 @@ export class AgentLoop {
                 assistantPushed = true
               }
               // Process the escalation
-              await this.processPendingGuardrailToolCalls(preToolEval, sendEvent)
+              await guardrailToolCalls(this.buildToolInterceptorContext(), preToolEval, sendEvent)
               return
             }
 
@@ -664,59 +640,52 @@ export class AgentLoop {
       }
 
       // ── S1: Post-stream synthesis — guarantee one tool_result per tool_use ──
+      // Always runs: wraps ALL tool results (success + error) into Anthropic
+      // API-format user messages with structured tool_result blocks.
+      // This replaces the legacy addToolResultMessages (assistant text format).
       if (assistantPushed && assistantMessage) {
         const toolUseBlocks = blocks
           ? [...(blocks as unknown as Map<unknown, { type: string; id: string; name: string }>).values()]
             .filter((b) => b.type === 'tool_use')
           : []
-        const trimmedToolUseIds = new Set(toolResults.map((r) => r.name))
+        const trimmedToolUseIds = new Set(toolResults.map((r) => r.toolUse?.id ?? r.name))
 
         // For any tool_use_id without a completed result AND without a missingReasons
         // entry, record 'stream_aborted' (defensive default)
         for (const tuBlock of toolUseBlocks) {
           const id = (tuBlock as { id: string }).id
           if (!trimmedToolUseIds.has(id) && !missingReasons.has(id)) {
-            // Check if we can find a matching tool_use in the assistant
-            const found = (assistantMessage as { toolUses?: Array<{ id: string }> }).toolUses?.find((t) => t.id === id)
-            if (found && !missingReasons.has(id)) {
-              missingReasons.set(id, 'stream_aborted')
-            }
+            missingReasons.set(id, 'stream_aborted')
           }
         }
 
-        // Synthesize results for any missing tool_use blocks
-        if (missingReasons.size > 0) {
-          const toolUses = (assistantMessage as { toolUses?: ToolUse[] }).toolUses ?? []
-          if (toolUses.length > 0) {
-            const synthesisBlocks = synthesizeMissingToolResults({
-              toolUses,
-              completedResults: toolResults.map((r) => ({
-                toolUseId: r.toolUse?.id ?? r.name,
-                output: r.output,
-                isError: (r.output as { ok?: boolean })?.ok === false,
-              })),
-              missingReasons,
-            })
+        // Build ToolUse[] from blocks (assistantMessage.toolUses is not populated
+        // by the stream handler — we must extract from the blocks map directly).
+        const toolUses: ToolUse[] = toolUseBlocks.map((b) => ({
+          id: (b as { id: string }).id,
+          name: (b as { name: string }).name,
+          input: JSON.parse((b as unknown as { content: string }).content || '{}'),
+        }))
 
-            // Push a user message with synthetic tool_results
-            // (content is structured blocks — Anthropic API format, not plain text)
-            this.messages.push({
-              id: crypto.randomUUID(),
-              role: 'user' as const,
-              content: synthesisBlocks.map((b) => ({
-                type: 'tool_result' as const,
-                tool_use_id: b.tool_use_id,
-                content: b.content,
-                is_error: b.is_error,
-              })) as unknown as string,
-              createdAt: new Date(),
-            })
-          }
+        if (toolUses.length > 0) {
+          const synthesisBlocks = synthesizeMissingToolResults({
+            toolUses,
+            completedResults: toolResults.map((r) => ({
+              toolUseId: r.toolUse?.id ?? r.name,
+              output: r.output,
+              isError: (r.output as { ok?: boolean })?.ok === false,
+            })),
+            missingReasons,
+          })
+
+          // Push user message with structured tool_result blocks (Anthropic API format).
+          // Handles both completed results (wrapped) and missing results (synthesized).
+          this.messages.push(buildToolResultMessageFromSynthesis(synthesisBlocks))
         }
 
-        // Now push pending policy feedback AFTER the tool_result message
+        // Push pending policy feedback AFTER the tool_result message
         for (const feedback of pendingPolicyFeedback) {
-          this.messages.push(makeUserMessage(feedback))
+          this.messages.push(buildPolicyFeedbackMessage(feedback))
         }
         pendingPolicyFeedback.length = 0
         missingReasons.clear()
@@ -800,7 +769,7 @@ export class AgentLoop {
         }
 
         // ── Intercept dispatch_subagent (CC mode sub-agent dispatch) ──
-        toolResults = await this.processDispatchSubagent(toolResults, sendEvent)
+        toolResults = await dispatchSubagent(this.buildToolInterceptorContext(), toolResults, sendEvent)
       }
 
       if (
@@ -1035,13 +1004,13 @@ export class AgentLoop {
         // Each pendingToolCall represents a hook resolving to invoke_tool (e.g. create_human_task).
         // Reuses the existing auto-escalate infrastructure (pendingEscalation → waiting_human return).
         if (postToolEval.pendingToolCalls && postToolEval.pendingToolCalls.length > 0) {
-          await this.processPendingGuardrailToolCalls(postToolEval, sendEvent)
+          await guardrailToolCalls(this.buildToolInterceptorContext(), postToolEval, sendEvent)
         }
 
         // Legacy: auto-escalate on escalated summary (backward compat for hooks without invoke_tool).
         if (!postToolEval.pendingToolCalls || postToolEval.pendingToolCalls.length === 0) {
           if (postToolEval.summary === 'escalated') {
-            await this.processPendingGuardrailToolCalls(postToolEval, sendEvent)
+            await guardrailToolCalls(this.buildToolInterceptorContext(), postToolEval, sendEvent)
           }
         }
         } catch (policyErr) {
@@ -1050,8 +1019,8 @@ export class AgentLoop {
       }
 
       // ── Add to message history ───────────────────────────────
+      // NOTE: Tool results are now added via S1 synthesis above (unified format).
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-      addToolResultMessages(this.messages, toolResults)
 
       // ── Step mode: detect todo_write failure + investigation in same batch
       // If the model tried to plan (called todo_write) but the call failed
@@ -1081,265 +1050,17 @@ export class AgentLoop {
         }
       }
 
-      // ── Terminal tool: dispatch_case_agent ─────────────────────────
-      const dispatchCaseAgentResult = toolResults.find(
-        (r) => r.name === 'dispatch_case_agent',
+      // ── Tool interception: dispatch_case_agent, read_chat_memory, etc. ──
+      const interceptorResult = await interceptToolResults(
+        this.buildToolInterceptorContext(),
+        toolResults,
+        sendEvent,
       )
-      if (dispatchCaseAgentResult) {
-        const toolInput = dispatchCaseAgentResult.toolUse?.input || {}
-        const caseType = String(toolInput.caseType || '')
-
-        if (caseType && isInvestigableCaseType(caseType)) {
-          try {
-            // Load case type from DB to build schema
-            const ctRow = await prisma.caseType.findUnique({
-              where: { orgId_type: { orgId: this.deps.orgId, type: caseType } },
-            })
-            if (ctRow) {
-              const stages = (() => { try { return JSON.parse(ctRow.stages) } catch { return [] } })() as string[]
-              const requiredFacts = (() => { try { return JSON.parse(ctRow.requiredFacts) } catch { return [] } })() as string[]
-              const stageConfigs = (() => { try { return JSON.parse(ctRow.stageConfigs || '{}') } catch { return {} } })() as Record<string, unknown>
-              const executionMode = (((ctRow as any).executionMode === 'sop' ? 'cc' : (ctRow as any).executionMode) as 'stage' | 'cc' | undefined) || 'stage'
-              const allSkills = this.skillRouter.getToolDefinitions()
-              const schema: CaseSchemaConfig = {
-                type: ctRow.type, displayName: ctRow.displayName, icon: ctRow.icon,
-                description: ctRow.description || undefined,
-                requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
-                stages: Array.isArray(stages) ? stages : [],
-                stageConfigs: stageConfigs as any,
-                defaultGoal: ctRow.defaultGoal,
-                escalateOn: (() => { try { return JSON.parse(ctRow.escalateOn) } catch { return [] } })() as string[] || [],
-                requireHumanReview: (ctRow as any).requireHumanReview === true,
-                executionMode,
-                sop: (ctRow as any).sop || undefined,
-              }
-
-              // Create a new case for this sub-agent investigation
-              const subCaseId = generateCaseId()
-              await this.persistence.ensureCase({
-                id: subCaseId,
-                orgId: this.deps.orgId,
-                userId: this.deps.userId,
-                type: caseType,
-                status: 'created',
-                chatId: this.deps.chatId ?? this.deps.caseId,
-              })
-
-              // Create ChatMemory for the sub-agent's case
-              await this.persistence.saveMemory(subCaseId, {
-                caseId: subCaseId,
-                confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
-                skillsCalled: JSON.stringify([]),
-                skillResults: JSON.stringify({}),
-                keyEvents: JSON.stringify([]),
-                humanTaskStatus: 'none',
-                needsContinuation: false,
-              })
-
-              // Build SubAgentConfig: merge all stage skills + SOP or stage-driven prompt
-              const stageSkillNames = new Set<string>()
-              for (const sc of Object.values(stageConfigs)) {
-                const cfg = sc as Record<string, unknown>
-                const skills = Array.isArray(cfg.availableSkills) ? cfg.availableSkills : []
-                for (const s of skills) stageSkillNames.add(s)
-              }
-              // Always allow terminal tools
-              for (const t of ['create_human_task', 'finalize_case', 'request_user_input']) {
-                stageSkillNames.add(t)
-              }
-              if (executionMode === 'cc') {
-                stageSkillNames.add('todo_write')
-                stageSkillNames.add('todo_read')
-                stageSkillNames.add('dispatch_subagent')
-              }
-
-              const casePrompt = ctRow.defaultGoal || `Investigate and resolve the customer's ${ctRow.displayName} issue.`
-              const sopDoc = (ctRow as any).sop?.trim()
-              const taskPrompt = executionMode === 'cc' && sopDoc
-                ? `[Case Agent: ${ctRow.displayName}]\n\n## SOP\n${sopDoc}\n\n## Goal\n${casePrompt}\n\nFollow the SOP. Use todo_write to plan, then execute each step. Call finalize_case when done.`
-                : `[Case Agent: ${ctRow.displayName}]\n\n## Goal\n${casePrompt}\n\nInvestigate through these stages: ${stages.join(' → ')}. Call finalize_case when resolved.`
-
-              // Resolve maxIterations from stage configs: use the max across all stages, default 5
-              let subAgentMaxIterations = 5
-              const stageMaxIterValues = Object.values(stageConfigs)
-                .map((sc) => (sc as Record<string, unknown>).maxIterations)
-                .filter((v): v is number => typeof v === 'number' && v > 0)
-              if (stageMaxIterValues.length > 0) {
-                subAgentMaxIterations = Math.max(...stageMaxIterValues)
-              }
-
-              const subAgentConfig: import('@intera/shared/types').SubAgentConfig = {
-                name: `case_agent_${caseType}`,
-                model: this.deps.config.model,
-                systemPrompt: this.deps.config.systemPrompt,
-                skills: Array.from(stageSkillNames),
-                taskTemplate: taskPrompt,
-                parallel: true,
-                maxIterations: subAgentMaxIterations,
-                fallbackModel: this.deps.config.fallbackModel,
-              }
-
-              if (!this.dryRun) {
-                const orchestrator = new OrchestratorAgent(
-                  schema,
-                  allSkills,
-                  this.deps.userId,
-                  this.chatMemory,
-                )
-
-                const caseMem = this.chatMemory.getSummary()
-                const tasks = await orchestrator.planInvestigation(
-                  schema.stages[0] || 'created',
-                  [subAgentConfig],
-                  { ...caseMem, caseId: subCaseId } as any,
-                  casePrompt,
-                )
-
-                if (tasks.length > 0) {
-                  orchestrator.dispatchInBackground(tasks, sendEvent)
-
-                  sendEvent({
-                    type: 'sub_agent_start',
-                    data: {
-                      agentId: tasks[0].id,
-                      agentName: subAgentConfig.name,
-                      taskDescription: casePrompt.slice(0, 200),
-                      stage: 'created',
-                      caseId: subCaseId,
-                    },
-                    timestamp: new Date().toISOString(),
-                  })
-                }
-              } else {
-                // Dry-run (playground): never spawn a real background agent or its
-                // DB writes. Emit a mock sub_agent_start so the UI/trace still shows
-                // the dispatch step, but skip OrchestratorAgent entirely.
-                sendEvent({
-                  type: 'sub_agent_start',
-                  data: {
-                    agentId: `dryrun_${subCaseId}`,
-                    agentName: subAgentConfig.name,
-                    taskDescription: casePrompt.slice(0, 200),
-                    stage: 'created',
-                    caseId: subCaseId,
-                    dryRun: true,
-                  },
-                  timestamp: new Date().toISOString(),
-                })
-              }
-
-              sendEvent({
-                type: 'case_created',
-                data: {
-                  caseId: subCaseId,
-                  caseType: caseType,
-                  displayName: ctRow.displayName,
-                  icon: ctRow.icon,
-                },
-                timestamp: new Date().toISOString(),
-              })
-
-              await this.traceWriter.write('loop_decision', `Case agent dispatched: ${caseType}`, { caseType, caseId: subCaseId })
-
-              // Replace mock result with real case ID
-              for (let i = this.messages.length - 1; i >= 0; i--) {
-                const m = this.messages[i]
-                if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool dispatch_case_agent result:')) {
-                  m.content = `Tool dispatch_case_agent result: ${JSON.stringify({ caseId: subCaseId, status: 'created', note: 'Case agent dispatched in background. Continue the conversation while it works.' })}`
-                  break
-                }
-              }
-
-              // Continue loop — main agent stays in conversation mode
-              continue
-            }
-          } catch (err) {
-            console.error('[AgentLoop] Failed to dispatch case agent:', err)
-          }
-        }
-      }
-
-      // ── Data tool: read_chat_memory ──────────────────────
-      const readMemResult = toolResults.find(
-        (r) => r.name === 'read_chat_memory',
-      )
-      if (readMemResult) {
-        const memSummary = this.chatMemory.getSummary() as unknown as Record<string, unknown>
-        const key = profileKey(this.deps.userId, this.deps.chatId)
-        const dbProfile = key ? await prisma.userProfile.findUnique({ where: { userId: key } }).catch(() => null) : null
-        for (let i = this.messages.length - 1; i >= 0; i--) {
-          const m = this.messages[i]
-          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_chat_memory result:')) {
-            m.content = `Tool read_chat_memory result: ${JSON.stringify({
-              confirmedFacts: memSummary.confirmedFacts ?? {},
-              skillsCalled: memSummary.skillsCalled ?? [],
-              keyEvents: (memSummary.keyEvents as any[])?.slice(-10) ?? [],
-              summary: this.chatMemory.hasSummary() ? (memSummary as any).summary : null,
-            })}`
-            break
-          }
-        }
-      }
-
-      // ── Data tool: read_user_profile ─────────────────────
-      const readProfileResult = toolResults.find(
-        (r) => r.name === 'read_user_profile',
-      )
-      if (readProfileResult) {
-        const key = profileKey(this.deps.userId, this.deps.chatId)
-        const dbProfile = key ? await prisma.userProfile.findUnique({ where: { userId: key } }).catch(() => null) : null
-        for (let i = this.messages.length - 1; i >= 0; i--) {
-          const m = this.messages[i]
-          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.startsWith('Tool read_user_profile result:')) {
-            m.content = `Tool read_user_profile result: ${JSON.stringify({
-              profile: dbProfile?.profile || null,
-              sections: dbProfile?.sections ? JSON.parse(dbProfile.sections) : null,
-              stats: dbProfile ? {
-                totalChats: dbProfile.totalChats,
-                totalCases: dbProfile.totalCases,
-                resolvedCases: dbProfile.resolvedCases,
-                escalatedCases: dbProfile.escalatedCases,
-                lastCaseType: dbProfile.lastCaseType,
-                firstSeenAt: dbProfile.firstSeenAt?.toISOString() ?? null,
-                lastSeenAt: dbProfile.lastSeenAt?.toISOString() ?? null,
-              } : { totalChats: 0, totalCases: 0, resolvedCases: 0, escalatedCases: 0, lastCaseType: null, firstSeenAt: null, lastSeenAt: null },
-            })}`
-            break
-          }
-        }
-      }
-
-      // ── Terminal tool: request_user_input (form) ─────────
-      const formResult = toolResults.find(
-        (r) => r.name === 'request_user_input',
-      )
-      if (formResult) {
-        await this.traceWriter.write('loop_decision', 'Exit: form requested', {
-          stopReason, toolCount: toolResults.length, iteration: this.iterationCount,
-        })
-        const toolInput = formResult.toolUse?.input || {}
-        const title = String(toolInput.title || 'Information Needed')
-        const description = String(toolInput.description || '')
-        const fields = (toolInput.fields as Array<Record<string, unknown>>) || []
-
-        sendEvent({
-          type: 'form_request',
-          data: {
-            caseId: this.deps.caseId,
-            skillCallId: formResult.toolUse?.id || crypto.randomUUID(),
-            title,
-            description,
-            fields,
-          },
-          timestamp: new Date().toISOString(),
-        })
-
-        return {
-          messages: this.messages,
-          caseStatus: this.currentStage as CaseStatus,
-          transition: 'waiting_form',
-          currentStage: this.currentStage,
-        }
+      if (interceptorResult.action.kind === 'continue') continue
+      if (interceptorResult.action.kind === 'return') {
+        this.compactUserProfile().catch(() => {})
+        this.persistChatSession().catch(() => {})
+        return interceptorResult.action.result
       }
 
       // ── Phase 2: Delegate case terminal tools to CaseAgentLoop ─────────────
@@ -1431,6 +1152,26 @@ export class AgentLoop {
   // Helpers
   // -----------------------------------------------------------------------
 
+  private buildToolInterceptorContext(): ToolInterceptorContext {
+    return {
+      caseId: this.deps.caseId,
+      orgId: this.deps.orgId,
+      userId: this.deps.userId,
+      chatId: this.deps.chatId,
+      config: this.deps.config,
+      caseSchema: this.deps.caseSchema,
+      chatMemory: this.chatMemory,
+      persistence: this.persistence,
+      traceWriter: this.traceWriter,
+      skillRouter: this.skillRouter,
+      getCaseLoop: () => this.caseLoop,
+      dryRun: this.dryRun,
+      messages: this.messages,
+      getCurrentStage: () => this.currentStage,
+      setPendingEscalation: (v) => { this.pendingEscalation = v },
+    }
+  }
+
   /**
    * Intercept step-mode internal tools (todo_write / todo_read) — replace their
    * mock executor outputs with real in-memory CaseMemory operations.
@@ -1438,135 +1179,6 @@ export class AgentLoop {
    */
   private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
     return processTodoTools(results, this.chatMemory)
-  }
-
-  /**
-   * G11: Process pending guardrail tool calls from policy evaluation.
-   * Reuses the existing auto-escalate infrastructure (pendingEscalation →
-   * waiting_human return). For Phase 1, the only expected tool is create_human_task.
-   */
-  private async processPendingGuardrailToolCalls(
-    policyEval: import('@intera/shared/types').PolicyEvaluationResult,
-    sendEvent: (event: import('@intera/shared/types').SSEEvent) => void,
-  ): Promise<void> {
-    const escalatedResults = policyEval.results.filter((r) => r.result === 'escalated')
-    const escalatedReasons = escalatedResults
-      .map((r) => `${r.policyName}: ${r.reason || 'guardrail escalation'}`)
-      .join('; ')
-
-    await this.traceWriter.write('loop_decision', 'Auto-escalate from guardrail policy', {
-      policyNames: escalatedResults.map((r) => r.policyName),
-      reasons: escalatedReasons,
-      pendingToolCalls: policyEval.pendingToolCalls,
-    })
-
-    // Process each pending tool call — for Phase 1, only create_human_task is expected
-    const pendingCalls = policyEval.pendingToolCalls || []
-    for (const ptc of pendingCalls) {
-      if (ptc.tool === 'create_human_task') {
-        try {
-          const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-          await this.persistence.ensureCase({
-            id: this.deps.caseId,
-            orgId: this.deps.orgId,
-            userId: this.deps.userId,
-            type: resolvedCaseType,
-            status: 'escalated',
-            blocker: `Guardrail escalation (${ptc.hookName}): ${ptc.reason}`,
-            chatId: this.deps.chatId ?? this.deps.caseId,
-          })
-          await this.persistence.createHumanTask({
-            caseId: this.deps.caseId,
-            queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-            question: `Auto-escalated by guardrail "${ptc.hookName}". ${ptc.reason}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
-            status: 'pending',
-          })
-        } catch (err) {
-          console.error('[AgentLoop] Failed to auto-create human task from guardrail:', err)
-        }
-      }
-    }
-
-    // Legacy fallback: if there are escalated results but no pendingToolCalls,
-    // still create a human task (backward compat).
-    if (pendingCalls.length === 0 && escalatedResults.length > 0) {
-      try {
-        const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-        await this.persistence.ensureCase({
-          id: this.deps.caseId,
-          orgId: this.deps.orgId,
-          userId: this.deps.userId,
-          type: resolvedCaseType,
-          status: 'escalated',
-          blocker: `Policy escalation: ${escalatedReasons}`,
-          chatId: this.deps.chatId ?? this.deps.caseId,
-        })
-        await this.persistence.createHumanTask({
-          caseId: this.deps.caseId,
-          queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-          question: `Auto-escalated by policy. ${escalatedReasons}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
-          status: 'pending',
-        })
-      } catch (err) {
-        console.error('[AgentLoop] Failed to auto-create human task from legacy escalation:', err)
-      }
-    }
-
-    // Customer-facing fallback
-    sendEvent({
-      type: 'text_delta',
-      data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
-      timestamp: new Date().toISOString(),
-    })
-    sendEvent({
-      type: 'escalated',
-      data: { stage: this.currentStage, reason: escalatedReasons },
-      timestamp: new Date().toISOString(),
-    })
-
-    this.pendingEscalation = true
-  }
-
-  /**
-   * Intercept dispatch_subagent calls in CC mode.
-   * Replaces the mock result with an actual orchestrator dispatch.
-   */
-  private async processDispatchSubagent(
-    toolResults: ToolExecutionResult[],
-    sendEvent: (event: SSEEvent) => void,
-  ): Promise<ToolExecutionResult[]> {
-    if (!this.caseLoop) return toolResults
-
-    const dispatchResults: ToolExecutionResult[] = []
-    for (const tr of toolResults) {
-      if (tr.name !== 'dispatch_subagent') {
-        dispatchResults.push(tr)
-        continue
-      }
-      const input = tr.output as { agentName?: string; taskDescription?: string; taskPrompt?: string } | undefined
-      if (!input?.agentName || !input?.taskPrompt) {
-        dispatchResults.push({
-          ...tr,
-          output: { ok: false, error: 'dispatch_subagent requires agentName, taskDescription, and taskPrompt' },
-        })
-        continue
-      }
-      try {
-        await this.caseLoop.dispatchSingle(
-          input.agentName,
-          input.taskDescription ?? input.agentName,
-          input.taskPrompt,
-          sendEvent,
-        )
-        dispatchResults.push({ ...tr, output: { ok: true, status: 'dispatched', agentName: input.agentName } })
-      } catch (err) {
-        dispatchResults.push({
-          ...tr,
-          output: { ok: false, error: String(err) },
-        })
-      }
-    }
-    return dispatchResults
   }
 
   private buildApiMessages() {
