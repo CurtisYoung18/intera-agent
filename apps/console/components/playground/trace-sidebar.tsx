@@ -458,6 +458,9 @@ function TurnSection({
             const isModelGen = step.stage === 'Model generation'
             const isSkill = step.stage === 'Skills & tools' || step.stage === 'Knowledge retrieval'
 
+            // Skip trace skill steps when live tools already show them (avoids duplication during streaming)
+            if (isSkill && hasLiveTools) return null
+
             if (isSkill && step.detail?.length > 0) {
               return step.detail.map(([actionType, detailText], di) => {
                 const toolKey = `${turnIdx}-${i}-${di}`
