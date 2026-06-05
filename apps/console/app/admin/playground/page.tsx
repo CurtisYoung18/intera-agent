@@ -93,6 +93,7 @@ export default function PlaygroundPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent' | 'system'; content: string; thinking?: string; images?: AttachedImage[]; notice?: LifecycleNotice }>>([])
   const [reply, setReply] = useState('')
   const [showThinking, setShowThinking] = useState(false)
+  const [openThinkings, setOpenThinkings] = useState<Set<number>>(new Set())
   const thinkingAccRef = useRef('')
   const [responding, setResponding] = useState(false)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([])
@@ -581,7 +582,7 @@ export default function PlaygroundPage() {
 
   return (
     <>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes wc-think-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:.8;transform:scale(1)}}`}</style>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* ═══════════════════════════════════════════
           Ambient background orbs
@@ -870,30 +871,79 @@ export default function PlaygroundPage() {
                 {/* Per-message thinking (above agent bubble, collapsed, survives turns) */}
                 {m.role !== 'system' && (
                   <>
-                {showThinking && m.role === 'agent' && m.thinking && (
-                  <details style={{
-                    padding: '10px 14px', borderRadius: 12,
-                    marginBottom: 6,
-                    background: 'rgba(139,111,245,0.04)',
-                    border: '1px solid rgba(139,111,245,0.1)',
-                    fontSize: 12,
-                  }}>
-                    <summary style={{
-                      fontWeight: 600, color: 'var(--lavender)',
-                      cursor: 'pointer', marginBottom: 6,
+                {showThinking && m.role === 'agent' && m.thinking && (() => {
+                  const isOpen = openThinkings.has(i)
+                  return (
+                    <div key={`think-${i}`} style={{
+                      borderRadius: 16,
+                      background: '#fffcf9',
+                      border: '1px solid rgba(0,0,0,0.06)',
+                      marginBottom: 6,
+                      boxShadow: '0 1px 2px rgba(60,40,20,0.04)',
+                      overflow: 'hidden',
+                      fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
                     }}>
-                      Thinking
-                    </summary>
-                    <div style={{
-                      color: 'var(--mist)', lineHeight: 1.7,
-                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                      fontFamily: 'var(--font-serif), serif', fontStyle: 'italic',
-                      fontSize: 12,
-                    }}>
-                      {m.thinking}
+                      <div
+                        onClick={() => {
+                          setOpenThinkings(prev => {
+                            const next = new Set(prev)
+                            if (next.has(i)) next.delete(i)
+                            else next.add(i)
+                            return next
+                          })
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '14px 18px', cursor: 'pointer',
+                          userSelect: 'none',
+                        }}
+                      >
+                        <svg
+                          width="18" height="18" viewBox="0 0 24 24" fill="none"
+                          stroke="#b8a99a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          style={{
+                            transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)',
+                            transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                        <span style={{
+                          fontSize: 13, fontWeight: 600,
+                          color: '#b87347',
+                          letterSpacing: '0.01em',
+                        }}>
+                          Thinking
+                        </span>
+                        <span style={{
+                          width: 7, height: 7, borderRadius: '50%',
+                          background: '#d4764e', opacity: 0.6,
+                          animation: 'wc-think-pulse 2.5s ease-in-out infinite',
+                        }} />
+                      </div>
+                      <div style={{
+                        maxHeight: isOpen ? 400 : 0,
+                        overflow: 'hidden',
+                        transition: 'max-height 0.4s cubic-bezier(0.4,0,0.2,1), padding 0.3s ease',
+                        padding: isOpen ? '0 18px 16px' : '0 18px',
+                      }}>
+                        <div style={{
+                          height: 1, marginBottom: 12,
+                          background: 'linear-gradient(90deg, transparent, rgba(0,0,0,0.06), transparent)',
+                        }} />
+                        <div style={{
+                          fontFamily: "'Literata', Georgia, serif",
+                          fontSize: 14, fontStyle: 'italic',
+                          color: '#6b5e54', lineHeight: 1.8,
+                          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                        }}>
+                          {m.thinking}
+                        </div>
+                      </div>
                     </div>
-                  </details>
-                )}
+                  )
+                })()}
                 <div
                   style={{
                     padding: '12px 16px', borderRadius: 14,
