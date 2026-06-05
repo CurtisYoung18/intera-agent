@@ -404,7 +404,7 @@ export class StreamingToolExecutor {
           const avgEmbeddingRate = embeddingRateSum / sources.length
           body = {
             prompt: input.query,
-            top_k: (input.topK as number) ?? maxTopK,
+            top_k: Math.max((input.topK as number) ?? maxTopK, maxTopK),
             group_ids: [...new Set(allGroupIds)],
             embedding_rate: avgEmbeddingRate,
             ...(sources[0]?.rerankVersion && { rerank_version: sources[0].rerankVersion }),
@@ -413,7 +413,7 @@ export class StreamingToolExecutor {
         } else {
           body = {
             prompt: input.query,
-            top_k: (input.topK as number) ?? 15,
+            top_k: Math.max((input.topK as number) ?? 15, 15),
           }
         }
       } catch {
