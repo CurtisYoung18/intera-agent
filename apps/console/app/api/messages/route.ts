@@ -13,6 +13,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
+import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 
 // Verify env vars at module load (logged once per cold start)
 const AUTH_SET = !!process.env.ANTHROPIC_AUTH_TOKEN
@@ -101,7 +102,7 @@ async function resolveCaseByIntent(
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
 ): Promise<string> {
-  const model = process.env.HUB_ROUTING_MODEL || 'deepseek-v4-flash'
+  const model = process.env.HUB_ROUTING_MODEL || DEFAULT_MEMORY_MODEL
 
   const caseList = activeCases
     .map((c) => `- id: "${c.id}", type: ${c.type}`)

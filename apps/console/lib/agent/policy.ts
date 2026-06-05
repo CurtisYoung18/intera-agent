@@ -17,6 +17,7 @@
 //   F6 — Audit: every hook resolution → AuditLog.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import { createAgentClient } from './api/provider-config'
 import type {
   PolicyHook,
@@ -125,7 +126,7 @@ export class PolicyEngine {
 
   constructor(orgId: string, _guardrails?: CapabilityBindings['guardrails']) {
     this.orgId = orgId
-    this.policyModel = process.env.POLICY_EVAL_MODEL || 'deepseek-v4-flash'
+    this.policyModel = process.env.POLICY_EVAL_MODEL || DEFAULT_MEMORY_MODEL
     this.llmClient = createAgentClient(this.policyModel)
   }
 
