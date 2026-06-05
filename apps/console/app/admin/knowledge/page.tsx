@@ -402,6 +402,12 @@ export default function KnowledgePage() {
   const boundSources = sources.filter(s => boundNames.includes(s.name))
   const boundEnabledCount = boundSources.filter(s => s.enabled).length
 
+  // GPTBots KBs already bound = IDs in groupIds of any bound source
+  const boundKbIds = new Set(
+    boundSources.flatMap(s => parseGroupIds(s.groupIds))
+  )
+  const availableKbs = gptKbs.filter(kb => !boundKbIds.has(kb.id))
+
   // ── Source CRUD ────────────────────────────────────────────────────
 
   const handleSave = async () => {
@@ -455,13 +461,39 @@ export default function KnowledgePage() {
     }
   }
 
-  const bindSource = (source: KnowledgeSource) => {
-    const newB = toggleItemBinding(bindings, 'knowledge', source.name)
-    saveBindings(newB)
-    setShowAddPicker(false)
-  }
+  const bindGptBotKb = async (kb: GptBotKb) => {
+    // AC-E: If KB name already exists in local DB, just bind it
+    const existing = sources.find(s => s.name === kb.name)
+    if (existing) {
+      const newB = toggleItemBinding(bindings, 'knowledge', existing.name)
+      saveBindings(newB)
+      setShowAddPicker(false)
+      return
+    }
 
-  const unboundSources = sources.filter(s => !boundNames.includes(s.name))
+    // AC-D: Create local KnowledgeSource from GPTBots KB
+    try {
+      await apiClient('/api/admin/knowledge/sources', {
+        method: 'POST',
+        body: {
+          name: kb.name,
+          description: kb.desc || null,
+          groupIds: JSON.stringify([kb.id]),
+          embeddingRate: 0.9,
+          topK: 15,
+          rerankVersion: 'BGE-Rerank',
+          docCorrelation: 0.3,
+          enabled: true,
+        },
+      })
+      const newB = toggleItemBinding(bindings, 'knowledge', kb.name)
+      saveBindings(newB)
+      fetchSources()
+      setShowAddPicker(false)
+    } catch {
+      setError('Failed to add knowledge source')
+    }
+  }
 
   // ── Test search ────────────────────────────────────────────────────
 
@@ -549,8 +581,12 @@ export default function KnowledgePage() {
                   Knowledge Sources ({boundSources.length})
                 </h2>
                 <button
-                  onClick={() => setShowAddPicker(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card text-[12px] font-semibold text-[var(--malachite)] hover:opacity-80 transition-opacity"
+                  onClick={() => gptConnected && setShowAddPicker(true)}
+                  disabled={!gptConnected}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card text-[12px] font-semibold transition-opacity ${
+                    gptConnected ? 'text-[var(--malachite)] hover:opacity-80' : 'text-[var(--fog)] opacity-40 cursor-not-allowed'
+                  }`}
+                  title={!gptConnected ? 'Configure GPTBots API key first' : undefined}
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Source
                 </button>
@@ -810,22 +846,25 @@ export default function KnowledgePage() {
                 </button>
               </div>
               <div className="px-5 py-4">
-                {unboundSources.length === 0 ? (
+                {availableKbs.length === 0 ? (
                   <p className="text-[13px] text-[var(--fog)] py-8 text-center">
-                    All organization sources are already bound to this agent.
+                    {gptKbs.length === 0
+                      ? 'No knowledge bases found in GPTBots.'
+                      : 'All knowledge bases are already bound to this agent.'}
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {unboundSources.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between gap-3 glass-card px-4 py-3">
+                    {availableKbs.map((kb) => (
+                      <div key={kb.id} className="flex items-center justify-between gap-3 glass-card px-4 py-3">
                         <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</p>
-                          {s.description && (
-                            <p className="text-[11px] text-[var(--fog)] mt-0.5 line-clamp-1">{s.description}</p>
+                          <p className="text-[13px] font-semibold text-[var(--mist)] truncate">{kb.name}</p>
+                          {kb.desc && (
+                            <p className="text-[11px] text-[var(--fog)] mt-0.5 line-clamp-1">{kb.desc}</p>
                           )}
+                          <p className="text-[10px] text-[var(--fog)] mt-0.5">{kb.chunk} chunks · {kb.doc} docs</p>
                         </div>
                         <button
-                          onClick={() => bindSource(s)}
+                          onClick={() => bindGptBotKb(kb)}
                           className="px-3 py-1.5 rounded-xl bg-[var(--indigo)] text-white text-[11px] font-semibold hover:opacity-90 transition-opacity flex-shrink-0"
                         >
                           Bind
