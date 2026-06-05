@@ -495,14 +495,18 @@ model ChatSession {
 }
 
 // ============================================
-// S5 — Channel Binding — per-org channel config
+// S5 — Channel Binding — per-org, per-agent channel config
+// agentName NULL = org default/fallback; non-NULL = per-agent override
 // ============================================
 model ChannelBinding {
   id                  String   @id @default(cuid())
   orgId          String @map("org_id") @default("default")
+  agentName           String?  @map("agent_name") // NULL = org default; non-NULL = per-agent
   channel             String   // 'web-chat' | 'livechat' | 'slack' | 'discord' | 'whatsapp'
   enabled             Boolean  @default(false)
-  credentials         String   @default("{}") // JSON
+  credentials         String   @default("{}") // JSON — secrets/connection (LiveChatCredentials etc.)
+  botAccessToken      String?  @map("bot_access_token") // denormalized from credentials for common queries
+  licenseId           String?  @map("license_id")       // denormalized from credentials for common queries
   toolOverrides       String?  // JSON: Record<string, RenderHint>
   defaults            String?  // JSON: { plain?, card?, form? }
   channelSkillBinding String?  // JSON: string[] — allowlist of tool names
@@ -512,7 +516,7 @@ model ChannelBinding {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  @@unique([orgId, channel])
+  @@unique([orgId, agentName, channel])
   @@map("channel_bindings")
 }
 
