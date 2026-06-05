@@ -640,11 +640,19 @@ export class AgentLoop {
         this.profiler.addToolExecution(tr.latencyMs || 0)
       }
 
+      // ── Ensure assistant message is pushed before tool results ──
+      // For blocked/escalated tools, the message was already pushed in onToolUseCompleted.
+      // For normal tools, we push it here so the tool_result message comes after it.
+      if (!assistantPushed && assistantMessage) {
+        this.messages.push(assistantMessage)
+        assistantPushed = true
+      }
+
       // ── S1: Post-stream synthesis — guarantee one tool_result per tool_use ──
       // Always runs: wraps ALL tool results (success + error) into Anthropic
       // API-format user messages with structured tool_result blocks.
       // This replaces the legacy addToolResultMessages (assistant text format).
-      if (assistantPushed && assistantMessage) {
+      if (assistantMessage) {
         const toolUseBlocks = blocks
           ? [...(blocks as unknown as Map<unknown, { type: string; id: string; name: string }>).values()]
             .filter((b) => b.type === 'tool_use')
@@ -667,6 +675,10 @@ export class AgentLoop {
           name: (b as { name: string }).name,
           input: JSON.parse((b as unknown as { content: string }).content || '{}'),
         }))
+
+        // Populate toolUses on assistantMessage so buildApiMessages can include
+        // them as content blocks for the next API call (required by Anthropic API).
+        assistantMessage.toolUses = toolUses.length > 0 ? toolUses : undefined
 
         if (toolUses.length > 0) {
           const synthesisBlocks = synthesizeMissingToolResults({

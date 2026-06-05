@@ -52,6 +52,19 @@ export function buildApiMessages(
       })
       return { role: msg.role, content: blocks }
     }
+    // If this is an assistant message with tool_use blocks, build content
+    // as an array of text + tool_use blocks (Anthropic API format).
+    const toolUses = (msg as any).toolUses as Array<{ id: string; name: string; input: Record<string, unknown> }> | undefined
+    if (toolUses?.length) {
+      const blocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }> = []
+      if (msg.content) {
+        blocks.push({ type: 'text', text: msg.content as string })
+      }
+      for (const tu of toolUses) {
+        blocks.push({ type: 'tool_use', id: tu.id, name: tu.name, input: tu.input })
+      }
+      return { role: msg.role, content: blocks }
+    }
     return { role: msg.role, content: msg.content }
   }
 
