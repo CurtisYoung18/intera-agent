@@ -18,7 +18,7 @@ import {
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MessageContent from '@/components/chat/message-content'
 // Trace timeline rendered inline below
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
@@ -91,8 +91,7 @@ function MessageRow({ msg }: { msg: MsgItem }) {
           isUser ? 'bg-indigo/[0.12] text-[var(--mist)] rounded-tr-sm'
           : isToolResult ? 'bg-black/[0.04] font-mono text-[11px] text-[var(--fog)] rounded-tl-sm border border-black/[0.05]'
           : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'}`}>
-          {isToolResult ? <pre className="whitespace-pre-wrap break-words">{msg.content}</pre>
-          : <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>}
+          <MessageContent content={msg.content} />
         </div>
         <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt)}</span>
       </div>
