@@ -373,6 +373,7 @@ export class StreamingToolExecutor {
         let sources: Array<{
           groupIds: string; topK: number; embeddingRate: number;
           docCorrelation: number | null; rerankVersion: string | null;
+          modelControlTopK: boolean;
         }> = []
 
         if (definition.name.startsWith('kb_search_')) {
@@ -402,9 +403,12 @@ export class StreamingToolExecutor {
           }
 
           const avgEmbeddingRate = embeddingRateSum / sources.length
+          const source = sources[0]
           body = {
             prompt: input.query,
-            top_k: (input.topK as number) ?? maxTopK,
+            top_k: source.modelControlTopK
+              ? Math.min(Math.max((input.topK as number) ?? source.topK, 1), 30)
+              : source.topK,
             group_ids: [...new Set(allGroupIds)],
             embedding_rate: avgEmbeddingRate,
             ...(sources[0]?.rerankVersion && { rerank_version: sources[0].rerankVersion }),
