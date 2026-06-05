@@ -106,6 +106,7 @@ export default function PlaygroundPage() {
   const [turnTotalMs, setTurnTotalMs] = useState<number[]>([])
   const turnNumRef = useRef(0)
   const [collapsedTraces, setCollapsedTraces] = useState<Set<string>>(new Set())
+  const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set())
   const [showSkipped, setShowSkipped] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [error, setError] = useState('')
@@ -293,6 +294,16 @@ export default function PlaygroundPage() {
           source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
         }))
       }
+      // Send conversation history so the model has multi-turn context.
+      // Filter out system notices — only user and agent messages matter.
+      body.messages = chatMessages
+        .filter((m) => m.role === 'user' || m.role === 'agent')
+        .map((m) => ({
+          id: crypto.randomUUID(),
+          role: m.role === 'agent' ? 'assistant' : 'user',
+          content: m.content,
+          createdAt: new Date().toISOString(),
+        }))
 
       const pushNotice = (notice: LifecycleNotice) => {
         setChatMessages(prev => [...prev, { role: 'system' as const, content: '', notice }])
@@ -1144,21 +1155,55 @@ export default function PlaygroundPage() {
                                   <div style={{ fontSize: 10, color: 'var(--mist)', fontWeight: 500 }}>{step.title}</div>
                                 )}
                                 {/* Expand individual tool calls for Skills & tools stage */}
-                                {isTools && !collapsed && step.detail.map(([actionType, detail]: [string, string], di: number) => (
-                                  <div key={di} style={{
-                                    display: 'flex', alignItems: 'center', gap: 6,
-                                    padding: '3px 8px', marginTop: 2, borderRadius: 6,
-                                    background: 'rgba(139,111,245,0.03)',
-                                    border: '1px solid rgba(139,111,245,0.06)',
-                                    fontSize: 10, color: 'var(--mist)',
-                                  }}>
-                                    <StatusDot status={actionType === 'skill_result' ? 'ok' : 'info'} size={7} />
-                                    <span style={{ fontWeight: 500, flexShrink: 0 }}>{actionType === 'skill_called' ? 'call' : 'result'}</span>
-                                    <span style={{ color: 'var(--fog)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {detail}
-                                    </span>
+                                {isTools && !collapsed && step.detail.map(([actionType, detail]: [string, string], di: number) => {
+                                  const detailKey = `${ck}-d${di}`
+                                  const detailExpanded = expandedDetails.has(detailKey)
+                                  const lineCount = detail.split('\n').length
+                                  return (
+                                  <div key={di}>
+                                    <div style={{
+                                      display: 'flex', alignItems: 'center', gap: 6,
+                                      padding: '3px 8px', marginTop: 2, borderRadius: 6,
+                                      background: 'rgba(139,111,245,0.03)',
+                                      border: '1px solid rgba(139,111,245,0.06)',
+                                      fontSize: 10, color: 'var(--mist)',
+                                      cursor: lineCount > 1 ? 'pointer' : 'default',
+                                    }} onClick={() => {
+                                      if (lineCount > 1) {
+                                        setExpandedDetails(prev => {
+                                          const next = new Set(prev)
+                                          if (next.has(detailKey)) { next.delete(detailKey) } else { next.add(detailKey) }
+                                          return next
+                                        })
+                                      }
+                                    }}>
+                                      <StatusDot status={actionType === 'skill_result' ? 'ok' : 'info'} size={7} />
+                                      <span style={{ fontWeight: 500, flexShrink: 0 }}>{actionType === 'skill_called' ? 'call' : 'result'}</span>
+                                      <span style={{ color: 'var(--fog)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                        {detail}
+                                      </span>
+                                      {lineCount > 1 && <ChevronDown size={8} color="var(--fog)" style={{ flexShrink: 0, transform: detailExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />}
+                                    </div>
+                                    {detailExpanded && (
+                                      <pre style={{
+                                        margin: '2px 8px 4px 24px',
+                                        padding: '6px 10px',
+                                        fontSize: 9,
+                                        color: 'var(--fog)',
+                                        background: 'rgba(255,255,255,0.95)',
+                                        border: '1px solid var(--border-subtle)',
+                                        borderRadius: 8,
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                        maxHeight: 200,
+                                        overflow: 'auto',
+                                      }}>
+                                        {detail}
+                                      </pre>
+                                    )}
                                   </div>
-                                ))}
+                                  )
+                                })}
                                 {!isTools && step.promptData && (
                                   <PromptViewer systemPrompt={step.promptData.systemPrompt} messages={step.promptData.messages} />
                                 )}

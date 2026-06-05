@@ -197,10 +197,14 @@ export function aggregateTraces(
       if ((r.actionType === 'skill_called' || r.actionType === 'skill_result') && r.payload) {
         try {
           const p = JSON.parse(r.payload)
-          const label = r.actionType === 'skill_called'
-            ? (p.input ? JSON.stringify(p.input) : r.title || '')
-            : (p.output ? JSON.stringify(p.output) : r.title || '')
-          return [r.actionType, label]
+          if (r.actionType === 'skill_called') {
+            return [r.actionType, p.input ? JSON.stringify(p.input) : r.title || '']
+          }
+          // skill_result: show both input and output when available
+          const parts: string[] = []
+          if (p.input) parts.push(`input: ${JSON.stringify(p.input)}`)
+          if (p.output) parts.push(`output: ${JSON.stringify(p.output)}`)
+          return [r.actionType, parts.length > 0 ? parts.join('\n') : r.title || '']
         } catch { /* fall through */ }
       }
       return [r.actionType, r.detail || r.title || '']
