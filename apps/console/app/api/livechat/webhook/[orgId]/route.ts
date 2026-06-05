@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
     method: 'POST',
     auth: 'webhook',
     async handler({ params }) {
-      // Load config from channel_bindings (primary) with livechat_configs fallback
+      // Load config from channel_bindings
       const config = await getLiveChatConfig(params.orgId)
       if (!config?.enabled) return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
 

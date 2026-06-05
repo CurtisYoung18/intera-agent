@@ -1,8 +1,7 @@
 // GET /api/livechat/config — Anonymous widget-facing route
-// Returns only non-sensitive fields. Reads from channel_bindings (primary)
-// with livechat_configs fallback. Does NOT use getLiveChatConfig because
-// this route must return the config even when enabled=false.
-// Migrated to defineRoute (G1 contract seam).
+// Returns only non-sensitive fields from channel_bindings.
+// Does NOT use getLiveChatConfig because this route must return the config
+// even when enabled=false. Migrated to defineRoute (G1 contract seam).
 
 import { NextResponse } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
@@ -28,28 +27,22 @@ export const GET = defineRoute({
       select: { enabled: true, credentials: true },
     })
 
-    if (cbRow) {
-      let creds: Record<string, unknown> = {}
-      try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
+    if (!cbRow) {
       return NextResponse.json({
         orgId: session.orgId,
-        enabled: cbRow.enabled,
-        showSkillStatus: (creds.showSkillStatus as boolean) ?? true,
-        region: (creds.region as string) ?? 'dal',
+        enabled: false,
+        showSkillStatus: true,
+        region: 'dal',
       }, { headers: CORS })
     }
 
-    // Fall back to livechat_configs
-    const lcRow = await prisma.liveChatConfig.findUnique({
-      where: { orgId: session.orgId },
-      select: { enabled: true, showSkillStatus: true, region: true },
-    })
-
+    let creds: Record<string, unknown> = {}
+    try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
     return NextResponse.json({
       orgId: session.orgId,
-      enabled: lcRow?.enabled ?? false,
-      showSkillStatus: lcRow?.showSkillStatus ?? true,
-      region: lcRow?.region ?? 'dal',
+      enabled: cbRow.enabled,
+      showSkillStatus: (creds.showSkillStatus as boolean) ?? true,
+      region: (creds.region as string) ?? 'dal',
     }, { headers: CORS })
   },
 })

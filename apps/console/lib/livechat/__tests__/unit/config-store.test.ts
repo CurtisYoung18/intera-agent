@@ -1,13 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockFindUnique = vi.fn()
 const mockFindFirst = vi.fn()
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
-    liveChatConfig: {
-      findUnique: (...args: unknown[]) => mockFindUnique(...args),
-    },
     channelBinding: {
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
     },
@@ -22,31 +18,26 @@ describe('config-store', () => {
   })
 
   describe('getLiveChatConfig', () => {
-    it('returns null when config not found', async () => {
+    it('returns null when no channel_bindings row exists', async () => {
       mockFindFirst.mockResolvedValue(null)
-      mockFindUnique.mockResolvedValue(null)
       const config = await getLiveChatConfig('cust-a')
       expect(config).toBeNull()
     })
 
-    it('returns config when found (channel_bindings fallback to livechat_configs)', async () => {
-      // channel_bindings query returns null — fallback to livechat_configs
-      mockFindFirst.mockResolvedValue(null)
-      mockFindUnique.mockResolvedValue({
+    it('returns config when found in channel_bindings', async () => {
+      mockFindFirst.mockResolvedValue({
         orgId: 'cust-b',
         botAccessToken: 'tok123',
         licenseId: 'lic456',
         showSkillStatus: true,
         enabled: true,
+        credentials: '{}',
       })
       const config = await getLiveChatConfig('cust-b')
-      expect(config).toEqual({
-        orgId: 'cust-b',
-        botAccessToken: 'tok123',
-        licenseId: 'lic456',
-        showSkillStatus: true,
-        enabled: true,
-      })
+      expect(config).not.toBeNull()
+      expect(config!.botAccessToken).toBe('tok123')
+      expect(config!.licenseId).toBe('lic456')
+      expect(config!.enabled).toBe(true)
     })
 
     it('returns null on prisma error', async () => {

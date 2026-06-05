@@ -124,7 +124,6 @@ export function repoForOrg(orgId: string) {
     apiKey: scopedModel(prisma.apiKey, orgId),
     case: scopedModel(prisma.case, orgId),
     userProfile: scopedModel(prisma.userProfile, orgId),
-    liveChatConfig: scopedModel(prisma.liveChatConfig, orgId),
     livechatPendingEvent: scopedModel(prisma.liveChatPendingEvent, orgId),
     channelHealth: scopedModel(prisma.channelHealth, orgId),
     chatSession: scopedModel(prisma.chatSession, orgId),

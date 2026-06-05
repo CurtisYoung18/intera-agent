@@ -20,14 +20,12 @@ vi.mock('@/lib/api-auth', () => ({
 
 vi.mock('@intera/shared/prisma', () => {
   // Use Proxy so repoForOrg can access any model property without crashing
-  const findUniqueMock = vi.fn()
   const findFirstMock = vi.fn()
   // Default no-op proxy for any unlisted model — returns itself for chaining
   const noopModel = new Proxy({}, { get: () => vi.fn() })
   return {
     prisma: new Proxy(
       {
-        liveChatConfig: { findUnique: findUniqueMock },
         channelBinding: { findFirst: findFirstMock },
       },
       {
@@ -56,7 +54,7 @@ function mkReq(url = 'http://localhost/api/test', opts?: { headers?: Record<stri
 const mockGetSession = getSession as ReturnType<typeof vi.fn>
 const mockResolveApiKey = resolveOrgFromApiKey as ReturnType<typeof vi.fn>
 const mockTrustedCall = isTrustedInternalCall as ReturnType<typeof vi.fn>
-const mockFindConfig = prisma.liveChatConfig.findUnique as ReturnType<typeof vi.fn>
+const mockFindFirst = (prisma as any).channelBinding.findFirst as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -192,6 +190,60 @@ describe('defineRoute auth modes', () => {
       await handler(mkReq())
       expect(called).toBe(true)
     })
+
+    it('trusted-internal call reads agentConfigId from x-intera-agent-config-id header', async () => {
+      mockTrustedCall.mockReturnValue(true)
+
+      let captured: any = null
+      const handler = defineRoute({
+        method: 'POST',
+        auth: 'apiKey',
+        handler: async (ctx) => {
+          captured = ctx.session
+          return { ok: true, data: {} }
+        },
+      })
+
+      const req = mkReq('http://localhost/api/messages', {
+        headers: {
+          'x-intera-org': 'acme',
+          'x-intera-agent-config-id': 'agent-cfg-42',
+        },
+      })
+      await handler(req)
+
+      expect(captured.orgId).toBe('acme')
+      expect(captured.agentConfigId).toBe('agent-cfg-42')
+      expect(captured.authMode).toBe('apiKey')
+    })
+
+    it('external apiKey call IGNORES x-intera-agent-config-id header (security)', async () => {
+      // Non-internal call: header must be ignored. agentConfigId comes from apiKey binding.
+      mockTrustedCall.mockReturnValue(false)
+      mockResolveApiKey.mockResolvedValue({ orgId: 'api-org', agentConfigId: 'cfg-from-apikey' })
+
+      let captured: any = null
+      const handler = defineRoute({
+        method: 'POST',
+        auth: 'apiKey',
+        handler: async (ctx) => {
+          captured = ctx.session
+          return { ok: true, data: {} }
+        },
+      })
+
+      const req = mkReq('http://localhost/api/messages', {
+        headers: {
+          Authorization: 'Bearer sk-valid',
+          'x-intera-agent-config-id': 'injected-by-attacker',
+        },
+      })
+      await handler(req)
+
+      // agentConfigId comes from the API key binding, NOT the header
+      expect(captured.orgId).toBe('api-org')
+      expect(captured.agentConfigId).toBe('cfg-from-apikey')
+    })
   })
 
   // ─── auth: webhook ───
@@ -235,7 +287,7 @@ describe('defineRoute auth modes', () => {
 
     it('passes with valid x-webhook-secret header', async () => {
       mockTrustedCall.mockReturnValue(false)
-      mockFindConfig.mockResolvedValue({ webhookSecret: 'secret-123' })
+      mockFindFirst.mockResolvedValue({ credentials: JSON.stringify({ webhookSecret: 'secret-123' }) })
 
       let captured: any = null
       const handler = defineRoute<void, { orgId: string }>({
@@ -258,7 +310,7 @@ describe('defineRoute auth modes', () => {
 
     it('returns 401 with wrong x-webhook-secret header', async () => {
       mockTrustedCall.mockReturnValue(false)
-      mockFindConfig.mockResolvedValue({ webhookSecret: 'secret-123' })
+      mockFindFirst.mockResolvedValue({ credentials: JSON.stringify({ webhookSecret: 'secret-123' }) })
 
       const handler = defineRoute({
         method: 'POST',
@@ -275,7 +327,7 @@ describe('defineRoute auth modes', () => {
 
     it('returns 401 when webhook is not configured', async () => {
       mockTrustedCall.mockReturnValue(false)
-      mockFindConfig.mockResolvedValue(null)
+      mockFindFirst.mockResolvedValue(null)
 
       const handler = defineRoute({
         method: 'POST',

@@ -411,29 +411,6 @@ model HumanTask {
 }
 
 // ============================================
-// LiveChat Bridge — 集成配置
-// ============================================
-model LiveChatConfig {
-  id              String   @id @default(cuid())
-  orgId      String?  @map("org_id") @unique
-  botAccessToken  String
-  licenseId       String
-  webhookSecret   String?
-  region          String   @default("dal")
-  authType        String   @default("auto")
-  accountId       String?
-  agentAccountId  String?
-  showSkillStatus Boolean  @default(true)
-  enabled         Boolean  @default(false)
-  transferGroupId Int?
-  transferMessage String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@map("livechat_configs")
-}
-
-// ============================================
 // Webhook Event — idempotency dedup (LiveChat / Slack / etc.)
 // ============================================
 model WebhookEvent {

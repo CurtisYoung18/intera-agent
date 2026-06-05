@@ -1,6 +1,5 @@
 // apps/console/lib/livechat/config-store.ts
-// Reads LiveChatConfig from channel_bindings (primary) with livechat_configs fallback.
-// TTL cache keyed by (orgId, agentName?).
+// Reads LiveChatConfig from channel_bindings. TTL cache keyed by (orgId, agentName?).
 
 import { prisma } from '@intera/shared/prisma'
 import type { LiveChatConfig } from './types'
@@ -21,36 +20,6 @@ export function invalidateLiveChatConfig(orgId: string, agentName?: string | nul
   cache.delete(cacheKey(orgId, agentName))
   // Also invalidate org-level cache entries when per-agent changes
   if (agentName) cache.delete(orgId)
-}
-
-function hydrateFromLiveChatConfigRow(row: {
-  orgId: string
-  botAccessToken: string
-  licenseId: string
-  webhookSecret?: string | null
-  region?: string | null
-  authType?: string | null
-  accountId?: string | null
-  agentAccountId?: string | null
-  showSkillStatus: boolean
-  enabled: boolean
-  transferGroupId?: number | null
-  transferMessage?: string | null
-}): LiveChatConfig {
-  return {
-    orgId: row.orgId,
-    botAccessToken: row.botAccessToken,
-    licenseId: row.licenseId,
-    webhookSecret: row.webhookSecret ?? undefined,
-    region: row.region ?? undefined,
-    authType: (row.authType as LiveChatConfig['authType']) ?? undefined,
-    accountId: row.accountId ?? undefined,
-    agentAccountId: row.agentAccountId ?? undefined,
-    showSkillStatus: row.showSkillStatus,
-    enabled: row.enabled,
-    transferGroupId: row.transferGroupId ?? undefined,
-    transferMessage: row.transferMessage ?? undefined,
-  }
 }
 
 function hydrateFromChannelBinding(row: {
@@ -123,13 +92,7 @@ export async function getLiveChatConfig(
       return config
     }
 
-    // 3. Fall back to livechat_configs
-    const lcRow = await prisma.liveChatConfig.findUnique({ where: { orgId } })
-    if (!lcRow || !lcRow.enabled) return null
-
-    const config = hydrateFromLiveChatConfigRow({ ...lcRow, orgId })
-    cache.set(key, { config, expiresAt: Date.now() + TTL_MS })
-    return config
+    return null
   } catch (err) {
     console.error('[LiveChat] Failed to load config:', err)
     return null
@@ -152,9 +115,7 @@ export async function upsertLiveChatConfig(
     transferMessage: data.transferMessage,
   })
 
-  // Dual-write during expand phase: channel_bindings (new) + livechat_configs (legacy)
-
-  // 1. Upsert channel_bindings row
+  // Upsert channel_bindings row
   const existing = await prisma.channelBinding.findFirst({
     where: { orgId, channel: 'livechat', agentName: agentName ?? null },
   })
@@ -182,13 +143,6 @@ export async function upsertLiveChatConfig(
       },
     })
   }
-
-  // 2. Also write to livechat_configs (legacy — removed in Wave 6)
-  await prisma.liveChatConfig.upsert({
-    where: { orgId },
-    update: data,
-    create: { orgId, ...data },
-  })
 
   invalidateLiveChatConfig(orgId, agentName)
 }

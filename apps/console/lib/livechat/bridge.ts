@@ -176,9 +176,6 @@ export async function handleIncomingEvent(
 
   const body = buildMessagesBody(event, session)
 
-  // Per-agent routing: pass the specific AgentConfig ID to /api/messages
-  if (agentConfigId) body.configId = agentConfigId
-
   // Empty message from non-action events (e.g. incoming_chat) → skip agent loop
   if (body.skip) {
     await updateSessionState(chatId, 'idle')
@@ -215,13 +212,16 @@ export async function handleIncomingEvent(
 
   let response: Response
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      [INTERNAL_SECRET_HEADER]: process.env.INTERNAL_API_SECRET || '',
+      'x-intera-org': session.orgId,
+    }
+    if (agentConfigId) headers['x-intera-agent-config-id'] = agentConfigId
+
     response = await fetch(getInternalMessagesUrl(), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        [INTERNAL_SECRET_HEADER]: process.env.INTERNAL_API_SECRET || '',
-        'x-intera-org': session.orgId,
-      },
+      headers,
       body: JSON.stringify(body),
     })
   } catch (err) {

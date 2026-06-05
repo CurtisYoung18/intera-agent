@@ -237,24 +237,15 @@ async function resolveSession(
         return { orgId, role: 'admin', authMode: 'webhook' }
       }
 
-      // External webhook: validate against org's webhookSecret.
-      // Read from channel_bindings (primary), fall back to livechat_configs.
-      let webhookSecret: string | null | undefined
+      // External webhook: validate against org's webhookSecret from channel_bindings.
       const cbRow = await prisma.channelBinding.findFirst({
         where: { orgId, channel: 'livechat', agentName: null },
         select: { credentials: true },
       })
-      if (cbRow) {
-        let creds: Record<string, unknown> = {}
-        try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
-        webhookSecret = creds.webhookSecret as string | null | undefined
-      } else {
-        const lcRow = await prisma.liveChatConfig.findUnique({
-          where: { orgId },
-          select: { webhookSecret: true },
-        })
-        webhookSecret = lcRow?.webhookSecret
-      }
+      if (!cbRow) throw new UnauthorizedError('Webhook not configured')
+      let creds: Record<string, unknown> = {}
+      try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
+      const webhookSecret = creds.webhookSecret as string | null | undefined
       if (!webhookSecret) throw new UnauthorizedError('Webhook not configured')
 
       // Header-based secret validation
