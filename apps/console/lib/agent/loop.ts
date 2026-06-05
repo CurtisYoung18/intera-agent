@@ -475,7 +475,8 @@ export class AgentLoop {
           return { messages: this.messages, caseStatus: this.currentStage as CaseStatus, transition: 'connection_lost', currentStage: this.currentStage, reason: 'connection_lost' }
         }
         const classified = err instanceof CannotRetryError ? err.errorClass : classifyError(err)
-        sendEvent({ type: 'error', data: `LLM API error (${classified})`, timestamp: new Date().toISOString() })
+        const detail = (err as any)?.message || (err as any)?.error?.message || String(err)
+        sendEvent({ type: 'error', data: `LLM API error (${classified}): ${detail}`, timestamp: new Date().toISOString() })
         return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: `llm_error:${classified}` }
       }
 

@@ -293,7 +293,19 @@ export default function PlaygroundPage() {
             else if (event.type === 'thinking_delta') {
               thinkingAccRef.current += event.data
             }
-            else if (event.type === 'error') setError(String(event.data))
+            else if (event.type === 'error') {
+              const errData = event.data
+              if (typeof errData === 'string') {
+                try {
+                  const parsed = JSON.parse(errData)
+                  setError(`API error: ${parsed?.error?.message || parsed?.message || errData}`)
+                } catch { setError(errData) }
+              } else if (errData && typeof errData === 'object') {
+                setError((errData as any)?.error?.message || (errData as any)?.message || JSON.stringify(errData))
+              } else {
+                setError(String(errData))
+              }
+            }
             else if (event.type === 'tool_executing') {
               const d = event.data as any
               const name = d?.name || 'tool'
