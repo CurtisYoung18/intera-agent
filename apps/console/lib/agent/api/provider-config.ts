@@ -68,6 +68,24 @@ function createOpenRouterFetch(apiKey: string): typeof fetch {
     headers.set('Authorization', `Bearer ${apiKey}`)
     headers.set('HTTP-Referer', 'https://intera.app')
     headers.set('X-Title', 'Intera')
+    // Debug: log request body to check if image blocks are included
+    if (init?.body && typeof init.body === 'string') {
+      try {
+        const parsed = JSON.parse(init.body)
+        if (parsed.messages) {
+          const imageMsgs = parsed.messages.filter((m: any) =>
+            Array.isArray(m.content) && m.content.some((c: any) => c.type === 'image')
+          )
+          if (imageMsgs.length > 0) {
+            console.log(`[OpenRouter] Request has ${imageMsgs.length} message(s) with image blocks`)
+            for (const msg of imageMsgs) {
+              const imgBlocks = msg.content.filter((c: any) => c.type === 'image')
+              console.log(`[OpenRouter] Image blocks: ${imgBlocks.map((b: any) => `${b.source?.media_type}(${b.source?.data?.length || 0} chars)`).join(', ')}`)
+            }
+          }
+        }
+      } catch { /* not JSON, skip */ }
+    }
     return fetch(input, { ...init, headers })
   }
 }

@@ -132,6 +132,10 @@ export async function* runPlaygroundTurn(input: {
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
+      // Debug: log image content blocks to verify they reach the runner
+      if (input.contentBlocks?.length) {
+        console.log(`[Playground] contentBlocks count: ${input.contentBlocks.length}, types: ${input.contentBlocks.map((b: any) => `${b.type}(${b.source?.media_type || 'unknown'})`).join(', ')}`)
+      }
       await agentLoop.run(message, sendEvent, input.contentBlocks)
     } catch (err) {
       pending.push({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Agent loop failed' }, timestamp: new Date().toISOString() })
