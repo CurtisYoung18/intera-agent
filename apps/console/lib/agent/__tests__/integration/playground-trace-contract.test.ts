@@ -175,6 +175,11 @@ describe('Playground trace contract (AC1, AC3, AC4, AC7)', () => {
     expect(typeof modelStage.promptData.systemPrompt).toBe('string')
     expect(modelStage.promptData.systemPrompt.length).toBeGreaterThan(0)
 
+    // AC4 — conversation messages survive (TraceWriter stores them under `lastMessages`;
+    // a key mismatch here silently empties the PromptViewer "Messages" pane).
+    expect(Array.isArray(modelStage.promptData.messages)).toBe(true)
+    expect(modelStage.promptData.messages.length).toBeGreaterThan(0)
+
     // AC4 — usage from real llm_response records
     expect(modelStage.usage).toBeDefined()
     expect(modelStage.usage.totalTokens).toBeGreaterThan(0)
@@ -190,10 +195,14 @@ describe('Playground trace contract (AC2 — Guardrails)', () => {
     const t0 = Date.now()
     const traces = [
       {
+        // REAL shape: the loop passes an object (PolicyEvaluation) as the 3rd arg, so
+        // TraceWriter stores it in `payload` and leaves `detail` null. A status check that
+        // only reads `detail` would wrongly render this blocked guardrail as green 'ok'.
         caseId: 'c1',
         actionType: 'policy_hit',
-        title: 'Policy hit: tone',
-        detail: 'Policy tone: warn — response tone is unprofessional',
+        title: 'Blocked: refund_policy',
+        detail: null,
+        payload: JSON.stringify({ results: [{ policyName: 'refund_policy', result: 'blocked' }], summary: 'blocked' }),
         createdAt: new Date(t0 + 50).toISOString(),
       },
       {
@@ -217,6 +226,6 @@ describe('Playground trace contract (AC2 — Guardrails)', () => {
     const guardsStage = result.find(s => s.stage === 'Guardrails')
     expect(guardsStage).toBeDefined()
     expect(guardsStage!.fired).toBe(true)
-    expect(guardsStage!.status).toBe('warn')
+    expect(guardsStage!.status).toBe('block')
   })
 })

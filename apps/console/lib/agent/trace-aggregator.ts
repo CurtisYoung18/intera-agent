@@ -40,17 +40,40 @@ const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; s
   llm_response: { stage: 'Model generation', source: 'agent' },
 }
 
-function deriveStatus(actionType: string, detail?: string | null): TraceStatus {
+/** Parse the structured policy outcome — real policy_hit records carry the
+ *  PolicyEvaluation object in `payload` (objects land in payload, not detail). */
+function policyOutcome(payload?: string | null): 'block' | 'warn' | null {
+  if (!payload) return null
+  try {
+    const p = JSON.parse(payload)
+    const results: Array<{ result?: string }> = Array.isArray(p?.results) ? p.results : []
+    const summary = String(p?.summary ?? p?.result ?? '')
+    if (summary === 'blocked' || results.some(r => r?.result === 'blocked')) return 'block'
+    if (summary === 'escalated' || results.some(r => r?.result === 'escalated')) return 'warn'
+  } catch { /* fall through to legacy detail-string check */ }
+  return null
+}
+
+function deriveStatus(record: TraceRecord): TraceStatus {
+  const { actionType, detail } = record
   if (actionType === 'policy_hit') {
+    // Structured payload is authoritative (TraceWriter stores the eval object there);
+    // legacy/string callers used `detail`. Check payload first.
+    const outcome = policyOutcome(record.payload)
+    if (outcome) return outcome
     if (detail?.includes('block')) return 'block'
-    if (detail?.includes('warn')) return 'warn'
+    if (detail?.includes('warn') || detail?.includes('escalat')) return 'warn'
     return 'ok'
   }
   if (actionType === 'skill_result') {
-    if (detail?.includes('error') || detail?.includes('failed')) return 'warn'
+    const blob = `${detail ?? ''} ${record.payload ?? ''}`
+    if (/"ok"\s*:\s*false|error|failed/i.test(blob)) return 'warn'
     return 'ok'
   }
-  if (actionType === 'skill_called' && detail?.includes('kb_search')) return 'info'
+  if (actionType === 'skill_called') {
+    const blob = `${detail ?? ''} ${record.payload ?? ''}`
+    if (blob.includes('kb_search')) return 'info'
+  }
   return 'ok'
 }
 
@@ -138,7 +161,7 @@ export function aggregateTraces(
     const times = records.map(r => new Date(r.createdAt || Date.now()).getTime()).sort((a, b) => a - b)
     const ms = times.length > 1 ? Math.max(0, times[times.length - 1] - times[0]) : 0
 
-    const statuses = records.map((r) => deriveStatus(r.actionType, r.detail))
+    const statuses = records.map((r) => deriveStatus(r))
     const worstStatus = statuses.includes('block') ? 'block'
       : statuses.includes('warn') ? 'warn'
       : statuses.includes('info') ? 'info'
@@ -163,10 +186,11 @@ export function aggregateTraces(
       if (llmReqRecord?.payload) {
         try {
           const parsed = JSON.parse(llmReqRecord.payload)
-          if (parsed.systemPrompt || parsed.messages) {
+          if (parsed.systemPrompt || parsed.messages || parsed.lastMessages) {
             step.promptData = {
               systemPrompt: parsed.systemPrompt || '',
-              messages: parsed.messages || [],
+              // TraceWriter.writeLlmRequestStart stores the conversation under `lastMessages`.
+              messages: parsed.lastMessages || parsed.messages || [],
             }
           }
         } catch { /* ignore parse errors */ }
