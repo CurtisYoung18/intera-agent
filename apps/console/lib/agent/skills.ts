@@ -884,13 +884,31 @@ export class SkillRouter {
 
         const resolution = resolveBindings(bindings, library)
 
-        // Store resolved tool names for getTools / getToolDefinitions filtering
+        // Store resolved tool names for getTools / getToolDefinitions filtering.
+        // Channel-mode tools (request_user_input, finalize_consultation) are always
+        // included — they have no real side effects (handled by tool interceptor) and
+        // the system prompt instructs the LLM to call them. Excluding them causes
+        // hallucinated tool_use blocks that hit the executor's "not found" error.
         router.boundToolNames = new Set(resolution.bound.tools)
+        for (const skill of router.skills.values()) {
+          if (skill.mode === 'channel' && skill.enabled) {
+            router.boundToolNames.add(skill.name)
+          }
+        }
 
         // Log drift warnings
         const driftMsg = formatDriftWarnings(resolution.missing)
         if (driftMsg) {
           console.warn(`[SkillRouter] ${driftMsg}`)
+        }
+
+        // Debug: log channel-mode tool status
+        for (const skill of router.skills.values()) {
+          if (skill.mode === 'channel') {
+            const inBound = router.boundToolNames?.has(skill.name) ?? false
+            const inLibrary = enabledSkillNames.has(skill.name)
+            console.log(`[SkillRouter] channel tool "${skill.name}": enabled=${skill.enabled}, inLibrary=${inLibrary}, inBound=${inBound}`)
+          }
         }
 
         // Override bindings with the resolved set (drifted names removed)
