@@ -45,6 +45,9 @@ echo "=== Prisma migrate ==="
 echo "=== Prisma ==="
 npm run db:generate
 
+echo "=== Clean build cache ==="
+rm -rf apps/console/.next
+
 echo "=== Build ==="
 npm run build:console
 
