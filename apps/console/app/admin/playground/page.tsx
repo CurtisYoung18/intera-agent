@@ -107,9 +107,10 @@ export default function PlaygroundPage() {
   const [debugMode, setDebugMode] = useState(false)
 
   const [message, setMessage] = useState('')
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string }>>([])
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent'; content: string; thinking?: string }>>([])
   const [reply, setReply] = useState('')
-  const [thinking, setThinking] = useState('')
+  const [showThinking, setShowThinking] = useState(false)
+  const thinkingAccRef = useRef('')
   const [responding, setResponding] = useState(false)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([])
   const [turnTraces, setTurnTraces] = useState<any[][]>([])
@@ -181,7 +182,7 @@ export default function PlaygroundPage() {
 
   const runTurn = useCallback(async (msg: string) => {
     setReply('')
-    setThinking('')
+    thinkingAccRef.current = ''
     turnNumRef.current += 1
     setTurnTraces(prev => [...prev, []])
     setLiveTools([])
@@ -219,7 +220,9 @@ export default function PlaygroundPage() {
           try {
             const event = JSON.parse(line.slice(6))
             if (event.type === 'text_delta') setReply(r => r + event.data)
-            else if (event.type === 'thinking_delta') setThinking(t => t + event.data)
+            else if (event.type === 'thinking_delta') {
+              thinkingAccRef.current += event.data
+            }
             else if (event.type === 'error') setError(String(event.data))
             else if (event.type === 'tool_executing') {
               const d = event.data as any
@@ -264,8 +267,9 @@ export default function PlaygroundPage() {
       setError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setResponding(false)
+      const archivedThinking = thinkingAccRef.current
       setReply(r => {
-        if (r) setChatMessages(prev => [...prev, { role: 'agent' as const, content: r }])
+        if (r) setChatMessages(prev => [...prev, { role: 'agent' as const, content: r, thinking: archivedThinking || undefined }])
         return ''
       })
     }
@@ -340,6 +344,21 @@ export default function PlaygroundPage() {
             <ConfigPill icon={<Shield size={11} />} label={`${snapshot.guardrailCount} rule${snapshot.guardrailCount !== 1 ? 's' : ''}`} />
 
             <div style={{ flex: 1 }} />
+
+            <button
+              onClick={() => setShowThinking(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 10, fontWeight: 500, color: showThinking ? 'var(--lavender)' : 'var(--fog)',
+                background: showThinking ? 'rgba(139,111,245,0.08)' : 'transparent',
+                border: showThinking ? '1px solid rgba(139,111,245,0.15)' : '1px solid transparent',
+                padding: '3px 8px', borderRadius: 8,
+                cursor: 'pointer', transition: 'all 0.15s',
+                flexShrink: 0,
+              }}
+            >
+              <Brain size={11} /> Thinking
+            </button>
 
             <Link
               href={`/admin/agent?agentId=${selectedAgentId}`}
@@ -461,32 +480,56 @@ export default function PlaygroundPage() {
 
             {/* ── Chat messages ── */}
             {chatMessages.map((m, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: '12px 16px', borderRadius: 14,
-                  marginBottom: 8,
-                  background: m.role === 'user'
-                    ? 'rgba(139,111,245,0.06)'
-                    : 'rgba(255,255,255,0.55)',
-                  backdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
-                  WebkitBackdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
-                  border: m.role === 'agent' ? '1px solid var(--border-subtle)' : '1px solid rgba(139,111,245,0.1)',
-                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '85%',
-                }}
-              >
-                <div style={{
-                  fontSize: 11, fontWeight: 600, color: 'var(--fog)',
-                  marginBottom: 4, opacity: 0.5,
-                }}>
-                  {m.role === 'user' ? 'You' : snapshot?.name || 'Agent'}
-                </div>
-                <div style={{
-                  fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>
-                  {m.content}
+              <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                {/* Per-message thinking (above agent bubble, collapsed, survives turns) */}
+                {showThinking && m.role === 'agent' && m.thinking && (
+                  <details style={{
+                    padding: '10px 14px', borderRadius: 12,
+                    marginBottom: 6,
+                    background: '#1e1e2e',
+                    border: '1px solid rgba(139,111,245,0.2)',
+                    fontSize: 12,
+                  }}>
+                    <summary style={{
+                      fontWeight: 600, color: '#c4b5fd',
+                      cursor: 'pointer', marginBottom: 6,
+                    }}>
+                      Thinking
+                    </summary>
+                    <div style={{
+                      color: '#cdd6f4', lineHeight: 1.7,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      fontFamily: 'var(--font-serif), serif', fontStyle: 'italic',
+                      fontSize: 12,
+                    }}>
+                      {m.thinking}
+                    </div>
+                  </details>
+                )}
+                <div
+                  style={{
+                    padding: '12px 16px', borderRadius: 14,
+                    marginBottom: 8,
+                    background: m.role === 'user'
+                      ? 'rgba(139,111,245,0.06)'
+                      : 'rgba(255,255,255,0.55)',
+                    backdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
+                    WebkitBackdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
+                    border: m.role === 'agent' ? '1px solid var(--border-subtle)' : '1px solid rgba(139,111,245,0.1)',
+                  }}
+                >
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--fog)',
+                    marginBottom: 4, opacity: 0.5,
+                  }}>
+                    {m.role === 'user' ? 'You' : snapshot?.name || 'Agent'}
+                  </div>
+                  <div style={{
+                    fontSize: 13, color: 'var(--mist)', lineHeight: 1.7,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  }}>
+                    {m.content}
+                  </div>
                 </div>
               </div>
             ))}
@@ -520,33 +563,6 @@ export default function PlaygroundPage() {
                   Thinking…
                 </span>
               </div>
-            )}
-
-            {/* ── Thinking stream (collapsible, only when showThinking is on) ── */}
-            {thinking && (
-              <details style={{
-                padding: '10px 14px', borderRadius: 12,
-                marginBottom: 6,
-                background: 'rgba(139,111,245,0.04)',
-                border: '1px solid rgba(139,111,245,0.12)',
-                alignSelf: 'flex-start',
-                maxWidth: '85%',
-                fontSize: 12,
-              }} open>
-                <summary style={{
-                  fontWeight: 600, color: 'var(--lavender)',
-                  cursor: 'pointer', marginBottom: 6,
-                }}>
-                  Thinking…
-                </summary>
-                <div style={{
-                  color: 'var(--fog)', lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  fontFamily: 'var(--font-serif)', fontStyle: 'italic',
-                }}>
-                  {thinking}
-                </div>
-              </details>
             )}
 
             {/* ── Streaming agent reply ── */}
