@@ -192,6 +192,60 @@ describe('defineRoute auth modes', () => {
       await handler(mkReq())
       expect(called).toBe(true)
     })
+
+    it('trusted-internal call reads agentConfigId from x-intera-agent-config-id header', async () => {
+      mockTrustedCall.mockReturnValue(true)
+
+      let captured: any = null
+      const handler = defineRoute({
+        method: 'POST',
+        auth: 'apiKey',
+        handler: async (ctx) => {
+          captured = ctx.session
+          return { ok: true, data: {} }
+        },
+      })
+
+      const req = mkReq('http://localhost/api/messages', {
+        headers: {
+          'x-intera-org': 'acme',
+          'x-intera-agent-config-id': 'agent-cfg-42',
+        },
+      })
+      await handler(req)
+
+      expect(captured.orgId).toBe('acme')
+      expect(captured.agentConfigId).toBe('agent-cfg-42')
+      expect(captured.authMode).toBe('apiKey')
+    })
+
+    it('external apiKey call IGNORES x-intera-agent-config-id header (security)', async () => {
+      // Non-internal call: header must be ignored. agentConfigId comes from apiKey binding.
+      mockTrustedCall.mockReturnValue(false)
+      mockResolveApiKey.mockResolvedValue({ orgId: 'api-org', agentConfigId: 'cfg-from-apikey' })
+
+      let captured: any = null
+      const handler = defineRoute({
+        method: 'POST',
+        auth: 'apiKey',
+        handler: async (ctx) => {
+          captured = ctx.session
+          return { ok: true, data: {} }
+        },
+      })
+
+      const req = mkReq('http://localhost/api/messages', {
+        headers: {
+          Authorization: 'Bearer sk-valid',
+          'x-intera-agent-config-id': 'injected-by-attacker',
+        },
+      })
+      await handler(req)
+
+      // agentConfigId comes from the API key binding, NOT the header
+      expect(captured.orgId).toBe('api-org')
+      expect(captured.agentConfigId).toBe('cfg-from-apikey')
+    })
   })
 
   // ─── auth: webhook ───
