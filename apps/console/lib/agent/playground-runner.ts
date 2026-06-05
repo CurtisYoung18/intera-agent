@@ -5,7 +5,7 @@ import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
 import { createMemoryPersistence, type TraceRecord } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
-import type { SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
+import type { SSEEvent, CaseSchemaConfig, ContentBlock } from '@intera/shared/types'
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext } from './prompt-resolver'
 import { buildModePrompt } from './buildModePrompt'
@@ -31,6 +31,7 @@ export interface PlaygroundResult {
 /** Run a single playground turn using the REAL AgentLoop pipeline. */
 export async function* runPlaygroundTurn(input: {
   orgId: string; message: string; playgroundConfig: PlaygroundConfig; configId?: string | null
+  contentBlocks?: ContentBlock[]
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc } = input
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -147,10 +148,32 @@ export async function* runPlaygroundTurn(input: {
     wake()
   }
 
+  // ── Resolve effective model (used by guard + result) ──
+  const resolvedModel = agentConfig.model || DEFAULT_MODEL
+
+  // ── Non-vision guard (defense-in-depth) ──
+  // UI should gate this first (Task 0h + Task 1), but if bypassed, fail clearly.
+  const hasImageBlock = input.contentBlocks?.some(
+    (b) => b.type === 'image' || (b as any).source?.type === 'base64',
+  )
+  if (hasImageBlock) {
+    const nonVisionPrefixes = ['deepseek-', 'MiniMax-']
+    const supportsVision = !nonVisionPrefixes.some((p) => resolvedModel.startsWith(p))
+    if (!supportsVision) {
+      yield {
+        type: 'error',
+        data: { code: 'unsupported_media', message: `${resolvedModel} does not support image input` },
+        timestamp: new Date().toISOString(),
+      }
+      yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
+      return
+    }
+  }
+
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
-      await agentLoop.run(message, sendEvent)
+      await agentLoop.run(message, sendEvent, input.contentBlocks)
     } catch (err) {
       pending.push({ type: 'error', data: err instanceof Error ? err.message : 'Agent loop failed', timestamp: new Date().toISOString() })
     } finally {
@@ -177,7 +200,6 @@ export async function* runPlaygroundTurn(input: {
   }
 
   // ── Derive applicable pipeline stages from agent config ──
-  const resolvedModel = agentConfig.model || DEFAULT_MODEL
 
   const guardsConfigured = (() => {
     try {
