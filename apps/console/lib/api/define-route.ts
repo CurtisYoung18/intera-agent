@@ -215,6 +215,14 @@ async function resolveSession(
       return { orgId: s.orgId, role: s.role, userId: s.userId, authMode: 'session' }
     }
     case 'apiKey': {
+      // Trusted internal calls (bridge → /api/messages) bypass API key auth.
+      // isTrustedInternalCall uses timingSafeEqual — safe to trust these headers.
+      if (isTrustedInternalCall(req)) {
+        const orgId = req.headers.get('x-intera-org')
+        if (!orgId) throw new UnauthorizedError('Missing x-intera-org header')
+        const agentConfigId = req.headers.get('x-intera-agent-config-id') ?? undefined
+        return { orgId, role: 'admin', authMode: 'apiKey', agentConfigId }
+      }
       const resolved = await resolveOrgFromApiKey(req)
       if (!resolved) throw new UnauthorizedError('Invalid API key')
       return { orgId: resolved.orgId, role: 'admin', authMode: 'apiKey', agentConfigId: resolved.agentConfigId ?? undefined }
