@@ -18,6 +18,8 @@ import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
 import RenderHintCard from '@/components/chat/render-hint-card'
 import { StatusDot, statusColor } from '@/components/chat/status-accents'
+import TraceSidebar from '@/components/playground/trace-sidebar'
+import type { LiveTool } from '@/components/playground/trace-sidebar'
 
 /* ── Types ── */
 
@@ -49,15 +51,6 @@ interface AgentSnapshot {
 }
 
 /** Per-tool status — driven by real `tool_executing` / `skill_result` SSE events. */
-interface LiveTool {
-  name: string
-  status: 'running' | 'done' | 'error'
-  startedAt: number
-  finishedAt?: number
-  result?: unknown
-  renderHints?: { kind: string; [key: string]: unknown }
-}
-
 /* ── Constants ── */
 
 const QUICK_STARTS = [
@@ -1150,450 +1143,33 @@ export default function PlaygroundPage() {
         </div>
 
         {/* ── Sidebar (right) ── */}
-        {!sidebarCollapsed && (
-        <aside style={{
-          width: 340, flexShrink: 0,
-          borderLeft: '1px solid var(--border-subtle)',
-          background: '#fff',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          {/* Header */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Activity size={11} style={{ color: 'var(--fog)' }} />
-              <span style={{ fontSize: 11, fontWeight: 650, color: 'var(--mist)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Trace</span>
-              {(liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)) > 0 && (
-                <span style={{
-                  fontSize: 10, fontWeight: 600, color: 'var(--fog)',
-                  background: 'rgba(59,108,244,0.06)', padding: '0 5px', borderRadius: 3,
-                  lineHeight: '18px', minWidth: 18, textAlign: 'center',
-                }}>
-                  {liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)}
-                </span>
-              )}
-            </div>
-            <button onClick={() => setSidebarCollapsed(true)} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: 2, color: 'var(--fog)', opacity: 0.5,
-            }}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-            {/* Empty state */}
-            {turnTraces.length === 0 && liveTools.length === 0 ? (
-              <div style={{
-                padding: '24px 20px', textAlign: 'center',
-                fontSize: 12, color: 'var(--smoke)', lineHeight: 1.6,
-              }}>
-                Send a message to see the trace.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {/* ── Session metrics ── */}
-                {sessionMetrics.totalInput > 0 && (
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6,
-                    padding: '0 12px 12px', borderBottom: '1px solid var(--border-subtle)',
-                    marginBottom: 8,
-                  }}>
-                    <div style={metricStyle}>
-                      <div style={metricValStyle}>{sessionMetrics.totalInput + sessionMetrics.totalOutput >= 1000 ? ((sessionMetrics.totalInput + sessionMetrics.totalOutput) / 1000).toFixed(1) + 'K' : String(sessionMetrics.totalInput + sessionMetrics.totalOutput)}</div>
-                      <div style={metricLblStyle}>{tb('trace.sessionTokens')}</div>
-                    </div>
-                    <div style={metricStyle}>
-                      <div style={metricValStyle}>{sessionMetrics.totalMs >= 1000 ? (sessionMetrics.totalMs / 1000).toFixed(1) + 's' : sessionMetrics.totalMs + 'ms'}</div>
-                      <div style={metricLblStyle}>{tb('trace.sessionWall')}</div>
-                    </div>
-                    <div style={metricStyle}>
-                      <div style={metricValStyle}>{sessionMetrics.llmCalls}</div>
-                      <div style={metricLblStyle}>{tb('trace.sessionLlm')}</div>
-                    </div>
-                    <div style={metricStyle}>
-                      <div style={metricValStyle}>{sessionMetrics.totalTools}</div>
-                      <div style={metricLblStyle}>{tb('trace.sessionTools')}</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Completed turns ── */}
-                {turnTraces.map((steps, turnIdx) => {
-                  const isExpanded = expandedTurns.has(turnIdx)
-                  const isLatest = turnIdx === turnTraces.length - 1
-                  const turnMs = turnTotalMs[turnIdx] || 0
-                  let turnInput = 0, turnOutput = 0, cacheRead = 0
-                  const modelStep = steps.find((s: any) => s.stage === 'Model generation')
-                  if (modelStep?.usage) {
-                    turnInput = modelStep.usage.inputTokens || 0
-                    turnOutput = modelStep.usage.outputTokens || 0
-                    cacheRead = modelStep.usage.cacheReadTokens || 0
-                  }
-                  const cachePct = (turnInput + cacheRead) > 0 ? Math.round(cacheRead / (turnInput + cacheRead) * 100) : 0
-                  const toolSteps = steps.filter((s: any) => s.stage === 'Skills & tools' || s.stage === 'Knowledge retrieval')
-                  const toolCount = toolSteps.reduce((sum: number, s: any) => sum + (s.detail?.length || 0), 0)
-
-                  return (
-                    <div key={turnIdx}>
-                      <div
-                        onClick={() => setExpandedTurns(prev => {
-                          const next = new Set(prev)
-                          if (next.has(turnIdx)) next.delete(turnIdx); else next.add(turnIdx)
-                          return next
-                        })}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '8px 12px', cursor: 'pointer',
-                          borderBottom: isExpanded ? 'none' : '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <div style={{
-                          width: 3, height: 22, borderRadius: 2, flexShrink: 0,
-                          background: isLatest ? '#3b6cf4' : '#d0d0d8',
-                        }} />
-                        <span style={{
-                          fontSize: 12, fontWeight: 650,
-                          color: isExpanded ? 'var(--mist)' : 'var(--fog)',
-                        }}>
-                          {`Turn ${turnIdx + 1}`}
-                        </span>
-                        {isLatest && (
-                          <div style={{
-                            width: 6, height: 6, borderRadius: '50%',
-                            background: '#3b6cf4',
-                            animation: 'pulse 2s ease infinite',
-                          }} />
-                        )}
-                        {cacheRead > 0 && (
-                          <span style={{
-                            fontSize: 10, padding: '1px 5px', borderRadius: 3,
-                            background: '#eef3f0', color: '#1d8c4e',
-                            fontFamily: 'monospace',
-                          }}>
-                            {cachePct}% cache
-                          </span>
-                        )}
-                        <span style={{
-                          fontSize: 10, color: 'var(--smoke)',
-                          whiteSpace: 'nowrap', marginLeft: 'auto',
-                        }}>
-                          {turnMs >= 1000 ? (turnMs / 1000).toFixed(1) + 's' : turnMs + 'ms'}{toolCount > 0 ? ` / ${toolCount} tool${toolCount !== 1 ? 's' : ''}` : ''}
-                        </span>
-                        <span style={{ fontSize: 10, color: 'var(--smoke)', opacity: 0.4 }}>
-                          {isExpanded ? '▲' : '▶'}
-                        </span>
-                      </div>
-
-                      {isExpanded && (
-                        <div style={{
-                          borderBottom: '1px solid var(--border-subtle)',
-                          paddingBottom: 8,
-                        }}>
-                          {modelStep && (
-                            <div style={{
-                              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-                              gap: 4, padding: '4px 12px 8px 24px',
-                            }}>
-                              <BreakdownCell label={tb('trace.breakdownInput')} value={String(turnInput)} />
-                              <BreakdownCell label={tb('trace.breakdownOutput')} value={String(turnOutput)} />
-                              <BreakdownCell label={tb('trace.breakdownCache')} value={`${cachePct}%`} />
-                              <BreakdownCell label={tb('trace.breakdownLlm')} value={modelStep.ms >= 1000 ? (modelStep.ms / 1000).toFixed(1) + 's' : modelStep.ms + 'ms'} />
-                              <BreakdownCell label={tb('trace.breakdownTools')} value={turnMs >= modelStep.ms && turnMs - modelStep.ms >= 0 ? ((turnMs - modelStep.ms) >= 1000 ? ((turnMs - modelStep.ms) / 1000).toFixed(1) + 's' : (turnMs - modelStep.ms) + 'ms') : '-'} />
-                              <BreakdownCell label={tb('trace.breakdownTokPerS')} value={modelStep.ms > 0 ? String(Math.round(turnOutput / (modelStep.ms / 1000))) : '-'} />
-                            </div>
-                          )}
-
-                          {steps.filter((s: any) => s.fired !== false).map((step: any, i: number) => {
-                            const isModelGen = step.stage === 'Model generation'
-                            const isSkill = step.stage === 'Skills & tools' || step.stage === 'Knowledge retrieval'
-
-                            if (isSkill && step.detail?.length > 0) {
-                              return step.detail.map(([actionType, detailText]: [string, string], di: number) => {
-                                const toolKey = `${turnIdx}-${i}-${di}`
-                                const isToolExpanded = expandedTools.has(toolKey)
-                                const isError = detailText.includes('ok:false') || detailText.includes('"ok":false') || detailText.includes('error')
-                                const toolName = step.summary?.split(' → ')?.[di] || actionType.replace('skill_', '')
-                                const lines = detailText.split('\n')
-                                const inputLines: string[] = []
-                                const outputLines: string[] = []
-                                let inOutput = false
-                                for (const line of lines) {
-                                  if (line.startsWith('input: ')) { inputLines.push(line.slice(7)); inOutput = false }
-                                  else if (line.startsWith('output: ')) { outputLines.push(line.slice(8)); inOutput = true }
-                                  else if (inOutput) { outputLines.push(line) }
-                                  else if (line.length > 0) { inputLines.push(line) }
-                                }
-
-                                return (
-                                  <div key={toolKey}>
-                                    <div
-                                      onClick={() => setExpandedTools(prev => {
-                                        const next = new Set(prev)
-                                        if (next.has(toolKey)) next.delete(toolKey); else next.add(toolKey)
-                                        return next
-                                      })}
-                                      style={{
-                                        display: 'flex', alignItems: 'center', gap: 7,
-                                        padding: '6px 12px 6px 24px', cursor: 'pointer',
-                                        background: isToolExpanded ? 'var(--surface-raised, #f9f9fb)' : undefined,
-                                      }}
-                                    >
-                                      <div style={{
-                                        width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
-                                        background: isError ? '#d63031' : '#1d8c4e',
-                                      }} />
-                                      <span style={{
-                                        fontSize: 11, fontWeight: 550,
-                                        color: isError ? '#d63031' : 'var(--mist)',
-                                        fontFamily: 'monospace',
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                      }}>
-                                        {toolName}
-                                      </span>
-                                      <span style={{
-                                        fontSize: 10, color: isError ? '#d63031' : 'var(--smoke)',
-                                        marginLeft: 'auto', fontFamily: 'monospace', flexShrink: 0,
-                                      }}>
-                                        {isError ? tb('trace.failed') : ''}
-                                      </span>
-                                    </div>
-
-                                    {isToolExpanded && (
-                                      <div style={{ padding: '0 12px 0 24px' }}>
-                                        {inputLines.length > 0 && inputLines[0] && (
-                                          <>
-                                            <div style={{
-                                              fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
-                                              textTransform: 'uppercase', color: '#3b6cf4',
-                                              marginBottom: 2, marginTop: 2,
-                                            }}>
-                                              {tb('trace.inputLabel')}
-                                            </div>
-                                            <div style={{
-                                              padding: '6px 8px', borderRadius: 6,
-                                              background: '#f4f6fe', border: '1px solid #e2e8f8',
-                                              fontSize: 10.5, fontFamily: 'monospace',
-                                              color: 'var(--mist)', lineHeight: 1.55,
-                                              maxHeight: 90, overflowY: 'auto',
-                                              marginBottom: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                                            }}>
-                                              {inputLines.join('\n')}
-                                            </div>
-                                          </>
-                                        )}
-                                        {outputLines.length > 0 && outputLines[0] && (
-                                          <>
-                                            <div style={{
-                                              fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
-                                              textTransform: 'uppercase',
-                                              color: isError ? '#d63031' : '#1d8c4e',
-                                              marginBottom: 2,
-                                            }}>
-                                              {tb('trace.outputLabel')}{isError ? ` · ${tb('trace.outputError')}` : ''}
-                                            </div>
-                                            <div style={{
-                                              padding: '6px 8px', borderRadius: 6,
-                                              background: isError ? '#fef5f5' : '#f3f9f5',
-                                              border: isError ? '1px solid #f8d7d7' : '1px solid #dcece2',
-                                              fontSize: 10.5, fontFamily: 'monospace',
-                                              color: isError ? '#d63031' : 'var(--mist)', lineHeight: 1.55,
-                                              maxHeight: 90, overflowY: 'auto',
-                                              marginBottom: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                                            }}>
-                                              {outputLines.join('\n')}
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })
-                            }
-
-                            if (isModelGen) {
-                              return (
-                                <div key={`${turnIdx}-${i}`}>
-                                  <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 7,
-                                    padding: '6px 12px 6px 24px',
-                                    borderTop: '1px solid var(--border-subtle)',
-                                  }}>
-                                    <div style={{
-                                      width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
-                                      background: '#3b6cf4',
-                                    }} />
-                                    <span style={{ fontSize: 11, fontWeight: 550, color: 'var(--mist)', fontFamily: 'monospace' }}>
-                                      {tb('trace.modelResponse')}
-                                    </span>
-                                    {step.usage && (
-                                      <span style={{
-                                        fontSize: 10, color: 'var(--smoke)',
-                                        marginLeft: 'auto', fontFamily: 'monospace',
-                                      }}>
-                                        &uarr;{step.usage.inputTokens || 0} &darr;{step.usage.outputTokens || 0} tok
-                                      </span>
-                                    )}
-                                  </div>
-                                  {isExpanded && step.summary && step.summary !== '(no summary)' && (
-                                    <div style={{
-                                      margin: '0 12px 8px 24px', padding: '7px 9px',
-                                      background: 'var(--surface-raised, #f9f9fb)',
-                                      borderRadius: 6, border: '1px solid var(--border-subtle)',
-                                      fontSize: 11, color: 'var(--mist)', lineHeight: 1.5,
-                                      maxHeight: 80, overflowY: 'auto',
-                                    }}>
-                                      {step.summary}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            }
-
-                            return null
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-
-                {/* Current turn in progress (during streaming) */}
-                {responding && liveTools.length > 0 && (
-                  <div>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)',
-                    }}>
-                      <div style={{
-                        width: 3, height: 22, borderRadius: 2, flexShrink: 0,
-                        background: '#3b6cf4',
-                      }} />
-                      <span style={{ fontSize: 12, fontWeight: 650, color: 'var(--mist)' }}>
-                        {`Turn ${turnTraces.length + 1}`}
-                      </span>
-                      <div style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: '#3b6cf4',
-                        animation: 'pulse 2s ease infinite',
-                      }} />
-                      <span style={{ fontSize: 10, color: '#3b6cf4', marginLeft: 'auto' }}>
-                        {tb('trace.running')}
-                      </span>
-                    </div>
-                    {liveTools.map((t, i) => (
-                      <div key={`live-${i}`} style={{
-                        display: 'flex', alignItems: 'center', gap: 7,
-                        padding: '6px 12px 6px 24px',
-                      }}>
-                        <div style={{
-                          width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
-                          background: t.status === 'running' ? '#c27a0a' : t.status === 'error' ? '#d63031' : '#1d8c4e',
-                          ...(t.status === 'running' ? { animation: 'pulse 1.2s ease infinite' } : {}),
-                        }} />
-                        <span style={{
-                          fontSize: 11, fontWeight: 550,
-                          color: t.status === 'error' ? '#d63031' : 'var(--mist)',
-                          fontFamily: 'monospace',
-                        }}>
-                          {t.name}
-                        </span>
-                        <span style={{
-                          fontSize: 10, color: t.status === 'running' ? '#c27a0a' : t.status === 'error' ? '#d63031' : 'var(--smoke)',
-                          marginLeft: 'auto', fontFamily: 'monospace',
-                        }}>
-                          {t.status === 'running' ? 'running' : t.status === 'error' ? tb('trace.failed') : t.finishedAt && t.startedAt ? `${t.finishedAt - t.startedAt}ms` : 'done'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* ── RenderHint display for completed tools ── */}
-                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
-                  const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.["web-chat"] || null
-                  if (!hint) return null
-                  return (
-                    <RenderHintCard
-                      key={`hint-${i}`}
-                      hint={hint}
-                      result={t.result}
-                      onSubmit={(values) => {
-                        const msg = JSON.stringify(values, null, 2)
-                        runTurn(msg)
-                      }}
-                    />
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </aside>
-        )}
-        {sidebarCollapsed && (
-          <div style={{
-            width: 32, flexShrink: 0, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'flex-start', paddingTop: 12,
-            borderLeft: '1px solid var(--border-subtle)',
-            background: 'rgba(255,255,255,0.4)', cursor: 'pointer',
-          }}
-            onClick={() => setSidebarCollapsed(false)}
-          >
-            <ChevronLeft size={14} style={{ color: 'var(--fog)', opacity: 0.5 }} />
-            {(liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)) > 0 && (
-              <span style={{
-                fontSize: 9, fontWeight: 700, color: '#3b6cf4',
-                marginTop: 6, writingMode: 'vertical-rl',
-              }}>
-                {liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)}
-              </span>
-            )}
-          </div>
-        )}
+        <TraceSidebar
+          collapsed={sidebarCollapsed}
+          onCollapse={() => setSidebarCollapsed(true)}
+          onExpand={() => setSidebarCollapsed(false)}
+          liveTools={liveTools}
+          turnTraces={turnTraces}
+          turnTotalMs={turnTotalMs}
+          sessionMetrics={sessionMetrics}
+          expandedTurns={expandedTurns}
+          expandedTools={expandedTools}
+          onToggleTurn={(idx) => setExpandedTurns(prev => {
+            const next = new Set(prev)
+            if (next.has(idx)) next.delete(idx); else next.add(idx)
+            return next
+          })}
+          onToggleTool={(key) => setExpandedTools(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key); else next.add(key)
+            return next
+          })}
+          responding={responding}
+          onRerunWithMessage={runTurn}
+          tb={tb}
+        />
       </div>
     </div>
     </>
-  )
-}
-
-/* ── Trace sidebar helpers ── */
-
-const metricStyle: React.CSSProperties = {
-  textAlign: 'center', padding: '6px 4px',
-  background: 'var(--surface-raised, #f9f9fb)',
-  borderRadius: 6, border: '1px solid var(--border-subtle)',
-}
-
-const metricValStyle: React.CSSProperties = {
-  fontSize: 13, fontWeight: 650, color: 'var(--mist)',
-  fontFamily: 'monospace', letterSpacing: '-0.02em',
-}
-
-const metricLblStyle: React.CSSProperties = {
-  fontSize: 8.5, color: 'var(--smoke)', marginTop: 2,
-  textTransform: 'uppercase', letterSpacing: '0.04em',
-}
-
-function BreakdownCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{
-      textAlign: 'center', padding: '5px 3px',
-      background: 'var(--surface-raised, #f9f9fb)',
-      borderRadius: 5, border: '1px solid var(--border-subtle)',
-    }}>
-      <div style={{
-        fontSize: 11.5, fontWeight: 650, color: 'var(--mist)',
-        fontFamily: 'monospace',
-      }}>{value}</div>
-      <div style={{
-        fontSize: 8, color: 'var(--smoke)',
-        textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 1,
-      }}>{label}</div>
-    </div>
   )
 }
 
