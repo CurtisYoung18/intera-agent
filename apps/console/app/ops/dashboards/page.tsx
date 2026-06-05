@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { MessageSquare, Briefcase, Clock, Shield, ArrowRight } from 'lucide-react'
+import { MessageSquare, Briefcase, Clock, Shield, ArrowRight, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
@@ -78,7 +78,7 @@ export default function DashboardPage() {
   const totalGuardrail = guardrailHits.reduce((s, g) => s + g.hits, 0)
 
   return (
-    <div className="relative p-6 max-w-6xl space-y-6">
+    <div className="p-6 max-w-6xl space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -90,10 +90,10 @@ export default function DashboardPage() {
       {/* ── Top metrics: 4-column ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* 24H Messages */}
-        <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#6366f1]/15 icon-pulse">
-              <MessageSquare className="w-4 h-4 text-[#a78bfa]" />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#6366f1]/10 icon-pulse">
+              <MessageSquare className="w-4 h-4 text-[#6366f1]" />
             </div>
             <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('messages24h')}</span>
           </div>
@@ -107,10 +107,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Active Cases */}
-        <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#f59e0b]/12 icon-pulse">
-              <Briefcase className="w-4 h-4 text-[#fbbf24]" />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#f59e0b]/10 icon-pulse">
+              <Briefcase className="w-4 h-4 text-[#f59e0b]" />
             </div>
             <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('activeCases')}</span>
           </div>
@@ -124,10 +124,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Avg Resolution — Ring */}
-        <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#14b8a6]/12 icon-pulse">
-              <Clock className="w-4 h-4 text-[#2dd4bf]" />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#14b8a6]/10 icon-pulse">
+              <Clock className="w-4 h-4 text-[#14b8a6]" />
             </div>
             <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('avgResolution')}</span>
           </div>
@@ -143,10 +143,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Guardrail Hits */}
-        <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#8b6ff5]/12 icon-pulse">
-              <Shield className="w-4 h-4 text-[#a78bfa]" />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#8b6ff5]/10 icon-pulse">
+              <Shield className="w-4 h-4 text-[#8b6ff5]" />
             </div>
             <span className="text-[11px] font-semibold text-[var(--fog)] uppercase tracking-[0.04em]">{l('guardrailHits')}</span>
           </div>
@@ -162,7 +162,7 @@ export default function DashboardPage() {
               {guardrailHits.slice(0, 3).map((g) => (
                 <div key={g.name} className="flex items-center justify-between">
                   <span className="text-[10px] text-[var(--fog)] truncate max-w-[120px]">{g.name}</span>
-                  <span className="text-[10px] font-mono text-[var(--smoke)]">{g.hits}</span>
+                  <span className="text-[10px] font-mono text-[var(--fog)]/60">{g.hits}</span>
                 </div>
               ))}
             </div>
@@ -173,7 +173,7 @@ export default function DashboardPage() {
       {/* ── Two-column row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Recent Cases */}
-        <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+        <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[13px] font-bold text-[var(--mist)]">{l('recentCases')}</h2>
             <Link href="/ops/chats" className="flex items-center gap-1 text-[11px] text-indigo/60 hover:text-indigo transition-colors">
@@ -185,10 +185,10 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {recentCases.slice(0, 5).map((c) => (
-                <div key={c.id} className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
+                <div key={c.id} className="flex items-center gap-3 py-2 border-b border-black/[0.03] last:border-0">
                   <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.status === 'resolved' ? 'bg-emerald-400' : c.status === 'escalated' ? 'bg-red-400' : 'bg-amber-400'}`} />
                   <span className="text-[12px] text-[var(--mist)] flex-1 min-w-0 truncate">{c.type.replace(/_/g, ' ')}</span>
-                  <span className="text-[10px] text-[var(--smoke)] flex-shrink-0">{timeAgo(c.createdAt)}</span>
+                  <span className="text-[10px] text-[var(--fog)]/50 flex-shrink-0">{timeAgo(c.createdAt)}</span>
                 </div>
               ))}
             </div>
@@ -197,7 +197,7 @@ export default function DashboardPage() {
 
         {/* Channel Health + Guardrail Hits */}
         <div className="space-y-4">
-          <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+          <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
             <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('channelHealth')}</h2>
             {channelHealth.length === 0 ? (
               <p className="text-[12px] text-[var(--fog)]/40 italic">{l('noData')}</p>
@@ -205,17 +205,17 @@ export default function DashboardPage() {
               <div className="space-y-2">
                 {channelHealth.map((ch) => (
                   <div key={ch.channel} className="flex items-center gap-3">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColors[ch.status] || 'bg-white/20'}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColors[ch.status] || 'bg-black/10'}`} />
                     <span className="text-[12px] text-[var(--mist)] flex-1 capitalize">{ch.channel}</span>
                     <span className="text-[11px] text-[var(--fog)]">{l(ch.status as keyof typeof L)}</span>
-                    <span className="text-[10px] text-[var(--smoke)]">{timeAgo(ch.lastChecked)}</span>
+                    <span className="text-[10px] text-[var(--fog)]/40">{timeAgo(ch.lastChecked)}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="glass-card-dark p-5 transition-all duration-250 hover:-translate-y-0.5">
+          <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
             <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('guardrailHits24h')}</h2>
             {guardrailHits.length === 0 ? (
               <p className="text-[12px] text-[var(--fog)]/40 italic">{l('noGuardrails')}</p>
