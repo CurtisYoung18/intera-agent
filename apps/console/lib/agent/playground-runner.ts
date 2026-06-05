@@ -229,6 +229,14 @@ export async function* runPlaygroundTurn(input: {
     await new Promise<void>((resolve) => { resolveNext = resolve })
   }
 
+  // ── Persist messages to DB (AgentLoop does NOT call saveMessages itself) ──
+  if (reply && !blocked) {
+    await persistence.saveMessages([
+      { id: turnId, role: 'user', content: message, caseId },
+      { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
+    ])
+  }
+
   // ── Derive applicable pipeline stages from agent config ──
 
   const guardsConfigured = (() => {
