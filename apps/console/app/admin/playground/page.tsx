@@ -148,15 +148,15 @@ export default function PlaygroundPage() {
       try {
         const res = await fetch('/api/admin/playground/sessions')
         if (!res.ok || cancelled) return
-        const data = await res.json() as { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> }
+        const { data } = await res.json() as { data: { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> } }
         const latestSession = data.sessions?.[0]
         if (!latestSession) return
         const detailRes = await fetch(`/api/admin/playground/sessions/${latestSession.chatId}`)
         if (!detailRes.ok || cancelled) return
-        const detail = await detailRes.json() as { chatId: string; messages: Array<{ id: string; role: string; content: string; contentBlocks?: unknown; createdAt: string }> }
+        const { data: detailData } = await detailRes.json() as { data: { chatId: string; messages: Array<{ id: string; role: string; content: string; contentBlocks?: unknown; createdAt: string }> } }
         if (cancelled) return
-        setChatId(detail.chatId)
-        setChatMessages(detail.messages.map((m) => ({
+        setChatId(detailData.chatId)
+        setChatMessages(detailData.messages.map((m) => ({
           role: m.role === 'assistant' ? 'agent' as const : 'user' as const,
           content: m.content,
         })))
