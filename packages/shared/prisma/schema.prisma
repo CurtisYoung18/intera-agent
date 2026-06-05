@@ -213,6 +213,7 @@ model Case {
 
   type    String
   status  String  @default("created")
+  source  String  @default("live")
   goal    String?
   blocker String?
 
