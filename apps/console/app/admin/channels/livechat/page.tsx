@@ -94,18 +94,24 @@ export default function LiveChatDetailPage() {
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionErrorCode, setConnectionErrorCode] = useState<string | null>(null)
   const [agentList, setAgentList] = useState<Array<{ id: string; name: string; isActive: boolean }>>([])
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null) // null = org default
+  const selectedAgentRef = useRef(selectedAgent)
+  const [showAgentList, setShowAgentList] = useState(false)
   const connState = getConnectionState(config, connectionTested)
 
-  // Sync config ref + auto-save on changes
+  // Sync refs + auto-save on changes
   useEffect(() => {
     configRef.current = config
+    selectedAgentRef.current = selectedAgent
     if (loadedRef.current && origConfig) {
       if (saveTimer.current) clearTimeout(saveTimer.current)
       setSyncStatus('syncing')
       saveTimer.current = setTimeout(async () => {
         const current = configRef.current
+        const agent = selectedAgentRef.current
+        const params = agent ? `?agentName=${encodeURIComponent(agent)}` : ''
         try {
-          await apiClient('/api/admin/livechat/config', { method: 'PUT', body: current })
+          await apiClient(`/api/admin/livechat/config${params}`, { method: 'PUT', body: current })
           setSyncStatus('synced')
           setOrigConfig({ ...current })
         } catch {
@@ -127,7 +133,8 @@ export default function LiveChatDetailPage() {
     setConnectionTested(null)
     setConnectionErrorCode(null)
     try {
-      const result = await apiClient<{ groups?: unknown[] }>('/api/admin/livechat/groups')
+      const params = selectedAgent ? `?agentName=${encodeURIComponent(selectedAgent)}` : ''
+      const result = await apiClient<{ groups?: unknown[] }>(`/api/admin/livechat/groups${params}`)
       setConnectionTested(true)
       void result
     } catch {
@@ -138,19 +145,22 @@ export default function LiveChatDetailPage() {
     }
   }
 
+  const fetchConfig = useCallback((agentName: string | null) => {
+    const params = agentName ? `?agentName=${encodeURIComponent(agentName)}` : ''
+    setLoading(true)
+    apiClient<{ config: LiveChatConfig }>(`/api/admin/livechat/config${params}`)
+      .then(r => { setConfig(r.data.config); setOrigConfig(r.data.config); loadedRef.current = true }).catch(() => {}).finally(() => setLoading(false))
+    apiClient<{ groups?: LiveChatGroup[] }>(`/api/admin/livechat/groups${params}`)
+      .then(r => { if (r.data.groups) setGroups(r.data.groups) }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     if (!orgId) return
-    setLoading(true)
-    // B1 fix: use gated admin route (orgId from session, not query param)
-    apiClient<{ config: LiveChatConfig }>('/api/admin/livechat/config')
-      .then(r => { setConfig(r.data.config); setOrigConfig(r.data.config); loadedRef.current = true }).catch(() => {}).finally(() => setLoading(false))
-    // Fetch available groups for escalation tab
-    apiClient<{ groups?: LiveChatGroup[] }>('/api/admin/livechat/groups')
-      .then(r => { if (r.data.groups) setGroups(r.data.groups) }).catch(() => {})
-    // Fetch agent list for per-agent webhook URLs
+    fetchConfig(selectedAgent)
+    // Fetch agent list for per-agent webhook URLs (only once)
     apiClient<{ configs?: Array<{ id: string; name: string; isActive: boolean }> }>('/api/admin/agent-configs')
       .then(r => { if (r.data.configs) setAgentList(r.data.configs.filter(a => a.isActive)) }).catch(() => {})
-  }, [orgId])
+  }, [orgId, selectedAgent, fetchConfig])
 
   const handleReset = () => { if (origConfig) setConfig({ ...origConfig }) }
 
@@ -189,7 +199,9 @@ export default function LiveChatDetailPage() {
 
   const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
-  const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/livechat/webhook/${orgId}` : `/api/livechat/webhook/${orgId}`
+  const webhookUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/api/livechat/webhook/${orgId}${selectedAgent ? `/${encodeURIComponent(selectedAgent)}` : ''}`
+    : `/api/livechat/webhook/${orgId}${selectedAgent ? `/${encodeURIComponent(selectedAgent)}` : ''}`
 
   return (
     <div className="p-8 max-w-5xl">
@@ -228,6 +240,36 @@ export default function LiveChatDetailPage() {
           <p className="text-[12px] text-red-700">
             {t(`livechat.test.err${connectionErrorCode.charAt(0).toUpperCase() + connectionErrorCode.slice(1)}`)}
           </p>
+        </div>
+      )}
+
+      {/* Agent selector */}
+      {agentList.length > 0 && (
+        <div className="flex items-center gap-3 mb-4 px-4 py-3 rounded-xl border border-black/[0.06] bg-white/50">
+          <label className="text-[12px] font-semibold text-[var(--mist)] flex-shrink-0">{t('livechat.agentSelect')}:</label>
+          <select
+            value={selectedAgent ?? '__org_default__'}
+            onChange={e => {
+              const v = e.target.value
+              setSelectedAgent(v === '__org_default__' ? null : v)
+              loadedRef.current = false
+            }}
+            className="w-48 px-3 py-1.5 text-[13px] border border-black/[0.08] rounded-lg bg-white outline-none focus:border-indigo/30"
+          >
+            <option value="__org_default__">{t('livechat.agentDefault')}</option>
+            {agentList.map(a => (
+              <option key={a.id} value={a.name}>{a.name}</option>
+            ))}
+          </select>
+          {selectedAgent && (
+            <span className="text-[10px] font-medium text-indigo bg-indigo/[0.06] px-2 py-0.5 rounded">{t('livechat.perAgentConfig')}</span>
+          )}
+          <div className="flex-1 flex items-center gap-2 ml-2">
+            <code className="text-[11px] text-[var(--fog)] bg-black/[0.02] px-3 py-1.5 rounded-lg border border-black/[0.04] truncate">{webhookUrl}</code>
+            <button onClick={() => handleCopy(webhookUrl)} className="flex-shrink-0 p-1.5 rounded-lg hover:bg-indigo/[0.06] text-[var(--fog)] hover:text-indigo transition-colors" title="Copy">
+              {copied ? <CheckCircle2 className="w-3.5 h-3.5 text-malachite" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
       )}
 
@@ -327,26 +369,36 @@ export default function LiveChatDetailPage() {
               <p className="text-[10px] text-[var(--fog)] mt-1 opacity-60">{t('livechat.webhookRouteNote')}</p>
             </div>
 
-            {/* Per-agent webhook URLs */}
+            {/* Per-agent webhook URLs (collapsible) */}
             {agentList.length > 0 && (
               <div>
-                <label className={labelCls}>{t('livechat.perAgentWebhooks')}</label>
-                <p className="text-[10px] text-[var(--fog)] mb-2 opacity-60">{t('livechat.perAgentWebhooksHint')}</p>
-                <div className="space-y-1.5">
-                  {agentList.map(a => {
-                    const url = typeof window !== 'undefined' ? `${window.location.origin}/api/livechat/webhook/${orgId}/${encodeURIComponent(a.name)}` : `/api/livechat/webhook/${orgId}/${encodeURIComponent(a.name)}`
-                    return (
-                      <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/60 border border-black/[0.04]">
-                        <span className="text-[11px] font-semibold text-[var(--mist)] flex-shrink-0">{a.name}</span>
-                        {a.isActive && <span className="text-[9px] font-bold text-malachite bg-malachite/[0.08] px-1.5 py-0.5 rounded uppercase flex-shrink-0">Active</span>}
-                        <code className="flex-1 text-[10px] text-[var(--fog)] truncate">{url}</code>
-                        <button onClick={() => handleCopy(url)} className="flex-shrink-0 p-1.5 rounded-lg hover:bg-indigo/[0.06] text-[var(--fog)] hover:text-indigo transition-colors" title="Copy">
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
+                <button
+                  onClick={() => setShowAgentList(s => !s)}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50 hover:text-[var(--fog)]/70 transition-colors"
+                >
+                  <span className={`transition-transform ${showAgentList ? 'rotate-90' : ''}`}>▸</span>
+                  {t('livechat.perAgentWebhooks')}
+                </button>
+                {showAgentList && (
+                  <>
+                    <p className="text-[10px] text-[var(--fog)] mb-2 mt-1 opacity-60">{t('livechat.perAgentWebhooksHint')}</p>
+                    <div className="space-y-1.5">
+                      {agentList.map(a => {
+                        const url = typeof window !== 'undefined' ? `${window.location.origin}/api/livechat/webhook/${orgId}/${encodeURIComponent(a.name)}` : `/api/livechat/webhook/${orgId}/${encodeURIComponent(a.name)}`
+                        return (
+                          <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/60 border border-black/[0.04]">
+                            <span className="text-[11px] font-semibold text-[var(--mist)] flex-shrink-0">{a.name}</span>
+                            {a.isActive && <span className="text-[9px] font-bold text-malachite bg-malachite/[0.08] px-1.5 py-0.5 rounded uppercase flex-shrink-0">Active</span>}
+                            <code className="flex-1 text-[10px] text-[var(--fog)] truncate">{url}</code>
+                            <button onClick={() => handleCopy(url)} className="flex-shrink-0 p-1.5 rounded-lg hover:bg-indigo/[0.06] text-[var(--fog)] hover:text-indigo transition-colors" title="Copy">
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
