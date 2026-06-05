@@ -991,14 +991,17 @@ export class SkillRouter {
         if (router.boundToolNames) {
           router.boundToolNames.add(toolName)
         }
+        const baseDesc = ks.description || `Search the "${ks.name}" knowledge base`
         router.skills.set(toolName, {
           name: toolName,
-          description: ks.description || `Search the "${ks.name}" knowledge base`,
+          description: ks.modelControlTopK
+            ? `${baseDesc}. Number of results to return (1–30, higher values return more matches). Default: ${ks.topK}.`
+            : baseDesc,
           inputSchema: {
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Search query in the user\'s language' },
-              topK: { type: 'number', description: 'Number of results to return (1-50)', default: 15 },
+              ...(ks.modelControlTopK ? { topK: { type: 'number', description: `Number of results to return (1–30). Default: ${ks.topK}.`, default: ks.topK } } : {}),
             },
             required: ['query'],
           },
