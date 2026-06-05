@@ -45,7 +45,7 @@ interface TraceSidebarProps {
 
 /* ── Sub-components ── */
 
-function TraceHeader({ count, onCollapse }: { count: number; onCollapse: () => void }) {
+function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -57,16 +57,6 @@ function TraceHeader({ count, onCollapse }: { count: number; onCollapse: () => v
           fontSize: 12, fontWeight: 700, color: 'var(--fog)',
           textTransform: 'uppercase', letterSpacing: '0.06em',
         }}>Trace</span>
-        {count > 0 && (
-          <span style={{
-            fontSize: 10, fontWeight: 600, color: 'var(--indigo)',
-            background: 'rgba(91,138,247,0.08)', padding: '1px 6px',
-            borderRadius: 'var(--radius-sm)', lineHeight: '18px',
-            minWidth: 18, textAlign: 'center', fontFamily: 'var(--font-mono)',
-          }}>
-            {count}
-          </span>
-        )}
       </div>
       <button onClick={onCollapse} style={{
         background: 'none', border: 'none', cursor: 'pointer',
@@ -544,7 +534,6 @@ export default function TraceSidebar({
   expandedTurns, expandedTools, onToggleTurn, onToggleTool,
   responding, onRerunWithMessage, tb,
 }: TraceSidebarProps) {
-  const totalCount = liveTools.length + turnTraces.reduce((sum, t) => sum + t.length, 0)
   const hasData = turnTraces.length > 0 || liveTools.length > 0
 
   /* ── Collapsed strip ── */
@@ -557,14 +546,6 @@ export default function TraceSidebar({
         background: 'var(--surface)', cursor: 'pointer',
       }} onClick={onExpand}>
         <ChevronLeft size={14} style={{ color: 'var(--fog)', opacity: 0.5 }} />
-        {totalCount > 0 && (
-          <span style={{
-            fontSize: 9, fontWeight: 700, color: 'var(--indigo)',
-            marginTop: 6, writingMode: 'vertical-rl',
-          }}>
-            {totalCount}
-          </span>
-        )}
       </div>
     )
   }
@@ -580,7 +561,7 @@ export default function TraceSidebar({
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
     }}>
-      <TraceHeader count={totalCount} onCollapse={onCollapse} />
+      <TraceHeader onCollapse={onCollapse} />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
         {!hasData ? (

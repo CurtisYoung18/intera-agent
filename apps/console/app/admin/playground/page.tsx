@@ -107,7 +107,9 @@ export default function PlaygroundPage() {
   const [toastMessage, setToastMessage] = useState('')
   const [savingToChat, setSavingToChat] = useState(false)
   const [savedChatId, setSavedChatId] = useState<string | null>(null)
-  const [chatId, setChatId] = useState<string | null>(null)
+  const [chatId, setChatId] = useState<string | null>(() => {
+    try { return localStorage.getItem('pg_chatId') } catch { return null }
+  })
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -119,6 +121,7 @@ export default function PlaygroundPage() {
   useEffect(() => { showThinkingRef.current = showThinking }, [showThinking])
   const chatIdRef = useRef<string | null>(null)
   useEffect(() => { chatIdRef.current = chatId }, [chatId])
+  const prevAgentIdRef = useRef<string | null>(null)
 
   // ── Message queue (allow typing while responding) ──
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
@@ -138,62 +141,65 @@ export default function PlaygroundPage() {
 
   // ── Restore session on mount + agent switch ──
   useEffect(() => {
-    // Clear current session before restoring new agent's session
-    setChatId(null)
-    setChatMessages([])
-    setTurnTraces([])
-    setTurnTotalMs([])
-    setReply('')
-    setError('')
-    setLiveTools([])
-    setSavedChatId(null)
+    // On mount, if chatId exists from localStorage, restore that session directly.
+    // On agent switch (selectedAgentId changes), clear and search for latest session.
+    const isAgentSwitch = prevAgentIdRef.current !== null && prevAgentIdRef.current !== selectedAgentId
+    prevAgentIdRef.current = selectedAgentId
+
+    if (isAgentSwitch) {
+      setChatId(null)
+      setChatMessages([])
+      setTurnTraces([])
+      setTurnTotalMs([])
+      setReply('')
+      setError('')
+      setLiveTools([])
+      setSavedChatId(null)
+      try { localStorage.removeItem('pg_chatId') } catch {}
+    }
 
     const configId = selectedAgentId
+    const initialChatId = isAgentSwitch ? null : chatId
     let cancelled = false
-    async function restore() {
-      try {
-        const params = configId ? `?configId=${encodeURIComponent(configId)}` : ''
-        const res = await fetch(`/api/admin/playground/sessions${params}`)
-        if (!res.ok || cancelled) return
-        const { data } = await res.json() as { data: { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> } }
-        const latestSession = data.sessions?.[0]
-        if (!latestSession) return
-        const detailRes = await fetch(`/api/admin/playground/sessions/${latestSession.chatId}`)
-        if (!detailRes.ok || cancelled) return
-        const { data: detailData } = await detailRes.json() as { data: {
-          chatId: string
-          messages: Array<{ id: string; role: string; content: string; contentBlocks?: unknown; createdAt: string }>
-          traces: Array<{ id: string; actionType: string; title: string; detail: string; payload: string; createdAt: string }>
-        } }
-        if (cancelled) return
-        setChatId(detailData.chatId)
-        setChatMessages(detailData.messages.map((m) => ({
-          role: m.role === 'assistant' ? 'agent' as const : 'user' as const,
-          content: m.content,
-        })))
 
-        // Restore traces: group raw traces by turn (each user message starts a new turn)
-        if (detailData.traces?.length > 0) {
-          const userMsgTimes = detailData.messages
-            .filter(m => m.role === 'user')
-            .map(m => new Date(m.createdAt).getTime())
+    async function loadSession(sessionChatId: string) {
+      const detailRes = await fetch(`/api/admin/playground/sessions/${sessionChatId}`)
+      if (!detailRes.ok || cancelled) return
+      const { data: detailData } = await detailRes.json() as { data: {
+        chatId: string
+        messages: Array<{ id: string; role: string; content: string; contentBlocks?: unknown; createdAt: string }>
+        traces: Array<{ id: string; actionType: string; title: string; detail: string; payload: string; createdAt: string }>
+      } }
+      if (cancelled) return
+      setChatId(detailData.chatId)
+      try { localStorage.setItem('pg_chatId', detailData.chatId) } catch {}
+      setChatMessages(detailData.messages.map((m) => ({
+        role: m.role === 'assistant' ? 'agent' as const : 'user' as const,
+        content: m.content,
+      })))
 
-          // Split traces into per-turn groups based on user message boundaries
-          const turnGroups: typeof detailData.traces[] = []
-          let currentGroup: typeof detailData.traces = []
-          let turnIdx = 0
+      // Restore traces: group raw traces by turn (each user message starts a new turn)
+      if (detailData.traces?.length > 0) {
+        const userMsgTimes = detailData.messages
+          .filter(m => m.role === 'user')
+          .map(m => new Date(m.createdAt).getTime())
 
-          for (const trace of detailData.traces) {
-            const traceTime = new Date(trace.createdAt).getTime()
-            // Advance turn boundary if this trace is after the next user message
-            while (turnIdx < userMsgTimes.length - 1 && traceTime >= userMsgTimes[turnIdx + 1]) {
-              turnGroups.push(currentGroup)
-              currentGroup = []
-              turnIdx++
-            }
-            currentGroup.push(trace)
+        // Split traces into per-turn groups based on user message boundaries
+        const turnGroups: typeof detailData.traces[] = []
+        let currentGroup: typeof detailData.traces = []
+        let turnIdx = 0
+
+        for (const trace of detailData.traces) {
+          const traceTime = new Date(trace.createdAt).getTime()
+          // Advance turn boundary if this trace is after the next user message
+          while (turnIdx < userMsgTimes.length - 1 && traceTime >= userMsgTimes[turnIdx + 1]) {
+            turnGroups.push(currentGroup)
+            currentGroup = []
+            turnIdx++
           }
-          if (currentGroup.length > 0) turnGroups.push(currentGroup)
+          currentGroup.push(trace)
+        }
+        if (currentGroup.length > 0) turnGroups.push(currentGroup)
 
           // Aggregate each turn's traces
           const restoredTraces = turnGroups.map((group) => {
@@ -219,6 +225,24 @@ export default function PlaygroundPage() {
             return msArr.length > 0 ? msArr.reduce((a, b) => a + b, 0) : 0
           }))
         }
+      } catch { /* session restore is best-effort */ }
+    }
+
+    async function restore() {
+      try {
+        // If we have a chatId from localStorage (page refresh), load it directly
+        if (initialChatId) {
+          await loadSession(initialChatId)
+          return
+        }
+        // Otherwise search for latest session by configId
+        const params = configId ? `?configId=${encodeURIComponent(configId)}` : ''
+        const res = await fetch(`/api/admin/playground/sessions${params}`)
+        if (!res.ok || cancelled) return
+        const { data } = await res.json() as { data: { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> } }
+        const latestSession = data.sessions?.[0]
+        if (!latestSession) return
+        await loadSession(latestSession.chatId)
       } catch { /* session restore is best-effort */ }
     }
     restore()
@@ -439,6 +463,7 @@ export default function PlaygroundPage() {
               const d = event.data as { chatId: string; caseId: string }
               if (d?.chatId && !chatIdRef.current) {
                 setChatId(d.chatId)
+                try { localStorage.setItem('pg_chatId', d.chatId) } catch {}
               }
             }
             else if (event.type === 'error') {
