@@ -101,7 +101,12 @@ export default function PlaygroundPage() {
   const turnNumRef = useRef(0)
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set())
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('pg_trace_collapsed') === 'true' } catch { return true }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('pg_trace_collapsed', String(sidebarCollapsed)) } catch {}
+  }, [sidebarCollapsed])
   const [error, setError] = useState('')
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [toastMessage, setToastMessage] = useState('')
@@ -294,12 +299,14 @@ export default function PlaygroundPage() {
     const selected = agentList.find(a => a.id === selectedAgentId)
     setSelectedIsActive(selected?.isActive ?? false)
     setSelectedVersion(selected?.version ?? null)
-    // Reset traces on agent change
-    setTurnTraces([])
-    setTurnTotalMs([])
-    turnNumRef.current = 0
-    setExpandedTurns(new Set())
-    setExpandedTools(new Set())
+    // Reset traces only on actual agent switch (not on initial mount when agentList loads)
+    if (hasRestoredRef.current) {
+      setTurnTraces([])
+      setTurnTotalMs([])
+      turnNumRef.current = 0
+      setExpandedTurns(new Set())
+      setExpandedTools(new Set())
+    }
 
     fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
       .then(r => r.json())
@@ -669,6 +676,8 @@ export default function PlaygroundPage() {
                 setError('')
                 setLiveTools([])
                 setSavedChatId(null)
+                setFormRequest(null)
+                try { localStorage.removeItem('pg_chatId') } catch {}
               }}
               disabled={!chatId}
               title="Reset session"
