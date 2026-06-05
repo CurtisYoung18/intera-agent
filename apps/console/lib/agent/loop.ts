@@ -1380,6 +1380,20 @@ export class AgentLoop {
           reason: 'auto_escalated_by_policy',
         }
       }
+
+      // End-turn exit: return cleanly from inside the loop body so we never
+      // reach the "Max iterations" trace block below the while condition.
+      if (stopReason === 'end_turn' || stopReason === 'max_tokens') {
+        this.compactUserProfile().catch(() => {})
+        this.persistChatSession().catch(() => {})
+        return {
+          messages: this.messages,
+          caseStatus: this.currentStage as CaseStatus,
+          transition: 'next_turn',
+          currentStage: this.currentStage,
+          reason: stopReason ?? undefined,
+        }
+      }
     } while (
       this.iterationCount < this.deps.config.maxIterations &&
       stopReason !== 'end_turn' &&
