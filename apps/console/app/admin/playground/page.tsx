@@ -117,8 +117,8 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/admin/agent-configs').then(r => r.json()),
-      fetch('/api/admin/models').then(r => r.json()),
+      fetch('/api/admin/agent-configs').then(r => r.json()).then(d => d.data || d),
+      fetch('/api/admin/models').then(r => r.json()).then(d => d.data || d),
     ]).then(([agentsData, modelsData]) => {
       setAgentList(agentsData.configs || [])
       setModels(modelsData.models || [])
@@ -139,7 +139,7 @@ export default function PlaygroundPage() {
     fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
       .then(r => r.json())
       .then(data => {
-        const raw = data.config || {}
+        const raw = data.data?.config || data.config || {}
         let memoryStrategy = {}
         let policyHooks = '{}'
         try { memoryStrategy = typeof raw.memoryStrategy === 'string' ? JSON.parse(raw.memoryStrategy || '{}') : raw.memoryStrategy || {} } catch { /* */ }
@@ -148,7 +148,7 @@ export default function PlaygroundPage() {
         const sp = raw.systemPrompt || ''
 
         // Resolved model: prefer the API-resolved name, fall back to modelInfo lookup, then raw model id
-        const resolvedModel: string = data.resolvedModel || data.config?.resolvedModel ||
+        const resolvedModel: string = data.data?.resolvedModel || data.resolvedModel || data.data?.config?.resolvedModel || data.config?.resolvedModel ||
           (models.find(m => m.id === raw.model)?.name || raw.model || resolveEffectiveModel({ model: raw.model }))
 
         setSnapshot({
@@ -953,17 +953,21 @@ export default function PlaygroundPage() {
                   </div>
                 ))}
                 {/* ── RenderHint display for completed tools ── */}
-                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => (
-                  <RenderHintCard
-                    key={`hint-${i}`}
-                    hint={t.renderHints as any}
-                    result={t.result}
-                    onSubmit={(values) => {
-                      const msg = JSON.stringify(values, null, 2)
-                      runTurn(msg)
-                    }}
-                  />
-                ))}
+                {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
+                  const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.["web-chat"] || null
+                  if (!hint) return null
+                  return (
+                    <RenderHintCard
+                      key={`hint-${i}`}
+                      hint={hint}
+                      result={t.result}
+                      onSubmit={(values) => {
+                        const msg = JSON.stringify(values, null, 2)
+                        runTurn(msg)
+                      }}
+                    />
+                  )
+                })}
               </div>
             )}
           </SidebarSection>
