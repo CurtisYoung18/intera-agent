@@ -2,6 +2,7 @@
 // Maps fine-grained ActionType events → PlaygroundTraceStep with timing + status.
 
 import type { TraceRecord } from './persistence-port'
+import type { ActionType } from './trace'
 
 export type TraceStage =
   | 'Guardrails'
@@ -27,7 +28,7 @@ export interface PlaygroundTraceStep {
   promptData?: { systemPrompt: string; messages: unknown[] }
 }
 
-const STAGE_MAP: Record<string, { stage: TraceStage; source: TraceSource }> = {
+const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; source: TraceSource }>> = {
   policy_hit: { stage: 'Guardrails', source: 'guardrails' },
   // kb_search_* tools
   kb_search: { stage: 'Knowledge retrieval', source: 'knowledge' },
@@ -88,7 +89,7 @@ export function aggregateTraces(
 
   for (const t of traces) {
     const actionType = t.actionType
-    let mapping = STAGE_MAP[actionType]
+    let mapping = STAGE_MAP[actionType as ActionType | 'kb_search']
 
     // kb_search_* tools → Knowledge retrieval
     if (!mapping && (actionType.startsWith('kb_search') || t.title?.startsWith('kb_search'))) {
@@ -109,15 +110,11 @@ export function aggregateTraces(
     }
   }
 
-  // Determine which stages to emit
-  const stagesToEmit: { stage: string; source: TraceSource }[] = applicableStages
-    ? applicableStages.map((s) => {
-        const found = allStages.find((as) => as.stage === s)
-        return { stage: s, source: found?.source ?? 'agent' as TraceSource }
-      })
-    : allStages
+  // Stages that actually produced records — always shown
+  const firedStages = new Set(stageMap.keys())
+  const ordered = allStages.filter(s => firedStages.has(s.stage) || (applicableStages ?? allStages.map(a => a.stage)).includes(s.stage))
 
-  return stagesToEmit.map(({ stage, source }) => {
+  return ordered.map(({ stage, source }) => {
     const entry = stageMap.get(stage)
     const fired = !!(entry && entry.records.length > 0)
 
@@ -136,17 +133,9 @@ export function aggregateTraces(
 
     const records = entry!.records
 
-    // Use earliest record time for ms offset
-    const ms = (() => {
-      if (startTime && records.length > 0) {
-        const firstCreatedAt = records[0].createdAt
-        if (firstCreatedAt) {
-          const t = new Date(firstCreatedAt).getTime()
-          return Math.max(1, t - startTime)
-        }
-      }
-      return 1
-    })()
+    // Per-stage ms = span between earliest and latest record (0 for single-record stages)
+    const times = records.map(r => new Date(r.createdAt || Date.now()).getTime()).sort((a, b) => a - b)
+    const ms = times.length > 1 ? Math.max(0, times[times.length - 1] - times[0]) : 0
 
     const statuses = records.map((r) => deriveStatus(r.actionType, r.detail))
     const worstStatus = statuses.includes('block') ? 'block'
