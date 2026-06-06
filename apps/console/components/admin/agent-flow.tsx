@@ -130,9 +130,7 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
 
         {activeSection === 'policy' && (
           <div className="space-y-3">
-            <p className="text-[12px] text-[var(--fog)]">JSON object mapping hook points (preTool, postTool, preFinalize) to policy names.</p>
-            <textarea value={config.policyHooks} onChange={e => update('policyHooks', e.target.value)}
-              rows={16} className="glass-input-console text-[12px] font-mono resize-y" placeholder='{"preTool": ["policy1"], "postTool": ["policy2"]}' />
+            <p className="text-[12px] text-[var(--fog)]">Policies are now managed via the standalone Policy editor. Use the sidebar to configure guardrail rules, capability bindings, and enforcement hooks.</p>
           </div>
         )}
 

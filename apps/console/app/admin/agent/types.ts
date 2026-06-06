@@ -54,11 +54,9 @@ export interface AgentConfigData {
   useLegacyCasePrompt: boolean
   showThinking: boolean
   memoryStrategy: MemoryStrategy
-  policyHooks: string
   resumePrompt: string
   debugMode: boolean
   invariantCheck: boolean
-  capabilityBindings?: string
 }
 
 export interface ModelInfo {

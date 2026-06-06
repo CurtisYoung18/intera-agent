@@ -72,9 +72,6 @@ function detectMemoryTier(ms: any): string {
   return 'Long-term'
 }
 
-function countGuardrails(s: string): number {
-  try { return Object.keys(JSON.parse(s)).length } catch { return 0 }
-}
 
 /* ── Page ── */
 
@@ -334,9 +331,7 @@ export default function PlaygroundPage() {
       .then(data => {
         const raw = data.data?.config || data.config || {}
         let memoryStrategy = {}
-        let policyHooks = '{}'
         try { memoryStrategy = typeof raw.memoryStrategy === 'string' ? JSON.parse(raw.memoryStrategy || '{}') : raw.memoryStrategy || {} } catch { /* */ }
-        try { policyHooks = typeof raw.policyHooks === 'string' ? raw.policyHooks : JSON.stringify(raw.policyHooks || {}, null, 2) } catch { policyHooks = '{}' }
 
         const sp = raw.systemPrompt || ''
 
@@ -349,7 +344,7 @@ export default function PlaygroundPage() {
           resolvedModel,
           systemPromptPreview: sp.length > 120 ? sp.slice(0, 120) + '…' : sp,
           memoryTierLabel: detectMemoryTier(memoryStrategy),
-          guardrailCount: countGuardrails(policyHooks),
+          guardrailCount: 0,
           temperature: raw.temperature ?? 0.5,
         })
         setDebugMode(Boolean(raw.debugMode))

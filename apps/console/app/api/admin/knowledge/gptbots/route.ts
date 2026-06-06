@@ -48,7 +48,7 @@ export const PUT = defineRoute({
       })
     } else {
       await repo.agentConfig.create({
-        data: { model: DEFAULT_MODEL, gptbotsApiKey: input.apiKey || null, systemPrompt: '', memoryStrategy: '{}', policyHooks: '{}' } as any,
+        data: { model: DEFAULT_MODEL, gptbotsApiKey: input.apiKey || null, systemPrompt: '', memoryStrategy: '{}' } as any,
       })
     }
     return apiOk({ ok: true })
