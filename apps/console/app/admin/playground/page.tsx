@@ -1041,7 +1041,7 @@ export default function PlaygroundPage() {
                 alignSelf: 'flex-start',
                 marginBottom: 16,
               }}>
-                <OrganicLoader icon="spin" size={16} style={{ color: '#b87347' }} />
+                <OrganicLoader icon="spin" size={16} className="text-[#b87347]" />
                 <span style={{ fontSize: 12, color: 'var(--fog)' }}>
                   Thinking…
                 </span>
