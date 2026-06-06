@@ -9,7 +9,6 @@ import {
   skillCreateRequestSchema,
   type SkillCreateRequest,
 } from '@intera/shared/contracts/tools'
-import { BUILT_IN_TOOLS } from '@/lib/agent/tools'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
@@ -22,67 +21,10 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   async handler({ input, repo }) {
     const { agentConfigId } = input
 
-    let tools = await repo.raw.tool.findMany({
+    const tools = await repo.raw.tool.findMany({
       where: { agentConfigId },
       orderBy: { name: 'asc' },
     })
-
-    const requiredNames = new Set([...SYSTEM_SKILL_NAMES, ...SPECIAL_SKILL_NAMES])
-    const existingNames = new Set(tools.map((t: { name: string }) => t.name))
-    const toUpsert = BUILT_IN_TOOLS.filter(
-      (t) => requiredNames.has(t.name) && !existingNames.has(t.name),
-    )
-
-    if (tools.length === 0 || toUpsert.length > 0) {
-      const namesToSeed = tools.length === 0 ? BUILT_IN_TOOLS : toUpsert
-      const stringify = (val: unknown): string | null => {
-        if (val === null || val === undefined) return null
-        return typeof val === 'string' ? val : JSON.stringify(val)
-      }
-      for (const t of namesToSeed) {
-        await repo.raw.tool.upsert({
-          where: { agentConfigId_name: { agentConfigId, name: t.name } },
-          update: {
-            description: t.description,
-            inputSchema: stringify(t.inputSchema) ?? '{}',
-            outputSchema: stringify(t.outputSchema) ?? '{}',
-            mode: t.mode === 'engine_managed' ? 'mock' : (t.mode === 'channel' ? 'mock' : t.mode),
-            isConcurrencySafe: t.isConcurrencySafe,
-            enabled: t.enabled,
-            guardPhase: 'post',
-            endpoint: t.endpoint ?? null,
-            httpMethod: t.httpMethod ?? 'POST',
-            headers: t.headers ? JSON.stringify(t.headers) : null,
-            timeoutMs: t.timeoutMs ?? 8000,
-            mockFixture: t.mockFixture ? JSON.stringify(t.mockFixture) : null,
-            displayVerb: t.displayVerb ? JSON.stringify(t.displayVerb) : null,
-            toolCategory: t.toolCategory ?? null,
-          },
-          create: {
-            agentConfigId,
-            name: t.name,
-            description: t.description,
-            inputSchema: stringify(t.inputSchema) ?? '{}',
-            outputSchema: stringify(t.outputSchema) ?? '{}',
-            mode: t.mode === 'engine_managed' ? 'mock' : (t.mode === 'channel' ? 'mock' : t.mode),
-            isConcurrencySafe: t.isConcurrencySafe,
-            enabled: t.enabled,
-            guardPhase: 'post',
-            endpoint: t.endpoint ?? null,
-            httpMethod: t.httpMethod ?? 'POST',
-            headers: t.headers ? JSON.stringify(t.headers) : null,
-            timeoutMs: t.timeoutMs ?? 8000,
-            mockFixture: t.mockFixture ? JSON.stringify(t.mockFixture) : null,
-            displayVerb: t.displayVerb ? JSON.stringify(t.displayVerb) : null,
-            toolCategory: t.toolCategory ?? null,
-          },
-        })
-      }
-      tools = await repo.raw.tool.findMany({
-        where: { agentConfigId },
-        orderBy: { name: 'asc' },
-      })
-    }
 
     const enriched = tools.map((t: { name: string; [k: string]: unknown }) => ({
       ...t,

@@ -28,9 +28,9 @@ export const skillItemSchema = z.object({
 
 export type SkillItem = z.infer<typeof skillItemSchema>
 
-// ── GET /api/admin/skills response ──
+// ── GET /api/admin/tools response ──
 export const skillsListResponseSchema = z.object({
-  skills: z.array(skillItemSchema),
+  tools: z.array(skillItemSchema),
 })
 export type SkillsListResponse = z.infer<typeof skillsListResponseSchema>
 

@@ -44,6 +44,56 @@ const AGENT_ID = 'agent_default_v1'
 
 const SEED_TOOLS = [
   {
+    name: 'read_chat_memory',
+    description: 'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, key events, and any compaction summary from earlier turns.',
+    inputSchema: JSON.stringify({ type: 'object', properties: {}, required: [] }),
+    outputSchema: JSON.stringify({ type: 'object', properties: { summary: { type: 'string' }, confirmedFacts: { type: 'object' }, stats: { type: 'object' } } }),
+    mode: 'mock',
+    guardPhase: 'post',
+    toolCategory: 'system_info',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+  {
+    name: 'read_user_profile',
+    description: 'Read the user profile for the current customer. Contains user attributes, preferences, tags, and cross-chat statistics.',
+    inputSchema: JSON.stringify({ type: 'object', properties: {}, required: [] }),
+    outputSchema: JSON.stringify({ type: 'object', properties: { profile: { type: 'string' }, stats: { type: 'object' } } }),
+    mode: 'mock',
+    guardPhase: 'post',
+    toolCategory: 'system_info',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+  {
+    name: 'todo_read',
+    description: 'Read the current todo list. Call this at the start of a turn to see pending, in-progress, and completed items before deciding what to do next.',
+    inputSchema: JSON.stringify({ type: 'object', properties: {} }),
+    outputSchema: JSON.stringify({ type: 'object', properties: { todos: { type: 'array' } } }),
+    mode: 'mock',
+    guardPhase: 'post',
+    toolCategory: 'system_info',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+  {
+    name: 'todo_write',
+    description: 'Create or update a structured todo list. Use this to plan complex investigations, track progress through multi-step workflows, and communicate current state.',
+    inputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        todos: { type: 'array', description: 'The complete todo list to persist.' },
+      },
+      required: ['todos'],
+    }),
+    outputSchema: JSON.stringify({ type: 'object', properties: { ok: { type: 'boolean' } } }),
+    mode: 'mock',
+    guardPhase: 'post',
+    toolCategory: 'system_info',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+  {
     name: 'search_knowledge_base',
     description: 'Search the knowledge base for articles, FAQs, policies, and SOPs relevant to the query.',
     inputSchema: JSON.stringify({

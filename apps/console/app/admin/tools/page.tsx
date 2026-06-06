@@ -115,7 +115,7 @@ export default function SkillsPage() {
     try {
       const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
       const result = await apiClient<SkillsListResponse>(`/api/admin/tools${params}`)
-      setSkills(result.data.skills || [])
+      setSkills(result.data.tools || [])
     } catch { /* apiClient throws on envelope errors; fall back gracefully */ }
     setLoading(false)
   }, [agentConfigId])

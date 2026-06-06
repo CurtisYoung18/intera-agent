@@ -5,7 +5,6 @@
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
-import { DEFAULT_POLICIES } from '@intera/shared/defaults'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
 
@@ -16,31 +15,10 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   async handler({ input, repo }) {
     const { agentConfigId } = input
 
-    let policies = await repo.raw.policy.findMany({
+    const policies = await repo.raw.policy.findMany({
       where: { agentConfigId },
       orderBy: { name: 'asc' },
     })
-    const existingNames = new Set(policies.map((p) => p.name))
-    const missing = DEFAULT_POLICIES.filter((p) => !existingNames.has(p.name))
-    if (missing.length > 0) {
-      for (const p of missing) {
-        await repo.raw.policy.create({
-          data: {
-            agentConfigId,
-            name: p.name,
-            description: p.description,
-            hook: p.hook,
-            rule: p.rule,
-            guardrailConfig: p.guardrailConfig ?? null,
-            enabled: true,
-          },
-        })
-      }
-      policies = await repo.raw.policy.findMany({
-        where: { agentConfigId },
-        orderBy: { name: 'asc' },
-      })
-    }
     return apiOk({ policies })
   },
 })

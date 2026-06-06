@@ -5,7 +5,6 @@
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
-import { DEFAULT_CASE_TYPES } from '@intera/shared/defaults'
 
 const stringifyMaybe = (val: unknown): string => {
   if (typeof val === 'string') return val
@@ -21,39 +20,10 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   async handler({ input, repo }) {
     const { agentConfigId } = input
 
-    let types = await repo.raw.caseType.findMany({
+    const types = await repo.raw.caseType.findMany({
       where: { agentConfigId },
       orderBy: { type: 'asc' },
     })
-    const existingTypes = new Set(types.map((t) => t.type))
-    const missing = DEFAULT_CASE_TYPES.filter((ct) => !existingTypes.has(ct.type))
-    if (missing.length > 0) {
-      const { DEFAULT_STAGE_CONFIGS, DEFAULT_ORCHESTRATOR_CONFIG } = await import('@intera/shared/defaults')
-      for (const ct of missing) {
-        const stageConfigs = (DEFAULT_STAGE_CONFIGS as Record<string, unknown>)[ct.type] || null
-        await repo.raw.caseType.create({
-          data: {
-            agentConfigId,
-            type: ct.type,
-            displayName: ct.displayName,
-            description: ct.description,
-            icon: ct.icon,
-            requiredFacts: ct.requiredFacts,
-            stages: ct.stages,
-            stageConfigs: stageConfigs ? JSON.stringify(stageConfigs) : null,
-            orchestratorConfig: JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG),
-            defaultGoal: ct.defaultGoal,
-            escalateOn: ct.escalateOn,
-            enabled: ct.enabled ?? true,
-            requireHumanReview: ct.requireHumanReview ?? false,
-          },
-        })
-      }
-      types = await repo.raw.caseType.findMany({
-        where: { agentConfigId },
-        orderBy: { type: 'asc' },
-      })
-    }
     return apiOk({ types })
   },
 })
