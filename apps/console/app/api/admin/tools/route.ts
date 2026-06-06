@@ -10,7 +10,7 @@ import {
   type SkillCreateRequest,
 } from '@intera/shared/contracts/tools'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
-import { SYSTEM_TOOLS } from '@/lib/agent/tools'
+import { BUILT_IN_TOOLS } from '@/lib/agent/tools'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
 
@@ -27,9 +27,9 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
       orderBy: { name: 'asc' },
     })
 
-    // Auto-gift system tools if missing (first load for any agent)
+    // Auto-gift built-in tools if missing (first load for any agent)
     const existingNames = new Set(tools.map((t: { name: string }) => t.name))
-    const missingSystem = SYSTEM_TOOLS.filter((st) => !existingNames.has(st.name))
+    const missingSystem = BUILT_IN_TOOLS.filter((st) => !existingNames.has(st.name))
     if (missingSystem.length > 0) {
       for (const st of missingSystem) {
         await repo.raw.tool.create({

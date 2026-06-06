@@ -2,17 +2,18 @@
 // Built-in tools are defined in BUILT_IN_TOOLS (tools.ts).
 // Business tools come from the database.
 
-/** System Tools — engine-managed, READ-ONLY. The agent loop handles these directly. */
+/** System Tools — engine-managed, READ-ONLY. Auto-gifted to every agent. */
 export const SYSTEM_SKILL_NAMES = new Set([
   'dispatch_case_agent',
   'finalize_case',
   'finalize_case_agent',
-  'create_human_task',
+  'read_chat_memory',
+  'read_user_profile',
 ])
 
 /** Channel Tools — behavior varies per channel. READ-ONLY. Configured in Channels detail page. */
 export const CHANNEL_SKILL_NAMES = new Set([
-  'finalize_consultation',
+  'create_human_task',
   'ask_user_questions',
 ])
 
