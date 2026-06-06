@@ -16,7 +16,7 @@ const KINDS = [
   { id: 'plain', label: 'Plain Text' },
 ] as const
 
-export default function SkillRenderHintsEditor({ value, onChange, mockFixture }: Props) {
+export default function ToolRenderHintsEditor({ value, onChange, mockFixture }: Props) {
   const [kind, setKind] = useState<string>(value?.kind ?? '')
 
   const handleKindChange = (newKind: string) => {

@@ -9,7 +9,7 @@ import {
   toolCreateRequestSchema,
   type ToolCreateRequest,
 } from '@intera/shared/contracts/tools'
-import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_TOOL_NAMES, SPECIAL_TOOL_NAMES, CHANNEL_TOOL_NAMES } from '@/lib/tool-classifications'
 import { BUILT_IN_TOOLS } from '@/lib/agent/tools'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
@@ -55,9 +55,9 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
 
     const enriched = tools.map((t: { name: string; [k: string]: unknown }) => ({
       ...t,
-      isSystem: SYSTEM_SKILL_NAMES.has(t.name),
-      isChannel: CHANNEL_SKILL_NAMES.has(t.name),
-      isSpecial: SPECIAL_SKILL_NAMES.has(t.name),
+      isSystem: SYSTEM_TOOL_NAMES.has(t.name),
+      isChannel: CHANNEL_TOOL_NAMES.has(t.name),
+      isSpecial: SPECIAL_TOOL_NAMES.has(t.name),
     }))
 
     return apiOk({ tools: enriched })

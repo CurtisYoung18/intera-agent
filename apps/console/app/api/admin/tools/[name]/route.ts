@@ -9,7 +9,7 @@ import {
   toolUpdateRequestSchema,
   type ToolUpdateRequest,
 } from '@intera/shared/contracts/tools'
-import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_TOOL_NAMES, SPECIAL_TOOL_NAMES, CHANNEL_TOOL_NAMES } from '@/lib/tool-classifications'
 
 // ── Route params ──
 interface ToolParams {
@@ -17,7 +17,7 @@ interface ToolParams {
 }
 
 function isProtected(name: string): boolean {
-  return SYSTEM_SKILL_NAMES.has(name) || SPECIAL_SKILL_NAMES.has(name) || CHANNEL_SKILL_NAMES.has(name)
+  return SYSTEM_TOOL_NAMES.has(name) || SPECIAL_TOOL_NAMES.has(name) || CHANNEL_TOOL_NAMES.has(name)
 }
 
 function isMutationAllowed(name: string, body: Record<string, unknown>): boolean {

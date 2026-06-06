@@ -83,10 +83,10 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-vi.mock('@/lib/skill-classifications', () => ({
-  SYSTEM_SKILL_NAMES: new Set(['system_info']),
-  SPECIAL_SKILL_NAMES: new Set<string>(),
-  CHANNEL_SKILL_NAMES: new Set<string>(),
+vi.mock('@/lib/tool-classifications', () => ({
+  SYSTEM_TOOL_NAMES: new Set(['system_info']),
+  SPECIAL_TOOL_NAMES: new Set<string>(),
+  CHANNEL_TOOL_NAMES: new Set<string>(),
 }))
 
 import { GET, POST } from '@/app/api/admin/tools/route'

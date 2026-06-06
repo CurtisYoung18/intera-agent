@@ -11,13 +11,13 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
-import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
+import ToolRenderHintsEditor from '@/components/admin/tool-render-hints-editor'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import type { ToolsListResponse, ToolCreateResponse } from '@intera/shared/contracts/tools'
 
-interface SkillItem {
+interface ToolItem {
   id: string; name: string; description: string; mode: string
   endpoint?: string | null; httpMethod?: string | null; timeoutMs?: number | null
   inputSchema?: string | null; outputSchema?: string | null; headers?: string | null
@@ -75,14 +75,14 @@ interface KnowledgeSourceRow {
   rerankVersion: string | null
 }
 
-export default function SkillsPage() {
+export default function ToolsPage() {
   const { t } = useConsoleLocale()
   const agentConfigId = useSelectedAgentId()
-  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [tools, setTools] = useState<ToolItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [editing, setEditing] = useState<SkillItem | null>(null)
-  const [viewSkill, setViewSkill] = useState<SkillItem | null>(null)
+  const [editing, setEditing] = useState<ToolItem | null>(null)
+  const [viewTool, setViewTool] = useState<ToolItem | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [originalName, setOriginalName] = useState('')
   const [testing, setTesting] = useState(false)
@@ -115,17 +115,17 @@ export default function SkillsPage() {
     try {
       const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
       const result = await apiClient<ToolsListResponse>(`/api/admin/tools${params}`)
-      setSkills(result.data.tools || [])
+      setTools(result.data.tools || [])
     } catch { /* apiClient throws on envelope errors; fall back gracefully */ }
     setLoading(false)
   }, [agentConfigId])
 
   useEffect(() => { load(); loadKnowledgeSources() }, [load, loadKnowledgeSources])
 
-  const toggleEnabled = useCallback(async (skill: SkillItem) => {
-    await apiClient(`/api/admin/tools/${encodeURIComponent(skill.name)}`, {
+  const toggleEnabled = useCallback(async (tool: ToolItem) => {
+    await apiClient(`/api/admin/tools/${encodeURIComponent(tool.name)}`, {
       method: 'PUT',
-      body: { enabled: !skill.enabled },
+      body: { enabled: !tool.enabled },
     })
     load()
   }, [load])
@@ -196,7 +196,7 @@ export default function SkillsPage() {
     setEditing({ ...editing, outputSchema: JSON.stringify(schema, null, 2) })
   }, [editing, testResult])
 
-  const formatField = (field: keyof SkillItem) => {
+  const formatField = (field: keyof ToolItem) => {
     if (!editing) return
     try { setEditing({ ...editing, [field]: JSON.stringify(JSON.parse(String(editing[field] || '{}')), null, 2) }) } catch {}
   }
@@ -210,16 +210,16 @@ export default function SkillsPage() {
     setIsNew(true); setOriginalName('')
   }
 
-  const openEdit = (s: SkillItem) => { if (s.isSpecial || s.mode === 'engine_managed' || s.mode === 'channel') return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
+  const openEdit = (s: ToolItem) => { if (s.isSpecial || s.mode === 'engine_managed' || s.mode === 'channel') return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
 
-  const filtered = skills.filter(s =>
+  const filtered = tools.filter(s =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.description || '').toLowerCase().includes(search.toLowerCase())
   )
 
-  const systemSkills = filtered.filter(s => s.isSystem)
-  const channelSkills = filtered.filter(s => s.isChannel)
-  const specialSkills = filtered.filter(s => s.isSpecial)
-  const businessSkills = filtered.filter(s => !s.isSystem && !s.isChannel && !s.isSpecial)
+  const systemTools = filtered.filter(s => s.isSystem)
+  const channelTools = filtered.filter(s => s.isChannel)
+  const specialTools = filtered.filter(s => s.isSpecial)
+  const businessTools = filtered.filter(s => !s.isSystem && !s.isChannel && !s.isSpecial)
 
   if (loading) return <div className="p-8"><ListSkeleton /></div>
 
@@ -231,7 +231,7 @@ export default function SkillsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('tools.title')}</h1>
-          <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('tools.subtitle', { n: skills.length })}</p>
+          <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('tools.subtitle', { n: tools.length })}</p>
         </div>
         <button onClick={openNew}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">
@@ -250,16 +250,16 @@ export default function SkillsPage() {
         <EmptyState icon={Puzzle} title={t('tools.noTools')} description={search ? t('common.noMatches') : t('tools.noToolsDesc')} />
       ) : (
         <div className="space-y-10">
-          {/* ── System Skills ── */}
-          {systemSkills.length > 0 && (
+          {/* ── System Tools ── */}
+          {systemTools.length > 0 && (
             <section>
               <div className="flex items-center gap-2 mb-4">
                 <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('tools.systemTools')}</h2>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-sky/[0.08] text-sky border border-sky/20">{t('tools.system')}</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {systemSkills.map(s => (
-                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => setViewSkill(s)}>
+                {systemTools.map(s => (
+                  <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => setViewTool(s)}>
                     <div className="p-5">
                       {/* Top row: icon + name + lock (no toggle for system tools) */}
                       <div className="flex items-start gap-3 mb-3">
@@ -294,7 +294,7 @@ export default function SkillsPage() {
           )}
 
           {/* ── Channel Tools ── */}
-          {channelSkills.length > 0 && (
+          {channelTools.length > 0 && (
             <section className="mb-8">
               <div className="flex items-center gap-2 mb-4">
                 <h2 className="text-[15px] font-semibold text-[var(--mist)]">Channel Tools</h2>
@@ -302,7 +302,7 @@ export default function SkillsPage() {
               </div>
               <p className="text-[12px] text-[var(--fog)] mb-4">Behavior varies per channel — configured in each Channel&apos;s detail page.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {channelSkills.map(s => (
+                {channelTools.map(s => (
                   <div key={s.id || s.name} className="rounded-2xl border border-purple/[0.12] bg-white/60 p-5">
                     <div className="flex items-start gap-3 mb-3">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple/[0.08]">
@@ -387,13 +387,13 @@ export default function SkillsPage() {
             )}
           </section>
 
-          {/* ── Special Skills ── */}
-          {specialSkills.length > 0 && (
+          {/* ── Special Tools ── */}
+          {specialTools.length > 0 && (
             <section className="mb-8">
               <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-1">{t('tools.specialTools')}</h2>
               <p className="text-[12px] text-[var(--fog)] mb-4">Configured in dedicated pages</p>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {specialSkills.map(s => (
+                {specialTools.map(s => (
                   <TiltCard key={s.id || s.name} accentColor="#14b8a6" onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
                     <div className="p-5">
                       <div className="flex items-start gap-3 mb-3">
@@ -415,12 +415,12 @@ export default function SkillsPage() {
             </section>
           )}
 
-          {/* ── Business Skills ── */}
-          {businessSkills.length > 0 && (
+          {/* ── Business Tools ── */}
+          {businessTools.length > 0 && (
             <section>
               <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-4">{t('tools.businessTools')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {businessSkills.map(s => (
+                {businessTools.map(s => (
                   <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
                     <div className="p-5">
                       {/* Top row: icon + info + toggle */}
@@ -499,13 +499,13 @@ export default function SkillsPage() {
 
 
       {/* Read-only detail panel for system tools */}
-      <ImmersiveModal open={!!viewSkill} onClose={() => setViewSkill(null)} title={viewSkill?.name ?? ''}>
-        {viewSkill && (
+      <ImmersiveModal open={!!viewTool} onClose={() => setViewTool(null)} title={viewTool?.name ?? ''}>
+        {viewTool && (
           <div className="space-y-4">
             {/* Mode + locked badge */}
             <div className="flex items-center gap-2">
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${viewSkill.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : viewSkill.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>
-                {viewSkill.mode === 'engine_managed' ? 'System' : viewSkill.mode === 'channel' ? 'Channel' : viewSkill.mode}
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${viewTool.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : viewTool.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>
+                {viewTool.mode === 'engine_managed' ? 'System' : viewTool.mode === 'channel' ? 'Channel' : viewTool.mode}
               </span>
               <span className="flex items-center gap-1 text-[11px] text-amber/80 bg-amber/[0.06] px-2 py-0.5 rounded-full">
                 <Lock className="w-3 h-3" /> Read-only — managed by the engine
@@ -514,21 +514,21 @@ export default function SkillsPage() {
             {/* Description */}
             <div>
               <p className="text-[11px] font-medium text-[var(--fog)] mb-1">{t('common.description')}</p>
-              <p className="text-[13px] text-[var(--mist)] leading-relaxed">{viewSkill.description || t('common.noDescription')}</p>
+              <p className="text-[13px] text-[var(--mist)] leading-relaxed">{viewTool.description || t('common.noDescription')}</p>
             </div>
             {/* LLM model view */}
             <div>
               <p className="text-[11px] font-medium text-[var(--fog)] mb-1 flex items-center gap-1"><Eye className="w-3 h-3" /> Model sees</p>
               <pre className="text-[10px] font-mono text-[var(--mist)] p-3 rounded-xl bg-black/[0.04] border border-[var(--border-subtle)] overflow-auto max-h-[260px] whitespace-pre-wrap">
 {JSON.stringify({
-  name: viewSkill.name,
-  description: viewSkill.description || '',
-  input_schema: (() => { try { return JSON.parse(viewSkill.inputSchema || '{}') } catch { return {} } })(),
+  name: viewTool.name,
+  description: viewTool.description || '',
+  input_schema: (() => { try { return JSON.parse(viewTool.inputSchema || '{}') } catch { return {} } })(),
 }, null, 2)}
               </pre>
             </div>
             <div className="pt-4 border-t border-[var(--border-subtle)]">
-              <button type="button" onClick={() => setViewSkill(null)} className="w-full py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">
+              <button type="button" onClick={() => setViewTool(null)} className="w-full py-2.5 rounded-xl text-[13px] text-[var(--fog)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] transition-all">
                 Close
               </button>
             </div>
@@ -554,7 +554,7 @@ export default function SkillsPage() {
               </span>
               <select value={editing.mode} onChange={e => {
                 const newMode = e.target.value
-                const update: Partial<SkillItem> = { mode: newMode }
+                const update: Partial<ToolItem> = { mode: newMode }
                 if (newMode === 'static' && !editing.mockFixture?.trim()) {
                   update.mockFixture = prefillDefaultMock(editing.name) || '{"status":"ok"}'
                 }
@@ -675,7 +675,7 @@ export default function SkillsPage() {
                 <ChevronDown className="w-3.5 h-3.5 text-indigo/60 group-open:rotate-180 transition-transform" />
               </summary>
               <div className="mt-3">
-                <SkillRenderHintsEditor
+                <ToolRenderHintsEditor
                   value={(() => {
                     try { return editing.renderHints ? (JSON.parse(editing.renderHints)?.livechat as LivechatRenderHint) : undefined }
                     catch { return undefined }
