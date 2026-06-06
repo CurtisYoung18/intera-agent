@@ -787,7 +787,7 @@ export default function PlaygroundPage() {
           <div className="pg-chat-scroll" style={{
             flex: 1, width: '100%',
             maxWidth: 680,
-            padding: '32px 24px 0 24px',
+            padding: '32px 10px 0 24px',
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
