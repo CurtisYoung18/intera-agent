@@ -1,4 +1,4 @@
-// Seed script — creates demo data for human tasks UI + admin config
+// Seed script — creates demo data for human tasks UI + agent-scoped config
 // Run from repo root: `npm run db:seed`
 // Loads `.env.local` / `.env` so `DATABASE_URL` and API model env vars match your machine.
 
@@ -13,14 +13,6 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   CORE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
-  DEFAULT_POLICY_HOOKS,
-  DEFAULT_SKILLS,
-  DEFAULT_POLICIES,
-  DEFAULT_CASE_TYPES,
-  DEFAULT_ROUTING,
-  DEFAULT_STAGE_CONFIGS,
-  DEFAULT_ORCHESTRATOR_CONFIG,
-  DEFAULT_KNOWLEDGE_SOURCES,
 } from '../defaults/index'
 
 function loadEnv(): void {
@@ -46,6 +38,157 @@ loadEnv()
 
 const prisma = new PrismaClient()
 
+// ── Agent-scoped seed data ────────────────────────────────────────────
+
+const AGENT_ID = 'agent_default_v1'
+
+const SEED_TOOLS = [
+  {
+    name: 'search_knowledge_base',
+    description: 'Search the knowledge base for articles, FAQs, policies, and SOPs relevant to the query.',
+    inputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Natural-language search query' },
+        source: { type: 'string', description: 'Optional knowledge source name filter' },
+      },
+      required: ['query'],
+    }),
+    outputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        results: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, content: { type: 'string' }, score: { type: 'number' } } } },
+      },
+    }),
+    mode: 'mock',
+    guardPhase: 'post',
+    toolCategory: 'system_info',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+  {
+    name: 'create_human_task',
+    description: 'Create a structured task for a human operator to review, investigate, or decide.',
+    inputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        queue: { type: 'string', description: 'Target operator queue (e.g. payment_ops, account_ops)' },
+        question: { type: 'string', description: 'Detailed question or context for the human operator' },
+      },
+      required: ['queue', 'question'],
+    }),
+    outputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        status: { type: 'string', enum: ['pending', 'resolved'] },
+      },
+    }),
+    mode: 'mock',
+    guardPhase: 'pre',
+    toolCategory: 'operational',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+  {
+    name: 'request_user_input',
+    description: 'Collect structured information from the user via a form. Use this instead of plain-text questions.',
+    inputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'Field identifier (e.g. txnId, amount, member_id)' },
+              label: { type: 'string', description: 'User-visible question text' },
+              required: { type: 'boolean', default: false },
+            },
+          },
+        },
+        title: { type: 'string', description: 'Optional form title' },
+      },
+      required: ['fields'],
+    }),
+    outputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        answers: { type: 'object', description: 'Map of field key -> user-provided value' },
+      },
+    }),
+    mode: 'mock',
+    guardPhase: 'pre',
+    toolCategory: 'operational',
+    isConcurrencySafe: true,
+    enabled: true,
+  },
+]
+
+const SEED_POLICIES = [
+  {
+    name: 'no_high_risk_account_change',
+    description: 'Block high-risk account mutations (refund, ban, delete) in preTool phase',
+    hook: 'preTool',
+    rule: JSON.stringify({ denyTools: ['refund_money', 'change_ban_status', 'delete_account'] }),
+    guardrailConfig: JSON.stringify({
+      when: 'preTool',
+      match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
+      check: { kind: 'rule', denyTools: ['refund_money', 'change_ban_status', 'delete_account'] },
+      onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
+      onUnavailable: { action: 'closed' },
+      guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
+    }),
+    enabled: true,
+  },
+  {
+    name: 'investigate_before_resolve',
+    description: 'Require evidence gathering before case finalization',
+    hook: 'preFinalize',
+    rule: JSON.stringify({ requireToolsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status', 'search_knowledge_base'] }),
+    guardrailConfig: JSON.stringify({
+      when: 'preFinalize',
+      match: { tools: [] },
+      check: {
+        kind: 'ai',
+        evaluationPrompt:
+          'Check whether the finalize conclusion cites evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.',
+      },
+      onViolation: { action: 'block', guidance: 'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or knowledge base articles.' },
+      onUnavailable: { action: 'open' },
+    }),
+    enabled: true,
+  },
+]
+
+const SEED_CASE_TYPES = [
+  {
+    type: 'general_inquiry',
+    displayName: 'General Inquiry',
+    description: 'General customer questions, information requests, how-to guidance, and platform policy inquiries.',
+    icon: '💬',
+    requiredFacts: '[]',
+    stages: '["created","resolved"]',
+    defaultGoal: 'Answer the customer question accurately using knowledge base and available tools.',
+    escalateOn: '[]',
+    enabled: true,
+    requireHumanReview: false,
+  },
+  {
+    type: 'deposit_issue',
+    displayName: 'Deposit not credited',
+    description:
+      'The customer says they topped up or transferred funds but their balance did not increase. Includes "charged but balance unchanged" and "still not credited after a long time".',
+    icon: '💰',
+    requiredFacts: '["txnId","amount","paymentMethod","date"]',
+    stages: '["created","collecting","investigating","resolved"]',
+    defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
+    escalateOn: '["conflict"]',
+    enabled: true,
+    requireHumanReview: true,
+  },
+]
+
 // ── Organization definitions ────────────────────────────────────────────
 
 const VENDORS = [
@@ -55,156 +198,126 @@ const VENDORS = [
 
 // ── Seed helpers ────────────────────────────────────────────────────
 
-async function seedVendorConfig(
-  orgId: string,
-  opts: {
-    model: string
-    temperature: number
-    maxIterations: number
-    showThinking: boolean
-    skillsMode: 'mock' | 'http'
-  },
-) {
-  // AgentConfig
+async function seedAgentConfig(orgId: string, agentId: string) {
   const agentPayload = {
+    id: agentId,
+    orgId,
+    name: 'Default',
+    version: 1,
+    isActive: true,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     coreSystemPrompt: CORE_SYSTEM_PROMPT,
     caseAddendum: null,
-    useLegacyCasePrompt: false, // base+append by default
-    model: opts.model,
-    temperature: opts.temperature,
+    useLegacyCasePrompt: false,
+    model: DEFAULT_MODEL,
+    temperature: 0.5,
     thinkingBudget: 4096,
-    maxIterations: opts.maxIterations,
+    maxIterations: 20,
     maxOutputTokens: 4096,
     memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-    policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
-    showThinking: opts.showThinking,
+    showThinking: true,
     resumePrompt:
-      `[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.`,
+      '[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.',
   }
 
-  const existing = await prisma.agentConfig.findFirst({ where: { orgId, isActive: true } })
-  if (existing) {
-    await prisma.agentConfig.update({ where: { id: existing.id }, data: agentPayload })
-  } else {
-    await prisma.agentConfig.create({ data: { orgId, ...agentPayload } })
-  }
-  console.log(`  ✓ AgentConfig (${orgId})`)
+  await prisma.agentConfig.upsert({
+    where: { id: agentId },
+    update: agentPayload,
+    create: agentPayload,
+  })
+  console.log(`  ✓ AgentConfig (${agentId})`)
 
-  // Skills
-  for (const s of DEFAULT_SKILLS) {
-    // For API org, force HTTP mode; for demo, keep original mode
-    const mode = opts.skillsMode === 'http' && s.endpoint ? 'http' : s.mode
-
-    await prisma.skill.upsert({
-      where: { orgId_name: { orgId, name: s.name } },
+  // Tools — agent-scoped
+  for (const t of SEED_TOOLS) {
+    await prisma.tool.upsert({
+      where: { agentConfigId_name: { agentConfigId: agentId, name: t.name } },
       update: {
-        description: s.description,
-        inputSchema: s.inputSchema,
-        outputSchema: s.outputSchema,
-        mode,
-        isConcurrencySafe: s.isConcurrencySafe,
-        enabled: s.enabled,
-        guardPhase: s.guardPhase,
-        mockFixture: s.mockFixture ?? null,
-        endpoint: s.endpoint ?? null,
-        httpMethod: s.httpMethod ?? 'POST',
-        headers: s.headers ?? null,
-        timeoutMs: s.timeoutMs ?? 8000,
-        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        outputSchema: t.outputSchema,
+        mode: t.mode,
+        guardPhase: t.guardPhase,
+        toolCategory: t.toolCategory,
+        isConcurrencySafe: t.isConcurrencySafe,
+        enabled: t.enabled,
       },
       create: {
-        orgId,
-        name: s.name,
-        description: s.description,
-        inputSchema: s.inputSchema,
-        outputSchema: s.outputSchema,
-        mode,
-        isConcurrencySafe: s.isConcurrencySafe,
-        enabled: s.enabled,
-        guardPhase: s.guardPhase,
-        mockFixture: s.mockFixture ?? null,
-        endpoint: s.endpoint ?? null,
-        httpMethod: s.httpMethod ?? 'POST',
-        headers: s.headers ?? null,
-        timeoutMs: s.timeoutMs ?? 8000,
-        displayVerb: s.displayVerb ? JSON.stringify(s.displayVerb) : null,
+        agentConfigId: agentId,
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        outputSchema: t.outputSchema,
+        mode: t.mode,
+        guardPhase: t.guardPhase,
+        toolCategory: t.toolCategory,
+        isConcurrencySafe: t.isConcurrencySafe,
+        enabled: t.enabled,
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_SKILLS.length} Skills (${orgId})`)
+  console.log(`  ✓ ${SEED_TOOLS.length} Tools (${agentId})`)
 
-  // Policies
-  for (const p of DEFAULT_POLICIES) {
+  // Policies — agent-scoped
+  for (const p of SEED_POLICIES) {
     await prisma.policy.upsert({
-      where: { orgId_name: { orgId, name: p.name } },
-      update: { description: p.description, hook: p.hook, rule: p.rule, guardrailConfig: p.guardrailConfig ?? null, enabled: true },
-      create: { orgId, name: p.name, description: p.description, hook: p.hook, rule: p.rule, guardrailConfig: p.guardrailConfig ?? null, enabled: true },
+      where: { agentConfigId_name: { agentConfigId: agentId, name: p.name } },
+      update: {
+        description: p.description,
+        hook: p.hook,
+        rule: p.rule,
+        guardrailConfig: p.guardrailConfig,
+        enabled: p.enabled,
+      },
+      create: {
+        agentConfigId: agentId,
+        name: p.name,
+        description: p.description,
+        hook: p.hook,
+        rule: p.rule,
+        guardrailConfig: p.guardrailConfig,
+        enabled: p.enabled,
+      },
     })
   }
-  console.log(`  ✓ ${DEFAULT_POLICIES.length} Policies (${orgId})`)
+  console.log(`  ✓ ${SEED_POLICIES.length} Policies (${agentId})`)
 
-  const orch = JSON.stringify(DEFAULT_ORCHESTRATOR_CONFIG)
-
-  // Case Types
-  for (const ct of DEFAULT_CASE_TYPES) {
-    const stageMap = DEFAULT_STAGE_CONFIGS[ct.type] as Record<string, unknown> | undefined
+  // Case Types — agent-scoped
+  for (const ct of SEED_CASE_TYPES) {
     await prisma.caseType.upsert({
-      where: { orgId_type: { orgId, type: ct.type } },
+      where: { agentConfigId_type: { agentConfigId: agentId, type: ct.type } },
       update: {
-        displayName: ct.displayName, description: ct.description, icon: ct.icon,
-        requiredFacts: ct.requiredFacts, stages: ct.stages,
-        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
-        orchestratorConfig: orch, defaultGoal: ct.defaultGoal,
-        escalateOn: ct.escalateOn, enabled: true,
+        displayName: ct.displayName,
+        description: ct.description,
+        icon: ct.icon,
+        requiredFacts: ct.requiredFacts,
+        stages: ct.stages,
+        defaultGoal: ct.defaultGoal,
+        escalateOn: ct.escalateOn,
+        enabled: ct.enabled,
+        requireHumanReview: ct.requireHumanReview ?? false,
       },
       create: {
-        orgId, type: ct.type, displayName: ct.displayName,
-        description: ct.description, icon: ct.icon,
-        requiredFacts: ct.requiredFacts, stages: ct.stages,
-        stageConfigs: stageMap ? JSON.stringify(stageMap) : null,
-        orchestratorConfig: orch, defaultGoal: ct.defaultGoal,
-        escalateOn: ct.escalateOn, enabled: true,
+        agentConfigId: agentId,
+        type: ct.type,
+        displayName: ct.displayName,
+        description: ct.description,
+        icon: ct.icon,
+        requiredFacts: ct.requiredFacts,
+        stages: ct.stages,
+        defaultGoal: ct.defaultGoal,
+        escalateOn: ct.escalateOn,
+        enabled: ct.enabled,
+        requireHumanReview: ct.requireHumanReview ?? false,
       },
     })
   }
-  console.log(`  ✓ ${DEFAULT_CASE_TYPES.length} Case Types (${orgId})`)
-
-  // Routing
-  for (const r of DEFAULT_ROUTING) {
-    await prisma.routing.upsert({
-      where: { orgId_queue: { orgId, queue: r.queue } },
-      update: { description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
-      create: { orgId, queue: r.queue, description: r.description, skillsAllowed: r.skillsAllowed, priority: r.priority },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_ROUTING.length} Routing queues (${orgId})`)
-
-  // Knowledge Sources
-  for (const ks of DEFAULT_KNOWLEDGE_SOURCES) {
-    await prisma.knowledgeSource.upsert({
-      where: { orgId_name: { orgId, name: ks.name } },
-      update: {
-        description: ks.description ?? null, groupIds: ks.groupIds,
-        embeddingRate: ks.embeddingRate, topK: ks.topK,
-        rerankVersion: ks.rerankVersion ?? null, docCorrelation: ks.docCorrelation ?? null,
-        caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
-      },
-      create: {
-        orgId, name: ks.name, description: ks.description ?? null,
-        groupIds: ks.groupIds, embeddingRate: ks.embeddingRate, topK: ks.topK,
-        rerankVersion: ks.rerankVersion ?? null, docCorrelation: ks.docCorrelation ?? null,
-        caseTypeTag: ks.caseTypeTag ?? null, enabled: ks.enabled,
-      },
-    })
-  }
-  console.log(`  ✓ ${DEFAULT_KNOWLEDGE_SOURCES.length} Knowledge Sources (${orgId})`)
+  console.log(`  ✓ ${SEED_CASE_TYPES.length} Case Types (${agentId})`)
 }
 
 // ── Main seed ────────────────────────────────────────────────────────
 
 async function seed() {
-  console.log('Seeding…')
+  console.log('Seeding...')
 
   // ── Clean old demo data ──
   await prisma.humanTask.deleteMany({ where: { id: 'seed-task-1' } })
@@ -223,7 +336,7 @@ async function seed() {
   }
   console.log(`  ✓ ${VENDORS.length} Vendors`)
 
-  // ── Bootstrap owner user (D1) ──
+  // ── Bootstrap owner user ──
   const staffPassword = process.env.STAFF_PASSWORD
   if (staffPassword) {
     const ownerEmail = process.env.SEED_OWNER_EMAIL || 'admin@intera.local'
@@ -256,15 +369,9 @@ async function seed() {
     }
   }
 
-  // ── Demo Org config ──
-  console.log('\n── Demo Org ──')
-  await seedVendorConfig('default', {
-    model: DEFAULT_MODEL,
-    temperature: 0.5,
-    maxIterations: 20,
-    showThinking: true,
-    skillsMode: 'mock',
-  })
+  // ── Agent Config: default org ──
+  console.log('\n── Agent Config ──')
+  await seedAgentConfig('default', AGENT_ID)
 
   // ── Demo data: Case + Memory + Messages + Traces + HumanTask ──
   const c = await prisma.case.create({
@@ -309,10 +416,10 @@ async function seed() {
   await prisma.actionTrace.createMany({
     data: [
       { caseId: c.id, actionType: 'user_message', title: 'User reported deposit issue' },
-      { caseId: c.id, actionType: 'skill_called', title: 'Skill called: query_order_status' },
-      { caseId: c.id, actionType: 'skill_result', title: 'Skill result: query_order_status' },
-      { caseId: c.id, actionType: 'skill_called', title: 'Skill called: query_payment_channel_status' },
-      { caseId: c.id, actionType: 'skill_result', title: 'Skill result: query_payment_channel_status' },
+      { caseId: c.id, actionType: 'tool_called', title: 'Tool called: query_order_status' },
+      { caseId: c.id, actionType: 'tool_result', title: 'Tool result: query_order_status' },
+      { caseId: c.id, actionType: 'tool_called', title: 'Tool called: query_payment_channel_status' },
+      { caseId: c.id, actionType: 'tool_result', title: 'Tool result: query_payment_channel_status' },
       { caseId: c.id, actionType: 'human_task_created', title: 'Human task created for payment_ops' },
     ],
   })

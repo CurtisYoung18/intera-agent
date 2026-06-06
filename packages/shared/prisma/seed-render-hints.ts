@@ -1,5 +1,5 @@
-// One-time seed script to update renderHints for the api customer's HTTP skills.
-// Run: npx tsx packages/shared/prisma/seed-render-hints.ts
+// One-time seed script to update renderHints for HTTP tools on a given agent config.
+// Run: npx tsx packages/shared/prisma/seed-render-hints.ts [agentConfigId]
 
 import { PrismaClient } from '@prisma/client'
 
@@ -19,21 +19,21 @@ const RENDER_HINTS: Record<string, string> = {
 }
 
 async function main() {
-  const orgId = process.argv[2] || 'demo'
-  console.log(`Updating renderHints for org: ${orgId}`)
+  const agentConfigId = process.argv[2] || 'agent_default_v1'
+  console.log(`Updating renderHints for agent: ${agentConfigId}`)
 
   for (const [name, renderHints] of Object.entries(RENDER_HINTS)) {
     try {
-      const skill = await prisma.skill.findUnique({
-        where: { orgId_name: { orgId, name } },
+      const tool = await prisma.tool.findUnique({
+        where: { agentConfigId_name: { agentConfigId, name } },
         select: { id: true, renderHints: true },
       })
-      if (!skill) {
+      if (!tool) {
         console.log(`  SKIP ${name} — not found`)
         continue
       }
-      await prisma.skill.update({
-        where: { orgId_name: { orgId, name } },
+      await prisma.tool.update({
+        where: { agentConfigId_name: { agentConfigId, name } },
         data: { renderHints },
       })
       console.log(`  OK   ${name}`)
