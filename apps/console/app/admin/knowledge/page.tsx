@@ -7,7 +7,6 @@ import {
   Eye, EyeOff, Key, Bot,
 } from 'lucide-react'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
-import { useCapabilityBindings, toggleItemBinding } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
@@ -65,13 +64,6 @@ const CASE_TYPE_OPTIONS = [
 
 function parseGroupIds(groupIds: string): string[] {
   try { return JSON.parse(groupIds) } catch { return [] }
-}
-
-function parseBoundKnowledge(bindings: string): string[] {
-  try {
-    const cb = JSON.parse(bindings || '{}')
-    return Array.isArray(cb.knowledge) ? cb.knowledge : []
-  } catch { return [] }
 }
 
 // ── Tab Bar ─────────────────────────────────────────────────────────────
@@ -324,8 +316,7 @@ function TestRetrieval({ sources, testQuery, testSourceId, testResults, testTota
 
 export default function KnowledgePage() {
   const { t } = useConsoleLocale()
-  const agentId = useSelectedAgentId()
-  const { bindings, saveBindings } = useCapabilityBindings(agentId)
+  const agentConfigId = useSelectedAgentId()
   const { orgId } = useSession()
 
   // Tab state
@@ -362,14 +353,15 @@ export default function KnowledgePage() {
 
   const fetchSources = useCallback(async () => {
     try {
-      const r = await apiClient<{ sources: KnowledgeSource[] }>('/api/admin/knowledge/sources')
+      const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+      const r = await apiClient<{ sources: KnowledgeSource[] }>(`/api/admin/knowledge/sources${params}`)
       setSources(r.data.sources || [])
     } catch {
       setError(t('knowledge.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [agentConfigId])
 
   const fetchGptKbs = useCallback(async () => {
     setGptKbsLoading(true)
@@ -399,15 +391,13 @@ export default function KnowledgePage() {
 
   // ── Binding-based filtering ────────────────────────────────────────
 
-  const boundNames = parseBoundKnowledge(bindings)
-  const boundSources = sources.filter(s => boundNames.includes(s.name))
-  const boundEnabledCount = boundSources.filter(s => s.enabled).length
+  const enabledCount = sources.filter(s => s.enabled).length
 
-  // GPTBots KBs already bound = IDs in groupIds of any bound source
-  const boundKbIds = new Set(
-    boundSources.flatMap(s => parseGroupIds(s.groupIds))
+  // GPTBots KBs already used = IDs in groupIds of any source
+  const usedKbIds = new Set(
+    sources.flatMap(s => parseGroupIds(s.groupIds))
   )
-  const availableKbs = gptKbs.filter(kb => !boundKbIds.has(kb.id))
+  const availableKbs = gptKbs.filter(kb => !usedKbIds.has(kb.id))
 
   // ── Source CRUD ────────────────────────────────────────────────────
 
@@ -463,16 +453,14 @@ export default function KnowledgePage() {
   }
 
   const bindGptBotKb = async (kb: GptBotKb) => {
-    // AC-E: If KB name already exists in local DB, just bind it
+    // If KB name already exists in local DB, just close the picker
     const existing = sources.find(s => s.name === kb.name)
     if (existing) {
-      const newB = toggleItemBinding(bindings, 'knowledge', existing.name)
-      saveBindings(newB)
       setShowAddPicker(false)
       return
     }
 
-    // AC-D: Create local KnowledgeSource from GPTBots KB
+    // Create local KnowledgeSource from GPTBots KB
     try {
       await apiClient('/api/admin/knowledge/sources', {
         method: 'POST',
@@ -487,8 +475,6 @@ export default function KnowledgePage() {
           enabled: true,
         },
       })
-      const newB = toggleItemBinding(bindings, 'knowledge', kb.name)
-      saveBindings(newB)
       fetchSources()
       setShowAddPicker(false)
     } catch {
@@ -552,8 +538,8 @@ export default function KnowledgePage() {
               <Bot className="w-4 h-4 text-[var(--indigo)]" />
               <span className="text-[12px] font-semibold text-[var(--indigo)]">
                 {gptConnected
-                  ? <>{boundEnabledCount} tools active</>
-                  : <>{boundEnabledCount} sources configured</>
+                  ? <>{enabledCount} tools active</>
+                  : <>{sources.length} sources configured</>
                 }
               </span>
             </div>
@@ -571,7 +557,7 @@ export default function KnowledgePage() {
           />
 
           {/* Tabs */}
-          <KnowledgeTabs activeTab={activeTab} onTabChange={setActiveTab} sourceCount={boundSources.length} />
+          <KnowledgeTabs activeTab={activeTab} onTabChange={setActiveTab} sourceCount={sources.length} />
 
           {/* Tab content */}
           {activeTab === 'sources' ? (
@@ -579,7 +565,7 @@ export default function KnowledgePage() {
               {/* Sources header */}
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[13px] font-semibold text-[var(--mist)]">
-                  Knowledge Sources ({boundSources.length})
+                  Knowledge Sources ({sources.length})
                 </h2>
                 <button
                   onClick={() => gptConnected && setShowAddPicker(true)}
@@ -597,15 +583,13 @@ export default function KnowledgePage() {
                 <div className="flex items-center gap-2 text-[13px] text-[var(--fog)] py-8 justify-center">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading...
                 </div>
-              ) : boundSources.length === 0 ? (
+              ) : sources.length === 0 ? (
                 <div className="glass-card text-center py-12 text-[13px] text-[var(--fog)]">
-                  {sources.length === 0
-                    ? 'No knowledge sources in your organization. Create a source first.'
-                    : 'No sources bound to this agent. Click "Add Source" to bind one.'}
+                  No knowledge sources for this agent. Add a source to get started.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {boundSources.map((s) => (
+                  {sources.map((s) => (
                     <SourceCard
                       key={s.id}
                       source={s}

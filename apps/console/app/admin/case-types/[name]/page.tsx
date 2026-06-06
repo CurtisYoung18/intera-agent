@@ -68,7 +68,7 @@ export default function CaseTypeDetailPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const ctRef = useRef(ct)
   const loadedRef = useRef(false)
-  const [allSkills, setAllSkills] = useState<string[]>([])
+  const [allTools, setAllTools] = useState<string[]>([])
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [confirmExecMode, setConfirmExecMode] = useState<string | null>(null)
@@ -130,8 +130,8 @@ export default function CaseTypeDetailPage() {
 
   // Fetch skills and models
   useEffect(() => {
-    apiClient<{ skills?: Array<{ name: string }> }>('/api/admin/skills')
-      .then((r) => setAllSkills((r.data.skills || []).map((s) => s.name)))
+    apiClient<{ tools?: Array<{ name: string }> }>('/api/admin/tools')
+      .then((r) => setAllTools((r.data.tools || r.data.skills || []).map((s) => s.name)))
       .catch(() => {})
     apiClient<{ models?: Array<{ id: string }> }>('/api/admin/models')
       .then((r) => setAvailableModels((r.data.models || []).map((m) => m.id)))
@@ -568,7 +568,7 @@ export default function CaseTypeDetailPage() {
           <StageConfigEditor
             stages={stageList}
             stageConfigs={stageConfigs as any}
-            allSkills={allSkills}
+            allSkills={allTools}
             availableModels={availableModels.length > 0 ? availableModels : ['MiniMax-M2.7-highspeed']}
             onChange={(updated) => {
               if (ct) setCt({ ...ct, stageConfigs: JSON.stringify(updated) })
@@ -599,7 +599,7 @@ export default function CaseTypeDetailPage() {
               className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:underline"
             >
               <Puzzle className="w-3.5 h-3.5" />
-              Manage Skills & Tools
+              Manage Tools
             </Link>
           </div>
         </div>

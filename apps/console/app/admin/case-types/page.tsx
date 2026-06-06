@@ -8,7 +8,6 @@ import EmptyState from '@/components/ui/empty-state'
 import TiltCard from '@/components/ui/tilt-card'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
-import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
@@ -36,8 +35,7 @@ interface CaseTypeItem {
 
 export default function CaseTypesPage() {
   const { t } = useConsoleLocale()
-  const agentId = useSelectedAgentId()
-  const { bindings, saveBindings } = useCapabilityBindings(agentId)
+  const agentConfigId = useSelectedAgentId()
   const router = useRouter()
   const [items, setItems] = useState<CaseTypeItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,7 +48,8 @@ export default function CaseTypesPage() {
 
   const load = useCallback(async () => {
     try {
-      const result = await apiClient<{ types: CaseTypeItem[] }>('/api/admin/case-types')
+      const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+      const result = await apiClient<{ types: CaseTypeItem[] }>(`/api/admin/case-types${params}`)
       const raw = (result.data.types || []) as CaseTypeItem[]
       setItems(raw.map((ct) => ({ ...ct, enabled: ct.enabled !== false })))
       setError(null)
@@ -252,20 +251,6 @@ export default function CaseTypesPage() {
                     <span className="text-[10px] text-[var(--smoke)]">
                       {ct.enabled ? t('common.active') : t('common.disabled')}
                     </span>
-                    {agentId && (() => {
-                      const stats = checkItemBinding(bindings, 'caseTypes', ct.type)
-                      return (
-                        <BindingIndicator
-                          isBound={stats.isBound}
-                          isDrift={stats.isDrift}
-                          otherVersionsBound={stats.otherVersionsBound}
-                          onToggle={() => {
-                            const newB = toggleItemBinding(bindings, 'caseTypes', ct.type)
-                            saveBindings(newB)
-                          }}
-                        />
-                      )
-                    })()}
                     </div>
                     <div className="flex gap-1">
                       <button

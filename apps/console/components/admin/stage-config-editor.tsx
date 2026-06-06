@@ -59,7 +59,7 @@ interface Props {
 
 const SOURCE_OPTIONS = [
   { value: 'user_input', label: 'User Input' },
-  { value: 'skill_output', label: 'Skill Output' },
+  { value: 'skill_output', label: 'Tool Output' },
   { value: 'evaluation', label: 'Evaluation' },
 ] as const
 
@@ -71,7 +71,7 @@ const TRANSITION_TYPES = [
 
 const CONDITION_TYPES = [
   { value: 'all_evidence_gathered', label: 'All Evidence Gathered' },
-  { value: 'all_skills_called', label: 'All Skills Called' },
+  { value: 'all_skills_called', label: 'All Tools Called' },
   { value: 'min_iterations', label: 'Min Iterations' },
   { value: 'llm_decision', label: 'LLM Decision' },
 ] as const
@@ -342,7 +342,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
               <div className="px-4">
                 <SectionHeader
                   icon={Wrench}
-                  title="Skills"
+                  title="Tools"
                   badge={cfg.requiredSkills?.length ? `${cfg.requiredSkills.length} required` : undefined}
                   expanded={expandedSections.skills}
                   onToggle={() => toggleSection('skills')}
@@ -353,31 +353,31 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                 <div className="px-4 pb-4 space-y-4 border-t border-[var(--border-subtle)]/50 pt-3">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium text-[var(--mist)]">Required Skills</span>
+                      <span className="text-[11px] font-medium text-[var(--mist)]">Required Tools</span>
                       <span className="text-[10px] text-[var(--smoke)]">Must be called in this stage</span>
                     </div>
                     <ChipInput
                       values={cfg.requiredSkills || []}
                       onChange={(v) => updateStage(activeStage, { requiredSkills: v }, stageConfigs, onChange)}
                       suggestions={allSkills}
-                      placeholder="Add required skill..."
+                      placeholder="Add required tool..."
                     />
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium text-[var(--mist)]">Allowed Skills</span>
-                      <span className="text-[10px] text-[var(--smoke)]">Empty = all skills allowed. Terminal tools always allowed.</span>
+                      <span className="text-[11px] font-medium text-[var(--mist)]">Allowed Tools</span>
+                      <span className="text-[10px] text-[var(--smoke)]">Empty = all tools allowed. Terminal tools always allowed.</span>
                     </div>
                     <ChipInput
                       values={cfg.availableSkills || []}
                       onChange={(v) => updateStage(activeStage, { availableSkills: v }, stageConfigs, onChange)}
                       suggestions={allSkills}
-                      placeholder="Add allowed skill..."
+                      placeholder="Add allowed tool..."
                     />
                   </div>
                   {(cfg.requiredSkills?.length ?? 0) === 0 && (cfg.availableSkills?.length ?? 0) === 0 ? (
                     <p className="text-[10px] leading-relaxed text-[var(--fog)] border-t border-[var(--border-subtle)]/40 pt-3">
-                      Skills can stay empty when this stage only auto-advances (e.g. <code className="text-[var(--mist)]">min_iterations</code> / transition
+                      Tools can stay empty when this stage only auto-advances (e.g. <code className="text-[var(--mist)]">min_iterations</code> / transition
                       rules). Tool requirements belong in downstream stages (
                       <code className="text-[var(--mist)]">collecting</code>,{' '}
                       <code className="text-[var(--mist)]">investigating</code>, … ) — check those tabs if you expected chips here.
@@ -451,7 +451,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                             }}
                             className="glass-input-console text-[12px] py-1 col-span-2"
                           >
-                            <option value="">skill</option>
+                            <option value="">tool</option>
                             {allSkills.map((s) => (
                               <option key={s} value={s}>{s}</option>
                             ))}

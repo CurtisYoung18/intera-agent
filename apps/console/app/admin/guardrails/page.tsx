@@ -10,13 +10,12 @@ import ChipInput from '@/components/ui/chip-input'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
-import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
 import { apiClient } from '@/lib/api/client'
 import type { GuardrailHook, GuardrailCheckpoint } from '@intera/shared/types'
 
 // ── Platform constants (mirrors policy.ts safety floor) ──────────────────
 
-const HIGH_RISK_SKILLS = ['refund_money', 'change_ban_status', 'delete_account']
+const HIGH_RISK_TOOLS = ['refund_money', 'change_ban_status', 'delete_account']
 const SAFE_TOOLS = [
   { value: 'create_human_task', label: 'Create Human Task (转人工)' },
   { value: 'request_user_input', label: 'Request User Input' },
@@ -72,7 +71,7 @@ function summarizeHook(p: PolicyItem): string {
     const parts: string[] = []
     const cpLabel = CHECKPOINTS.find(c => c.value === gh.when)?.label || gh.when
     parts.push(cpLabel)
-    if (gh.match.skills.length) parts.push(`Skills: ${gh.match.skills.join(', ')}`)
+    if (gh.match.skills.length) parts.push(`Tools: ${gh.match.skills.join(', ')}`)
     parts.push(gh.check.kind === 'rule' ? 'Rule' : 'AI')
     if (gh.onViolation.action !== 'warn') parts.push(`On violation: ${gh.onViolation.action}`)
     return parts.join(' · ')
@@ -90,13 +89,12 @@ function summarizeHook(p: PolicyItem): string {
 }
 
 function isHighRiskHook(gh: GuardrailHook): boolean {
-  return gh.match.skills.some(s => HIGH_RISK_SKILLS.includes(s))
+  return gh.match.skills.some(s => HIGH_RISK_TOOLS.includes(s))
 }
 
 export default function PoliciesPage() {
   const { t } = useConsoleLocale()
-  const agentId = useSelectedAgentId()
-  const { bindings, saveBindings } = useCapabilityBindings(agentId)
+  const agentConfigId = useSelectedAgentId()
   const hookMeta = useMemo(
     () => ({
       preTool: { label: t('policy.hook.preTool'), icon: AlertTriangle, color: '#d4912e' },
@@ -112,58 +110,27 @@ export default function PoliciesPage() {
   const [isNew, setIsNew] = useState(false)
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [hitStats, setHitStats] = useState<Map<string, number>>(new Map())
-  const [usedByAgent, setUsedByAgent] = useState<Set<string>>(new Set())
-  const [allSkills, setAllSkills] = useState<string[]>([])
+  const [allTools, setAllTools] = useState<string[]>([])
   const [gh, setGh] = useState<GuardrailHook>(defaultGuardrailHook())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const load = useCallback(async () => {
-    const res = await fetch('/api/admin/policies')
+    const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+    const res = await fetch(`/api/admin/policies${params}`)
     const data = await res.json()
     setItems((data.data || data).policies || [])
     setLoading(false)
-  }, [])
+  }, [agentConfigId])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    fetch('/api/admin/agent')
+    const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+    fetch(`/api/admin/tools${params}`)
       .then((r) => r.json())
-      .then((d) => {
-        const p = d.data || d
-        try {
-          const hooks = typeof p.config?.policyHooks === 'string' ? JSON.parse(p.config.policyHooks) : p.config?.policyHooks
-          const names = new Set<string>()
-          for (const key of ['preTool', 'postTool', 'preFinalize']) {
-            if (Array.isArray(hooks?.[key])) {
-              for (const n of hooks[key]) if (typeof n === 'string') names.add(n)
-            }
-          }
-          setUsedByAgent(names)
-        } catch { /* ignore */ }
-      })
+      .then((d) => { const p = d.data || d; setAllTools((p.tools || p.skills || []).map((s: { name: string }) => s.name)) })
       .catch(() => {})
-  }, [items])
-
-  useEffect(() => {
-    fetch('/api/admin/policies/stats')
-      .then((r) => r.json())
-      .then((d) => {
-        const p = d.data || d
-        const m = new Map<string, number>()
-        for (const s of p.stats || []) m.set(s.name, s.hits)
-        setHitStats(m)
-      })
-      .catch(() => {})
-  }, [items])
-
-  useEffect(() => {
-    fetch('/api/admin/skills')
-      .then((r) => r.json())
-      .then((d) => { const p = d.data || d; setAllSkills((p.skills || []).map((s: { name: string }) => s.name)) })
-      .catch(() => {})
-  }, [])
+  }, [agentConfigId])
 
   const insertPlaceholder = (ph: string) => {
     const ta = textareaRef.current
@@ -212,7 +179,7 @@ export default function PoliciesPage() {
 
     // Validate safety floor in UI
     if (isHighRiskHook(gh) && gh.onUnavailable.action === 'open') {
-      setSaveError('onUnavailable cannot be "open" for hooks on high-risk skills (refund_money, change_ban_status, delete_account). Use "closed" or "invoke_tool".')
+      setSaveError('onUnavailable cannot be "open" for hooks on high-risk tools (refund_money, change_ban_status, delete_account). Use "closed" or "invoke_tool".')
       return
     }
 
@@ -248,6 +215,7 @@ export default function PoliciesPage() {
       hook: gh.when,
       rule: legacyRule,
       guardrailConfig,
+      agentConfigId,
     }
     const url = isNew ? '/api/admin/policies' : `/api/admin/policies/${encodeURIComponent(editing.name)}`
     const res = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -321,23 +289,6 @@ export default function PoliciesPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-[var(--smoke)]">{p.enabled ? t('common.active') : t('common.inactive')}</span>
-                              {usedByAgent.has(p.name) && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-malachite/[0.08] text-malachite font-medium">Assigned to agent</span>
-                              )}
-                              {agentId && (() => {
-                                const stats = checkItemBinding(bindings, 'guardrails', p.name, p.hook as 'preTool' | 'postTool' | 'preFinalize')
-                                return (
-                                  <BindingIndicator
-                                    isBound={stats.isBound}
-                                    isDrift={stats.isDrift}
-                                    otherVersionsBound={stats.otherVersionsBound}
-                                    onToggle={() => {
-                                      const newB = toggleItemBinding(bindings, 'guardrails', p.name, p.hook as 'preTool' | 'postTool' | 'preFinalize')
-                                      saveBindings(newB)
-                                    }}
-                                  />
-                                )
-                              })()}
                             </div>
                             <div className="flex gap-1">
                               <button type="button" onClick={e => { e.stopPropagation(); openEdit(p) }} className="p-1.5 rounded-lg hover:bg-black/5" title={t('common.edit')}><Pencil className="w-3.5 h-3.5 text-[var(--fog)]" /></button>
@@ -352,34 +303,6 @@ export default function PoliciesPage() {
               </div>
             )
           })}
-        </div>
-      )}
-
-      {/* ── Hit Stats ── */}
-      {items.length > 0 && (
-        <div className="mt-8 rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl px-5 py-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="w-4 h-4 text-[var(--fog)]" />
-            <h2 className="text-[13px] font-semibold text-[var(--mist)]">Hit Statistics</h2>
-            <span className="text-[10px] text-[var(--fog)]/60 ml-1">(last 7 days)</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {items.filter(p => p.enabled).slice(0, 6).map(p => (
-              <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-black/[0.04] bg-white">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-medium text-[var(--mist)] truncate">{p.name}</p>
-                  <p className="text-[10px] text-[var(--fog)]">{p.hook === 'preTool' ? 'Before tool' : p.hook === 'postTool' ? 'After tool' : 'Before resolve'}</p>
-                </div>
-                <div className="text-right flex-shrink-0 ml-3">
-                  <p className="text-[16px] font-bold text-[var(--mist)]">{hitStats.get(p.name) ?? '—'}</p>
-                  <p className="text-[9px] text-[var(--fog)]/50">hits</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          {hitStats.size === 0 && (
-            <p className="text-[10px] text-[var(--fog)]/50 mt-2">No policy hits recorded in the last 7 days.</p>
-          )}
         </div>
       )}
 
@@ -418,9 +341,9 @@ export default function PoliciesPage() {
               <span className="text-[11px] text-[var(--fog)] font-medium">2. Which actions/outputs?</span>
 
               <label className="space-y-1.5 block">
-                <span className="text-[11px] text-[var(--fog)]">Match skills</span>
-                <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Skills that trigger this guardrail. Leave empty to match all skills at this checkpoint.</p>
-                <ChipInput values={gh.match.skills} onChange={v => setGh({ ...gh, match: { ...gh.match, skills: v } })} suggestions={allSkills} placeholder="Add skill..." />
+                <span className="text-[11px] text-[var(--fog)]">Match tools</span>
+                <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Tools that trigger this guardrail. Leave empty to match all tools at this checkpoint.</p>
+                <ChipInput values={gh.match.skills} onChange={v => setGh({ ...gh, match: { ...gh.match, skills: v } })} suggestions={allTools} placeholder="Add tool..." />
               </label>
 
               <label className="space-y-1.5 block">
@@ -446,17 +369,17 @@ export default function PoliciesPage() {
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] text-[var(--fog)]">Deny Skills</span>
                     <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Skills the agent is never allowed to call.</p>
-                    <ChipInput values={gh.check.denySkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, denySkills: v.length ? v : undefined } })} suggestions={allSkills} placeholder="Add skill..." />
+                    <ChipInput values={gh.check.denySkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, denySkills: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
                   </label>
                   <label className="space-y-1.5 block">
-                    <span className="text-[11px] text-[var(--fog)]">Require Skills (all)</span>
-                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">All listed skills must have been called.</p>
-                    <ChipInput values={gh.check.requireSkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkills: v.length ? v : undefined } })} suggestions={allSkills} placeholder="Add skill..." />
+                    <span className="text-[11px] text-[var(--fog)]">Require Tools (all)</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">All listed tools must have been called.</p>
+                    <ChipInput values={gh.check.requireSkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkills: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
                   </label>
                   <label className="space-y-1.5 block">
-                    <span className="text-[11px] text-[var(--fog)]">Require Skills (any)</span>
-                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">At least one listed skill must have been called.</p>
-                    <ChipInput values={gh.check.requireSkillsAny || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkillsAny: v.length ? v : undefined } })} suggestions={allSkills} placeholder="Add skill..." />
+                    <span className="text-[11px] text-[var(--fog)]">Require Tools (any)</span>
+                    <p className="text-[10px] text-[var(--smoke)] -mt-0.5">At least one listed tool must have been called.</p>
+                    <ChipInput values={gh.check.requireSkillsAny || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkillsAny: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
                   </label>
                 </>
               ) : (
@@ -519,7 +442,7 @@ export default function PoliciesPage() {
               {highRisk && (
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-vermillion/[0.06] border border-vermillion/15">
                   <AlertTriangle className="w-3.5 h-3.5 text-vermillion flex-shrink-0" />
-                  <span className="text-[10px] text-vermillion font-medium">This hook targets high-risk skills. "Open" (allow) is not available — the platform requires fail-closed safety.</span>
+                  <span className="text-[10px] text-vermillion font-medium">This hook targets high-risk tools. "Open" (allow) is not available — the platform requires fail-closed safety.</span>
                 </div>
               )}
 

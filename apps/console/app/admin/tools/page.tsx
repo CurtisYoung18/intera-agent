@@ -11,13 +11,11 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 
 import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
-import { useCapabilityBindings, checkItemBinding, toggleItemBinding, BindingIndicator } from '@/components/admin/binding-column'
-import { DEFAULT_SKILLS } from '@intera/shared/defaults'
 import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
-import type { SkillsListResponse, SkillCreateResponse } from '@intera/shared/contracts/skills'
+import type { SkillsListResponse, SkillCreateResponse } from '@intera/shared/contracts/tools'
 
 interface SkillItem {
   id: string; name: string; description: string; mode: string
@@ -79,8 +77,7 @@ interface KnowledgeSourceRow {
 
 export default function SkillsPage() {
   const { t } = useConsoleLocale()
-  const agentId = useSelectedAgentId()
-  const { bindings, saveBindings } = useCapabilityBindings(agentId)
+  const agentConfigId = useSelectedAgentId()
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -116,16 +113,17 @@ export default function SkillsPage() {
 
   const load = useCallback(async () => {
     try {
-      const result = await apiClient<SkillsListResponse>('/api/admin/skills')
+      const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+      const result = await apiClient<SkillsListResponse>(`/api/admin/tools${params}`)
       setSkills(result.data.skills || [])
     } catch { /* apiClient throws on envelope errors; fall back gracefully */ }
     setLoading(false)
-  }, [])
+  }, [agentConfigId])
 
   useEffect(() => { load(); loadKnowledgeSources() }, [load, loadKnowledgeSources])
 
   const toggleEnabled = useCallback(async (skill: SkillItem) => {
-    await apiClient(`/api/admin/skills/${encodeURIComponent(skill.name)}`, {
+    await apiClient(`/api/admin/tools/${encodeURIComponent(skill.name)}`, {
       method: 'PUT',
       body: { enabled: !skill.enabled },
     })
@@ -146,7 +144,7 @@ export default function SkillsPage() {
       }
     }
     const urlName = isNew ? editing.name : originalName
-    const url = isNew ? '/api/admin/skills' : `/api/admin/skills/${encodeURIComponent(urlName)}`
+    const url = isNew ? '/api/admin/tools' : `/api/admin/tools/${encodeURIComponent(urlName)}`
     try {
       await apiClient<SkillCreateResponse>(url, {
         method: isNew ? 'POST' : 'PUT',
@@ -184,7 +182,7 @@ export default function SkillsPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      const r = await apiClient('/api/admin/skills/test', { method: 'POST', body: editing })
+      const r = await apiClient('/api/admin/tools/test', { method: 'POST', body: editing })
       setTestResult(r.data as any)
     } catch {
       setTestResult({ ok: false, status: 0, body: 'Connection failed' })
@@ -203,9 +201,8 @@ export default function SkillsPage() {
     try { setEditing({ ...editing, [field]: JSON.stringify(JSON.parse(String(editing[field] || '{}')), null, 2) }) } catch {}
   }
 
-  const prefillDefaultMock = (name: string): string | undefined => {
-    const def = DEFAULT_SKILLS.find((s) => s.name === name)
-    return def?.mockFixture ?? undefined
+  const prefillDefaultMock = (_name: string): string | undefined => {
+    return undefined
   }
 
   const openNew = () => {
@@ -479,20 +476,6 @@ export default function SkillsPage() {
                       <div className="flex items-center justify-between translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-[var(--smoke)]">{s.enabled ? t('common.active') : t('common.disabled')}</span>
-                          {agentId && (() => {
-                            const stats = checkItemBinding(bindings, 'tools', s.name)
-                            return (
-                              <BindingIndicator
-                                isBound={stats.isBound}
-                                isDrift={stats.isDrift}
-                                otherVersionsBound={stats.otherVersionsBound}
-                                onToggle={() => {
-                                  const newB = toggleItemBinding(bindings, 'tools', s.name)
-                                  saveBindings(newB)
-                                }}
-                              />
-                            )
-                          })()}
                         </div>
                         <div className="flex gap-1">
                           <button onClick={e => { e.stopPropagation(); openEdit(s) }}

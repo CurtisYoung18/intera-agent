@@ -149,12 +149,12 @@ export default function SubAgentForm({
 
       {/* allowed skills */}
       <div className="space-y-1">
-        <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Allowed Skills</span>
+        <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Allowed Tools</span>
         <ChipInput
           values={value.skills || []}
           onChange={(v) => onChange(patch(value, { skills: v }))}
           suggestions={allSkills}
-          placeholder="Add skill..."
+          placeholder="Add tool..."
         />
       </div>
 
