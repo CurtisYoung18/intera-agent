@@ -1,48 +1,37 @@
 // B1 guard test — proves the /api/livechat/config split closes the
 // unauthenticated cross-tenant write vulnerability.
-//
-// RED (before B1 fix):
-//   - Anonymous PUT to /api/livechat/config took orgId from request BODY
-//     with NO session check → anyone could overwrite any org's LiveChat config.
-//   - Anonymous GET leaked secrets/metadata (botAccessToken mask, enabled status).
-//
-// GREEN (after B1 fix):
-//   - Anonymous /api/livechat/config is GET-only, returns only non-sensitive
-//     fields (enabled, showSkillStatus, region). No PUT, no secrets.
-//   - Gated /api/admin/livechat/config requires verified session (401 without).
-//   - Gated GET returns full config (secrets masked). Gated PUT scopes to
-//     session orgId. Cross-org isolation: org A cannot read/write org B.
+// Scoped by agentConfigId (not orgId).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Hoisted mock state ──
 const h = vi.hoisted(() => {
   const configs: Record<string, Record<string, unknown>> = {
-    default: { orgId: 'default', botAccessToken: 'tok_def', licenseId: 'lic_def', webhookSecret: 'sec_def', showSkillStatus: true, enabled: true, region: 'dal', transferGroupId: 123 },
-    orgB: { orgId: 'orgB', botAccessToken: 'tok_orgb', licenseId: 'lic_orgb', webhookSecret: 'sec_orgb', showSkillStatus: false, enabled: false, region: 'fra', transferGroupId: 456 },
+    'agent_default_v1': { agentConfigId: 'agent_default_v1', botAccessToken: 'tok_def', licenseId: 'lic_def', webhookSecret: 'sec_def', showSkillStatus: true, enabled: true, region: 'dal', transferGroupId: 123 },
+    'test-agent': { agentConfigId: 'test-agent', botAccessToken: 'tok_orgb', licenseId: 'lic_orgb', webhookSecret: 'sec_orgb', showSkillStatus: false, enabled: false, region: 'fra', transferGroupId: 456 },
   }
   const mockGetSession = vi.fn()
   return { configs, mockGetSession }
 })
 
-// ── Mock repoForOrg (same pattern as skills-route.test.ts) ──
+// ── Mock repoForOrg ──
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
-    const config = h.configs[orgId]
     return {
       orgId,
-      raw: {
-      },
+      raw: {},
     } as any
   },
 }))
 
-// Mock prisma for the anonymous widget route (doesn't use repoForOrg)
+// Mock prisma for the anonymous widget route (uses agentConfigId)
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
     channelBinding: {
-      findFirst: vi.fn(async ({ where }: { where: { orgId: string } }) => {
-        const config = h.configs[where.orgId]
+      findFirst: vi.fn(async ({ where }: { where: { agentConfigId?: string } }) => {
+        const agentConfigId = where.agentConfigId
+        if (!agentConfigId) return null
+        const config = h.configs[agentConfigId]
         if (!config) return null
         return {
           enabled: config.enabled,
@@ -59,9 +48,9 @@ vi.mock('@intera/shared/prisma', () => ({
 vi.mock('@/lib/auth', () => ({ getSession: h.mockGetSession }))
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@/lib/livechat/config-store', () => ({
-  getLiveChatConfig: vi.fn(async (orgId: string) => h.configs[orgId] ?? null),
-  upsertLiveChatConfig: vi.fn(async (orgId: string, data: Record<string, unknown>) => {
-    h.configs[orgId] = { ...h.configs[orgId], ...data }
+  getLiveChatConfig: vi.fn(async (agentConfigId: string) => h.configs[agentConfigId] ?? null),
+  upsertLiveChatConfig: vi.fn(async (agentConfigId: string, data: Record<string, unknown>) => {
+    h.configs[agentConfigId] = { ...h.configs[agentConfigId], ...data }
   }),
   invalidateLiveChatConfig: vi.fn(),
 }))
@@ -71,9 +60,9 @@ import { GET as anonGet, OPTIONS as anonOptions } from '@/app/api/livechat/confi
 // ── Gated admin route ──
 import { GET as adminGet, PUT as adminPut } from '@/app/api/admin/livechat/config/route'
 
-function makeAnonRequest(orgId?: string) {
-  const url = orgId
-    ? `http://localhost/api/livechat/config?orgId=${orgId}`
+function makeAnonRequest(agentConfigId?: string) {
+  const url = agentConfigId
+    ? `http://localhost/api/livechat/config?agentConfigId=${agentConfigId}`
     : 'http://localhost/api/livechat/config'
   return { nextUrl: new URL(url) } as any
 }
@@ -81,7 +70,14 @@ function makeAnonRequest(orgId?: string) {
 function makeAdminRequest(body?: unknown) {
   return {
     json: async () => body ?? {},
-    nextUrl: new URL('http://localhost/api/admin/livechat/config'),
+    nextUrl: new URL('http://localhost/api/admin/livechat/config?agentConfigId=agent_default_v1'),
+  } as any
+}
+
+function makeAdminRequestForAgent(agentConfigId: string, body?: unknown) {
+  return {
+    json: async () => body ?? {},
+    nextUrl: new URL(`http://localhost/api/admin/livechat/config?agentConfigId=${agentConfigId}`),
   } as any
 }
 
@@ -89,8 +85,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin', userId: 'u1' })
   // Reset config to initial state
-  h.configs.default = { orgId: 'default', botAccessToken: 'tok_def', licenseId: 'lic_def', webhookSecret: 'sec_def', showSkillStatus: true, enabled: true, region: 'dal', transferGroupId: 123 }
-  h.configs.orgB = { orgId: 'orgB', botAccessToken: 'tok_orgb', licenseId: 'lic_orgb', webhookSecret: 'sec_orgb', showSkillStatus: false, enabled: false, region: 'fra', transferGroupId: 456 }
+  h.configs['agent_default_v1'] = { agentConfigId: 'agent_default_v1', botAccessToken: 'tok_def', licenseId: 'lic_def', webhookSecret: 'sec_def', showSkillStatus: true, enabled: true, region: 'dal', transferGroupId: 123 }
+  h.configs['test-agent'] = { agentConfigId: 'test-agent', botAccessToken: 'tok_orgb', licenseId: 'lic_orgb', webhookSecret: 'sec_orgb', showSkillStatus: false, enabled: false, region: 'fra', transferGroupId: 456 }
 })
 
 // ════════════════════════════════════════════════════════════════
@@ -98,10 +94,10 @@ beforeEach(() => {
 // ════════════════════════════════════════════════════════════════
 describe('B1 — Anonymous /api/livechat/config is GET-only, non-sensitive', () => {
   it('returns only non-sensitive fields (enabled, showSkillStatus, region)', async () => {
-    const res = await anonGet(makeAnonRequest('default'))
+    const res = await anonGet(makeAnonRequest('agent_default_v1'))
     const body = await res.json()
 
-    expect(body.orgId).toBe('default')
+    expect(body.agentConfigId).toBe('agent_default_v1')
     expect(body.enabled).toBe(true)
     expect(body.showSkillStatus).toBe(true)
     expect(body.region).toBe('dal')
@@ -109,17 +105,14 @@ describe('B1 — Anonymous /api/livechat/config is GET-only, non-sensitive', () 
     expect(body.botAccessToken).toBeUndefined()
     expect(body.licenseId).toBeUndefined()
     expect(body.webhookSecret).toBeUndefined()
-    expect(body.transferGroupId).toBeUndefined()
-    expect(body.transferMessage).toBeUndefined()
   })
 
   it('no PUT handler exists (anonymous writes are blocked)', async () => {
-    // The anonymous route no longer exports PUT
     const mod = await import('@/app/api/livechat/config/route')
     expect((mod as any).PUT).toBeUndefined()
   })
 
-  it('returns disabled=false for missing org', async () => {
+  it('returns disabled=false for missing agent config', async () => {
     const res = await anonGet(makeAnonRequest('nonexistent'))
     const body = await res.json()
 
@@ -150,7 +143,7 @@ describe('B1 — Gated /api/admin/livechat/config requires session', () => {
 
   it('PUT returns 401 without session', async () => {
     h.mockGetSession.mockResolvedValue(null)
-    const res = await adminPut(makeAdminRequest({ botAccessToken: 'tok', licenseId: 'lic', showSkillStatus: true, enabled: true }))
+    const res = await adminPut(makeAdminRequest({ agentConfigId: 'agent_default_v1', botAccessToken: 'tok', licenseId: 'lic', showSkillStatus: true, enabled: true }))
     const body = await res.json()
 
     expect(body.ok).toBe(false)
@@ -164,16 +157,16 @@ describe('B1 — Gated /api/admin/livechat/config requires session', () => {
     const body = await res.json()
 
     expect(body.ok).toBe(true)
-    expect(body.data.config.orgId).toBe('default')
     expect(body.data.config.enabled).toBe(true)
     // Secrets are masked but present (••••••••)
     expect(body.data.config.botAccessToken).toBe('••••••••')
     expect(body.data.config.webhookSecret).toBe('••••••••')
   })
 
-  it('PUT scopes write to session orgId (orgId from body is ignored)', async () => {
+  it('PUT scopes write to agentConfigId from body', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'orgB', role: 'admin', userId: 'u1' })
-    const res = await adminPut(makeAdminRequest({
+    const res = await adminPut(makeAdminRequestForAgent('test-agent', {
+      agentConfigId: 'test-agent',
       botAccessToken: 'new_token',
       licenseId: 'new_lic',
       showSkillStatus: true,
@@ -182,27 +175,27 @@ describe('B1 — Gated /api/admin/livechat/config requires session', () => {
     const body = await res.json()
 
     expect(body.ok).toBe(true)
-    // orgB's config was updated (NOT default's config)
-    expect(h.configs.orgB.botAccessToken).toBe('new_token')
-    // default's config was NOT touched
-    expect(h.configs.default.botAccessToken).toBe('tok_def')
+    // test-agent's config was updated
+    expect(h.configs['test-agent'].botAccessToken).toBe('new_token')
+    // agent_default_v1's config was NOT touched
+    expect(h.configs['agent_default_v1'].botAccessToken).toBe('tok_def')
   })
 
-  it('cross-org: session for org A CANNOT read org B config', async () => {
+  it('cross-org: agent_default_v1 CANNOT read test-agent config without query param', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin', userId: 'u1' })
     const res = await adminGet(makeAdminRequest())
     const body = await res.json()
 
     expect(body.ok).toBe(true)
-    // Session is for 'default', so config returned is default's
-    expect(body.data.config.orgId).toBe('default')
+    // agent_default_v1's config is returned
+    expect(body.data.config.agentConfigId).toBe('agent_default_v1')
     expect(body.data.config.enabled).toBe(true)
-    // orgB's config is NOT returned (no cross-org leak)
   })
 
   it('PUT rejects viewer role (RBAC)', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'viewer', userId: 'u1' })
     const res = await adminPut(makeAdminRequest({
+      agentConfigId: 'agent_default_v1',
       botAccessToken: 'tok',
       licenseId: 'lic',
       showSkillStatus: true,

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { APIConnectionError } from '@anthropic-ai/sdk'
 import { AgentLoop, type AgentLoopDeps } from '../../loop'
-import { SkillRouter } from '../../skills'
+import { ToolRouter } from '../../tools'
 import { consumeStream, type StreamConsumeCallbacks, type StreamContentBlock } from '../../stream-handler'
 import { mockTextStream, mockToolUseStream, mockAnthropicClient } from '../mocks/anthropic'
 import { classifyError } from '../../api/error-classifier'
@@ -186,9 +186,9 @@ describe('E7 — Integration: S1 Invariant + Tool Execution', () => {
   })
 })
 
-describe('E7 — Integration: SkillRouter + Tool Discovery', () => {
+describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
   it('all built-in skills are discoverable', () => {
-    const router = new SkillRouter('integration-test')
+    const router = new ToolRouter('integration-test')
 
     // Verify critical skills are present
     const requiredSkills = [
@@ -201,14 +201,14 @@ describe('E7 — Integration: SkillRouter + Tool Discovery', () => {
     ]
 
     for (const name of requiredSkills) {
-      const skill = router.getSkill(name)
+      const skill = router.getTool(name)
       expect(skill, `${name} should be registered`).toBeDefined()
       expect(skill!.name).toBe(name)
     }
   })
 
   it('getToolDefinitions returns valid skill definitions', () => {
-    const router = new SkillRouter('integration-test')
+    const router = new ToolRouter('integration-test')
     const tools = router.getToolDefinitions()
 
     expect(tools.length).toBeGreaterThan(0)
@@ -220,7 +220,7 @@ describe('E7 — Integration: SkillRouter + Tool Discovery', () => {
   })
 
   it('dispatch_subagent is in tool definitions', () => {
-    const router = new SkillRouter('integration-test')
+    const router = new ToolRouter('integration-test')
     const tools = router.getToolDefinitions()
     const dispatchTool = tools.find((t) => t.name === 'dispatch_subagent')
 

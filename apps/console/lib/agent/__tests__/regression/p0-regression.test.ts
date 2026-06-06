@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Anthropic from '@anthropic-ai/sdk'
 import { APIConnectionError } from '@anthropic-ai/sdk'
-import { SkillRouter } from '../../skills'
+import { ToolRouter } from '../../tools'
 import { withRetry, CannotRetryError } from '../../api/with-retry'
 
 function makeAnthropicClient() {
@@ -147,11 +147,11 @@ describe('A3 — Sub-agent model and retry', () => {
 })
 
 describe('A4 — dispatch_subagent', () => {
-  it('dispatch_subagent is in BUILT_IN_SKILLS via SkillRouter', () => {
-    const router = new SkillRouter('test-customer')
+  it('dispatch_subagent is in BUILT_IN_TOOLS via ToolRouter', () => {
+    const router = new ToolRouter()
 
-    // SkillRouter constructor loads BUILT_IN_SKILLS
-    const dispatchDef = router.getSkill('dispatch_subagent')
+    // ToolRouter constructor loads BUILT_IN_TOOLS
+    const dispatchDef = router.getTool('dispatch_subagent')
     expect(dispatchDef).toBeDefined()
     expect(dispatchDef!.name).toBe('dispatch_subagent')
     expect(dispatchDef!.inputSchema).toBeDefined()
@@ -161,8 +161,8 @@ describe('A4 — dispatch_subagent', () => {
   })
 
   it('dispatch_subagent has correct input schema', () => {
-    const router = new SkillRouter('test-customer')
-    const def = router.getSkill('dispatch_subagent')
+    const router = new ToolRouter()
+    const def = router.getTool('dispatch_subagent')
     expect(def!.inputSchema.required).toContain('agentName')
     expect(def!.inputSchema.required).toContain('taskPrompt')
   })

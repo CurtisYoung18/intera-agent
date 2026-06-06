@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mockTextStream, mockToolUseStream, createMockStream, mockStreamThatBreaks } from '../mocks/anthropic'
 import { consumeStream, type StreamConsumeCallbacks, type StreamContentBlock } from '../../stream-handler'
-import { SkillRouter } from '../../skills'
+import { ToolRouter } from '../../tools'
 import { classifyError } from '../../api/error-classifier'
 import { synthesizeMissingToolResults, assertToolResultInvariant } from '../../tool-result-invariant'
 import { APIConnectionError, APIUserAbortError } from '@anthropic-ai/sdk'
@@ -53,25 +53,25 @@ describe('Smoke — Stream Handler (E1-1)', () => {
   })
 })
 
-describe('Smoke — SkillRouter (E1-2)', () => {
+describe('Smoke — ToolRouter (E1-2)', () => {
   it('returns built-in skills including dispatch_subagent', () => {
-    const router = new SkillRouter('smoke-test')
+    const router = new ToolRouter('smoke-test')
     const skills = router.getToolDefinitions()
     expect(skills.length).toBeGreaterThan(0)
 
-    const dispatchCaseAgent = router.getSkill('dispatch_case_agent')
+    const dispatchCaseAgent = router.getTool('dispatch_case_agent')
     expect(dispatchCaseAgent).toBeDefined()
 
-    const finalizeCase = router.getSkill('finalize_case')
+    const finalizeCase = router.getTool('finalize_case')
     expect(finalizeCase).toBeDefined()
 
-    const dispatchSubagent = router.getSkill('dispatch_subagent')
+    const dispatchSubagent = router.getTool('dispatch_subagent')
     expect(dispatchSubagent).toBeDefined()
   })
 
-  it('getSkill returns undefined for unknown skill', () => {
-    const router = new SkillRouter('smoke-test')
-    expect(router.getSkill('nonexistent_skill_xyz')).toBeUndefined()
+  it('getTool returns undefined for unknown skill', () => {
+    const router = new ToolRouter('smoke-test')
+    expect(router.getTool('nonexistent_skill_xyz')).toBeUndefined()
   })
 })
 

@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { GuardrailHook } from '@intera/shared/types'
-import { PolicyEngine, validateGuardrailHook, legacyRuleToHook } from '@/lib/agent/policy'
+import { PolicyEngine, validateGuardrailHook } from '@/lib/agent/policy'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ function makeHook(overrides: Partial<GuardrailHook> = {}): GuardrailHook {
 
 function makeEngine(): PolicyEngine {
   // Use a real PolicyEngine — the global vitest-setup mocks createAgentClient
-  return new PolicyEngine('test-org')
+  return new PolicyEngine('test-agent')
 }
 
 // ── Config validation tests ───────────────────────────────────────────────
@@ -309,95 +309,6 @@ describe('PolicyEngine safety floor', () => {
   })
 })
 
-// ── Legacy rule fallback tests ────────────────────────────────────────────
-
-describe('legacyRuleToHook', () => {
-  it('converts deny_skills rule to GuardrailHook with block onViolation', () => {
-    const gh = legacyRuleToHook(
-      JSON.stringify({ deny_skills: ['refund_money', 'delete_account'] }),
-      'preTool',
-      'no_high_risk',
-    )
-
-    expect(gh.when).toBe('preTool')
-    expect(gh.match.skills).toEqual(['refund_money', 'delete_account'])
-    expect(gh.check.kind).toBe('rule')
-    expect(gh.check.denySkills).toEqual(['refund_money', 'delete_account'])
-    expect(gh.onViolation.action).toBe('block')
-    expect(gh.onUnavailable.action).toBe('closed')
-  })
-
-  it('converts require_skills_any rule to GuardrailHook', () => {
-    const gh = legacyRuleToHook(
-      JSON.stringify({ require_skills_any: ['get_latest_deposit', 'get_account_status'] }),
-      'preFinalize',
-      'evidence_required',
-    )
-
-    expect(gh.when).toBe('preFinalize')
-    expect(gh.check.kind).toBe('rule')
-    expect(gh.check.requireSkillsAny).toEqual(['get_latest_deposit', 'get_account_status'])
-    expect(gh.onViolation.action).toBe('block')
-  })
-
-  it('converts evaluationPrompt rule to ai kind with invoke_tool onUnavailable', () => {
-    const gh = legacyRuleToHook(
-      JSON.stringify({ evaluationPrompt: 'Check if refund is promised {{skill_output}}' }),
-      'preFinalize',
-      'no_compensation',
-    )
-
-    expect(gh.when).toBe('preFinalize')
-    expect(gh.check.kind).toBe('ai')
-    expect(gh.check.evaluationPrompt).toContain('{{skill_output}}')
-    expect(gh.onUnavailable.action).toBe('invoke_tool')
-    expect(gh.onUnavailable.tool).toBe('create_human_task')
-  })
-
-  it('converts hook_skills + evaluationPrompt to GuardrailHook with match.skills', () => {
-    const gh = legacyRuleToHook(
-      JSON.stringify({
-        hook_skills: ['get_latest_deposit', 'get_account_status'],
-        evaluationPrompt: 'Check for contradiction {{skill_output}}',
-      }),
-      'postTool',
-      'conflict_requires_human',
-    )
-
-    expect(gh.match.skills).toEqual(['get_latest_deposit', 'get_account_status'])
-    expect(gh.check.kind).toBe('ai')
-  })
-
-  it('legacy hook evaluates correctly via PolicyEngine (end-to-end)', async () => {
-    const engine = new PolicyEngine('test-org')
-
-    // Convert and register a legacy deny rule
-    const gh = legacyRuleToHook(
-      JSON.stringify({ deny_skills: ['refund_money'] }),
-      'preTool',
-      'legacy_deny_refund',
-    );
-    (gh as any).__name = 'legacy_deny_refund'
-    engine.setHook(gh)
-
-    const result = await engine.evaluate('preTool', {
-      skillName: 'refund_money',
-      skillInput: { amount: 100 },
-    })
-
-    expect(result.summary).toBe('blocked')
-  })
-
-  it('handles empty rule JSON gracefully', () => {
-    const gh = legacyRuleToHook('{}', 'preTool', 'empty_rule')
-    expect(gh.when).toBe('preTool')
-    expect(gh.match.skills).toEqual([])
-    expect(gh.check.kind).toBe('rule')
-  })
-
-  it('handles malformed JSON gracefully', () => {
-    const gh = legacyRuleToHook('not-json', 'postTool', 'bad_rule')
-    expect(gh.when).toBe('postTool')
-    expect(gh.check.kind).toBe('rule')
-  })
-})
+// ── Legacy rule fallback (removed) ──
+// legacyRuleToHook was removed in the agent-scoped migration.
+// Legacy DB rules are now migrated via the G11 guardrailConfig field.

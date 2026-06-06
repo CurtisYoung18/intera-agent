@@ -5,11 +5,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => {
   const configsByOrg: Record<string, Record<string, unknown>[]> = {
     default: [
-      { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', policyHooks: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
-      { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', policyHooks: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
     ],
     orgB: [
-      { id: 'ac3', orgId: 'orgB', name: 'OrgB Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', policyHooks: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ac3', orgId: 'orgB', name: 'OrgB Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
   const mockGetSession = vi.fn()
@@ -65,8 +65,19 @@ vi.mock('@/lib/db/repo-for-org', () => ({
         organization: {
           upsert: vi.fn(async () => ({ id: orgId, name: 'Demo Org' })),
         },
-        $transaction: vi.fn(async (ops: any[]) => {
-          for (const op of ops) await op
+        $transaction: vi.fn(async (cb: any) => {
+          const tx = {
+            tool: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            policy: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            caseType: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            knowledgeSource: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            channelBinding: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            $executeRaw: vi.fn(),
+            $queryRaw: vi.fn(),
+          }
+          if (typeof cb === 'function') return await cb(tx)
+          // Array of promises mode
+          return await Promise.all(cb)
         }),
         agentConfig: {
           update: vi.fn(async (args: any) => args.data),
@@ -103,11 +114,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
   h.configsByOrg.default = [
-    { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', policyHooks: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
-    { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', policyHooks: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
   ]
   h.configsByOrg.orgB = [
-    { id: 'ac3', orgId: 'orgB', name: 'OrgB Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', policyHooks: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ac3', orgId: 'orgB', name: 'OrgB Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
   ]
 })
 

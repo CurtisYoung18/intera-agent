@@ -47,7 +47,7 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
-export { ensureSqliteSchemaCompat } from './sqlite-schema-compat'
+export { ensureSqliteSchemaCompat } from './sqlite-schema-compat.ts'
 
 // Lazy-init safety net for dev: ensures the parent Organization row exists before
 // any admin route inserts a Organization-FK child (AgentConfig, CaseType, Skill,

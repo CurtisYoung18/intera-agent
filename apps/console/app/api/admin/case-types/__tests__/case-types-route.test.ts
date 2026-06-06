@@ -1,54 +1,61 @@
 // Route-level guard test for /api/admin/case-types
+// Scoped by agentConfigId (not orgId).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => {
-  const typesByOrg: Record<string, Record<string, unknown>[]> = {
-    default: [
-      { id: 'ct1', orgId: 'default', type: 'refund_request', displayName: 'Refund', description: 'Refund case', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
-      { id: 'ct2', orgId: 'default', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit', icon: ':icon:', requiredFacts: '[]', stages: '["created","investigating","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+  const typesByAgent: Record<string, Record<string, unknown>[]> = {
+    'agent_default_v1': [
+      { id: 'ct1', agentConfigId: 'agent_default_v1', type: 'refund_request', displayName: 'Refund', description: 'Refund case', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ct2', agentConfigId: 'agent_default_v1', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit', icon: ':icon:', requiredFacts: '[]', stages: '["created","investigating","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
     ],
-    orgB: [
-      { id: 'ct3', orgId: 'orgB', type: 'org_b_type', displayName: 'Org B Type', description: 'B only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+    'test-agent': [
+      { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
   const mockGetSession = vi.fn()
 
-  return { typesByOrg, mockGetSession }
+  return { typesByAgent, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
-    const types = h.typesByOrg[orgId] ?? []
     return {
       orgId,
-      caseType: {
-        findMany: vi.fn(async () => types),
-        findUnique: vi.fn(async (args: any) => {
-          const type = args?.where?.orgId_type?.type
-          return types.find((t) => t.type === type) ?? null
-        }),
-        create: vi.fn(async (args: any) => {
-          const ct = { id: `ct_new_${Date.now()}`, ...args.data, orgId, createdAt: new Date(), updatedAt: new Date() }
-          if (!h.typesByOrg[orgId]) h.typesByOrg[orgId] = []
-          h.typesByOrg[orgId].push(ct)
-          return ct
-        }),
-        update: vi.fn(async (args: any) => {
-          const type = args.where.orgId_type.type
-          const ct = types.find((t) => t.type === type)
-          if (!ct) throw new Error('Not found')
-          Object.assign(ct, args.data)
-          return ct
-        }),
-        delete: vi.fn(async (args: any) => {
-          const type = args.where.orgId_type.type
-          const idx = types.findIndex((t) => t.type === type)
-          if (idx === -1) throw new Error('Not found')
-          types.splice(idx, 1)
-        }),
-      },
       raw: {
+        caseType: {
+          findMany: vi.fn(async (args?: any) => {
+            const where = args?.where || {}
+            const agentConfigId = where.agentConfigId as string | undefined
+            return agentConfigId ? (h.typesByAgent[agentConfigId] ?? []) : []
+          }),
+          findUnique: vi.fn(async (args: any) => {
+            const { agentConfigId, type } = args?.where?.agentConfigId_type ?? {}
+            return (h.typesByAgent[agentConfigId] ?? []).find((t: any) => t.type === type) ?? null
+          }),
+          create: vi.fn(async (args: any) => {
+            const ct = { id: `ct_new_${Date.now()}`, ...args.data, createdAt: new Date(), updatedAt: new Date() }
+            const ac = args.data.agentConfigId
+            if (!h.typesByAgent[ac]) h.typesByAgent[ac] = []
+            h.typesByAgent[ac].push(ct)
+            return ct
+          }),
+          update: vi.fn(async (args: any) => {
+            const { agentConfigId, type } = args.where.agentConfigId_type
+            const types = h.typesByAgent[agentConfigId] ?? []
+            const ct = types.find((t: any) => t.type === type)
+            if (!ct) throw new Error('Not found')
+            Object.assign(ct, args.data)
+            return ct
+          }),
+          delete: vi.fn(async (args: any) => {
+            const { agentConfigId, type } = args.where.agentConfigId_type
+            const types = h.typesByAgent[agentConfigId] ?? []
+            const idx = types.findIndex((t: any) => t.type === type)
+            if (idx === -1) throw new Error('Not found')
+            types.splice(idx, 1)
+          }),
+        },
         organization: {
           upsert: vi.fn(async () => ({ id: orgId, name: 'Demo Org' })),
         },
@@ -76,7 +83,11 @@ import { GET, POST } from '@/app/api/admin/case-types/route'
 import { GET as GetByName, PUT, DELETE } from '@/app/api/admin/case-types/[name]/route'
 
 function makeRequest(body?: unknown) {
-  return { method: body ? 'POST' : 'GET', json: async () => body ?? {}, nextUrl: new URL('http://localhost/api/admin/case-types') } as any
+  return { method: body ? 'POST' : 'GET', json: async () => body ?? {}, nextUrl: new URL('http://localhost/api/admin/case-types?agentConfigId=agent_default_v1') } as any
+}
+
+function makeRequestForAgent(agentConfigId: string, body?: unknown) {
+  return { method: body ? 'POST' : 'GET', json: async () => body ?? {}, nextUrl: new URL(`http://localhost/api/admin/case-types?agentConfigId=${agentConfigId}`) } as any
 }
 
 function routeCtx(name: string) {
@@ -86,12 +97,12 @@ function routeCtx(name: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
-  h.typesByOrg.default = [
-    { id: 'ct1', orgId: 'default', type: 'refund_request', displayName: 'Refund', description: 'Refund case', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
-    { id: 'ct2', orgId: 'default', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit', icon: ':icon:', requiredFacts: '[]', stages: '["created","investigating","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+  h.typesByAgent['agent_default_v1'] = [
+    { id: 'ct1', agentConfigId: 'agent_default_v1', type: 'refund_request', displayName: 'Refund', description: 'Refund case', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ct2', agentConfigId: 'agent_default_v1', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit', icon: ':icon:', requiredFacts: '[]', stages: '["created","investigating","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
   ]
-  h.typesByOrg.orgB = [
-    { id: 'ct3', orgId: 'orgB', type: 'org_b_type', displayName: 'Org B Type', description: 'B only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+  h.typesByAgent['test-agent'] = [
+    { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
   ]
 })
 
@@ -112,7 +123,7 @@ describe('G1 — Uniform envelope', () => {
   })
 
   it('POST with valid input returns ApiOk<{caseType}> (201)', async () => {
-    const res = await POST(makeRequest({ type: 'new_type', displayName: 'New Type' }))
+    const res = await POST(makeRequest({ agentConfigId: 'agent_default_v1', type: 'new_type', displayName: 'New Type' }))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.caseType.type).toBe('new_type')
@@ -121,17 +132,17 @@ describe('G1 — Uniform envelope', () => {
 })
 
 describe('G2 — Tenant isolation', () => {
-  it('org default only sees its own types', async () => {
+  it('agent_default_v1 only sees its own types', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
-    const res = await GET(makeRequest())
+    const res = await GET(makeRequestForAgent('agent_default_v1'))
     const body = await res.json()
     expect(body.data.types.length).toBe(2)
-    expect(body.data.types.every((t: any) => t.orgId === 'default')).toBe(true)
+    expect(body.data.types.every((t: any) => t.agentConfigId === 'agent_default_v1')).toBe(true)
   })
 
-  it('org A CANNOT see org B type by name', async () => {
+  it('agent_default_v1 CANNOT see test-agent type by name', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
-    const res = await GetByName(makeRequest(), routeCtx('org_b_type'))
+    const res = await GetByName(makeRequestForAgent('agent_default_v1'), routeCtx('org_b_type'))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')
@@ -141,14 +152,14 @@ describe('G2 — Tenant isolation', () => {
 
 describe('G3 — Mutations', () => {
   it('DELETE removes case type and returns success', async () => {
-    const res = await DELETE(makeRequest(), routeCtx('refund_request'))
+    const res = await DELETE(makeRequestForAgent('agent_default_v1'), routeCtx('refund_request'))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.success).toBe(true)
   })
 
   it('PUT updates case type display name', async () => {
-    const res = await PUT(makeRequest({ displayName: 'Updated Refund' }), routeCtx('refund_request'))
+    const res = await PUT(makeRequestForAgent('agent_default_v1', { agentConfigId: 'agent_default_v1', displayName: 'Updated Refund' }), routeCtx('refund_request'))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.caseType.displayName).toBe('Updated Refund')
@@ -166,7 +177,7 @@ describe('Error codes', () => {
   })
 
   it('returns 404 for non-existent case type', async () => {
-    const res = await GetByName(makeRequest(), routeCtx('nonexistent'))
+    const res = await GetByName(makeRequestForAgent('agent_default_v1'), routeCtx('nonexistent'))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')

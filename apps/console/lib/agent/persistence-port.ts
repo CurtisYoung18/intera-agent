@@ -1,6 +1,8 @@
 // Persistence port — all DB writes from the agent pipeline flow through this interface.
 // Production: PrismaPersistence (real DB). Playground: MemoryPersistence (zero side-effects).
 
+import { prisma } from '@intera/shared/prisma'
+
 export interface CaseRecord {
   id: string
   orgId: string
@@ -75,9 +77,6 @@ export interface PersistencePort {
 
 /** Factory: return the production Prisma-backed persistence port. */
 export function createPrismaPersistence(): PersistencePort {
-  // Lazy import to avoid circular deps
-  const { prisma } = require('@intera/shared/prisma')
-
   return {
     async ensureCase(record: CaseRecord) {
       await prisma.case.upsert({

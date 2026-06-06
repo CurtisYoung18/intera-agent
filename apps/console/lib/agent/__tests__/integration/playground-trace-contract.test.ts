@@ -75,7 +75,13 @@ vi.mock('@intera/shared/prisma', () => {
         }),
     })
 
-  const prisma = new Proxy({}, { get: (_t, model: string) => handler(model) })
+  const prisma = new Proxy({}, {
+    get: (_t, prop: string) => {
+      if (prop === '$transaction') return vi.fn(async (arg: any) => typeof arg === 'function' ? arg(prisma) : Promise.all(arg))
+      if (prop === '$disconnect' || prop === '$connect' || prop === '$on') return vi.fn()
+      return handler(prop)
+    }
+  })
   return { prisma, default: prisma }
 })
 

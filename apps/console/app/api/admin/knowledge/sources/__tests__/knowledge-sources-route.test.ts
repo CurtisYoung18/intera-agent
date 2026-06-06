@@ -1,57 +1,73 @@
 // Route-level guard test for /api/admin/knowledge/sources
+// Scoped by agentConfigId (not orgId).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => {
-  const sourcesByOrg: Record<string, Record<string, unknown>[]> = {
-    default: [
-      { id: 'ks1', orgId: 'default', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
-      { id: 'ks2', orgId: 'default', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+  const sourcesByAgent: Record<string, Record<string, unknown>[]> = {
+    'agent_default_v1': [
+      { id: 'ks1', agentConfigId: 'agent_default_v1', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ks2', agentConfigId: 'agent_default_v1', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
     ],
-    orgB: [
-      { id: 'ks3', orgId: 'orgB', name: 'org_b_source', description: 'Org B only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+    'test-agent': [
+      { id: 'ks3', agentConfigId: 'test-agent', name: 'org_b_source', description: 'Test agent only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
   const mockGetSession = vi.fn()
 
-  return { sourcesByOrg, mockGetSession }
+  return { sourcesByAgent, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
-    const sources = h.sourcesByOrg[orgId] ?? []
     return {
       orgId,
-      knowledgeSource: {
-        findMany: vi.fn(async () => sources),
-        findFirst: vi.fn(async (args: any) => {
-          const id = args?.where?.id
-          return sources.find((s) => s.id === id) ?? null
-        }),
-        create: vi.fn(async (args: any) => {
-          const source = { id: `ks_new_${Date.now()}`, ...args.data, orgId, createdAt: new Date(), updatedAt: new Date() }
-          if (!h.sourcesByOrg[orgId]) h.sourcesByOrg[orgId] = []
-          h.sourcesByOrg[orgId].push(source)
-          return source
-        }),
-        updateMany: vi.fn(async (args: any) => {
-          const id = args.where.id
-          const source = sources.find((s) => s.id === id)
-          if (source) {
-            Object.assign(source, args.data)
-            return { count: 1 }
-          }
-          return { count: 0 }
-        }),
-        deleteMany: vi.fn(async (args: any) => {
-          const id = args.where.id
-          const idx = sources.findIndex((s) => s.id === id)
-          if (idx === -1) return { count: 0 }
-          sources.splice(idx, 1)
-          return { count: 1 }
-        }),
-      },
       raw: {
+        knowledgeSource: {
+          findMany: vi.fn(async (args?: any) => {
+            const where = args?.where || {}
+            const agentConfigId = where.agentConfigId as string | undefined
+            return agentConfigId ? (h.sourcesByAgent[agentConfigId] ?? []) : []
+          }),
+          findFirst: vi.fn(async (args: any) => {
+            const id = args?.where?.id
+            const agentConfigId = args?.where?.agentConfigId
+            if (agentConfigId) {
+              return (h.sourcesByAgent[agentConfigId] ?? []).find((s: any) => s.id === id) ?? null
+            }
+            // Fallback: search all
+            for (const arr of Object.values(h.sourcesByAgent)) {
+              const found = arr.find((s: any) => s.id === id)
+              if (found) return found
+            }
+            return null
+          }),
+          create: vi.fn(async (args: any) => {
+            const source = { id: `ks_new_${Date.now()}`, ...args.data, createdAt: new Date(), updatedAt: new Date() }
+            const ac = args.data.agentConfigId
+            if (!h.sourcesByAgent[ac]) h.sourcesByAgent[ac] = []
+            h.sourcesByAgent[ac].push(source)
+            return source
+          }),
+          updateMany: vi.fn(async (args: any) => {
+            const { id, agentConfigId } = args.where
+            const sources = h.sourcesByAgent[agentConfigId] ?? []
+            const source = sources.find((s: any) => s.id === id)
+            if (source) {
+              Object.assign(source, args.data)
+              return { count: 1 }
+            }
+            return { count: 0 }
+          }),
+          deleteMany: vi.fn(async (args: any) => {
+            const { id, agentConfigId } = args.where
+            const sources = h.sourcesByAgent[agentConfigId] ?? []
+            const idx = sources.findIndex((s: any) => s.id === id)
+            if (idx === -1) return { count: 0 }
+            sources.splice(idx, 1)
+            return { count: 1 }
+          }),
+        },
         organization: {
           upsert: vi.fn(async () => ({ id: orgId, name: 'Demo Org' })),
         },
@@ -72,7 +88,11 @@ import { GET, POST } from '@/app/api/admin/knowledge/sources/route'
 import { GET as GetById, PUT, DELETE } from '@/app/api/admin/knowledge/sources/[id]/route'
 
 function makeRequest(body?: unknown) {
-  return { method: body ? 'POST' : 'GET', json: async () => body ?? {}, nextUrl: new URL('http://localhost/api/admin/knowledge/sources') } as any
+  return { method: body ? 'POST' : 'GET', json: async () => body ?? {}, nextUrl: new URL('http://localhost/api/admin/knowledge/sources?agentConfigId=agent_default_v1') } as any
+}
+
+function makeRequestForAgent(agentConfigId: string, body?: unknown) {
+  return { method: body ? 'POST' : 'GET', json: async () => body ?? {}, nextUrl: new URL(`http://localhost/api/admin/knowledge/sources?agentConfigId=${agentConfigId}`) } as any
 }
 
 function routeCtx(id: string) {
@@ -82,12 +102,12 @@ function routeCtx(id: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
-  h.sourcesByOrg.default = [
-    { id: 'ks1', orgId: 'default', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
-    { id: 'ks2', orgId: 'default', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+  h.sourcesByAgent['agent_default_v1'] = [
+    { id: 'ks1', agentConfigId: 'agent_default_v1', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ks2', agentConfigId: 'agent_default_v1', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
   ]
-  h.sourcesByOrg.orgB = [
-    { id: 'ks3', orgId: 'orgB', name: 'org_b_source', description: 'Org B only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+  h.sourcesByAgent['test-agent'] = [
+    { id: 'ks3', agentConfigId: 'test-agent', name: 'org_b_source', description: 'Test agent only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
   ]
 })
 
@@ -108,7 +128,7 @@ describe('G1 — Uniform envelope', () => {
   })
 
   it('POST with valid input returns ApiOk<{source}> (201)', async () => {
-    const res = await POST(makeRequest({ name: 'new_source', groupIds: ['g1'] }))
+    const res = await POST(makeRequest({ agentConfigId: 'agent_default_v1', name: 'new_source', groupIds: ['g1'] }))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.source.name).toBe('new_source')
@@ -117,17 +137,17 @@ describe('G1 — Uniform envelope', () => {
 })
 
 describe('G2 — Tenant isolation', () => {
-  it('org default only sees its own sources', async () => {
+  it('agent_default_v1 only sees its own sources', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
-    const res = await GET(makeRequest())
+    const res = await GET(makeRequestForAgent('agent_default_v1'))
     const body = await res.json()
     expect(body.data.sources.length).toBe(2)
-    expect(body.data.sources.every((s: any) => s.orgId === 'default')).toBe(true)
+    expect(body.data.sources.every((s: any) => s.agentConfigId === 'agent_default_v1')).toBe(true)
   })
 
-  it('org A CANNOT see org B source by id', async () => {
+  it('agent_default_v1 CANNOT see test-agent source by id', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
-    const res = await GetById(makeRequest(), routeCtx('ks3'))
+    const res = await GetById(makeRequestForAgent('agent_default_v1'), routeCtx('ks3'))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')
@@ -137,14 +157,14 @@ describe('G2 — Tenant isolation', () => {
 
 describe('G3 — Mutations', () => {
   it('DELETE removes source and returns ok', async () => {
-    const res = await DELETE(makeRequest(), routeCtx('ks2'))
+    const res = await DELETE(makeRequestForAgent('agent_default_v1'), routeCtx('ks2'))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.ok).toBe(true)
   })
 
   it('PUT updates source', async () => {
-    const res = await PUT(makeRequest({ description: 'Updated' }), routeCtx('ks1'))
+    const res = await PUT(makeRequestForAgent('agent_default_v1', { agentConfigId: 'agent_default_v1', description: 'Updated' }), routeCtx('ks1'))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.source.description).toBe('Updated')
@@ -162,7 +182,7 @@ describe('Error codes', () => {
   })
 
   it('returns 404 for non-existent source', async () => {
-    const res = await GetById(makeRequest(), routeCtx('nonexistent'))
+    const res = await GetById(makeRequestForAgent('agent_default_v1'), routeCtx('nonexistent'))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')
