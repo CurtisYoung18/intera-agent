@@ -98,6 +98,7 @@ export default function PlaygroundPage() {
   const [openThinkings, setOpenThinkings] = useState<Set<number>>(new Set())
   const thinkingAccRef = useRef('')
   const [responding, setResponding] = useState(false)
+  const runningRef = useRef(false)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([])
   const [turnTraces, setTurnTraces] = useState<any[][]>([])
   const [turnTotalMs, setTurnTotalMs] = useState<number[]>([])
@@ -434,6 +435,8 @@ export default function PlaygroundPage() {
   /* ── Run turn ── */
 
   const runTurn = useCallback(async (msg: string, queuedImages?: AttachedImage[]) => {
+    if (runningRef.current) return
+    runningRef.current = true
     setReply('')
     thinkingAccRef.current = ''
     turnNumRef.current += 1
@@ -558,6 +561,7 @@ export default function PlaygroundPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error')
     } finally {
+      runningRef.current = false
       setResponding(false)
       // Clean up trailing empty turns (race condition: trace event may arrive after responding=false)
       setTurnTraces(prev => prev.length > 0 && prev[prev.length - 1].length === 0 ? prev.slice(0, -1) : prev)
@@ -1222,7 +1226,7 @@ export default function PlaygroundPage() {
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && message.trim()) { const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && message.trim()) { e.preventDefault(); const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
                 onPaste={e => {
                   const items = e.clipboardData?.items
                   if (!items) return
