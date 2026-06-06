@@ -1,8 +1,6 @@
 // GET + PUT /api/admin/livechat/config — Gated admin route.
-// orgId is STRICTLY from the verified session (never from body or query param).
-// Optional ?agentName=<name> scopes to a specific agent's LiveChat config.
-// Without agentName: org-default config. Replaces the unauthenticated
-// /api/livechat/config PUT (B1 fix).
+// agentConfigId is from the verified session or query param.
+// Replaces the old orgId + agentName scoping with agentConfigId.
 
 import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
@@ -24,29 +22,30 @@ const livechatConfigSchema = z.object({
   transferMessage: z.string().optional(),
 })
 
-async function resolveAgentName(repo: any, orgId: string, agentName: string | null) {
-  if (!agentName) return null
-  const agentConfig = await repo.agentConfig.findFirst({
-    where: { name: agentName, isActive: true },
-    select: { id: true, name: true },
-  })
-  return agentConfig?.name ?? null
-}
-
 export async function GET(request: NextRequest) {
-  const agentName = request.nextUrl.searchParams.get('agentName')
+  const agentConfigId = request.nextUrl.searchParams.get('agentConfigId')
 
   return defineRoute({
     method: 'GET',
-    async handler({ session, repo }) {
-      const resolvedName = agentName ? await resolveAgentName(repo, session.orgId, agentName) : null
-      const config = await getLiveChatConfig(session.orgId, resolvedName)
+    async handler({}) {
+      if (!agentConfigId) {
+        return apiOk({
+          config: {
+            agentConfigId: '',
+            botAccessToken: '',
+            licenseId: '',
+            showSkillStatus: true,
+            enabled: false,
+          },
+        })
+      }
+
+      const config = await getLiveChatConfig(agentConfigId)
 
       if (!config) {
         return apiOk({
           config: {
-            orgId: session.orgId,
-            agentName: resolvedName ?? undefined,
+            agentConfigId,
             botAccessToken: '',
             licenseId: '',
             showSkillStatus: true,
@@ -57,7 +56,7 @@ export async function GET(request: NextRequest) {
       return apiOk({
         config: {
           ...config,
-          agentName: resolvedName ?? undefined,
+          agentConfigId,
           botAccessToken: config.botAccessToken ? '••••••••' : '',
           webhookSecret: config.webhookSecret ? '••••••••' : '',
         },
@@ -67,28 +66,30 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const agentName = request.nextUrl.searchParams.get('agentName')
+  const agentConfigId = request.nextUrl.searchParams.get('agentConfigId')
 
   return defineRoute({
     method: 'PUT',
     inputSchema: livechatConfigSchema,
     requireRole: ['admin', 'owner'],
-    async handler({ input, session, repo, audit }) {
-      const resolvedName = agentName ? await resolveAgentName(repo, session.orgId, agentName) : null
+    async handler({ input, audit }) {
+      if (!agentConfigId) {
+        return apiOk({ ok: false, error: 'agentConfigId query param is required' })
+      }
 
       // Preserve existing secrets when masked value is sent
       if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {
-        const existing = await getLiveChatConfig(session.orgId, resolvedName)
+        const existing = await getLiveChatConfig(agentConfigId)
         if (existing) {
           if (input.botAccessToken === '••••••••') input.botAccessToken = existing.botAccessToken
           if (input.webhookSecret === '••••••••') input.webhookSecret = existing.webhookSecret ?? ''
         }
       }
 
-      await upsertLiveChatConfig(session.orgId, input, resolvedName)
+      await upsertLiveChatConfig(agentConfigId, input)
       await audit({
         action: 'livechat.config.update',
-        target: `org:${session.orgId}/agent:${resolvedName ?? '_default'}`,
+        target: `agent_config:${agentConfigId}`,
       })
 
       return apiOk({ ok: true })

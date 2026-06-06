@@ -116,7 +116,7 @@ export function scopedModel<T extends Record<string, any>>(
 export function repoForOrg(orgId: string) {
   return {
     orgId,
-    skill: scopedModel(prisma.skill, orgId),
+    tool: scopedModel(prisma.tool, orgId),
     agentConfig: scopedModel(prisma.agentConfig, orgId),
     caseType: scopedModel(prisma.caseType, orgId),
     policy: scopedModel(prisma.policy, orgId),
@@ -125,7 +125,7 @@ export function repoForOrg(orgId: string) {
     case: scopedModel(prisma.case, orgId),
     userProfile: scopedModel(prisma.userProfile, orgId),
     livechatPendingEvent: scopedModel(prisma.liveChatPendingEvent, orgId),
-    channelHealth: scopedModel(prisma.channelHealth, orgId),
+
     chatSession: scopedModel(prisma.chatSession, orgId),
     channelBinding: scopedModel(prisma.channelBinding, orgId),
     externalConversation: scopedModel(prisma.externalConversation, orgId),

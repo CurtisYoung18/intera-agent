@@ -1,6 +1,6 @@
 // GET /api/admin/livechat/groups — Gated admin route.
-// orgId is STRICTLY from the verified session.
-// Optional ?agentName=<name> scopes to a specific agent's LiveChat config.
+// Scoped by agentConfigId from query param.
+// Replaces the old orgId + agentName scoping with agentConfigId.
 
 import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
@@ -9,23 +9,17 @@ import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { listGroups } from '@/lib/livechat/livechat-api'
 
 export async function GET(request: NextRequest) {
-  const agentName = request.nextUrl.searchParams.get('agentName') ?? undefined
+  const agentConfigId = request.nextUrl.searchParams.get('agentConfigId')
 
   return defineRoute({
     method: 'GET',
-    async handler({ session, repo }) {
-      // Resolve agentName to verify agent exists (optional)
-      let resolvedName: string | null = null
-      if (agentName) {
-        const agentConfig = await repo.agentConfig.findFirst({
-          where: { name: agentName, isActive: true },
-          select: { name: true },
-        })
-        resolvedName = agentConfig?.name ?? null
+    async handler({}) {
+      if (!agentConfigId) {
+        return apiOk({ groups: [], error: 'agentConfigId query param is required', code: 'missing_param' })
       }
 
       try {
-        const config = await getLiveChatConfig(session.orgId, resolvedName)
+        const config = await getLiveChatConfig(agentConfigId)
         if (!config) {
           return apiOk({ groups: [] })
         }

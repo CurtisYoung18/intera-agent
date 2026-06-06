@@ -40,8 +40,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
       })
       if (!agentConfig) throw new NotFoundError(`Agent "${decodedName}" not found or not active`)
 
-      // Load per-agent channel binding, falling back to org default
-      const config = await getLiveChatConfig(params.orgId, decodedName)
+      // Load per-agent channel binding by agentConfigId
+      const config = await getLiveChatConfig(agentConfig.id)
       if (!config?.enabled) return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
 
       if (config.webhookSecret) {

@@ -426,7 +426,7 @@ export async function POST(request: NextRequest) {
         ) {
           try {
             const ctRow = await prisma.caseType.findUnique({
-              where: { orgId_type: { orgId: resolvedOrgId, type: bodyCaseType } },
+              where: { agentConfigId_type: { agentConfigId: resolvedAgentConfigId ?? '', type: bodyCaseType } },
             })
             const newCase = await prisma.case.create({
               data: {
@@ -484,8 +484,8 @@ export async function POST(request: NextRequest) {
             try {
               const ctRow = await prisma.caseType.findUnique({
                 where: {
-                  orgId_type: {
-                    orgId: resolvedOrgId,
+                  agentConfigId_type: {
+                    agentConfigId: resolvedAgentConfigId ?? '',
                     type: inferredType,
                   },
                 },
@@ -520,7 +520,7 @@ export async function POST(request: NextRequest) {
             // Load case type schema if available
             try {
               const caseType = await prisma.caseType.findUnique({
-                where: { orgId_type: { orgId: resolvedOrgId, type: existingCase.type } },
+                where: { agentConfigId_type: { agentConfigId: resolvedAgentConfigId ?? '', type: existingCase.type } },
               })
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
@@ -601,8 +601,8 @@ export async function POST(request: NextRequest) {
           try {
             const ctRow = await prisma.caseType.findUnique({
               where: {
-                orgId_type: {
-                  orgId: resolvedOrgId,
+                agentConfigId_type: {
+                  agentConfigId: resolvedAgentConfigId ?? '',
                   type: inferredCaseTypeForRecord,
                 },
               },
@@ -640,7 +640,7 @@ export async function POST(request: NextRequest) {
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
         try {
           const dbSkills = await prisma.tool.findMany({
-            where: { agentConfigId: resolvedAgentConfigId, enabled: true },
+            where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
             select: { name: true, description: true, inputSchema: true, mode: true },
           })
           for (const s of dbSkills) {
@@ -649,7 +649,7 @@ export async function POST(request: NextRequest) {
             toolSummaries.push({ name: s.name, description: s.description, needsMemberId })
           }
           const kbSources = await prisma.knowledgeSource.findMany({
-            where: { orgId: resolvedOrgId, enabled: true },
+            where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
             select: { name: true, description: true },
           })
           for (const ks of kbSources) {

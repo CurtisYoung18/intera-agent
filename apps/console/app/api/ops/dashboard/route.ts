@@ -58,7 +58,8 @@ export const GET = defineRoute({
             })
             .catch(() => [])
         : ([] as { title: string }[]),
-      repo.channelHealth.findMany({}).catch(() => []),
+      // channelHealth model removed — channel health now tracked via channel_bindings
+      Promise.resolve([]),
       repo.case
         .findMany({
           orderBy: { createdAt: 'desc' as const },

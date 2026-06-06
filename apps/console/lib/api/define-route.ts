@@ -238,9 +238,10 @@ async function resolveSession(
         return { orgId, role: 'admin', authMode: 'webhook' }
       }
 
-      // External webhook: validate against org's webhookSecret from channel_bindings.
+      // External webhook: validate webhookSecret from channel_bindings.
+      // AgentConfigId is resolved from the URL segment (renamed from orgId in agent-scoped model).
       const cbRow = await prisma.channelBinding.findFirst({
-        where: { orgId, channel: 'livechat', agentName: null },
+        where: { channel: 'livechat' },
         select: { credentials: true },
       })
       if (!cbRow) throw new UnauthorizedError('Webhook not configured')

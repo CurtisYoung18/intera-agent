@@ -1,12 +1,13 @@
 // GET + PUT + POST /api/admin/agent — Agent config CRUD (upsert)
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 // POST is an alias for PUT (apiClient defaults to POST when body is present).
+// Removed policyHooks and capabilityBindings (sub-modules are now agentConfigId-scoped).
 
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY, DEFAULT_POLICY_HOOKS } from '@intera/shared/defaults'
+import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 
 const getQuerySchema = z.object({
@@ -39,7 +40,6 @@ export const GET = defineRoute({
           useLegacyCasePrompt: false,
           resumePrompt: null,
           memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-          policyHooks: JSON.stringify(DEFAULT_POLICY_HOOKS),
         } as any,
       })
     }
@@ -60,11 +60,9 @@ const putSchema = z.object({
   useLegacyCasePrompt: z.boolean().optional(),
   showThinking: z.boolean().optional(),
   memoryStrategy: z.union([z.string(), z.record(z.unknown())]).optional(),
-  policyHooks: z.union([z.string(), z.record(z.unknown())]).optional(),
   resumePrompt: z.string().nullable().optional(),
   debugMode: z.boolean().optional(),
   invariantCheck: z.boolean().optional(),
-  capabilityBindings: z.union([z.string(), z.record(z.unknown())]).optional(),
 })
 type PutInput = z.infer<typeof putSchema>
 
@@ -93,11 +91,9 @@ function agentUpdateHandler(agentId: string | null) {
     if (input.useLegacyCasePrompt !== undefined) data.useLegacyCasePrompt = input.useLegacyCasePrompt
     if (input.showThinking !== undefined) data.showThinking = input.showThinking
     if (input.memoryStrategy !== undefined) data.memoryStrategy = toJsonIfObject(input.memoryStrategy)
-    if (input.policyHooks !== undefined) data.policyHooks = toJsonIfObject(input.policyHooks)
     if (input.resumePrompt !== undefined) data.resumePrompt = input.resumePrompt
     if (input.debugMode !== undefined) data.debugMode = input.debugMode
     if (input.invariantCheck !== undefined) data.invariantCheck = input.invariantCheck
-    if (input.capabilityBindings !== undefined) data.capabilityBindings = toJsonIfObject(input.capabilityBindings)
 
     const existing = agentId
       ? await repo.agentConfig.findUnique({ where: { id: agentId } })
@@ -121,7 +117,6 @@ function agentUpdateHandler(agentId: string | null) {
           resumePrompt: input.resumePrompt ?? null,
           debugMode: input.debugMode ?? false,
           memoryStrategy: input.memoryStrategy ? toJsonIfObject(input.memoryStrategy) || JSON.stringify({}) : JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-          policyHooks: input.policyHooks ? toJsonIfObject(input.policyHooks) || JSON.stringify({}) : JSON.stringify(DEFAULT_POLICY_HOOKS),
         } as any,
       })
     }

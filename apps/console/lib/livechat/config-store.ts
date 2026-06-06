@@ -1,5 +1,6 @@
 // apps/console/lib/livechat/config-store.ts
-// Reads LiveChatConfig from channel_bindings. TTL cache keyed by (orgId, agentName?).
+// Reads LiveChatConfig from channel_bindings. TTL cache keyed by (agentConfigId).
+// Scoped by agentConfigId (not orgId + agentName).
 
 import { prisma } from '@intera/shared/prisma'
 import type { LiveChatConfig } from './types'
@@ -12,18 +13,17 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 const TTL_MS = 30_000
 
-function cacheKey(orgId: string, agentName?: string | null): string {
-  return agentName ? `${orgId}:${agentName}` : orgId
+function cacheKey(agentConfigId: string): string {
+  return agentConfigId
 }
 
-export function invalidateLiveChatConfig(orgId: string, agentName?: string | null): void {
-  cache.delete(cacheKey(orgId, agentName))
-  // Also invalidate org-level cache entries when per-agent changes
-  if (agentName) cache.delete(orgId)
+export function invalidateLiveChatConfig(agentConfigId: string): void {
+  cache.delete(cacheKey(agentConfigId))
 }
 
 function hydrateFromChannelBinding(row: {
-  orgId: string
+  orgId?: string | null
+  agentConfigId: string
   enabled: boolean
   credentials: string
   botAccessToken?: string | null
@@ -33,7 +33,7 @@ function hydrateFromChannelBinding(row: {
   try { creds = JSON.parse(row.credentials) } catch { /* keep empty */ }
 
   return {
-    orgId: row.orgId,
+    orgId: row.orgId ?? row.agentConfigId,
     botAccessToken: (row.botAccessToken ?? (creds.botAccessToken as string) ?? '') as string,
     licenseId: (row.licenseId ?? (creds.licenseId as string) ?? '') as string,
     webhookSecret: creds.webhookSecret as string | undefined,
@@ -49,41 +49,20 @@ function hydrateFromChannelBinding(row: {
 }
 
 export async function getLiveChatConfig(
-  orgId: string,
-  agentName?: string | null,
+  agentConfigId: string,
 ): Promise<LiveChatConfig | null> {
-  const key = cacheKey(orgId, agentName)
+  const key = cacheKey(agentConfigId)
   const cached = cache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.config
 
   try {
-    if (agentName) {
-      // Per-agent: only return that agent's own binding, never fall back
-      const cbRow = await prisma.channelBinding.findFirst({
-        where: { orgId, channel: 'livechat', agentName },
-      })
-      if (cbRow) {
-        const config = hydrateFromChannelBinding({
-          orgId: cbRow.orgId,
-          enabled: cbRow.enabled,
-          credentials: cbRow.credentials,
-          botAccessToken: cbRow.botAccessToken,
-          licenseId: cbRow.licenseId,
-        })
-        cache.set(key, { config, expiresAt: Date.now() + TTL_MS })
-        return config
-      }
-      return null
-    }
-
-    // No agentName: org-default binding (legacy webhook compatibility)
     const cbRow = await prisma.channelBinding.findFirst({
-      where: { orgId, channel: 'livechat', agentName: null },
+      where: { agentConfigId, channel: 'livechat' },
     })
 
     if (cbRow && cbRow.enabled) {
       const config = hydrateFromChannelBinding({
-        orgId: cbRow.orgId,
+        agentConfigId: cbRow.agentConfigId,
         enabled: cbRow.enabled,
         credentials: cbRow.credentials,
         botAccessToken: cbRow.botAccessToken,
@@ -101,9 +80,8 @@ export async function getLiveChatConfig(
 }
 
 export async function upsertLiveChatConfig(
-  orgId: string,
+  agentConfigId: string,
   data: Omit<LiveChatConfig, 'orgId'>,
-  agentName?: string | null,
 ): Promise<void> {
   const credentials = JSON.stringify({
     webhookSecret: data.webhookSecret,
@@ -116,9 +94,9 @@ export async function upsertLiveChatConfig(
     transferMessage: data.transferMessage,
   })
 
-  // Upsert channel_bindings row
+  // Upsert channel_bindings row by agentConfigId + channel
   const existing = await prisma.channelBinding.findFirst({
-    where: { orgId, channel: 'livechat', agentName: agentName ?? null },
+    where: { agentConfigId, channel: 'livechat' },
   })
 
   if (existing) {
@@ -134,8 +112,7 @@ export async function upsertLiveChatConfig(
   } else {
     await prisma.channelBinding.create({
       data: {
-        orgId,
-        agentName: agentName ?? null,
+        agentConfigId,
         channel: 'livechat',
         enabled: data.enabled,
         botAccessToken: data.botAccessToken,
@@ -145,5 +122,5 @@ export async function upsertLiveChatConfig(
     })
   }
 
-  invalidateLiveChatConfig(orgId, agentName)
+  invalidateLiveChatConfig(agentConfigId)
 }
