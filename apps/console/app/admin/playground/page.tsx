@@ -786,8 +786,7 @@ export default function PlaygroundPage() {
         }}>
           <div className="pg-chat-scroll" style={{
             flex: 1, width: '100%',
-            maxWidth: 680,
-            padding: '32px 10px 0 24px',
+            padding: '32px 16px 0 24px',
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
@@ -1143,7 +1142,7 @@ export default function PlaygroundPage() {
           {/* ── Composer ── */}
           <div style={{
             position: 'relative', zIndex: 1, flexShrink: 0,
-            width: '100%', maxWidth: 680, padding: '12px 24px 12px',
+            width: '100%', padding: '12px 16px 12px 24px',
           }}>
             {/* ── Attached image previews ── */}
             {attachedImages.length > 0 && (
