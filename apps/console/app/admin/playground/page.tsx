@@ -787,7 +787,7 @@ export default function PlaygroundPage() {
           <div className="pg-chat-scroll" style={{
             flex: 1, width: '100%',
             maxWidth: 680,
-            padding: '32px 0 0 24px',
+            padding: '32px 24px 0 24px',
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
@@ -1279,19 +1279,46 @@ export default function PlaygroundPage() {
               </button>
             </div>
 
-            {/* ── Queue indicator ── */}
+            {/* ── Queued messages ── */}
             {queuedMessages.length > 0 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '4px 0', fontSize: 11, color: '#b87347',
-                fontWeight: 500, gap: 4,
-              }}>
-                <div style={{
-                  width: 6, height: 6, borderRadius: '50%',
-                  background: '#b87347', opacity: 0.6,
-                  animation: 'pulse 1.5s ease-in-out infinite',
-                }} />
-                {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                {queuedMessages.map((qm, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 12px', borderRadius: 10,
+                    background: 'rgba(212,118,78,0.04)',
+                    border: '1px dashed rgba(212,118,78,0.18)',
+                    opacity: 0.7,
+                  }}>
+                    <div style={{
+                      width: 5, height: 5, borderRadius: '50%',
+                      background: '#d4764e', flexShrink: 0,
+                      animation: 'pulse 1.5s ease-in-out infinite',
+                    }} />
+                    <span style={{
+                      flex: 1, fontSize: 12, color: '#8a7e74',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+                    }}>
+                      {qm.text}
+                    </span>
+                    <button
+                      onClick={() => setQueuedMessages(prev => prev.filter((_, i) => i !== idx))}
+                      style={{
+                        flexShrink: 0, width: 18, height: 18, borderRadius: '50%',
+                        border: 'none', cursor: 'pointer', fontSize: 10,
+                        background: 'rgba(0,0,0,0.06)', color: '#b8a99a',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(230,69,57,0.12)'; e.currentTarget.style.color = '#e64539' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; e.currentTarget.style.color = '#b8a99a' }}
+                      title="Remove from queue"
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
