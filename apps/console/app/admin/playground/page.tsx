@@ -610,12 +610,12 @@ export default function PlaygroundPage() {
         <div style={{
           position: 'absolute', width: 480, height: 480, top: '-8%', left: '-5%',
           borderRadius: '50%', filter: 'blur(100px)', opacity: 0.45,
-          background: 'radial-gradient(circle, rgba(139,111,245,0.09), transparent 70%)',
+          background: 'radial-gradient(circle, rgba(212,118,78,0.06), transparent 70%)',
         }} />
         <div style={{
           position: 'absolute', width: 400, height: 400, bottom: '5%', right: '-3%',
           borderRadius: '50%', filter: 'blur(90px)', opacity: 0.35,
-          background: 'radial-gradient(circle, rgba(91,184,247,0.07), transparent 70%)',
+          background: 'radial-gradient(circle, rgba(201,136,74,0.05), transparent 70%)',
         }} />
       </div>
 
@@ -635,10 +635,10 @@ export default function PlaygroundPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 10,
-            background: 'linear-gradient(135deg, rgba(139,111,245,0.12), rgba(91,184,247,0.08))',
+            background: 'linear-gradient(135deg, rgba(212,118,78,0.1), rgba(201,136,74,0.08))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <FlaskConical size={16} color="var(--indigo)" />
+            <FlaskConical size={16} color="#b87347" />
           </div>
           <AgentVersionPicker
             key={pickerRefreshKey}
@@ -673,9 +673,9 @@ export default function PlaygroundPage() {
               onClick={() => setShowThinking(v => !v)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 10, fontWeight: 500, color: showThinking ? 'var(--lavender)' : 'var(--fog)',
-                background: showThinking ? 'rgba(139,111,245,0.08)' : 'transparent',
-                border: showThinking ? '1px solid rgba(139,111,245,0.15)' : '1px solid transparent',
+                fontSize: 10, fontWeight: 500, color: showThinking ? '#b87347' : 'var(--fog)',
+                background: showThinking ? 'rgba(212,118,78,0.08)' : 'transparent',
+                border: showThinking ? '1px solid rgba(212,118,78,0.15)' : '1px solid transparent',
                 padding: '3px 8px', borderRadius: 8,
                 cursor: 'pointer', transition: 'all 0.15s',
                 flexShrink: 0,
@@ -751,12 +751,12 @@ export default function PlaygroundPage() {
               href={`/admin/agent?agentId=${selectedAgentId}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                fontSize: 11, fontWeight: 500, color: 'var(--indigo)',
+                fontSize: 11, fontWeight: 500, color: '#b87347',
                 textDecoration: 'none', opacity: 0.7,
                 padding: '4px 10px', borderRadius: 8,
                 transition: 'opacity 0.15s, background 0.15s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(91,138,247,0.06)' }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(212,118,78,0.06)' }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.background = 'transparent' }}
             >
               Edit agent <ExternalLink size={10} />
@@ -794,11 +794,11 @@ export default function PlaygroundPage() {
               }}>
                 <div style={{
                   width: 56, height: 56, borderRadius: 16,
-                  background: 'linear-gradient(135deg, rgba(139,111,245,0.1), rgba(91,184,247,0.06))',
+                  background: 'linear-gradient(135deg, rgba(212,118,78,0.08), rgba(201,136,74,0.05))',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 0 0 1px rgba(139,111,245,0.08) inset',
+                  boxShadow: '0 0 0 1px rgba(212,118,78,0.06) inset',
                 }}>
-                  <FlaskConical size={24} color="var(--indigo)" />
+                  <FlaskConical size={24} color="#b87347" />
                 </div>
                 <p style={{
                   fontSize: 13, color: 'var(--fog)', margin: 0,
@@ -852,8 +852,8 @@ export default function PlaygroundPage() {
                   <div style={{
                     width: '100%', maxWidth: 440, marginTop: 8,
                     padding: '12px 16px', borderRadius: 12,
-                    background: 'rgba(139,111,245,0.03)',
-                    border: '1px solid rgba(139,111,245,0.06)',
+                    background: 'rgba(212,118,78,0.03)',
+                    border: '1px solid rgba(212,118,78,0.06)',
                   }}>
                     <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--fog)', opacity: 0.5, marginBottom: 6 }}>
                       System Prompt
@@ -874,13 +874,13 @@ export default function PlaygroundPage() {
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 6,
                       padding: '6px 14px', borderRadius: 20,
-                      background: 'rgba(139,111,245,0.06)',
-                      border: '1px solid rgba(139,111,245,0.1)',
+                      background: 'rgba(212,118,78,0.06)',
+                      border: '1px solid rgba(212,118,78,0.1)',
                       fontSize: 11, color: 'var(--fog)',
                     }}>
                       {m.notice.kind === 'escalated' && <AlertCircle size={12} color="var(--amber)" />}
                       {m.notice.kind === 'case_created' && <CheckCircle2 size={12} color="var(--malachite)" />}
-                      {m.notice.kind === 'sub_agent' && <Activity size={12} color="var(--indigo)" />}
+                      {m.notice.kind === 'sub_agent' && <Activity size={12} color="#b87347" />}
                       {m.notice.kind === 'human_task' && <Clock size={12} color="var(--amber)" />}
                       {m.notice.kind === 'retry' && <XCircle size={12} color="var(--vermillion)" />}
                       <span>{m.notice.label}</span>
@@ -969,11 +969,11 @@ export default function PlaygroundPage() {
                     padding: '12px 16px', borderRadius: 14,
                     marginBottom: 8,
                     background: m.role === 'user'
-                      ? 'rgba(139,111,245,0.06)'
+                      ? 'rgba(212,118,78,0.06)'
                       : 'rgba(255,255,255,0.55)',
                     backdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
                     WebkitBackdropFilter: m.role === 'agent' ? 'blur(12px)' : undefined,
-                    border: m.role === 'agent' ? '1px solid var(--border-subtle)' : '1px solid rgba(139,111,245,0.1)',
+                    border: m.role === 'agent' ? '1px solid var(--border-subtle)' : '1px solid rgba(212,118,78,0.1)',
                   }}
                 >
                   <div style={{
@@ -997,7 +997,7 @@ export default function PlaygroundPage() {
                               style={{
                                 maxWidth: 120, maxHeight: 80,
                                 borderRadius: 8, objectFit: 'cover',
-                                border: '1px solid rgba(139,111,245,0.12)',
+                                border: '1px solid rgba(212,118,78,0.12)',
                               }}
                             />
                           ))}
@@ -1041,7 +1041,7 @@ export default function PlaygroundPage() {
                 alignSelf: 'flex-start',
                 marginBottom: 16,
               }}>
-                <OrganicLoader icon="spin" size={16} className="text-indigo" />
+                <OrganicLoader icon="spin" size={16} style={{ color: '#b87347' }} />
                 <span style={{ fontSize: 12, color: 'var(--fog)' }}>
                   Thinking…
                 </span>
@@ -1073,20 +1073,18 @@ export default function PlaygroundPage() {
             {/* ── Form request (request_user_input) ── */}
             {formRequest && (
               <div style={{
-                padding: '16px 20px', borderRadius: 14,
+                padding: 24, borderRadius: 16,
                 marginBottom: 8,
-                background: 'rgba(255,255,255,0.7)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(139,111,245,0.2)',
-                boxShadow: '0 4px 16px rgba(139,111,245,0.08)',
+                background: '#fffcf9',
+                border: '1px solid rgba(0,0,0,0.06)',
+                boxShadow: '0 1px 2px rgba(60,40,20,0.04), 0 4px 12px rgba(60,40,20,0.03)',
                 alignSelf: 'flex-start',
                 maxWidth: '420px',
                 width: '100%',
               }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--mist)', margin: '0 0 2px' }}>{formRequest.title}</p>
+                <p style={{ fontSize: 17, fontWeight: 700, color: '#2d2926', margin: '0 0 2px', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>{formRequest.title}</p>
                 {formRequest.description && (
-                  <p style={{ fontSize: 11, color: 'var(--fog)', margin: '0 0 12px', opacity: 0.7 }}>{formRequest.description}</p>
+                  <p style={{ fontSize: 13.5, color: '#8a7e74', margin: '0 0 12px', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>{formRequest.description}</p>
                 )}
                 <form onSubmit={e => {
                   e.preventDefault()
@@ -1099,32 +1097,34 @@ export default function PlaygroundPage() {
                     .join('\n')
                   setFormRequest(null)
                   if (answerText) runTurn(`[Form submission]\n${answerText}`)
-                }} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {formRequest.fields.map(f => (
                     <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--mist)' }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#8a7e74', letterSpacing: '0.02em', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
                         {f.label}{f.required ? ' *' : ''}
                       </label>
                       {f.type === 'select' ? (
                         <select name={f.key} required={f.required}
-                          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', background: '#fff', outline: 'none' }}>
+                          style={{ padding: '11px 14px', fontSize: 14, borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', background: '#faf8f5', color: '#3d3833', outline: 'none', appearance: 'none', cursor: 'pointer', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
                           <option value="">--</option>
                           {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       ) : f.type === 'textarea' ? (
                         <textarea name={f.key} required={f.required} placeholder={f.placeholder}
-                          rows={2} style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', resize: 'vertical', outline: 'none' }} />
+                          rows={3} style={{ padding: '11px 14px', fontSize: 14, borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', background: '#faf8f5', color: '#3d3833', resize: 'vertical', outline: 'none', minHeight: 80, fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} />
                       ) : (
                         <input name={f.key} type={f.type === 'number' ? 'number' : 'text'} required={f.required} placeholder={f.placeholder}
-                          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border-subtle)', outline: 'none' }} />
+                          style={{ padding: '11px 14px', fontSize: 14, borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', background: '#faf8f5', color: '#3d3833', outline: 'none', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} />
                       )}
                     </div>
                   ))}
                   <button type="submit"
                     style={{
-                      marginTop: 4, padding: '8px 16px', fontSize: 12, fontWeight: 600,
-                      borderRadius: 8, border: 'none', cursor: 'pointer',
-                      background: 'var(--indigo)', color: '#fff',
+                      marginTop: 4, padding: '11px 28px', fontSize: 14, fontWeight: 600,
+                      borderRadius: 10, border: 'none', cursor: 'pointer',
+                      background: 'linear-gradient(135deg, #d4764e, #c9884a)', color: '#fff',
+                      boxShadow: '0 1px 2px rgba(212,118,78,0.25)',
+                      fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
                     }}>
                     Submit
                   </button>
@@ -1198,15 +1198,15 @@ export default function PlaygroundPage() {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 36, height: 36, borderRadius: 12,
-                  background: supportsVision ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
-                  border: supportsVision ? '1px solid rgba(139,111,245,0.12)' : '1px solid rgba(0,0,0,0.06)',
+                  background: supportsVision ? 'rgba(212,118,78,0.06)' : 'rgba(0,0,0,0.03)',
+                  border: supportsVision ? '1px solid rgba(212,118,78,0.12)' : '1px solid rgba(0,0,0,0.06)',
                   cursor: supportsVision ? 'pointer' : 'not-allowed',
                   opacity: supportsVision ? 1 : 0.35,
                   transition: 'all 0.15s',
                   flexShrink: 0,
                 }}
               >
-                <ImageIcon size={14} color={supportsVision ? 'var(--lavender)' : 'var(--fog)'} />
+                <ImageIcon size={14} color={supportsVision ? '#b87347' : 'var(--fog)'} />
                 <input
                   type="file"
                   accept="image/*"
@@ -1276,12 +1276,12 @@ export default function PlaygroundPage() {
             {queuedMessages.length > 0 && (
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '4px 0', fontSize: 11, color: 'var(--lavender)',
+                padding: '4px 0', fontSize: 11, color: '#b87347',
                 fontWeight: 500, gap: 4,
               }}>
                 <div style={{
                   width: 6, height: 6, borderRadius: '50%',
-                  background: 'var(--lavender)', opacity: 0.6,
+                  background: '#b87347', opacity: 0.6,
                   animation: 'pulse 1.5s ease-in-out infinite',
                 }} />
                 {queuedMessages.length} message{queuedMessages.length > 1 ? 's' : ''} queued
@@ -1389,8 +1389,8 @@ function SidebarSection({
         {typeof count === 'number' && count > 0 && (
           <span style={{
             marginLeft: 4, fontSize: 9, fontWeight: 600,
-            color: 'var(--indigo)',
-            background: 'rgba(91,138,247,0.08)',
+            color: '#b87347',
+            background: 'rgba(212,118,78,0.08)',
             padding: '1px 6px', borderRadius: 6,
             textTransform: 'none', letterSpacing: 0, opacity: 1,
           }}>
@@ -1440,7 +1440,7 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
       {systemPrompt && (
         <details style={{ fontSize: 10 }}>
           <summary style={{
-            fontWeight: 600, color: 'var(--lavender)',
+            fontWeight: 600, color: '#b87347',
             cursor: 'pointer', opacity: 0.8,
             display: 'flex', alignItems: 'center', gap: 4,
           }}>
@@ -1461,7 +1461,7 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
       {messages.length > 0 && (
         <details style={{ fontSize: 10 }}>
           <summary style={{
-            fontWeight: 600, color: 'var(--lavender)',
+            fontWeight: 600, color: '#b87347',
             cursor: 'pointer', opacity: 0.8,
           }}>
             Messages ({messages.length})
@@ -1475,7 +1475,7 @@ function PromptViewer({ systemPrompt, messages }: { systemPrompt: string; messag
             {messages.map((m: any, idx: number) => (
               <div key={idx} style={{
                 padding: '3px 6px', borderRadius: 6,
-                background: m.role === 'user' ? 'rgba(139,111,245,0.06)' : 'rgba(0,0,0,0.03)',
+                background: m.role === 'user' ? 'rgba(212,118,78,0.06)' : 'rgba(0,0,0,0.03)',
                 fontSize: 9,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
