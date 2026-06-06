@@ -11,7 +11,7 @@ interface BlueprintProps {
 }
 
 const CORE_SIZE = 68
-const NODE_DISTANCE = 0.58
+const NODE_DISTANCE = 0.72
 
 const NODE_COLORS = {
   brain:      { main: '#8b6ff5', glow: 'rgba(139,111,245,0.12)', bg: 'rgba(139,111,245,0.06)' },
@@ -163,9 +163,9 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
         return t(`blueprint.memoryTier${memoryTier.charAt(0).toUpperCase() + memoryTier.slice(1)}` as any) || memoryTier
       }
       case 'guardrails':
-        return guardrailTotal > 0 ? `${guardrailTotal} ${t('blueprint.guardrailsCount', { n: guardrailTotal }).split(' ')[0]}` : t('blueprint.noPolicies')
+        return guardrailTotal > 0 ? `${guardrailTotal} rules` : t('blueprint.noPolicies')
       case 'subAgents':
-        return subAgentTotal > 0 ? `${subAgentTotal} ${t('blueprint.subAgentsPreview', { n: subAgentTotal }).split(' ')[0]}` : t('blueprint.noSubAgents')
+        return subAgentTotal > 0 ? `${subAgentTotal} agents` : t('blueprint.noSubAgents')
       case 'tools': {
         const { sys, ch, biz, kb } = toolSummary
         const total = sys + ch + biz + kb
@@ -237,22 +237,22 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
               className="rounded-xl transition-all duration-200 ease-out cursor-pointer
                 hover:-translate-y-0.5 active:scale-[0.97]"
               style={{
-                padding: '8px 12px',
+                padding: '10px 14px',
                 background: 'rgba(255,252,249,0.82)',
                 backdropFilter: 'blur(16px) saturate(150%)',
                 border: `1px solid rgba(0,0,0,0.04)`,
                 borderLeft: `2.5px solid ${c.main}`,
                 boxShadow: `0 1px 4px rgba(0,0,0,0.03)`,
-                minWidth: 110,
+                minWidth: 120,
               }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 4px 16px ${c.glow}` }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = `0 1px 4px rgba(0,0,0,0.03)` }}
             >
               <div className="flex items-center gap-1.5 mb-0.5">
-                <Icon style={{ width: 12, height: 12, color: c.main }} />
-                <span className="text-[11px] font-semibold text-[var(--mist)]">{label}</span>
+                <Icon style={{ width: 13, height: 13, color: c.main }} />
+                <span className="text-[12px] font-semibold text-[var(--mist)]">{label}</span>
               </div>
-              <div className="text-[11px] text-[var(--fog)] pl-[18px] truncate max-w-[160px]" title={value}>
+              <div className="text-[11.5px] text-[var(--fog)] pl-[18px] truncate max-w-[180px]" title={value}>
                 {value}
               </div>
             </div>
