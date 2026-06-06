@@ -1,4 +1,4 @@
-// Intera Harness - finalize_sub_agent (Built-in Tool, S4 spec)
+// Intera Harness - finalize_case_agent (Built-in Tool, S4 spec)
 // Ported from sub-agent.ts FINALIZE_SUB_AGENT_SKILL + skills.ts built-in.
 // Terminal tool for sub-agents — the ChecklistPolicy intercepts this to
 // produce a SubAgentResult. No side effects in the call body itself.
@@ -27,7 +27,7 @@ type Input = z.infer<typeof inputSchema>
 // ── Tool definition ────────────────────────────────────────────────────────
 
 export const finalizeSubAgentTool: Tool<Input, Input> = {
-  name: 'finalize_sub_agent',
+  name: 'finalize_case_agent',
   source: 'builtin',
   guardPhase: 'post',
   isEnabled() { return true },

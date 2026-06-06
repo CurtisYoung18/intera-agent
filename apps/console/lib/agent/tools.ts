@@ -53,69 +53,6 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
     mockFixture: { profile: '', stats: {} },
     zodSchema: z.object({}),
   },
-  {
-    name: 'todo_read',
-    description:
-      'Read the current todo list. Call this at the start of a turn to see pending, ' +
-      'in-progress, and completed items before deciding what to do next.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-    isConcurrencySafe: true,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Reviewing task list', icon: 'scan' },
-    zodSchema: z.object({}),
-  },
-  {
-    name: 'todo_write',
-    description:
-      'Create or update a structured todo list. ' +
-      'Use this to plan complex investigations, track progress through multi-step workflows, ' +
-      'and communicate current state to the user. Each item should have a unique id, ' +
-      'a content description, and a status (pending, in_progress, completed, or cancelled).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        todos: {
-          type: 'array',
-          description: 'The complete todo list to persist. Replaces the existing list.',
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string', description: 'Unique identifier for this todo item' },
-              content: { type: 'string', description: 'Description of what needs to be done' },
-              status: {
-                type: 'string',
-                enum: ['pending', 'in_progress', 'completed', 'cancelled'],
-                description: 'Current status of this item',
-              },
-              notes: { type: 'string', description: 'Optional findings or notes for this item' },
-            },
-            required: ['id', 'content', 'status'],
-          },
-        },
-      },
-      required: ['todos'],
-    },
-    isConcurrencySafe: true,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Updating task list', icon: 'dots' },
-    zodSchema: z.object({
-      todos: z.array(
-        z.object({
-          id: z.string(),
-          content: z.string(),
-          status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
-          notes: z.string().optional(),
-        }),
-      ),
-    }),
-  },
 ]
 
 /**
@@ -144,28 +81,6 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     toolCategory: 'operational',
     displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
     zodSchema: z.object({ caseType: z.string() }),
-  },
-  {
-    name: 'read_case_history',
-    description: "Read the customer's historical cases for context",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        userId: { type: 'string', description: 'Customer user ID' },
-        limit: {
-          type: 'number',
-          description: 'Max number of cases to return',
-          default: 5,
-        },
-      },
-      required: ['userId'],
-    },
-    isConcurrencySafe: true,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Looking up past cases', icon: 'scan' },
-    zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
   },
   {
     name: 'query_order_status',
@@ -565,7 +480,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
   },
   {
-    name: 'request_user_input',
+    name: 'ask_user_questions',
     description:
       'Display a structured form to the customer to collect required information. ' +
       'Use this when you need the customer to provide specific details (amount, payment method, ' +
@@ -638,7 +553,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
   },
   {
-    name: 'finalize_sub_agent',
+    name: 'finalize_case_agent',
     description:
       '子代理完成任务后调用，将调查结果返回给主 Agent。调用后子代理循环终止。',
     inputSchema: {
@@ -714,59 +629,6 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
   },
 ]
 
-/**
- * SOP Internal Tools — only injected into the tool list when a case type
- * uses `executionMode: 'sop'`. Intercepted in AgentLoop (never sent to the
- * streaming-tool-executor for real execution).
- */
-export const SOP_INTERNAL_TOOLS: ToolDefinition[] = [
-  {
-    name: 'todo_write',
-    description:
-      'Create, update, complete, or cancel a todo item in the case investigation plan. ' +
-      'Use "add" to create a new todo, "complete" to mark one done (with findings as notes), ' +
-      '"cancel" to drop an item that is no longer relevant, and "update" to revise text or notes. ' +
-      'Always complete or cancel items as you progress — do not leave stale pending todos.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: ['add', 'update', 'complete', 'cancel'],
-          description: '"add" creates a new todo; "complete"/"cancel"/"update" require id.',
-        },
-        id: { type: 'string', description: 'Todo ID — required for update / complete / cancel.' },
-        text: { type: 'string', description: 'Todo description (required for add; optional for update).' },
-        notes: { type: 'string', description: 'Findings or reason for this state change (e.g., what was discovered on completion).' },
-      },
-      required: [],
-    },
-    isConcurrencySafe: false,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Updating investigation plan', icon: 'dots' },
-    zodSchema: z.object({
-      action: z.enum(['add', 'update', 'complete', 'cancel']).optional(),
-      id: z.string().optional(),
-      text: z.string().optional(),
-      notes: z.string().optional(),
-    }),
-  },
-  {
-    name: 'todo_read',
-    description: 'Read the current investigation todo list. Call this at the start of each turn to see pending, in-progress, and completed items before deciding what to do next.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-    isConcurrencySafe: true,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Reviewing investigation plan', icon: 'scan' },
-  },
-]
 
 /** Set of built-in tool names for fast lookup. */
 export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((s) => s.name))
@@ -786,18 +648,12 @@ export class ToolRouter {
   private tools: Map<string, ToolDefinition> = new Map()
 
   constructor(agentConfigId?: string) {
-    // Register system tools — always available (read_chat_memory, read_user_profile, todo_read, todo_write)
+    // Register system tools — always available (read_chat_memory, read_user_profile)
     for (const tool of SYSTEM_TOOLS) {
       this.tools.set(tool.name, tool)
     }
     // Load built-in tools as fallback (overridden by DB when available)
     for (const tool of BUILT_IN_TOOLS) {
-      this.tools.set(tool.name, tool)
-    }
-    // SOP internal tools (todo_write, todo_read) must be in the registry so
-    // getTool() resolves their displayVerb and getToolDefinitions() includes
-    // them for the StreamingToolExecutor.
-    for (const tool of SOP_INTERNAL_TOOLS) {
       this.tools.set(tool.name, tool)
     }
   }

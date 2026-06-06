@@ -14,7 +14,7 @@ import type { StageExecutor } from '../stage-executor'
 const TERMINAL_TOOLS = new Set([
   'create_human_task',
   'finalize_case',
-  'request_user_input',
+  'ask_user_questions',
   'finalize_consultation',
 ])
 

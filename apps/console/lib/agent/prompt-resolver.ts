@@ -78,7 +78,7 @@ function renderTools(tools: PromptContext['available_tools']): string {
     for (const t of kbTools) lines.push(`- ${t.name}: ${t.description}`)
   }
   if (lookupTools.length) {
-    lines.push('\n**Account Lookups** (all require member_id — call request_user_input first):')
+    lines.push('\n**Account Lookups** (all require member_id — call ask_user_questions first):')
     for (const t of lookupTools) lines.push(`- ${t.name}: ${t.description}`)
   }
   if (otherTools.length) {
@@ -96,7 +96,7 @@ function renderSessionBinding(binding: PromptContext['session_binding']): string
   if (label) lines.push(`- Label: ${label}`)
 
   // Emit ONLY the dynamic facts here. The behavioral instruction (use the
-  // Member ID vs. collect it via request_user_input) lives in the editable
+  // Member ID vs. collect it via ask_user_questions) lives in the editable
   // System Prompt (`## member_id` section), so it can be hot-updated in Console.
   // BUG-G: LiveChat's author_id is a random UUID, not a business member_id —
   // surface that distinction as a fact, not a hardcoded instruction.

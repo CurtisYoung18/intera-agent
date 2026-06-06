@@ -86,9 +86,9 @@ describe('validateGuardrailHook', () => {
     expect(errors).toEqual([])
   })
 
-  it('allows onViolation.invoke_tool to request_user_input', () => {
+  it('allows onViolation.invoke_tool to ask_user_questions', () => {
     const hook = makeHook({
-      onViolation: { action: 'invoke_tool', tool: 'request_user_input' },
+      onViolation: { action: 'invoke_tool', tool: 'ask_user_questions' },
     })
     const errors = validateGuardrailHook(hook)
     expect(errors).toEqual([])

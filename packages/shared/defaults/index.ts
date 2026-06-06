@@ -50,7 +50,7 @@ Facts extracted from previous turns are in confirmedFacts — trust them. Summar
 
 ## member_id
 
-The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
+The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call ask_user_questions to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call ask_user_questions immediately.
 
 ## Knowledge base vs account tools
 
@@ -68,7 +68,7 @@ export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant.
 
 **Never fabricate data.** If a tool returns success:false or an error, report the error to the customer. Never invent results, numbers, dates, or records. If data is not returned by a tool, it does not exist.
 
-**Always use request_user_input to collect information.** When you need member_id, date range, order ID, amount, or any other details: call request_user_input. Never ask in plain text — use the form tool. A text question like "Please provide your member ID" without calling request_user_input is a failed response.
+**Always use ask_user_questions to collect information.** When you need member_id, date range, order ID, amount, or any other details: call ask_user_questions. Never ask in plain text — use the form tool. A text question like "Please provide your member ID" without calling ask_user_questions is a failed response.
 
 ## Parallel tool calls
 
@@ -78,7 +78,7 @@ When you need to look up or check multiple things, call all independent tools to
 
 ## member_id
 
-The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately — don't apologize, just ask.
+The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call ask_user_questions to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call ask_user_questions immediately — don't apologize, just ask.
 
 ## Knowledge base vs account tools
 
@@ -152,7 +152,7 @@ Use these when you need context about the user or the current case state.
 
 ## member_id
 
-The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call request_user_input to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call request_user_input immediately.
+The Session ID under "Current User" is NOT a member_id. If a verified Member ID is listed there, use it for any tool that needs member_id. If member_id is unknown, call ask_user_questions to ask the customer for it before calling any tool that needs it — never guess or pass the Session ID. If a tool returns "member id is invalid", call ask_user_questions immediately.
 
 ## Knowledge base vs account tools
 
@@ -208,8 +208,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
     'get_latest_deposit',
     'get_withdraw_conditions',
     'get_active_promotions',
-    'read_case_history',
-    // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
+        // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
   ],
 
   // Fact extraction (LLM-based, replaces regex/keyword patterns)
@@ -371,8 +370,8 @@ export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string,
     created: {
       name: 'created',
       description:
-        'Case just opened — briefly reassure the customer first. If they already provided complete info (txnId, amount, channel), the evaluator may go straight to investigating; otherwise go to collecting and use request_user_input to gather it.',
-      availableSkills: ['request_user_input'],
+        'Case just opened — briefly reassure the customer first. If they already provided complete info (txnId, amount, channel), the evaluator may go straight to investigating; otherwise go to collecting and use ask_user_questions to gather it.',
+      availableSkills: ['ask_user_questions'],
       transition: {
         type: 'evaluation',
 
@@ -390,9 +389,9 @@ Respond with JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: 'Collect txnId, amount, channel, time, etc. from the customer; gather them all at once with a request_user_input form. The form field keys MUST be: txnId, amount, paymentMethod, date (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.\n\nIMPORTANT: After the form is submitted and all facts are confirmed, do NOT call create_human_task or any investigation tool yet. The system will automatically advance to the investigating stage — wait for that transition before querying order or channel status.',
-      requiredSkills: ['request_user_input'],
-      availableSkills: ['request_user_input'],
+      description: 'Collect txnId, amount, channel, time, etc. from the customer; gather them all at once with a ask_user_questions form. The form field keys MUST be: txnId, amount, paymentMethod, date (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling ask_user_questions. Call ask_user_questions directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.\n\nIMPORTANT: After the form is submitted and all facts are confirmed, do NOT call create_human_task or any investigation tool yet. The system will automatically advance to the investigating stage — wait for that transition before querying order or channel status.',
+      requiredSkills: ['ask_user_questions'],
+      availableSkills: ['ask_user_questions'],
       evidenceRequirements: [
         { factKey: 'txnId', description: 'Transaction / top-up reference number', source: 'user_input', required: true },
         { factKey: 'amount', description: 'Top-up amount', source: 'user_input', required: true },
@@ -410,7 +409,7 @@ The txnId argument for get_latest_deposit and get_withdraw_conditions MUST be **
 
 **Investigation order:**
 1. Call get_latest_deposit (passing confirmedFacts.txnId) and get_withdraw_conditions — both in the SAME turn, do not split across turns.
-2. If needed, call read_case_history for past cases, get_active_promotions for notices, and kb_search_<name> for the relevant knowledge base.
+2. If needed, check past cases, get_active_promotions for notices, and kb_search_<name> for the relevant knowledge base.
 
 **Interpreting results:**
 - If the txnId returned by get_latest_deposit does not match confirmedFacts.txnId (order not found, or the record belongs to a different transaction) then treat it as "order not found", call create_human_task directly, and do NOT ask the customer to re-confirm the txnId.
@@ -418,9 +417,9 @@ The txnId argument for get_latest_deposit and get_withdraw_conditions MUST be **
 - If the channel has a delayed batch (delayed_batch: true), tell the customer the expected arrival time and go to resolved.
 - If data is consistent and the order is processed, go to resolved.
 
-If you need more info from the customer (screenshots, etc.), you MUST collect it with a request_user_input form — never ask in plain text.`,
+If you need more info from the customer (screenshots, etc.), you MUST collect it with a ask_user_questions form — never ask in plain text.`,
       requiredSkills: ['get_latest_deposit', 'get_withdraw_conditions'],
-      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'read_case_history', 'request_user_input'],
+      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'ask_user_questions'],
       evidenceRequirements: [
         {
           factKey: 'status',
@@ -468,7 +467,7 @@ Respond JSON ONLY:
       name: 'verifying',
       description: 'Verify order details and collect missing information',
       requiredSkills: ['get_latest_deposit'],
-      availableSkills: ['get_latest_deposit', 'request_user_input', 'read_case_history'],
+      availableSkills: ['get_latest_deposit', 'ask_user_questions'],
       evidenceRequirements: [
         { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
         { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
@@ -486,7 +485,7 @@ Respond JSON ONLY:
       name: 'investigating',
       description: 'Investigate order issue',
       requiredSkills: ['get_withdraw_conditions'],
-      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'read_case_history'],
+      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions'],
       transition: { type: 'evaluation', evaluationPrompt: 'If conflict detected → call create_human_task. If resolved → resolved.' },
     },
     resolved: {
@@ -500,8 +499,8 @@ Respond JSON ONLY:
     created: {
       name: 'created',
       description:
-        'Case just opened — briefly reassure the customer first. If they already provided userId and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use request_user_input to gather it.',
-      availableSkills: ['request_user_input'],
+        'Case just opened — briefly reassure the customer first. If they already provided userId and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use ask_user_questions to gather it.',
+      availableSkills: ['ask_user_questions'],
       transition: {
         type: 'evaluation',
 
@@ -520,9 +519,9 @@ JSON ONLY:
     collecting: {
       name: 'collecting',
       description:
-        'Collect the user identifier, issue type, and symptom description; gather them at once with request_user_input. The form field keys MUST be: userId, issueType, symptoms (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
-      requiredSkills: ['request_user_input'],
-      availableSkills: ['request_user_input'],
+        'Collect the user identifier, issue type, and symptom description; gather them at once with ask_user_questions. The form field keys MUST be: userId, issueType, symptoms (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling ask_user_questions. Call ask_user_questions directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
+      requiredSkills: ['ask_user_questions'],
+      availableSkills: ['ask_user_questions'],
       evidenceRequirements: [
         { factKey: 'userId', description: 'Platform user ID / UID', source: 'user_input', required: true },
         {
@@ -544,13 +543,12 @@ JSON ONLY:
       name: 'investigating',
       description:
         'In parallel, verify the account-side snapshot against past cases / policy entries; if records conflict with the customer report, prepare human-review wording.',
-      requiredSkills: ['get_account_status', 'get_kyc_status', 'read_case_history'],
+      requiredSkills: ['get_account_status', 'get_kyc_status'],
       availableSkills: [
         'get_account_status',
         'get_kyc_status',
-        'read_case_history',
         // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
-        'request_user_input',
+        'ask_user_questions',
       ],
       evidenceRequirements: [
         {
@@ -565,13 +563,6 @@ JSON ONLY:
           description: 'KYC status returned by get_kyc_status (field `data.kyc_status`)',
           source: 'skill_output',
           skillName: 'get_kyc_status',
-          required: true,
-        },
-        {
-          factKey: 'total',
-          description: 'read_case_history has run and returned a past-case count (field `total`)',
-          source: 'skill_output',
-          skillName: 'read_case_history',
           required: true,
         },
       ],
@@ -599,7 +590,7 @@ JSON ONLY:
       name: 'reviewing',
       description: 'Review refund eligibility',
       requiredSkills: ['get_latest_deposit'],
-      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'read_case_history', 'request_user_input'],
+      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'ask_user_questions'],
       evidenceRequirements: [
         { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
         { factKey: 'amount', description: 'Refund amount', source: 'user_input', required: true },
@@ -630,8 +621,8 @@ JSON ONLY:
   withdrawal_issue: {
     created: {
       name: 'created',
-      description: 'Case just opened — briefly reassure the customer first. If they already provided member_id and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use request_user_input to gather it.',
-      availableSkills: ['request_user_input'],
+      description: 'Case just opened — briefly reassure the customer first. If they already provided member_id and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use ask_user_questions to gather it.',
+      availableSkills: ['ask_user_questions'],
       transition: {
         type: 'evaluation',
 
@@ -649,9 +640,9 @@ JSON ONLY:
     },
     collecting: {
       name: 'collecting',
-      description: 'Collect the customer member_id and withdrawal issue details; gather them at once with request_user_input. The form field keys MUST be: member_id, issueType, amount (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling request_user_input. Call request_user_input directly in your first response.',
-      requiredSkills: ['request_user_input'],
-      availableSkills: ['request_user_input'],
+      description: 'Collect the customer member_id and withdrawal issue details; gather them at once with ask_user_questions. The form field keys MUST be: member_id, issueType, amount (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling ask_user_questions. Call ask_user_questions directly in your first response.',
+      requiredSkills: ['ask_user_questions'],
+      availableSkills: ['ask_user_questions'],
       evidenceRequirements: [
         { factKey: 'member_id', description: 'Customer member ID', source: 'user_input', required: true },
         { factKey: 'issueType', description: 'Issue type (not arrived / insufficient turnover / rejected, etc.)', source: 'user_input', required: true },
@@ -661,9 +652,9 @@ JSON ONLY:
     },
     investigating: {
       name: 'investigating',
-      description: 'Call the withdrawal-status and turnover-condition tools to verify platform records. If you find conflicts requiring more info from the customer, collect it with a request_user_input form.',
+      description: 'Call the withdrawal-status and turnover-condition tools to verify platform records. If you find conflicts requiring more info from the customer, collect it with a ask_user_questions form.',
       requiredSkills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
-      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'read_case_history', 'request_user_input'],
+      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'ask_user_questions'],
       evidenceRequirements: [
         {
           factKey: 'withdrawalStatus',
@@ -702,7 +693,7 @@ JSON ONLY:
     investigating: {
       name: 'investigating',
       description: 'Check the promotion status, eligible promotions, and turnover conditions for this member. Give the customer the complete information in one go.',
-      availableSkills: ['get_active_promotions', 'get_eligible_promotions', 'get_withdraw_conditions', 'request_user_input'],
+      availableSkills: ['get_active_promotions', 'get_eligible_promotions', 'get_withdraw_conditions', 'ask_user_questions'],
       evidenceRequirements: [
         {
           factKey: 'activePromotions',

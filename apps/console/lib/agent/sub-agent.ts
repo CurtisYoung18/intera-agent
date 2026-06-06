@@ -16,8 +16,8 @@ const DEFAULT_MAX_ITERATIONS = 5
 const DEFAULT_TIMEOUT_MS = 30_000
 
 /** Terminal tool for sub-agents — intercepted by ChecklistStrategy, never executed. */
-const FINALIZE_SUB_AGENT_SKILL: ToolDefinition = {
-  name: 'finalize_sub_agent',
+const FINALIZE_CASE_AGENT_SKILL: ToolDefinition = {
+  name: 'finalize_case_agent',
   description:
     'Call this when you have completed all required investigation checks. ' +
     'Returns your findings, evidence, and recommendation to the orchestrator. ' +
@@ -69,17 +69,17 @@ export class SubAgent {
    *
    * Creates a ChecklistStrategy from `ctx.allowedTools` and `ctx.taskChecklist`,
    * then delegates all ReAct iteration to the shared loop engine. The policy
-   * intercepts `finalize_sub_agent` to produce a SubAgentResult.
+   * intercepts `finalize_case_agent` to produce a SubAgentResult.
    */
   async run(ctx: AgentContext, task: SubAgentTask): Promise<SubAgentResult> {
     const startTime = Date.now()
 
     // ── Build skill definitions including the terminal tool ────────
-    const allSkills = [...this.skillDefinitions, FINALIZE_SUB_AGENT_SKILL]
+    const allSkills = [...this.skillDefinitions, FINALIZE_CASE_AGENT_SKILL]
 
     // ── Build ChecklistStrategy ──────────────────────────────────────
     const allowedTools = new Set(ctx.allowedTools)
-    allowedTools.add('finalize_sub_agent')
+    allowedTools.add('finalize_case_agent')
 
     const policy = new ChecklistStrategy({
       allowedTools,

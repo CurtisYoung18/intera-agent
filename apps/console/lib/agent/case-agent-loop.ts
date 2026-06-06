@@ -19,7 +19,6 @@ import type { ChatMemoryManager } from './memory'
 import type { PolicyEngine } from './policy'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
-import { SOP_INTERNAL_TOOLS } from './tools'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
@@ -129,7 +128,7 @@ export class CaseAgentLoop {
     const sopDoc = this.caseSchema.sop?.trim() || '(No SOP document provided — use your best judgment.)'
 
     const todoLines = todos.length === 0
-      ? '  ⚠️ EMPTY — You MUST create todos via todo_write BEFORE calling any investigation tools.'
+      ? '  ⚠️ EMPTY — Proceed with investigation to gather required evidence.'
       : todos.map((t) => {
           const icon = t.status === 'completed' ? '✓' : t.status === 'cancelled' ? '✗' : t.status === 'in_progress' ? '→' : '○'
           const notes = t.notes ? ` — ${t.notes}` : ''
@@ -159,8 +158,7 @@ export class CaseAgentLoop {
       '',
       'Rule 1 — Decision conditions are HARD TRIGGERS, not suggestions.',
       'When a condition is satisfied, call the prescribed tool IN THAT SAME TURN.',
-      'Rule 2 — Create todos via todo_write BEFORE calling investigation tools.',
-      'Rule 3 — Complete each todo after its tool call succeeds.',
+      'Rule 2 — Complete each investigation when its tool call succeeds.',
     ].join('\n')
     return header + '\n\n' + basePrompt
   }
@@ -190,20 +188,12 @@ export class CaseAgentLoop {
   }
 
   /**
-   * Filter tools for step mode — all customer skills plus the internal
-   * todo_write/todo_read tools (injected only in step execution).
+   * Filter tools for step mode — all customer skills.
+   * dispatch_case_agent is not needed in SOP mode — the case already exists.
    */
   filterSopTools(allTools: Tool[]): Tool[] {
-    const sopNames = new Set(SOP_INTERNAL_TOOLS.map((s) => s.name))
-    // dispatch_case_agent is not needed in SOP mode — the case already exists
     const excludedInSop = new Set(['dispatch_case_agent'])
-    // Prepend todo tools so the LLM sees them first, then deduplicate
-    const sopTools: Tool[] = SOP_INTERNAL_TOOLS.map((s) => ({
-      name: s.name,
-      description: s.description,
-      input_schema: s.inputSchema as Tool['input_schema'],
-    }))
-    return [...sopTools, ...allTools.filter((t) => !sopNames.has(t.name) && !excludedInSop.has(t.name))]
+    return allTools.filter((t) => !excludedInSop.has(t.name))
   }
 
   // ── No-tools stage evaluation ─────────────────────────────────────────────

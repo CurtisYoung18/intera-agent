@@ -18,7 +18,7 @@ import type { GuardrailHook, GuardrailCheckpoint } from '@intera/shared/types'
 const HIGH_RISK_TOOLS = ['refund_money', 'change_ban_status', 'delete_account']
 const SAFE_TOOLS = [
   { value: 'create_human_task', label: 'Create Human Task (转人工)' },
-  { value: 'request_user_input', label: 'Request User Input' },
+  { value: 'ask_user_questions', label: 'Ask User Questions' },
 ]
 const CHECKPOINTS: { value: GuardrailCheckpoint; label: string }[] = [
   { value: 'preTool', label: 'Before Tool' },

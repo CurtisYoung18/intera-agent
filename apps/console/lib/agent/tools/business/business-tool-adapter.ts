@@ -38,11 +38,8 @@ export function adaptBusinessTool(def: ToolDefinition): Tool {
 
 const DEFAULT_MOCK_RESPONSES: Record<string, unknown> = {
   dispatch_case_agent: { caseId: 'case_mock_001', status: 'created' },
-  read_case_history: { cases: [], total: 0 },
   finalize_case: { status: 'resolved' },
-  finalize_sub_agent: { findings: [], recommendation: 'completed' },
-  todo_write: { status: 'ok' },
-  todo_read: { todos: [] },
+  finalize_case_agent: { findings: [], recommendation: 'completed' },
   query_order_status: { txnId: '', status: 'pending' },
   query_payment_channel_status: { channelStatus: 'normal' },
   get_account_status: { status: 'active' },

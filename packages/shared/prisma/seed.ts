@@ -66,57 +66,6 @@ const SEED_TOOLS = [
     enabled: true,
   },
   {
-    name: 'todo_read',
-    description: 'Read the current todo list. Call this at the start of a turn to see pending, in-progress, and completed items before deciding what to do next.',
-    inputSchema: JSON.stringify({ type: 'object', properties: {} }),
-    outputSchema: JSON.stringify({ type: 'object', properties: { todos: { type: 'array' } } }),
-    mode: 'mock',
-    guardPhase: 'post',
-    toolCategory: 'system_info',
-    isConcurrencySafe: true,
-    enabled: true,
-  },
-  {
-    name: 'todo_write',
-    description: 'Create or update a structured todo list. Use this to plan complex investigations, track progress through multi-step workflows, and communicate current state.',
-    inputSchema: JSON.stringify({
-      type: 'object',
-      properties: {
-        todos: { type: 'array', description: 'The complete todo list to persist.' },
-      },
-      required: ['todos'],
-    }),
-    outputSchema: JSON.stringify({ type: 'object', properties: { ok: { type: 'boolean' } } }),
-    mode: 'mock',
-    guardPhase: 'post',
-    toolCategory: 'system_info',
-    isConcurrencySafe: true,
-    enabled: true,
-  },
-  {
-    name: 'search_knowledge_base',
-    description: 'Search the knowledge base for articles, FAQs, policies, and SOPs relevant to the query.',
-    inputSchema: JSON.stringify({
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Natural-language search query' },
-        source: { type: 'string', description: 'Optional knowledge source name filter' },
-      },
-      required: ['query'],
-    }),
-    outputSchema: JSON.stringify({
-      type: 'object',
-      properties: {
-        results: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, content: { type: 'string' }, score: { type: 'number' } } } },
-      },
-    }),
-    mode: 'mock',
-    guardPhase: 'post',
-    toolCategory: 'system_info',
-    isConcurrencySafe: true,
-    enabled: true,
-  },
-  {
     name: 'create_human_task',
     description: 'Create a structured task for a human operator to review, investigate, or decide.',
     inputSchema: JSON.stringify({
@@ -141,7 +90,7 @@ const SEED_TOOLS = [
     enabled: true,
   },
   {
-    name: 'request_user_input',
+    name: 'ask_user_questions',
     description: 'Collect structured information from the user via a form. Use this instead of plain-text questions.',
     inputSchema: JSON.stringify({
       type: 'object',

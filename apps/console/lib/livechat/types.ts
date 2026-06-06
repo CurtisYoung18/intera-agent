@@ -34,7 +34,7 @@ export interface LiveChatConfig {
 // intera_widget_payload variants
 export type WidgetPayloadKind =
   | 'status_track'
-  | 'request_user_input'
+  | 'ask_user_questions'
   | 'skill_render'
 
 export interface StatusTrackStep {

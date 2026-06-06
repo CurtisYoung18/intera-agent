@@ -142,7 +142,7 @@ describe('E7 — Integration: S1 Invariant + Tool Execution', () => {
     // Simulate a stream breaking after emitting a tool_use but before execution
     const toolUses = [
       makeToolUse('tu_1', 'query_order'),
-      makeToolUse('tu_2', 'read_case_history'),
+      makeToolUse('tu_2', 'query_order_status'),
     ]
 
     // Only one tool completed; tu_2 missing with stream_aborted reason
@@ -196,8 +196,6 @@ describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
       'finalize_case',
       'create_human_task',
       'dispatch_subagent',
-      'todo_write',
-      'todo_read',
     ]
 
     for (const name of requiredSkills) {

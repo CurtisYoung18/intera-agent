@@ -1074,7 +1074,7 @@ export default function PlaygroundPage() {
               </div>
             )}
 
-            {/* ── Form request (request_user_input) ── */}
+            {/* ── Form request (ask_user_questions) ── */}
             {formRequest && (
               <div style={{
                 padding: 24, borderRadius: 16,

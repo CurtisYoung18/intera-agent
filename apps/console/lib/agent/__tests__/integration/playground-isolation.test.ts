@@ -292,8 +292,8 @@ describe('Playground isolation — additional operational tools', () => {
     streamSpy.mockRestore()
   })
 
-  it('request_user_input produces ZERO real prisma writes (dryRun intercepts)', async () => {
-    const req = makeToolStream('request_user_input', { question: 'What is your order ID?' })
+  it('ask_user_questions produces ZERO real prisma writes (dryRun intercepts)', async () => {
+    const req = makeToolStream('ask_user_questions', { question: 'What is your order ID?' })
     const streamSpy = vi.spyOn(h.fakeClient.messages, 'stream').mockImplementation(req.stream.bind(req) as any)
 
     await drainPlayground('I need to report an issue')

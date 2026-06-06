@@ -32,12 +32,12 @@ describe('consumeStream', () => {
     const cbs = makeCallbacks()
     const blocks = new Map<number, StreamContentBlock>()
 
-    const stream = mockToolUseStream('read_case_history', { caseId: '123' })
+    const stream = mockToolUseStream('query_order', { caseId: '123' })
     const result = await consumeStream(stream as any, blocks, cbs)
 
     expect(cbs.onToolUseCompleted).toHaveBeenCalledTimes(1)
     const callArgs = (cbs.onToolUseCompleted as any).mock.calls[0]
-    expect(callArgs[0].name).toBe('read_case_history')
+    expect(callArgs[0].name).toBe('query_order')
     expect(callArgs[0].input).toEqual({ caseId: '123' })
     expect(result.stopReason).toBe('tool_use')
   })

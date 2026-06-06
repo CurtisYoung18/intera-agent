@@ -6,7 +6,7 @@
 // SAFETY FLOOR (platform-owned, NOT configurable):
 //   - Hooks on high-risk skills {refund_money, change_ban_status, delete_account}
 //     CANNOT have onUnavailable:'open' — coerced to invoke_tool(create_human_task).
-//   - invoke_tool may target ONLY the safe-tool allowlist {create_human_task, request_user_input}.
+//   - invoke_tool may target ONLY the safe-tool allowlist {create_human_task, ask_user_questions}.
 //   - Every hook resolution writes an AuditLog row (F6).
 //
 // FIXES:
@@ -33,7 +33,7 @@ import { writeAudit } from '@/lib/audit'
 // ── Platform-owned safety constants (§7.6) ────────────────────────────────
 
 const HIGH_RISK_SKILLS = new Set(['refund_money', 'change_ban_status', 'delete_account'])
-const SAFE_TOOL_ALLOWLIST = new Set(['create_human_task', 'request_user_input'])
+const SAFE_TOOL_ALLOWLIST = new Set(['create_human_task', 'ask_user_questions'])
 const DEFAULT_FALLBACK_TOOL = 'create_human_task'
 
 // ── Public interfaces ─────────────────────────────────────────────────────

@@ -309,7 +309,6 @@ export class StreamingToolExecutor {
     }
 
     const defaultResponses: Record<string, unknown> = {
-      read_case_history: { cases: [], total: 0 },
       query_order_status: {
         status: 'pending',
         amount: 0,

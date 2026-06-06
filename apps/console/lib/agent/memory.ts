@@ -159,7 +159,7 @@ export class ChatMemoryManager {
       '- NEVER fabricate system-side data (e.g. "systemReceivedAmount", "systemShows", "platformStatus"). Only extract what the customer explicitly says THEY observed or did.',
       '- If the message contains transaction IDs, order numbers, or similar identifiers, extract them as txnId.',
       '- If amounts are mentioned (e.g. "500元", "$100", "1000块"), extract the numeric value as amount.',
-      '- If the message is a form submission starting with "Tool request_user_input result:", parse the JSON object directly — each key is a fact name, each value is the fact value. Do NOT re-interpret or summarize the values.',
+      '- If the message is a form submission starting with "Tool ask_user_questions result:", parse the JSON object directly — each key is a fact name, each value is the fact value. Do NOT re-interpret or summarize the values.',
     ].join('\n')
 
     // Native tool_use: model MUST call extract_facts with structured input.
@@ -262,9 +262,6 @@ export class ChatMemoryManager {
     if (skillName === 'query_payment_channel_status') {
       if (result.delayed_batch !== undefined) this.setConfirmedFact('channelDelayedBatch', result.delayed_batch)
       if (result.reason) this.setConfirmedFact('delayReason', result.reason)
-    }
-    if (skillName === 'read_case_history' && typeof result.total === 'number') {
-      this.setConfirmedFact('priorCaseCount', result.total)
     }
 
     this.keyEvents.push({

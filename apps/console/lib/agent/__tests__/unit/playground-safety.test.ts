@@ -88,8 +88,8 @@ describe('Playground safety invariants', () => {
       'get_kyc_status', 'get_transaction_history', 'get_active_promotions',
       'get_eligible_promotions', 'get_latest_withdrawal', 'get_withdraw_conditions',
       'ocr_receipt', 'dispatch_case_agent', 'create_human_task', 'finalize_case',
-      'request_user_input', 'dispatch_subagent', 'todo_write', 'todo_read',
-      'finalize_sub_agent',
+      'ask_user_questions', 'dispatch_subagent',
+      'finalize_case_agent',
     ]
 
     for (const name of operationalPatterns) {
@@ -100,8 +100,7 @@ describe('Playground safety invariants', () => {
 
   it('all built-in system_info tools are correctly classified', () => {
     const systemInfoPatterns = [
-      'read_chat_memory', 'read_user_profile', 'read_case_history',
-      'get_current_time', 'kb_search_docs', 'search_delay_notice',
+      'read_chat_memory', 'read_user_profile',       'get_current_time', 'kb_search_docs', 'search_delay_notice',
     ]
 
     for (const name of systemInfoPatterns) {

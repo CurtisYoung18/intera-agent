@@ -77,7 +77,7 @@ ${skillNames}
 Rules:
   - 严格按照 task 描述执行，不得自由发挥
   - 工具调用失败时报告具体错误，不得猜测结果
-  - 完成后调用 finalize_sub_agent，禁止调用其他终端工具（finalize_case、dispatch_case_agent、create_human_task）
+  - 完成后调用 finalize_case_agent，禁止调用其他终端工具（finalize_case、dispatch_case_agent、create_human_task）
   - 如果收集到了足够信息，尽早完成，不要反复核查`
 
       // Surface key facts explicitly so sub-agents don't miss them (e.g. txnId
@@ -89,7 +89,7 @@ Rules:
       if (txnId) extraHints.push(`Use txnId="${txnId}" when calling query_order_status.`)
       if (paymentMethod) extraHints.push(`Use paymentMethod="${paymentMethod}" when calling query_payment_channel_status.`)
       const uid = this.platformUserId.trim() || 'anonymous'
-      extraHints.push(`platformUserId for tools (e.g. read_case_history): "${uid}"`)
+      extraHints.push(`platformUserId for tools (e.g. chat_memory): "${uid}"`)
       if (extraHints.length) {
         taskPrompt = taskDirective + '\n\n[Harness Hints]\n' + extraHints.map((h) => `- ${h}`).join('\n')
       } else {

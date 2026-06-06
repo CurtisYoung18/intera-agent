@@ -18,7 +18,7 @@ interface TaskChecklist {
  *
  * - Injects a structured task checklist into the system prompt.
  * - Restricts the sub-agent to only the tools whitelisted in `allowedTools`.
- * - Intercepts `finalize_sub_agent` to produce a `SubAgentResult` and
+ * - Intercepts `finalize_case_agent` to produce a `SubAgentResult` and
  *   signal `complete_task`.
  * - Stops the loop if the sub-agent produces no tool calls beyond the
  *   first iteration (stuck guard).
@@ -68,7 +68,7 @@ export class ChecklistStrategy implements ExecutionStrategy {
     _toolResults: ToolResult[],
     iteration: number,
   ): ContinueDecision {
-    // If finalize_sub_agent was intercepted by handleTerminalTool, complete.
+    // If finalize_case_agent was intercepted by handleTerminalTool, complete.
     if (this.pendingSubAgentResult) {
       const result = this.pendingSubAgentResult
       this.pendingSubAgentResult = null
@@ -89,7 +89,7 @@ export class ChecklistStrategy implements ExecutionStrategy {
   // ── handleTerminalTool ───────────────────────────────────────────────
 
   handleTerminalTool(toolName: string, input: unknown): TerminalToolResult | null {
-    if (toolName !== 'finalize_sub_agent') return { type: 'not_handled' }
+    if (toolName !== 'finalize_case_agent') return { type: 'not_handled' }
 
     const data = input as Record<string, unknown>
 
@@ -112,13 +112,13 @@ export class ChecklistStrategy implements ExecutionStrategy {
       messages: [],
       caseStatus: 'resolved' as const,
       transition: 'stage_continue' as const,
-      reason: 'finalize_sub_agent called',
+      reason: 'finalize_case_agent called',
     }
 
     return { type: 'handled', result: loopResult }
   }
 
-  /** Retrieve the SubAgentResult produced by finalize_sub_agent, if any. */
+  /** Retrieve the SubAgentResult produced by finalize_case_agent, if any. */
   getSubAgentResult(): SubAgentResult | null {
     return this.pendingSubAgentResult
   }

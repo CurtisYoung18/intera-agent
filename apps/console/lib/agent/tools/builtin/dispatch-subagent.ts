@@ -40,7 +40,7 @@ export const dispatchSubagentTool: Tool<Input, unknown> = {
       'Dispatch a specialist sub-agent to investigate a specific aspect of the case. ' +
       'Available sub-agents are defined in the case type\'s stage configuration. ' +
       'The sub-agent will run independently with its own model and tools, then return ' +
-      'findings via finalize_sub_agent.\n\n' +
+      'findings via finalize_case_agent.\n\n' +
       'Available types (typical):\n' +
       '  - order_verifier — verify order/transaction details with the payment platform\n' +
       '  - payment_channel_checker — check payment channel status and settlement delays\n' +

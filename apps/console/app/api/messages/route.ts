@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
           formAnswers = answers
           // Format as tool_result so the model sees it exactly like any other
           // tool execution result — matching CC's AskUserQuestion pattern.
-          userMessage = `Tool request_user_input result: ${JSON.stringify(answers)}`
+          userMessage = `Tool ask_user_questions result: ${JSON.stringify(answers)}`
           console.log(`[Intera] Form submitted for case ${resolvedCaseId}`)
         }
 
@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
           }
           const payload: Record<string, unknown> = { optionId }
           if (input) payload.input = input
-          userMessage = `Tool request_user_input result: ${JSON.stringify(payload)}`
+          userMessage = `Tool ask_user_questions result: ${JSON.stringify(payload)}`
           console.log(`[Intera] Interaction resolved for case ${resolvedCaseId}: option=${optionId}`)
         }
 

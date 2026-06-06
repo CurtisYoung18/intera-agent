@@ -540,7 +540,7 @@ export default function CaseTypeDetailPage() {
         <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
           <h2 className="text-[14px] font-semibold text-[var(--mist)] mb-1">SOP Document</h2>
           <p className="text-[11px] text-[var(--fog)] mb-3">
-            The SOP (Standard Operating Procedure) guides the agent in Adaptive mode. Write it as a step-by-step playbook — the agent uses this to plan its investigation via todo_write/todo_read.
+            The SOP (Standard Operating Procedure) guides the agent in Adaptive mode. Write it as a step-by-step playbook — the agent follows this to investigate and resolve the case.
           </p>
           <textarea
             value={ct.sop || ''}

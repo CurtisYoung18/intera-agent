@@ -37,7 +37,6 @@ export class StageExecutor {
   private static readonly SYSTEM_INFO_TOOLS = new Set([
     'read_chat_memory',
     'read_user_profile',
-    'read_case_history',
     'search_delay_notice',
     'get_current_time',
   ])
@@ -149,7 +148,7 @@ export class StageExecutor {
         const forced = new Set(requiredCheck.missing)
         forced.add('create_human_task')
         forced.add('finalize_case')
-        forced.add('request_user_input')
+        forced.add('ask_user_questions')
         forced.add('finalize_consultation')
         // Always allow system_info tools even under nudge constraint
         for (const name of StageExecutor.SYSTEM_INFO_TOOLS) forced.add(name)
@@ -161,7 +160,7 @@ export class StageExecutor {
     // Always allow terminal tools regardless of stage
     allowed.add('create_human_task')
     allowed.add('finalize_case')
-    allowed.add('request_user_input')
+    allowed.add('ask_user_questions')
     // finalize_consultation is the terminal tool for consultation resolution.
     allowed.add('finalize_consultation')
 
@@ -496,7 +495,7 @@ export class StageExecutor {
           ?.filter((e) => evidenceCheck.missing.includes(e.factKey) && e.source === 'user_input')
         if (userMissing?.length) {
           const withKeys = userMissing.map((e) => `${e.description} (field key: "${e.factKey}")`)
-          parts.push(`Still need from customer: ${withKeys.join(', ')}. Use request_user_input with these exact field keys.`)
+          parts.push(`Still need from customer: ${withKeys.join(', ')}. Use ask_user_questions with these exact field keys.`)
         }
       }
     } else if (nudgeCount === 2) {

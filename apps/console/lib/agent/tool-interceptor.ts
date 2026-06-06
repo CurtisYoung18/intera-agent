@@ -91,8 +91,8 @@ export async function interceptToolResults(
     await handleReadUserProfile(ctx)
   }
 
-  // 4. Terminal tool: request_user_input (form)
-  const formResult = toolResults.find((r) => r.name === 'request_user_input')
+  // 4. Terminal tool: ask_user_questions (form)
+  const formResult = toolResults.find((r) => r.name === 'ask_user_questions')
   if (formResult) {
     const action = await handleRequestUserInput(ctx, formResult, sendEvent)
     if (action.kind !== 'pass') return { action, toolResults }
@@ -272,7 +272,7 @@ async function handleReadUserProfile(ctx: ToolInterceptorContext): Promise<void>
 }
 
 // ---------------------------------------------------------------------------
-// request_user_input (form)
+// ask_user_questions (form)
 // ---------------------------------------------------------------------------
 
 async function handleRequestUserInput(
@@ -465,12 +465,10 @@ function collectStageSkillNames(
     for (const s of skills) names.add(s)
   }
   // Always allow terminal tools
-  for (const t of ['create_human_task', 'finalize_case', 'request_user_input']) {
+  for (const t of ['create_human_task', 'finalize_case', 'ask_user_questions']) {
     names.add(t)
   }
   if (executionMode === 'cc') {
-    names.add('todo_write')
-    names.add('todo_read')
     names.add('dispatch_subagent')
   }
   return names
@@ -484,7 +482,7 @@ function buildTaskPrompt(
 ): string {
   const sopDoc = (ctRow as any).sop?.trim()
   if (executionMode === 'cc' && sopDoc) {
-    return `[Case Agent: ${ctRow.displayName}]\n\n## SOP\n${sopDoc}\n\n## Goal\n${casePrompt}\n\nFollow the SOP. Use todo_write to plan, then execute each step. Call finalize_case when done.`
+    return `[Case Agent: ${ctRow.displayName}]\n\n## SOP\n${sopDoc}\n\n## Goal\n${casePrompt}\n\nFollow the SOP. Execute each step. Call finalize_case when done.`
   }
   return `[Case Agent: ${ctRow.displayName}]\n\n## Goal\n${casePrompt}\n\nInvestigate through these stages: ${stages.join(' → ')}. Call finalize_case when resolved.`
 }

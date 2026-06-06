@@ -13,7 +13,7 @@ import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { ChatMemoryManager, ChatSessionManager } from './memory'
 import { PolicyEngine } from './policy'
-import { ToolRouter, SOP_INTERNAL_TOOLS } from './tools'
+import { ToolRouter } from './tools'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
@@ -45,7 +45,6 @@ import { selectPromptAndTools } from './prompt-selector'
 import { buildToolResultMessageFromSynthesis, buildPolicyFeedbackMessage } from './tool-result-manager'
 import { interceptToolResults, processPendingGuardrailToolCalls as guardrailToolCalls, processDispatchSubagent as dispatchSubagent, type ToolInterceptorContext } from './tool-interceptor'
 import { runReActLoop } from './react-loop'
-import { processTodoTools } from './todo-processor'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -323,16 +322,10 @@ export class AgentLoop {
 
       // ── StreamingToolExecutor is created BEFORE the stream so tools
       //    can be enqueued incrementally as each tool_use block completes.
-      // NOTE: SOP-internal tools (todo_write / todo_read) and dispatch_case_agent are
-      // excluded from live skill_result emission — their executor output is just
-      // the empty mock fixture. The real results are emitted manually further
-      // down (todo list via processTodoTools, caseId via case_created event).
-      const sopInternalNames = new Set(SOP_INTERNAL_TOOLS.map((s) => s.name))
-      sopInternalNames.add('dispatch_case_agent')
       const toolExecutor = new StreamingToolExecutor(
         this.toolRouter.getToolDefinitions(),
         (toolUse, status, renderHints) => {
-          if (sopInternalNames.has(toolUse.name)) return
+          if (toolUse.name === 'dispatch_case_agent') return
           const skillDef = this.toolRouter.getTool(toolUse.name)
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'skill_result',
@@ -733,58 +726,8 @@ export class AgentLoop {
         }
       }
 
-      // ── Step-mode todo interception (pure in-memory, no side effects) ─────
-      // todo_write and todo_read bypass the skill executor — their mock outputs
-      // are replaced here with real in-memory operations on CaseMemory.
+      // ── Intercept dispatch_subagent (CC mode sub-agent dispatch) ──
       if (this.deps.caseSchema?.executionMode === 'cc') {
-        toolResults = this.processTodoTools(toolResults)
-
-        // Auto-complete todo items whose corresponding investigation tools succeeded.
-        // This handles models that forget to call todo_write(complete) after tool results.
-        const succeededTools = new Set(
-          toolResults
-            .filter((r) => !sopInternalNames.has(r.name) && (r.output as any)?.ok !== false)
-            .map((r) => r.name),
-        )
-        if (succeededTools.size > 0) {
-          const pendingTodos = this.chatMemory.getTodos().filter((t) => t.status === 'pending')
-          for (const todo of pendingTodos) {
-            for (const toolName of succeededTools) {
-              if (todo.text.includes(toolName)) {
-                this.chatMemory.applyTodoAction({
-                  action: 'complete',
-                  id: todo.id,
-                  notes: `${toolName} completed successfully`,
-                })
-                break
-              }
-            }
-          }
-        }
-
-        // Manually fan out skill_result events for SOP-internal tools using
-        // the REAL post-intercept output. The live executor callback
-        // suppressed them above because at that point the result was just
-        // the empty mock fixture. Emitting here ensures the inline todo
-        // dashboard in the UI sees the actual todo list.
-        for (const tr of toolResults) {
-          if (!sopInternalNames.has(tr.name)) continue
-          const skillDef = this.toolRouter.getTool(tr.name)
-          // Emit a synthetic "executing" first so the UI's tool-call tracking
-          // stays in sync (matches the pair pattern from non-SOP tools).
-          sendEvent({
-            type: 'tool_executing',
-            data: { name: tr.name, status: 'executing', displayVerb: skillDef?.displayVerb },
-            timestamp: new Date().toISOString(),
-          })
-          sendEvent({
-            type: 'skill_result',
-            data: { name: tr.name, status: 'completed', result: tr.output },
-            timestamp: new Date().toISOString(),
-          })
-        }
-
-        // ── Intercept dispatch_subagent (CC mode sub-agent dispatch) ──
         toolResults = await dispatchSubagent(this.buildToolInterceptorContext(), toolResults, sendEvent)
       }
 
@@ -915,21 +858,11 @@ export class AgentLoop {
           const lastFewMessages = this.messages.slice(-6)
           const hasPendingToolResults = lastFewMessages.some(
             (m) => m.role === 'assistant' && typeof m.content === 'string' &&
-                   m.content.startsWith('Tool ') && !m.content.includes('todo_read'),
+                   m.content.startsWith('Tool '),
           )
-          // Also trigger if the model just received failed todo_write results
-          // (defensive inference errors) and produced no response.
-          const hasFailedTodoWrite = lastFewMessages.some(
-            (m) => m.role === 'assistant' && typeof m.content === 'string' &&
-                   m.content.includes('Tool todo_write') && m.content.includes('"ok":false'),
-          )
-          if ((hasPendingToolResults || hasFailedTodoWrite) && this.nudgeCount < 3) {
+          if (hasPendingToolResults && this.nudgeCount < 3) {
             this.nudgeCount++
-            const sopNudge = hasFailedTodoWrite
-              ? '[SYSTEM] Your todo_write calls failed because they were missing required parameters. ' +
-                'Call todo_write with action="add" and text="<step description>" for each SOP step. ' +
-                'Example: todo_write({ "action": "add", "text": "Check account status" })'
-              : '[SYSTEM] You just received investigation results but produced no response. ' +
+            const sopNudge = '[SYSTEM] You just received investigation results but produced no response. ' +
                 'You MUST now either: (1) call finalize_case with a conclusion, (2) call create_human_task if escalation is needed, ' +
                 'or (3) respond to the customer with findings and next steps. ' +
                 'Do not produce empty turns — act on the data you just received.'
@@ -1038,33 +971,6 @@ export class AgentLoop {
       // NOTE: Tool results are now added via S1 synthesis above (unified format).
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
 
-      // ── Step mode: detect todo_write failure + investigation in same batch
-      // If the model tried to plan (called todo_write) but the call failed
-      // because of wrong format, AND also ran investigation tools in the same
-      // turn, we must tell it to fix the plan BEFORE acting on the results.
-      // This fires even on non-empty turns (so it's not gated on !fullText).
-      if (this.deps.caseSchema?.executionMode === 'cc' && this.nudgeCount < 3) {
-        const todoFailed = toolResults.some(
-          (r) => r.name === 'todo_write' && !(r.output as Record<string, unknown>)?.ok,
-        )
-        const nonSopTools = new Set(['todo_write', 'todo_read', 'dispatch_case_agent', 'request_user_input',
-          'finalize_case', 'create_human_task', 'finalize_consultation',
-          'read_chat_memory', 'read_user_profile'])
-        const investigationRan = toolResults.some((r) => !nonSopTools.has(r.name))
-        if (todoFailed && investigationRan) {
-          this.nudgeCount++
-          this.messages.push(makeUserMessage(
-            `[System] Your todo_write call failed — the "action" field is required. ` +
-            `The investigation data above is already collected. You MUST now: ` +
-            `(1) Call todo_write({ "action": "add", "text": "..." }) for each SOP step. ` +
-            `(2) For steps already covered by the results above, immediately call todo_write({ "action": "complete", "id": "<id>", "notes": "<findings>" }). ` +
-            `(3) Then continue with any remaining steps.`,
-          ))
-          await this.traceWriter.write('loop_decision', 'SOP: failed todo_write + investigation, correction injected', {
-            nudgeCount: this.nudgeCount, iteration: this.iterationCount,
-          })
-        }
-      }
 
       // ── Tool interception: dispatch_case_agent, read_chat_memory, etc. ──
       const interceptorResult = await interceptToolResults(
@@ -1187,15 +1093,6 @@ export class AgentLoop {
       getCurrentStage: () => this.currentStage,
       setPendingEscalation: (v) => { this.pendingEscalation = v },
     }
-  }
-
-  /**
-   * Intercept step-mode internal tools (todo_write / todo_read) — replace their
-   * mock executor outputs with real in-memory CaseMemory operations.
-   * Must be called after toolExecutor.waitForAll() when executionMode is 'sop'.
-   */
-  private processTodoTools(results: ToolExecutionResult[]): ToolExecutionResult[] {
-    return processTodoTools(results, this.chatMemory)
   }
 
   private buildApiMessages() {

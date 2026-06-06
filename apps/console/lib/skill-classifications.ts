@@ -6,17 +6,14 @@
 export const SYSTEM_SKILL_NAMES = new Set([
   'dispatch_case_agent',
   'finalize_case',
-  'finalize_sub_agent',
+  'finalize_case_agent',
   'create_human_task',
-  'read_case_history',
-  'todo_write',
-  'todo_read',
 ])
 
 /** Channel Tools — behavior varies per channel. READ-ONLY. Configured in Channels detail page. */
 export const CHANNEL_SKILL_NAMES = new Set([
   'finalize_consultation',
-  'request_user_input',
+  'ask_user_questions',
 ])
 
 /** Special Skill — configured in dedicated pages (not Tools page). */

@@ -93,7 +93,7 @@ export const DEFAULT_MEMORY: MemoryStrategy = {
   compactMinSummaryLength: 100,
   compactionKeepMin: 10,
   compactionKeepRatio: 0.65,
-  compactableTools: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'read_case_history', 'ocr_receipt'],
+  compactableTools: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'ocr_receipt'],
   factExtractionPrompt: '',
   keyEventMaxChars: 100,
   tokensPerKeyEvent: 20,

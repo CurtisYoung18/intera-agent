@@ -272,7 +272,7 @@ export default function SkillsPage() {
                             <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'System' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                           </div>
                         </div>
                       </div>
@@ -431,7 +431,7 @@ export default function SkillsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'Engine' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'System' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                             {(() => { try { return s.renderHints && JSON.parse(s.renderHints)?.livechat } catch { return false } })() && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-indigo/[0.06] text-indigo flex items-center gap-1"><Plug className="w-2.5 h-2.5" />LiveChat</span>
                             )}
@@ -560,7 +560,7 @@ export default function SkillsPage() {
                 }
                 setEditing({ ...editing, ...update })
               }} className="glass-input-console text-[13px]" disabled={!!editing.isSystem}>
-                <option value="static">{t('common.mock')}</option><option value="http">{t('common.http')}</option><option value="engine_managed">Engine Managed</option>
+                <option value="static">{t('common.mock')}</option><option value="http">{t('common.http')}</option><option value="engine_managed">System Managed</option>
               </select>
             </label>
             <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('common.description')}</span>
