@@ -62,6 +62,34 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
  * These serve as fallback when the DB has no tools for the agentConfig.
  */
 export const BUILT_IN_TOOLS: ToolDefinition[] = [
+  // ── System tools (engine-managed, auto-gifted) ──
+  {
+    name: 'read_chat_memory',
+    description:
+      'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, ' +
+      'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    isConcurrencySafe: true,
+    mode: 'engine_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Loading user memory', icon: 'scan' },
+    zodSchema: z.object({}),
+  },
+  {
+    name: 'read_user_profile',
+    description:
+      'Read the user profile for the current customer. Contains user attributes, preferences, tags, ' +
+      'and cross-chat statistics accumulated over time. Use this to understand the customer\'s identity, ' +
+      'preferences, and long-term behavior patterns.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    isConcurrencySafe: true,
+    mode: 'engine_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Loading user profile', icon: 'scan' },
+    zodSchema: z.object({}),
+  },
   {
     name: 'dispatch_case_agent',
     description:
@@ -78,320 +106,55 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
-    toolCategory: 'operational',
+    toolCategory: 'system_info',
     displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
     zodSchema: z.object({ caseType: z.string() }),
   },
   {
-    name: 'query_order_status',
-    description: 'Query the platform order system for transaction status',
+    name: 'finalize_case',
+    description: 'Mark the case as resolved with a conclusion.',
     inputSchema: {
       type: 'object',
       properties: {
-        txnId: { type: 'string', description: 'Transaction ID' },
+        status: { type: 'string', enum: ['resolved', 'escalated'], description: 'Final status' },
+        conclusion: { type: 'string', description: 'Conclusion summary' },
+        basis: { type: 'array', items: { type: 'string' }, description: 'Evidence basis for the conclusion' },
       },
-      required: ['txnId'],
+      required: ['status', 'conclusion'],
     },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Checking order status', icon: 'scan' },
-    zodSchema: z.object({ txnId: z.string() }),
-    mockFixture: {
-      txnId: 'TX2026051912345678',
-      status: 'pending',
-      amount: 1000.0,
-      currency: 'CNY',
-      time: '2026-05-19T15:30:00.000Z',
-      channel: 'alipay',
-      paymentMethod: 'Alipay',
-      merchantRef: 'MCH20260519001',
-    },
-  },
-  {
-    name: 'query_payment_channel_status',
-    description: 'Query the payment channel for current status and delays',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        txnId: { type: 'string', description: 'Transaction ID to look up' },
-        channel: { type: 'string', description: 'Payment channel name (optional, inferred from query_order_status if omitted)' },
-      },
-      required: ['txnId'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
-    zodSchema: z.object({ txnId: z.string(), channel: z.string().optional() }),
-    mockFixture: {
-      delayed_batch: false,
-      channel: 'alipay',
-      channelStatus: 'normal',
-      lastSettlementAt: '2026-05-19T15:25:00.000Z',
-      currentLoad: 'low',
-      reason: null,
-    },
-  },
-  {
-    name: 'search_delay_notice',
-    description: 'Search for any delay notices or announcements',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query' },
-      },
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
+    isConcurrencySafe: false,
+    mode: 'engine_managed',
     enabled: true,
     toolCategory: 'system_info',
-    displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
-    zodSchema: z.object({ query: z.string().optional() }),
-    mockFixture: {
-      notices: [
-        {
-          id: 'NOT20260510-001',
-          title: 'Alipay Batch Settlement Schedule',
-          channel: 'alipay',
-          severity: 'info',
-          content: 'Alipay deposits are processed in batches every 15-30 minutes during normal hours (00:00-02:00 UTC). During the 02:00-04:00 UTC maintenance window, settlement may be delayed up to 2 hours.',
-          publishedAt: '2026-05-10T00:00:00Z',
-          affectsDeposit: true,
-        },
-      ],
-    },
+    displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
+    zodSchema: z.object({ status: z.enum(['resolved', 'escalated']), conclusion: z.string(), basis: z.array(z.string()).optional() }),
   },
   {
-    name: 'get_account_status',
-    description: 'Retrieve the current account status, restrictions, and ban reason for a member',
+    name: 'finalize_case_agent',
+    description:
+      'Called when a sub-agent completes its task. Returns investigation findings to the main agent. ' +
+      'After calling this, the sub-agent loop terminates.',
     inputSchema: {
       type: 'object',
       properties: {
-        member_id: { type: 'string', description: 'Platform user ID (UID)' },
+        findings: { type: 'array', items: { type: 'object', properties: { key: { type: 'string' }, value: {} } }, description: 'List of discovered facts' },
+        evidence: { type: 'array', items: { type: 'string' }, description: 'Evidence references supporting the conclusion' },
+        recommendation: { type: 'string', description: 'Suggested next action' },
       },
-      required: ['member_id'],
+      required: ['findings', 'recommendation'],
     },
-    isConcurrencySafe: true,
-    mode: 'static',
+    isConcurrencySafe: false,
+    mode: 'engine_managed',
     enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Checking account status', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string() }),
-    mockFixture: {
-      member_id: 'U10023',
-      status: 'active',
-      restrictions: [],
-      banReason: null,
-      lastLoginAt: '2026-05-21T08:00:00Z',
-      registeredAt: '2025-01-15T00:00:00Z',
-      riskLevel: 'low',
-    },
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
+    zodSchema: z.object({
+      findings: z.array(z.object({ key: z.string(), value: z.unknown() })),
+      evidence: z.array(z.string()).optional(),
+      recommendation: z.string(),
+    }),
   },
-  {
-    name: 'get_kyc_status',
-    description: 'Retrieve KYC (identity verification) status for a member',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        member_id: { type: 'string', description: 'Platform user ID (UID)' },
-      },
-      required: ['member_id'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Verifying identity status', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string() }),
-    mockFixture: {
-      member_id: 'U10023',
-      kycStatus: 'approved',
-      kycLevel: 'basic',
-      submittedAt: '2025-01-16T09:00:00Z',
-      approvedAt: '2025-01-17T10:30:00Z',
-      rejectionReason: null,
-    },
-  },
-  {
-    name: 'get_latest_withdrawal',
-    description: 'Retrieve the most recent withdrawal request and its status for a member',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        member_id: { type: 'string', description: 'Platform user ID' },
-      },
-      required: ['member_id'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Checking withdrawal status', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string() }),
-    mockFixture: {
-      withdrawalId: 'WD2026052100987',
-      member_id: 'U10023',
-      amount: 3000.0,
-      currency: 'CNY',
-      status: 'pending',
-      bankName: '招商银行',
-      bankAccount: '****1234',
-      requestedAt: '2026-05-21T10:00:00Z',
-      estimatedArrival: '2026-05-22T18:00:00Z',
-      rejectionReason: null,
-    },
-  },
-  {
-    name: 'get_withdraw_conditions',
-    description: 'Check withdrawal eligibility conditions for a member, including wagering requirements',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        member_id: { type: 'string', description: 'Platform user ID' },
-      },
-      required: ['member_id'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Checking withdrawal eligibility', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string() }),
-    mockFixture: {
-      eligible: true,
-      wageringRequired: 5000.0,
-      wageringCompleted: 5200.0,
-      wageringShortfall: 0,
-      bonusLockAmount: 0,
-      minWithdrawalAmount: 100.0,
-      maxWithdrawalAmount: 50000.0,
-      dailyLimitRemaining: 10000.0,
-      pendingWithdrawals: 1,
-    },
-  },
-  {
-    name: 'get_transaction_history',
-    description: 'Retrieve recent deposit/withdrawal transaction history for a member',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        member_id: { type: 'string', description: 'Platform user ID' },
-        limit: { type: 'number', description: 'Max records to return (default 10)' },
-        type: { type: 'string', description: 'Filter by type: deposit | withdrawal | all', enum: ['deposit', 'withdrawal', 'all'] },
-      },
-      required: ['member_id'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Loading transaction history', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string(), limit: z.number().optional(), type: z.enum(['deposit', 'withdrawal', 'all']).optional() }),
-    mockFixture: {
-      transactions: [
-        { id: 'TX001', type: 'withdrawal', amount: 3000.0, status: 'pending',   at: '2026-05-21T10:00:00Z' },
-        { id: 'TX002', type: 'deposit',    amount: 5000.0, status: 'completed', at: '2026-05-20T14:00:00Z' },
-        { id: 'TX003', type: 'deposit',    amount: 1000.0, status: 'completed', at: '2026-05-19T15:30:00Z' },
-      ],
-      total: 3,
-    },
-  },
-  {
-    name: 'get_active_promotions',
-    description: 'Retrieve promotions the member is currently participating in',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        member_id: { type: 'string', description: 'Platform user ID' },
-      },
-      required: ['member_id'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Loading active promotions', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string() }),
-    mockFixture: {
-      activePromotions: [
-        {
-          id: 'PROMO-2026-05-WELCOME',
-          name: '首存优惠 100%',
-          type: 'deposit_bonus',
-          bonusAmount: 1000.0,
-          wageringRequired: 5000.0,
-          wageringCompleted: 5200.0,
-          expiresAt: '2026-06-01T00:00:00Z',
-          status: 'wagering_complete',
-        },
-      ],
-    },
-  },
-  {
-    name: 'get_eligible_promotions',
-    description: 'Retrieve promotions the member is eligible for but has not yet claimed',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        member_id: { type: 'string', description: 'Platform user ID' },
-      },
-      required: ['member_id'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Finding available promotions', icon: 'scan' },
-    zodSchema: z.object({ member_id: z.string() }),
-    mockFixture: {
-      eligiblePromotions: [
-        {
-          id: 'PROMO-2026-05-RELOAD',
-          name: '每周续存优惠 50%',
-          type: 'reload_bonus',
-          maxBonus: 500.0,
-          minDeposit: 200.0,
-          wageringMultiplier: 3,
-          validUntil: '2026-05-25T23:59:59Z',
-          claimUrl: '/promotions/reload',
-        },
-      ],
-    },
-  },
-  {
-    name: 'ocr_receipt',
-    description: 'Extract information from uploaded receipt screenshots',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        attachmentId: {
-          type: 'string',
-          description: 'Attachment ID to process',
-        },
-      },
-      required: ['attachmentId'],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Reading your receipt', icon: 'spin' },
-    zodSchema: z.object({ attachmentId: z.string() }),
-    mockFixture: {
-      success: true,
-      extracted: {
-        amount: 1000.0,
-        currency: 'CNY',
-        time: '2026-05-19T15:30:00.000Z',
-        channel: 'alipay',
-        merchantRef: 'MCH20260519001',
-        txnId: 'TX2026051912345678',
-      },
-    },
-  },
+  // ── Channel tools ──
   {
     name: 'create_human_task',
     description:
@@ -402,14 +165,8 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        queue: {
-          type: 'string',
-          description: 'Human queue to route to',
-        },
-        question: {
-          type: 'string',
-          description: 'Structured question for human',
-        },
+        queue: { type: 'string', description: 'Human queue to route to' },
+        question: { type: 'string', description: 'Structured question for human' },
         fields: {
           type: 'array',
           description: 'Optional structured form fields for the operator to fill. Their answers flow back as confirmedFacts.',
@@ -417,7 +174,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
             type: 'object',
             properties: {
               key: { type: 'string', description: 'Fact key, e.g. "actualAmount", "verifyResult"' },
-              label: { type: 'string', description: 'Display label, e.g. "实际到账金额"' },
+              label: { type: 'string', description: 'Display label, e.g. "Actual deposit amount"' },
               type: { type: 'string', enum: ['text', 'number', 'select', 'textarea'], description: 'Field type' },
               required: { type: 'boolean', description: 'Whether this field must be filled' },
               placeholder: { type: 'string', description: 'Placeholder text' },
@@ -426,16 +183,15 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
             required: ['key', 'label', 'type'],
           },
         },
-        context: {
-          type: 'object',
-          description: 'Additional context for the human reviewer',
-        },
+        context: { type: 'object', description: 'Additional context for the human reviewer' },
       },
       required: ['queue', 'question'],
     },
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
+    toolCategory: 'operational',
+    displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
     zodSchema: z.object({
       queue: z.string(),
       question: z.string(),
@@ -449,54 +205,19 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       })).optional(),
       context: z.object({}).optional(),
     }),
-    toolCategory: 'operational',
-    displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
-  },
-  {
-    name: 'finalize_case',
-    description: 'Mark the case as resolved with a conclusion',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        status: {
-          type: 'string',
-          enum: ['resolved', 'escalated'],
-          description: 'Final status',
-        },
-        conclusion: { type: 'string', description: 'Conclusion summary' },
-        basis: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Evidence basis for the conclusion',
-        },
-      },
-      required: ['status', 'conclusion'],
-    },
-    isConcurrencySafe: false,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
-    zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
   },
   {
     name: 'ask_user_questions',
     description:
       'Display a structured form to the customer to collect required information. ' +
       'Use this when you need the customer to provide specific details (amount, payment method, ' +
-      'screenshots, etc.). The form will appear as a floating glass card in the chat UI. ' +
+      'screenshots, etc.). The form will appear as a floating card in the chat UI. ' +
       'Once the customer submits, you will receive their answers and can continue.',
     inputSchema: {
       type: 'object',
       properties: {
-        title: {
-          type: 'string',
-          description: 'Form title, e.g. "Order Details Needed"',
-        },
-        description: {
-          type: 'string',
-          description: 'Brief explanation of why this information is needed',
-        },
+        title: { type: 'string', description: 'Form title, e.g. "Order Details Needed"' },
+        description: { type: 'string', description: 'Brief explanation of why this information is needed' },
         fields: {
           type: 'array',
           description: 'Form fields to collect from the customer',
@@ -504,22 +225,11 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
             type: 'object',
             properties: {
               key: { type: 'string', description: 'Field identifier, e.g. "amount"' },
-              label: { type: 'string', description: 'Display label, e.g. "充值金额"' },
-              type: {
-                type: 'string',
-                enum: ['text', 'number', 'select', 'textarea', 'file', 'date'],
-                description: 'Input type',
-              },
-              required: {
-                type: 'boolean',
-                description: 'Whether this field is required',
-              },
+              label: { type: 'string', description: 'Display label, e.g. "Deposit amount"' },
+              type: { type: 'string', enum: ['text', 'number', 'select', 'textarea', 'file', 'date'], description: 'Input type' },
+              required: { type: 'boolean', description: 'Whether this field is required' },
               placeholder: { type: 'string', description: 'Placeholder text' },
-              options: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Options for select type',
-              },
+              options: { type: 'array', items: { type: 'string' }, description: 'Options for select type' },
             },
             required: ['key', 'label', 'type'],
           },
@@ -532,103 +242,20 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     enabled: true,
     toolCategory: 'operational',
     displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
-    zodSchema: z.object({ title: z.string(), description: z.string().optional(), fields: z.array(z.object({ key: z.string(), label: z.string(), type: z.enum(["text","number","select","textarea","file","date"]), required: z.boolean().optional(), placeholder: z.string().optional(), options: z.array(z.string()).optional() })) }),
-  },
-  {
-    name: 'finalize_consultation',
-    description: 'End the human consultation. Provide a customer-facing summary and the resolution decision. This closes the consultation chat and notifies the customer.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        summary: { type: 'string', description: 'Message to show the customer explaining what was resolved' },
-        resolution: { type: 'string', description: 'The specialist\'s decision: confirmed_delayed, refund_issued, needs_more_info, resolved, false_alarm' },
-      },
-      required: ['summary', 'resolution'],
-    },
-    isConcurrencySafe: false,
-    mode: 'channel',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Closing consultation', icon: 'spin' },
-    zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
-  },
-  {
-    name: 'finalize_case_agent',
-    description:
-      '子代理完成任务后调用，将调查结果返回给主 Agent。调用后子代理循环终止。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        findings: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: { key: { type: 'string' }, value: {} },
-          },
-          description: '调查发现的事实列表',
-        },
-        evidence: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '支持结论的证据引用',
-        },
-        recommendation: { type: 'string', description: '建议的后续行动' },
-      },
-      required: ['findings', 'recommendation'],
-    },
-    isConcurrencySafe: false,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
     zodSchema: z.object({
-      findings: z.array(z.object({ key: z.string(), value: z.unknown() })),
-      evidence: z.array(z.string()).optional(),
-      recommendation: z.string(),
+      title: z.string(),
+      description: z.string().optional(),
+      fields: z.array(z.object({
+        key: z.string(),
+        label: z.string(),
+        type: z.enum(['text', 'number', 'select', 'textarea', 'file', 'date']),
+        required: z.boolean().optional(),
+        placeholder: z.string().optional(),
+        options: z.array(z.string()).optional(),
+      })),
     }),
-    mockFixture: { status: 'finalized' },
-  },
-  {
-    name: 'dispatch_subagent',
-    description:
-      'Dispatch a specialist sub-agent to investigate a specific aspect of the case. ' +
-      'Available sub-agents are defined in the case type stage configuration. ' +
-      'Use this to delegate research tasks to specialized agents.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        agentName: { type: 'string', description: 'Name of the sub-agent to dispatch' },
-        taskDescription: { type: 'string', description: 'Short human-readable task summary' },
-        taskPrompt: { type: 'string', description: 'Detailed investigation instructions for the sub-agent' },
-      },
-      required: ['agentName', 'taskDescription', 'taskPrompt'],
-    },
-    isConcurrencySafe: false,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Dispatching specialist agent', icon: 'pulse' },
-    zodSchema: z.object({
-      agentName: z.string(),
-      taskDescription: z.string(),
-      taskPrompt: z.string(),
-    }),
-    mockFixture: { status: 'dispatched', message: 'Sub-agent task dispatched' },
-  },
-  {
-    name: 'get_current_time',
-    description: 'Get current date/time. Returns today date in YYYY-MM-DD format with day of week and UTC/GMT+8 times.',
-    inputSchema: { type: 'object', properties: {} },
-    outputSchema: { type: 'object', properties: { today: { type: 'string' }, day_of_week: { type: 'string' }, utc_time: { type: 'string' }, gmt8_time: { type: 'string' } } },
-    mode: 'static',
-    isConcurrencySafe: true,
-    enabled: true,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Getting current time', icon: 'dots' },
-    mockFixture: {},
   },
 ]
-
 
 /** Set of built-in tool names for fast lookup. */
 export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((s) => s.name))

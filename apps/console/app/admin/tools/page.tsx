@@ -505,7 +505,7 @@ export default function SkillsPage() {
             {/* Mode + locked badge */}
             <div className="flex items-center gap-2">
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${viewSkill.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : viewSkill.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>
-                {viewSkill.mode === 'engine_managed' ? 'Engine' : viewSkill.mode === 'channel' ? 'Channel' : viewSkill.mode}
+                {viewSkill.mode === 'engine_managed' ? 'System' : viewSkill.mode === 'channel' ? 'Channel' : viewSkill.mode}
               </span>
               <span className="flex items-center gap-1 text-[11px] text-amber/80 bg-amber/[0.06] px-2 py-0.5 rounded-full">
                 <Lock className="w-3 h-3" /> Read-only — managed by the engine
