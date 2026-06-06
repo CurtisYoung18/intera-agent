@@ -236,16 +236,6 @@ export const DEFAULT_MEMORY_STRATEGY = {
   toolResultTemplate: 'Tool {name} result:\n{output}',
 }
 
-export const DEFAULT_POLICY_HOOKS = {
-  preTool: ['no_high_risk_account_change', 'investigate_before_escalation'],
-  postTool: ['conflict_requires_human'],
-  preFinalize: [
-    'evidence_required_before_resolution',
-    'no_compensation_promise',
-    'must_cite_basis',
-  ],
-}
-
 /** Appended after harness-injected header + verdict lines when `resumePrompt` in AgentConfig is empty. */
 export const HARNESS_DEFAULT_RESUME_PROMPT_APPEND = `[Human task resolved — operator closed the case]
 IMPORTANT — Customer communication task:
@@ -258,105 +248,6 @@ IMPORTANT — Customer communication task:
 /** Appended after \`[Form submitted]\` + answer lines when \`formResponseTemplate\` is empty. */
 export const HARNESS_DEFAULT_FORM_RESPONSE_APPEND =
   'Please continue processing based on this information.'
-
-export interface DefaultSkillSeed {
-  name: string
-  displayVerb?: { text: string; icon: string }
-  description: string
-  inputSchema: string
-  outputSchema: string
-  mode: string
-  isConcurrencySafe: boolean
-  enabled: boolean
-  guardPhase: string
-  toolCategory?: 'system_info' | 'operational'
-  /** JSON string — mock executor returns this payload when mode is mock */
-  mockFixture?: string
-  /** HTTP endpoint path (appended to base URL for http-mode skills) */
-  endpoint?: string
-  httpMethod?: string
-  /** JSON string — extra HTTP headers */
-  headers?: string
-  timeoutMs?: number
-}
-
-export const DEFAULT_SKILLS: DefaultSkillSeed[] = [
-  {
-    name: 'dispatch_case_agent',
-    displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
-    toolCategory: 'operational',
-    description: 'Dispatch a case investigation agent when the customer reports an issue. IMPORTANT: Call dispatch_case_agent BEFORE any lookup tools (get_latest_deposit, get_transaction_history, get_account_status, etc.). Do not investigate first — the case system manages investigation stages. Only use lookup tools directly when the customer asks a simple informational question, NOT when they report a problem.',
-    inputSchema:
-      '{"type":"object","properties":{"caseType":{"type":"string","description":"Case type slug, e.g. deposit_issue, account_issue, order_issue, refund_request"},"summary":{"type":"string","description":"Brief summary of what the customer reported"}},"required":["caseType","summary"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"caseId":"case_mock_001","status":"created"}',
-  },
-  {
-    name: 'read_case_history',
-    displayVerb: { text: 'Looking up past cases', icon: 'scan' },
-    description: "Read the customer's historical cases for context",
-    inputSchema: '{"type":"object","properties":{"userId":{"type":"string","description":"Customer user ID"},"limit":{"type":"number","description":"Max number of cases to return","default":5}},"required":["userId"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture:
-      '{"cases":[{"id":"C2024-0892","type":"deposit_issue","status":"resolved","summary":"User deposited 500 CNY via WeChat Pay, funds credited after 2-hour delay","resolvedAt":"2024-11-15T10:30:00Z"},{"id":"C2024-1034","type":"account_issue","status":"resolved","summary":"Account temporarily restricted due to suspicious login from new device; verified identity and lifted restriction","resolvedAt":"2024-12-03T16:45:00Z"},{"id":"C2025-0017","type":"deposit_issue","status":"resolved","summary":"User reported 200 CNY missing from balance after Alipay top-up; traced to pending batch settlement, resolved within 24h","resolvedAt":"2025-01-22T09:15:00Z"}],"total":3}',
-  },
-  {
-    name: 'create_human_task',
-    displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
-    description: 'Create a human task for manual confirmation or processing',
-    inputSchema: '{"type":"object","properties":{"queue":{"type":"string","description":"Queue to route to"},"question":{"type":"string","description":"Question for the human operator"}},"required":["queue","question"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"taskId":"htask_mock_001","status":"pending"}',
-  },
-  {
-    name: 'finalize_case',
-    displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
-    description: 'Mark the case as resolved with a conclusion',
-    inputSchema: '{"type":"object","properties":{"conclusion":{"type":"string","description":"Case conclusion"},"basis":{"type":"array","items":{"type":"string"},"description":"Evidence basis"}},"required":["conclusion","basis"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"status":"resolved","resolvedAt":"2026-05-01T12:00:00.000Z"}',
-  },
-  {
-    name: 'request_user_input',
-    displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
-    description: 'Display a structured form to collect required information from the customer',
-    inputSchema: '{"type":"object","properties":{"title":{"type":"string","description":"Form title"},"fields":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"label":{"type":"string"},"type":{"type":"string","enum":["text","number","select","textarea","file"]},"required":{"type":"boolean"},"placeholder":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["key","label","type"]}}},"required":["title","fields"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"status":"form_displayed"}',
-  },
-  {
-    name: 'finalize_consultation',
-    displayVerb: { text: 'Closing consultation', icon: 'spin' },
-    description: 'End the human consultation with a summary and resolution',
-    inputSchema: '{"type":"object","properties":{"summary":{"type":"string","description":"Customer-facing message about what was resolved"},"resolution":{"type":"string","enum":["confirmed_delayed","refund_approved","needs_more_info","resolved","false_alarm"]}},"required":["summary","resolution"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"status":"consultation_closed"}',
-  },
-  {
-    name: 'todo_write',
-    displayVerb: { text: 'Updating task list', icon: 'dots' },
-    description: 'Create or update a structured todo list. Use to plan complex investigations, track progress, and communicate current state.',
-    inputSchema: '{"type":"object","properties":{"todos":{"type":"array","description":"The complete todo list to persist","items":{"type":"object","properties":{"id":{"type":"string","description":"Unique identifier"},"content":{"type":"string","description":"What needs to be done"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]},"notes":{"type":"string","description":"Optional findings"}},"required":["id","content","status"]}}},"required":["todos"]}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"ok":true,"todos":[]}',
-  },
-  {
-    name: 'todo_read',
-    displayVerb: { text: 'Reviewing task list', icon: 'scan' },
-    description: 'Read the current todo list to see pending, in-progress, and completed items.',
-    inputSchema: '{"type":"object","properties":{}}',
-    mode: 'mock', isConcurrencySafe: true, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"todos":[]}',
-  },
-  {
-    name: 'finalize_sub_agent',
-    displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
-    description: 'Called by a sub-agent when it finishes, to return its findings to the main agent. The sub-agent loop ends after this call.',
-    inputSchema: '{"type":"object","properties":{"findings":{"type":"array","items":{"type":"object","properties":{"key":{"type":"string"},"value":{}}},"description":"List of facts discovered during investigation"},"evidence":{"type":"array","items":{"type":"string"},"description":"Evidence references supporting the conclusion"},"recommendation":{"type":"string","description":"Recommended next action"}},"required":["findings","recommendation"]}',
-    mode: 'mock', isConcurrencySafe: false, enabled: true, guardPhase: 'post', outputSchema: '{}',
-    mockFixture: '{"status":"finalized"}',
-  },
-]
 
 export interface DefaultPolicySeed {
   name: string
