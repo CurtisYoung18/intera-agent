@@ -513,7 +513,7 @@ function TurnSection({
                 color: t.status === 'error' ? 'var(--vermillion)' : 'var(--mist)',
                 fontFamily: 'var(--font-mono)',
               }}>
-                {t.name}
+                Tool: {t.name}
               </span>
               <span style={{
                 fontSize: 11, color: t.status === 'running' ? 'var(--amber)' : t.status === 'error' ? 'var(--vermillion)' : 'var(--smoke)',
