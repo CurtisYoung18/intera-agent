@@ -69,6 +69,13 @@ model AgentConfig {
   parent   AgentConfig?  @relation("AgentVersions", fields: [parentId], references: [id], onDelete: SetNull)
   children AgentConfig[] @relation("AgentVersions")
 
+  // Agent-scoped sub-modules
+  tools             Tool[]
+  policies          Policy[]
+  caseTypes         CaseType[]
+  knowledgeSources  KnowledgeSource[]
+  channelBindings   ChannelBinding[]
+
   model          String
   temperature    Float   @default(0.5)
   thinkingBudget Int     @default(4096)
@@ -85,8 +92,6 @@ model AgentConfig {
 
   // JSON fields
   memoryStrategy     String  // MemoryStrategy
-  policyHooks        String  // @deprecated PolicyHooks — migrated into capabilityBindings.guardrails. Remove after backfill + code migration.
-  capabilityBindings String? // JSON: CapabilityBindings (guardrails/tools/caseTypes/knowledge). Unified version-bound manifest.
   gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
   invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
 
@@ -110,8 +115,8 @@ model AgentConfig {
 // Case 类型定义（动态状态机）
 // ============================================
 model CaseType {
-  id         String   @id @default(cuid())
-  orgId String  @map("org_id") @default("default")
+  id             String   @id @default(cuid())
+  agentConfigId  String   @map("agent_config_id")
 
   type        String
   displayName String
@@ -140,16 +145,18 @@ model CaseType {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orgId, type])
+  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, type])
   @@map("case_types")
 }
 
 // ============================================
-// Skill 注册中心
+// Tool 注册中心
 // ============================================
-model Skill {
+model Tool {
   id         String   @id @default(cuid())
-  orgId String  @map("org_id") @default("default")
+  agentConfigId String  @map("agent_config_id")
 
   name        String
   description String
@@ -175,16 +182,18 @@ model Skill {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orgId, name])
-  @@map("skills")
+  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, name])
+  @@map("tools")
 }
 
 // ============================================
 // Policy 规则配置
 // ============================================
 model Policy {
-  id         String   @id @default(cuid())
-  orgId String  @map("org_id") @default("default")
+  id             String   @id @default(cuid())
+  agentConfigId  String   @map("agent_config_id")
 
   name        String
   description String?
@@ -196,7 +205,9 @@ model Policy {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orgId, name])
+  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, name])
   @@map("policies")
 }
 
@@ -334,8 +345,8 @@ model ActionTrace {
 // 知识检索 — 知识源配置（GPTBots / 外部 RAG）
 // ============================================
 model KnowledgeSource {
-  id         String   @id @default(cuid())
-  orgId String  @map("org_id") @default("default")
+  id             String   @id @default(cuid())
+  agentConfigId  String   @map("agent_config_id")
 
   name        String // 显示名称
   description String?
@@ -357,8 +368,10 @@ model KnowledgeSource {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orgId, name])
-  @@index([orgId, enabled])
+  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, name])
+  @@index([agentConfigId, enabled])
   @@map("knowledge_sources")
 }
 
@@ -441,22 +454,6 @@ model LiveChatPendingEvent {
 }
 
 // ============================================
-// Channel Health — per-org channel status monitoring
-// ============================================
-model ChannelHealth {
-  id          String   @id @default(cuid())
-  orgId  String   @map("org_id") @default("default")
-  channel     String
-  status      String   @default("healthy")
-  lastChecked DateTime @default(now())
-  lastError   String?
-  metadata    Json?
-
-  @@unique([orgId, channel])
-  @@map("channel_health")
-}
-
-// ============================================
 // ChatSession — chat-level memory (cross-case)
 // ============================================
 model ChatSession {
@@ -473,13 +470,11 @@ model ChatSession {
 }
 
 // ============================================
-// S5 — Channel Binding — per-org, per-agent channel config
-// agentName NULL = org default/fallback; non-NULL = per-agent override
+// S5 — Channel Binding — per-agent channel config
 // ============================================
 model ChannelBinding {
   id                  String   @id @default(cuid())
-  orgId          String @map("org_id") @default("default")
-  agentName           String?  @map("agent_name") // NULL = org default; non-NULL = per-agent
+  agentConfigId       String   @map("agent_config_id")
   channel             String   // 'web-chat' | 'livechat' | 'slack' | 'discord' | 'whatsapp'
   enabled             Boolean  @default(false)
   credentials         String   @default("{}") // JSON — secrets/connection (LiveChatCredentials etc.)
@@ -494,7 +489,9 @@ model ChannelBinding {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  @@unique([orgId, agentName, channel])
+  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, channel])
   @@map("channel_bindings")
 }
 
