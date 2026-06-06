@@ -71,7 +71,7 @@ function summarizeHook(p: PolicyItem): string {
     const parts: string[] = []
     const cpLabel = CHECKPOINTS.find(c => c.value === gh.when)?.label || gh.when
     parts.push(cpLabel)
-    if (gh.match.skills.length) parts.push(`Tools: ${gh.match.skills.join(', ')}`)
+    if (gh.match.skills?.length) parts.push(`Tools: ${gh.match.skills.join(', ')}`)
     parts.push(gh.check.kind === 'rule' ? 'Rule' : 'AI')
     if (gh.onViolation.action !== 'warn') parts.push(`On violation: ${gh.onViolation.action}`)
     return parts.join(' · ')
@@ -89,7 +89,7 @@ function summarizeHook(p: PolicyItem): string {
 }
 
 function isHighRiskHook(gh: GuardrailHook): boolean {
-  return gh.match.skills.some(s => HIGH_RISK_TOOLS.includes(s))
+  return (gh.match.skills || []).some(s => HIGH_RISK_TOOLS.includes(s))
 }
 
 export default function PoliciesPage() {
