@@ -5,9 +5,9 @@ import { describe, it, expect } from 'vitest'
 import { createMemoryPersistence } from '../../persistence-port'
 import { isSafeInDryRun, dryRunMockResult, dispatchCaseAgentMockResult } from '../../dry-run-executor'
 import { StreamingToolExecutor } from '../../streaming-tool-executor'
-import type { SkillDefinition } from '@intera/shared/types'
+import type { ToolDefinition } from '@intera/shared/types'
 
-function makeSkill(overrides: Partial<SkillDefinition> = {}): SkillDefinition {
+function makeSkill(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   return {
     name: 'test_skill',
     description: 'Test skill',
@@ -129,7 +129,7 @@ describe('Playground safety invariants', () => {
   it('memory persistence implements full PersistencePort interface', async () => {
     const { port, cases, memories, messages, traces } = createMemoryPersistence()
 
-    await port.ensureCase({ id: 'c1', orgId: 'o1', userId: 'u1', type: 't', status: 'created', chatId: null })
+    await port.ensureCase({ id: 'c1', orgId: 'o1', userId: 'u1', type: 't', status: 'created', chatId: 'test-chat' })
     await port.saveMemory('c1', { caseId: 'c1' })
     await port.saveMessages([{ id: 'm1', caseId: 'c1', role: 'user', content: 'hi' }])
     await port.saveTrace({ caseId: 'c1', actionType: 'test', title: 't' })
@@ -169,7 +169,7 @@ describe('Playground safety invariants', () => {
   it('memory persistence creates no side effects beyond arrays', async () => {
     const { port, cases, humanTasks, traces } = createMemoryPersistence()
 
-    await port.ensureCase({ id: 'c1', orgId: 'o1', userId: 'u1', type: 't', status: 'created', chatId: null })
+    await port.ensureCase({ id: 'c1', orgId: 'o1', userId: 'u1', type: 't', status: 'created', chatId: 'test-chat' })
     await port.createHumanTask({ caseId: 'c1', queue: 'general', question: 'escalation' })
     await port.saveTrace({ caseId: 'c1', actionType: 'test', title: 'trace' })
 

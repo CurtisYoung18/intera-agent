@@ -83,12 +83,12 @@ function createLoop(options?: { existingProfile?: string; enableChatMemory?: boo
       ...DEFAULT_MEMORY_STRATEGY,
       enableChatMemory: options?.enableChatMemory ?? true,
     },
-    policyHooks: { preTool: [], postTool: [], preFinalize: [] },
     debugMode: false,
   }
 
   const deps = {
     config,
+    configId: 'test-agent',
     caseId: 'test-case-001',
     orgId: 'test-org',
     userId: 'test-user',
@@ -223,12 +223,12 @@ describe('compactUserProfile — dual-write (C3)', () => {
       systemPrompt: 'You are helpful.',
       showThinking: false,
       memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, enableChatMemory: true },
-      policyHooks: { preTool: [], postTool: [], preFinalize: [] },
       debugMode: false,
     }
 
     const deps = {
       config,
+      configId: 'test-agent',
       caseId: 'test-case-001',
       orgId: 'test-org',
       userId: 'test-user',
@@ -277,13 +277,13 @@ describe('compactUserProfile — dual-write (C3)', () => {
       systemPrompt: 'You are helpful.',
       showThinking: false,
       memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, enableChatMemory: true },
-      policyHooks: { preTool: [], postTool: [], preFinalize: [] },
       debugMode: false,
     }
 
     // userId is undefined → profileKey returns null
     const deps = {
       config,
+      configId: 'test-agent',
       caseId: 'test-case-001',
       orgId: 'test-org',
       userId: '',

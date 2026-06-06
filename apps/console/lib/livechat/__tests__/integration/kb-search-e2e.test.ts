@@ -5,25 +5,25 @@ import { describe, it, expect, beforeAll } from 'vitest'
 // Skipped in local/CI environments without live service access.
 
 describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTBots)', () => {
-  let SkillRouter: typeof import('../../../agent/skills').SkillRouter
+  let ToolRouter: typeof import('../../../agent/tools').ToolRouter
   let StreamingToolExecutor: typeof import('../../../agent/streaming-tool-executor').StreamingToolExecutor
 
   beforeAll(async () => {
-    const skillsMod = await import('../../../agent/skills')
-    SkillRouter = skillsMod.SkillRouter
+    const toolsMod = await import('../../../agent/tools')
+    ToolRouter = toolsMod.ToolRouter
     const execMod = await import('../../../agent/streaming-tool-executor')
     StreamingToolExecutor = execMod.StreamingToolExecutor
   })
 
-  it('SkillRouter.create() generates kb_search_* tools for each KnowledgeSource', async () => {
-    const router = await SkillRouter.create('api')
+  it('ToolRouter.create() generates kb_search_* tools for each KnowledgeSource', async () => {
+    const router = await ToolRouter.create('api')
     const tools = router.getTools()
-    const kbTools = tools.filter(t => t.name.startsWith('kb_search_'))
+    const kbTools = tools.filter((t: { name: string }) => t.name.startsWith('kb_search_'))
 
     expect(kbTools.length).toBeGreaterThanOrEqual(7)
 
     // Each kb_search_* tool should have the source's description
-    const names = kbTools.map(t => t.name)
+    const names = kbTools.map((t: { name: string }) => t.name)
     expect(names).toContain('kb_search_Deposit')
     expect(names).toContain('kb_search_General')
     expect(names).toContain('kb_search_Game')
@@ -33,13 +33,13 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
     expect(names).toContain('kb_search_Abbreviation_Mapping')
 
     // Verify descriptions are from DB
-    const deposit = kbTools.find(t => t.name === 'kb_search_Deposit')!
+    const deposit = kbTools.find((t: { name: string }) => t.name === 'kb_search_Deposit')!
     expect(deposit.description).toBe('Deposit QA')
 
-    const game = kbTools.find(t => t.name === 'kb_search_Game')!
+    const game = kbTools.find((t: { name: string }) => t.name === 'kb_search_Game')!
     expect(game.description).toBe('Game QA')
 
-    const general = kbTools.find(t => t.name === 'kb_search_General')!
+    const general = kbTools.find((t: { name: string }) => t.name === 'kb_search_General')!
     expect(general.description).toBe('General QA')
 
     // Each tool should have query + topK input schema
@@ -49,10 +49,10 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
     }
   })
 
-  it('SkillRouter.getToolDefinitions() includes kb_search_* definitions with http config', async () => {
-    const router = await SkillRouter.create('api')
+  it('ToolRouter.getToolDefinitions() includes kb_search_* definitions with http config', async () => {
+    const router = await ToolRouter.create('api')
     const defs = router.getToolDefinitions()
-    const kbDefs = defs.filter(d => d.name.startsWith('kb_search_'))
+    const kbDefs = defs.filter((d: { name: string; mode?: string; endpoint?: string; isConcurrencySafe?: boolean; enabled?: boolean }) => d.name.startsWith('kb_search_'))
 
     for (const d of kbDefs) {
       expect(d.mode).toBe('http')
@@ -68,8 +68,8 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
       return
     }
 
-    const router = await SkillRouter.create('api')
-    const depositDef = router.getSkill('kb_search_Deposit')
+    const router = await ToolRouter.create('api')
+    const depositDef = router.getTool('kb_search_Deposit')
     expect(depositDef).toBeDefined()
 
     const executor = new StreamingToolExecutor(
@@ -100,17 +100,17 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
   }, 15000)
 
   it('multiple kb_search_* tools can be defined and are concurrency-safe', async () => {
-    const router = await SkillRouter.create('api')
-    const kbDefs = router.getToolDefinitions().filter(d => d.name.startsWith('kb_search_'))
+    const router = await ToolRouter.create('api')
+    const kbDefs = router.getToolDefinitions().filter((d: { name: string }) => d.name.startsWith('kb_search_'))
 
     // All kb search tools should be concurrency-safe (parallelizable)
     for (const d of kbDefs) {
       expect(d.isConcurrencySafe).toBe(true)
     }
 
-    // Verify that getSkill resolves each
+    // Verify that getTool resolves each
     for (const d of kbDefs) {
-      const skill = router.getSkill(d.name)
+      const skill = router.getTool(d.name)
       expect(skill).toBeDefined()
       expect(skill!.name).toBe(d.name)
     }

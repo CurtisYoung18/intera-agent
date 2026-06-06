@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 
 describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective verification', () => {
   it('LLM sees 7 independent kb_search tools, each with its own description', async () => {
-    const { SkillRouter } = await import('../../../agent/skills')
-    const router = await SkillRouter.create('api')
+    const { ToolRouter } = await import('../../../agent/tools')
+    const router = await ToolRouter.create('api')
     const allTools = router.getTools()
 
     // Filter to just kb_search tools (what the LLM sees mixed with other tools)
-    const kbTools = allTools.filter(t => t.name.startsWith('kb_search_'))
+    const kbTools = allTools.filter((t: { name: string }) => t.name.startsWith('kb_search_'))
 
     console.log(`\n=== Intera sees ${kbTools.length} knowledge search tools ===\n`)
     for (const t of kbTools) {
@@ -20,19 +20,19 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
     expect(kbTools.length).toBe(7)
 
     // Verify LLM can distinguish sources by description
-    const descriptions = kbTools.map(t => t.description)
+    const descriptions = kbTools.map((t: { description?: string }) => t.description)
     const unique = new Set(descriptions)
     expect(unique.size).toBeGreaterThanOrEqual(6) // at least most should differ
 
     // Verify concurrency: these are all safe to call in parallel
-    const defs = router.getToolDefinitions().filter(d => d.name.startsWith('kb_search_'))
-    expect(defs.every(d => d.isConcurrencySafe)).toBe(true)
+    const defs = router.getToolDefinitions().filter((d: { name: string }) => d.name.startsWith('kb_search_'))
+    expect(defs.every((d: { isConcurrencySafe?: boolean }) => d.isConcurrencySafe)).toBe(true)
     console.log(`All ${defs.length} kb_search tools are concurrency-safe → LLM can call multiple in parallel`)
   })
 
   it('Deposit query example: LLM picks kb_search_Deposit based on description', async () => {
-    const { SkillRouter } = await import('../../../agent/skills')
-    const router = await SkillRouter.create('api')
+    const { ToolRouter } = await import('../../../agent/tools')
+    const router = await ToolRouter.create('api')
     const allTools = router.getTools()
 
     // Simulate the LLM's decision:
@@ -44,11 +44,11 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
     //
     // LLM decides: call kb_search_Deposit AND kb_search_General in parallel
 
-    const depositTool = allTools.find(t => t.name === 'kb_search_Deposit')
+    const depositTool = allTools.find((t: { name: string }) => t.name === 'kb_search_Deposit')
     expect(depositTool).toBeDefined()
     expect(depositTool!.description).toBe('Deposit QA')
 
-    const generalTool = allTools.find(t => t.name === 'kb_search_General')
+    const generalTool = allTools.find((t: { name: string }) => t.name === 'kb_search_General')
     expect(generalTool).toBeDefined()
     expect(generalTool!.description).toBe('General QA')
 
@@ -58,11 +58,11 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
   })
 
   it('Abbreviation query example: LLM picks kb_search_Abbreviation_Mapping', async () => {
-    const { SkillRouter } = await import('../../../agent/skills')
-    const router = await SkillRouter.create('api')
+    const { ToolRouter } = await import('../../../agent/tools')
+    const router = await ToolRouter.create('api')
     const allTools = router.getTools()
 
-    const abbrevTool = allTools.find(t => t.name === 'kb_search_Abbreviation_Mapping')
+    const abbrevTool = allTools.find((t: { name: string }) => t.name === 'kb_search_Abbreviation_Mapping')
     expect(abbrevTool).toBeDefined()
     expect(abbrevTool!.description).toBe('Only when customer said possbile abbreviation')
 
@@ -72,17 +72,17 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
   })
 
   it('Multi-source parallel query: LLM can call 3 unrelated sources simultaneously', async () => {
-    const { SkillRouter } = await import('../../../agent/skills')
-    const router = await SkillRouter.create('api')
+    const { ToolRouter } = await import('../../../agent/tools')
+    const router = await ToolRouter.create('api')
     const defs = router.getToolDefinitions()
 
     // Simulate: user asks a broad question that spans multiple domains
     // "I deposited money but it's not showing. Also, is there a promo?"
     // LLM decides: call kb_search_Deposit + kb_search_Promotion in parallel
 
-    const depositDef = defs.find(d => d.name === 'kb_search_Deposit')
-    const promoDef = defs.find(d => d.name === 'kb_search_Promotion')
-    const generalDef = defs.find(d => d.name === 'kb_search_General')
+    const depositDef = defs.find((d: { name: string }) => d.name === 'kb_search_Deposit')
+    const promoDef = defs.find((d: { name: string }) => d.name === 'kb_search_Promotion')
+    const generalDef = defs.find((d: { name: string }) => d.name === 'kb_search_General')
 
     for (const d of [depositDef, promoDef, generalDef]) {
       expect(d).toBeDefined()

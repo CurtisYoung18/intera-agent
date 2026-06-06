@@ -9,7 +9,7 @@ import type {
   SubAgentResult,
   ChatMemoryData,
   SSEEvent,
-  SkillDefinition,
+  ToolDefinition,
   AgentContext,
   MessageBus,
 } from '@intera/shared/types'
@@ -24,7 +24,7 @@ export class OrchestratorAgent {
 
   constructor(
     private caseSchema: CaseSchemaConfig,
-    private skillDefinitions: SkillDefinition[] = [],
+    private skillDefinitions: ToolDefinition[] = [],
     private platformUserId: string = 'anonymous',
     /** Live memory manager for shared dashboard polling by sub-agents. */
     private memoryManager?: ChatMemoryManager,

@@ -1,50 +1,28 @@
-// apps/chat/lib/livechat/channel-health.ts
-// Monitors LiveChat token health and reports status to Console.
-
-import { prisma } from '@intera/shared/prisma'
+// Stub channel-health module — ChannelHealth table was removed during agent-scoped refactor.
+// Bridge.ts calls are already guarded with .catch(() => {}), so no-ops are safe.
 
 export type HealthStatus = 'healthy' | 'token_expired' | 'rate_limited' | 'unreachable'
 
 export async function markChannelUnhealthy(
-  orgId: string,
-  channel: string,
-  status: HealthStatus,
-  error?: string,
+  _orgId: string,
+  _channel: string,
+  _status: HealthStatus,
+  _error?: string,
 ): Promise<void> {
-  await prisma.channelHealth.upsert({
-    where: { orgId_channel: { orgId, channel } },
-    update: { status, lastError: error, lastChecked: new Date() },
-    create: {
-      orgId,
-      channel,
-      status,
-      lastError: error,
-      lastChecked: new Date(),
-    },
-  })
+  // no-op: ChannelHealth table removed
 }
 
-export async function markChannelHealthy(orgId: string, channel: string): Promise<void> {
-  await prisma.channelHealth.upsert({
-    where: { orgId_channel: { orgId, channel } },
-    update: { status: 'healthy', lastError: null, lastChecked: new Date() },
-    create: {
-      orgId,
-      channel: 'livechat',
-      status: 'healthy' as HealthStatus,
-      lastChecked: new Date(),
-    },
-  })
+export async function markChannelHealthy(_orgId: string, _channel: string): Promise<void> {
+  // no-op: ChannelHealth table removed
 }
 
-export async function getChannelHealth(orgId: string, channel: string): Promise<{
+export async function getChannelHealth(
+  _orgId: string,
+  _channel: string,
+): Promise<{
   status: HealthStatus
   lastChecked: Date
   lastError: string | null
 } | null> {
-  const row = await prisma.channelHealth.findUnique({
-    where: { orgId_channel: { orgId, channel } },
-  })
-  if (!row) return null
-  return { status: row.status as HealthStatus, lastChecked: row.lastChecked, lastError: row.lastError }
+  return null
 }

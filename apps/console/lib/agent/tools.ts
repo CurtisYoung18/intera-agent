@@ -785,7 +785,7 @@ export function isBuiltInTool(name: string): boolean {
 export class ToolRouter {
   private tools: Map<string, ToolDefinition> = new Map()
 
-  constructor() {
+  constructor(agentConfigId?: string) {
     // Register system tools — always available (read_chat_memory, read_user_profile, todo_read, todo_write)
     for (const tool of SYSTEM_TOOLS) {
       this.tools.set(tool.name, tool)
@@ -806,7 +806,7 @@ export class ToolRouter {
    *  @param agentConfigId — agent config ID for DB queries.
    *  @param dryRun  — when true, skips knowledge-source auto-heal writes. */
   static async create(agentConfigId: string, dryRun = false): Promise<ToolRouter> {
-    const router = new ToolRouter()
+    const router = new ToolRouter(agentConfigId)
 
     // Load DB tools (overlay on top of system/built-ins already loaded in constructor)
     try {

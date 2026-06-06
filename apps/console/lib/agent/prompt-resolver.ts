@@ -152,11 +152,11 @@ export async function buildPromptContext(params: {
 
   const [caseTypes, policies] = await Promise.all([
     prisma.caseType.findMany({
-      where: { orgId: params.orgId, enabled: true },
+      where: { agentConfigId: params.orgId, enabled: true },
       select: { type: true, displayName: true, description: true },
     }),
     prisma.policy.findMany({
-      where: { orgId: params.orgId, enabled: true },
+      where: { agentConfigId: params.orgId, enabled: true },
       select: { name: true, hook: true, description: true },
     }),
   ])

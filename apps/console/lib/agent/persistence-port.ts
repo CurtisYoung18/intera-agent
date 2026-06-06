@@ -9,7 +9,7 @@ export interface CaseRecord {
   userId: string
   type: string
   status: string
-  chatId: string | null
+  chatId: string
   goal?: string | null
   blocker?: string | null
 }
@@ -123,7 +123,7 @@ export function createPrismaPersistence(): PersistencePort {
           prisma.message.upsert({
             where: { id: msg.id },
             update: { content: msg.content, contentBlocks: msg.contentBlocks ?? undefined, isStreaming: false },
-            create: msg,
+            create: msg as any,
           }),
         ),
       )
