@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   ReactFlow,
   Background,
@@ -11,7 +11,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import CoreNode from './nodes/core-node'
-import ModuleNode, { type ModuleId } from './nodes/module-node'
+import ModuleNode, { type ModuleId, THEMES } from './nodes/module-node'
 import AgentDetailPanel from './agent-detail-panel'
 import { apiClient } from '@/lib/api/client'
 
@@ -32,11 +32,11 @@ interface AgentData {
 const NODE_TYPES = { coreNode: CoreNode, moduleNode: ModuleNode }
 
 const POSITIONS: Record<ModuleId, [number, number]> = {
-  brain: [450, 60],
-  tools: [130, 170],
-  memory: [770, 170],
-  caseAgents: [210, 390],
-  guardrails: [690, 390],
+  brain: [450, 40],
+  tools: [100, 170],
+  memory: [800, 170],
+  caseAgents: [180, 400],
+  guardrails: [720, 400],
 }
 
 const MODULE_SETTINGS: Record<ModuleId, string> = {
@@ -45,6 +45,14 @@ const MODULE_SETTINGS: Record<ModuleId, string> = {
   tools: '/admin/tools',
   guardrails: '/admin/guardrails',
   caseAgents: '/admin/case-types',
+}
+
+const EDGE_COLORS: Record<ModuleId, string> = {
+  brain: '#e11d48',
+  tools: '#2563eb',
+  memory: '#d97706',
+  caseAgents: '#db2777',
+  guardrails: '#16a34a',
 }
 
 export default function AgentBlueprintGraph({ agentId }: Props) {
@@ -74,7 +82,7 @@ export default function AgentBlueprintGraph({ agentId }: Props) {
     {
       id: 'core',
       type: 'coreNode',
-      position: { x: 410, y: 210 },
+      position: { x: 430, y: 210 },
       data: {},
       draggable: false,
       selectable: false,
@@ -90,7 +98,7 @@ export default function AgentBlueprintGraph({ agentId }: Props) {
     ).map(([id, , subtitle]) => ({
       id,
       type: 'moduleNode' as const,
-      position: { x: POSITIONS[id][0] - 36, y: POSITIONS[id][1] - 36 },
+      position: { x: POSITIONS[id][0], y: POSITIONS[id][1] },
       data: {
         moduleId: id,
         subtitle,
@@ -104,17 +112,22 @@ export default function AgentBlueprintGraph({ agentId }: Props) {
 
   const buildEdges = useCallback((sel: ModuleId | null): Edge[] => (
     Object.keys(POSITIONS) as ModuleId[]
-  ).map((id) => ({
-    id: `core-${id}`,
-    source: 'core',
-    target: id,
-    style: {
-      stroke: '#d4d7e0',
-      strokeWidth: 1.2,
-      opacity: sel ? 0.25 : 0.5,
-      transition: 'opacity 0.3s',
-    },
-  })), [])
+  ).map((id) => {
+    const isActive = sel === id
+    const isDimmed = sel !== null && !isActive
+    return {
+      id: `core-${id}`,
+      source: 'core',
+      target: id,
+      style: {
+        stroke: isDimmed ? '#e5e7eb' : EDGE_COLORS[id],
+        strokeWidth: isActive ? 2 : 1.5,
+        opacity: isDimmed ? 0.2 : isActive ? 0.7 : 0.35,
+        transition: 'opacity 0.4s ease, stroke 0.4s ease, stroke-width 0.4s ease',
+      },
+      animated: isActive,
+    }
+  }), [])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(null, 0, 0, 0))
   const [edges, setEdges, onEdgesChange] = useEdgesState(buildEdges(null))
@@ -182,8 +195,29 @@ export default function AgentBlueprintGraph({ agentId }: Props) {
 
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden" style={{
-      background: 'linear-gradient(135deg, #f8f9fc 0%, #f0f2f7 50%, #eef0f5 100%)',
+      background: 'linear-gradient(160deg, #f4f5f9 0%, #eceef3 40%, #e8eaf0 100%)',
     }}>
+      {/* Subtle radial highlights */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'radial-gradient(ellipse 60% 50% at 50% 35%, rgba(255,255,255,0.6) 0%, transparent 70%)',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }} />
+
+      <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+        <defs>
+          {(Object.keys(EDGE_COLORS) as ModuleId[]).map((id) => (
+            <linearGradient key={id} id={`edge-${id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={EDGE_COLORS[id]} stopOpacity={0.15} />
+              <stop offset="50%" stopColor={EDGE_COLORS[id]} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={EDGE_COLORS[id]} stopOpacity={0.15} />
+            </linearGradient>
+          ))}
+        </defs>
+      </svg>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -193,21 +227,12 @@ export default function AgentBlueprintGraph({ agentId }: Props) {
         nodesDraggable={false}
         nodesConnectable={false}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding: 0.25 }}
         proOptions={{ hideAttribution: true }}
-        style={{ background: 'transparent' }}
+        style={{ background: 'transparent', zIndex: 1 }}
       >
         <Background gap={0} />
       </ReactFlow>
-
-      {!selectedModule && (
-        <div
-          className="absolute bottom-4 left-0 right-0 text-center text-[11px] pointer-events-none"
-          style={{ color: '#c0c4cc', letterSpacing: '0.3px', zIndex: 2 }}
-        >
-          Click a cluster to explore
-        </div>
-      )}
 
       {selectedModule && detailProps && (
         <AgentDetailPanel
