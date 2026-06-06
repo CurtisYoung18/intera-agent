@@ -585,7 +585,7 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
   "name": "no_high_risk_account_change",
   "description": "Block high-risk account skills until admin reviews.",
   "hook": "preTool",
-  "rule": "{\\"deny_skills\\":[\\"refund_money\\",\\"change_ban_status\\",\\"delete_account\\"]}"
+  "rule": "{\\"deny_tools\\":[\\"refund_money\\",\\"change_ban_status\\",\\"delete_account\\"]}"
 }`}
             />
             <Endpoint method="PUT" path="/api/admin/policies/{name}" host={CONSOLE_HOST} summary="Update a guardrail." />

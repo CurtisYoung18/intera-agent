@@ -6,8 +6,8 @@ import { z } from 'zod'
 import { defineRoute, ForbiddenError, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
-  skillUpdateRequestSchema,
-  type SkillUpdateRequest,
+  toolUpdateRequestSchema,
+  type ToolUpdateRequest,
 } from '@intera/shared/contracts/tools'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
 
@@ -44,7 +44,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
 })
 
 // ── PUT ──
-const putBodySchema = skillUpdateRequestSchema.extend({
+const putBodySchema = toolUpdateRequestSchema.extend({
   agentConfigId: z.string().min(1, 'agentConfigId is required'),
 })
 type PutInput = z.infer<typeof putBodySchema>

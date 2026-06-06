@@ -132,7 +132,7 @@ const SEED_POLICIES = [
     rule: JSON.stringify({ denyTools: ['refund_money', 'change_ban_status', 'delete_account'] }),
     guardrailConfig: JSON.stringify({
       when: 'preTool',
-      match: { skills: ['refund_money', 'change_ban_status', 'delete_account'] },
+      match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
       check: { kind: 'rule', denyTools: ['refund_money', 'change_ban_status', 'delete_account'] },
       onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
       onUnavailable: { action: 'closed' },
@@ -147,7 +147,7 @@ const SEED_POLICIES = [
     rule: JSON.stringify({ requireToolsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status', 'search_knowledge_base'] }),
     guardrailConfig: JSON.stringify({
       when: 'preFinalize',
-      match: { skills: [] },
+      match: { tools: [] },
       check: {
         kind: 'ai',
         evaluationPrompt:

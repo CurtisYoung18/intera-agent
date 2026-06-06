@@ -684,11 +684,11 @@ export class CaseAgentLoop {
     const preFinalizeEval = await policyEngine.evaluate(
       'preFinalize',
       {
-        skillName: 'finalize_case',
+        toolName: 'finalize_case',
         skillOutput: finalizedPayload,
         confirmedFacts: this.services.chatMemory.getConfirmedFacts(),
-        skillsCalled: this.services.chatMemory.getSkillsCalled(),
-        skillResults: this.services.chatMemory.getSummary().skillResults as Record<string, unknown>,
+        toolsCalled: this.services.chatMemory.getSkillsCalled(),
+        toolResults: this.services.chatMemory.getSummary().skillResults as Record<string, unknown>,
       },
       this.buildHitCounts(),
     )

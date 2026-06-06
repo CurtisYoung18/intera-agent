@@ -40,7 +40,7 @@ const UNAVAILABLE_ACTIONS = [
   { value: 'invoke_tool' as const, label: 'Invoke Tool' },
 ]
 
-const PLACEHOLDERS = ['{{skill_name}}', '{{skill_input}}', '{{skill_output}}', '{{confirmed_facts}}', '{{skills_called}}']
+const PLACEHOLDERS = ['{{tool_name}}', '{{tool_input}}', '{{tool_output}}', '{{confirmed_facts}}', '{{tools_called}}']
 
 interface PolicyItem { id: string; name: string; description: string; hook: string; rule: string; guardrailConfig?: string | null; enabled: boolean }
 
@@ -58,7 +58,7 @@ function buildGuardrailConfig(hook: GuardrailHook): string {
 function defaultGuardrailHook(): GuardrailHook {
   return {
     when: 'preTool',
-    match: { skills: [] },
+    match: { tools: [] },
     check: { kind: 'rule' },
     onViolation: { action: 'warn' },
     onUnavailable: { action: 'closed' },
@@ -71,7 +71,7 @@ function summarizeHook(p: PolicyItem): string {
     const parts: string[] = []
     const cpLabel = CHECKPOINTS.find(c => c.value === gh.when)?.label || gh.when
     parts.push(cpLabel)
-    if (gh.match.skills?.length) parts.push(`Tools: ${gh.match.skills.join(', ')}`)
+    if (gh.match.tools?.length) parts.push(`Tools: ${gh.match.tools.join(', ')}`)
     parts.push(gh.check.kind === 'rule' ? 'Rule' : 'AI')
     if (gh.onViolation.action !== 'warn') parts.push(`On violation: ${gh.onViolation.action}`)
     return parts.join(' · ')
@@ -80,16 +80,16 @@ function summarizeHook(p: PolicyItem): string {
   try {
     const r = JSON.parse(p.rule || '{}')
     const parts: string[] = []
-    if (r.deny_skills?.length) parts.push(`Blocks: ${r.deny_skills.join(', ')}`)
-    if (r.require_skills?.length) parts.push(`Requires ALL: ${r.require_skills.join(', ')}`)
-    if (r.require_skills_any?.length) parts.push(`Requires ANY: ${r.require_skills_any.join(', ')}`)
+    if (r.deny_tools?.length) parts.push(`Blocks: ${r.deny_tools.join(', ')}`)
+    if (r.require_tools?.length) parts.push(`Requires ALL: ${r.require_tools.join(', ')}`)
+    if (r.require_tools_any?.length) parts.push(`Requires ANY: ${r.require_tools_any.join(', ')}`)
     if (r.evaluationPrompt) parts.push('AI eval')
     return parts.length ? parts.join(' · ') : 'Legacy rule'
   } catch { return 'No conditions' }
 }
 
 function isHighRiskHook(gh: GuardrailHook): boolean {
-  return (gh.match.skills || []).some(s => HIGH_RISK_TOOLS.includes(s))
+  return (gh.match.tools || []).some(s => HIGH_RISK_TOOLS.includes(s))
 }
 
 export default function PoliciesPage() {
@@ -200,11 +200,11 @@ export default function PoliciesPage() {
     const guardrailConfig = buildGuardrailConfig(gh)
     // Also keep legacy rule/hook for backward compat
     const legacyRule = JSON.stringify({
-      hook_skills: gh.match.skills,
+      hook_tools: gh.match.tools,
       ...(gh.check.kind === 'rule' ? {
-        deny_skills: gh.check.denySkills,
-        require_skills: gh.check.requireSkills,
-        require_skills_any: gh.check.requireSkillsAny,
+        deny_tools: gh.check.denyTools,
+        require_tools: gh.check.requireTools,
+        require_tools_any: gh.check.requireToolsAny,
       } : {
         evaluationPrompt: gh.check.evaluationPrompt,
       }),
@@ -343,7 +343,7 @@ export default function PoliciesPage() {
               <label className="space-y-1.5 block">
                 <span className="text-[11px] text-[var(--fog)]">Match tools</span>
                 <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Tools that trigger this guardrail. Leave empty to match all tools at this checkpoint.</p>
-                <ChipInput values={gh.match.skills} onChange={v => setGh({ ...gh, match: { ...gh.match, skills: v } })} suggestions={allTools} placeholder="Add tool..." />
+                <ChipInput values={gh.match.tools} onChange={v => setGh({ ...gh, match: { ...gh.match, tools: v } })} suggestions={allTools} placeholder="Add tool..." />
               </label>
 
               <label className="space-y-1.5 block">
@@ -369,17 +369,17 @@ export default function PoliciesPage() {
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] text-[var(--fog)]">Deny Skills</span>
                     <p className="text-[10px] text-[var(--smoke)] -mt-0.5">Skills the agent is never allowed to call.</p>
-                    <ChipInput values={gh.check.denySkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, denySkills: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
+                    <ChipInput values={gh.check.denyTools || []} onChange={v => setGh({ ...gh, check: { ...gh.check, denyTools: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
                   </label>
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] text-[var(--fog)]">Require Tools (all)</span>
                     <p className="text-[10px] text-[var(--smoke)] -mt-0.5">All listed tools must have been called.</p>
-                    <ChipInput values={gh.check.requireSkills || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkills: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
+                    <ChipInput values={gh.check.requireTools || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireTools: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
                   </label>
                   <label className="space-y-1.5 block">
                     <span className="text-[11px] text-[var(--fog)]">Require Tools (any)</span>
                     <p className="text-[10px] text-[var(--smoke)] -mt-0.5">At least one listed tool must have been called.</p>
-                    <ChipInput values={gh.check.requireSkillsAny || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireSkillsAny: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
+                    <ChipInput values={gh.check.requireToolsAny || []} onChange={v => setGh({ ...gh, check: { ...gh.check, requireToolsAny: v.length ? v : undefined } })} suggestions={allTools} placeholder="Add tool..." />
                   </label>
                 </>
               ) : (

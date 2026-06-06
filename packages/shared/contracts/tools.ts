@@ -1,9 +1,9 @@
-// Skills domain contract — request/response zod schemas for /api/admin/skills
+// Tools domain contract — request/response zod schemas for /api/admin/tools
 
 import { z } from 'zod'
 
-// ── Skill item (returned in list + single responses) ──
-export const skillItemSchema = z.object({
+// ── Tool item (returned in list + single responses) ──
+export const toolItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
@@ -26,16 +26,16 @@ export const skillItemSchema = z.object({
   isSpecial: z.boolean().optional(),
 })
 
-export type SkillItem = z.infer<typeof skillItemSchema>
+export type ToolItem = z.infer<typeof toolItemSchema>
 
 // ── GET /api/admin/tools response ──
-export const skillsListResponseSchema = z.object({
-  tools: z.array(skillItemSchema),
+export const toolsListResponseSchema = z.object({
+  tools: z.array(toolItemSchema),
 })
-export type SkillsListResponse = z.infer<typeof skillsListResponseSchema>
+export type ToolsListResponse = z.infer<typeof toolsListResponseSchema>
 
-// ── POST /api/admin/skills request body ──
-export const skillCreateRequestSchema = z.object({
+// ── POST /api/admin/tools request body ──
+export const toolCreateRequestSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional().default(''),
   inputSchema: z.union([z.string(), z.record(z.unknown())]).optional().default('{}'),
@@ -53,22 +53,22 @@ export const skillCreateRequestSchema = z.object({
   enabled: z.boolean().optional().default(true),
   toolCategory: z.string().nullable().optional(),
 })
-export type SkillCreateRequest = z.infer<typeof skillCreateRequestSchema>
+export type ToolCreateRequest = z.infer<typeof toolCreateRequestSchema>
 
-// ── POST /api/admin/skills response ──
-export const skillCreateResponseSchema = z.object({
-  skill: skillItemSchema,
+// ── POST /api/admin/tools response ──
+export const toolCreateResponseSchema = z.object({
+  tool: toolItemSchema,
 })
-export type SkillCreateResponse = z.infer<typeof skillCreateResponseSchema>
+export type ToolCreateResponse = z.infer<typeof toolCreateResponseSchema>
 
-// ── GET /api/admin/skills/[name] response ──
-export const skillGetResponseSchema = z.object({
-  skill: skillItemSchema,
+// ── GET /api/admin/tools/[name] response ──
+export const toolGetResponseSchema = z.object({
+  tool: toolItemSchema,
 })
-export type SkillGetResponse = z.infer<typeof skillGetResponseSchema>
+export type ToolGetResponse = z.infer<typeof toolGetResponseSchema>
 
-// ── PUT /api/admin/skills/[name] request body ──
-export const skillUpdateRequestSchema = z.object({
+// ── PUT /api/admin/tools/[name] request body ──
+export const toolUpdateRequestSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
   inputSchema: z.union([z.string(), z.record(z.unknown())]).optional(),
@@ -86,10 +86,10 @@ export const skillUpdateRequestSchema = z.object({
   enabled: z.boolean().optional(),
   toolCategory: z.string().nullable().optional(),
 })
-export type SkillUpdateRequest = z.infer<typeof skillUpdateRequestSchema>
+export type ToolUpdateRequest = z.infer<typeof toolUpdateRequestSchema>
 
-// ── PUT /api/admin/skills/[name] response ──
-export const skillUpdateResponseSchema = z.object({
-  skill: skillItemSchema,
+// ── PUT /api/admin/tools/[name] response ──
+export const toolUpdateResponseSchema = z.object({
+  tool: toolItemSchema,
 })
-export type SkillUpdateResponse = z.infer<typeof skillUpdateResponseSchema>
+export type ToolUpdateResponse = z.infer<typeof toolUpdateResponseSchema>

@@ -475,11 +475,11 @@ export class AgentLoop {
           onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
             // PreTool policy check
             const preToolEval = await this.policyEngine.evaluate('preTool', {
-              skillName: toolUse.name,
+              toolName: toolUse.name,
               skillInput: toolUse.input,
               confirmedFacts: this.chatMemory.getConfirmedFacts(),
-              skillsCalled: this.chatMemory.getSkillsCalled(),
-              skillResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
+              toolsCalled: this.chatMemory.getSkillsCalled(),
+              toolResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
             }, buildHitCounts())
 
             if (preToolEval.summary === 'blocked') {
@@ -929,8 +929,8 @@ export class AgentLoop {
           skillOutput: ctxSummary,
           confirmedFacts: this.chatMemory.getConfirmedFacts(),
           executedSkills,
-          skillsCalled: this.chatMemory.getSkillsCalled(),
-          skillResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
+          toolsCalled: this.chatMemory.getSkillsCalled(),
+          toolResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
         }, buildHitCounts())
 
         for (const r of postToolEval.results) {

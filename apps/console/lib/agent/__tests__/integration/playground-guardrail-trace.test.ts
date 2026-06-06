@@ -71,8 +71,8 @@ vi.mock('@intera/shared/prisma', () => {
                 hook: 'preTool',
                 guardrailConfig: JSON.stringify({
                   when: 'preTool',
-                  match: { skills: ['kb_search_org'] },
-                  check: { kind: 'rule', denySkills: ['kb_search_org'] },
+                  match: { tools: ['kb_search_org'] },
+                  check: { kind: 'rule', denyTools: ['kb_search_org'] },
                   onViolation: { action: 'block', guidance: 'Knowledge base search is not allowed.' },
                   onUnavailable: { action: 'closed' },
                 }),

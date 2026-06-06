@@ -11,7 +11,7 @@ import { PolicyEngine, validateGuardrailHook } from '@/lib/agent/policy'
 function makeHook(overrides: Partial<GuardrailHook> = {}): GuardrailHook {
   return {
     when: 'preTool',
-    match: { skills: [] },
+    match: { tools: [] },
     check: { kind: 'rule' },
     onViolation: { action: 'warn' },
     onUnavailable: { action: 'closed' },
@@ -29,7 +29,7 @@ function makeEngine(): PolicyEngine {
 describe('validateGuardrailHook', () => {
   it('rejects onUnavailable:open on a high-risk skill hook', () => {
     const hook = makeHook({
-      match: { skills: ['refund_money'] },
+      match: { tools: ['refund_money'] },
       check: { kind: 'ai', evaluationPrompt: 'test' },
       onUnavailable: { action: 'open' },
     })
@@ -40,7 +40,7 @@ describe('validateGuardrailHook', () => {
 
   it('allows onUnavailable:closed on a high-risk skill hook', () => {
     const hook = makeHook({
-      match: { skills: ['refund_money'] },
+      match: { tools: ['refund_money'] },
       check: { kind: 'ai', evaluationPrompt: 'test' },
       onUnavailable: { action: 'closed' },
     })
@@ -50,7 +50,7 @@ describe('validateGuardrailHook', () => {
 
   it('allows onUnavailable:invoke_tool(create_human_task) on a high-risk skill hook', () => {
     const hook = makeHook({
-      match: { skills: ['refund_money'] },
+      match: { tools: ['refund_money'] },
       check: { kind: 'ai', evaluationPrompt: 'test' },
       onUnavailable: { action: 'invoke_tool', tool: 'create_human_task' },
     })
@@ -69,7 +69,7 @@ describe('validateGuardrailHook', () => {
 
   it('rejects onUnavailable.invoke_tool to a non-allowlisted tool', () => {
     const hook = makeHook({
-      match: { skills: ['refund_money'] },
+      match: { tools: ['refund_money'] },
       check: { kind: 'ai', evaluationPrompt: 'test' },
       onUnavailable: { action: 'invoke_tool', tool: 'delete_account' },
     })
@@ -96,7 +96,7 @@ describe('validateGuardrailHook', () => {
 
   it('valid hook on normal skill passes validation', () => {
     const hook = makeHook({
-      match: { skills: ['get_latest_deposit'] },
+      match: { tools: ['get_latest_deposit'] },
       check: {
         kind: 'ai',
         evaluationPrompt: 'Check if output is valid {{skill_output}}',
@@ -110,7 +110,7 @@ describe('validateGuardrailHook', () => {
 
   it('rejects onUnavailable:open for change_ban_status (high-risk)', () => {
     const hook = makeHook({
-      match: { skills: ['change_ban_status'] },
+      match: { tools: ['change_ban_status'] },
       check: { kind: 'ai', evaluationPrompt: 'test' },
       onUnavailable: { action: 'open' },
     })
@@ -120,7 +120,7 @@ describe('validateGuardrailHook', () => {
 
   it('rejects onUnavailable:open for delete_account (high-risk)', () => {
     const hook = makeHook({
-      match: { skills: ['delete_account'] },
+      match: { tools: ['delete_account'] },
       check: { kind: 'ai', evaluationPrompt: 'test' },
       onUnavailable: { action: 'open' },
     })
@@ -138,7 +138,7 @@ describe('PolicyEngine F2 fail-closed', () => {
 
     const moneyHook: GuardrailHook = {
       when: 'preTool',
-      match: { skills: ['refund_money'] },
+      match: { tools: ['refund_money'] },
       check: {
         kind: 'ai',
         evaluationPrompt: 'Check whether the refund is authorized {{skill_input}}',
@@ -166,7 +166,7 @@ describe('PolicyEngine F2 fail-closed', () => {
 
     const hook: GuardrailHook = {
       when: 'postTool',
-      match: { skills: ['get_latest_deposit'] },
+      match: { tools: ['get_latest_deposit'] },
       check: {
         kind: 'ai',
         evaluationPrompt: 'Check output {{skill_output}}',
@@ -183,10 +183,10 @@ describe('PolicyEngine F2 fail-closed', () => {
     // also fails, the policy is marked as 'pass' (model didn't evaluate it).
     // We verify the engine evaluates without throwing.
     const result = await engine.evaluate('postTool', {
-      skillName: 'get_latest_deposit',
+      toolName: 'get_latest_deposit',
       skillOutput: { status: 'completed' },
       confirmedFacts: {},
-      skillsCalled: ['get_latest_deposit'],
+      toolsCalled: ['get_latest_deposit'],
       executedSkills: ['get_latest_deposit'],
     })
 
@@ -204,8 +204,8 @@ describe('PolicyEngine F2 fail-closed', () => {
 
     const denyHook: GuardrailHook = {
       when: 'preTool',
-      match: { skills: ['refund_money'] },
-      check: { kind: 'rule', denySkills: ['refund_money'] },
+      match: { tools: ['refund_money'] },
+      check: { kind: 'rule', denyTools: ['refund_money'] },
       onViolation: { action: 'block', guidance: 'Refunds are blocked' },
       onUnavailable: { action: 'closed' },
     }
@@ -214,10 +214,10 @@ describe('PolicyEngine F2 fail-closed', () => {
     engine.setHook(denyHook)
 
     const result = await engine.evaluate('preTool', {
-      skillName: 'refund_money',
+      toolName: 'refund_money',
       skillInput: { amount: 100 },
       confirmedFacts: {},
-      skillsCalled: [],
+      toolsCalled: [],
     })
 
     expect(result.summary).toBe('blocked')
@@ -233,7 +233,7 @@ describe('PolicyEngine F1 preTool input-based eval', () => {
 
     const hook: GuardrailHook = {
       when: 'preTool',
-      match: { skills: ['get_latest_deposit'] },
+      match: { tools: ['get_latest_deposit'] },
       check: {
         kind: 'ai',
         evaluationPrompt: 'Check if this is a valid query: {{skill_input}}',
@@ -247,11 +247,11 @@ describe('PolicyEngine F1 preTool input-based eval', () => {
 
     // preTool: skillOutput is absent, but skillInput is present
     const result = await engine.evaluate('preTool', {
-      skillName: 'get_latest_deposit',
+      toolName: 'get_latest_deposit',
       skillInput: { userId: '123', days: 7 },
       // skillOutput is NOT set — this is preTool by definition
       confirmedFacts: {},
-      skillsCalled: [],
+      toolsCalled: [],
     })
 
     expect(result).toBeDefined()
@@ -275,10 +275,10 @@ describe('PolicyEngine safety floor', () => {
 
     const hook: GuardrailHook = {
       when: 'postTool',
-      match: { skills: ['create_human_task'] },
+      match: { tools: ['create_human_task'] },
       check: {
         kind: 'rule',
-        requireSkillsAny: ['get_latest_deposit', 'get_account_status'],
+        requireToolsAny: ['get_latest_deposit', 'get_account_status'],
       },
       onViolation: { action: 'block', guidance: 'Must investigate first' },
       onUnavailable: { action: 'closed' },
@@ -289,9 +289,9 @@ describe('PolicyEngine safety floor', () => {
 
     // Case 1: required skills not called → blocked
     const resultBlocked = await engine.evaluate('postTool', {
-      skillName: 'create_human_task',
+      toolName: 'create_human_task',
       skillOutput: { escalated: true },
-      skillsCalled: ['some_other_skill'],
+      toolsCalled: ['some_other_skill'],
       executedSkills: ['create_human_task'],
     })
 
@@ -299,9 +299,9 @@ describe('PolicyEngine safety floor', () => {
 
     // Case 2: required skill called → pass
     const resultPass = await engine.evaluate('postTool', {
-      skillName: 'create_human_task',
+      toolName: 'create_human_task',
       skillOutput: { escalated: true },
-      skillsCalled: ['get_latest_deposit'],
+      toolsCalled: ['get_latest_deposit'],
       executedSkills: ['create_human_task'],
     })
 

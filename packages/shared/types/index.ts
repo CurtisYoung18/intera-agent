@@ -218,18 +218,18 @@ export type PolicyResult = 'pass' | 'blocked' | 'hint' | 'escalated'
 
 /** @deprecated — superseded by GuardrailHook. Kept for backward-compat with legacy DB rows. */
 export interface PolicyRule {
-  /** Block specific skills by exact name match (preTool only) */
-  deny_skills?: string[]
-  /** All listed skills must have been called before finalize_case */
-  require_skills?: string[]
-  /** At least one listed skill must have been called before finalize_case */
-  require_skills_any?: string[]
-  /** postTool only: only evaluate this policy when these skills were called in the iteration. Empty = all tools. */
-  hook_skills?: string[]
+  /** Block specific tools by exact name match (preTool only) */
+  deny_tools?: string[]
+  /** All listed tools must have been called before finalize_case */
+  require_tools?: string[]
+  /** At least one listed tool must have been called before finalize_case */
+  require_tools_any?: string[]
+  /** postTool only: only evaluate this policy when these tools were called in the iteration. Empty = all tools. */
+  hook_tools?: string[]
   /** Enable LLM-based evaluation. When false, only exact-match rules (deny/require) apply. Default true. */
   enableLlm?: boolean
   /** Natural-language evaluation prompt for LLM-based policy checks.
-   * Supports placeholders: {{skill_name}} {{skill_output}} {{confirmed_facts}} {{skills_called}} */
+   * Supports placeholders: {{tool_name}} {{tool_output}} {{confirmed_facts}} {{tools_called}} */
   evaluationPrompt?: string
 }
 
@@ -242,8 +242,8 @@ export interface PolicyRule {
 export type GuardrailCheckpoint = 'preTool' | 'postTool' | 'preFinalize'
 
 export interface GuardrailMatch {
-  /** Skills that trigger this hook. Supports exact names; empty = all skills. */
-  skills: string[]
+  /** Tools that trigger this hook. Supports exact names; empty = all tools. */
+  tools: string[]
   /** Optional cheap pre-filter on the payload (regex or substring match). */
   ifPattern?: string
 }
@@ -251,9 +251,9 @@ export interface GuardrailMatch {
 export interface GuardrailCheck {
   kind: 'rule' | 'ai'
   // ── rule (deterministic) ──
-  denySkills?: string[]
-  requireSkills?: string[]
-  requireSkillsAny?: string[]
+  denyTools?: string[]
+  requireTools?: string[]
+  requireToolsAny?: string[]
   // ── ai (LLM evaluation) ──
   evaluationPrompt?: string
   model?: string

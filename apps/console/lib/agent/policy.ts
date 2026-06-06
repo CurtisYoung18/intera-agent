@@ -4,13 +4,13 @@
 // Hooks load from DB (guardrailConfig JSON), scoped to agentConfigId.
 //
 // SAFETY FLOOR (platform-owned, NOT configurable):
-//   - Hooks on high-risk skills {refund_money, change_ban_status, delete_account}
+//   - Hooks on high-risk tools {refund_money, change_ban_status, delete_account}
 //     CANNOT have onUnavailable:'open' — coerced to invoke_tool(create_human_task).
 //   - invoke_tool may target ONLY the safe-tool allowlist {create_human_task, ask_user_questions}.
 //   - Every hook resolution writes an AuditLog row (F6).
 //
 // FIXES:
-//   F1 — preTool input-based eval: resolve {{skill_input}}/{{skill_name}} at preTool
+//   F1 — preTool input-based eval: resolve {{skill_input}}/{{tool_name}} at preTool
 //        (skillOutput is absent by definition); stop silently skipping ai checks at preTool.
 //   F2 — Fail-closed: on ai check failure, follow onUnavailable instead of silent pass.
 //   F6 — Audit: every hook resolution → AuditLog.
@@ -32,20 +32,20 @@ import { writeAudit } from '@/lib/audit'
 
 // ── Platform-owned safety constants (§7.6) ────────────────────────────────
 
-const HIGH_RISK_SKILLS = new Set(['refund_money', 'change_ban_status', 'delete_account'])
+const HIGH_RISK_TOOLS = new Set(['refund_money', 'change_ban_status', 'delete_account'])
 const SAFE_TOOL_ALLOWLIST = new Set(['create_human_task', 'ask_user_questions'])
 const DEFAULT_FALLBACK_TOOL = 'create_human_task'
 
 // ── Public interfaces ─────────────────────────────────────────────────────
 
 export interface PolicyContext {
-  skillName?: string
+  toolName?: string
   skillInput?: Record<string, unknown>
   skillOutput?: unknown
   confirmedFacts?: Record<string, unknown>
-  skillsCalled?: string[]
+  toolsCalled?: string[]
   executedSkills?: string[]
-  skillResults?: Record<string, unknown>
+  toolResults?: Record<string, unknown>
 }
 
 const SEVERITY: Record<PolicyResult, number> = {
@@ -71,9 +71,9 @@ export function validateGuardrailHook(hook: GuardrailHook): string[] {
     }
   }
 
-  const hasHighRiskSkill = hook.match.skills.some((s) => HIGH_RISK_SKILLS.has(s))
+  const hasHighRiskSkill = hook.match.tools.some((s) => HIGH_RISK_TOOLS.has(s))
   if (hasHighRiskSkill && hook.onUnavailable.action === 'open') {
-    errors.push(`onUnavailable cannot be 'open' for hooks on high-risk skills (${hook.match.skills.filter((s) => HIGH_RISK_SKILLS.has(s)).join(', ')}). Use 'closed' or 'invoke_tool'.`)
+    errors.push(`onUnavailable cannot be 'open' for hooks on high-risk tools (${hook.match.tools.filter((s) => HIGH_RISK_TOOLS.has(s)).join(', ')}). Use 'closed' or 'invoke_tool'.`)
   }
 
   return errors
@@ -203,9 +203,9 @@ export class PolicyEngine {
   // ── Context matching ────────────────────────────────────────────────────
 
   private matchesContext(gh: GuardrailHook, context: PolicyContext, checkpoint: GuardrailCheckpoint): boolean {
-    if (gh.match.skills.length > 0) {
-      if (!context.skillName) return false
-      if (!gh.match.skills.includes(context.skillName)) return false
+    if (gh.match.tools.length > 0) {
+      if (!context.toolName) return false
+      if (!gh.match.tools.includes(context.toolName)) return false
     }
     if (gh.match.ifPattern) {
       const payload = checkpoint === 'preTool'
@@ -223,24 +223,24 @@ export class PolicyEngine {
   private checkRule(gh: GuardrailHook, context: PolicyContext, hookName: string): PolicyCheckResult | null {
     const ch = gh.check
 
-    if (ch.denySkills && context.skillName && ch.denySkills.includes(context.skillName)) {
-      return { policyName: hookName, result: 'blocked', reason: `Skill "${context.skillName}" is denied by policy` }
+    if (ch.denyTools && context.toolName && ch.denyTools.includes(context.toolName)) {
+      return { policyName: hookName, result: 'blocked', reason: `Tool "${context.toolName}" is denied by policy` }
     }
 
-    if (ch.requireSkills && ch.requireSkills.length > 0) {
-      const called = context.skillsCalled || []
-      const missing = ch.requireSkills.filter((s) => !called.includes(s))
+    if (ch.requireTools && ch.requireTools.length > 0) {
+      const called = context.toolsCalled || []
+      const missing = ch.requireTools.filter((s) => !called.includes(s))
       if (missing.length > 0) {
         return { policyName: hookName, result: 'blocked', reason: `Required skills not called: ${missing.join(', ')}` }
       }
     }
 
-    if (ch.requireSkillsAny && ch.requireSkillsAny.length > 0) {
-      const called = context.skillsCalled || []
-      let ok = ch.requireSkillsAny.some((s) => called.includes(s))
-      if (!ok && context.skillResults) {
-        ok = ch.requireSkillsAny.some((requiredSkill) => {
-          for (const [key, value] of Object.entries(context.skillResults!)) {
+    if (ch.requireToolsAny && ch.requireToolsAny.length > 0) {
+      const called = context.toolsCalled || []
+      let ok = ch.requireToolsAny.some((s) => called.includes(s))
+      if (!ok && context.toolResults) {
+        ok = ch.requireToolsAny.some((requiredSkill) => {
+          for (const [key, value] of Object.entries(context.toolResults!)) {
             if (key.startsWith('subagent:') && value && typeof value === 'object') {
               const evidence = (value as any).evidence as Array<{ source: string }> | undefined
               if (evidence?.some((e) => e.source === requiredSkill)) return true
@@ -250,7 +250,7 @@ export class PolicyEngine {
         })
       }
       if (!ok) {
-        return { policyName: hookName, result: 'blocked', reason: `Must call at least one of: ${ch.requireSkillsAny.join(', ')} before ${context.skillName || 'this action'}` }
+        return { policyName: hookName, result: 'blocked', reason: `Must call at least one of: ${ch.requireToolsAny.join(', ')} before ${context.toolName || 'this action'}` }
       }
     }
 
@@ -273,7 +273,7 @@ export class PolicyEngine {
   }
 
   private resolveUnavailable(gh: GuardrailHook, hookName: string, err: unknown): PolicyCheckResult {
-    const hasHighRisk = gh.match.skills.some((s) => HIGH_RISK_SKILLS.has(s))
+    const hasHighRisk = gh.match.tools.some((s) => HIGH_RISK_TOOLS.has(s))
     let unavailableAction = gh.onUnavailable.action
     if (hasHighRisk && unavailableAction === 'open') {
       unavailableAction = 'invoke_tool'
@@ -299,7 +299,7 @@ export class PolicyEngine {
   }
 
   private getUnavailableTool(gh: GuardrailHook): string | null {
-    const hasHighRisk = gh.match.skills.some((s) => HIGH_RISK_SKILLS.has(s))
+    const hasHighRisk = gh.match.tools.some((s) => HIGH_RISK_TOOLS.has(s))
     let action = gh.onUnavailable.action
     if (hasHighRisk && action === 'open') action = 'invoke_tool'
     if (action === 'invoke_tool') {
@@ -414,15 +414,15 @@ export class PolicyEngine {
     const hasOutput = context.skillOutput !== undefined && context.skillOutput !== null
     const output = hasOutput ? JSON.stringify(context.skillOutput)
       : (checkpoint === 'preTool' && context.skillInput ? JSON.stringify(context.skillInput) : 'none')
-    const skillsCalled = context.skillsCalled ? JSON.stringify(context.skillsCalled) : '[]'
-    const skillName = context.skillName || 'unknown'
+    const toolsCalled = context.toolsCalled ? JSON.stringify(context.toolsCalled) : '[]'
+    const toolName = context.toolName || 'unknown'
 
     return template
-      .replace(/\{\{skill_name\}\}/g, skillName)
-      .replace(/\{\{skill_output\}\}/g, output)
+      .replace(/\{\{tool_name\}\}/g, toolName)
+      .replace(/\{\{tool_output\}\}/g, output)
       .replace(/\{\{skill_input\}\}/g, context.skillInput ? JSON.stringify(context.skillInput) : 'none')
       .replace(/\{\{confirmed_facts\}\}/g, facts)
-      .replace(/\{\{skills_called\}\}/g, skillsCalled)
+      .replace(/\{\{tools_called\}\}/g, toolsCalled)
   }
 
   // ── Result aggregation ──────────────────────────────────────────────────
@@ -494,11 +494,11 @@ export class PolicyEngine {
       const stageName = `stage:${g.name}`
       const gh: GuardrailHook = {
         when: g.hook as GuardrailCheckpoint,
-        match: { skills: g.rule?.hook_skills || [] },
+        match: { tools: g.rule?.hook_tools || [] },
         check: {
           kind: g.rule?.evaluationPrompt ? 'ai' : 'rule',
-          denySkills: g.rule?.deny_skills, requireSkills: g.rule?.require_skills,
-          requireSkillsAny: g.rule?.require_skills_any, evaluationPrompt: g.rule?.evaluationPrompt,
+          denyTools: g.rule?.deny_tools, requireTools: g.rule?.require_tools,
+          requireToolsAny: g.rule?.require_tools_any, evaluationPrompt: g.rule?.evaluationPrompt,
         },
         onViolation: { action: 'block' },
         onUnavailable: { action: 'closed' },

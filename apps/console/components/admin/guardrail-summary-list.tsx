@@ -56,29 +56,29 @@ export default function GuardrailSummaryList() {
       const rule = parseRule(policy.rule)
       if (!rule) continue
 
-      if (rule.deny_skills && rule.deny_skills.length > 0) {
+      if (rule.deny_tools && rule.deny_tools.length > 0) {
         result.push({
           policyName: name,
-          label: `Never allow: ${rule.deny_skills.join(', ')}`,
+          label: `Never allow: ${rule.deny_tools.join(', ')}`,
           chipColor: 'amber' as const,
         })
       }
 
-      if (rule.require_skills_any && rule.require_skills_any.length > 0) {
-        const hookCtx = rule.hook_skills && rule.hook_skills.length > 0
-          ? ` (triggered by: ${rule.hook_skills.join(', ')})`
+      if (rule.require_tools_any && rule.require_tools_any.length > 0) {
+        const hookCtx = rule.hook_tools && rule.hook_tools.length > 0
+          ? ` (triggered by: ${rule.hook_tools.join(', ')})`
           : ''
         result.push({
           policyName: name,
-          label: `Must call at least one of: ${rule.require_skills_any.join(', ')}${hookCtx}`,
+          label: `Must call at least one of: ${rule.require_tools_any.join(', ')}${hookCtx}`,
           chipColor: 'malachite' as const,
         })
       }
 
-      if (rule.require_skills && rule.require_skills.length > 0) {
+      if (rule.require_tools && rule.require_tools.length > 0) {
         result.push({
           policyName: name,
-          label: `Must call all: ${rule.require_skills.join(', ')}`,
+          label: `Must call all: ${rule.require_tools.join(', ')}`,
           chipColor: 'malachite' as const,
         })
       }

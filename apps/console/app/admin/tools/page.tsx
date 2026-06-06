@@ -15,7 +15,7 @@ import SkillRenderHintsEditor from '@/components/admin/skill-render-hints-editor
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
-import type { SkillsListResponse, SkillCreateResponse } from '@intera/shared/contracts/tools'
+import type { ToolsListResponse, ToolCreateResponse } from '@intera/shared/contracts/tools'
 
 interface SkillItem {
   id: string; name: string; description: string; mode: string
@@ -114,7 +114,7 @@ export default function SkillsPage() {
   const load = useCallback(async () => {
     try {
       const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
-      const result = await apiClient<SkillsListResponse>(`/api/admin/tools${params}`)
+      const result = await apiClient<ToolsListResponse>(`/api/admin/tools${params}`)
       setSkills(result.data.tools || [])
     } catch { /* apiClient throws on envelope errors; fall back gracefully */ }
     setLoading(false)
@@ -146,7 +146,7 @@ export default function SkillsPage() {
     const urlName = isNew ? editing.name : originalName
     const url = isNew ? '/api/admin/tools' : `/api/admin/tools/${encodeURIComponent(urlName)}`
     try {
-      await apiClient<SkillCreateResponse>(url, {
+      await apiClient<ToolCreateResponse>(url, {
         method: isNew ? 'POST' : 'PUT',
         body: editing,
       })
