@@ -1226,7 +1226,7 @@ export default function PlaygroundPage() {
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && message.trim()) { e.preventDefault(); const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
                 onPaste={e => {
                   const items = e.clipboardData?.items
                   if (!items) return
