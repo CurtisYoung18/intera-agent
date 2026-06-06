@@ -1,60 +1,106 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Brain, Database, Shield, Users, Wrench, Zap, ExternalLink } from 'lucide-react'
+import { Brain, Database, Shield, Users, Wrench, Zap, ChevronRight } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { resolveBindings, hasMissing } from '@/lib/agent/resolve-bindings'
-import type { CapabilityLibrary } from '@/lib/agent/resolve-bindings'
 import type { CapabilityBindings } from '@intera/shared/types'
 
 interface BlueprintProps {
-  /** The currently selected agent ID (from localStorage) */
   agentId?: string | null
 }
 
-const CORE_RADIUS = 52
-const NODE_OFFSET = 60
+// ── Layout constants ────────────────────────────────────────────────
+const CORE_SIZE = 68
+const NODE_DISTANCE = 0.62
 
+// ── Node color tokens ──────────────────────────────────────────────
+const NODE_COLORS = {
+  brain:      { main: '#8b6ff5', glow: 'rgba(139,111,245,0.12)', bg: 'rgba(139,111,245,0.06)' },
+  memory:     { main: '#d4912e', glow: 'rgba(212,145,46,0.12)',  bg: 'rgba(212,145,46,0.06)' },
+  guardrails: { main: '#2ea04a', glow: 'rgba(46,160,74,0.12)',   bg: 'rgba(46,160,74,0.06)' },
+  subAgents:  { main: '#e75c8a', glow: 'rgba(231,92,138,0.12)',  bg: 'rgba(231,92,138,0.06)' },
+  tools:      { main: '#5b8af7', glow: 'rgba(91,138,247,0.12)',  bg: 'rgba(91,138,247,0.06)' },
+} as const
+
+// ── Satellite definitions ──────────────────────────────────────────
+const SATELLITES = [
+  { id: 'brain' as const,      navigateTo: '/admin/model',      icon: Brain,      angle: -90,  distance: NODE_DISTANCE, labelKey: 'blueprint.nodeBrain' },
+  { id: 'memory' as const,     navigateTo: '/admin/memory',     icon: Database,   angle: -20,  distance: NODE_DISTANCE, labelKey: 'blueprint.nodeMemory' },
+  { id: 'guardrails' as const, navigateTo: '/admin/guardrails', icon: Shield,     angle: 50,   distance: NODE_DISTANCE, labelKey: 'blueprint.nodeGuardrails' },
+  { id: 'subAgents' as const,  navigateTo: '/admin/case-types', icon: Users,      angle: 130,  distance: NODE_DISTANCE, labelKey: 'blueprint.nodeSubAgents' },
+  { id: 'tools' as const,      navigateTo: '/admin/tools',      icon: Wrench,     angle: 200,  distance: NODE_DISTANCE, labelKey: 'blueprint.nodeTools' },
+] as const
+
+// ── Data types ─────────────────────────────────────────────────────
+interface PolicyItem { name: string; enabled: boolean; guardrailConfig?: string | null }
+interface SkillItem  { name: string; enabled: boolean; isSystem?: boolean; isChannel?: boolean; isSpecial?: boolean; mode?: string }
+interface CaseType   { type: string; displayName: string; enabled: boolean; stageConfigs?: string | null }
+interface KBSource   { id: string; name: string; enabled: boolean }
+
+interface GuardrailStats {
+  preTool: number
+  postTool: number
+  preFinalize: number
+  total: number
+}
+
+interface ToolStats {
+  system: number
+  channel: number
+  business: number
+  kbSources: { name: string; enabled: boolean }[]
+  totalBound: number
+}
+
+interface SubAgentGroup {
+  caseType: string
+  displayName: string
+  count: number
+}
+
+// ── Component ──────────────────────────────────────────────────────
 export default function AgentBlueprint({ agentId }: BlueprintProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ w: 800, h: 600 })
   const { t } = useConsoleLocale()
   const router = useRouter()
-  const [subAgentCount, setSubAgentCount] = useState(0)
-  const [agentModel, setAgentModel] = useState<string | null>(null)
-  const [memoryTier, setMemoryTier] = useState<string | null>(null)
-  const [bindings, setBindings] = useState<CapabilityBindings | null>(null)
-  const [library, setLibrary] = useState<CapabilityLibrary | null>(null)
-  const [bindingStats, setBindingStats] = useState<{
-    brain: { bound: number; missing: number }
-    memory: { bound: number; missing: number }
-    guardrails: { bound: number; missing: number }
-    tools: { bound: number; missing: number }
-    caseTypes: { bound: number; missing: number }
-    knowledge: { bound: number; missing: number }
-  } | null>(null)
 
-  // Fetch agent config (model, memory, capabilityBindings)
+  // Agent config state
+  const [agentModel, setAgentModel] = useState<string | null>(null)
+  const [agentTemperature, setAgentTemperature] = useState<number | null>(null)
+  const [agentThinkingBudget, setAgentThinkingBudget] = useState<number | null>(null)
+  const [memoryTier, setMemoryTier] = useState<string | null>(null)
+  const [memoryThreshold, setMemoryThreshold] = useState<number | null>(null)
+  const [bindings, setBindings] = useState<CapabilityBindings | null>(null)
+
+  // Library data
+  const [policies, setPolicies] = useState<PolicyItem[]>([])
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [caseTypes, setCaseTypes] = useState<CaseType[]>([])
+  const [kbSources, setKbSources] = useState<KBSource[]>([])
+
+  // ── Fetch agent config ───────────────────────────────────────────
   useEffect(() => {
     if (!agentId) return
     fetch(`/api/admin/agent?agentId=${agentId}`).then(r => r.json()).then(d => d.data || d)
       .then(d => {
         const cfg = d.config || {}
         if (cfg.model) setAgentModel(cfg.model)
+        if (typeof cfg.temperature === 'number') setAgentTemperature(cfg.temperature)
+        if (typeof cfg.thinkingBudget === 'number') setAgentThinkingBudget(cfg.thinkingBudget)
         try {
           const ms = typeof cfg.memoryStrategy === 'string' ? JSON.parse(cfg.memoryStrategy || '{}') : (cfg.memoryStrategy || {})
-          const thresholds = ms.autocompactThresholdTokens ?? 0
-          if (thresholds <= 20000) setMemoryTier('short')
-          else if (thresholds <= 40000) setMemoryTier('balanced')
-          else if (thresholds > 40000) setMemoryTier('long')
-          else setMemoryTier(null)
-        } catch { setMemoryTier(null) }
+          const threshold = ms.autocompactThresholdTokens ?? 0
+          setMemoryThreshold(threshold)
+          if (threshold <= 20000) setMemoryTier('short')
+          else if (threshold <= 40000) setMemoryTier('balanced')
+          else setMemoryTier('long')
+        } catch { setMemoryTier(null); setMemoryThreshold(null) }
         if (cfg.capabilityBindings) {
           try {
             const raw = cfg.capabilityBindings
-            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-            setBindings(parsed)
+            setBindings(typeof raw === 'string' ? JSON.parse(raw) : raw)
           } catch { setBindings(null) }
         } else {
           setBindings(null)
@@ -63,7 +109,7 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
       .catch(() => {})
   }, [agentId])
 
-  // Fetch library data for drift detection
+  // ── Fetch library data (policies, skills, case types, KB sources) ─
   useEffect(() => {
     Promise.all([
       fetch('/api/admin/policies').then(r => r.ok ? r.json().then(d => d.data || d) : null),
@@ -72,128 +118,106 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
       fetch('/api/admin/knowledge/sources').then(r => r.ok ? r.json().then(d => d.data || d) : null),
     ])
       .then(([policiesData, skillsData, caseTypesData, knowledgeData]) => {
-        const policyNames = new Set<string>((policiesData?.policies || []).map((p: { name: string }) => p.name))
-        const skillNames = new Set<string>((skillsData?.skills || []).map((s: { name: string }) => s.name))
-        const caseTypeSlugs = new Set<string>((caseTypesData?.types || []).map((ct: { type: string }) => ct.type))
-        const knowledgeNames = new Set<string>((knowledgeData?.sources || []).map((ks: { name: string }) => ks.name))
-        setLibrary({ policyNames, skillNames, caseTypeSlugs, knowledgeNames })
+        const p = (policiesData?.policies || []) as PolicyItem[]
+        const s = (skillsData?.skills || []) as SkillItem[]
+        const ct = (caseTypesData?.types || []) as CaseType[]
+        const kb = (knowledgeData?.sources || []) as KBSource[]
+
+        setPolicies(p)
+        setSkills(s)
+        setCaseTypes(ct)
+        setKbSources(kb)
       })
       .catch(() => {})
   }, [])
 
-  // Compute binding stats
-  useEffect(() => {
-    if (!bindings || !library) {
-      setBindingStats(null)
-      return
+  // ── Compute derived stats ────────────────────────────────────────
+  const guardrailStats = useMemo<GuardrailStats>(() => {
+    if (!bindings || !policies.length) {
+      // No bindings: show all enabled policies grouped by hook
+      const enabled = policies.filter(p => p.enabled)
+      let preTool = 0, postTool = 0, preFinalize = 0
+      for (const pol of enabled) {
+        try {
+          const cfg = pol.guardrailConfig ? JSON.parse(pol.guardrailConfig) : null
+          if (cfg?.when === 'preTool') preTool++
+          else if (cfg?.when === 'postTool') postTool++
+          else if (cfg?.when === 'preFinalize') preFinalize++
+          else preTool++ // default
+        } catch { preTool++ }
+      }
+      return { preTool, postTool, preFinalize, total: enabled.length }
     }
-    const resolved = resolveBindings(bindings, library)
-    setBindingStats({
-      brain: { bound: 0, missing: 0 },
-      memory: { bound: 0, missing: 0 },
-      guardrails: {
-        bound: resolved.bound.guardrails.preTool.length + resolved.bound.guardrails.postTool.length + resolved.bound.guardrails.preFinalize.length,
-        missing: resolved.missing.guardrails.length,
-      },
-      tools: {
-        bound: resolved.bound.tools.length,
-        missing: resolved.missing.tools.length,
-      },
-      caseTypes: {
-        bound: resolved.bound.caseTypes.length,
-        missing: resolved.missing.caseTypes.length,
-      },
-      knowledge: {
-        bound: resolved.bound.knowledge.length,
-        missing: resolved.missing.knowledge.length,
-      },
-    })
-  }, [bindings, library])
 
-  // Fetch case-type info for sub-agent preview
-  useEffect(() => {
-    fetch('/api/admin/case-types').then(r => r.ok ? r.json().then(d => d.data || d) : Promise.reject(new Error()))
-      .then((d) => {
-        const types = (d.types || []) as Array<{
-          type: string; displayName: string; enabled: boolean; stageConfigs: string | null
-        }>
-        const enabled = types.filter((ct) => ct.enabled)
-        let saCount = 0
-        for (const ct of enabled) {
-          if (ct.stageConfigs) {
-            try {
-              const configs = JSON.parse(ct.stageConfigs)
-              for (const stageName of Object.keys(configs || {})) {
-                const stage = configs[stageName]
-                if (stage && Array.isArray(stage.subAgents)) {
-                  saCount += stage.subAgents.length
-                }
-              }
-            } catch { /* ignore */ }
+    // With bindings: only count bound + enabled policies
+    const boundNames = new Set([
+      ...(bindings.guardrails?.preTool || []),
+      ...(bindings.guardrails?.postTool || []),
+      ...(bindings.guardrails?.preFinalize || []),
+    ])
+    const boundPolicies = policies.filter(p => boundNames.has(p.name) && p.enabled)
+    let preTool = 0, postTool = 0, preFinalize = 0
+    for (const pol of boundPolicies) {
+      try {
+        const cfg = pol.guardrailConfig ? JSON.parse(pol.guardrailConfig) : null
+        if (cfg?.when === 'preTool') preTool++
+        else if (cfg?.when === 'postTool') postTool++
+        else if (cfg?.when === 'preFinalize') preFinalize++
+        else preTool++
+      } catch { preTool++ }
+    }
+    return { preTool, postTool, preFinalize, total: boundPolicies.length }
+  }, [bindings, policies])
+
+  const toolStats = useMemo<ToolStats>(() => {
+    // KB sources are always shown regardless of bindings
+    const kb = kbSources.map(ks => ({ name: ks.name, enabled: ks.enabled }))
+
+    if (!bindings) {
+      // No bindings: show all skills by category
+      const system = skills.filter(s => s.isSystem).length
+      const channel = skills.filter(s => s.isChannel).length
+      const business = skills.filter(s => !s.isSystem && !s.isChannel && !s.isSpecial).length
+      return { system, channel, business, kbSources: kb, totalBound: system + channel + business }
+    }
+
+    // With bindings: count bound skills by category
+    const boundSet = new Set(bindings.tools || [])
+    // Empty tools array = bind all
+    const allBound = !bindings.tools || bindings.tools.length === 0
+    const relevant = allBound ? skills : skills.filter(s => boundSet.has(s.name))
+
+    const system = relevant.filter(s => s.isSystem).length
+    const channel = relevant.filter(s => s.isChannel).length
+    const business = relevant.filter(s => !s.isSystem && !s.isChannel && !s.isSpecial).length
+    return { system, channel, business, kbSources: kb, totalBound: system + channel + business }
+  }, [bindings, skills, kbSources])
+
+  const subAgentGroups = useMemo<SubAgentGroup[]>(() => {
+    const enabled = caseTypes.filter(ct => ct.enabled)
+    const groups: SubAgentGroup[] = []
+    for (const ct of enabled) {
+      if (!ct.stageConfigs) continue
+      try {
+        const configs = JSON.parse(ct.stageConfigs)
+        let count = 0
+        for (const stageName of Object.keys(configs || {})) {
+          const stage = configs[stageName]
+          if (stage && Array.isArray(stage.subAgents)) {
+            count += stage.subAgents.length
           }
         }
-        setSubAgentCount(saCount)
-      })
-      .catch(() => { /* ignore */ })
-  }, [])
+        if (count > 0) {
+          groups.push({ caseType: ct.type, displayName: ct.displayName, count })
+        }
+      } catch { /* ignore */ }
+    }
+    return groups
+  }, [caseTypes])
 
-  const satellites = useMemo(
-    () =>
-      [
-        {
-          id: 'brain' as const,
-          navigateTo: '/admin/model',
-          icon: <Brain className="w-5 h-5" />,
-          label: t('blueprint.nodeBrain'),
-          color: '#8b6ff5',
-          glow: 'rgba(139,111,245,0.15)',
-          angle: -90,
-          distance: 0.65,
-        },
-        {
-          id: 'memory' as const,
-          navigateTo: '/admin/memory',
-          icon: <Database className="w-5 h-5" />,
-          label: t('blueprint.nodeMemory'),
-          color: '#d4912e',
-          glow: 'rgba(212,145,46,0.15)',
-          angle: -20,
-          distance: 0.65,
-        },
-        {
-          id: 'guardrails' as const,
-          navigateTo: '/admin/guardrails',
-          icon: <Shield className="w-5 h-5" />,
-          label: t('blueprint.nodeGuardrails'),
-          color: '#2ea04a',
-          glow: 'rgba(46,160,74,0.15)',
-          angle: 50,
-          distance: 0.65,
-        },
-        {
-          id: 'subAgents' as const,
-          navigateTo: '/admin/case-types',
-          icon: <Users className="w-5 h-5" />,
-          label: t('blueprint.nodeSubAgents'),
-          color: '#e75c8a',
-          glow: 'rgba(231,92,138,0.15)',
-          angle: 130,
-          distance: 0.65,
-        },
-        {
-          id: 'tools' as const,
-          navigateTo: '/admin/tools',
-          icon: <Wrench className="w-5 h-5" />,
-          label: t('blueprint.nodeTools'),
-          color: '#5b8af7',
-          glow: 'rgba(91,138,247,0.15)',
-          angle: 200,
-          distance: 0.65,
-        },
-      ] as const,
-    [t],
-  )
+  const totalSubAgents = subAgentGroups.reduce((sum, g) => sum + g.count, 0)
 
+  // ── ResizeObserver ───────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -216,181 +240,215 @@ export default function AgentBlueprint({ agentId }: BlueprintProps) {
     return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r }
   }
 
-  const connectionLines = satellites.map(s => {
+  const connectionLines = SATELLITES.map(s => {
     const nodePos = getNodePos(s.angle, s.distance)
     const rad = (s.angle * Math.PI) / 180
-    const fromX = cx + Math.cos(rad) * CORE_RADIUS
-    const fromY = cy + Math.sin(rad) * CORE_RADIUS
-    const toX = nodePos.x - Math.cos(rad) * NODE_OFFSET
-    const toY = nodePos.y - Math.sin(rad) * NODE_OFFSET
-    return { x1: fromX, y1: fromY, x2: toX, y2: toY, id: s.id, color: s.color }
+    const fromX = cx + Math.cos(rad) * (CORE_SIZE / 2 + 4)
+    const fromY = cy + Math.sin(rad) * (CORE_SIZE / 2 + 4)
+    const toX = nodePos.x - Math.cos(rad) * 24
+    const toY = nodePos.y - Math.sin(rad) * 24
+    return { x1: fromX, y1: fromY, x2: toX, y2: toY, id: s.id, color: NODE_COLORS[s.id].main }
   })
 
-  // Map satellite node id → bindingStats key (subAgents → caseTypes)
-  const NODE_TO_STAT_KEY: Record<string, string> = {
-    brain: 'brain',
-    memory: 'memory',
-    guardrails: 'guardrails',
-    subAgents: 'caseTypes',
-    tools: 'tools',
+  // ── Render: satellite card content ───────────────────────────────
+  function renderBrainDetail() {
+    if (!agentModel) return <span className="text-[11px] text-[var(--smoke)]">{t('blueprint.notConfigured')}</span>
+    const parts: string[] = []
+    if (agentTemperature != null) parts.push(`temp ${agentTemperature}`)
+    if (agentThinkingBudget != null) parts.push(`budget ${(agentThinkingBudget / 1000).toFixed(0)}k`)
+    return (
+      <>
+        <div className="text-[12px] font-semibold text-[var(--mist)] truncate">{agentModel}</div>
+        {parts.length > 0 && <div className="text-[10px] text-[var(--smoke)] mt-0.5">{parts.join(' · ')}</div>}
+      </>
+    )
   }
 
-  function hasDrift(nodeId: string): boolean {
-    if (!bindingStats) return false
-    const statKey = NODE_TO_STAT_KEY[nodeId]
-    if (!statKey) return false
-    const stats = bindingStats[statKey as keyof typeof bindingStats]
-    return stats ? stats.missing > 0 : false
+  function renderMemoryDetail() {
+    if (!memoryTier) return <span className="text-[11px] text-[var(--smoke)]">{t('blueprint.notConfigured')}</span>
+    const tierLabel = t(`blueprint.memoryTier${memoryTier.charAt(0).toUpperCase() + memoryTier.slice(1)}` as any) || memoryTier
+    return (
+      <>
+        <div className="text-[12px] font-semibold text-[var(--mist)]">{tierLabel}</div>
+        {memoryThreshold != null && (
+          <div className="text-[10px] text-[var(--smoke)] mt-0.5">autocompact: {(memoryThreshold / 1000).toFixed(0)}k tokens</div>
+        )}
+      </>
+    )
   }
 
-  // Stat pill data per node
-  function getNodePill(nodeId: string): { label: string; color: string; muted?: boolean } | null {
-    const c = satellites.find(s => s.id === nodeId)?.color || '#888'
-    switch (nodeId) {
-      case 'brain':
-        return agentModel
-          ? { label: agentModel, color: c }
-          : { label: t('blueprint.notConfigured'), color: c, muted: true }
-      case 'memory':
-        return memoryTier
-          ? { label: t(`blueprint.memoryTier${memoryTier.charAt(0).toUpperCase() + memoryTier.slice(1)}` as any) || memoryTier, color: c }
-          : { label: t('blueprint.notConfigured'), color: c, muted: true }
-      case 'guardrails': {
-        const n = bindingStats?.guardrails?.bound ?? 0
-        return n > 0
-          ? { label: t('blueprint.guardrailsCount', { n }), color: c }
-          : { label: t('blueprint.noPolicies'), color: c, muted: true }
-      }
-      case 'tools': {
-        const n = bindingStats?.tools?.bound ?? 0
-        return n > 0
-          ? { label: t('blueprint.toolsCount', { n }), color: c }
-          : { label: t('blueprint.noTools'), color: c, muted: true }
-      }
-      case 'subAgents':
-        return subAgentCount > 0
-          ? { label: t('blueprint.subAgentsPreview', { n: subAgentCount }), color: c }
-          : { label: t('blueprint.noSubAgents'), color: c, muted: true }
-      default:
-        return null
-    }
+  function renderGuardrailsDetail() {
+    const { preTool, postTool, preFinalize, total } = guardrailStats
+    if (total === 0) return <span className="text-[11px] text-[var(--smoke)]">{t('blueprint.noPolicies')}</span>
+    return (
+      <>
+        <div className="flex items-center gap-2 text-[11px] text-[var(--mist)]">
+          <span>preTool: <strong>{preTool}</strong></span>
+          <span className="text-[var(--smoke)]">·</span>
+          <span>postTool: <strong>{postTool}</strong></span>
+          <span className="text-[var(--smoke)]">·</span>
+          <span>finalize: <strong>{preFinalize}</strong></span>
+        </div>
+      </>
+    )
+  }
+
+  function renderSubAgentsDetail() {
+    if (totalSubAgents === 0) return <span className="text-[11px] text-[var(--smoke)]">{t('blueprint.noSubAgents')}</span>
+    return (
+      <div className="flex flex-col gap-0.5">
+        {subAgentGroups.map(g => (
+          <div key={g.caseType} className="text-[11px] text-[var(--mist)]">
+            {g.displayName}: <strong>{g.count}</strong> {g.count === 1 ? 'agent' : 'agents'}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  function renderToolsDetail() {
+    const { system, channel, business, kbSources: kb, totalBound } = toolStats
+    const total = totalBound + kb.length
+    if (total === 0) return <span className="text-[11px] text-[var(--smoke)]">{t('blueprint.noTools')}</span>
+    return (
+      <>
+        <div className="flex items-center gap-2 text-[11px] text-[var(--mist)] flex-wrap">
+          {system > 0 && <span>Sys <strong>{system}</strong></span>}
+          {channel > 0 && <>
+            {system > 0 && <span className="text-[var(--smoke)]">·</span>}
+            <span>Ch <strong>{channel}</strong></span>
+          </>}
+          {business > 0 && <>
+            {(system > 0 || channel > 0) && <span className="text-[var(--smoke)]">·</span>}
+            <span>Biz <strong>{business}</strong></span>
+          </>}
+        </div>
+        {kb.length > 0 && (
+          <div className="text-[10px] text-[var(--smoke)] mt-0.5">
+            KB: {kb.map(k => k.name).join(', ')} ({kb.length})
+          </div>
+        )}
+      </>
+    )
+  }
+
+  const detailRenderers: Record<string, () => React.ReactNode> = {
+    brain: renderBrainDetail,
+    memory: renderMemoryDetail,
+    guardrails: renderGuardrailsDetail,
+    subAgents: renderSubAgentsDetail,
+    tools: renderToolsDetail,
   }
 
   return (
     <div ref={containerRef} className="relative w-full" style={{ height: '100%', minHeight: '500px' }}>
-      {/* Connection lines — SVG */}
+      {/* ── Connection lines (SVG) ──────────────────────────────── */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1, overflow: 'visible' }}>
         <defs>
-          {satellites.map(s => (
+          {SATELLITES.map(s => (
             <linearGradient key={s.id} id={`grad-${s.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={s.color} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={s.color} stopOpacity={0.05} />
+              <stop offset="0%" stopColor={NODE_COLORS[s.id].main} stopOpacity={0.25} />
+              <stop offset="100%" stopColor={NODE_COLORS[s.id].main} stopOpacity={0.03} />
             </linearGradient>
           ))}
         </defs>
         {connectionLines.map(line => (
           <g key={line.id}>
             <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-              stroke={line.color} strokeOpacity={0.1} strokeWidth={4} strokeLinecap="round" />
+              stroke={line.color} strokeOpacity={0.06} strokeWidth={6} strokeLinecap="round" />
             <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-              stroke={`url(#grad-${line.id})`} strokeWidth={1} strokeLinecap="round" />
+              stroke={`url(#grad-${line.id})`} strokeWidth={1.5} strokeLinecap="round" />
             <line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-              stroke={line.color}
-              strokeOpacity={0.25}
-              strokeWidth={1.5}
-              strokeDasharray="4 12"
-              strokeLinecap="round"
+              stroke={line.color} strokeOpacity={0.2} strokeWidth={1.2}
+              strokeDasharray="3 10" strokeLinecap="round"
               className="animate-particle-flow" />
-            <circle cx={line.x2} cy={line.y2} r={2}
-              fill={line.color} opacity={0.3} />
           </g>
         ))}
       </svg>
 
-      {/* Agent Core — center */}
+      {/* ── Core node ──────────────────────────────────────────── */}
       <div className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center pointer-events-none"
         style={{ transform: 'translate(-50%, -50%)' }}>
         <div
-          className="absolute w-[140px] h-[140px] rounded-full pointer-events-none opacity-[0.38]"
+          className="absolute rounded-full pointer-events-none opacity-30"
           style={{
-            background: 'radial-gradient(circle, rgba(139,111,245,0.07) 0%, transparent 72%)',
-            transform: 'translate(-50%, -50%)',
-            left: '50%',
-            top: '50%',
+            width: CORE_SIZE * 2.2, height: CORE_SIZE * 2.2,
+            background: 'radial-gradient(circle, rgba(139,111,245,0.08) 0%, transparent 72%)',
+            transform: 'translate(-50%, -50%)', left: '50%', top: '50%',
           }}
         />
         <div
-          className="relative w-[72px] h-[72px] rounded-2xl flex flex-col items-center justify-center pointer-events-auto animate-core-box-breathe"
+          className="relative rounded-2xl flex flex-col items-center justify-center pointer-events-auto animate-core-box-breathe"
           style={{
-            background: 'linear-gradient(135deg, rgba(139,111,245,0.15), rgba(91,138,247,0.06))',
-            border: '1px solid rgba(139,111,245,0.25)',
-            transformOrigin: 'center center',
+            width: CORE_SIZE, height: CORE_SIZE,
+            background: 'linear-gradient(135deg, rgba(139,111,245,0.12), rgba(91,138,247,0.05))',
+            border: '1px solid rgba(139,111,245,0.2)',
+            backdropFilter: 'blur(12px)',
           }}
         >
-          <Zap className="w-[22px] h-[22px] text-lavender mb-0.5 animate-core-zap-soft" />
-          <span className="text-[11px] font-bold text-lavender/70 tracking-[0.1em] uppercase">{t('blueprint.core')}</span>
-        </div>
-        <div className="mt-3 flex items-center gap-1.5 pointer-events-auto">
-          <div className="w-1.5 h-1.5 rounded-full bg-lavender/40" />
-          <span className="text-[11px] text-[var(--fog)] font-medium">
-            {t('blueprint.clickToNavigate')}
-          </span>
+          <Zap className="text-lavender mb-0.5 animate-core-zap-soft" style={{ width: 20, height: 20 }} />
+          <span className="text-[10px] font-bold text-lavender/60 tracking-[0.12em] uppercase">{t('blueprint.core')}</span>
         </div>
       </div>
 
-      {/* Satellite nodes */}
-      {satellites.map(s => {
+      {/* ── Satellite cards ────────────────────────────────────── */}
+      {SATELLITES.map(s => {
         const pos = getNodePos(s.angle, s.distance)
-        const drift = hasDrift(s.id)
-        const pill = getNodePill(s.id)
+        const colors = NODE_COLORS[s.id]
+        const Icon = s.icon
+        const detail = detailRenderers[s.id]?.()
 
         return (
           <button
             key={s.id}
             onClick={() => router.push(s.navigateTo)}
-            className="absolute z-10 flex items-center gap-3 px-5 py-3.5 rounded-xl transition-all duration-300 ease-out
-              bg-white/80 backdrop-blur-xl border cursor-pointer text-left group
-              hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+            className="absolute z-10 text-left group"
             style={{
-              left: pos.x,
-              top: pos.y,
-              transform: `translate(-50%, -50%)`,
-              borderColor: drift ? 'rgba(212,145,46,0.4)' : 'rgba(0,0,0,0.05)',
-              boxShadow: drift ? '0 0 16px rgba(212,145,46,0.12), 0 1px 3px rgba(0,0,0,0.04)' : '0 1px 3px rgba(0,0,0,0.04)',
+              left: pos.x, top: pos.y,
+              transform: 'translate(-50%, -50%)',
             }}
           >
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform duration-200"
-              style={{ background: `linear-gradient(135deg, ${s.glow}, transparent)`, color: s.color }}>
-              {s.icon}
-            </div>
-            <div className="min-w-0">
-              <div className="text-[13px] font-semibold text-[var(--mist)] flex items-center gap-1.5">
-                {s.label}
-                {drift && (
-                  <span className="text-[9px] px-1 py-0.5 rounded-full bg-amber/[0.12] text-amber font-bold">
-                    {bindingStats?.[s.id === 'subAgents' ? 'caseTypes' : s.id]?.missing ?? 0}
-                  </span>
-                )}
-              </div>
-              {pill && (
-                <div className="mt-1">
-                  <span
-                    className="inline-block max-w-[200px] truncate rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
-                    style={{
-                      backgroundColor: pill.muted ? 'transparent' : `${pill.color}12`,
-                      border: pill.muted ? '1px dashed rgba(0,0,0,0.08)' : `1px solid ${pill.color}25`,
-                      color: pill.muted ? 'var(--fog)' : pill.color,
-                    }}
-                  >
-                    {pill.label}
-                  </span>
+            <div
+              className="rounded-2xl transition-all duration-300 ease-out cursor-pointer
+                hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98]"
+              style={{
+                width: 200,
+                padding: '12px 14px',
+                background: 'rgba(255,252,249,0.82)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                border: `1px solid rgba(0,0,0,0.04)`,
+                borderLeft: `3px solid ${colors.main}`,
+                boxShadow: `0 2px 8px rgba(0,0,0,0.03), 0 0 0 0 ${colors.glow}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = `0 4px 20px ${colors.glow}, 0 0 0 1px ${colors.main}20`
+                e.currentTarget.style.borderColor = `rgba(0,0,0,0.06)`
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = `0 2px 8px rgba(0,0,0,0.03), 0 0 0 0 ${colors.glow}`
+                e.currentTarget.style.borderColor = `rgba(0,0,0,0.04)`
+              }}
+            >
+              {/* Header: icon + label + arrow */}
+              <div className="flex items-center gap-2 mb-1.5">
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ background: colors.bg }}
+                >
+                  <Icon style={{ width: 14, height: 14, color: colors.main }} />
                 </div>
-              )}
-            </div>
-            {/* Navigate arrow */}
-            <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ background: `${s.color}10` }}>
-              <ExternalLink className="w-3 h-3" style={{ color: s.color }} />
+                <span className="text-[12px] font-semibold text-[var(--mist)] flex-1">
+                  {t(s.labelKey as any) || s.id}
+                </span>
+                <ChevronRight
+                  className="w-3.5 h-3.5 text-[var(--smoke)] opacity-0 group-hover:opacity-100 transition-opacity"
+                />
+              </div>
+
+              {/* Detail content */}
+              <div className="pl-9">
+                {detail}
+              </div>
             </div>
           </button>
         )
