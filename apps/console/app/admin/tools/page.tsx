@@ -212,7 +212,7 @@ export default function SkillsPage() {
 
   const openEdit = (s: SkillItem) => { if (s.isSpecial || s.mode === 'engine_managed' || s.mode === 'channel') return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
 
-  const filtered = tools.filter(s =>
+  const filtered = skills.filter(s =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.description || '').toLowerCase().includes(search.toLowerCase())
   )
 
@@ -231,7 +231,7 @@ export default function SkillsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('tools.title')}</h1>
-          <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('tools.subtitle', { n: tools.length })}</p>
+          <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('tools.subtitle', { n: skills.length })}</p>
         </div>
         <button onClick={openNew}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">
