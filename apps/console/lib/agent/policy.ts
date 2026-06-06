@@ -1,8 +1,7 @@
 // Intera Harness - Policy Engine (G11 Phase 1 — GuardrailHook primitive)
 //
 // Guardrail hooks are evaluated at preTool, postTool, and preFinalize checkpoints.
-// Hooks load from DB (guardrailConfig JSON, falling back to legacy rule JSON).
-// Hook assignment is driven by AgentConfig.capabilityBindings.guardrails.
+// Hooks load from DB (guardrailConfig JSON), scoped to agentConfigId.
 //
 // SAFETY FLOOR (platform-owned, NOT configurable):
 //   - Hooks on high-risk skills {refund_money, change_ban_status, delete_account}
@@ -22,7 +21,6 @@ import { createAgentClient } from './api/provider-config'
 import type {
   PolicyHook,
   PolicyResult,
-  CapabilityBindings,
   PolicyCheckResult,
   PolicyEvaluationResult,
   PendingGuardrailToolCall,
@@ -52,41 +50,6 @@ export interface PolicyContext {
 
 const SEVERITY: Record<PolicyResult, number> = {
   pass: 0, hint: 1, blocked: 2, escalated: 3,
-}
-
-// ── Legacy rule → GuardrailHook conversion ────────────────────────────────
-
-/** Convert a legacy PolicyRule JSON + hook string into a GuardrailHook.
- *  Reuses the same mapping as loadStageGuardrails. */
-export function legacyRuleToHook(ruleJson: string, hook: string, name: string): GuardrailHook {
-  let rule: Record<string, unknown> = {}
-  try { rule = JSON.parse(ruleJson || '{}') } catch { /* use empty */ }
-
-  const hookSkills: string[] = Array.isArray(rule.hook_skills) ? rule.hook_skills : []
-  const denySkills: string[] = Array.isArray(rule.deny_skills) ? rule.deny_skills : []
-  const requireSkills: string[] = Array.isArray(rule.require_skills) ? rule.require_skills : []
-  const requireSkillsAny: string[] = Array.isArray(rule.require_skills_any) ? rule.require_skills_any : []
-  const evalPrompt: string | undefined = typeof rule.evaluationPrompt === 'string' ? rule.evaluationPrompt : undefined
-  const hasAi = !!evalPrompt
-  const hasRules = denySkills.length > 0 || requireSkills.length > 0 || requireSkillsAny.length > 0
-
-  // Match skills: prefer hook_skills; fall back to deny_skills for "never allow" hooks
-  const matchSkills = hookSkills.length > 0 ? hookSkills : denySkills
-
-  const gh: GuardrailHook = {
-    when: hook as GuardrailCheckpoint,
-    match: { skills: matchSkills },
-    check: hasAi
-      ? { kind: 'ai', evaluationPrompt: evalPrompt }
-      : { kind: 'rule', ...(denySkills.length > 0 ? { denySkills } : {}), ...(requireSkills.length > 0 ? { requireSkills } : {}), ...(requireSkillsAny.length > 0 ? { requireSkillsAny } : {}) },
-    onViolation: denySkills.length > 0 || requireSkills.length > 0 || requireSkillsAny.length > 0
-      ? { action: 'block', guidance: 'Blocked by policy rule.' }
-      : hasAi ? { action: 'block', guidance: 'Violation detected by AI evaluation.' } : { action: 'warn' },
-    // Safe default: ai checks escalate on unavailable; rule checks are closed
-    onUnavailable: hasAi ? { action: 'invoke_tool', tool: 'create_human_task' } : { action: 'closed' },
-  }
-
-  return gh
 }
 
 // ── Validation ────────────────────────────────────────────────────────────
@@ -122,23 +85,20 @@ export class PolicyEngine {
   private hooks: GuardrailHook[] = []
   private policyModel: string
   private llmClient: Anthropic
-  private orgId: string
+  private agentConfigId: string
 
-  constructor(orgId: string, _guardrails?: CapabilityBindings['guardrails']) {
-    this.orgId = orgId
+  constructor(agentConfigId: string) {
+    this.agentConfigId = agentConfigId
     this.policyModel = process.env.POLICY_EVAL_MODEL || DEFAULT_MEMORY_MODEL
     this.llmClient = createAgentClient(this.policyModel)
   }
 
-  static async create(orgId: string, guardrails?: CapabilityBindings['guardrails']): Promise<PolicyEngine> {
-    const engine = new PolicyEngine(orgId, guardrails)
-
-    let totalDbPolicies = 0
+  static async create(agentConfigId: string): Promise<PolicyEngine> {
+    const engine = new PolicyEngine(agentConfigId)
 
     try {
       const { prisma } = await import('@intera/shared/prisma')
-      const dbPolicies = await prisma.policy.findMany({ where: { orgId, enabled: true } })
-      totalDbPolicies = dbPolicies.length
+      const dbPolicies = await prisma.policy.findMany({ where: { agentConfigId, enabled: true } })
 
       for (const p of dbPolicies) {
         if (p.guardrailConfig) {
@@ -153,135 +113,13 @@ export class PolicyEngine {
           } catch (err) {
             console.warn(`[PolicyEngine] Failed to parse guardrailConfig for "${p.name}":`, err)
           }
-        } else if (p.rule) {
-          // Legacy fallback: convert old PolicyRule JSON → GuardrailHook
-          try {
-            const hook = legacyRuleToHook(p.rule, p.hook, p.name);
-            (hook as any).__name = p.name
-            engine.hooks.push(hook)
-          } catch (err) {
-            console.warn(`[PolicyEngine] Failed to convert legacy rule for "${p.name}":`, err)
-          }
         }
       }
     } catch (err) {
-      console.warn('[PolicyEngine] Failed to load policies from DB, using built-ins only:', err)
-    }
-
-    // Only fall back to built-ins when the DB has NO policies at all
-    // (not just zero hooks loaded — avoids re-enabling user-disabled built-ins).
-    if (totalDbPolicies === 0) {
-      engine.loadBuiltInHooks()
-    }
-
-    if (guardrails) {
-      const names = new Set([...(guardrails.preTool || []), ...(guardrails.postTool || []), ...(guardrails.preFinalize || [])])
-      if (names.size > 0) {
-        engine.hooks = engine.hooks.filter((h) => names.has((h as any).__name))
-      }
+      console.warn('[PolicyEngine] Failed to load policies from DB:', err)
     }
 
     return engine
-  }
-
-  // ── Built-in hooks ──────────────────────────────────────────────────────
-
-  private loadBuiltInHooks(): void {
-    const builtIns: Array<{ name: string; hook: GuardrailHook }> = [
-      {
-        name: 'no_high_risk_account_change',
-        hook: {
-          when: 'preTool', match: { skills: ['refund_money', 'change_ban_status', 'delete_account'] },
-          check: { kind: 'rule', denySkills: ['refund_money', 'change_ban_status', 'delete_account'] },
-          onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
-          onUnavailable: { action: 'closed' },
-          guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
-        },
-      },
-      {
-        name: 'investigate_before_escalation',
-        hook: {
-          when: 'preTool', match: { skills: ['create_human_task'] },
-          check: { kind: 'rule', requireSkillsAny: ['get_latest_deposit', 'get_withdraw_conditions', 'get_account_status', 'get_kyc_status'] },
-          onViolation: { action: 'block', guidance: 'Complete the required investigation first before escalating.' },
-          onUnavailable: { action: 'closed' },
-          guidance: 'Investigation required before escalation. Call the required skills first.',
-        },
-      },
-      {
-        name: 'conflict_requires_human',
-        hook: {
-          when: 'postTool', match: { skills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_account_status', 'get_kyc_status'] },
-          check: {
-            kind: 'ai',
-            evaluationPrompt: [
-              'Check whether the skill outputs contradict what the customer reported.',
-              '', 'Skill output: {{skill_output}}', 'Confirmed facts: {{confirmed_facts}}', '',
-              'Escalate to human (result=escalated) when:',
-              '(1) the system shows a completed/successful transaction but the customer says funds are missing or not received,',
-              '(2) the system shows account status is normal but the customer reports access issues,',
-              '(3) the payment channel shows normal operation but the customer says the payment failed.',
-              '', 'If outputs are consistent with the customer issue, pass.', 'If data is ambiguous or incomplete, hint.',
-            ].join('\n'),
-          },
-          onViolation: { action: 'invoke_tool', tool: 'create_human_task' },
-          onUnavailable: { action: 'invoke_tool', tool: 'create_human_task' },
-        },
-      },
-      {
-        name: 'evidence_required_before_resolution',
-        hook: {
-          when: 'preFinalize', match: { skills: [] },
-          check: { kind: 'rule', requireSkillsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status'] },
-          onViolation: { action: 'block', guidance: 'Evidence required before resolution. Call at least one investigation skill first.' },
-          onUnavailable: { action: 'closed' },
-        },
-      },
-      {
-        name: 'no_compensation_promise',
-        hook: {
-          when: 'preFinalize', match: { skills: [] },
-          check: {
-            kind: 'ai',
-            evaluationPrompt: [
-              'Check whether the finalize conclusion promises or commits to any monetary compensation.',
-              '', 'Finalize output: {{skill_output}}', 'Confirmed facts: {{confirmed_facts}}', '',
-              'Block (result=blocked) if the agent promises refund, cash reimbursement, voucher with cash value, or direct financial remedy — only human operators may authorize compensation.',
-              'Pass if the conclusion explains findings, policy, or next steps without committing to pay the customer.',
-              'Also pass if the agent only relays what a human operator already approved.',
-            ].join('\n'),
-          },
-          onViolation: { action: 'block', guidance: 'Only human operators may authorize compensation. Do not promise refunds or financial remedies.' },
-          onUnavailable: { action: 'invoke_tool', tool: 'create_human_task' },
-        },
-      },
-      {
-        name: 'must_cite_basis',
-        hook: {
-          when: 'preFinalize', match: { skills: [] },
-          check: {
-            kind: 'ai',
-            evaluationPrompt: [
-              'Check whether the finalize conclusion references specific evidence gathered during case investigation.',
-              '', 'Finalize output: {{skill_output}}', 'Confirmed facts: {{confirmed_facts}}', 'Skills called: {{skills_called}}', '',
-              'The conclusion must cite at least one of:',
-              '(1) a specific skill result (e.g. get_latest_deposit showed status=completed),',
-              '(2) confirmed facts collected from the user,',
-              '(3) a knowledge base article or policy reference.',
-              '', 'Block (result=blocked) if the conclusion makes claims without any factual grounding.',
-              'Pass if evidence is properly cited and the reasoning is traceable to collected facts.',
-            ].join('\n'),
-          },
-          onViolation: { action: 'block', guidance: 'Conclusions must cite specific evidence. Reference skill results, confirmed facts, or policy.' },
-          onUnavailable: { action: 'open' },
-        },
-      },
-    ]
-
-    for (const { name, hook } of builtIns) {
-      (hook as any).__name = name
-      this.hooks.push(hook)
-    }
   }
 
   // ── Public API ──────────────────────────────────────────────────────────
@@ -479,7 +317,7 @@ export class PolicyEngine {
       : 'guardrail.hint'
 
     writeAudit({
-      actorUserId: 'system', orgId: this.orgId, action, target: `policy:${hookName}`,
+      actorUserId: 'system', orgId: this.agentConfigId, action, target: `policy:${hookName}`,
       after: { checkpoint, result: result.result, reason: result.reason, modelUsed: result.modelUsed },
     }).catch((err) => { console.warn('[PolicyEngine] Audit write failed (non-fatal):', err) })
   }

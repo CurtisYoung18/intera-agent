@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { createAgentClient } from './api/provider-config'
-import type { SubAgentConfig, SubAgentTask, SubAgentResult, SkillDefinition, ToolUse, AgentContext, SSEEvent } from '@intera/shared/types'
+import type { SubAgentConfig, SubAgentTask, SubAgentResult, ToolDefinition, ToolUse, AgentContext, SSEEvent } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { ChecklistStrategy } from './strategies/checklist-strategy'
 import { AgentLoop } from './loop'
@@ -16,7 +16,7 @@ const DEFAULT_MAX_ITERATIONS = 5
 const DEFAULT_TIMEOUT_MS = 30_000
 
 /** Terminal tool for sub-agents — intercepted by ChecklistStrategy, never executed. */
-const FINALIZE_SUB_AGENT_SKILL: SkillDefinition = {
+const FINALIZE_SUB_AGENT_SKILL: ToolDefinition = {
   name: 'finalize_sub_agent',
   description:
     'Call this when you have completed all required investigation checks. ' +
@@ -59,7 +59,7 @@ export class SubAgent {
 
   constructor(
     private config: SubAgentConfig,
-    private skillDefinitions: SkillDefinition[] = [],
+    private skillDefinitions: ToolDefinition[] = [],
   ) {
     this.client = createAgentClient(config.model)
   }

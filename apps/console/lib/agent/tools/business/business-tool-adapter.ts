@@ -1,16 +1,16 @@
 // S4b — Business tool adapter.
-// Wraps a DB SkillDefinition as a Tool<I,O> so the executor sees one interface.
+// Wraps a DB ToolDefinition as a Tool<I,O> so the executor sees one interface.
 
 import { z } from 'zod'
 import type { Tool, ToolContext } from '@intera/shared/tools/tool'
-import type { SkillDefinition } from '@intera/shared/types'
+import type { ToolDefinition } from '@intera/shared/types'
 
 function safeZod(schema: unknown): z.ZodType {
   if (schema instanceof z.ZodType) return schema
   return z.object({}).passthrough()
 }
 
-export function adaptBusinessTool(def: SkillDefinition): Tool {
+export function adaptBusinessTool(def: ToolDefinition): Tool {
   const inputSchema = (def as { zodSchema?: z.ZodType }).zodSchema ?? safeZod(def.inputSchema)
 
   return {
@@ -48,7 +48,7 @@ const DEFAULT_MOCK_RESPONSES: Record<string, unknown> = {
   get_account_status: { status: 'active' },
 }
 
-async function executeMock(def: SkillDefinition, input?: unknown): Promise<unknown> {
+async function executeMock(def: ToolDefinition, input?: unknown): Promise<unknown> {
   await new Promise((r) => setTimeout(r, 100 + Math.random() * 200))
   if (def.mockFixture && typeof def.mockFixture === 'object') return def.mockFixture
   return DEFAULT_MOCK_RESPONSES[def.name] ?? { ok: true }
@@ -57,7 +57,7 @@ async function executeMock(def: SkillDefinition, input?: unknown): Promise<unkno
 // ── executeHttp ───────────────────────────────────────────────
 
 async function executeHttp(
-  def: SkillDefinition,
+  def: ToolDefinition,
   input: unknown,
   ctx: ToolContext,
 ): Promise<unknown> {

@@ -3,12 +3,12 @@
 // Unknown/missing category → treated as operational (fail-safe).
 
 import type { ToolExecutionResult } from './streaming-tool-executor'
-import type { SkillDefinition } from '@intera/shared/types'
+import type { ToolDefinition } from '@intera/shared/types'
 
 export type ToolCategory = 'system_info' | 'operational' | null
 
 /** Check whether a tool is safe to execute in dry-run mode. */
-export function isSafeInDryRun(skill: SkillDefinition): boolean {
+export function isSafeInDryRun(skill: ToolDefinition): boolean {
   // system_info tools read data — safe to execute for real
   if ((skill as any).toolCategory === 'system_info') return true
   // Everything else (operational, null, undefined) → mock in dry-run
@@ -16,7 +16,7 @@ export function isSafeInDryRun(skill: SkillDefinition): boolean {
 }
 
 /** Produce a mock ToolExecutionResult for a dry-run intercepted tool. */
-export function dryRunMockResult(skill: SkillDefinition): ToolExecutionResult {
+export function dryRunMockResult(skill: ToolDefinition): ToolExecutionResult {
   return {
     name: skill.name,
     latencyMs: 1,

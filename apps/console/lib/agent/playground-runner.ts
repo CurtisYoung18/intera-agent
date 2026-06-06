@@ -58,7 +58,7 @@ export async function* runPlaygroundTurn(input: {
   }
 
   // ── Load real config from DB ──
-  const agentConfig = await loadAgentConfig(orgId, input.configId)
+  const agentConfig = await loadAgentConfig(input.configId)
   if (pc.showThinking !== undefined) { (agentConfig as any).showThinking = pc.showThinking }
   const systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
 
@@ -131,6 +131,7 @@ export async function* runPlaygroundTurn(input: {
 
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
+    configId: input.configId || orgId,
     caseId,
     orgId,
     userId,
@@ -243,31 +244,17 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Derive applicable pipeline stages from agent config ──
 
-  const guardsConfigured = (() => {
-    try {
-      const hooks = typeof agentConfig.policyHooks === 'string'
-        ? JSON.parse(agentConfig.policyHooks)
-        : (agentConfig.policyHooks || {})
-      const keys = Object.keys(hooks)
-      if (keys.length > 0) {
-        // Also check if any hook array is non-empty
-        return keys.some(k => {
-          const arr = hooks[k]
-          return Array.isArray(arr) && arr.length > 0
-        })
-      }
-      return false
-    } catch { return false }
-  })()
+  // Guardrails are loaded from DB by PolicyEngine (scoped to agentConfigId)
+  const guardsConfigured = true
 
-  const bindings = agentConfig.capabilityBindings
-  const toolsConfigured = !!(bindings?.tools?.length)
-  const knowledgeConfigured = !!(bindings?.knowledge?.length)
+  // Tools and knowledge sources are always available (scoped to agentConfigId)
+  const toolsConfigured = true
+  const knowledgeConfigured = true
   const stageConfigured = false // playground always has caseSchema: null → no stage configs
 
   const applicableStages: string[] = ['Guardrails', 'Model generation']
   if (knowledgeConfigured) applicableStages.push('Knowledge retrieval')
-  if (toolsConfigured) applicableStages.push('Skills & tools')
+  if (toolsConfigured) applicableStages.push('Tools')
   if (stageConfigured) applicableStages.push('Stage SOP')
   // Guardrails always included in base — but only fire if guardsConfigured
   // (fired=false when no guardrail events occur, which is correct)

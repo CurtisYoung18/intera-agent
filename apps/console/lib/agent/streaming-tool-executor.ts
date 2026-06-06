@@ -7,7 +7,7 @@
 //
 // Supports both batch mode (executeAll) and streaming mode (enqueue + waitForAll).
 
-import type { ToolUse, ToolResult, SkillDefinition } from '@intera/shared/types'
+import type { ToolUse, ToolResult, ToolDefinition } from '@intera/shared/types'
 
 /** Tool execution stores `{ ok, output, latencyMs }`; consumers need the inner skill payload. */
 export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknown {
@@ -20,7 +20,7 @@ export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknow
 type StatusCallback = (
   toolUse: ToolUse,
   status: 'executing' | 'completed' | 'error',
-  renderHints?: SkillDefinition['renderHints'],
+  renderHints?: ToolDefinition['renderHints'],
 ) => void
 
 interface TrackedTool {
@@ -29,7 +29,7 @@ interface TrackedTool {
   input: Record<string, unknown>
   status: 'queued' | 'executing' | 'completed' | 'error'
   isConcurrencySafe: boolean
-  definition: SkillDefinition
+  definition: ToolDefinition
   result?: ToolResult
 }
 
@@ -56,10 +56,10 @@ export class StreamingToolExecutor {
   private pendingPromises: Promise<void>[] = []
 
   constructor(
-    private toolDefinitions: SkillDefinition[],
+    private toolDefinitions: ToolDefinition[],
     private onStatusChange?: StatusCallback,
     private dryRun?: boolean,
-    private orgId?: string,
+    private agentConfigId?: string,
   ) {}
 
   /**
@@ -131,13 +131,13 @@ export class StreamingToolExecutor {
    * Batch mode — for non-streaming use cases.
    */
   static async executeAll(
-    toolDefinitions: SkillDefinition[],
+    toolDefinitions: ToolDefinition[],
     toolUses: ToolUse[],
     onStatusChange?: StatusCallback,
     dryRun?: boolean,
-    orgId?: string,
+    agentConfigId?: string,
   ): Promise<ToolExecutionResult[]> {
-    const executor = new StreamingToolExecutor(toolDefinitions, onStatusChange, dryRun, orgId)
+    const executor = new StreamingToolExecutor(toolDefinitions, onStatusChange, dryRun, agentConfigId)
     for (const toolUse of toolUses) {
       executor.enqueue(toolUse)
     }
@@ -286,7 +286,7 @@ export class StreamingToolExecutor {
   }
 
   // [MOCK] Returns mockFixture or built-in fallback. Simulates network latency.
-  private async executeMock(definition: SkillDefinition): Promise<unknown> {
+  private async executeMock(definition: ToolDefinition): Promise<unknown> {
     await this.sleep(100 + Math.random() * 200)
 
     // Dynamic mock for get_current_time
@@ -350,7 +350,7 @@ export class StreamingToolExecutor {
   }
 
   private async executeHttp(
-    definition: SkillDefinition,
+    definition: ToolDefinition,
     input: Record<string, unknown>,
   ): Promise<unknown> {
     if (!definition.endpoint) {
@@ -379,7 +379,7 @@ export class StreamingToolExecutor {
         if (definition.name.startsWith('kb_search_')) {
           const sourceName = definition.name.slice('kb_search_'.length)
           const source = await prisma.knowledgeSource.findFirst({
-            where: { orgId: this.orgId ?? '', name: sourceName, enabled: true },
+            where: { agentConfigId: this.agentConfigId ?? '', name: sourceName, enabled: true },
           })
           if (source) sources = [source]
         }

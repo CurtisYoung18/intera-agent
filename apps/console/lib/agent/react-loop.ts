@@ -4,14 +4,14 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool } from '@anthropic-ai/sdk/resources'
-import type { Message, ToolUse, SSEEvent, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
+import type { Message, ToolUse, SSEEvent, AgentContext, ToolResult, ToolDefinition } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
 import type { ExecutionStrategy } from './strategies/types'
 import type { LoopResult } from './loop'
 
 /** Build Anthropic tool definitions from skill definitions. */
-export function buildAnthropicTools(skillDefinitions: SkillDefinition[]): Tool[] {
+export function buildAnthropicTools(skillDefinitions: ToolDefinition[]): Tool[] {
   return skillDefinitions
     .filter((s) => s.enabled)
     .map((s) => ({
@@ -30,7 +30,7 @@ export async function runReActLoop(
   model: string,
   fallbackModel: string | undefined,
   systemPrompt: string,
-  skillDefinitions: SkillDefinition[],
+  skillDefinitions: ToolDefinition[],
   ctx: AgentContext,
   policy: ExecutionStrategy,
   sendEvent: (event: SSEEvent) => void,

@@ -1,6 +1,6 @@
 // Shared classification constants for Tools Admin page.
-// Built-in skills are defined in BUILT_IN_SKILLS (skills.ts).
-// Business skills come from the database.
+// Built-in tools are defined in BUILT_IN_TOOLS (tools.ts).
+// Business tools come from the database.
 
 /** System Tools — engine-managed, READ-ONLY. The agent loop handles these directly. */
 export const SYSTEM_SKILL_NAMES = new Set([

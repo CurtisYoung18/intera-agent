@@ -1,11 +1,11 @@
 // SOP todo_write / todo_read interceptor — extracted from AgentLoop.
 // Replaces mock tool results with real in-memory CaseMemory operations.
 
-import { SOP_INTERNAL_SKILLS } from './skills'
+import { SOP_INTERNAL_TOOLS } from './tools'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
 
-const sopToolNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+const sopToolNames = new Set(SOP_INTERNAL_TOOLS.map((s) => s.name))
 
 export function processTodoTools(
   results: ToolExecutionResult[],

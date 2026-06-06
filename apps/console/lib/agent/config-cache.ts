@@ -1,4 +1,4 @@
-// AgentConfig + CaseType cache — per-customer, TTL-based
+// AgentConfig + CaseType cache — per-agentConfigId, TTL-based
 // Used by messages/route.ts to avoid DB hammering.
 // Invalidated by POST /api/admin/config-changed when admin saves config.
 
@@ -8,12 +8,12 @@ const TTL_MS = 30_000
 
 const cache = new Map<string, { config: AgentConfigData; timestamp: number }>()
 
-function cacheKey(orgId: string, agentId?: string): string {
-  return agentId ? `${orgId}::${agentId}` : orgId
+function cacheKey(agentId?: string): string {
+  return agentId || '__default__'
 }
 
-export function getCachedConfig(orgId: string, agentId?: string): AgentConfigData | null {
-  const key = cacheKey(orgId, agentId)
+export function getCachedConfig(agentId?: string): AgentConfigData | null {
+  const key = cacheKey(agentId)
   const entry = cache.get(key)
   if (!entry) return null
   if (Date.now() - entry.timestamp > TTL_MS) {
@@ -23,24 +23,15 @@ export function getCachedConfig(orgId: string, agentId?: string): AgentConfigDat
   return entry.config
 }
 
-export function setCachedConfig(orgId: string, config: AgentConfigData, agentId?: string): void {
-  const key = cacheKey(orgId, agentId)
+export function setCachedConfig(agentId: string | undefined, config: AgentConfigData): void {
+  const key = cacheKey(agentId)
   cache.set(key, { config, timestamp: Date.now() })
 }
 
-export function clearConfigCache(orgId?: string, agentId?: string): void {
-  if (orgId) {
-    if (agentId) {
-      // Clear a specific agent config's cache entry.
-      cache.delete(cacheKey(orgId, agentId))
-    } else {
-      // Clear org-default AND all per-agent-id entries for this org.
-      const prefix = `${orgId}::`
-      for (const key of cache.keys()) {
-        if (key === orgId || key.startsWith(prefix)) cache.delete(key)
-      }
-    }
-    clearCaseTypeCache(orgId)
+export function clearConfigCache(agentConfigId?: string): void {
+  if (agentConfigId) {
+    cache.delete(cacheKey(agentConfigId))
+    clearCaseTypeCache(agentConfigId)
   } else {
     cache.clear()
     clearCaseTypeCache()
@@ -60,23 +51,23 @@ export interface CachedCaseType {
 
 const caseTypeCache = new Map<string, { types: CachedCaseType[]; timestamp: number }>()
 
-export function getCachedCaseTypes(orgId: string): CachedCaseType[] | null {
-  const entry = caseTypeCache.get(orgId)
+export function getCachedCaseTypes(agentConfigId: string): CachedCaseType[] | null {
+  const entry = caseTypeCache.get(agentConfigId)
   if (!entry) return null
   if (Date.now() - entry.timestamp > TTL_MS) {
-    caseTypeCache.delete(orgId)
+    caseTypeCache.delete(agentConfigId)
     return null
   }
   return entry.types
 }
 
-export function setCachedCaseTypes(orgId: string, types: CachedCaseType[]): void {
-  caseTypeCache.set(orgId, { types, timestamp: Date.now() })
+export function setCachedCaseTypes(agentConfigId: string, types: CachedCaseType[]): void {
+  caseTypeCache.set(agentConfigId, { types, timestamp: Date.now() })
 }
 
-export function clearCaseTypeCache(orgId?: string): void {
-  if (orgId) {
-    caseTypeCache.delete(orgId)
+export function clearCaseTypeCache(agentConfigId?: string): void {
+  if (agentConfigId) {
+    caseTypeCache.delete(agentConfigId)
   } else {
     caseTypeCache.clear()
   }

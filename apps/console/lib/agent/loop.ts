@@ -8,12 +8,12 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
-import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, SkillDefinition } from '@intera/shared/types'
+import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, ToolDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { ChatMemoryManager, ChatSessionManager } from './memory'
 import { PolicyEngine } from './policy'
-import { SkillRouter, SOP_INTERNAL_SKILLS } from './skills'
+import { ToolRouter, SOP_INTERNAL_TOOLS } from './tools'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
@@ -53,6 +53,8 @@ import { processTodoTools } from './todo-processor'
 
 export interface AgentLoopDeps {
   config: AgentConfigData
+  /** AgentConfig ID for scoped Tool + Policy loading. */
+  configId: string
   caseId: string
   orgId: string
   userId: string
@@ -88,7 +90,7 @@ export class AgentLoop {
   private messages: Message[] = []
   private chatMemory: ChatMemoryManager
   private policyEngine!: PolicyEngine
-  private skillRouter: SkillRouter
+  private toolRouter: ToolRouter
   /** Case-specific execution engine — null in Core (discovery) mode. */
   private caseLoop: CaseAgentLoop | null = null
   /** Core (discovery) mode handler — prompt + tool filtering. */
@@ -113,7 +115,7 @@ export class AgentLoop {
 
   constructor(private deps: AgentLoopDeps) {
     this.chatMemory = new ChatMemoryManager(deps.caseId, deps.config.memoryStrategy)
-    this.skillRouter = new SkillRouter(deps.orgId)
+    this.toolRouter = new ToolRouter()
     this.abortController = new AbortController()
     this.anthropicClient = createAgentClient(deps.config.model)
     // Persistence port — defaults to Prisma if not injected (playground injects memory port).
@@ -145,13 +147,14 @@ export class AgentLoop {
     return {
       caseId: this.deps.caseId,
       orgId: this.deps.orgId,
+      agentConfigId: this.deps.configId,
       userId: this.deps.userId,
       chatId: this.deps.chatId,
       config: this.deps.config,
       chatMemory: this.chatMemory,
       getPolicyEngine: () => this.policyEngine,
       traceWriter: this.traceWriter,
-      skillRouter: this.skillRouter,
+      toolRouter: this.toolRouter,
       getMessages: () => this.messages,
       addMessage: (msg) => this.messages.push(msg),
       makeUserMessage: (content) => makeUserMessage(content),
@@ -161,8 +164,8 @@ export class AgentLoop {
   /** Create and initialize an AgentLoop — loads skills/policies from DB. */
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
-    loop.skillRouter = await SkillRouter.create(deps.orgId, deps.dryRun ?? false, deps.config.capabilityBindings)
-    loop.policyEngine = await PolicyEngine.create(deps.orgId, deps.config.capabilityBindings?.guardrails)
+    loop.toolRouter = await ToolRouter.create(deps.configId, deps.dryRun ?? false)
+    loop.policyEngine = await PolicyEngine.create(deps.configId)
     return loop
   }
 
@@ -324,13 +327,13 @@ export class AgentLoop {
       // excluded from live skill_result emission — their executor output is just
       // the empty mock fixture. The real results are emitted manually further
       // down (todo list via processTodoTools, caseId via case_created event).
-      const sopInternalNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+      const sopInternalNames = new Set(SOP_INTERNAL_TOOLS.map((s) => s.name))
       sopInternalNames.add('dispatch_case_agent')
       const toolExecutor = new StreamingToolExecutor(
-        this.skillRouter.getToolDefinitions(),
+        this.toolRouter.getToolDefinitions(),
         (toolUse, status, renderHints) => {
           if (sopInternalNames.has(toolUse.name)) return
-          const skillDef = this.skillRouter.getSkill(toolUse.name)
+          const skillDef = this.toolRouter.getTool(toolUse.name)
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'skill_result',
             data: {
@@ -344,7 +347,7 @@ export class AgentLoop {
           })
         },
         this.dryRun,
-        this.deps.orgId,
+        this.deps.configId,
       )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
@@ -358,7 +361,7 @@ export class AgentLoop {
         conversationLoop: this.conversationLoop,
         caseLoop: this.caseLoop,
         chatMemory: this.chatMemory,
-        allTools: this.skillRouter.getTools(),
+        allTools: this.toolRouter.getTools(),
       })
 
       const blocks = new Map<number, StreamContentBlock>()
@@ -766,7 +769,7 @@ export class AgentLoop {
         // dashboard in the UI sees the actual todo list.
         for (const tr of toolResults) {
           if (!sopInternalNames.has(tr.name)) continue
-          const skillDef = this.skillRouter.getSkill(tr.name)
+          const skillDef = this.toolRouter.getTool(tr.name)
           // Emit a synthetic "executing" first so the UI's tool-call tracking
           // stays in sync (matches the pair pattern from non-SOP tools).
           sendEvent({
@@ -1169,6 +1172,7 @@ export class AgentLoop {
     return {
       caseId: this.deps.caseId,
       orgId: this.deps.orgId,
+      agentConfigId: this.deps.configId,
       userId: this.deps.userId,
       chatId: this.deps.chatId,
       config: this.deps.config,
@@ -1176,7 +1180,7 @@ export class AgentLoop {
       chatMemory: this.chatMemory,
       persistence: this.persistence,
       traceWriter: this.traceWriter,
-      skillRouter: this.skillRouter,
+      toolRouter: this.toolRouter,
       getCaseLoop: () => this.caseLoop,
       dryRun: this.dryRun,
       messages: this.messages,

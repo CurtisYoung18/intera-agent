@@ -31,8 +31,8 @@ export const PUT = defineRoute<z.infer<typeof activateSchema>, AgentConfigParams
         select: { id: true, name: true, version: true, isActive: true },
       }),
     ])
-    if (previousActive) clearConfigCache(repo.orgId, previousActive.id)
-    clearConfigCache(repo.orgId, target.id); clearConfigCache(repo.orgId)
+    if (previousActive) clearConfigCache(previousActive.id)
+    clearConfigCache(target.id)
     await audit({ action: 'agent_config.activate', target: `agent_config:${id}`, before: { previousActiveId: previousActive?.id }, after: { activeId: id, releaseNote: input.releaseNote } })
     return apiOk({ config: { id: target.id, name: target.name, version: target.version, isActive: true } })
   },

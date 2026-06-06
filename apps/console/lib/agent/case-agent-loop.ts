@@ -18,8 +18,8 @@ import { OrchestratorAgent } from './orchestrator'
 import type { ChatMemoryManager } from './memory'
 import type { PolicyEngine } from './policy'
 import type { TraceWriter } from './trace'
-import type { SkillRouter } from './skills'
-import { SOP_INTERNAL_SKILLS } from './skills'
+import type { ToolRouter } from './tools'
+import { SOP_INTERNAL_TOOLS } from './tools'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
@@ -32,6 +32,7 @@ import type { LoopResult } from './loop'
 export interface CaseLoopServices {
   caseId: string
   orgId: string
+  agentConfigId: string
   userId: string
   chatId?: string | null
   config: AgentConfigData
@@ -39,7 +40,7 @@ export interface CaseLoopServices {
   /** Live accessor — called at usage time, never captured at construction. */
   getPolicyEngine: () => PolicyEngine
   traceWriter: TraceWriter
-  skillRouter: SkillRouter
+  toolRouter: ToolRouter
   /** Always returns the current message array (survives loadMessages replacement). */
   getMessages: () => Message[]
   addMessage: (msg: Message) => void
@@ -81,7 +82,7 @@ export class CaseAgentLoop {
     this._currentStage = this.stageExecutor.getCurrentStage()
     this.orchestrator = new OrchestratorAgent(
       caseSchema,
-      services.skillRouter.getToolDefinitions(),
+      services.toolRouter.getToolDefinitions(),
       services.userId,
       services.chatMemory,
     )
@@ -193,11 +194,11 @@ export class CaseAgentLoop {
    * todo_write/todo_read tools (injected only in step execution).
    */
   filterSopTools(allTools: Tool[]): Tool[] {
-    const sopNames = new Set(SOP_INTERNAL_SKILLS.map((s) => s.name))
+    const sopNames = new Set(SOP_INTERNAL_TOOLS.map((s) => s.name))
     // dispatch_case_agent is not needed in SOP mode — the case already exists
     const excludedInSop = new Set(['dispatch_case_agent'])
     // Prepend todo tools so the LLM sees them first, then deduplicate
-    const sopTools: Tool[] = SOP_INTERNAL_SKILLS.map((s) => ({
+    const sopTools: Tool[] = SOP_INTERNAL_TOOLS.map((s) => ({
       name: s.name,
       description: s.description,
       input_schema: s.inputSchema as Tool['input_schema'],

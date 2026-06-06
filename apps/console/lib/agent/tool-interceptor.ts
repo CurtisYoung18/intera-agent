@@ -13,7 +13,7 @@ import type { ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
-import type { SkillRouter } from './skills'
+import type { ToolRouter } from './tools'
 import type { CaseAgentLoop } from './case-agent-loop'
 import { OrchestratorAgent } from './orchestrator'
 import { generateCaseId } from '@/lib/utils'
@@ -26,6 +26,7 @@ import { isInvestigableCaseType } from './case-type-slugs'
 export interface ToolInterceptorContext {
   caseId: string
   orgId: string
+  agentConfigId: string
   userId: string
   chatId?: string | null
   config: AgentConfigData
@@ -33,7 +34,7 @@ export interface ToolInterceptorContext {
   chatMemory: ChatMemoryManager
   persistence: PersistencePort
   traceWriter: TraceWriter
-  skillRouter: SkillRouter
+  toolRouter: ToolRouter
   getCaseLoop: () => CaseAgentLoop | null
   dryRun: boolean
   messages: Message[]
@@ -118,7 +119,7 @@ async function handleDispatchCaseAgent(
 
   try {
     const ctRow = await prisma.caseType.findUnique({
-      where: { orgId_type: { orgId: ctx.orgId, type: caseType } },
+      where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: caseType } },
     })
     if (!ctRow) return { kind: 'pass' }
 
@@ -126,7 +127,7 @@ async function handleDispatchCaseAgent(
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
     const stageConfigs = safeJson<Record<string, unknown>>(ctRow.stageConfigs || '{}', {})
     const executionMode = normalizeExecutionMode((ctRow as any).executionMode)
-    const allSkills = ctx.skillRouter.getToolDefinitions()
+    const allSkills = ctx.toolRouter.getToolDefinitions()
 
     const schema: CaseSchemaConfig = {
       type: ctRow.type,

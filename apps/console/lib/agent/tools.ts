@@ -1,24 +1,130 @@
-// Intera Harness - Skill Router
-// Based on architecture doc: Skills System
+// Intera Harness - Tool Router
+// Based on architecture doc: Tools System
 //
-// [MOCK] Hardcoded built-in skills with mock execution.
+// Built-in tools with mock execution (fallback).
 // Production path:
-//   - Load skills from Skill table (Prisma) for the active Customer
-//   - Support dynamic skill registration via Admin console
-//   - Route mock/http based on Skill.mode field
+//   - Load tools from Tool table (Prisma) for the active AgentConfig
+//   - Support dynamic tool registration via Admin console
+//   - Route mock/http based on Tool.mode field
 
-import type { SkillDefinition, ToolUse, CapabilityBindings } from '@intera/shared/types'
+import type { ToolDefinition, ToolUse } from '@intera/shared/types'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { z } from 'zod'
-import { resolveBindings, formatDriftWarnings, type CapabilityLibrary } from './resolve-bindings'
-import { EMPTY_BINDINGS } from '@intera/shared/types'
 
 /**
- * Built-in Skills — core capabilities available to the Agent.
- * Each skill has a mock implementation in streaming-tool-executor.ts.
- * Skills marked isConcurrencySafe=false run sequentially (write operations).
+ * System Tools — always-available core tools registered directly in the constructor.
+ * These are NOT loaded from DB; they're built into the runtime.
  */
-export const BUILT_IN_SKILLS: SkillDefinition[] = [
+export const SYSTEM_TOOLS: ToolDefinition[] = [
+  {
+    name: 'read_chat_memory',
+    description:
+      'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, ' +
+      'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    isConcurrencySafe: true,
+    mode: 'static',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Loading user memory', icon: 'scan' },
+    mockFixture: { summary: '', confirmedFacts: {}, stats: {} },
+    zodSchema: z.object({}),
+  },
+  {
+    name: 'read_user_profile',
+    description:
+      'Read the user profile for the current customer. This contains the user\'s attributes, preferences, tags, ' +
+      'and cross-chat statistics accumulated over time. Use this when you need to understand the customer\'s ' +
+      'identity, preferences, and long-term behavior patterns.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    isConcurrencySafe: true,
+    mode: 'static',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Loading user profile', icon: 'scan' },
+    mockFixture: { profile: '', stats: {} },
+    zodSchema: z.object({}),
+  },
+  {
+    name: 'todo_read',
+    description:
+      'Read the current todo list. Call this at the start of a turn to see pending, ' +
+      'in-progress, and completed items before deciding what to do next.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    isConcurrencySafe: true,
+    mode: 'engine_managed',
+    enabled: true,
+    toolCategory: 'operational',
+    displayVerb: { text: 'Reviewing task list', icon: 'scan' },
+    zodSchema: z.object({}),
+  },
+  {
+    name: 'todo_write',
+    description:
+      'Create or update a structured todo list. ' +
+      'Use this to plan complex investigations, track progress through multi-step workflows, ' +
+      'and communicate current state to the user. Each item should have a unique id, ' +
+      'a content description, and a status (pending, in_progress, completed, or cancelled).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        todos: {
+          type: 'array',
+          description: 'The complete todo list to persist. Replaces the existing list.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Unique identifier for this todo item' },
+              content: { type: 'string', description: 'Description of what needs to be done' },
+              status: {
+                type: 'string',
+                enum: ['pending', 'in_progress', 'completed', 'cancelled'],
+                description: 'Current status of this item',
+              },
+              notes: { type: 'string', description: 'Optional findings or notes for this item' },
+            },
+            required: ['id', 'content', 'status'],
+          },
+        },
+      },
+      required: ['todos'],
+    },
+    isConcurrencySafe: true,
+    mode: 'engine_managed',
+    enabled: true,
+    toolCategory: 'operational',
+    displayVerb: { text: 'Updating task list', icon: 'dots' },
+    zodSchema: z.object({
+      todos: z.array(
+        z.object({
+          id: z.string(),
+          content: z.string(),
+          status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+          notes: z.string().optional(),
+        }),
+      ),
+    }),
+  },
+]
+
+/**
+ * Built-in Tools — core capabilities available to the Agent.
+ * Each tool has a mock implementation in streaming-tool-executor.ts.
+ * Tools marked isConcurrencySafe=false run sequentially (write operations).
+ * These serve as fallback when the DB has no tools for the agentConfig.
+ */
+export const BUILT_IN_TOOLS: ToolDefinition[] = [
   {
     name: 'dispatch_case_agent',
     description:
@@ -62,43 +168,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     zodSchema: z.object({ userId: z.string(), limit: z.number().optional() }),
   },
   {
-    name: 'read_chat_memory',
-    description:
-      'Read the per-case working memory for the current investigation. Returns confirmed facts, skills called so far, ' +
-      'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: [],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Loading user memory', icon: 'scan' },
-    mockFixture: { summary: '', confirmedFacts: {}, stats: {} },
-    zodSchema: z.object({}),
-  },
-  {
-    name: 'read_user_profile',
-    description:
-      'Read the user profile for the current customer. This contains the user\'s attributes, preferences, tags, ' +
-      'and cross-chat statistics accumulated over time. Use this when you need to understand the customer\'s ' +
-      'identity, preferences, and long-term behavior patterns.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      required: [],
-    },
-    isConcurrencySafe: true,
-    mode: 'static',
-    enabled: true,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Loading user profile', icon: 'scan' },
-    mockFixture: { profile: '', stats: {} },
-    zodSchema: z.object({}),
-  },
-  {
     name: 'query_order_status',
     description: 'Query the platform order system for transaction status',
     inputSchema: {
@@ -114,7 +183,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     toolCategory: 'operational',
     displayVerb: { text: 'Checking order status', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string() }),
-    // [MOCK] realistic deposit scenario — Alipay 1000 CNY pending batch settlement
     mockFixture: {
       txnId: 'TX2026051912345678',
       status: 'pending',
@@ -143,7 +211,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     toolCategory: 'operational',
     displayVerb: { text: 'Verifying payment channel', icon: 'scan' },
     zodSchema: z.object({ txnId: z.string(), channel: z.string().optional() }),
-    // [MOCK] realistic Alipay channel — normal operation, no delays
     mockFixture: {
       delayed_batch: false,
       channel: 'alipay',
@@ -168,7 +235,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     toolCategory: 'system_info',
     displayVerb: { text: 'Checking platform announcements', icon: 'dots' },
     zodSchema: z.object({ query: z.string().optional() }),
-    // [MOCK] realistic delay notices — Alipay batch settlement schedule
     mockFixture: {
       notices: [
         {
@@ -183,7 +249,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       ],
     },
   },
-  // ── Account / KYC skills (used by account_issue SOP) ────────────────────────
   {
     name: 'get_account_status',
     description: 'Retrieve the current account status, restrictions, and ban reason for a member',
@@ -202,7 +267,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
       member_id: 'U10023',
-      status: 'active',           // active | suspended | banned | locked
+      status: 'active',
       restrictions: [],
       banReason: null,
       lastLoginAt: '2026-05-21T08:00:00Z',
@@ -228,15 +293,13 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     zodSchema: z.object({ member_id: z.string() }),
     mockFixture: {
       member_id: 'U10023',
-      kycStatus: 'approved',      // not_started | pending | approved | rejected
-      kycLevel: 'basic',          // basic | enhanced
+      kycStatus: 'approved',
+      kycLevel: 'basic',
       submittedAt: '2025-01-16T09:00:00Z',
       approvedAt: '2025-01-17T10:30:00Z',
       rejectionReason: null,
     },
   },
-
-  // ── Withdrawal skills (used by withdrawal_issue SOP) ──────────────────────
   {
     name: 'get_latest_withdrawal',
     description: 'Retrieve the most recent withdrawal request and its status for a member',
@@ -258,7 +321,7 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       member_id: 'U10023',
       amount: 3000.0,
       currency: 'CNY',
-      status: 'pending',          // pending | processing | completed | rejected | cancelled
+      status: 'pending',
       bankName: '招商银行',
       bankAccount: '****1234',
       requestedAt: '2026-05-21T10:00:00Z',
@@ -321,8 +384,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       total: 3,
     },
   },
-
-  // ── Promotion skills (used by promotion_inquiry SOP) ─────────────────────
   {
     name: 'get_active_promotions',
     description: 'Retrieve promotions the member is currently participating in',
@@ -385,7 +446,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
       ],
     },
   },
-
   {
     name: 'ocr_receipt',
     description: 'Extract information from uploaded receipt screenshots',
@@ -405,7 +465,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     toolCategory: 'operational',
     displayVerb: { text: 'Reading your receipt', icon: 'spin' },
     zodSchema: z.object({ attachmentId: z.string() }),
-    // [MOCK] realistic receipt extraction — Alipay payment of 1000 CNY
     mockFixture: {
       success: true,
       extracted: {
@@ -505,10 +564,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
     zodSchema: z.object({ status: z.enum(["resolved","escalated"]), conclusion: z.string(), basis: z.array(z.string()).optional() }),
   },
-  // kb_search_* tools are dynamically injected from KnowledgeSource records
-  // in SkillRouter.create(). Each source becomes kb_search_<name> with its
-  // own description, so the LLM can choose which source(s) to query.
-
   {
     name: 'request_user_input',
     description:
@@ -582,71 +637,6 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
     displayVerb: { text: 'Closing consultation', icon: 'spin' },
     zodSchema: z.object({ summary: z.string(), resolution: z.string() }),
   },
-  // ── Todo-list skills (general-purpose, not SOP-specific) ──────────────────
-  {
-    name: 'todo_write',
-    description:
-      'Create or update a structured todo list. ' +
-      'Use this to plan complex investigations, track progress through multi-step workflows, ' +
-      'and communicate current state to the user. Each item should have a unique id, ' +
-      'a content description, and a status (pending, in_progress, completed, or cancelled).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        todos: {
-          type: 'array',
-          description: 'The complete todo list to persist. Replaces the existing list.',
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string', description: 'Unique identifier for this todo item' },
-              content: { type: 'string', description: 'Description of what needs to be done' },
-              status: {
-                type: 'string',
-                enum: ['pending', 'in_progress', 'completed', 'cancelled'],
-                description: 'Current status of this item',
-              },
-              notes: { type: 'string', description: 'Optional findings or notes for this item' },
-            },
-            required: ['id', 'content', 'status'],
-          },
-        },
-      },
-      required: ['todos'],
-    },
-    isConcurrencySafe: true,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Updating task list', icon: 'dots' },
-    zodSchema: z.object({
-      todos: z.array(
-        z.object({
-          id: z.string(),
-          content: z.string(),
-          status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
-          notes: z.string().optional(),
-        }),
-      ),
-    }),
-  },
-  {
-    name: 'todo_read',
-    description:
-      'Read the current todo list. Call this at the start of a turn to see pending, ' +
-      'in-progress, and completed items before deciding what to do next.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-    isConcurrencySafe: true,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'operational',
-    displayVerb: { text: 'Reviewing task list', icon: 'scan' },
-    zodSchema: z.object({}),
-  },
-  // ── Sub-agent terminal tool ─────────────────────────────────────────────
   {
     name: 'finalize_sub_agent',
     description:
@@ -725,11 +715,11 @@ export const BUILT_IN_SKILLS: SkillDefinition[] = [
 ]
 
 /**
- * SOP Internal Skills — only injected into the tool list when a case type
+ * SOP Internal Tools — only injected into the tool list when a case type
  * uses `executionMode: 'sop'`. Intercepted in AgentLoop (never sent to the
  * streaming-tool-executor for real execution).
  */
-export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
+export const SOP_INTERNAL_TOOLS: ToolDefinition[] = [
   {
     name: 'todo_write',
     description:
@@ -778,168 +768,91 @@ export const SOP_INTERNAL_SKILLS: SkillDefinition[] = [
   },
 ]
 
-/** Set of built-in skill names for fast lookup. */
-export const BUILT_IN_SKILL_NAMES: Set<string> = new Set(BUILT_IN_SKILLS.map((s) => s.name))
+/** Set of built-in tool names for fast lookup. */
+export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((s) => s.name))
 
 /**
- * Returns true if the given skill name is a built-in (system) skill.
+ * Returns true if the given tool name is a built-in (system) tool.
  */
-export function isBuiltInSkill(name: string): boolean {
-  return BUILT_IN_SKILL_NAMES.has(name)
+export function isBuiltInTool(name: string): boolean {
+  return BUILT_IN_TOOL_NAMES.has(name)
 }
 
 /**
- * Skill Router — manages the skill registry and provides tool definitions
+ * Tool Router — manages the tool registry and provides tool definitions
  * in Anthropic API format.
  */
-export class SkillRouter {
-  private skills: Map<string, SkillDefinition> = new Map()
-  /** Resolved tool names from capabilityBindings. null = no bindings (backward compat: all enabled). */
-  private boundToolNames: Set<string> | null = null
+export class ToolRouter {
+  private tools: Map<string, ToolDefinition> = new Map()
 
-  constructor(_orgId: string) {
-    // Load built-in skills synchronously (fallback).
-    // Call SkillRouter.create() for DB-loaded skills.
-    for (const skill of BUILT_IN_SKILLS) {
-      this.skills.set(skill.name, skill)
+  constructor() {
+    // Register system tools — always available (read_chat_memory, read_user_profile, todo_read, todo_write)
+    for (const tool of SYSTEM_TOOLS) {
+      this.tools.set(tool.name, tool)
+    }
+    // Load built-in tools as fallback (overridden by DB when available)
+    for (const tool of BUILT_IN_TOOLS) {
+      this.tools.set(tool.name, tool)
     }
     // SOP internal tools (todo_write, todo_read) must be in the registry so
-    // getSkill() resolves their displayVerb and getToolDefinitions() includes
+    // getTool() resolves their displayVerb and getToolDefinitions() includes
     // them for the StreamingToolExecutor.
-    for (const skill of SOP_INTERNAL_SKILLS) {
-      this.skills.set(skill.name, skill)
+    for (const tool of SOP_INTERNAL_TOOLS) {
+      this.tools.set(tool.name, tool)
     }
   }
 
-  /** Create and initialize a SkillRouter — loads built-ins (via constructor) + DB skills + dynamic knowledge sources.
-   *  @param orgId   — organization ID for DB queries.
-   *  @param dryRun  — when true, skips knowledge-source auto-heal writes.
-   *  @param bindings — optional CapabilityBindings from the active AgentConfig version.
-   *                     When provided, only skills/knowledge/caseTypes in the bindings are exposed.
-   *                     When null/undefined (backward compat), all enabled items are exposed. */
-  static async create(orgId: string, dryRun = false, bindings?: CapabilityBindings | null): Promise<SkillRouter> {
-    const router = new SkillRouter(orgId)
+  /** Create and initialize a ToolRouter — loads system tools (via constructor) + DB tools + dynamic knowledge sources.
+   *  @param agentConfigId — agent config ID for DB queries.
+   *  @param dryRun  — when true, skips knowledge-source auto-heal writes. */
+  static async create(agentConfigId: string, dryRun = false): Promise<ToolRouter> {
+    const router = new ToolRouter()
 
-    // Load DB skills (overlay on top of built-ins already loaded in constructor)
+    // Load DB tools (overlay on top of system/built-ins already loaded in constructor)
     try {
       const { prisma } = await import('@intera/shared/prisma')
-      // Load ALL DB skills (including disabled) so that enabled:false records
+      // Load ALL DB tools (including disabled) so that enabled:false records
       // properly shadow their built-in counterparts. Filtering only enabled:true
       // would leave built-ins (always enabled:true) unaffected by console toggles.
-      const dbSkills = await prisma.skill.findMany({
-        where: { orgId },
+      const dbTools = await prisma.tool.findMany({
+        where: { agentConfigId },
       })
 
       const VALID_MODES = new Set(['static', 'http', 'engine_managed', 'channel'])
-      for (const s of dbSkills) {
-        const dbMode = s.mode || 'static'
+      for (const t of dbTools) {
+        const dbMode = t.mode || 'static'
         // Preserve the built-in mode when DB has an invalid mode value (e.g. 'mock'
         // from old console saves). The built-in definition is authoritative for mode.
-        const builtinMode = router.skills.get(s.name)?.mode
+        const builtinMode = router.tools.get(t.name)?.mode
         const mode = VALID_MODES.has(dbMode)
           ? (dbMode as 'static' | 'http' | 'engine_managed' | 'channel')
           : (builtinMode as 'static' | 'http' | 'engine_managed' | 'channel') || 'static'
-        router.skills.set(s.name, {
-          name: s.name,
-          description: s.description,
-          inputSchema: JSON.parse(s.inputSchema || '{}'),
-          outputSchema: s.outputSchema ? JSON.parse(s.outputSchema) : undefined,
+        router.tools.set(t.name, {
+          name: t.name,
+          description: t.description,
+          inputSchema: JSON.parse(t.inputSchema || '{}'),
+          outputSchema: t.outputSchema ? JSON.parse(t.outputSchema) : undefined,
           mode,
-          endpoint: s.endpoint || undefined,
-          httpMethod: (s.httpMethod as 'GET' | 'POST') || 'POST',
-          headers: s.headers ? JSON.parse(s.headers) : undefined,
-          timeoutMs: s.timeoutMs,
-          mockFixture: s.mockFixture ? JSON.parse(s.mockFixture) : undefined,
-          displayVerb: s.displayVerb ? JSON.parse(s.displayVerb) : undefined,
-          renderHints: s.renderHints ? JSON.parse(s.renderHints) : undefined,
-          toolCategory: (s.toolCategory as 'system_info' | 'operational') || undefined,
-          isConcurrencySafe: s.isConcurrencySafe,
-          enabled: s.enabled,
+          endpoint: t.endpoint || undefined,
+          httpMethod: (t.httpMethod as 'GET' | 'POST') || 'POST',
+          headers: t.headers ? JSON.parse(t.headers) : undefined,
+          timeoutMs: t.timeoutMs,
+          mockFixture: t.mockFixture ? JSON.parse(t.mockFixture) : undefined,
+          displayVerb: t.displayVerb ? JSON.parse(t.displayVerb) : undefined,
+          renderHints: t.renderHints ? JSON.parse(t.renderHints) : undefined,
+          toolCategory: (t.toolCategory as 'system_info' | 'operational') || undefined,
+          isConcurrencySafe: t.isConcurrencySafe,
+          enabled: t.enabled,
         })
       }
 
-      // ── Resolve bindings against the library (if provided) ──
-      if (bindings) {
-        const enabledSkillNames = new Set(
-          Array.from(router.skills.values()).filter((s) => s.enabled).map((s) => s.name),
-        )
-        // Build library from DB-loaded skills only (built-ins + DB overlay).
-        // Policies and knowledge sources are resolved separately below.
-        const library: CapabilityLibrary = {
-          skillNames: enabledSkillNames,
-          caseTypeSlugs: new Set(), // populated below
-          policyNames: new Set(),   // not used in SkillRouter
-          knowledgeNames: new Set(), // populated below
-        }
-
-        // Load case type slugs for binding resolution
-        try {
-          const allCaseTypes = await prisma.caseType.findMany({
-            where: { orgId, enabled: true },
-            select: { type: true },
-          })
-          library.caseTypeSlugs = new Set(allCaseTypes.map((c) => c.type))
-        } catch { /* keep empty */ }
-
-        // Load knowledge source names for binding resolution
-        try {
-          const allKb = await prisma.knowledgeSource.findMany({
-            where: { orgId, enabled: true },
-            select: { name: true },
-          })
-          library.knowledgeNames = new Set(allKb.map((k) => k.name))
-        } catch { /* keep empty */ }
-
-        const resolution = resolveBindings(bindings, library)
-
-        // Store resolved tool names for getTools / getToolDefinitions filtering.
-        // Channel-mode tools (request_user_input, finalize_consultation) are always
-        // included — they have no real side effects (handled by tool interceptor) and
-        // the system prompt instructs the LLM to call them. Excluding them causes
-        // hallucinated tool_use blocks that hit the executor's "not found" error.
-        router.boundToolNames = new Set(resolution.bound.tools)
-        for (const skill of router.skills.values()) {
-          if (skill.mode === 'channel' && skill.enabled) {
-            router.boundToolNames.add(skill.name)
-          }
-        }
-
-        // Log drift warnings
-        const driftMsg = formatDriftWarnings(resolution.missing)
-        if (driftMsg) {
-          console.warn(`[SkillRouter] ${driftMsg}`)
-        }
-
-        // Debug: log channel-mode tool status
-        for (const skill of router.skills.values()) {
-          if (skill.mode === 'channel') {
-            const inBound = router.boundToolNames?.has(skill.name) ?? false
-            const inLibrary = enabledSkillNames.has(skill.name)
-            console.log(`[SkillRouter] channel tool "${skill.name}": enabled=${skill.enabled}, inLibrary=${inLibrary}, inBound=${inBound}`)
-          }
-        }
-
-        // Override bindings with the resolved set (drifted names removed)
-        bindings = resolution.bound
-      }
-
-      // ── Dynamic tool descriptions: inject org's case types into tool descriptions ──
-      // Console admins can override by creating a DB Skill row with the same name,
-      // which has already been loaded above. Only fill in if no DB override exists.
-      const hasDbOverride = (name: string) => dbSkills.some((s) => s.name === name)
+      // ── Dynamic tool descriptions: inject agent config's case types into tool descriptions ──
+      const hasDbOverride = (name: string) => dbTools.some((t) => t.name === name)
 
       if (!hasDbOverride('dispatch_case_agent')) {
         try {
-          const caseTypeWhere: { orgId: string; enabled: boolean; type?: { in: string[] } } = {
-            orgId,
-            enabled: true,
-          }
-          // If bindings are provided, only include case types in the bindings
-          if (bindings?.caseTypes && bindings.caseTypes.length > 0) {
-            caseTypeWhere.type = { in: bindings.caseTypes }
-          }
           const caseTypes = await prisma.caseType.findMany({
-            where: caseTypeWhere,
+            where: { agentConfigId, enabled: true },
             select: { type: true, displayName: true, description: true, icon: true },
           })
 
@@ -949,9 +862,9 @@ export class SkillRouter {
               .join('\n')
 
             if (!hasDbOverride('dispatch_case_agent')) {
-              const existingDispatchSkill = router.skills.get('dispatch_case_agent')
-              if (existingDispatchSkill) {
-                existingDispatchSkill.description =
+              const existingDispatchTool = router.tools.get('dispatch_case_agent')
+              if (existingDispatchTool) {
+                existingDispatchTool.description =
                   'Dispatch a background case investigation agent. The agent runs autonomously through all investigation stages while you continue the conversation.\n\n' +
                   '## Available Case Types\n' +
                   caseTypeList +
@@ -960,27 +873,17 @@ export class SkillRouter {
             }
           }
         } catch (err) {
-          console.warn('[SkillRouter] Failed to load case types for tool descriptions:', err)
+          console.warn('[ToolRouter] Failed to load case types for tool descriptions:', err)
         }
       }
 
       // Load knowledge sources and inject each as a kb_search_<name> tool.
-      // If bindings are provided, only inject sources named in bindings.knowledge.
-      const kbWhere: { orgId: string; enabled: boolean; name?: { in: string[] } } = {
-        orgId,
-        enabled: true,
-      }
-      if (bindings?.knowledge && bindings.knowledge.length > 0) {
-        kbWhere.name = { in: bindings.knowledge }
-      }
       const knowledgeSources = await prisma.knowledgeSource.findMany({
-        where: kbWhere,
+        where: { agentConfigId, enabled: true },
       })
 
       // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
-      // Seed already has new defaults; this handles rows created before this deploy.
-      // Skipped entirely in dry-run (playground) so a turn performs ZERO DB writes —
-      // note prisma.update() must not even be *called*, since calling it issues the write.
+      // Skipped entirely in dry-run (playground) so a turn performs ZERO DB writes.
       if (!dryRun) {
         const healOps: Promise<unknown>[] = []
         for (const ks of knowledgeSources) {
@@ -999,12 +902,11 @@ export class SkillRouter {
         }
       }
 
-      // Resolve GPTBots API key: per-org DB key first, env var fallback.
-      // Mirrors the getApiKey() pattern in app/api/admin/knowledge/gptbots/route.ts.
+      // Resolve GPTBots API key: per-agentConfig DB key first, env var fallback.
       let gptbotsApiKey = process.env.GPTBOTS_API_KEY ?? ''
       try {
-        const config = await prisma.agentConfig.findFirst({
-          where: { orgId, isActive: true },
+        const config = await prisma.agentConfig.findUnique({
+          where: { id: agentConfigId },
           select: { gptbotsApiKey: true },
         })
         if (config?.gptbotsApiKey) gptbotsApiKey = config.gptbotsApiKey
@@ -1012,13 +914,8 @@ export class SkillRouter {
 
       for (const ks of knowledgeSources) {
         const toolName = `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
-        // Include dynamically-created kb_search_* tools in the bound set so
-        // getTools() / getToolDefinitions() won't filter them out.
-        if (router.boundToolNames) {
-          router.boundToolNames.add(toolName)
-        }
         const baseDesc = ks.description || `Search the "${ks.name}" knowledge base`
-        router.skills.set(toolName, {
+        router.tools.set(toolName, {
           name: toolName,
           description: ks.modelControlTopK
             ? `${baseDesc}. Number of results to return (1–30, higher values return more matches). Default: ${ks.topK}.`
@@ -1060,46 +957,37 @@ export class SkillRouter {
         })
       }
     } catch (err) {
-      console.warn('[SkillRouter] Failed to load skills from DB, using built-ins only:', err)
+      console.warn('[ToolRouter] Failed to load tools from DB, using built-ins only:', err)
     }
 
     return router
   }
 
-  /** Returns Anthropic tool format for all enabled skills.
-   *  When capabilityBindings are set, only returns tools whose names are in the bound list. */
+  /** Returns Anthropic tool format for all enabled tools. */
   getTools(): Tool[] {
     const tools: Tool[] = []
-    for (const skill of this.skills.values()) {
-      if (!skill.enabled) continue
-      // Binding filter: if boundToolNames is set, only include tools in the bound set
-      if (this.boundToolNames && !this.boundToolNames.has(skill.name)) continue
+    for (const tool of this.tools.values()) {
+      if (!tool.enabled) continue
       tools.push({
-        name: skill.name,
-        description: skill.description,
-        input_schema: skill.inputSchema as Tool['input_schema'],
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.inputSchema as Tool['input_schema'],
       })
     }
     return tools
   }
 
-  /** Returns full skill definitions (with runtime config).
-   *  When capabilityBindings are set, only returns tools whose names are in the bound list. */
-  getToolDefinitions(): SkillDefinition[] {
-    const defs = Array.from(this.skills.values()).filter((s) => s.enabled)
-    if (this.boundToolNames) {
-      return defs.filter((s) => this.boundToolNames!.has(s.name))
-    }
-    return defs
+  /** Returns full tool definitions (with runtime config). */
+  getToolDefinitions(): ToolDefinition[] {
+    return Array.from(this.tools.values()).filter((t) => t.enabled)
   }
 
-  getSkill(name: string): SkillDefinition | undefined {
-    return this.skills.get(name)
+  getTool(name: string): ToolDefinition | undefined {
+    return this.tools.get(name)
   }
 
-  /** Register or update a skill (used by Admin console). */
-  setSkill(skill: SkillDefinition): void {
-    this.skills.set(skill.name, skill)
+  /** Register or update a tool (used by Admin console). */
+  setTool(tool: ToolDefinition): void {
+    this.tools.set(tool.name, tool)
   }
-
 }

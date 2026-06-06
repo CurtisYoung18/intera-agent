@@ -9,8 +9,8 @@ export const POST = defineRoute({
   method: 'POST',
   async handler({ input }) {
     const body = input as Record<string, unknown> | undefined
-    const orgId = (body?.orgId as string) || undefined
-    clearConfigCache(orgId)
+    const agentConfigId = (body?.agentConfigId as string) || undefined
+    clearConfigCache(agentConfigId)
     return apiOk({ success: true })
   },
 })

@@ -29,8 +29,8 @@ export const PUT = defineRoute<RenameInput, AgentConfigParams>({
     await repo.agentConfig.updateMany({ where: { name: oldName }, data: { name: cleanName } })
     const updated = await repo.agentConfig.findUnique({ where: { id }, select: { id: true, name: true, version: true, isActive: true, model: true, createdAt: true, updatedAt: true } })
     const allInGroup = await repo.agentConfig.findMany({ where: { name: cleanName }, select: { id: true } })
-    for (const row of allInGroup) clearConfigCache(repo.orgId, row.id)
-    clearConfigCache(repo.orgId)
+    for (const row of allInGroup) clearConfigCache(row.id)
+    clearConfigCache()
     await audit({ action: 'agent_config.rename', target: `agent_config:${id}`, before: { oldName }, after: { newName: cleanName } })
     return apiOk({ config: updated })
   },
@@ -50,11 +50,11 @@ export const DELETE = defineRoute<void, AgentConfigParams>({
       const successor = await repo.agentConfig.findFirst({ where: { name: config.name, id: { not: id }, isActive: false }, orderBy: { version: 'desc' }, select: { id: true } })
       if (!successor) throw new ValidationError('No other version available to promote')
       await repo.raw.$transaction([repo.raw.agentConfig.update({ where: { id: successor.id }, data: { isActive: true } }), repo.raw.agentConfig.delete({ where: { id } })])
-      clearConfigCache(repo.orgId, successor.id)
+      clearConfigCache(successor.id)
     } else {
       await repo.agentConfig.delete({ where: { id } })
     }
-    clearConfigCache(repo.orgId, id); clearConfigCache(repo.orgId)
+    clearConfigCache(id)
     await audit({ action: 'agent_config.delete', target: `agent_config:${id}`, before: { name: config.name, version: config.version } })
     return apiOk({ ok: true })
   },

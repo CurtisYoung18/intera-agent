@@ -29,7 +29,6 @@ import {
   CORE_SYSTEM_PROMPT,
   CASE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
-  DEFAULT_POLICY_HOOKS,
   HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
 } from '@intera/shared/defaults'
 
@@ -319,7 +318,7 @@ export async function POST(request: NextRequest) {
             resolvedUserId = task.case.userId
 
             const resumeTmpl =
-              (await loadAgentConfig(resolvedOrgId, resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+              (await loadAgentConfig(resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
             const parts = ['[Human task resolved — operator closed the case]']
             if (task.verdict) parts.push(`Operator verdict: ${task.verdict.replace(/_/g, ' ')}`)
             if (task.expectedEta) parts.push(`Expected resolution time: ${task.expectedEta}`)
@@ -536,7 +535,7 @@ export async function POST(request: NextRequest) {
                   orderBy: { resolvedAt: 'desc' },
                 })
                 if (resolvedTask) {
-                  const resumeTmpl = (await loadAgentConfig(resolvedOrgId, resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
+                  const resumeTmpl = (await loadAgentConfig(resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
                   const parts = ['[Human task resolved — operator reviewed your case]']
                   if (resolvedTask.verdict) parts.push(`Operator verdict: ${resolvedTask.verdict.replace(/_/g, ' ')}`)
                   if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
@@ -635,13 +634,13 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const agentConfig = await loadAgentConfig(resolvedOrgId, resolvedAgentConfigId)
+        const agentConfig = await loadAgentConfig(resolvedAgentConfigId)
 
         // Load tool summaries for {{available_tools}} template var
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
         try {
-          const dbSkills = await prisma.skill.findMany({
-            where: { orgId: resolvedOrgId, enabled: true },
+          const dbSkills = await prisma.tool.findMany({
+            where: { agentConfigId: resolvedAgentConfigId, enabled: true },
             select: { name: true, description: true, inputSchema: true, mode: true },
           })
           for (const s of dbSkills) {
@@ -661,8 +660,8 @@ export async function POST(request: NextRequest) {
             })
           }
           // Include built-in skills not in DB
-          const { BUILT_IN_SKILLS } = await import('@/lib/agent/skills')
-          for (const s of BUILT_IN_SKILLS) {
+          const { BUILT_IN_TOOLS } = await import('@/lib/agent/tools')
+          for (const s of BUILT_IN_TOOLS) {
             if (!toolSummaries.find(t => t.name === s.name)) {
               toolSummaries.push({ name: s.name, description: s.description, needsMemberId: false })
             }
@@ -731,6 +730,7 @@ export async function POST(request: NextRequest) {
 
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
+          configId: resolvedAgentConfigId,
           caseId: resolvedCaseId,
           orgId: resolvedOrgId,
           userId: resolvedUserId,
@@ -781,6 +781,7 @@ export async function POST(request: NextRequest) {
           if (!next || next.content === '__SESSION_CLOSED__') break
           const followup = await AgentLoop.create({
             config: agentConfig,
+            configId: resolvedAgentConfigId,
             caseId: resolvedCaseId,
             orgId: resolvedOrgId,
             userId: resolvedUserId,
