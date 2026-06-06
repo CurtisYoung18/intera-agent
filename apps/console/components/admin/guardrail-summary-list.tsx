@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
 import type { PolicyRule } from '@intera/shared/types'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 
 interface PolicyRow {
   id: string
@@ -13,10 +14,6 @@ interface PolicyRow {
   hook: string
   enabled: boolean
   rule: string | PolicyRule
-}
-
-interface Props {
-  policyHooks: string
 }
 
 function parseRule(raw: string | PolicyRule): PolicyRule | null {
@@ -31,33 +28,17 @@ function parseRule(raw: string | PolicyRule): PolicyRule | null {
   return null
 }
 
-function parseHookNames(raw: string): string[] {
-  try {
-    const obj = JSON.parse(raw || '{}')
-    const names: string[] = []
-    for (const key of ['preTool', 'postTool', 'preFinalize']) {
-      if (Array.isArray(obj[key])) {
-        for (const item of obj[key]) {
-          if (typeof item === 'string') names.push(item)
-        }
-      }
-    }
-    return names
-  } catch {
-    return []
-  }
-}
-
-export default function GuardrailSummaryList({ policyHooks }: Props) {
+export default function GuardrailSummaryList() {
   const { t } = useConsoleLocale()
+  const agentConfigId = useSelectedAgentId()
   const [catalog, setCatalog] = useState<PolicyRow[]>([])
   const [loadErr, setLoadErr] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin/policies').then(r => r.ok ? r.json().then(d => d.data || d) : Promise.reject(new Error()))
+    fetch(`/api/admin/policies?agentConfigId=${encodeURIComponent(agentConfigId ?? '')}`).then(r => r.ok ? r.json().then(d => d.data || d) : Promise.reject(new Error()))
       .then((d) => setCatalog((d.policies || []) as PolicyRow[]))
       .catch(() => setLoadErr(true))
-  }, [])
+  }, [agentConfigId])
 
   const byName = useMemo(() => {
     const m = new Map<string, PolicyRow>()
@@ -65,7 +46,7 @@ export default function GuardrailSummaryList({ policyHooks }: Props) {
     return m
   }, [catalog])
 
-  const activeNames = useMemo(() => parseHookNames(policyHooks), [policyHooks])
+  const activeNames = useMemo(() => catalog.filter(p => p.enabled).map(p => p.name), [catalog])
 
   const chips = useMemo(() => {
     const result: Array<{ policyName: string; label: string; chipColor: 'amber' | 'malachite' | 'lavender' }> = []

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronRight, Trash2, ClipboardList, Bot, Shield, ShieldOff } from 'lucide-react'
 import ChipInput from '@/components/ui/chip-input'
 import { DEFAULT_MODEL } from '@intera/shared/defaults'
+import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -268,14 +269,15 @@ function GuardrailsSection({ value, onChange }: Pick<Props, 'value' | 'onChange'
   const [expanded, setExpanded] = useState(false)
   const [globalPolicies, setGlobalPolicies] = useState<PolicyItem[]>([])
   const [loaded, setLoaded] = useState(false)
+  const agentConfigId = useSelectedAgentId()
 
   useEffect(() => {
     if (!expanded || loaded) return
-    fetch('/api/admin/policies').then(r => r.json()).then(d => d.data || d)
+    fetch(`/api/admin/policies?agentConfigId=${encodeURIComponent(agentConfigId ?? '')}`).then(r => r.json()).then(d => d.data || d)
       .then((d) => setGlobalPolicies((d.policies || []) as PolicyItem[]))
       .catch(() => {})
       .finally(() => setLoaded(true))
-  }, [expanded, loaded])
+  }, [expanded, loaded, agentConfigId])
 
   const disabled = value.guardrailOverrides?.disabled || []
 

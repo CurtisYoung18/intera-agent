@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Brain, Zap } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
+import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 
 interface SkillRow {
   name: string
@@ -24,19 +25,20 @@ export default function AgentHumanInteractionPanel({
   onHumanSkillsChange,
 }: Props) {
   const { t } = useConsoleLocale()
+  const agentConfigId = useSelectedAgentId()
   const [availableSkills, setAvailableSkills] = useState<SkillRow[]>([])
   const selectedSkills = humanSkills
     ? humanSkills.split('\n').map((s) => s.trim()).filter(Boolean)
     : []
 
   useEffect(() => {
-    fetch('/api/admin/skills').then(r => r.json()).then(d => d.data || d)
+    fetch(`/api/admin/tools?agentConfigId=${encodeURIComponent(agentConfigId ?? '')}`).then(r => r.json()).then(d => d.data || d)
       .then((data) => {
-        const skills = Array.isArray(data.skills) ? data.skills : []
-        setAvailableSkills(skills.filter((s: SkillRow) => s.enabled))
+        const tools = Array.isArray(data.tools) ? data.tools : []
+        setAvailableSkills(tools.filter((s: SkillRow) => s.enabled))
       })
       .catch(() => { /* catalog unavailable */ })
-  }, [])
+  }, [agentConfigId])
 
   const toggleSkill = (name: string) => {
     if (selectedSkills.includes(name)) {

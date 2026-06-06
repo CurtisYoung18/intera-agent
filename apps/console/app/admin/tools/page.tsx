@@ -173,7 +173,7 @@ export default function SkillsPage() {
     const name = confirmDeleteName
     if (!name) return
     setConfirmDeleteName(null)
-    await apiClient(`/api/admin/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    await apiClient(`/api/admin/tools/${encodeURIComponent(name)}?agentConfigId=${encodeURIComponent(agentConfigId ?? '')}`, { method: 'DELETE' })
     load()
   }, [confirmDeleteName, load])
 
