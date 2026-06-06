@@ -187,15 +187,14 @@ describe('E7 — Integration: S1 Invariant + Tool Execution', () => {
 })
 
 describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
-  it('all built-in skills are discoverable', () => {
+  it('all built-in tools are discoverable', () => {
     const router = new ToolRouter('integration-test')
 
-    // Verify critical skills are present
+    // Verify critical tools are present
     const requiredSkills = [
       'dispatch_case_agent',
       'finalize_case',
       'create_human_task',
-      'dispatch_subagent',
     ]
 
     for (const name of requiredSkills) {
@@ -217,15 +216,13 @@ describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
     }
   })
 
-  it('dispatch_subagent is in tool definitions', () => {
+  it('dispatch_case_agent is in tool definitions', () => {
     const router = new ToolRouter('integration-test')
     const tools = router.getToolDefinitions()
-    const dispatchTool = tools.find((t) => t.name === 'dispatch_subagent')
+    const dispatchTool = tools.find((t) => t.name === 'dispatch_case_agent')
 
     expect(dispatchTool).toBeDefined()
-    expect(dispatchTool!.inputSchema.properties).toHaveProperty('agentName')
-    expect(dispatchTool!.inputSchema.properties).toHaveProperty('taskDescription')
-    expect(dispatchTool!.inputSchema.properties).toHaveProperty('taskPrompt')
+    expect(dispatchTool!.inputSchema.properties).toHaveProperty('caseType')
   })
 })
 

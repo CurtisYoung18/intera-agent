@@ -146,24 +146,21 @@ describe('A3 — Sub-agent model and retry', () => {
   })
 })
 
-describe('A4 — dispatch_subagent', () => {
-  it('dispatch_subagent is in BUILT_IN_TOOLS via ToolRouter', () => {
+describe('A4 — dispatch_case_agent', () => {
+  it('dispatch_case_agent is in BUILT_IN_TOOLS via ToolRouter', () => {
     const router = new ToolRouter()
 
     // ToolRouter constructor loads BUILT_IN_TOOLS
-    const dispatchDef = router.getTool('dispatch_subagent')
+    const dispatchDef = router.getTool('dispatch_case_agent')
     expect(dispatchDef).toBeDefined()
-    expect(dispatchDef!.name).toBe('dispatch_subagent')
+    expect(dispatchDef!.name).toBe('dispatch_case_agent')
     expect(dispatchDef!.inputSchema).toBeDefined()
-    expect(dispatchDef!.inputSchema.properties).toHaveProperty('agentName')
-    expect(dispatchDef!.inputSchema.properties).toHaveProperty('taskDescription')
-    expect(dispatchDef!.inputSchema.properties).toHaveProperty('taskPrompt')
+    expect(dispatchDef!.inputSchema.properties).toHaveProperty('caseType')
   })
 
-  it('dispatch_subagent has correct input schema', () => {
+  it('dispatch_case_agent has correct input schema', () => {
     const router = new ToolRouter()
-    const def = router.getTool('dispatch_subagent')
-    expect(def!.inputSchema.required).toContain('agentName')
-    expect(def!.inputSchema.required).toContain('taskPrompt')
+    const def = router.getTool('dispatch_case_agent')
+    expect(def!.inputSchema.required).toContain('caseType')
   })
 })

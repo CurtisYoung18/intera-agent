@@ -54,7 +54,7 @@ describe('Smoke — Stream Handler (E1-1)', () => {
 })
 
 describe('Smoke — ToolRouter (E1-2)', () => {
-  it('returns built-in skills including dispatch_subagent', () => {
+  it('returns built-in tools including dispatch_case_agent', () => {
     const router = new ToolRouter('smoke-test')
     const skills = router.getToolDefinitions()
     expect(skills.length).toBeGreaterThan(0)
@@ -65,8 +65,8 @@ describe('Smoke — ToolRouter (E1-2)', () => {
     const finalizeCase = router.getTool('finalize_case')
     expect(finalizeCase).toBeDefined()
 
-    const dispatchSubagent = router.getTool('dispatch_subagent')
-    expect(dispatchSubagent).toBeDefined()
+    const dispatchCaseAgent2 = router.getTool('dispatch_case_agent')
+    expect(dispatchCaseAgent2).toBeDefined()
   })
 
   it('getTool returns undefined for unknown skill', () => {
