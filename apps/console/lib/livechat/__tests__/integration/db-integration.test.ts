@@ -22,10 +22,6 @@ describe.skipIf(!hasLocalPostgres)('DB integration tests (PostgreSQL)', () => {
   let isDuplicateWebhook: typeof import('../../webhook-dedup').isDuplicateWebhook
   let pruneOldWebhookEvents: typeof import('../../webhook-dedup').pruneOldWebhookEvents
 
-  let markChannelUnhealthy: typeof import('../../channel-health').markChannelUnhealthy
-  let markChannelHealthy: typeof import('../../channel-health').markChannelHealthy
-  let getChannelHealth: typeof import('../../channel-health').getChannelHealth
-
   let enqueueRetry: typeof import('../../retry-queue').enqueueRetry
 
   beforeAll(async () => {
@@ -42,11 +38,6 @@ describe.skipIf(!hasLocalPostgres)('DB integration tests (PostgreSQL)', () => {
     const dedupMod = await import('../../webhook-dedup')
     isDuplicateWebhook = dedupMod.isDuplicateWebhook
     pruneOldWebhookEvents = dedupMod.pruneOldWebhookEvents
-
-    const healthMod = await import('../../channel-health')
-    markChannelUnhealthy = healthMod.markChannelUnhealthy
-    markChannelHealthy = healthMod.markChannelHealthy
-    getChannelHealth = healthMod.getChannelHealth
 
     const retryMod = await import('../../retry-queue')
     enqueueRetry = retryMod.enqueueRetry
@@ -119,31 +110,6 @@ describe.skipIf(!hasLocalPostgres)('DB integration tests (PostgreSQL)', () => {
 
     it('pruneOldWebhookEvents completes without error', async () => {
       await expect(pruneOldWebhookEvents(365)).resolves.toBeUndefined()
-    })
-  })
-
-  describe('channel-health (PostgreSQL)', () => {
-    it('markChannelUnhealthy + getChannelHealth round-trip', async () => {
-      const cid = `health-${Date.now()}`
-      await markChannelUnhealthy(cid, 'livechat', 'token_expired', 'test error')
-      const health = await getChannelHealth(cid, 'livechat')
-      expect(health).not.toBeNull()
-      expect(health!.status).toBe('token_expired')
-      expect(health!.lastError).toBe('test error')
-    })
-
-    it('markChannelHealthy transitions to healthy', async () => {
-      const cid = `health-recover-${Date.now()}`
-      await markChannelUnhealthy(cid, 'livechat', 'token_expired', 'err')
-      await markChannelHealthy(cid, 'livechat')
-      const health = await getChannelHealth(cid, 'livechat')
-      expect(health!.status).toBe('healthy')
-      expect(health!.lastError).toBeNull()
-    })
-
-    it('getChannelHealth returns null for missing', async () => {
-      const health = await getChannelHealth(`no-health-${Date.now()}`, 'livechat')
-      expect(health).toBeNull()
     })
   })
 

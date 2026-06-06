@@ -12,7 +12,7 @@ import {
   deactivateChat,
 } from './livechat-api'
 import { enqueueRetry } from './retry-queue'
-import { markChannelUnhealthy, markChannelHealthy } from './channel-health'
+
 import { downloadAndEncode, isSupportedImageType } from './image-utils'
 import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
@@ -317,11 +317,11 @@ export async function handleIncomingEvent(
           const e = err as Error & { code?: string }
           const msg = e.message ?? ''
           if (e.code === 'TOKEN_EXPIRED') {
-            await markChannelUnhealthy(orgId, 'livechat', 'token_expired', String(err))
+            // channel health tracking removed
           } else if (e.code === 'NOT_IN_CHAT') {
-            await markChannelUnhealthy(orgId, 'livechat', 'token_expired', String(err))
+            // channel health tracking removed
           } else if (e.code === 'RATE_LIMITED') {
-            await markChannelUnhealthy(orgId, 'livechat', 'rate_limited', String(err))
+            // channel health tracking removed
           } else if (msg.includes('Chat not active')) {
             // Chat has been archived — don't retry, just close the session
             await closeSession(chatId, 'archived_externally')
@@ -351,7 +351,5 @@ export async function handleIncomingEvent(
     await updateSessionState(chatId, 'idle')
   }
 
-  if (!streamTruncated) {
-    await markChannelHealthy(orgId, 'livechat').catch(() => {})
-  }
+  // channel health tracking removed (markChannelHealthy)
 }

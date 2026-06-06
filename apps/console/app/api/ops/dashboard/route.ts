@@ -28,7 +28,6 @@ export const GET = defineRoute({
       activeCases,
       resolvedCases,
       guardrailHits,
-      channelHealth,
       recentCases,
     ] = await Promise.all([
       repo.case
@@ -58,8 +57,6 @@ export const GET = defineRoute({
             })
             .catch(() => [])
         : ([] as { title: string }[]),
-      // channelHealth model removed — channel health now tracked via channel_bindings
-      Promise.resolve([]),
       repo.case
         .findMany({
           orderBy: { createdAt: 'desc' as const },
@@ -114,19 +111,6 @@ export const GET = defineRoute({
         avgResolutionMin,
       },
       guardrailHits: topHits,
-      channelHealth: (
-        channelHealth as Array<{
-          channel: string
-          status: string
-          lastChecked: Date
-          lastError: string | null
-        }>
-      ).map((ch) => ({
-        channel: ch.channel,
-        status: ch.status,
-        lastChecked: ch.lastChecked.toISOString(),
-        lastError: ch.lastError,
-      })),
       recentCases: (
         recentCases as Array<{
           id: string

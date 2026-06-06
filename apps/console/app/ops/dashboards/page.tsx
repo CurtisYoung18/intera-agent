@@ -16,7 +16,6 @@ interface DashboardData {
     avgResolutionMin: number | null
   }
   guardrailHits: Array<{ name: string; hits: number }>
-  channelHealth: Array<{ channel: string; status: string; lastChecked: string; lastError: string | null }>
   recentCases: Array<{ id: string; type: string; status: string; createdAt: string }>
 }
 
@@ -28,14 +27,9 @@ const L = {
   avgResolution: { en: 'Avg Resolution', zh: '平均响应' },
   guardrailHits: { en: 'Guardrail Hits', zh: '护栏命中' },
   guardrailHits24h: { en: 'Guardrail Hits (24h)', zh: '护栏命中 (24h)' },
-  channelHealth: { en: 'Channel Health', zh: '渠道健康' },
   recentCases: { en: 'Recent Cases', zh: '最近案例' },
   noData: { en: 'No data yet', zh: '暂无数据' },
   min: { en: 'min', zh: '分钟' },
-  healthy: { en: 'Healthy', zh: '正常' },
-  token_expired: { en: 'Token expired', zh: '令牌过期' },
-  unreachable: { en: 'Unreachable', zh: '不可达' },
-  rate_limited: { en: 'Rate limited', zh: '限流中' },
   loading: { en: 'Loading…', zh: '加载中…' },
   noGuardrails: { en: 'No guardrail activity yet.', zh: '暂无护栏活动' },
   viewAll: { en: 'View all', zh: '查看全部' },
@@ -44,10 +38,6 @@ const L = {
 function useL() {
   const { locale } = useConsoleLocale()
   return (key: keyof typeof L) => L[key][locale as 'en' | 'zh'] ?? L[key].en
-}
-
-const statusColors: Record<string, string> = {
-  healthy: 'bg-emerald-400', token_expired: 'bg-red-400', unreachable: 'bg-red-400', rate_limited: 'bg-amber-400',
 }
 
 function timeAgo(iso: string): string {
@@ -74,7 +64,7 @@ export default function DashboardPage() {
   if (loading) return <div className="p-8 text-[13px] text-[var(--fog)]">{l('loading')}</div>
   if (!data) return <div className="p-8 text-[13px] text-[var(--fog)]">{l('noData')}</div>
 
-  const { overview, guardrailHits, channelHealth, recentCases } = data
+  const { overview, guardrailHits, recentCases } = data
   const totalGuardrail = guardrailHits.reduce((s, g) => s + g.hits, 0)
 
   return (
@@ -195,26 +185,8 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Channel Health + Guardrail Hits */}
+        {/* Guardrail Hits */}
         <div className="space-y-4">
-          <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
-            <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('channelHealth')}</h2>
-            {channelHealth.length === 0 ? (
-              <p className="text-[12px] text-[var(--fog)]/40 italic">{l('noData')}</p>
-            ) : (
-              <div className="space-y-2">
-                {channelHealth.map((ch) => (
-                  <div key={ch.channel} className="flex items-center gap-3">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColors[ch.status] || 'bg-black/10'}`} />
-                    <span className="text-[12px] text-[var(--mist)] flex-1 capitalize">{ch.channel}</span>
-                    <span className="text-[11px] text-[var(--fog)]">{l(ch.status as keyof typeof L)}</span>
-                    <span className="text-[10px] text-[var(--fog)]/40">{timeAgo(ch.lastChecked)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
             <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('guardrailHits24h')}</h2>
             {guardrailHits.length === 0 ? (

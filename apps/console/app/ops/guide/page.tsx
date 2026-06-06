@@ -534,20 +534,19 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
   "maxIterations": 20,
   "maxOutputTokens": 4096,
   "memoryStrategy": "{…JSON…}",
-  "policyHooks": "{…JSON…}",
   "showThinking": false,
   "invariantCheck": true
 }`}
             />
             <Endpoint method="GET" path="/api/admin/models" host={CONSOLE_HOST} summary="List models available for selection (used by drop-downs)." />
 
-            <SectionHeading>2.3 Skills (Tools)</SectionHeading>
-            <Endpoint method="GET" path="/api/admin/skills" host={CONSOLE_HOST} summary="List all enabled skills for the active customer. Returns enriched flags isSystem / isSpecial." />
+            <SectionHeading>2.3 Tools</SectionHeading>
+            <Endpoint method="GET" path="/api/admin/tools" host={CONSOLE_HOST} summary="List all enabled tools for the active customer. Returns enriched flags isSystem / isSpecial." />
             <Endpoint
               method="POST"
-              path="/api/admin/skills"
+              path="/api/admin/tools"
               host={CONSOLE_HOST}
-              summary="Create a new business skill."
+              summary="Create a new business tool."
               body={`{
   "name": "query_order_status",
   "description": "Look up an order by ID.",
@@ -563,14 +562,14 @@ data: {"type":"message_stop","data":{"reason":"next_turn","stage":"investigating
   "displayVerb": { "text": "Checking order", "icon": "scan" }
 }`}
             />
-            <Endpoint method="GET" path="/api/admin/skills/{name}" host={CONSOLE_HOST} summary="Read a single skill." />
-            <Endpoint method="PUT" path="/api/admin/skills/{name}" host={CONSOLE_HOST} summary="Update a skill. System skills (engine-managed) reject everything except `enabled` toggle." />
-            <Endpoint method="DELETE" path="/api/admin/skills/{name}" host={CONSOLE_HOST} summary="Delete a business skill. System / special skills can&rsquo;t be deleted." />
+            <Endpoint method="GET" path="/api/admin/tools/{name}" host={CONSOLE_HOST} summary="Read a single tool." />
+            <Endpoint method="PUT" path="/api/admin/tools/{name}" host={CONSOLE_HOST} summary="Update a tool. System tools (engine-managed) reject everything except `enabled` toggle." />
+            <Endpoint method="DELETE" path="/api/admin/tools/{name}" host={CONSOLE_HOST} summary="Delete a business tool. System / special tools can&rsquo;t be deleted." />
             <Endpoint
               method="POST"
-              path="/api/admin/skills/test"
+              path="/api/admin/tools/test"
               host={CONSOLE_HOST}
-              summary="Test an HTTP skill against its endpoint with a dummy or provided input. Returns status + body."
+              summary="Test an HTTP tool against its endpoint with a dummy or provided input. Returns status + body."
               body={`{ "name": "query_order_status", "input": { "orderId": "TX2026…" } }`}
             />
 
