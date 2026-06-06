@@ -266,10 +266,28 @@ export function aggregateTraces(
         step.ms = realLlmMs
       }
 
-      // Extract usage from llm_response
-      const llmRespRecord = records.find(r => r.actionType === 'llm_response')
-      if (llmRespRecord) {
-        step.usage = extractUsage(llmRespRecord)
+      // Extract usage from ALL llm_response records (multiple LLM calls per turn)
+      const llmRespRecords = records.filter(r => r.actionType === 'llm_response')
+      if (llmRespRecords.length > 0) {
+        let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0
+        for (const rec of llmRespRecords) {
+          const u = extractUsage(rec)
+          if (u) {
+            totalInput += u.inputTokens
+            totalOutput += u.outputTokens
+            totalCacheRead += u.cacheReadTokens ?? 0
+            totalCacheWrite += u.cacheWriteTokens ?? 0
+          }
+        }
+        if (totalInput > 0 || totalOutput > 0) {
+          step.usage = {
+            inputTokens: totalInput,
+            outputTokens: totalOutput,
+            totalTokens: totalInput + totalOutput,
+            cacheReadTokens: totalCacheRead || undefined,
+            cacheWriteTokens: totalCacheWrite || undefined,
+          }
+        }
       }
     }
 
