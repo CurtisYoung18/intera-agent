@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { AlertCircle, GitBranch, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import AgentBlueprint from '@/components/admin/agent-blueprint'
+import AgentBlueprintGraph from '@/components/admin/agent-blueprint-graph'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { useAgentContext } from '@/lib/agent/agent-context'
@@ -140,7 +140,7 @@ function AgentConfigPage() {
         )}
 
         {/* Agent Blueprint — read-only health dashboard, click to navigate */}
-        <AgentBlueprint
+        <AgentBlueprintGraph
           agentId={currentAgentId}
         />
       </div>
