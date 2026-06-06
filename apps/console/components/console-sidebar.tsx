@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import {
-  ClipboardList, FolderOpen, Bot, Puzzle, Shield, Layers,
+  ClipboardList, FolderOpen, Puzzle, Shield, Layers,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Languages, Lock, Unlock,
   BookOpen,
@@ -69,7 +69,6 @@ interface CustomerInfo {
 
 const BUILD_ITEMS: NavItem[] = [
   { href: '/admin/playground', slug: 'playground', icon: FlaskConical, color: '#8b6ff5' },
-  { href: '/admin/agent', slug: 'agentConfig', icon: Bot, color: '#2ea04a' },
   { href: '/admin/model', slug: 'model' as NavSlug, icon: Brain, color: '#8b6ff5' },
   { href: '/admin/memory', slug: 'memory' as NavSlug, icon: Database, color: '#d4912e' },
   { href: '/admin/guardrails', slug: 'guardrails', icon: Shield, color: '#e64539' },
@@ -135,9 +134,6 @@ export default function ConsoleSidebar() {
 
   const handleAgentSelect = (id: string) => {
     selectAgent(id)
-    if (pathname.startsWith('/admin/agent')) {
-      router.push(`/admin/agent?agentId=${id}`)
-    }
   }
 
   // Load customer list
