@@ -138,7 +138,7 @@ export default function SkillsPage() {
     if (mf) {
       const parsed = parseJsonField(editing.mockFixture)
       if (!parsed.ok) {
-        setSaveError(t('skills.mockInvalidJson', { detail: parsed.error }))
+        setSaveError(t('tools.mockInvalidJson', { detail: parsed.error }))
         setSaveStatus('error')
         return
       }
@@ -212,7 +212,7 @@ export default function SkillsPage() {
 
   const openEdit = (s: SkillItem) => { if (s.isSpecial || s.mode === 'engine_managed' || s.mode === 'channel') return; setEditing({ ...s }); setIsNew(false); setOriginalName(s.name) }
 
-  const filtered = skills.filter(s =>
+  const filtered = tools.filter(s =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.description || '').toLowerCase().includes(search.toLowerCase())
   )
 
@@ -230,32 +230,32 @@ export default function SkillsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('skills.title')}</h1>
-          <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('skills.subtitle', { n: skills.length })}</p>
+          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('tools.title')}</h1>
+          <p className="text-[13px] text-[var(--fog)] mt-0.5">{t('tools.subtitle', { n: tools.length })}</p>
         </div>
         <button onClick={openNew}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-indigo/[0.08] border border-indigo/20 text-indigo hover:bg-indigo/[0.15] transition-all">
-          <Plus className="w-4 h-4" /> {t('skills.new')}
+          <Plus className="w-4 h-4" /> {t('tools.new')}
         </button>
       </div>
 
       {/* Search */}
       <div className="relative mb-6 max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--smoke)]" />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('skills.searchPh')} className="glass-input-console pl-10 text-[13px]" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('tools.searchPh')} className="glass-input-console pl-10 text-[13px]" />
       </div>
 
 
       {filtered.length === 0 ? (
-        <EmptyState icon={Puzzle} title={t('skills.noSkills')} description={search ? t('common.noMatches') : t('skills.noSkillsDesc')} />
+        <EmptyState icon={Puzzle} title={t('tools.noTools')} description={search ? t('common.noMatches') : t('tools.noToolsDesc')} />
       ) : (
         <div className="space-y-10">
           {/* ── System Skills ── */}
           {systemSkills.length > 0 && (
             <section>
               <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('skills.systemSkills')}</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-sky/[0.08] text-sky border border-sky/20">{t('skills.system')}</span>
+                <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('tools.systemTools')}</h2>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-sky/[0.08] text-sky border border-sky/20">{t('tools.system')}</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {systemSkills.map(s => (
@@ -390,7 +390,7 @@ export default function SkillsPage() {
           {/* ── Special Skills ── */}
           {specialSkills.length > 0 && (
             <section className="mb-8">
-              <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-1">{t('skills.specialSkills')}</h2>
+              <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-1">{t('tools.specialTools')}</h2>
               <p className="text-[12px] text-[var(--fog)] mb-4">Configured in dedicated pages</p>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {specialSkills.map(s => (
@@ -418,7 +418,7 @@ export default function SkillsPage() {
           {/* ── Business Skills ── */}
           {businessSkills.length > 0 && (
             <section>
-              <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-4">{t('skills.businessSkills')}</h2>
+              <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-4">{t('tools.businessTools')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {businessSkills.map(s => (
                   <TiltCard key={s.id || s.name} accentColor={s.mode === 'http' ? '#5bb8f7' : s.mode === 'engine_managed' ? '#d97706' : s.mode === 'channel' ? '#7c3aed' : '#8b6ff5'} onClick={() => s.mode !== 'engine_managed' && s.mode !== 'channel' && openEdit(s)}>
@@ -450,14 +450,14 @@ export default function SkillsPage() {
 
                       {s.mode === 'static' && (
                         <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
-                          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('skills.mockCardPreview')}</div>
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-[var(--smoke)] mb-1.5">{t('tools.mockCardPreview')}</div>
                           {(() => {
                             const chips = mockFixtureChips(s.mockFixture)
                             if (!s.mockFixture?.trim()) {
-                              return <p className="text-[11px] text-[var(--smoke)] italic">{t('skills.noMockYet')}</p>
+                              return <p className="text-[11px] text-[var(--smoke)] italic">{t('tools.noMockYet')}</p>
                             }
                             if (chips === null) {
-                              return <p className="text-[11px] text-vermillion/80">{t('skills.mockMalformedCard')}</p>
+                              return <p className="text-[11px] text-vermillion/80">{t('tools.mockMalformedCard')}</p>
                             }
                             if (chips.length === 0) {
                               return <span className="text-[11px] font-mono text-[var(--fog)]">{'{}'}</span>
@@ -537,7 +537,7 @@ export default function SkillsPage() {
       </ImmersiveModal>
 
       {/* Slide Panel Editor — same logic as before */}
-      <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('skills.newSkill') : t('skills.editSkill')}>
+      <ImmersiveModal open={!!editing} onClose={() => setEditing(null)} title={isNew ? t('tools.newTool') : t('tools.editTool')}>
         {editing && (
           <div className="space-y-4">
             <label className="space-y-1.5 block">
@@ -588,11 +588,11 @@ export default function SkillsPage() {
             {editing.mode === 'static' ? (
               <div className="rounded-xl border border-lavender/25 bg-lavender/[0.05] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold text-lavender">{t('skills.mockResponseEditor')}</span>
+                  <span className="text-[11px] font-semibold text-lavender">{t('tools.mockResponseEditor')}</span>
                   <div className="flex items-center gap-2 shrink-0">
                     {editing.name && prefillDefaultMock(editing.name) && (
                       <button type="button" onClick={() => setEditing({ ...editing, mockFixture: prefillDefaultMock(editing.name) })} className="text-[10px] text-lavender/70 hover:text-lavender flex items-center gap-1">
-                        <Zap className="w-3 h-3" />{t('skills.resetDefault')}
+                        <Zap className="w-3 h-3" />{t('tools.resetDefault')}
                       </button>
                     )}
                     <button type="button" onClick={() => formatField('mockFixture')} className="text-[10px] text-indigo/70 hover:text-indigo flex items-center gap-1">
@@ -602,7 +602,7 @@ export default function SkillsPage() {
                 </div>
                 <div className="grid md:grid-cols-2 gap-3">
                   <label className="space-y-1.5 block min-h-0">
-                    <span className="text-[10px] text-[var(--fog)]">{t('skills.mockSourceJson')}</span>
+                    <span className="text-[10px] text-[var(--fog)]">{t('tools.mockSourceJson')}</span>
                     <textarea
                       value={editing.mockFixture || ''}
                       onChange={e => setEditing({ ...editing, mockFixture: e.target.value })}
@@ -613,17 +613,17 @@ export default function SkillsPage() {
                     />
                   </label>
                   <div className="flex flex-col min-h-0">
-                    <span className="text-[10px] text-[var(--fog)] mb-1">{t('skills.mockLivePreview')}</span>
+                    <span className="text-[10px] text-[var(--fog)] mb-1">{t('tools.mockLivePreview')}</span>
                     {(() => {
                       const p = parseJsonField(editing.mockFixture)
                       if (!editing.mockFixture?.trim()) {
                         return (
-                          <pre className="flex-1 text-[11px] font-mono text-[var(--smoke)] p-3 rounded-lg bg-black/[0.03] border border-[var(--border-subtle)] whitespace-pre-wrap">{t('skills.mockPreviewEmpty')}</pre>
+                          <pre className="flex-1 text-[11px] font-mono text-[var(--smoke)] p-3 rounded-lg bg-black/[0.03] border border-[var(--border-subtle)] whitespace-pre-wrap">{t('tools.mockPreviewEmpty')}</pre>
                         )
                       }
                       if (!p.ok) {
                         return (
-                          <pre className="flex-1 text-[11px] font-mono text-vermillion/90 p-3 rounded-lg bg-vermillion/[0.06] border border-vermillion/20 whitespace-pre-wrap">{t('skills.mockInvalidJson', { detail: p.error })}</pre>
+                          <pre className="flex-1 text-[11px] font-mono text-vermillion/90 p-3 rounded-lg bg-vermillion/[0.06] border border-vermillion/20 whitespace-pre-wrap">{t('tools.mockInvalidJson', { detail: p.error })}</pre>
                         )
                       }
                       return (
@@ -636,8 +636,8 @@ export default function SkillsPage() {
             ) : (
               <details className="rounded-xl border border-[var(--border-subtle)] bg-black/[0.02] px-4 py-3 group/mockfix">
                 <summary className="text-[11px] font-medium text-[var(--fog)] cursor-pointer list-none flex items-center justify-between">
-                  <span>{t('skills.mockOptionalHttp')}</span>
-                  <span className="text-[10px] text-[var(--smoke)] opacity-70">{t('skills.mockOptionalToggle')}</span>
+                  <span>{t('tools.mockOptionalHttp')}</span>
+                  <span className="text-[10px] text-[var(--smoke)] opacity-70">{t('tools.mockOptionalToggle')}</span>
                 </summary>
                 <div className="mt-3 space-y-2 pt-2 border-t border-[var(--border-subtle)]">
                   <div className="flex justify-end">
@@ -656,7 +656,7 @@ export default function SkillsPage() {
                     const p = parseJsonField(editing.mockFixture)
                     if (!editing.mockFixture?.trim()) return null
                     if (!p.ok) {
-                      return <p className="text-[11px] text-vermillion/85">{t('skills.mockInvalidJson', { detail: p.error })}</p>
+                      return <p className="text-[11px] text-vermillion/85">{t('tools.mockInvalidJson', { detail: p.error })}</p>
                     }
                     return (
                       <pre className="text-[11px] font-mono text-[var(--mist)] p-3 rounded-lg bg-black/[0.03] border border-[var(--border-subtle)] overflow-auto max-h-[160px]">{JSON.stringify(p.value, null, 2)}</pre>
@@ -691,19 +691,19 @@ export default function SkillsPage() {
             </details>
 
             <div className={`space-y-3 ${editing.mode === 'static' ? 'opacity-40 pointer-events-none' : ''}`}>
-              <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('skills.httpConfig')}</span></div>
-              <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('skills.endpoint')}</span>
+              <div className="border-t border-[var(--border-subtle)] pt-3"><span className="text-[11px] font-medium text-[var(--fog)]">{t('tools.httpConfig')}</span></div>
+              <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('tools.endpoint')}</span>
                 <input value={editing.endpoint || ''} onChange={e => setEditing({ ...editing, endpoint: e.target.value })} className="glass-input-console text-[13px] font-mono" />
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1.5"><span className="text-[11px] text-[var(--fog)]">{t('common.method')}</span>
                   <select value={editing.httpMethod || 'POST'} onChange={e => setEditing({ ...editing, httpMethod: e.target.value })} className="glass-input-console text-[13px]"><option>POST</option><option>GET</option></select>
                 </label>
-                <label className="space-y-1.5"><span className="text-[11px] text-[var(--fog)]">{t('skills.timeoutMs')}</span>
+                <label className="space-y-1.5"><span className="text-[11px] text-[var(--fog)]">{t('tools.timeoutMs')}</span>
                   <input type="number" value={editing.timeoutMs || 10000} onChange={e => setEditing({ ...editing, timeoutMs: parseInt(e.target.value) || 10000 })} className="glass-input-console text-[13px] font-mono" />
                 </label>
               </div>
-              <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('skills.guardPhase')}</span>
+              <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">{t('tools.guardPhase')}</span>
                 <select value={editing.guardPhase || 'pre'} onChange={e => setEditing({ ...editing, guardPhase: e.target.value })} className="glass-input-console text-[13px]"><option value="pre">pre</option><option value="post">post</option></select>
               </label>
               <label className="space-y-1.5 block"><span className="text-[11px] text-[var(--fog)]">Tool Category</span>
@@ -714,7 +714,7 @@ export default function SkillsPage() {
                 </select>
               </label>
               <button onClick={handleTestEndpoint} disabled={testing} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] bg-sky/[0.06] border border-sky/20 text-sky hover:bg-sky/[0.1] transition-all">
-                <Zap className="w-3.5 h-3.5" />{testing ? t('skills.testing') : t('skills.testEndpoint')}
+                <Zap className="w-3.5 h-3.5" />{testing ? t('tools.testing') : t('tools.testEndpoint')}
               </button>
 
               {testResult && (
@@ -738,9 +738,9 @@ export default function SkillsPage() {
             {(['inputSchema', 'outputSchema', 'headers'] as const).map(f => {
               const fk = (
                 {
-                  inputSchema: 'skills.inputSchema',
-                  outputSchema: 'skills.outputSchema',
-                  headers: 'skills.headers',
+                  inputSchema: 'tools.inputSchema',
+                  outputSchema: 'tools.outputSchema',
+                  headers: 'tools.headers',
                 } as const
               )[f]
               const isInputLocked = f === 'inputSchema' && editing.isSystem
@@ -759,7 +759,7 @@ export default function SkillsPage() {
               </label>
             )})}
             <div className="flex items-center gap-4 pt-2">
-              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editing.isConcurrencySafe} onChange={e => setEditing({ ...editing, isConcurrencySafe: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('skills.concurrencySafe')}</span></label>
+              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editing.isConcurrencySafe} onChange={e => setEditing({ ...editing, isConcurrencySafe: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('tools.concurrencySafe')}</span></label>
               <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} className="accent-indigo rounded" /><span className="text-[12px] text-[var(--fog)]">{t('common.enabled')}</span></label>
             </div>
             {saveError && (
