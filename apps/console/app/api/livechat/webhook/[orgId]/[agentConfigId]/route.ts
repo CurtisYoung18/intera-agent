@@ -1,4 +1,4 @@
-// POST /api/livechat/webhook/[agentConfigId] — Per-agent LiveChat webhook
+// POST /api/livechat/webhook/[orgId]/[agentConfigId] — Per-agent LiveChat webhook
 // Migrated to defineRoute (G1 contract seam).
 // Loads per-agent channel binding and passes agentConfigId to the bridge for per-agent brain routing.
 
@@ -16,8 +16,8 @@ function getChatPresence(body: Record<string, unknown>): string[] {
   return (additional?.chat_presence_user_ids ?? []) as string[]
 }
 
-export async function POST(request: NextRequest, ctx: { params: Promise<{ agentConfigId: string }> }) {
-  const { agentConfigId } = await ctx.params
+export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId: string; agentConfigId: string }> }) {
+  const { orgId, agentConfigId } = await ctx.params
 
   const rl = checkRateLimit({ key: `webhook:${agentConfigId}`, max: 60, windowSec: 60 })
   if (!rl.allowed) return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 })

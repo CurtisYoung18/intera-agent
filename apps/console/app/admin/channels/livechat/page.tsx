@@ -209,9 +209,9 @@ export default function LiveChatDetailPage() {
   const selectedAgentConfigId = agentList.find(a => a.name === selectedAgent)?.id
   const inputCls = 'w-full px-3 py-2 text-[13px] border border-black/[0.08] rounded-xl bg-white outline-none focus:border-indigo/30'
   const labelCls = 'block text-[12px] font-semibold text-[var(--mist)] mb-1'
-  const webhookUrl = typeof window !== 'undefined' && selectedAgentConfigId
-    ? `${window.location.origin}/api/livechat/webhook/${selectedAgentConfigId}`
-    : selectedAgentConfigId ? `/api/livechat/webhook/${selectedAgentConfigId}` : ''
+  const webhookUrl = typeof window !== 'undefined' && selectedAgentConfigId && orgId
+    ? `${window.location.origin}/api/livechat/webhook/${orgId}/${selectedAgentConfigId}`
+    : selectedAgentConfigId && orgId ? `/api/livechat/webhook/${orgId}/${selectedAgentConfigId}` : ''
 
   return (
     <div className="p-8 max-w-5xl">
@@ -392,7 +392,7 @@ export default function LiveChatDetailPage() {
                     <p className="text-[10px] text-[var(--fog)] mb-2 mt-1 opacity-60">{t('livechat.perAgentWebhooksHint')}</p>
                     <div className="space-y-1.5">
                       {agentList.map(a => {
-                        const url = typeof window !== 'undefined' ? `${window.location.origin}/api/livechat/webhook/${a.id}` : `/api/livechat/webhook/${a.id}`
+                        const url = typeof window !== 'undefined' ? `${window.location.origin}/api/livechat/webhook/${orgId}/${a.id}` : `/api/livechat/webhook/${orgId}/${a.id}`
                         return (
                           <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/60 border border-black/[0.04]">
                             <span className="text-[11px] font-semibold text-[var(--mist)] flex-shrink-0">{a.name}</span>
