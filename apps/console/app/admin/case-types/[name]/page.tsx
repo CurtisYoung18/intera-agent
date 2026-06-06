@@ -131,7 +131,7 @@ export default function CaseTypeDetailPage() {
   // Fetch skills and models
   useEffect(() => {
     apiClient<{ tools?: Array<{ name: string }> }>('/api/admin/tools')
-      .then((r) => setAllTools((r.data.tools || r.data.skills || []).map((s) => s.name)))
+      .then((r) => setAllTools((r.data.tools || []).map((s) => s.name)))
       .catch(() => {})
     apiClient<{ models?: Array<{ id: string }> }>('/api/admin/models')
       .then((r) => setAvailableModels((r.data.models || []).map((m) => m.id)))

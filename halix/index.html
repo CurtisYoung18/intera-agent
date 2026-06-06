@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Halix v1 — AI Fitness Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-snap-type: y mandatory; }
+  body { font-family: 'Inter', sans-serif; background: #000; color: #fff; overflow-x: hidden; }
+
+  .section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    scroll-snap-align: start;
+  }
+
+  .section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+
+  /* Water background — blue-green bokeh orbs */
+  .water-bg::before {
+    background:
+      radial-gradient(ellipse 70% 60% at 25% 55%, rgba(0, 200, 130, 0.55) 0%, transparent 55%),
+      radial-gradient(ellipse 60% 70% at 75% 35%, rgba(0, 120, 240, 0.5) 0%, transparent 55%),
+      radial-gradient(ellipse 50% 50% at 50% 65%, rgba(0, 80, 180, 0.35) 0%, transparent 45%),
+      radial-gradient(ellipse 30% 30% at 85% 70%, rgba(100, 200, 255, 0.25) 0%, transparent 40%),
+      linear-gradient(180deg, #001418 0%, #001828 50%, #002038 100%);
+  }
+
+  /* Calories background — purple/pink bokeh orbs */
+  .calories-bg::before {
+    background:
+      radial-gradient(ellipse 60% 65% at 25% 60%, rgba(140, 60, 200, 0.45) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 55% at 75% 30%, rgba(60, 100, 220, 0.4) 0%, transparent 55%),
+      radial-gradient(ellipse 45% 45% at 55% 75%, rgba(200, 80, 180, 0.3) 0%, transparent 45%),
+      radial-gradient(ellipse 35% 35% at 80% 65%, rgba(100, 60, 180, 0.25) 0%, transparent 40%),
+      linear-gradient(180deg, #0a0818 0%, #140a28 50%, #0c1030 100%);
+  }
+
+  /* Dashboard background — amber/orange bokeh orbs */
+  .dashboard-bg::before {
+    background:
+      radial-gradient(ellipse 70% 70% at 60% 50%, rgba(230, 130, 0, 0.45) 0%, transparent 55%),
+      radial-gradient(ellipse 55% 55% at 30% 65%, rgba(200, 90, 0, 0.3) 0%, transparent 50%),
+      radial-gradient(ellipse 40% 40% at 80% 30%, rgba(255, 170, 0, 0.2) 0%, transparent 45%),
+      radial-gradient(ellipse 30% 30% at 45% 25%, rgba(180, 100, 20, 0.2) 0%, transparent 40%),
+      linear-gradient(180deg, #080400 0%, #180c00 50%, #201200 100%);
+  }
+
+  /* ===== Card Base ===== */
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 380px;
+    border-radius: 28px;
+    padding: 32px;
+    overflow: hidden;
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .card-title {
+    font-size: 24px;
+    font-weight: 400;
+    letter-spacing: -0.3px;
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .card-subtitle {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.45);
+    margin-top: 4px;
+    font-weight: 300;
+  }
+
+  .icon-circle {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+
+  .icon-circle svg {
+    width: 20px;
+    height: 20px;
+    stroke: rgba(255, 255, 255, 0.8);
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ===== Water Card ===== */
+  .water-card {
+    background: linear-gradient(160deg, rgba(0, 90, 180, 0.32) 0%, rgba(0, 50, 120, 0.22) 50%, rgba(0, 70, 140, 0.18) 100%);
+    backdrop-filter: blur(40px) saturate(1.4);
+    -webkit-backdrop-filter: blur(40px) saturate(1.4);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  .progress-container {
+    background: rgba(0, 60, 140, 0.35);
+    border-radius: 14px;
+    height: 40px;
+    position: relative;
+    overflow: visible;
+    margin-top: 24px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 14px;
+    background: linear-gradient(90deg, #0066cc, #0099ff, #00bbff);
+    width: 0%;
+    position: relative;
+    box-shadow: 0 0 20px rgba(0, 150, 255, 0.25);
+  }
+
+  .progress-handle {
+    position: absolute;
+    right: -3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 26px;
+    background: white;
+    border-radius: 3px;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+  }
+
+  /* ===== Calories Card ===== */
+  .calories-card {
+    background: linear-gradient(160deg, rgba(110, 75, 170, 0.3) 0%, rgba(70, 55, 130, 0.22) 50%, rgba(90, 65, 150, 0.18) 100%);
+    backdrop-filter: blur(40px) saturate(1.4);
+    -webkit-backdrop-filter: blur(40px) saturate(1.4);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  .chart-container {
+    height: 160px;
+    margin: 10px 0 20px;
+  }
+
+  .chart-container svg { width: 100%; height: 100%; }
+
+  /* ===== Dashboard Card ===== */
+  .dashboard-card {
+    background: linear-gradient(160deg, rgba(55, 40, 22, 0.5) 0%, rgba(35, 25, 12, 0.45) 50%, rgba(45, 30, 18, 0.4) 100%);
+    backdrop-filter: blur(40px) saturate(1.3);
+    -webkit-backdrop-filter: blur(40px) saturate(1.3);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  }
+
+  .greeting { font-size: 14px; color: rgba(255,255,255,0.45); font-weight: 300; margin-bottom: 2px; }
+  .date-text { font-size: 28px; font-weight: 500; letter-spacing: -0.5px; color: rgba(255,255,255,0.95); }
+
+  .avatar {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: linear-gradient(135deg, #555, #888);
+    border: 2px solid rgba(255,255,255,0.1);
+  }
+
+  .ring-container {
+    width: 220px; height: 220px;
+    margin: 16px auto 24px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .ring-bg {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle, rgba(20,15,10,0.8) 0%, rgba(30,20,15,0.5) 70%, transparent 100%);
+    border: 6px solid rgba(255,255,255,0.05);
+  }
+
+  .ring-progress { position: absolute; inset: 0; }
+  .ring-progress svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+
+  .ring-center { position: relative; z-index: 1; text-align: center; }
+  .ring-value { font-size: 52px; font-weight: 300; letter-spacing: 2px; }
+  .ring-label { font-size: 14px; color: rgba(255,255,255,0.5); margin-top: 2px; font-weight: 300; }
+
+  .sub-stats { display: flex; gap: 8px; }
+  .sub-stat {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 14px 12px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .sub-stat-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 6px; letter-spacing: 0.3px; }
+  .sub-stat-value { font-size: 22px; font-weight: 500; color: rgba(255,255,255,0.95); line-height: 1.1; }
+  .sub-stat-value.small { font-size: 17px; }
+  .sub-stat-detail { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 4px; font-weight: 300; }
+
+  /* ===== Brand Watermark ===== */
+  .brand-watermark {
+    position: absolute;
+    font-size: 140px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.025);
+    letter-spacing: 10px;
+    z-index: 0;
+    pointer-events: none;
+    user-select: none;
+    bottom: 8%;
+    right: 5%;
+  }
+
+  /* ===== Nav Dots ===== */
+  .nav-dots {
+    position: fixed;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 100;
+  }
+
+  .nav-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: background 0.3s, transform 0.3s;
+  }
+
+  .nav-dot.active {
+    background: rgba(255, 255, 255, 0.8);
+    transform: scale(1.3);
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Water Section ===== -->
+<div class="section water-bg" id="water-section">
+  <div class="brand-watermark">Halix</div>
+  <div class="card water-card" id="water-card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Water</div>
+        <div class="card-subtitle">32% of goal. Keep moving!</div>
+      </div>
+      <div class="icon-circle">
+        <svg viewBox="0 0 24 24"><path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z"/></svg>
+      </div>
+    </div>
+    <div id="water-number" style="text-align:center; margin: 28px 0 8px;"></div>
+    <div style="text-align:center; color: rgba(255,255,255,0.5); font-size: 16px; font-weight: 300; margin-top: 4px;">L</div>
+    <div class="progress-container">
+      <div class="progress-fill" id="water-progress">
+        <div class="progress-handle"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Calories Section ===== -->
+<div class="section calories-bg" id="calories-section">
+  <div class="brand-watermark">Halix</div>
+  <div class="card calories-card" id="calories-card">
+    <div class="card-header">
+      <div class="card-title">Calories</div>
+      <div class="icon-circle">
+        <svg viewBox="0 0 24 24"><path d="M12 2c-1 4-4 6-4 10a4 4 0 0 0 8 0c0-4-3-6-4-10z"/></svg>
+      </div>
+    </div>
+    <div class="chart-container">
+      <svg viewBox="0 0 340 140">
+        <defs>
+          <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#00aa44"/>
+            <stop offset="50%" stop-color="#88cc00"/>
+            <stop offset="100%" stop-color="#ddee00"/>
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <path id="wave-path"
+              d="M 10 100 C 40 95, 60 40, 100 55 C 140 70, 160 90, 200 60 C 240 30, 280 20, 330 15"
+              fill="none" stroke="url(#waveGrad)" stroke-width="4" stroke-linecap="round" filter="url(#glow)"/>
+        <circle id="wave-dot" cx="325" cy="16" r="7" fill="#ddee00" filter="url(#glow)"/>
+        <circle cx="325" cy="16" r="12" fill="none" stroke="rgba(200,220,0,0.2)" stroke-width="2" id="wave-dot-ring"/>
+      </svg>
+    </div>
+    <div id="calories-number" style="text-align:center; margin: 0 0 4px;"></div>
+    <div style="text-align:center; color: rgba(255,255,255,0.45); font-size: 15px; font-weight: 300;">Kcal</div>
+  </div>
+</div>
+
+<!-- ===== Dashboard Section ===== -->
+<div class="section dashboard-bg" id="dashboard-section">
+  <div class="brand-watermark">Halix</div>
+  <div class="card dashboard-card" id="dashboard-card">
+    <div class="card-header">
+      <div>
+        <div class="greeting">Good Morning</div>
+        <div class="date-text">Today, May 6</div>
+      </div>
+      <div class="avatar"></div>
+    </div>
+    <div class="ring-container">
+      <div class="ring-bg"></div>
+      <div class="ring-progress">
+        <svg viewBox="0 0 220 220">
+          <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#ffaa00"/>
+              <stop offset="50%" stop-color="#ff8800"/>
+              <stop offset="100%" stop-color="#ff5500"/>
+            </linearGradient>
+          </defs>
+          <circle cx="110" cy="110" r="100" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="10"/>
+          <circle id="ring-arc" cx="110" cy="110" r="100" fill="none" stroke="url(#ringGrad)"
+                  stroke-width="10" stroke-linecap="round" stroke-dasharray="628" stroke-dashoffset="628"/>
+        </svg>
+      </div>
+      <div class="ring-center">
+        <div class="ring-value" id="ring-number"></div>
+        <div class="ring-label">Optimal</div>
+      </div>
+    </div>
+    <div class="sub-stats">
+      <div class="sub-stat">
+        <div class="sub-stat-label">HRV</div>
+        <div class="sub-stat-value">62</div>
+        <div class="sub-stat-detail">+8% sv avg</div>
+      </div>
+      <div class="sub-stat">
+        <div class="sub-stat-label">Sleep</div>
+        <div class="sub-stat-value small">7h 42 m</div>
+        <div class="sub-stat-detail">94% quality</div>
+      </div>
+      <div class="sub-stat">
+        <div class="sub-stat-label">Energy</div>
+        <div class="sub-stat-value">High</div>
+        <div class="sub-stat-detail">4/5 bars</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Nav Dots -->
+<div class="nav-dots">
+  <div class="nav-dot active" data-section="water-section"></div>
+  <div class="nav-dot" data-section="calories-section"></div>
+  <div class="nav-dot" data-section="dashboard-section"></div>
+</div>
+
+<script>
+// ===== LED Dot-Matrix Digit Definitions =====
+// Each digit: 5 columns × 7 rows, stored as flat array of 0/1
+const DIGITS = {
+  '0': [0,1,1,1,0, 1,0,0,0,1, 1,0,0,1,1, 1,0,1,0,1, 1,1,0,0,1, 1,0,0,0,1, 0,1,1,1,0],
+  '1': [0,0,1,0,0, 0,1,1,0,0, 1,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 1,1,1,1,1],
+  '2': [0,1,1,1,0, 1,0,0,0,1, 0,0,0,0,1, 0,0,1,1,0, 0,1,0,0,0, 1,0,0,0,0, 1,1,1,1,1],
+  '3': [1,1,1,1,0, 0,0,0,0,1, 0,0,0,0,1, 0,1,1,1,0, 0,0,0,0,1, 0,0,0,0,1, 1,1,1,1,0],
+  '4': [1,0,0,1,0, 1,0,0,1,0, 1,0,0,1,0, 1,1,1,1,1, 0,0,0,1,0, 0,0,0,1,0, 0,0,0,1,0],
+  '5': [1,1,1,1,1, 1,0,0,0,0, 1,1,1,1,0, 0,0,0,0,1, 0,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0],
+  '6': [0,1,1,1,0, 1,0,0,0,0, 1,0,0,0,0, 1,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0],
+  '7': [1,1,1,1,1, 0,0,0,0,1, 0,0,0,1,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0],
+  '8': [0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0],
+  '9': [0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,1, 0,0,0,0,1, 0,0,0,0,1, 0,1,1,1,0],
+  ',': [0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,1,0,0, 0,1,0,0,0],
+  '.': [0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0,1,1,0,0, 0,1,1,0,0],
+};
+
+function renderDotMatrix(text, dotRadius, spacing) {
+  dotRadius = dotRadius || 2.5;
+  spacing = spacing || 5.5;
+  var cols = 5;
+  var rows = 7;
+  var chars = text.split('');
+  var totalWidth = chars.length * (cols * spacing) - spacing;
+  var totalHeight = rows * spacing;
+
+  var svgContent = '';
+  chars.forEach(function(ch, ci) {
+    var grid = DIGITS[ch];
+    if (!grid) return;
+    var offsetX = ci * (cols * spacing);
+    grid.forEach(function(val, i) {
+      if (val) {
+        var x = offsetX + (i % cols) * spacing + spacing / 2;
+        var y = Math.floor(i / cols) * spacing + spacing / 2;
+        svgContent += '<circle cx="' + x + '" cy="' + y + '" r="' + dotRadius + '" fill="white"/>';
+      }
+    });
+  });
+
+  return '<svg viewBox="0 0 ' + totalWidth + ' ' + totalHeight + '" width="' + totalWidth + '" height="' + totalHeight + '" style="display:block;margin:0 auto;">' + svgContent + '</svg>';
+}
+
+// ===== Initialize dot-matrix numbers =====
+document.getElementById('water-number').innerHTML = renderDotMatrix('0.0');
+document.getElementById('calories-number').innerHTML = renderDotMatrix('0');
+document.getElementById('ring-number').innerHTML = renderDotMatrix('0');
+
+// Set up wave path for animation
+var wavePath = document.getElementById('wave-path');
+var waveLength = wavePath.getTotalLength();
+wavePath.style.strokeDasharray = waveLength;
+wavePath.style.strokeDashoffset = waveLength;
+
+// ===== GSAP Animations =====
+gsap.registerPlugin(ScrollTrigger);
+
+// Water widget animation
+function animateWater() {
+  var card = document.getElementById('water-card');
+  var numberEl = document.getElementById('water-number');
+  var progressEl = document.getElementById('water-progress');
+
+  gsap.to(card, { opacity: 1, scale: 1, duration: 0.8, ease: 'power2.out' });
+
+  var counter = { val: 0 };
+  gsap.to(counter, {
+    val: 1.4,
+    duration: 2,
+    ease: 'power2.out',
+    onUpdate: function() {
+      numberEl.innerHTML = renderDotMatrix(counter.val.toFixed(1));
+    }
+  });
+
+  gsap.to(progressEl, {
+    width: '32%',
+    duration: 2,
+    ease: 'power2.out',
+    delay: 0.3
+  });
+}
+
+// Calories widget animation
+function animateCalories() {
+  var card = document.getElementById('calories-card');
+  var numberEl = document.getElementById('calories-number');
+  var wavePath = document.getElementById('wave-path');
+
+  gsap.to(card, { opacity: 1, scale: 1, duration: 0.8, ease: 'power2.out' });
+
+  gsap.to(wavePath, {
+    strokeDashoffset: 0,
+    duration: 2.5,
+    ease: 'power2.inOut'
+  });
+
+  gsap.to('#wave-dot-ring', {
+    scale: 1.3,
+    opacity: 0.4,
+    duration: 1.2,
+    repeat: -1,
+    yoyo: true,
+    ease: 'sine.inOut',
+    transformOrigin: '325px 16px'
+  });
+
+  var counter = { val: 0 };
+  gsap.to(counter, {
+    val: 5010,
+    duration: 2.5,
+    ease: 'power2.out',
+    onUpdate: function() {
+      numberEl.innerHTML = renderDotMatrix(Math.floor(counter.val).toLocaleString());
+    }
+  });
+}
+
+// Dashboard widget animation
+function animateDashboard() {
+  var card = document.getElementById('dashboard-card');
+  var numberEl = document.getElementById('ring-number');
+  var ringArc = document.getElementById('ring-arc');
+
+  gsap.to(card, { opacity: 1, scale: 1, duration: 0.8, ease: 'power2.out' });
+
+  gsap.to(ringArc, {
+    strokeDashoffset: 220,
+    duration: 2,
+    ease: 'power2.out',
+    delay: 0.3
+  });
+
+  var counter = { val: 0 };
+  gsap.to(counter, {
+    val: 62,
+    duration: 2,
+    ease: 'power2.out',
+    delay: 0.3,
+    onUpdate: function() {
+      numberEl.innerHTML = renderDotMatrix(Math.floor(counter.val).toString());
+    }
+  });
+}
+
+// ===== ScrollTrigger setup =====
+ScrollTrigger.create({
+  trigger: '#water-section',
+  start: 'top center',
+  onEnter: animateWater,
+  once: true
+});
+
+ScrollTrigger.create({
+  trigger: '#calories-section',
+  start: 'top center',
+  onEnter: animateCalories,
+  once: true
+});
+
+ScrollTrigger.create({
+  trigger: '#dashboard-section',
+  start: 'top center',
+  onEnter: animateDashboard,
+  once: true
+});
+
+// Fallback: animate immediately if already visible
+setTimeout(function() {
+  if (document.getElementById('water-section').getBoundingClientRect().top < window.innerHeight) {
+    animateWater();
+  }
+  if (document.getElementById('calories-section').getBoundingClientRect().top < window.innerHeight) {
+    animateCalories();
+  }
+  if (document.getElementById('dashboard-section').getBoundingClientRect().top < window.innerHeight) {
+    animateDashboard();
+  }
+}, 100);
+
+// ===== Nav dot tracking =====
+var sectionIds = ['water-section', 'calories-section', 'dashboard-section'];
+sectionIds.forEach(function(id) {
+  ScrollTrigger.create({
+    trigger: '#' + id,
+    start: 'top center',
+    end: 'bottom center',
+    onToggle: function(self) {
+      if (self.isActive) {
+        document.querySelectorAll('.nav-dot').forEach(function(d) { d.classList.remove('active'); });
+        document.querySelector('[data-section="' + id + '"]').classList.add('active');
+      }
+    }
+  });
+});
+
+// Nav dot click
+document.querySelectorAll('.nav-dot').forEach(function(dot) {
+  dot.addEventListener('click', function() {
+    document.getElementById(dot.dataset.section).scrollIntoView({ behavior: 'smooth' });
+  });
+});
+</script>
+
+</body>
+</html>

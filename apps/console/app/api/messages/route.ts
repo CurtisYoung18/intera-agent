@@ -730,7 +730,7 @@ export async function POST(request: NextRequest) {
 
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
-          configId: resolvedAgentConfigId,
+          configId: resolvedAgentConfigId ?? '',
           caseId: resolvedCaseId,
           orgId: resolvedOrgId,
           userId: resolvedUserId,
@@ -781,7 +781,7 @@ export async function POST(request: NextRequest) {
           if (!next || next.content === '__SESSION_CLOSED__') break
           const followup = await AgentLoop.create({
             config: agentConfig,
-            configId: resolvedAgentConfigId,
+            configId: resolvedAgentConfigId ?? '',
             caseId: resolvedCaseId,
             orgId: resolvedOrgId,
             userId: resolvedUserId,

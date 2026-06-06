@@ -14,7 +14,6 @@ export function makeDefaultConfig(overrides?: Partial<AgentConfigData>): AgentCo
     systemPrompt: 'You are a helpful assistant.',
     showThinking: false,
     memoryStrategy: DEFAULT_MEMORY_STRATEGY,
-    policyHooks: { preTool: [], postTool: [], preFinalize: [] },
     debugMode: false,
     ...overrides,
   }
@@ -35,6 +34,7 @@ export function makeAgentLoopDeps(overrides?: Partial<AgentLoopDeps>): AgentLoop
   const config = makeDefaultConfig()
   return {
     config,
+    configId: 'test-agent',
     caseId: 'test-case-001',
     orgId: 'test-customer',
     userId: 'test-user',
