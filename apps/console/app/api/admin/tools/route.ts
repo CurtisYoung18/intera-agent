@@ -10,6 +10,7 @@ import {
   type SkillCreateRequest,
 } from '@intera/shared/contracts/tools'
 import { SYSTEM_SKILL_NAMES, SPECIAL_SKILL_NAMES, CHANNEL_SKILL_NAMES } from '@/lib/skill-classifications'
+import { SYSTEM_TOOLS } from '@/lib/agent/tools'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
 
@@ -21,10 +22,36 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   async handler({ input, repo }) {
     const { agentConfigId } = input
 
-    const tools = await repo.raw.tool.findMany({
+    let tools = await repo.raw.tool.findMany({
       where: { agentConfigId },
       orderBy: { name: 'asc' },
     })
+
+    // Auto-gift system tools if missing (first load for any agent)
+    const existingNames = new Set(tools.map((t: { name: string }) => t.name))
+    const missingSystem = SYSTEM_TOOLS.filter((st) => !existingNames.has(st.name))
+    if (missingSystem.length > 0) {
+      for (const st of missingSystem) {
+        await repo.raw.tool.create({
+          data: {
+            agentConfigId,
+            name: st.name,
+            description: st.description,
+            inputSchema: JSON.stringify(st.inputSchema),
+            outputSchema: st.outputSchema ? JSON.stringify(st.outputSchema) : '{}',
+            mode: st.mode,
+            guardPhase: 'post',
+            toolCategory: st.toolCategory ?? null,
+            isConcurrencySafe: st.isConcurrencySafe,
+            enabled: st.enabled,
+          },
+        })
+      }
+      tools = await repo.raw.tool.findMany({
+        where: { agentConfigId },
+        orderBy: { name: 'asc' },
+      })
+    }
 
     const enriched = tools.map((t: { name: string; [k: string]: unknown }) => ({
       ...t,
