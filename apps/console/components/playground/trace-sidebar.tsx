@@ -49,20 +49,33 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
+      padding: '14px 16px',
+      borderBottom: '1px solid rgba(0,0,0,0.04)',
+      background: 'rgba(255,252,249,0.4)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <Activity size={14} style={{ color: 'var(--fog)' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: 8,
+          background: 'linear-gradient(135deg, rgba(91,138,247,0.12), rgba(139,111,245,0.10))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Activity size={13} style={{ color: 'var(--indigo)' }} />
+        </div>
         <span style={{
-          fontSize: 12, fontWeight: 700, color: 'var(--fog)',
-          textTransform: 'uppercase', letterSpacing: '0.06em',
+          fontSize: 12, fontWeight: 700, color: '#5a524b',
+          textTransform: 'uppercase', letterSpacing: '0.08em',
         }}>Trace</span>
       </div>
       <button onClick={onCollapse} style={{
-        background: 'none', border: 'none', cursor: 'pointer',
-        padding: 2, color: 'var(--fog)', opacity: 0.5,
-      }}>
-        <ChevronLeft size={14} />
+        width: 24, height: 24, borderRadius: 6,
+        background: 'rgba(0,0,0,0.04)', border: 'none', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#b8a99a', transition: 'all 150ms ease',
+      }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.08)'; e.currentTarget.style.color = '#8a7e74' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; e.currentTarget.style.color = '#b8a99a' }}
+      >
+        <ChevronLeft size={13} />
       </button>
     </div>
   )
@@ -84,23 +97,25 @@ function SessionMetricsGrid({ metrics, tb }: { metrics: TraceSidebarProps['sessi
 
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8,
-      padding: '0 14px 12px', borderBottom: '1px solid var(--border-subtle)',
-      marginBottom: 6,
+      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6,
+      padding: '8px 14px 12px',
+      borderBottom: '1px solid rgba(0,0,0,0.04)',
     }}>
       {items.map((item) => (
         <div key={item.label} style={{
-          textAlign: 'center', padding: '7px 4px',
-          background: 'var(--surface)', borderRadius: 'var(--radius-sm)',
-          border: '1px solid var(--border-subtle)',
+          textAlign: 'center', padding: '8px 4px',
+          background: 'rgba(255,252,249,0.6)',
+          borderRadius: 10,
+          border: '1px solid rgba(0,0,0,0.04)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
         }}>
           <div style={{
-            fontSize: 15, fontWeight: 700, color: 'var(--mist)',
+            fontSize: 15, fontWeight: 700, color: '#3d3833',
             fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em',
           }}>{item.value}</div>
           <div style={{
-            fontSize: 9, fontWeight: 600, color: 'var(--smoke)', marginTop: 2,
-            textTransform: 'uppercase', letterSpacing: '0.06em',
+            fontSize: 9, fontWeight: 600, color: '#b8a99a', marginTop: 3,
+            textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>{item.label}</div>
         </div>
       ))}
@@ -111,17 +126,18 @@ function SessionMetricsGrid({ metrics, tb }: { metrics: TraceSidebarProps['sessi
 function BreakdownCell({ label, value }: { label: string; value: string }) {
   return (
     <div style={{
-      textAlign: 'center', padding: '6px 4px',
-      background: 'var(--surface)', borderRadius: 'var(--radius-sm)',
-      border: '1px solid var(--border-subtle)',
+      textAlign: 'center', padding: '7px 4px',
+      background: 'rgba(255,252,249,0.5)',
+      borderRadius: 8,
+      border: '1px solid rgba(0,0,0,0.03)',
     }}>
       <div style={{
-        fontSize: 12, fontWeight: 600, color: 'var(--mist)',
+        fontSize: 12, fontWeight: 600, color: '#3d3833',
         fontFamily: 'var(--font-mono)',
       }}>{value}</div>
       <div style={{
-        fontSize: 9, fontWeight: 600, color: 'var(--smoke)',
-        textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 1,
+        fontSize: 9, fontWeight: 600, color: '#b8a99a',
+        textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2,
       }}>{label}</div>
     </div>
   )
@@ -154,10 +170,13 @@ function ToolCallCard({
         onClick={onToggle}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          padding: '7px 14px 7px 26px', cursor: 'pointer',
-          background: isExpanded ? 'rgba(248,247,244,0.5)' : undefined,
-          transition: 'background 150ms ease',
+          padding: '8px 14px 8px 26px', cursor: 'pointer',
+          background: isExpanded ? 'rgba(212,118,78,0.04)' : 'transparent',
+          transition: 'background 200ms ease',
+          borderLeft: isExpanded ? '2px solid rgba(212,118,78,0.3)' : '2px solid transparent',
         }}
+        onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'rgba(0,0,0,0.02)' }}
+        onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent' }}
       >
         {isError ? (
           <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
@@ -166,14 +185,14 @@ function ToolCallCard({
         )}
         <span style={{
           fontSize: 12, fontWeight: 500,
-          color: isError ? 'var(--vermillion)' : 'var(--mist)',
+          color: isError ? 'var(--vermillion)' : '#5a524b',
           fontFamily: 'var(--font-mono)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {toolName}
         </span>
         <span style={{
-          fontSize: 10, color: isError ? 'var(--vermillion)' : 'var(--smoke)',
+          fontSize: 10, color: isError ? 'var(--vermillion)' : '#b8a99a',
           marginLeft: 'auto', fontFamily: 'var(--font-mono)', flexShrink: 0,
         }}>
           {isError ? 'failed' : ''}
@@ -187,16 +206,16 @@ function ToolCallCard({
               {inputLines.length > 0 && inputLines[0] && (
                 <>
                   <div style={{
-                    fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+                    fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
                     textTransform: 'uppercase', color: 'var(--indigo)',
-                    marginBottom: 3, marginTop: 3,
+                    marginBottom: 4, marginTop: 4,
                   }}>Input</div>
                   <div style={{
-                    padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-                    background: 'rgba(91,138,247,0.05)',
-                    border: '1px solid rgba(91,138,247,0.12)',
+                    padding: '8px 10px', borderRadius: 8,
+                    background: 'rgba(91,138,247,0.04)',
+                    border: '1px solid rgba(91,138,247,0.10)',
                     fontSize: 11, fontFamily: 'var(--font-mono)',
-                    color: 'var(--mist)', lineHeight: 1.6,
+                    color: '#5a524b', lineHeight: 1.6,
                     maxHeight: 120, overflowY: 'auto',
                     marginBottom: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                   }}>
@@ -207,17 +226,17 @@ function ToolCallCard({
               {outputLines.length > 0 && outputLines[0] && (
                 <>
                   <div style={{
-                    fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+                    fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
                     textTransform: 'uppercase',
                     color: isError ? 'var(--vermillion)' : 'var(--malachite)',
-                    marginBottom: 3,
+                    marginBottom: 4,
                   }}>Output{isError ? ' - error' : ''}</div>
                   <div style={{
-                    padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-                    background: isError ? 'rgba(230,69,57,0.05)' : 'rgba(46,160,74,0.05)',
-                    border: isError ? '1px solid rgba(230,69,57,0.12)' : '1px solid rgba(46,160,74,0.12)',
+                    padding: '8px 10px', borderRadius: 8,
+                    background: isError ? 'rgba(230,69,57,0.04)' : 'rgba(46,160,74,0.04)',
+                    border: isError ? '1px solid rgba(230,69,57,0.10)' : '1px solid rgba(46,160,74,0.10)',
                     fontSize: 11, fontFamily: 'var(--font-mono)',
-                    color: isError ? 'var(--vermillion)' : 'var(--mist)', lineHeight: 1.6,
+                    color: isError ? 'var(--vermillion)' : '#5a524b', lineHeight: 1.6,
                     maxHeight: 120, overflowY: 'auto',
                     marginBottom: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                   }}>
@@ -227,13 +246,12 @@ function ToolCallCard({
               )}
             </>
           ) : (
-            /* Fallback: unstructured detail text */
             <div style={{
-              padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-              background: 'var(--surface)',
-              border: '1px solid var(--border-subtle)',
+              padding: '8px 10px', borderRadius: 8,
+              background: 'rgba(255,252,249,0.5)',
+              border: '1px solid rgba(0,0,0,0.04)',
               fontSize: 11, fontFamily: 'var(--font-mono)',
-              color: 'var(--mist)', lineHeight: 1.6,
+              color: '#5a524b', lineHeight: 1.6,
               maxHeight: 120, overflowY: 'auto',
               marginBottom: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
             }}>
@@ -253,7 +271,7 @@ function PromptSection({ label, data, color }: { label: string; data: string; co
     <div style={{ marginBottom: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
         <span style={{
-          fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
           textTransform: 'uppercase', color,
         }}>{label}</span>
         <CopyButton text={data} label={`Copy ${label}`} />
@@ -261,11 +279,11 @@ function PromptSection({ label, data, color }: { label: string; data: string; co
       <div
         onClick={() => truncated && setExpanded(true)}
         style={{
-          padding: '8px 10px', borderRadius: 'var(--radius-sm)',
-          background: 'rgba(91,138,247,0.05)',
-          border: '1px solid rgba(91,138,247,0.12)',
+          padding: '8px 10px', borderRadius: 8,
+          background: 'rgba(91,138,247,0.04)',
+          border: '1px solid rgba(91,138,247,0.10)',
           fontSize: 11, fontFamily: 'var(--font-mono)',
-          color: 'var(--mist)', lineHeight: 1.6,
+          color: '#5a524b', lineHeight: 1.6,
           maxHeight: expanded ? 400 : 120, overflowY: 'auto',
           whiteSpace: 'pre-wrap', wordBreak: 'break-all',
           cursor: truncated ? 'pointer' : undefined,
@@ -302,19 +320,19 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
     <div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '7px 14px 7px 26px',
-        borderTop: '1px solid var(--border-subtle)',
+        padding: '8px 14px 8px 26px',
+        borderTop: '1px solid rgba(0,0,0,0.03)',
       }}>
         <Brain size={12} style={{ color: 'var(--indigo)', flexShrink: 0 }} />
         <span style={{
-          fontSize: 12, fontWeight: 500, color: 'var(--mist)',
+          fontSize: 12, fontWeight: 500, color: '#5a524b',
           fontFamily: 'var(--font-mono)',
         }}>
           {tb('trace.modelResponse')}
         </span>
         {step.usage && (
           <span style={{
-            fontSize: 10, color: 'var(--smoke)',
+            fontSize: 10, color: '#b8a99a',
             marginLeft: 'auto', fontFamily: 'var(--font-mono)',
           }}>
             &uarr;{step.usage.inputTokens || 0} &darr;{step.usage.outputTokens || 0} tok
@@ -326,9 +344,9 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
           {step.summary && step.summary !== '(no summary)' && (
             <div style={{
               padding: '8px 10px', marginBottom: hasPromptData ? 6 : 0,
-              background: 'var(--surface)',
-              borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)',
-              fontSize: 11, color: 'var(--mist)', lineHeight: 1.6,
+              background: 'rgba(255,252,249,0.5)',
+              borderRadius: 8, border: '1px solid rgba(0,0,0,0.04)',
+              fontSize: 11, color: '#5a524b', lineHeight: 1.6,
               maxHeight: 80, overflowY: 'auto',
             }}>
               {step.summary}
@@ -342,7 +360,7 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
                 padding: '2px 0', display: 'flex', alignItems: 'center', gap: 4,
               }}>
                 <ChevronDown size={10} style={{
-                  transition: 'transform 150ms ease',
+                  transition: 'transform 200ms cubic-bezier(0.4,0,0.2,1)',
                   transform: showPromptData ? 'rotate(0deg)' : 'rotate(-90deg)',
                 }} />
                 {showPromptData ? 'Hide' : 'Show'} prompt data
@@ -389,25 +407,33 @@ function TurnSection({
   const chevronStyle: React.CSSProperties = {
     transition: 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
     transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-    color: 'var(--smoke)', flexShrink: 0,
+    color: '#b8a99a', flexShrink: 0,
   }
 
   return (
-    <div>
+    <div style={{
+      borderBottom: '1px solid rgba(0,0,0,0.03)',
+    }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '10px 14px', cursor: 'pointer',
-        borderBottom: isExpanded ? 'none' : '1px solid var(--border-subtle)',
+        background: isExpanded ? 'rgba(212,118,78,0.03)' : 'transparent',
+        transition: 'background 200ms ease',
       }}
         onClick={() => onToggleTurn(turnIdx)}
+        onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'rgba(0,0,0,0.015)' }}
+        onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent' }}
       >
         <div style={{
           width: 3, height: 22, borderRadius: 2, flexShrink: 0,
-          background: isLatest ? 'var(--indigo)' : 'var(--obsidian)',
+          background: isLatest
+            ? 'linear-gradient(180deg, var(--indigo), rgba(139,111,245,0.6))'
+            : 'linear-gradient(180deg, #d4c9be, #c4b8ad)',
+          boxShadow: isLatest ? '0 0 6px rgba(91,138,247,0.2)' : 'none',
         }} />
         <span style={{
           fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
-          color: isExpanded ? 'var(--mist)' : 'var(--fog)',
+          color: isExpanded ? '#3d3833' : '#8a7e74',
         }}>
           Turn {turnIdx + 1}
         </span>
@@ -418,15 +444,15 @@ function TurnSection({
         )}
         {cacheRead > 0 && (
           <span style={{
-            fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-sm)',
-            background: 'rgba(46,160,74,0.1)', color: 'var(--malachite)',
-            fontFamily: 'var(--font-mono)',
+            fontSize: 10, padding: '2px 7px', borderRadius: 6,
+            background: 'rgba(46,160,74,0.08)', color: 'var(--malachite)',
+            fontFamily: 'var(--font-mono)', fontWeight: 500,
           }}>
             {cachePct}% cache
           </span>
         )}
         <span style={{
-          fontSize: 11, color: hasLiveTools && !hasTraceData ? 'var(--indigo)' : 'var(--fog)',
+          fontSize: 11, color: hasLiveTools && !hasTraceData ? 'var(--indigo)' : '#b8a99a',
           whiteSpace: 'nowrap', marginLeft: 'auto',
           fontFamily: 'var(--font-mono)',
         }}>
@@ -439,11 +465,11 @@ function TurnSection({
       </div>
 
       {isExpanded && (
-        <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 10 }}>
+        <div style={{ paddingBottom: 10 }}>
           {modelStep && (
             <div style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-              gap: 6, padding: '6px 14px 10px 26px',
+              gap: 5, padding: '6px 14px 10px 26px',
             }}>
               <BreakdownCell label={tb('trace.breakdownInput')} value={String(turnInput)} />
               <BreakdownCell label={tb('trace.breakdownOutput')} value={String(turnOutput)} />
@@ -458,7 +484,6 @@ function TurnSection({
             const isModelGen = step.stage === 'Model generation'
             const isSkill = step.stage === 'Skills & tools' || step.stage === 'Knowledge retrieval'
 
-            // Skip trace skill steps when live tools already show them (avoids duplication during streaming)
             if (isSkill && hasLiveTools) return null
 
             if (isSkill && step.detail?.length > 0) {
@@ -493,11 +518,11 @@ function TurnSection({
             return null
           })}
 
-          {/* Live tools during streaming — rendered inside the current turn */}
           {hasLiveTools && liveTools.map((t, i) => (
             <div key={`live-${i}`} style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              padding: '7px 14px 7px 26px',
+              padding: '8px 14px 8px 26px',
+              background: t.status === 'running' ? 'rgba(217,161,36,0.03)' : 'transparent',
             }}>
               {t.status === 'running' ? (
                 <Loader2 size={12} style={{
@@ -510,13 +535,13 @@ function TurnSection({
               )}
               <span style={{
                 fontSize: 12, fontWeight: 500,
-                color: t.status === 'error' ? 'var(--vermillion)' : 'var(--mist)',
+                color: t.status === 'error' ? 'var(--vermillion)' : '#5a524b',
                 fontFamily: 'var(--font-mono)',
               }}>
                 Tool: {t.name}
               </span>
               <span style={{
-                fontSize: 11, color: t.status === 'running' ? 'var(--amber)' : t.status === 'error' ? 'var(--vermillion)' : 'var(--smoke)',
+                fontSize: 11, color: t.status === 'running' ? 'var(--amber)' : t.status === 'error' ? 'var(--vermillion)' : '#b8a99a',
                 marginLeft: 'auto', fontFamily: 'var(--font-mono)',
               }}>
                 {t.status === 'running' ? 'running...' : t.status === 'error' ? 'failed' : t.finishedAt && t.startedAt ? `${t.finishedAt - t.startedAt}ms` : 'done'}
@@ -543,12 +568,16 @@ export default function TraceSidebar({
   if (collapsed) {
     return (
       <div style={{
-        width: 32, flexShrink: 0, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'flex-start', paddingTop: 12,
-        borderLeft: '1px solid var(--border-subtle)',
-        background: 'var(--surface)', cursor: 'pointer',
+        width: 36, flexShrink: 0, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'flex-start', paddingTop: 14,
+        borderLeft: '1px solid rgba(0,0,0,0.04)',
+        background: 'rgba(255,252,249,0.5)',
+        backdropFilter: 'blur(20px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(150%)',
+        cursor: 'pointer',
+        boxShadow: '-1px 0 8px rgba(0,0,0,0.02)',
       }} onClick={onExpand}>
-        <ChevronLeft size={14} style={{ color: 'var(--fog)', opacity: 0.5 }} />
+        <ChevronLeft size={14} style={{ color: '#b8a99a', opacity: 0.6 }} />
       </div>
     )
   }
@@ -557,34 +586,32 @@ export default function TraceSidebar({
   return (
     <aside style={{
       width: 340, flexShrink: 0,
-      borderLeft: '1px solid var(--border-subtle)',
-      background: 'rgba(255, 255, 255, 0.92)',
-      backdropFilter: 'blur(20px) saturate(150%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(150%)',
+      borderLeft: '1px solid rgba(0,0,0,0.04)',
+      background: 'rgba(255, 252, 249, 0.82)',
+      backdropFilter: 'blur(24px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+      boxShadow: '-2px 0 16px rgba(0,0,0,0.03), -1px 0 4px rgba(0,0,0,0.02)',
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
     }}>
       <TraceHeader onCollapse={onCollapse} />
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {!hasData ? (
           <div style={{
-            padding: '24px 20px', textAlign: 'center',
-            fontSize: 12, color: 'var(--smoke)', lineHeight: 1.6,
+            padding: '28px 20px', textAlign: 'center',
+            fontSize: 12, color: '#b8a99a', lineHeight: 1.6,
           }}>
             Send a message to see the trace.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {/* Session metrics */}
             {(turnTraces.length > 0 || liveTools.length > 0) && (
               <SessionMetricsGrid metrics={sessionMetrics} tb={tb} />
             )}
 
-            {/* Completed turns + live turn (merged) */}
             {turnTraces.map((steps, turnIdx) => {
               const isLatest = turnIdx === turnTraces.length - 1
-              // Show live tools on the latest turn when responding
               const live = (isLatest && responding) ? liveTools : []
               return (
                 <TurnSection
@@ -604,7 +631,6 @@ export default function TraceSidebar({
               )
             })}
 
-            {/* Render hints for completed tools */}
             {liveTools.filter(t => t.status === 'done' && t.renderHints).map((t, i) => {
               const hint = (t.renderHints as any)?.playground || (t.renderHints as any)?.['web-chat'] || null
               if (!hint) return null
