@@ -567,17 +567,33 @@ export default function TraceSidebar({
   /* ── Collapsed strip ── */
   if (collapsed) {
     return (
-      <div style={{
-        width: 36, flexShrink: 0, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'flex-start', paddingTop: 14,
-        borderLeft: '1px solid rgba(0,0,0,0.04)',
-        background: 'rgba(255,252,249,0.5)',
-        backdropFilter: 'blur(20px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(150%)',
-        cursor: 'pointer',
-        boxShadow: '-1px 0 8px rgba(0,0,0,0.02)',
-      }} onClick={onExpand}>
-        <ChevronLeft size={14} style={{ color: '#b8a99a', opacity: 0.6 }} />
+      <div
+        onClick={onExpand}
+        style={{
+          width: 32, flexShrink: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'flex-start', paddingTop: 14,
+          borderLeft: '1px solid rgba(0,0,0,0.05)',
+          background: 'rgba(255,252,249,0.35)',
+          backdropFilter: 'blur(16px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+          cursor: 'pointer',
+          transition: 'all 200ms ease',
+          position: 'relative',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'rgba(255,252,249,0.55)'
+          e.currentTarget.style.backdropFilter = 'blur(20px) saturate(160%)'
+          const icon = e.currentTarget.querySelector('svg') as SVGElement | null
+          if (icon) { icon.style.color = '#8a7e74'; icon.style.opacity = '1' }
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = 'rgba(255,252,249,0.35)'
+          e.currentTarget.style.backdropFilter = 'blur(16px) saturate(140%)'
+          const icon = e.currentTarget.querySelector('svg') as SVGElement | null
+          if (icon) { icon.style.color = '#b8a99a'; icon.style.opacity = '0.5' }
+        }}
+      >
+        <ChevronLeft size={13} style={{ color: '#b8a99a', opacity: 0.5, transition: 'all 200ms ease' }} />
       </div>
     )
   }
