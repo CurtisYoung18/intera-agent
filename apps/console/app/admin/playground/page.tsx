@@ -99,6 +99,7 @@ export default function PlaygroundPage() {
   const thinkingAccRef = useRef('')
   const [responding, setResponding] = useState(false)
   const runningRef = useRef(false)
+  const composingRef = useRef(false)
   const [liveTools, setLiveTools] = useState<LiveTool[]>([])
   const [turnTraces, setTurnTraces] = useState<any[][]>([])
   const [turnTotalMs, setTurnTotalMs] = useState<number[]>([])
@@ -1226,7 +1227,9 @@ export default function PlaygroundPage() {
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !composingRef.current && message.trim()) { e.preventDefault(); const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={() => { composingRef.current = false }}
                 onPaste={e => {
                   const items = e.clipboardData?.items
                   if (!items) return
