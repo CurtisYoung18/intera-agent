@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { AlertCircle, Brain, CheckCircle2, Loader2 } from 'lucide-react'
+import { AlertCircle, Brain, CheckCircle2, Loader2, Save, Rocket, Pencil } from 'lucide-react'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
-import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import VersionContextBar, { useSelectedAgentId, useIsActiveVersion } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { CORE_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { drawerFieldClass, DrawerCheckboxRail, DrawerSection, DrawerShell } from '@/components/admin/agent-config-drawer-ui'
@@ -31,16 +31,47 @@ export default function ModelPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mainModels, setMainModels] = useState<ModelInfo[]>([])
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const [assembledPreview, setAssembledPreview] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const [saving, setSaving] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishNote, setPublishNote] = useState('')
+  const [showPublishDialog, setShowPublishDialog] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const initialValues = useRef<Record<string, unknown> | null>(null)
   const configRef = useRef(config)
   const { orgId } = useSession()
+  const isActiveVersion = useIsActiveVersion(agentId)
 
   useEffect(() => {
     configRef.current = config
   }, [config])
+
+  // Dirty tracking — compare against last saved/loaded values
+  useEffect(() => {
+    if (!config) return
+    if (!initialValues.current) {
+      initialValues.current = { ...config }
+      return
+    }
+    const dirty = Object.keys(config).some(
+      (k) => config[k as keyof ModelConfig] !== initialValues.current![k]
+    )
+    setIsDirty(dirty)
+  }, [config])
+
+  // Navigation guard for unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   // Fetch config + models
   useEffect(() => {
@@ -80,48 +111,62 @@ export default function ModelPage() {
       .finally(() => setPreviewLoading(false))
   }, [agentId, config?.coreSystemPrompt]) // refresh when prompt changes
 
-  // Flush pending save on unmount (navigation/blur)
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current)
-        const current = configRef.current
-        if (current && agentId) {
-          apiClient(`/api/admin/agent?agentId=${agentId}`, {
-            body: current,
-          }).catch(() => {})
-          bustConfigCache(orgId).catch(() => {})
-        }
-      }
+  const handleSave = useCallback(async () => {
+    if (!agentId || !configRef.current) return
+    setSaving(true)
+    try {
+      await apiClient(`/api/admin/agent?agentId=${agentId}`, { body: configRef.current })
+      // Don't bust cache on draft save (preserves live cache for active version)
+      initialValues.current = { ...configRef.current }
+      setIsDirty(false)
+      setLastSavedAt(new Date())
+    } catch {
+      // Keep dirty state on failure
+    } finally {
+      setSaving(false)
     }
-  }, [agentId, orgId])
+  }, [agentId])
 
-  const autoSave = useCallback(() => {
+  const handlePublish = useCallback(async () => {
+    if (!agentId || !publishNote.trim()) return
+    setPublishing(true)
+    try {
+      await apiClient(`/api/admin/agent-configs/${agentId}/activate`, {
+        method: 'PUT',
+        body: { releaseNote: publishNote.trim() },
+      })
+      await bustConfigCache(orgId)
+      setPublishNote('')
+      setShowPublishDialog(false)
+      setIsDirty(false)
+      setLastSavedAt(new Date())
+      window.location.reload() // switch to viewing mode after publish
+    } catch {
+      // Keep publish dialog open on failure
+    } finally {
+      setPublishing(false)
+    }
+  }, [agentId, publishNote, orgId])
+
+  const handleEditAsDraft = useCallback(async () => {
     if (!agentId) return
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    setSyncStatus('syncing')
-    saveTimer.current = setTimeout(async () => {
-      const current = configRef.current
-      if (!current) return
-      try {
-        await apiClient(`/api/admin/agent?agentId=${agentId}`, {
-          body: current,
-        })
-        await bustConfigCache(orgId)
-        setSyncStatus('synced')
-        setTimeout(() => setSyncStatus('idle'), 2500)
-      } catch {
-        setSyncStatus('error')
+    try {
+      const result: any = await apiClient(`/api/admin/agent-configs/${agentId}/fork`, { method: 'POST' })
+      const newId = result.data?.config?.id
+      if (newId) {
+        window.location.href = `/admin/model?agentId=${newId}`
       }
-    }, 800)
-  }, [agentId, orgId])
+    } catch {
+      // keep current page on failure
+    }
+  }, [agentId])
 
   const update = useCallback(
     (field: string, value: unknown) => {
       setConfig((prev) => (prev ? { ...prev, [field]: value } : null))
-      autoSave()
+      // No autosave — explicit Save button handles persistence
     },
-    [autoSave],
+    [],
   )
 
   function renderModelOptions(models: ModelInfo[]) {
@@ -171,16 +216,95 @@ export default function ModelPage() {
 
         </div>
 
-        {/* Save status bar — persistent */}
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2 w-fit">
-          {syncStatus === 'syncing' ? (
-            <><Loader2 className="w-3 h-3 animate-spin text-amber" /><span className="text-[11px] font-medium text-amber">{t('model.saving')}</span></>
-          ) : syncStatus === 'error' ? (
-            <><AlertCircle className="w-3 h-3 text-vermillion" /><span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span></>
+        {/* Draft gate toolbar — explicit Save + Publish */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          {isActiveVersion ? (
+            <div className="flex items-center gap-2 rounded-xl border border-lavender/30 bg-lavender/[0.04] px-3 py-2">
+              <span className="text-[11px] font-medium text-[var(--fog)]">
+                {t('model.viewingLive') || 'Viewing live version — read-only'}
+              </span>
+              <button
+                onClick={handleEditAsDraft}
+                className="flex items-center gap-1.5 rounded-lg border border-lavender/30 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
+              >
+                <Pencil className="w-3 h-3" />
+                {t('model.editAsDraft') || 'Edit as draft'}
+              </button>
+            </div>
           ) : (
-            <><CheckCircle2 className="w-3 h-3 text-malachite" /><span className="text-[11px] font-medium text-malachite">{t('model.saved')}</span></>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleSave}
+                disabled={saving || !isDirty}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold shadow-sm transition ${
+                  isDirty
+                    ? 'border-malachite/40 bg-malachite/[0.06] text-malachite hover:bg-malachite/[0.12]'
+                    : 'border-black/[0.06] bg-white/60 text-[var(--smoke)]'
+                }`}
+              >
+                {saving ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Save className="w-3 h-3" />
+                )}
+                {saving ? (t('model.saving') || 'Saving...') : isDirty ? (t('model.save') || 'Save') : (t('model.saved') || 'Saved')}
+              </button>
+              <button
+                onClick={() => setShowPublishDialog(true)}
+                disabled={publishing || saving}
+                className="flex items-center gap-1.5 rounded-lg border border-lavender/40 bg-lavender/[0.06] px-3 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/[0.12]"
+              >
+                {publishing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Rocket className="w-3 h-3" />
+                )}
+                {t('model.publish') || 'Publish'}
+              </button>
+              {lastSavedAt && (
+                <span className="text-[10px] text-[var(--smoke)]">
+                  {t('model.lastSaved') || 'Last saved'}: {lastSavedAt.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
           )}
         </div>
+
+        {/* Publish dialog */}
+        {showPublishDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+            <div className="rounded-2xl bg-white p-6 shadow-xl border border-black/[0.08] w-full max-w-md">
+              <h2 className="text-[16px] font-semibold text-[var(--mist)] mb-2">
+                {t('model.publishTitle') || 'Publish Version'}
+              </h2>
+              <p className="text-[12px] text-[var(--fog)] mb-4">
+                {t('model.publishHelp') || 'This will make this draft the live version. All active conversations will use the new configuration. A commit message is required.'}
+              </p>
+              <textarea
+                value={publishNote}
+                onChange={(e) => setPublishNote(e.target.value)}
+                placeholder={t('model.publishNotePlaceholder') || 'Describe what changed in this version...'}
+                rows={3}
+                className="glass-input-console w-full text-[12px] mb-4 rounded-lg border border-black/[0.08] p-2"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => { setShowPublishDialog(false); setPublishNote('') }}
+                  className="rounded-lg border border-black/[0.06] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--fog)]"
+                >
+                  {t('common.cancel') || 'Cancel'}
+                </button>
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing || !publishNote.trim()}
+                  className="rounded-lg bg-lavender px-4 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-40"
+                >
+                  {publishing ? (t('model.publishing') || 'Publishing...') : (t('model.confirmPublish') || 'Publish')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <DrawerShell>
           {/* ── Model sub-section ── */}

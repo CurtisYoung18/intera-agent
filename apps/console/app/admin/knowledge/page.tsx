@@ -555,6 +555,7 @@ export default function KnowledgePage() {
             gptKbsLoading={gptKbsLoading}
             onRefresh={fetchGptKbs}
             onKeySaved={() => fetchGptKbs()}
+            agentConfigId={agentConfigId}
           />
 
           {/* Tabs */}

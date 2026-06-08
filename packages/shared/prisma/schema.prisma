@@ -81,7 +81,7 @@ model AgentConfig {
   thinkingBudget Int     @default(4096)
   maxIterations  Int     @default(20)
   coreSystemPrompt String? // Core/discovery prompt (no active case); falls back to CORE_SYSTEM_PROMPT default when empty
-  extendedThinking Boolean @default(false) @map("show_thinking")
+  extendedThinking Boolean @default(false) @map("showThinking")
 
   maxOutputTokens       Int? // default 4096
   resumePrompt          String? // synthetic message for human task resume
