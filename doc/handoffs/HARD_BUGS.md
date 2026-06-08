@@ -57,6 +57,14 @@ This sits **outside** the stream `try/catch` (which closes ~`loop.ts:600`) and o
 
 Net: every prod `dispatch_case_agent` burns model tokens on an investigation the customer never sees. *(Partial reader nuance: `policy.ts:244` does read `subagent:*` evidence to satisfy a `requireToolsAny` guardrail — so the data is not 100% write-only, but it is never surfaced as a customer-facing answer and no seeded case type relies on it.)* **This is the F1 "live-but-broken" finding made concrete; it is on the retire path** — Procedure-refactor **Phase 4 / D-a** strips the background spawn and turns `dispatch_case_agent` into an inline "open case" action. Until Phase 4 lands, treat the wasted spend + ChatMemory race as live.
 
+### L8 — Model page: cleared prompt reappears after refresh — 🟠 MEDIUM (data loss illusion)
+
+`apps/console/app/admin/model/page.tsx:64` — `raw.coreSystemPrompt ? stripTokens(...) : CLEAN_CORE_PROMPT`
+
+When the user clears the Core Prompt and saves, the server stores `coreSystemPrompt: ''` (empty string). On next load, `''` is **falsy**, so the ternary falls through to the default `CLEAN_CORE_PROMPT` — the empty value the user intentionally saved is silently overwritten. **Prod-reproduced 2026-06-08:** clear → Save → refresh → 2703-char default prompt returns.
+
+**Fix:** `raw.coreSystemPrompt != null ? stripTokens(String(raw.coreSystemPrompt)) : CLEAN_CORE_PROMPT` (null-check, not truthy-check). One line.
+
 > Broader open items (dry-run isolation seam, vision-gate dual-source, `runTurn` stale-closure) are catalogued in `MASTER_BUILD_HANDOFF.md` — referenced here, not duplicated. **Lower-severity, lower-confidence (architect 2026-06-08, investigate):** the post-turn persistence writes `persistChatSession()`/`compactUserProfile()` are launched fire-and-forget (`.catch(()=>{})`) and **not awaited** before `run()` returns ([loop.ts:990-991, 1008-1009, 1024-1025, 1038-1039](../../apps/console/lib/agent/loop.ts)). On a long-lived Node server they complete, but they race the *next* request's memory load for the same `chatId` (fast follow-up → stale read) and would be dropped entirely on a serverless freeze-after-response. Confirm the deploy target before deciding whether this matters.
 
 ---

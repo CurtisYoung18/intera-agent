@@ -61,7 +61,7 @@ export default function ModelPage() {
           thinkingBudget: raw.thinkingBudget ?? 4096,
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
-          coreSystemPrompt: raw.coreSystemPrompt ? stripTokens(String(raw.coreSystemPrompt)) : CLEAN_CORE_PROMPT,
+          coreSystemPrompt: raw.coreSystemPrompt != null ? stripTokens(String(raw.coreSystemPrompt)) : CLEAN_CORE_PROMPT,
           extendedThinking: raw.extendedThinking ?? false,
           resumePrompt: raw.resumePrompt || '',
         })
