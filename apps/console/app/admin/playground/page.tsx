@@ -252,12 +252,16 @@ export default function PlaygroundPage() {
             if (trace.actionType !== 'skill_result') continue
             let payload: Record<string, unknown> = {}
             try { payload = JSON.parse(trace.payload || '{}') } catch {}
-            const skillName = (payload.skillName as string) || trace.title?.replace(/^Skill result: /, '') || ''
-            if (!skillName || seenNames.has(skillName)) continue
-            seenNames.add(skillName)
-            const renderHints = detailData.renderHintsMap?.[skillName] as LiveTool['renderHints'] | undefined
+            const toolName = (payload.toolName as string) || (payload.skillName as string) || trace.title?.replace(/^(?:Skill|Tool) result: /, '') || ''
+            if (!toolName || seenNames.has(toolName)) continue
+            seenNames.add(toolName)
+            // Prefer renderHints from the actual execution trace payload;
+            // fall back to the static DB tool definition.
+            const traceHints = payload.renderHints as LiveTool['renderHints'] | undefined
+            const dbHints = detailData.renderHintsMap?.[toolName] as LiveTool['renderHints'] | undefined
+            const renderHints = traceHints ?? dbHints ?? undefined
             rebuiltTools.push({
-              name: skillName,
+              name: toolName,
               status: 'done',
               startedAt: new Date(trace.createdAt).getTime(),
               finishedAt: new Date(trace.createdAt).getTime(),
