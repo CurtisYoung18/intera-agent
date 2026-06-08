@@ -399,7 +399,7 @@ function TurnSection({
     cacheRead = modelStep.usage.cacheReadTokens || 0
   }
   const cachePct = (turnInput + cacheRead) > 0 ? Math.round(cacheRead / (turnInput + cacheRead) * 100) : 0
-  const toolSteps = steps.filter((s) => s.stage === 'Skills & tools' || s.stage === 'Knowledge retrieval')
+  const toolSteps = steps.filter((s) => s.stage === 'Tools' || s.stage === 'Knowledge retrieval')
   const toolCount = toolSteps.reduce((sum, s) => sum + (s.detail?.length || 0), 0)
   const hasLiveTools = isLatest && isResponding && liveTools.length > 0
   const hasTraceData = steps.length > 0
@@ -482,14 +482,14 @@ function TurnSection({
 
           {steps.filter((s) => s.fired !== false).map((step, i) => {
             const isModelGen = step.stage === 'Model generation'
-            const isSkill = step.stage === 'Skills & tools' || step.stage === 'Knowledge retrieval'
+            const isTool = step.stage === 'Tools' || step.stage === 'Knowledge retrieval'
 
-            if (isSkill && hasLiveTools) return null
+            if (isTool && hasLiveTools) return null
 
-            if (isSkill && step.detail?.length > 0) {
+            if (isTool && step.detail?.length > 0) {
               return step.detail.map(([actionType, detailText], di) => {
                 const toolKey = `${turnIdx}-${i}-${di}`
-                const toolName = step.summary?.split(' → ')?.[di] || actionType.replace('skill_', '')
+                const toolName = step.summary?.split(' → ')?.[di] || actionType.replace('tool_', '')
                 return (
                   <ToolCallCard
                     key={toolKey}

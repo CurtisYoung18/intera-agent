@@ -2,7 +2,7 @@
 // Drives runPlaygroundTurn with a mocked LLM stream and asserts the
 // trace pipeline produces correct stages, timing, and prompt data.
 //
-// AC1 – No split-brain: Skills & tools stage shows real tool count
+// AC1 – No split-brain: Tools stage shows real tool count
 // AC2 – Guardrails visible: policy_hit records → Guardrails stage fired:true
 // AC3 – Honest timing: totalMs > 0, every stage ms ≤ totalMs
 // AC4 – Model generation fidelity: promptData + usage preserved
@@ -114,7 +114,7 @@ beforeEach(() => {
 })
 
 describe('Playground trace contract (AC1, AC3, AC4, AC7)', () => {
-  it('AC1 — Skills & tools stage is fired and matches tool events', async () => {
+  it('AC1 — Tools stage is fired and matches tool events', async () => {
     // Prevent background agent dispatch
     vi.spyOn(OrchestratorAgent.prototype, 'planInvestigation').mockResolvedValue([{ id: 't1' } as never])
     vi.spyOn(OrchestratorAgent.prototype, 'dispatchInBackground').mockImplementation((() => undefined) as never)
@@ -128,15 +128,15 @@ describe('Playground trace contract (AC1, AC3, AC4, AC7)', () => {
     const traceData: any = (traceEvents[0] as any).data
     const trace = traceData.trace || []
 
-    // AC1 — Skills & tools stage exists with fired:true
-    const toolsStage = trace.find((s: any) => s.stage === 'Skills & tools')
+    // AC1 — Tools stage exists with fired:true
+    const toolsStage = trace.find((s: any) => s.stage === 'Tools')
     expect(toolsStage).toBeDefined()
     expect(toolsStage.fired).toBe(true)
 
-    // AC1 — tool count matches (one read_chat_memory call = 1 skill_result + 1 skill_called → N=2)
+    // AC1 — tool count matches the tool execution/result events.
     // The tool_executing event also counts. Verify >0.
     const toolEvents = events.filter((e: any) =>
-      e.type === 'tool_executing' || e.type === 'skill_result',
+      e.type === 'tool_executing' || e.type === 'tool_result',
     )
     expect(toolEvents.length).toBeGreaterThan(0)
   })

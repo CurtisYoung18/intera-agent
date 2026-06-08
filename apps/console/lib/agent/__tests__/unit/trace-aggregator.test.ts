@@ -6,10 +6,10 @@ describe('aggregateTraces', () => {
 
   it('never hides a stage that fired, even if not in applicableStages', () => {
     const recs = [
-      { caseId: 'c', actionType: 'skill_result', title: 'Skill: kb_search', detail: 'ok', createdAt: new Date(t0 + 10).toISOString() },
+      { caseId: 'c', actionType: 'tool_result', title: 'Tool: kb_search', detail: 'ok', createdAt: new Date(t0 + 10).toISOString() },
     ]
     const out = aggregateTraces(recs as any, t0, false, ['Guardrails', 'Model generation'])
-    const tools = out.find(s => s.stage === 'Skills & tools')
+    const tools = out.find(s => s.stage === 'Tools')
     expect(tools?.fired).toBe(true)
   })
 
@@ -22,11 +22,11 @@ describe('aggregateTraces', () => {
 
   it('computes ms as span between first and last record, not start-offset', () => {
     const recs = [
-      { caseId: 'c', actionType: 'skill_result', title: 'Tool A', detail: 'ok', createdAt: new Date(t0 + 100).toISOString() },
-      { caseId: 'c', actionType: 'skill_result', title: 'Tool B', detail: 'ok', createdAt: new Date(t0 + 600).toISOString() },
+      { caseId: 'c', actionType: 'tool_result', title: 'Tool A', detail: 'ok', createdAt: new Date(t0 + 100).toISOString() },
+      { caseId: 'c', actionType: 'tool_result', title: 'Tool B', detail: 'ok', createdAt: new Date(t0 + 600).toISOString() },
     ]
-    const out = aggregateTraces(recs as any, t0, false, ['Skills & tools'])
-    const tools = out.find(s => s.stage === 'Skills & tools')
+    const out = aggregateTraces(recs as any, t0, false, ['Tools'])
+    const tools = out.find(s => s.stage === 'Tools')
     expect(tools?.ms).toBe(500)
   })
 
@@ -45,21 +45,37 @@ describe('aggregateTraces', () => {
     expect(out.every(s => s.fired === false)).toBe(true)
   })
 
-  it('excludes bookkeeping actionTypes from Skills & tools stage (AC-C1)', () => {
+  it('excludes bookkeeping actionTypes from Tools stage (AC-C1)', () => {
     const t0 = Date.now()
     const traces = [
       { caseId: 'c', actionType: 'user_message', title: 'run start', detail: '', createdAt: new Date(t0).toISOString() },
       { caseId: 'c', actionType: 'stream_event', title: 'stream', detail: '', createdAt: new Date(t0 + 10).toISOString() },
       { caseId: 'c', actionType: 'loop_decision', title: 'Iteration Snapshot', payload: JSON.stringify({ llmWallMs: 1200, iterationWallMs: 1500 }), detail: '', createdAt: new Date(t0 + 20).toISOString() },
-      { caseId: 'c', actionType: 'skill_result', title: 'Skill: kb_search', detail: 'ok', createdAt: new Date(t0 + 50).toISOString() },
+      { caseId: 'c', actionType: 'tool_result', title: 'Tool: kb_search', detail: 'ok', createdAt: new Date(t0 + 50).toISOString() },
     ]
-    const result = aggregateTraces(traces as any, t0, false, ['Skills & tools', 'Model generation'])
-    const tools = result.find(s => s.stage === 'Skills & tools')
+    const result = aggregateTraces(traces as any, t0, false, ['Tools', 'Model generation'])
+    const tools = result.find(s => s.stage === 'Tools')
     expect(tools?.fired).toBe(true)
     // Only kb_search should appear in the summary, not Iteration Snapshot or run start
     expect(tools?.summary).toContain('kb_search')
     expect(tools?.summary).not.toContain('Iteration Snapshot')
     expect(tools?.summary).not.toContain('run start')
+  })
+
+  it('normalizes historical skill_result rows for display only', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'skill_result',
+        title: 'Tool: kb_search',
+        payload: JSON.stringify({ skillName: 'kb_search', output: { hits: 1 } }),
+        createdAt: new Date(t0 + 50).toISOString(),
+      },
+    ]
+    const result = aggregateTraces(traces as any, t0, false, ['Tools'])
+    const tools = result.find(s => s.stage === 'Tools')
+    expect(tools?.fired).toBe(true)
+    expect(tools?.detail[0]?.[0]).toBe('tool_result')
   })
 
   it('uses real llmWallMs from Iteration Snapshot for Model generation ms (AC-C2)', () => {

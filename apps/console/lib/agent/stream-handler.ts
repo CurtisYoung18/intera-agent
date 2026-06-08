@@ -9,6 +9,16 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { AssistantMessage, SSEEvent, ToolUse } from '@intera/shared/types'
 
+const LEGACY_SSE_EVENT_TYPE_MAP: Partial<Record<string, SSEEvent['type']>> = {
+  skill_call: 'tool_call',
+  skill_result: 'tool_result',
+}
+
+export function normalizeSSEEvent(event: SSEEvent): SSEEvent {
+  const type = LEGACY_SSE_EVENT_TYPE_MAP[event.type] ?? event.type
+  return type === event.type ? event : { ...event, type }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

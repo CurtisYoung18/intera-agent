@@ -11,8 +11,8 @@ import type { BridgeAction, FormField } from '@/lib/livechat/types'
 import { renderSkillByHint, readPath } from './render-skill-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
-function skillLabel(name: string, displayVerb?: { text: string; icon: string }): string {
-  // Prefer the displayVerb text from the skill definition (already i18n-friendly).
+function toolLabel(name: string, displayVerb?: { text: string; icon: string }): string {
+  // Prefer the displayVerb text from the tool definition (already i18n-friendly).
   if (displayVerb?.text) return displayVerb.text
   return name.replace(/_/g, ' ')
 }
@@ -38,7 +38,8 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       case 'tool_executing':
         return { type: 'noop' }
 
-      // ── skill_result: { name, status: 'completed', result, renderHints? } ──
+      // ── tool_result: { name, status: 'completed', result, renderHints? } ──
+      case 'tool_result':
       case 'skill_result': {
         const d = event.data as {
           name: string; status: string; result?: unknown
@@ -59,7 +60,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         if (!this.showSkillStatus) return { type: 'noop' }
         return {
           type: 'send_text',
-          text: `✅ ${skillLabel(d.name)}`,
+          text: `✅ ${toolLabel(d.name)}`,
         }
       }
 

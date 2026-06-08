@@ -52,10 +52,10 @@ describe('LiveChatRenderer', () => {
     })
   })
 
-  describe('skill_result', () => {
-    it('returns send_text for done skill', () => {
+  describe('tool_result', () => {
+    it('returns send_text for done tool', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('skill_result', { name: 'query_order', status: 'completed', result: {} }), makeCtx())
+      const actions = r.render(makeEvent('tool_result', { name: 'query_order', status: 'completed', result: {} }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_text')
       expect((a as { type: 'send_text'; text: string }).text).toContain('query order')
@@ -63,7 +63,7 @@ describe('LiveChatRenderer', () => {
 
     it('returns send_card when renderHints.livechat has card hint', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('skill_result', {
+      const actions = r.render(makeEvent('tool_result', {
         name: 'query_order',
         status: 'completed',
         result: { order: { id: 'TX123', status: 'pending' } },
@@ -80,7 +80,7 @@ describe('LiveChatRenderer', () => {
 
     it('returns send_carousel when renderHints.livechat has carousel hint', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('skill_result', {
+      const actions = r.render(makeEvent('tool_result', {
         name: 'kb_search',
         status: 'completed',
         result: { results: [{ id: '1', title: 'Doc 1' }] },
@@ -97,7 +97,7 @@ describe('LiveChatRenderer', () => {
 
     it('falls back to send_text for unknown hint kind', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('skill_result', {
+      const actions = r.render(makeEvent('tool_result', {
         name: 'query_order',
         status: 'completed',
         result: { steps: [{ label: 'Order placed' }] },
@@ -108,9 +108,9 @@ describe('LiveChatRenderer', () => {
       expect(actions[0]!.type).toBe('send_text')
     })
 
-    it('returns noop for skill_result without renderHints when showSkillStatus=false', () => {
+    it('returns noop for tool_result without renderHints when showSkillStatus=false', () => {
       const r = new LiveChatRenderer(false)
-      const actions = r.render(makeEvent('skill_result', { name: 'x', status: 'completed', result: {} }), makeCtx())
+      const actions = r.render(makeEvent('tool_result', { name: 'x', status: 'completed', result: {} }), makeCtx())
       expect(actions[0]!.type).toBe('noop')
     })
   })

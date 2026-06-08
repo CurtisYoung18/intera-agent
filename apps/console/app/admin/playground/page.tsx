@@ -52,7 +52,7 @@ interface AgentSnapshot {
   temperature: number
 }
 
-/** Per-tool status — driven by real `tool_executing` / `skill_result` SSE events. */
+/** Per-tool status — driven by real `tool_executing` / `tool_result` SSE events. */
 /* ── Constants ── */
 
 const QUICK_STARTS = [
@@ -241,7 +241,7 @@ export default function PlaygroundPage() {
         }
         if (currentGroup.length > 0) turnGroups.push(currentGroup)
 
-        // Rebuild liveTools from the last turn's skill_result traces so
+        // Rebuild liveTools from the last turn's tool_result traces so
         // RenderHintCard components survive page refresh. During live use
         // liveTools resets per turn — only the final turn's hints are shown.
         if (turnGroups.length > 0) {
@@ -249,7 +249,7 @@ export default function PlaygroundPage() {
           const rebuiltTools: LiveTool[] = []
           const seenNames = new Set<string>()
           for (const trace of lastTurn) {
-            if (trace.actionType !== 'skill_result') continue
+            if (trace.actionType !== 'tool_result' && trace.actionType !== 'skill_result') continue
             let payload: Record<string, unknown> = {}
             try { payload = JSON.parse(trace.payload || '{}') } catch {}
             const toolName = (payload.toolName as string) || (payload.skillName as string) || trace.title?.replace(/^(?:Skill|Tool) result: /, '') || ''
@@ -570,7 +570,7 @@ export default function PlaygroundPage() {
                 { name, status: 'running', startedAt: Date.now() },
               ])
             }
-            else if (event.type === 'skill_result') {
+            else if (event.type === 'tool_result' || event.type === 'skill_result') {
               const d = event.data as any
               const name = d?.name || 'tool'
               setLiveTools(prev => prev.map(t =>
@@ -633,7 +633,7 @@ export default function PlaygroundPage() {
     for (const steps of turnTraces) {
       for (const step of steps) {
         if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0; llmCalls++ }
-        if (step.stage === 'Skills & tools' || step.stage === 'Knowledge retrieval') totalTools += step.detail?.length || 0
+        if (step.stage === 'Tools' || step.stage === 'Knowledge retrieval') totalTools += step.detail?.length || 0
       }
     }
     const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)

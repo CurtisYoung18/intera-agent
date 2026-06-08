@@ -9,7 +9,7 @@
 
 import type { ToolUse, ToolResult, ToolDefinition } from '@intera/shared/types'
 
-/** Tool execution stores `{ ok, output, latencyMs }`; consumers need the inner skill payload. */
+/** Tool execution stores `{ ok, output, latencyMs }`; consumers need the inner tool payload. */
 export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknown {
   if (!toolExecutionOutput || typeof toolExecutionOutput !== 'object') return toolExecutionOutput
   const tr = toolExecutionOutput as ToolResult
@@ -240,7 +240,7 @@ export class StreamingToolExecutor {
       let output: unknown
 
       if (tool.definition.mode === 'engine_managed' || tool.definition.mode === 'channel') {
-        // Engine-managed and channel-dependent skills are handled by the
+        // Engine-managed and channel-dependent tools are handled by the
         // agent loop directly — the executor should never receive them.
         output = { ok: true, handled: tool.definition.mode }
       } else if (tool.definition.mode === 'static') {
@@ -356,14 +356,14 @@ export class StreamingToolExecutor {
   ): Promise<unknown> {
     if (!definition.endpoint) {
       throw new Error(
-        `No endpoint configured for skill "${definition.name}"`,
+        `No endpoint configured for tool "${definition.name}"`,
       )
     }
 
     const resolvedEndpoint = this.resolveEnvVars(definition.endpoint)
     const resolvedHeaders = await this.resolveHeaders(definition.headers as Record<string, string> | undefined)
 
-    // For kb_search_* tools: each knowledge source is a separate skill with its
+    // For kb_search_* tools: each knowledge source is a separate tool with its
     // groupIds baked into the endpoint or resolved from DB at execution time.
     let body = input
     if (definition.name.startsWith('kb_search_')) {

@@ -34,6 +34,12 @@ interface CaseSummary {
   _count?: { messages: number }
 }
 
+function normalizeTraceActionType(actionType: string): string {
+  if (actionType === 'skill_call' || actionType === 'skill_called' || actionType === 'tool_called') return 'tool_call'
+  if (actionType === 'skill_result') return 'tool_result'
+  return actionType
+}
+
 interface ChatSession {
   chatId: string; userId: string; cases: CaseSummary[]
   messageCount: number; lastActivity: string; hasHumanTask: boolean
@@ -354,12 +360,12 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
               <div className="space-y-1.5">
                 {session.cases.map((c) => {
                   const caseTraces = traces.filter((t) => t.caseId === c.id)
-                  const caseSkills = caseTraces.filter((t) => t.actionType === 'skill_called').length
+                  const caseTools = caseTraces.filter((t) => normalizeTraceActionType(t.actionType) === 'tool_call').length
                   return (
                     <div key={c.id} className="flex items-center gap-2 text-[11px]">
                       <span className="w-16 text-[var(--fog)]/50">{c.id.slice(0, 8)}</span>
                       <span className="text-[var(--mist)]">{c.type.replace(/_/g, ' ')}</span>
-                      <span className="text-[var(--fog)]/50">· {caseTraces.length} traces · {caseSkills} skills</span>
+                      <span className="text-[var(--fog)]/50">· {caseTraces.length} traces · {caseTools} tools</span>
                     </div>
                   )
                 })}
@@ -502,8 +508,8 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
 }
 
 const ACTION_COLORS: Record<string, string> = {
-  user_message: '#6366f1', case_created: '#2ea04a', skill_called: '#5b8af7',
-  skill_result: '#14b8a6', human_task_created: '#d4912e', final_resolution: '#2ea04a',
+  user_message: '#6366f1', case_created: '#2ea04a', tool_call: '#5b8af7',
+  tool_result: '#14b8a6', human_task_created: '#d4912e', final_resolution: '#2ea04a',
   llm_request_start: '#8b6ff5', llm_response: '#8b6ff5', error: '#e64539',
   escalated: '#e64539', loop_decision: '#a09888',
   queue_message_enqueued: '#f0b050', queue_message_consumed: '#f0b050',
@@ -516,11 +522,12 @@ type FilterKey = (typeof FILTER_KEYS)[number]
 const STORAGE_KEY = 'trace-viewer-filters'
 
 function matchFilter(actionType: string, activeFilters: Set<string>): boolean {
+  const normalizedActionType = normalizeTraceActionType(actionType)
   if (activeFilters.size === 0 || activeFilters.has('All')) return true
-  if (activeFilters.has('LLM') && (actionType.startsWith('llm_') || actionType === 'stream_event')) return true
-  if (activeFilters.has('Tools') && (actionType.startsWith('skill_') || actionType.startsWith('tool_'))) return true
-  if (activeFilters.has('Policy') && (actionType === 'policy_hit' || actionType === 'loop_decision')) return true
-  if (activeFilters.has('Sub-Agents') && (actionType.includes('sub_agent') || actionType.includes('dispatch_subagent'))) return true
+  if (activeFilters.has('LLM') && (normalizedActionType.startsWith('llm_') || normalizedActionType === 'stream_event')) return true
+  if (activeFilters.has('Tools') && normalizedActionType.startsWith('tool_')) return true
+  if (activeFilters.has('Policy') && (normalizedActionType === 'policy_hit' || normalizedActionType === 'loop_decision')) return true
+  if (activeFilters.has('Sub-Agents') && (normalizedActionType.includes('sub_agent') || normalizedActionType.includes('dispatch_subagent'))) return true
   return false
 }
 
@@ -645,16 +652,19 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
           </button>
           {expandedIterations.has('Initial') && (
             <div className="border-t border-black/[0.04]">
-              {unassigned.map((t) => (
-                <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
-                  <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
-                    style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
-                  <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
-                  <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{t.actionType}</span>
-                  <span className="text-[var(--mist)] truncate">{t.title}</span>
-                  {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
-                </div>
-              ))}
+              {unassigned.map((t) => {
+                const actionType = normalizeTraceActionType(t.actionType)
+                return (
+                  <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
+                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                      style={{ background: ACTION_COLORS[actionType] ?? '#a09888' }} />
+                    <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
+                    <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{actionType}</span>
+                    <span className="text-[var(--mist)] truncate">{t.title}</span>
+                    {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -679,16 +689,19 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
             </button>
             {expandedIterations.has(key) && (
               <div className="border-t border-indigo/[0.06]">
-                {group.map((t) => (
-                  <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
-                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
-                      style={{ background: ACTION_COLORS[t.actionType] ?? '#a09888' }} />
-                    <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
-                    <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{t.actionType}</span>
-                    <span className="text-[var(--mist)] truncate">{t.title}</span>
-                    {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
-                  </div>
-                ))}
+                {group.map((t) => {
+                  const actionType = normalizeTraceActionType(t.actionType)
+                  return (
+                    <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
+                      <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                        style={{ background: ACTION_COLORS[actionType] ?? '#a09888' }} />
+                      <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
+                      <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{actionType}</span>
+                      <span className="text-[var(--mist)] truncate">{t.title}</span>
+                      {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

@@ -12,6 +12,7 @@ import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
 import { generateCaseId } from '@/lib/utils'
 import { buildModelList } from './build-model-list'
+import { normalizeSSEEvent } from './stream-handler'
 
 /** Lightweight overrides for playground runs. Real AgentConfig is loaded from DB. */
 export interface PlaygroundConfig {
@@ -177,13 +178,14 @@ export async function* runPlaygroundTurn(input: {
   const wake = () => { const r = resolveNext; resolveNext = null; r?.() }
 
   const sendEvent = (event: SSEEvent) => {
+    const normalizedEvent = normalizeSSEEvent(event)
     // Collect text for reply
-    if (event.type === 'text_delta') reply += event.data as string
+    if (normalizedEvent.type === 'text_delta') reply += normalizedEvent.data as string
 
-    if (event.type === 'policy_blocked') blocked = true
+    if (normalizedEvent.type === 'policy_blocked') blocked = true
 
     // Stream out in real-time (was buffered until end-of-run previously)
-    pending.push(event)
+    pending.push(normalizedEvent)
     wake()
   }
 
@@ -255,7 +257,7 @@ export async function* runPlaygroundTurn(input: {
   // (fired=false when no guardrail events occur, which is correct)
 
   // ── Aggregate traces ──
-  const totalMs = Date.now() - startTime
+  const totalMs = Math.max(1, Date.now() - startTime)
   const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages)
   const caseType = ''
 

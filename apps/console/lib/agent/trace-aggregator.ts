@@ -2,12 +2,12 @@
 // Maps fine-grained ActionType events → PlaygroundTraceStep with timing + status.
 
 import type { TraceRecord } from './persistence-port'
-import type { ActionType } from './trace'
+import { normalizeTraceActionType, type ActionType } from './trace'
 
 export type TraceStage =
   | 'Guardrails'
   | 'Knowledge retrieval'
-  | 'Skills & tools'
+  | 'Tools'
   | 'Stage SOP'
   | 'Model generation'
 
@@ -44,9 +44,8 @@ const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; s
   policy_hit: { stage: 'Guardrails', source: 'guardrails' },
   // kb_search_* tools
   kb_search: { stage: 'Knowledge retrieval', source: 'knowledge' },
-  // All other skill_called / skill_result
-  skill_called: { stage: 'Skills & tools', source: 'tools' },
-  skill_result: { stage: 'Skills & tools', source: 'tools' },
+  tool_call: { stage: 'Tools', source: 'tools' },
+  tool_result: { stage: 'Tools', source: 'tools' },
   stage_eval: { stage: 'Stage SOP', source: 'agent' },
   llm_request_start: { stage: 'Model generation', source: 'agent' },
   llm_response: { stage: 'Model generation', source: 'agent' },
@@ -77,7 +76,8 @@ function deriveStatus(record: TraceRecord): TraceStatus {
     if (detail?.includes('warn') || detail?.includes('escalat')) return 'warn'
     return 'ok'
   }
-  if (actionType === 'skill_result') {
+  const canonicalActionType = normalizeTraceActionType(actionType)
+  if (canonicalActionType === 'tool_result') {
     // system_info tools (read_chat_memory, read_user_profile) always return empty
     // mock data in playground — never treat as error.
     const name = (title || '').toLowerCase()
@@ -90,7 +90,7 @@ function deriveStatus(record: TraceRecord): TraceStatus {
     if (/error|failed/i.test(blob)) return 'warn'
     return 'ok'
   }
-  if (actionType === 'skill_called') {
+  if (canonicalActionType === 'tool_call') {
     const blob = `${detail ?? ''} ${record.payload ?? ''}`
     if (blob.includes('kb_search')) return 'info'
   }
@@ -123,7 +123,7 @@ function extractUsage(record: TraceRecord): PlaygroundTraceStep['usage'] {
 const allStages: { stage: TraceStage; source: TraceSource }[] = [
   { stage: 'Guardrails', source: 'guardrails' },
   { stage: 'Knowledge retrieval', source: 'knowledge' },
-  { stage: 'Skills & tools', source: 'tools' },
+  { stage: 'Tools', source: 'tools' },
   { stage: 'Stage SOP', source: 'agent' },
   { stage: 'Model generation', source: 'agent' },
 ]
@@ -140,20 +140,21 @@ export function aggregateTraces(
 
   for (const t of traces) {
     if (BOOKKEEPING.has(t.actionType)) { bookkeeping.push(t); continue }
-    const actionType = t.actionType
+    const actionType = normalizeTraceActionType(t.actionType)
 
     // kb_search_* → Knowledge retrieval (must run before STAGE_MAP lookup,
-    // since skill_called/skill_result have their own mappings)
+    // since tool_call/tool_result have their own mappings)
     let mapping: { stage: TraceStage; source: TraceSource } | undefined
 
     if (actionType.startsWith('kb_search') || t.title?.startsWith('kb_search')) {
       mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
-    } else if (actionType === 'skill_called' || actionType === 'skill_result') {
-      // Check payload for kb_search skill name
+    } else if (actionType === 'tool_call' || actionType === 'tool_result') {
+      // Check payload for kb_search tool name
       if (t.payload) {
         try {
           const p = JSON.parse(t.payload)
-          if (typeof p?.skillName === 'string' && p.skillName.startsWith('kb_search_')) {
+          const toolName = typeof p?.toolName === 'string' ? p.toolName : p?.skillName
+          if (typeof toolName === 'string' && toolName.startsWith('kb_search_')) {
             mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
           }
         } catch { /* not valid JSON */ }
@@ -162,9 +163,9 @@ export function aggregateTraces(
 
     mapping ??= STAGE_MAP[actionType as ActionType | 'kb_search']
 
-    // Default: Skills & tools
+    // Default: Tools
     if (!mapping) {
-      mapping = { stage: 'Skills & tools', source: 'tools' }
+      mapping = { stage: 'Tools', source: 'tools' }
     }
 
     const existing = stageMap.get(mapping.stage)
@@ -211,21 +212,23 @@ export function aggregateTraces(
 
     const summary = records.map((r) => r.title).filter(Boolean).join(' → ') || '(no summary)'
     const detail: [string, string][] = records.slice(0, 10).map((r) => {
-      // For skill records, show input/output from payload
-      if ((r.actionType === 'skill_called' || r.actionType === 'skill_result') && r.payload) {
+      const actionType = normalizeTraceActionType(r.actionType)
+      // For tool records, show input/output from payload. Historical skill_* rows
+      // are normalized above so downstream renderers only see tool_* action names.
+      if ((actionType === 'tool_call' || actionType === 'tool_result') && r.payload) {
         try {
           const p = JSON.parse(r.payload)
-          if (r.actionType === 'skill_called') {
-            return [r.actionType, p.input ? JSON.stringify(p.input) : r.title || '']
+          if (actionType === 'tool_call') {
+            return [actionType, p.input ? JSON.stringify(p.input) : r.title || '']
           }
-          // skill_result: show both input and output when available
+          // tool_result: show both input and output when available
           const parts: string[] = []
           if (p.input) parts.push(`input: ${JSON.stringify(p.input)}`)
           if (p.output) parts.push(`output: ${JSON.stringify(p.output)}`)
-          return [r.actionType, parts.length > 0 ? parts.join('\n') : r.title || '']
+          return [actionType, parts.length > 0 ? parts.join('\n') : r.title || '']
         } catch { /* fall through */ }
       }
-      return [r.actionType, r.detail || r.title || '']
+      return [actionType, r.detail || r.title || '']
     })
 
     const step: PlaygroundTraceStep = {

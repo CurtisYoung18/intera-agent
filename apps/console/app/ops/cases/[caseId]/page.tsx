@@ -30,6 +30,12 @@ interface ToolCall {
   createdAt: string
 }
 
+function normalizeTraceActionType(actionType: string): string {
+  if (actionType === 'skill_call' || actionType === 'skill_called' || actionType === 'tool_called') return 'tool_call'
+  if (actionType === 'skill_result') return 'tool_result'
+  return actionType
+}
+
 interface IterationMetrics {
   iteration: number
   inputTokens: number; outputTokens: number; cacheReadTokens: number
@@ -114,8 +120,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         iterMetrics.set(iter, im)
       }
 
-      // Track tool calls from skill_result traces
-      if (t.actionType === 'skill_result' && p) {
+      // Track tool calls from tool_result traces.
+      if (normalizeTraceActionType(t.actionType) === 'tool_result' && p) {
         const input = (() => { try { return t.detail ? JSON.parse(t.detail) : null } catch { return null } })()
         toolCalls.push({
           name: (p.skillName as string) || (p.toolName as string) || t.title,

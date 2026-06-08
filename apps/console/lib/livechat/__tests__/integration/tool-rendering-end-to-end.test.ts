@@ -73,8 +73,8 @@ describe('skill-rendering end-to-end', () => {
   })
 
   describe('status_track fallback when no hint', () => {
-    it('renderer uses status_track for skill_result without renderHints (tested in renderer.test.ts)', () => {
-      // This is verified by renderer.test.ts skill_result case
+    it('renderer uses status_track for tool_result without renderHints (tested in renderer.test.ts)', () => {
+      // This is verified by renderer.test.ts tool_result case
       expect(true).toBe(true)
     })
   })

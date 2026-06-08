@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
 import { enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
+import { normalizeSSEEvent } from '@/lib/agent/stream-handler'
 import { prisma } from '@intera/shared/prisma'
 import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
@@ -166,8 +167,9 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const sendEvent = (event: SSEEvent) => {
+        const normalizedEvent = normalizeSSEEvent(event)
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+          encoder.encode(`data: ${JSON.stringify(normalizedEvent)}\n\n`),
         )
       }
 

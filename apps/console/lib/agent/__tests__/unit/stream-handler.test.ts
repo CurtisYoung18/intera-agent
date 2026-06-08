@@ -3,6 +3,7 @@ import {
   consumeStream,
   parseToolInput,
   buildToolUsesFromBlocks,
+  normalizeSSEEvent,
   type StreamConsumeCallbacks,
   type StreamContentBlock,
 } from '../../stream-handler'
@@ -164,6 +165,16 @@ describe('consumeStream', () => {
     await consumeStream(stream as any, blocks, cbs)
 
     expect(flushSanitizer).toHaveBeenCalled()
+  })
+})
+
+describe('normalizeSSEEvent', () => {
+  it('canonicalizes historical skill event names to tool event names', () => {
+    const timestamp = new Date().toISOString()
+
+    expect(normalizeSSEEvent({ type: 'skill_call', data: {}, timestamp }).type).toBe('tool_call')
+    expect(normalizeSSEEvent({ type: 'skill_result', data: {}, timestamp }).type).toBe('tool_result')
+    expect(normalizeSSEEvent({ type: 'tool_result', data: {}, timestamp }).type).toBe('tool_result')
   })
 })
 

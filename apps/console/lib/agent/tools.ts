@@ -258,7 +258,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
 ]
 
 /** Set of built-in tool names for fast lookup. */
-export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((s) => s.name))
+export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((tool) => tool.name))
 
 /**
  * Returns true if the given tool name is a built-in (system) tool.

@@ -12,7 +12,13 @@ export type ActionType =
   | 'case_created'
   | 'fact_extracted'
   | 'policy_hit'
+  | 'tool_call'
+  | 'tool_result'
+  /** @deprecated Historical trace action; writes are normalized to tool_call. */
+  | 'skill_call'
+  /** @deprecated Historical trace action; writes are normalized to tool_call. */
   | 'skill_called'
+  /** @deprecated Historical trace action; writes are normalized to tool_result. */
   | 'skill_result'
   | 'human_task_created'
   | 'human_task_resolved'
@@ -36,6 +42,17 @@ export type ActionType =
   | 'case_merged'
   | 'sub_agent_dispatched'
   | 'sub_agent_merged'
+
+const LEGACY_ACTION_TYPE_MAP: Partial<Record<string, ActionType>> = {
+  skill_call: 'tool_call',
+  skill_called: 'tool_call',
+  skill_result: 'tool_result',
+  tool_called: 'tool_call',
+}
+
+export function normalizeTraceActionType(actionType: string): ActionType | string {
+  return LEGACY_ACTION_TYPE_MAP[actionType] ?? actionType
+}
 
 export interface TraceEntry {
   id: string
@@ -65,7 +82,7 @@ export class TraceWriter {
     const entry: TraceEntry = {
       id: crypto.randomUUID(),
       caseId: this.caseId,
-      actionType,
+      actionType: normalizeTraceActionType(actionType) as ActionType,
       title,
       createdAt: new Date(),
     }
@@ -85,29 +102,45 @@ export class TraceWriter {
       title: entry.title,
       detail: entry.detail ?? null,
       payload: entry.payload ? JSON.stringify(entry.payload) : null,
-    }).catch((err) => console.error(`[TraceWriter] saveTrace failed (${actionType}):`, err))
+    }).catch((err) => console.error(`[TraceWriter] saveTrace failed (${entry.actionType}):`, err))
 
     return entry
   }
 
-  async writeSkillCall(
-    skillName: string,
+  async writeToolCall(
+    toolName: string,
     input: Record<string, unknown>,
   ): Promise<void> {
-    await this.write('skill_called', `Tool called: ${skillName}`, {
-      skillName,
+    await this.write('tool_call', `Tool called: ${toolName}`, {
+      toolName,
       input,
     })
   }
 
+  async writeToolResult(
+    toolName: string,
+    output: unknown,
+  ): Promise<void> {
+    await this.write('tool_result', `Tool result: ${toolName}`, {
+      toolName,
+      output,
+    })
+  }
+
+  /** @deprecated Use writeToolCall. Kept as a read-only adapter for old callers. */
+  async writeSkillCall(
+    skillName: string,
+    input: Record<string, unknown>,
+  ): Promise<void> {
+    await this.writeToolCall(skillName, input)
+  }
+
+  /** @deprecated Use writeToolResult. Kept as a read-only adapter for old callers. */
   async writeSkillResult(
     skillName: string,
     output: unknown,
   ): Promise<void> {
-    await this.write('skill_result', `Skill result: ${skillName}`, {
-      skillName,
-      output,
-    })
+    await this.writeToolResult(skillName, output)
   }
 
   async writePolicyHit(

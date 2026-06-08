@@ -3,7 +3,7 @@ import { statusColor, ACCENTS } from '../status-accents'
 
 describe('statusColor', () => {
   it('returns green for success types', () => {
-    expect(statusColor('skill_result')).toBe('#2ea04a')
+    expect(statusColor('tool_result')).toBe('#2ea04a')
     expect(statusColor('ok')).toBe('#2ea04a')
     expect(statusColor('success')).toBe('#2ea04a')
     expect(statusColor('resolved')).toBe('#2ea04a')
@@ -18,7 +18,7 @@ describe('statusColor', () => {
   })
 
   it('returns amber for warn/in-progress types', () => {
-    expect(statusColor('skill_called')).toBe('#d4912e')
+    expect(statusColor('tool_call')).toBe('#d4912e')
     expect(statusColor('human_task')).toBe('#d4912e')
     expect(statusColor('waiting_human')).toBe('#d4912e')
     expect(statusColor('warn')).toBe('#d4912e')
@@ -38,8 +38,8 @@ describe('statusColor', () => {
 describe('ACCENTS', () => {
   it('has expected entries', () => {
     expect(ACCENTS.policy_hit.stroke).toBe('#e64539')
-    expect(ACCENTS.skill_result.stroke).toBe('#2ea04a')
-    expect(ACCENTS.skill_called.stroke).toBe('#d4912e')
+    expect(ACCENTS.tool_result.stroke).toBe('#2ea04a')
+    expect(ACCENTS.tool_call.stroke).toBe('#d4912e')
     expect(ACCENTS.llm_request_start.stroke).toBe('#5b8af7')
   })
 
@@ -61,8 +61,8 @@ describe('ACCENTS', () => {
       case_created: '#a09888',
       fact_extracted: '#d4912e',
       policy_hit: '#e64539',
-      skill_called: '#d4912e',
-      skill_result: '#2ea04a',
+      tool_call: '#d4912e',
+      tool_result: '#2ea04a',
       human_task_created: '#d4912e',
       human_task_resolved: '#2ea04a',
       final_resolution: '#2ea04a',
@@ -82,8 +82,8 @@ describe('ACCENTS', () => {
       case_created: 'rgba(160, 152, 136, 0.08)',
       fact_extracted: 'rgba(212, 145, 46, 0.10)',
       policy_hit: 'rgba(230, 69, 57, 0.08)',
-      skill_called: 'rgba(212, 145, 46, 0.10)',
-      skill_result: 'rgba(46, 160, 74, 0.08)',
+      tool_call: 'rgba(212, 145, 46, 0.10)',
+      tool_result: 'rgba(46, 160, 74, 0.08)',
       human_task_created: 'rgba(212, 145, 46, 0.12)',
       human_task_resolved: 'rgba(46, 160, 74, 0.10)',
       final_resolution: 'rgba(46, 160, 74, 0.10)',

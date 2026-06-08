@@ -37,6 +37,12 @@ function formatActionLabel(actionType: string): string {
   return actionType.replace(/_/g, ' ')
 }
 
+function normalizeTraceActionType(actionType: string): string {
+  if (actionType === 'skill_call' || actionType === 'skill_called' || actionType === 'tool_called') return 'tool_call'
+  if (actionType === 'skill_result') return 'tool_result'
+  return actionType
+}
+
 function formatClock(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -288,20 +294,21 @@ export function CaseTraceTimeline({
 
   // ── Single trace card (shared between flat and grouped views) ──
   const renderTraceCard = (trace: TraceRow) => {
-    const accent = ACCENTS[trace.actionType] ?? {
+    const actionType = normalizeTraceActionType(trace.actionType)
+    const accent = ACCENTS[actionType] ?? {
       stroke: '#a09888',
       fill: 'rgba(160, 152, 136, 0.06)',
       icon: MessageSquare,
     }
     const Icon = accent.icon
     const payload = parseTracePayload(trace)
-    const isUser = trace.actionType === 'user_message'
-    const isLlm = trace.actionType === 'llm_response'
-    const isSkill = trace.actionType === 'skill_result'
+    const isUser = actionType === 'user_message'
+    const isLlm = actionType === 'llm_response'
+    const isToolResult = actionType === 'tool_result'
     const isNoisy =
-      trace.actionType === 'stream_event' ||
-      trace.actionType === 'loop_decision' ||
-      trace.actionType === 'llm_request_start'
+      actionType === 'stream_event' ||
+      actionType === 'loop_decision' ||
+      actionType === 'llm_request_start'
 
     const userBody =
       isUser && payload && typeof payload.content === 'string'
@@ -310,8 +317,8 @@ export function CaseTraceTimeline({
           ? trace.detail
           : null
 
-    const skillLatency =
-      isSkill && payload && typeof payload.latencyMs === 'number' ? payload.latencyMs : null
+    const toolLatency =
+      isToolResult && payload && typeof payload.latencyMs === 'number' ? payload.latencyMs : null
 
     const showStructuredPayload =
       payload &&
@@ -341,7 +348,7 @@ export function CaseTraceTimeline({
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--fog)]">
-                  {formatActionLabel(trace.actionType)}
+                  {formatActionLabel(actionType)}
                 </p>
                 <p className="truncate text-[13px] font-medium text-[var(--mist)]">{trace.title}</p>
               </div>
@@ -370,10 +377,10 @@ export function CaseTraceTimeline({
               </>
             )}
 
-            {skillLatency != null && (
+            {toolLatency != null && (
               <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber/15 bg-amber/[0.06] px-2.5 py-1 text-[11px] font-medium tabular-nums text-amber/90">
                 <Clock className="h-3.5 w-3.5" aria-hidden />
-                {t('caseDetail.ms', { n: skillLatency })}
+                {t('caseDetail.ms', { n: toolLatency })}
               </p>
             )}
 
@@ -433,7 +440,7 @@ export function CaseTraceTimeline({
         const toolsWallMs = snap && typeof snap.toolsWallMs === 'number' ? snap.toolsWallMs : null
         const inTokens = snap && typeof snap.inputTokens === 'number' ? snap.inputTokens : 0
         const outTokens = snap && typeof snap.outputTokens === 'number' ? snap.outputTokens : 0
-        const skillTraces = group.traces.filter((t) => t.actionType === 'skill_result')
+        const toolTraces = group.traces.filter((t) => normalizeTraceActionType(t.actionType) === 'tool_result')
 
         return (
           <IterationGroupCard
@@ -444,7 +451,7 @@ export function CaseTraceTimeline({
             toolsWallMs={toolsWallMs}
             inputTokens={inTokens}
             outputTokens={outTokens}
-            skillCount={skillTraces.length}
+            toolCount={toolTraces.length}
             traces={group.traces}
             renderTraceCard={renderTraceCard}
             t={t}
@@ -462,7 +469,7 @@ function IterationGroupCard({
   toolsWallMs,
   inputTokens,
   outputTokens,
-  skillCount,
+  toolCount,
   traces,
   renderTraceCard,
   t,
@@ -473,7 +480,7 @@ function IterationGroupCard({
   toolsWallMs: number | null
   inputTokens: number
   outputTokens: number
-  skillCount: number
+  toolCount: number
   traces: TraceRow[]
   renderTraceCard: (trace: TraceRow) => ReactNode
   t: TranslateFn
@@ -507,7 +514,7 @@ function IterationGroupCard({
             })}
           </span>
         )}
-        <span className="text-[11px] text-fog/50">{t('caseDetail.iterationSkillsLabel', { n: skillCount })}</span>
+        <span className="text-[11px] text-fog/50">{t('caseDetail.iterationSkillsLabel', { n: toolCount })}</span>
         <ChevronDown className={`h-3.5 w-3.5 ml-auto text-fog/40 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden />
       </button>
       {expanded && (
