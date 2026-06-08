@@ -13,16 +13,29 @@ const h = vi.hoisted(() => {
       { id: 't3', agentConfigId: 'test-agent', name: 'orgb_tool', description: 'Test agent tool', mode: 'static', inputSchema: '{}', outputSchema: '{}', isConcurrencySafe: true, enabled: true, guardPhase: 'post', endpoint: null, httpMethod: 'POST', headers: null, timeoutMs: 8000, mockFixture: null, displayVerb: null, renderHints: null, toolCategory: null, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
+  const agentConfigs: Record<string, { id: string; orgId: string }> = {
+    'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
+    'test-agent': { id: 'test-agent', orgId: 'test-org' },
+  }
   const createdTools: Record<string, unknown>[] = []
   const mockGetSession = vi.fn()
 
-  return { toolsByAgent, createdTools, mockGetSession }
+  return { toolsByAgent, agentConfigs, createdTools, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
     return {
       orgId,
+      agentConfig: {
+        findUnique: vi.fn(async (args: any) => {
+          const id = args?.where?.id
+          const ac = h.agentConfigs[id]
+          if (!ac) return null
+          if (ac.orgId !== orgId) return null
+          return ac
+        }),
+      },
       raw: {
         tool: {
           findMany: vi.fn(async (args?: any) => {

@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import {
   toolCreateRequestSchema,
@@ -21,6 +22,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   parseQuery: true,
   async handler({ input, repo }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
 
     let tools = await repo.raw.tool.findMany({
       where: { agentConfigId },
@@ -76,6 +78,7 @@ export const POST = defineRoute<PostInput>({
   requireRole: ['admin', 'owner'],
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
+    await assertAgentInOrg(repo, agentConfigId)
 
     const stringifyField = (val: unknown): string | null => {
       if (val === null || val === undefined) return null

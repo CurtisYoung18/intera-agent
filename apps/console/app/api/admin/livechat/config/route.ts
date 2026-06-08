@@ -4,6 +4,7 @@
 
 import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
 import { z } from 'zod'
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 
   return defineRoute({
     method: 'GET',
-    async handler({}) {
+    async handler({ repo }) {
       if (!agentConfigId) {
         return apiOk({
           config: {
@@ -39,6 +40,8 @@ export async function GET(request: NextRequest) {
           },
         })
       }
+
+      await assertAgentInOrg(repo, agentConfigId)
 
       const config = await getLiveChatConfig(agentConfigId)
 
@@ -72,10 +75,12 @@ export async function PUT(request: NextRequest) {
     method: 'PUT',
     inputSchema: livechatConfigSchema,
     requireRole: ['admin', 'owner'],
-    async handler({ input, audit }) {
+    async handler({ input, audit, repo }) {
       if (!agentConfigId) {
         return apiOk({ ok: false, error: 'agentConfigId query param is required' })
       }
+
+      await assertAgentInOrg(repo, agentConfigId)
 
       // Preserve existing secrets when masked value is sent
       if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {

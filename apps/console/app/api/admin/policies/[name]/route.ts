@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 interface PolicyParams { name: string }
@@ -16,6 +17,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>, PolicyParams>({
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const policy = await repo.raw.policy.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })
@@ -40,6 +42,7 @@ export const PUT = defineRoute<UpdateInput, PolicyParams>({
   inputSchema: updateSchema,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const existing = await repo.raw.policy.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })
@@ -66,6 +69,7 @@ export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, PolicyParams>(
   parseQuery: true,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const existing = await repo.raw.policy.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })

@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 interface KnowledgeSourceParams { id: string }
@@ -21,6 +22,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>, KnowledgeSourcePa
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const source = await repo.raw.knowledgeSource.findFirst({
       where: { id: params.id, agentConfigId },
     })
@@ -49,6 +51,7 @@ export const PUT = defineRoute<UpdateInput, KnowledgeSourceParams>({
   inputSchema: updateSchema,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const { id } = params
     const existing = await repo.raw.knowledgeSource.findFirst({
       where: { id, agentConfigId },
@@ -82,6 +85,7 @@ export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, KnowledgeSourc
   parseQuery: true,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const { id } = params
     const existing = await repo.raw.knowledgeSource.findFirst({
       where: { id, agentConfigId },

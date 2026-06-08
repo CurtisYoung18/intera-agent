@@ -13,15 +13,28 @@ const h = vi.hoisted(() => {
       { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
+  const agentConfigs: Record<string, { id: string; orgId: string }> = {
+    'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
+    'test-agent': { id: 'test-agent', orgId: 'test-org' },
+  }
   const mockGetSession = vi.fn()
 
-  return { typesByAgent, mockGetSession }
+  return { typesByAgent, agentConfigs, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
     return {
       orgId,
+      agentConfig: {
+        findUnique: vi.fn(async (args: any) => {
+          const id = args?.where?.id
+          const ac = h.agentConfigs[id]
+          if (!ac) return null
+          if (ac.orgId !== orgId) return null
+          return ac
+        }),
+      },
       raw: {
         caseType: {
           findMany: vi.fn(async (args?: any) => {

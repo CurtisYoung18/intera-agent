@@ -4,6 +4,7 @@
 
 import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
 import { listGroups } from '@/lib/livechat/livechat-api'
@@ -13,10 +14,12 @@ export async function GET(request: NextRequest) {
 
   return defineRoute({
     method: 'GET',
-    async handler({}) {
+    async handler({ repo }) {
       if (!agentConfigId) {
         return apiOk({ groups: [], error: 'agentConfigId query param is required', code: 'missing_param' })
       }
+
+      await assertAgentInOrg(repo, agentConfigId)
 
       try {
         const config = await getLiveChatConfig(agentConfigId)

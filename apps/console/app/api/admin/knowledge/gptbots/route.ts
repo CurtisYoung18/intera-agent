@@ -3,6 +3,7 @@
 
 import { z } from 'zod'
 import { defineRoute, RouteError } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 const GPTBOTS_KB_API = 'https://api-sg.gptbots.ai/v1/bot/knowledge/base/page'
@@ -48,6 +49,7 @@ export const PUT = defineRoute({
   inputSchema: putSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, repo }) {
+    await assertAgentInOrg(repo, input.agentConfigId)
     await repo.raw.agentConfig.update({
       where: { id: input.agentConfigId },
       data: { gptbotsApiKey: input.apiKey || null },

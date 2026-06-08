@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
@@ -14,6 +15,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   parseQuery: true,
   async handler({ input, repo }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
 
     const policies = await repo.raw.policy.findMany({
       where: { agentConfigId },
@@ -39,6 +41,7 @@ export const POST = defineRoute<CreateInput>({
   inputSchema: createSchema,
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const guardrailConfigStr = fields.guardrailConfig
       ? (typeof fields.guardrailConfig === 'string' ? fields.guardrailConfig : JSON.stringify(fields.guardrailConfig))
       : null

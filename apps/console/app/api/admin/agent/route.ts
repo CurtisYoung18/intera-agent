@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { DEFAULT_MODEL, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
@@ -20,6 +21,9 @@ export const GET = defineRoute({
   inputSchema: getQuerySchema,
   async handler({ input, repo }) {
     const agentId = input.agentId ?? null
+    // Only assert when a client-supplied id is present; the no-id path uses the
+    // org-scoped findFirst({ isActive: true }) and stays within the caller's org.
+    if (agentId) await assertAgentInOrg(repo, agentId)
 
     let config = agentId
       // Use raw findUnique — `id` is globally unique, org scoping would miss cross-org configs
@@ -70,6 +74,10 @@ function agentUpdateHandler(agentId: string | null) {
     inputSchema: putSchema,
     requireRole: ['admin', 'owner'],
     async handler({ input, repo }) {
+    // Only assert when a client-supplied id is present; the no-id path uses the
+    // org-scoped findFirst({ isActive: true }) and stays within the caller's org.
+    if (agentId) await assertAgentInOrg(repo, agentId)
+
     await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
 
     const data: Record<string, unknown> = {}

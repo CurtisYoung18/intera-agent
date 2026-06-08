@@ -18,6 +18,7 @@ import type { CaseAgentLoop } from './case-agent-loop'
 import { OrchestratorAgent } from './orchestrator'
 import { generateCaseId } from '@/lib/utils'
 import { isInvestigableCaseType } from './case-type-slugs'
+import { escalationMessageFor, latestUserText } from './customer-messages'
 
 // ---------------------------------------------------------------------------
 // Context — dependencies the interceptor needs from AgentLoop
@@ -386,7 +387,7 @@ export async function processPendingGuardrailToolCalls(
   // Customer-facing fallback
   sendEvent({
     type: 'text_delta',
-    data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
+    data: escalationMessageFor(latestUserText(ctx.messages)),
     timestamp: new Date().toISOString(),
   })
   sendEvent({

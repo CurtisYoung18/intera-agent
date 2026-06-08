@@ -13,16 +13,29 @@ const h = vi.hoisted(() => {
       { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', description: 'Test agent only', hook: 'preTool', rule: '{}', enabled: true, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
+  const agentConfigs: Record<string, { id: string; orgId: string }> = {
+    'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
+    'test-agent': { id: 'test-agent', orgId: 'test-org' },
+  }
   const createdPolicies: Record<string, unknown>[] = []
   const mockGetSession = vi.fn()
 
-  return { policiesByAgent, createdPolicies, mockGetSession }
+  return { policiesByAgent, agentConfigs, createdPolicies, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
     return {
       orgId,
+      agentConfig: {
+        findUnique: vi.fn(async (args: any) => {
+          const id = args?.where?.id
+          const ac = h.agentConfigs[id]
+          if (!ac) return null
+          if (ac.orgId !== orgId) return null
+          return ac
+        }),
+      },
       raw: {
         policy: {
           findMany: vi.fn(async (args?: any) => {

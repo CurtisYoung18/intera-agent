@@ -25,8 +25,8 @@ describe.skip('repoForOrg — real PostgreSQL round-trip (requires local DB)', (
     })
     await prisma.agentConfig.createMany({
       data: [
-        { id: TEST_AGENT_A, orgId: TEST_ORG_A, version: 'v1', config: '{}' },
-        { id: TEST_AGENT_B, orgId: TEST_ORG_B, version: 'v1', config: '{}' },
+        { id: TEST_AGENT_A, orgId: TEST_ORG_A, version: 1, model: 'deepseek-v4-flash', memoryStrategy: '{}' },
+        { id: TEST_AGENT_B, orgId: TEST_ORG_B, version: 1, model: 'deepseek-v4-flash', memoryStrategy: '{}' },
       ],
       skipDuplicates: true,
     })

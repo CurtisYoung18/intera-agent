@@ -7,6 +7,8 @@
 > 🔥 **CURRENT PRIORITY (2026-06-04):** a **minimal, smooth, fully-functional internal-test version** for building agents — bar is "works · smooth · no regressions," NOT enterprise-grade. Punch-list ✅ delivered ([`doc/what's done/`](../what's%20done/)). Enterprise hardening program (G1–G11) **deferred** — direction shifted to internal-test smoothness, not enterprise SaaS.
 > 
 > 📋 **Architecture review (2026-06-04):** [`2026-06-04-arch-review-console-backend.md`](../what's%20done/2026-06-04-arch-review-console-backend.md) — comprehensive assessment of console↔backend cooperation. ✅ **Migration program COMPLETE** — 58/60 routes use `defineRoute`, 11 admin pages at zero raw `fetch()`. Remaining gaps: G5 observability, G4 Redis, G2-RLS, G6 job queue, G7 data-model, G10 loop decomposition.
+>
+> 🧭 **Long-term architecture review (2026-06-08):** [`doc/2026-06-08-long-term-architecture-review.md`](../2026-06-08-long-term-architecture-review.md) — the "why we plateaued + the sequence out." Thesis: consolidation + foundation, not more features. Owner-approved 2026-06-08: **(P0)** safe-local-DB foundation lane runs **in parallel** with the Procedure refactor's additive phases; Procedure Phases 4–6 gated on it. Live landmines moved to [`HARD_BUGS.md`](./HARD_BUGS.md) (F8 i18n HIGH, ChunkLoadError, playground god-component, isolation-seam gap §L5). **Next architect deliverable:** P0 foundation plan (`doc/to-do/2026-06-08-foundation-safe-local-db.md`).
 
 ---
 
@@ -16,10 +18,14 @@
 
 | Lane | Session | Task | Files owned | Started |
 |------|---------|------|-------------|---------|
+| **BUGFIX-F8** | architect-leader | Customer-facing escalation message i18n (HARD_BUGS §L1) | `lib/agent/loop.ts`, `lib/agent/tool-interceptor.ts`, NEW `lib/agent/customer-messages.ts` + test | 2026-06-08 |
+| **BUGFIX-CHUNK** | architect-leader | ChunkLoadError deploy-window recovery (HARD_BUGS §L2) | NEW `app/global-error.tsx`, NEW `app/error.tsx` | 2026-06-08 |
+| **AUDIT-L5** | architect-leader | Tenant-isolation audit, agent-scoped model (HARD_BUGS §L5) | read-only audit + NEW guard test; route edits only if leak confirmed | 2026-06-08 |
 | ~~K1~~ | ~~architect~~ | ~~Knowledge page redesign~~ | ~~`page.tsx` (full rewrite)~~ | ~~2026-06-05~~ |
 | ~~M1~~ | ~~architect→coding~~ | ~~Model page refactor Phases 1-6~~ | ~~see plan~~ | ~~2026-06-08~~ |
 
-> **2026-06-08:** Model Page Long-Term Refactor ✅ SHIPPED — 6 phases, 606/634 keyless green, tsc 0, build ✓, deploy ✓, migration applied. See [2026-06-08-model-page-long-term-refactor.md](../what's%20done/2026-06-08-model-page-long-term-refactor.md). **Residual:** Phase-2 browser verification skipped (Playwright locked).
+> **2026-06-08:** Model Page Long-Term Refactor ✅ SHIPPED — keyless green, tsc 0, build ✓, deploy ✓, migration applied. See [2026-06-08-model-page-long-term-refactor.md](../what's%20done/2026-06-08-model-page-long-term-refactor.md). **Residual:** Phase-2 browser verification skipped (Playwright locked).
+> ⚠️ **Correction (architect 2026-06-08):** the model page did **not** ship a draft→publish gate. The gate was built then **removed** (commit `f22adf59` "simplify model page — direct Save+cache-bust, remove draft gate"); the page autosaves directly to the active version (`model/page.tsx` → `apiClient PUT /api/admin/agent` + `bustConfigCache`). **`useDraftGate` does not exist in code.** Any plan that says "reuse the model-page `useDraftGate`" (e.g. the Procedure refactor's Phase 6) has an unfounded dependency — see that plan's annotated Phase 6 and [`doc/2026-06-08-long-term-architecture-review.md §2`](../2026-06-08-long-term-architecture-review.md).
 >
 > **2026-06-05:** Playground Trace & UX Hardening ✅ SHIPPED — architect-reviewed. 22 commits, Wave 0 (8 lanes) + Wave 1 (2 lanes). tsc clean, keyless 620/641 pass. See [2026-06-05-playground-trace-ux-hardening.md](../what's%20done/2026-06-05-playground-trace-ux-hardening.md).
 >

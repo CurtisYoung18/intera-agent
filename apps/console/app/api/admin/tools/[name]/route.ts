@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import { defineRoute, ForbiddenError, NotFoundError } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
   toolUpdateRequestSchema,
@@ -35,6 +36,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
     const tool = await repo.raw.tool.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })
@@ -55,6 +57,7 @@ export const PUT = defineRoute<PutInput, ToolParams>({
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
+    await assertAgentInOrg(repo, agentConfigId)
 
     const existing = await repo.raw.tool.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
@@ -106,6 +109,7 @@ export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
+    await assertAgentInOrg(repo, agentConfigId)
     if (isProtected(params.name)) {
       throw new ForbiddenError(`Cannot delete protected tool "${params.name}"`)
     }

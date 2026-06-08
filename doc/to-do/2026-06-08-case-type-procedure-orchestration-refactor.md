@@ -5,6 +5,11 @@
 > Read [`GENERIC_HANDOFF.md §0`](../handoffs/GENERIC_HANDOFF.md) first. This plan touches **`schema.prisma` (the documented hotspot)** and the **core agent loop / policy engine** — declare lanes in `MASTER_BUILD_HANDOFF.md` Active Lanes before any file is touched, and sequence the schema + loop phases as single owned lanes.
 >
 > **⛓️ Hard dependency:** This plan overlaps [`2026-06-08-model-page-long-term-refactor.md`](./2026-06-08-model-page-long-term-refactor.md) on `loop.ts`, `buildModePrompt.ts`, `prompt-resolver.ts`, and the case-types pages. **Do not run this plan's Phase 4–6 until the model-page refactor has landed (esp. its Phase 5 schema + Phase 2 prompt cleanup).** Phases 0–3 here are additive and can run in parallel on non-overlapping files if lanes are declared. This is "page 2/N" of the long-term console pass (playground was 1/N).
+>
+> 🧭 **Architect corrections (owner-approved 2026-06-08, from [`doc/2026-06-08-long-term-architecture-review.md`](../2026-06-08-long-term-architecture-review.md)):**
+> 1. **No draft-gate.** Phase 6 ships against the existing version system, not a `useDraftGate` hook (it was removed and does not exist). §3.5 + Phase 6 updated.
+> 2. **Parallel sequencing with the foundation lane (P0).** Phases 0–3 (additive) run **concurrently with the safe-local-DB / dev-prod-parity foundation lane** on non-overlapping files. **Gate Phases 4–6 on the foundation landing** — they need real local-DB e2e and SELECT-only prod (memory `project_local_db_is_production`), which the foundation provides. Without it, Phase 0/2/3/5 inherit the verification-skip pattern.
+> 3. **Fold in loop decomposition (G10/TODO-17).** Phase 5 already rewrites `loop.ts`; collapse the dual ReAct loops (`react-loop.ts`/`sub-agent.ts` vs the main `do…while`) and the misnamed `ConversationLoop`/`CaseAgentLoop` strategy objects into "Core loop + `ProcedureExecutor` on one engine" — don't defer it.
 
 ---
 
@@ -123,7 +128,7 @@ New `apps/console/lib/agent/procedure-executor.ts` replacing `stage-executor.ts`
 
 ### 3.5 Console — Procedure Builder + guardrail activation
 
-`apps/console/app/admin/case-types/[name]/page.tsx`: replace stage/JSON editors with a **Procedure Builder** — a drag-reorderable step list; each row = `{ action (select), target (typed picker), guidance (text), when (text), required (toggle) }`; plus a **guardrail activation** multi-select sourced from the agent's guardrail library (orphan-safe). Reuse the **draft→publish gate** the model-page refactor introduces (case-types is already its declared fast-follow — [model-page doc §2 D2](./2026-06-08-model-page-long-term-refactor.md)). Delete `sub-agent-form.tsx` + `sub-agent-summary-list.tsx`.
+`apps/console/app/admin/case-types/[name]/page.tsx`: replace stage/JSON editors with a **Procedure Builder** — a drag-reorderable step list; each row = `{ action (select), target (typed picker), guidance (text), when (text), required (toggle) }`; plus a **guardrail activation** multi-select sourced from the agent's guardrail library (orphan-safe). ~~Reuse the draft→publish gate the model-page refactor introduces.~~ **CORRECTED (architect, owner-approved 2026-06-08): there is no draft→publish gate — the model page's gate was built then removed (`f22adf59`); `useDraftGate` does not exist.** Ship the Procedure Builder against the **existing version system** (`agent-version-picker` fork/activate), the same way every other config page persists today. Delete `sub-agent-form.tsx` + `sub-agent-summary-list.tsx`.
 
 ## 4. Affected-files map (ripple — enumerate so nothing silently breaks)
 
@@ -178,10 +183,10 @@ New `apps/console/lib/agent/procedure-executor.ts` replacing `stage-executor.ts`
 - **Verify:** `db:generate` → `build:console` → keyless suite; deploy; prod smoke — open **each** of the 6 re-authored case types and run to resolution; confirm guardrails + human handoff still fire.
 
 ### Phase 6 — Console Procedure Builder + guardrail activation UI
-- **Goal:** operator can author Procedures + activate guardrails, behind the draft→publish gate.
-- **Steps:** §3.5; reuse model-page `useDraftGate`; delete sub-agent admin components.
-- **Guard tests (e2e):** build a 4-step procedure + activate 2 guardrails → publish → run in playground → steps execute in order, deactivated guardrails silent; editing the live version forces a draft (gate).
-- **Verify:** two-phase; prod — author a new case type as a Procedure from scratch, publish, run a live turn.
+- **Goal:** operator can author Procedures + activate guardrails.
+- **Steps:** §3.5; **ship against the existing version system** (`agent-version-picker` fork/activate) — **NOT** a `useDraftGate` hook (it doesn't exist; owner-approved 2026-06-08 to drop the gate); delete sub-agent admin components.
+- **Guard tests (e2e):** build a 4-step procedure + activate 2 guardrails → save → run in playground → steps execute in order, deactivated guardrails silent.
+- **Verify:** two-phase; prod — author a new case type as a Procedure from scratch, save, run a live turn.
 
 ## 6. Sequencing, risk, rollback
 - **Order is load-bearing:** 0 → 1 → 2 → 3 → (model-page refactor lands) → 4 → 5 → 6. Phases 1–3 are additive (new columns/paths) and revert by commit; they may run in parallel with model-page on **non-overlapping** files (declare lanes; do **not** co-edit `loop.ts`/`buildModePrompt.ts`).
@@ -200,5 +205,5 @@ New `apps/console/lib/agent/procedure-executor.ts` replacing `stage-executor.ts`
 - Guardrails are **case-type-activated** (`CaseType.guardrails[]`) over a single agent-global registry + always-on safety floor; `requireHumanReview` is a derived guardrail; orphan refs validated.
 - `dispatch_case_agent` opens a case inline with **no** background agent; `needsContinuation` and dead `ChatMemory` columns removed.
 - 6 case types re-authored as Procedures and **prod-verified** end-to-end (incl. guardrail trip + human handoff).
-- Console **Procedure Builder** + guardrail activation live behind draft→publish.
+- Console **Procedure Builder** + guardrail activation live on the existing version system (fork/activate); no draft-gate dependency.
 - Handoffs updated: `GENERIC_HANDOFF §1` engine description corrected; `MASTER_BUILD_HANDOFF` status + this guide moved to `doc/what's done/`; schema-comment/`executionMode` drift removed.

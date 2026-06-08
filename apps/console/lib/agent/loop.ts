@@ -46,6 +46,7 @@ import { selectPromptAndTools } from './prompt-selector'
 import { buildToolResultMessageFromSynthesis, buildPolicyFeedbackMessage } from './tool-result-manager'
 import { interceptToolResults, processPendingGuardrailToolCalls as guardrailToolCalls, processDispatchSubagent as dispatchSubagent, type ToolInterceptorContext } from './tool-interceptor'
 import { runReActLoop } from './react-loop'
+import { escalationMessageFor, latestUserText } from './customer-messages'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -825,7 +826,7 @@ export class AgentLoop {
               // Notify the customer before exiting — a silent escalation is confusing.
               sendEvent({
                 type: 'text_delta',
-                data: '非常抱歉，您的问题需要由人工专员协助处理。我们已为您创建工单，专员将尽快与您联系，感谢您的耐心等待。',
+                data: escalationMessageFor(latestUserText(this.messages)),
                 timestamp: new Date().toISOString(),
               })
               sendEvent({

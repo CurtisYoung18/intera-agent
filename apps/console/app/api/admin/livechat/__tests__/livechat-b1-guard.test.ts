@@ -10,8 +10,12 @@ const h = vi.hoisted(() => {
     'agent_default_v1': { agentConfigId: 'agent_default_v1', botAccessToken: 'tok_def', licenseId: 'lic_def', webhookSecret: 'sec_def', showSkillStatus: true, enabled: true, region: 'dal', transferGroupId: 123 },
     'test-agent': { agentConfigId: 'test-agent', botAccessToken: 'tok_orgb', licenseId: 'lic_orgb', webhookSecret: 'sec_orgb', showSkillStatus: false, enabled: false, region: 'fra', transferGroupId: 456 },
   }
+  const agentConfigs: Record<string, { id: string; orgId: string }> = {
+    'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
+    'test-agent': { id: 'test-agent', orgId: 'orgB' },
+  }
   const mockGetSession = vi.fn()
-  return { configs, mockGetSession }
+  return { configs, agentConfigs, mockGetSession }
 })
 
 // ── Mock repoForOrg ──
@@ -19,6 +23,15 @@ vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
     return {
       orgId,
+      agentConfig: {
+        findUnique: vi.fn(async (args: any) => {
+          const id = args?.where?.id
+          const ac = h.agentConfigs[id]
+          if (!ac) return null
+          if (ac.orgId !== orgId) return null
+          return ac
+        }),
+      },
       raw: {},
     } as any
   },

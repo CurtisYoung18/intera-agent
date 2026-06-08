@@ -1,6 +1,6 @@
 # Generic Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
+**Last updated:** 2026-06-08 (architect: reconciled with the 2026-06-06 agent-scoped pivot) | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
 
 > **Two handoffs live in this folder, and only two:**
 > 1. **`GENERIC_HANDOFF.md`** (this file) — stable project context. Changes rarely.
@@ -77,7 +77,9 @@ git pull --rebase origin main          # integrate other lanes' commits
 
 **Intera Agent** is a multi-tenant SaaS customer-service AI platform. Next.js monorepo (`apps/console` + `packages/shared`), self-hosted on an Ubuntu box, served at `https://demo.anytrans.ai`.
 
-The AI engine (`apps/console/lib/agent/loop.ts`) is a ReAct loop with streaming tool execution, a stage-based state machine, sub-agent orchestration, a policy engine, and a LiveChat bridge.
+The AI engine (`apps/console/lib/agent/loop.ts`) is a ReAct loop with streaming tool execution, a stage-based state machine, a policy/guardrail engine, and a LiveChat bridge. (The sub-agent fan-out is being retired and the stage machine replaced by a Procedure model — see [`doc/2026-06-08-long-term-architecture-review.md`](../2026-06-08-long-term-architecture-review.md) and [`doc/to-do/2026-06-08-case-type-procedure-orchestration-refactor.md`](../to-do/2026-06-08-case-type-procedure-orchestration-refactor.md).)
+
+> ⚠️ **2026-06-06 data-model pivot — config is now AGENT-scoped, not org-scoped.** Migration `20260606000000_agent_scoped_architecture` moved `Tool`/`Policy`/`CaseType`/`KnowledgeSource`/`ChannelBinding` from `org_id` to `agent_config_id` (old `org_id` columns dropped, old rows deleted), and dropped `policyHooks` + `capabilityBindings` from `AgentConfig`. **Consequence:** the `repoForOrg`/`scopedModel` proxy scopes by `orgId`, which these models no longer carry — so sub-module routes use `repo.raw.*` and scope by `agentConfigId` manually, with an orgId→agentConfig ownership check as the real isolation boundary. Treat that boundary as **unaudited** (HARD_BUGS §L5). `capabilityBindings` and `policyHooks` are **gone** — any doc that still mentions them (incl. older sections of this file's siblings and `v1.3` notes) is stale.
 
 ```
 apps/console/             ← the only app (apps/chat was deleted post-migration)
@@ -93,7 +95,7 @@ apps/console/             ← the only app (apps/chat was deleted post-migration
   components/             ← React (sidebar, docked-preview, admin editors)
 
 packages/shared/
-  prisma/schema.prisma    ← ~21 models (Organization, AgentConfig, Case, ApiKey, …)
+  prisma/schema.prisma    ← 22 models (Organization, AgentConfig, Case, ApiKey, …). AgentConfig owns Tool/Policy/CaseType/KnowledgeSource/ChannelBinding (agent-scoped since 2026-06-06)
   types/index.ts          ← SSEEvent, SkillDefinition, AgentConfigData, …
   defaults/index.ts       ← default system prompts, memory strategies, policy hooks
   ui/intera-logo.tsx      ← animated wordmark (INTERA ↔ AI, one fluid transition)
