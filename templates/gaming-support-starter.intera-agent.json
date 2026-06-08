@@ -1,0 +1,393 @@
+{
+  "schemaVersion": "intera.agentTemplate.v1",
+  "metadata": {
+    "templateId": "gaming_support_starter",
+    "name": "Gaming Support Starter",
+    "industry": "gaming",
+    "locales": ["en-US", "zh-CN"],
+    "publisher": "Intera",
+    "license": "internal-delivery",
+    "marketplace": {
+      "category": "customer-support",
+      "tags": ["gaming", "igaming", "support", "starter"]
+    }
+  },
+  "agent": {
+    "name": "Gaming Support Starter",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.5,
+    "thinkingBudget": 4096,
+    "maxIterations": 20,
+    "maxOutputTokens": 4096,
+    "coreSystemPrompt": "You are Intera, a customer service assistant for a gaming support desk. Respond in the customer's language, collect missing facts through Tools, never invent account data, and transfer to a human when evidence conflicts or policy boundaries require it.",
+    "memoryStrategy": {
+      "enableChatMemory": true,
+      "maxRecentTraces": 20
+    }
+  },
+  "caseTypes": [
+    {
+      "type": "deposit_issue",
+      "displayName": "Deposit not credited",
+      "description": "Customer says a deposit or top-up was charged but did not appear in their gaming balance.",
+      "icon": "money",
+      "requiredFacts": ["member_id", "amount", "currency", "payment_method", "approximate_time"],
+      "defaultGoal": "Collect deposit details, check platform evidence, and escalate when the payment evidence is conflicting or incomplete.",
+      "escalateOn": ["conflict", "missing_payment_provider_status"],
+      "enabled": true,
+      "maxAutoTurns": 8,
+      "procedure": {
+        "steps": [
+          {
+            "id": "collect_deposit_details",
+            "action": "ask",
+            "target": "deposit_details",
+            "guidance": "Collect member id, amount, currency, payment method, and approximate deposit time.",
+            "required": true
+          },
+          {
+            "id": "lookup_latest_deposit",
+            "action": "use",
+            "target": "get_latest_deposit",
+            "guidance": "Read the latest platform-side deposit record before drawing a conclusion.",
+            "required": true
+          },
+          {
+            "id": "decide_deposit_status",
+            "action": "decide",
+            "guidance": "Compare the customer claim with platform evidence and mark conflicts for human review."
+          },
+          {
+            "id": "handoff_if_conflict",
+            "action": "escalate",
+            "target": "create_human_task",
+            "when": "Platform evidence is conflicting, unavailable, or requires manual payment-ops action."
+          },
+          {
+            "id": "explain_deposit_next_step",
+            "action": "finalize",
+            "guidance": "Explain the current status, cite evidence, and avoid promising compensation."
+          }
+        ]
+      }
+    },
+    {
+      "type": "withdrawal_status",
+      "displayName": "Withdrawal status",
+      "description": "Customer asks why a withdrawal is pending, rejected, or unavailable.",
+      "icon": "withdrawal",
+      "requiredFacts": ["member_id", "withdrawal_id"],
+      "defaultGoal": "Check withdrawal status and turnover requirements before explaining next steps.",
+      "escalateOn": ["conflict", "manual_review"],
+      "enabled": true,
+      "maxAutoTurns": 8,
+      "procedure": {
+        "steps": [
+          {
+            "id": "collect_withdrawal_details",
+            "action": "ask",
+            "target": "withdrawal_details",
+            "guidance": "Collect member id and withdrawal id if they are missing.",
+            "required": true
+          },
+          {
+            "id": "lookup_withdrawal_status",
+            "action": "use",
+            "target": "get_withdrawal_status",
+            "guidance": "Check current withdrawal status and turnover requirements.",
+            "required": true
+          },
+          {
+            "id": "explain_withdrawal_next_step",
+            "action": "finalize",
+            "guidance": "Explain status and next step without making unsupported payout promises."
+          }
+        ]
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "ask_user_questions",
+      "description": "Collect structured information from the customer through a channel form.",
+      "mode": "system_managed",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fields": { "type": "array" },
+          "title": { "type": "string" }
+        },
+        "required": ["fields"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "answers": { "type": "object" }
+        }
+      },
+      "toolCategory": "operational",
+      "isConcurrencySafe": true,
+      "enabled": true
+    },
+    {
+      "name": "create_human_task",
+      "description": "Create a structured handoff task for a human support operator.",
+      "mode": "system_managed",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "queue": { "type": "string" },
+          "question": { "type": "string" }
+        },
+        "required": ["queue", "question"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      },
+      "toolCategory": "operational",
+      "isConcurrencySafe": true,
+      "enabled": true
+    },
+    {
+      "name": "get_latest_deposit",
+      "description": "Static starter fixture for the latest deposit state. Replace with the customer's HTTP API during delivery.",
+      "mode": "static_fixture",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": { "type": "string" }
+        },
+        "required": ["member_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "providerStatus": { "type": "string" }
+        }
+      },
+      "staticFixture": {
+        "status": "pending",
+        "amount": 100,
+        "currency": "USDT",
+        "providerStatus": "processing"
+      },
+      "displayVerb": {
+        "text": "Checking deposit",
+        "icon": "scan"
+      },
+      "isConcurrencySafe": true,
+      "enabled": true
+    },
+    {
+      "name": "get_withdrawal_status",
+      "description": "Static starter fixture for withdrawal status and turnover requirements.",
+      "mode": "static_fixture",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": { "type": "string" },
+          "withdrawal_id": { "type": "string" }
+        },
+        "required": ["member_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "turnoverRequired": { "type": "number" },
+          "turnoverCompleted": { "type": "number" }
+        }
+      },
+      "staticFixture": {
+        "status": "pending_turnover",
+        "turnoverRequired": 500,
+        "turnoverCompleted": 320
+      },
+      "displayVerb": {
+        "text": "Checking withdrawal",
+        "icon": "scan"
+      },
+      "isConcurrencySafe": true,
+      "enabled": true
+    }
+  ],
+  "hooks": [
+    {
+      "name": "require_investigation_before_handoff",
+      "displayName": "Require investigation before handoff",
+      "description": "Block human handoff until at least one relevant investigation Tool has run.",
+      "checkpoint": "PreToolUse",
+      "handlerKind": "declarative",
+      "handler": {
+        "kind": "declarative",
+        "check": {
+          "kind": "rule",
+          "match": { "tools": ["create_human_task"] },
+          "requireToolsAny": ["get_latest_deposit", "get_withdrawal_status"]
+        },
+        "effect": {
+          "decision": "block",
+          "guidance": "Run the relevant lookup Tool before transferring to a human."
+        }
+      },
+      "enabled": true,
+      "severity": "high"
+    },
+    {
+      "name": "conflict_requires_human",
+      "displayName": "Conflict requires human",
+      "description": "Escalate when platform evidence conflicts with the customer report.",
+      "checkpoint": "PostToolUse",
+      "handlerKind": "declarative",
+      "handler": {
+        "kind": "declarative",
+        "check": {
+          "kind": "ai",
+          "evaluationPrompt": "Check whether the Tool output contradicts the customer report or is too ambiguous for a safe answer."
+        },
+        "effect": {
+          "decision": "escalate",
+          "guidance": "Create a human handoff when evidence is conflicting or ambiguous."
+        }
+      },
+      "enabled": true,
+      "severity": "high"
+    },
+    {
+      "name": "no_compensation_promise",
+      "displayName": "No compensation promise",
+      "description": "Prevent unsupported refund, bonus, or compensation promises in customer-visible replies.",
+      "checkpoint": "Stop",
+      "handlerKind": "declarative",
+      "handler": {
+        "kind": "declarative",
+        "check": {
+          "kind": "ai",
+          "evaluationPrompt": "Block if the draft promises refunds, bonuses, credits, or payout timing without explicit human approval or platform evidence."
+        },
+        "effect": {
+          "decision": "block",
+          "guidance": "Do not promise compensation. Explain evidence and route to a human if authorization is required."
+        }
+      },
+      "enabled": true,
+      "severity": "critical"
+    }
+  ],
+  "hookBindings": [
+    {
+      "hookName": "require_investigation_before_handoff",
+      "scopeType": "agent",
+      "scopeKey": "agent",
+      "enabled": true
+    },
+    {
+      "hookName": "conflict_requires_human",
+      "scopeType": "caseType",
+      "scopeKey": "caseType:deposit_issue",
+      "caseTypeName": "deposit_issue",
+      "enabled": true
+    },
+    {
+      "hookName": "conflict_requires_human",
+      "scopeType": "caseType",
+      "scopeKey": "caseType:withdrawal_status",
+      "caseTypeName": "withdrawal_status",
+      "enabled": true
+    },
+    {
+      "hookName": "no_compensation_promise",
+      "scopeType": "procedureStep",
+      "scopeKey": "procedureStep:deposit_issue:explain_deposit_next_step",
+      "caseTypeName": "deposit_issue",
+      "procedureStepId": "explain_deposit_next_step",
+      "enabled": true
+    },
+    {
+      "hookName": "no_compensation_promise",
+      "scopeType": "procedureStep",
+      "scopeKey": "procedureStep:withdrawal_status:explain_withdrawal_next_step",
+      "caseTypeName": "withdrawal_status",
+      "procedureStepId": "explain_withdrawal_next_step",
+      "enabled": true
+    },
+    {
+      "hookName": "conflict_requires_human",
+      "scopeType": "tool",
+      "scopeKey": "tool:get_latest_deposit",
+      "toolName": "get_latest_deposit",
+      "enabled": true
+    },
+    {
+      "hookName": "conflict_requires_human",
+      "scopeType": "tool",
+      "scopeKey": "tool:get_withdrawal_status",
+      "toolName": "get_withdrawal_status",
+      "enabled": true
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "deposit_pending_handoff",
+      "displayName": "Deposit pending handoff",
+      "description": "Customer reports a missing deposit that remains pending in platform evidence.",
+      "locale": "en-US",
+      "tags": ["deposit", "handoff"],
+      "turns": [
+        {
+          "role": "user",
+          "content": "My USDT deposit was charged but my balance is still not updated."
+        }
+      ],
+      "expected": {
+        "caseType": "deposit_issue",
+        "toolsCalled": ["ask_user_questions", "get_latest_deposit"],
+        "hooks": [
+          {
+            "hookName": "no_compensation_promise",
+            "checkpoint": "Stop"
+          }
+        ],
+        "humanTransfer": true,
+        "forbiddenPhrases": ["we will refund", "guaranteed payout"]
+      },
+      "enabled": true
+    },
+    {
+      "name": "withdrawal_turnover_explained",
+      "displayName": "Withdrawal turnover explained",
+      "description": "Customer asks why withdrawal is unavailable and the fixture shows turnover is incomplete.",
+      "locale": "en-US",
+      "tags": ["withdrawal", "turnover"],
+      "turns": [
+        {
+          "role": "user",
+          "content": "Why can't I withdraw right now?"
+        }
+      ],
+      "expected": {
+        "caseType": "withdrawal_status",
+        "toolsCalled": ["ask_user_questions", "get_withdrawal_status"],
+        "humanTransfer": false,
+        "requiredPhrases": ["turnover"]
+      },
+      "enabled": true
+    }
+  ],
+  "secrets": [],
+  "legacy": {
+    "caseTypes": [],
+    "policies": [],
+    "guardrails": [],
+    "skills": [],
+    "stageConfigs": [],
+    "subAgents": []
+  }
+}
