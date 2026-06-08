@@ -139,6 +139,14 @@ model CaseType {
   /// Max auto-continuation turns in SOP mode (prevents infinite loops)
   sopMaxAutoTurns Int     @default(10)
 
+  // ── Procedure refactor (additive, Phase 1) ── old stage fields above stay until Phase 5.
+  /// JSON: Procedure (ordered ProcedureStep[]). When present, the case runs the single-agent Procedure path.
+  procedure    String?
+  /// JSON: string[] — activated guardrail names (case-type-scoped over the agent-global registry).
+  guardrails   String  @default("[]")
+  /// Safety bound on auto-continuation turns (replaces sopMaxAutoTurns).
+  maxAutoTurns Int     @default(10)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
