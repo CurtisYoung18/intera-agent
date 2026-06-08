@@ -1,7 +1,6 @@
 # Hard Bugs & Landmines Registry
 
-> **Last updated:** 2026-06-08 (architect — code-review pass: verified L1 fixed-in-tree, escalated L5 to confirmed-exploitable, added L6/L7. See signed §"Architect code-review pass" at the bottom).
-> **Earlier 2026-06-08:** removed the two verified-fixed bugs per owner; only OPEN landmines remain tracked.
+> **Last updated:** 2026-06-08 (coding team: L1/L2/L5 shipped `5bd7326b`; L6/L7 remain open).
 > **Scope:** this file now tracks **open** landmines live in the tree. Fixed-and-verified bugs are reduced to a one-line archive pointer (full write-ups removed once confirmed).
 > **Line numbers drift** — cite by `file:symbol`/string, verify the symbol before relying on a line.
 
@@ -11,6 +10,9 @@
 
 - **Playground chat history leaks across org switch** — fixed `88ac4682` (localStorage keys scoped to `userId(+agentId)` + `prevOrgIdRef` org-switch detection). Re-verified present: `playground/page.tsx` scoped-key factory + `isOrgSwitch` clear path.
 - **Tool-use renderHint cards disappear after playground refresh** — fixed `570e823e`, `43f13f9a` (`renderHints` carried through the full SSE → trace payload → restore pipeline). Re-verified present: `streaming-tool-executor.ts` push sites, `loop.ts` skill_result payload, `playground/page.tsx` restore.
+- **L1 — Hardcoded Chinese escalation message (F8)** — fixed `5bd7326b`. `customer-messages.ts` locale-aware zh/en detector; hardcoded Mandarin replaced by `escalationMessageFor(latestUserText(…))` in `loop.ts` + `tool-interceptor.ts`. Residual caveat: `detectCustomerLocale` is zh/en-only on CJK Han range — JA kanji matches zh; KO/TH/AR fall to en. Flag if JA/KO tenant onboarded.
+- **L2 — ChunkLoadError deploy-window recovery** — fixed `5bd7326b`. `global-error.tsx` + `error.tsx` error boundaries with `sessionStorage`-debounced auto-reload; shared logic in `app/_lib/chunk-error.ts`.
+- **L5 — Tenant-isolation cross-org read/write exploit** — fixed `5bd7326b`. `assertAgentInOrg()` guard (joining `agentConfigId → AgentConfig.orgId` via org-scoped proxy, 404 on mismatch) wired into all 11 sub-module admin routes: `tools`, `policies`, `case-types`, `knowledge/sources`, `knowledge/gptbots`, `livechat/config`, `livechat/groups`, `agent`. Red reproduction test (`cross-org-isolation.test.ts`) confirms the hole pre-fix; existing route tests updated with `agentConfig` mock.
 
 ---
 
@@ -18,19 +20,9 @@
 
 > Confirmed-present as of 2026-06-08. Severity = customer/tenant impact, not effort.
 
-### L1 — Hardcoded Chinese escalation message (F8) — 🟢 FIXED IN WORKING TREE, **uncommitted** (verify + commit + close)
+### L1 — ✅ RESOLVED (see archive above)
 
-~~A customer-facing escalation string is hardcoded in Mandarin in two production paths.~~ **Re-verified in code 2026-06-08 (architect): both call sites now route through a locale-aware source.** The coding team landed the fix but it is **not yet committed** (untracked `apps/console/lib/agent/customer-messages.ts` + modified `loop.ts`/`tool-interceptor.ts` in `git status`):
-
-- `apps/console/lib/agent/loop.ts:829` → `escalationMessageFor(latestUserText(this.messages))` (max-nudges escalation).
-- `apps/console/lib/agent/tool-interceptor.ts:390` → `escalationMessageFor(latestUserText(ctx.messages))` (guardrail/legacy escalation fallback).
-- The Mandarin literal now lives **once**, as the `zh` value in `customer-messages.ts:29` (its intended home); `grep '您的问题需要由人工专员协助处理'` returns that single hit.
-
-**Action:** commit the fix and close L1. **Residual caveat before closing:** `detectCustomerLocale` (`customer-messages.ts:18`) is a deliberate zh/en-only branch on the CJK Han range `[一-鿿]`. Two known gaps to confirm are acceptable for the current tenant set — (a) Japanese kanji matches the Han range → a JA customer is served the **zh** string; (b) Korean/Thai/Arabic etc. fall through to **en**. Documented as intentional, but flag if a JA/KO tenant is onboarded.
-
-### L2 — No `ChunkLoadError` recovery on deploy window — 🟠 MEDIUM
-
-`grep ChunkLoadError` across `apps/console/app` + `apps/console/components` = **zero hits**. On deploy, hashed chunk filenames change; a client mid-session requesting an old chunk gets a 400/404 with no retry/reload boundary → white screen until manual refresh. The internal-test "deploy freely" posture makes this hit often. Fix: an error boundary that detects chunk-load failure and does a one-time hard reload.
+### L2 — ✅ RESOLVED (see archive above)
 
 ### L3 — `playground/page.tsx` god-component — 🟠 MEDIUM (maintainability)
 
@@ -40,16 +32,7 @@
 
 The AC2 fix is present — `trace-aggregator.ts` `deriveStatus` reads structured `payload.policyOutcome` before the legacy `detail` string (~L57-77), so a fired guardrail derives `block`/`warn` (no longer always-green). But live-prod confirm is "pending a guardrail-configured agent" — and prod has only 2 policies on `agent_default_v1`, none wired as a tripping guardrail yet (DB inventory 2026-06-08). Close it once a guardrail-bearing agent exists in prod.
 
-### L5 — Tenant-isolation seam vs. agent-scoped data model — coherence gap (investigate) — see [[project_agent_scoped_pivot]]
-
-The 2026-06-06 agent-scoped migration dropped `org_id` from `policies`/`tools`/`case_types`/`knowledge_sources`/`channel_bindings` (confirmed in prod DB 2026-06-08: `case_types` has `agent_config_id`, no `org_id`). The isolation proxy `repoForOrg`/`scopedModel` injects **`orgId`**, which these models no longer carry → sub-module routes use `repo.raw.*` and scope by `agentConfigId` ad hoc (commits `ef56523a`/`6954f5db`). The orgId→agentConfig **ownership check** is now the real isolation boundary, enforced ad hoc, not at the seam. ~~**Not proven exploitable**~~ Prod currently has 2 orgs (`default`/Test, `demo`/Demo) — a real multi-tenant surface.
-
-> **🔺 ESCALATED 2026-06-08 (architect code-review): CONFIRMED EXPLOITABLE — promote to 🔴 HIGH.** L5 is no longer "unaudited / not proven." Verified in code + a red reproduction test now exists.
-> - **The hole, in code:** `app/api/admin/tools/route.ts` `GET`/`POST` pass the **client-supplied** `agentConfigId` (query/body) straight into `repo.raw.tool.findMany/create` with **no check that it belongs to `repo.orgId`** (the session's org). `repo.raw.*` is the UNSCOPED Prisma client — the org proxy never sees it. An authenticated org-A operator who passes org-B's `agentConfigId` reads/writes org-B's tools (incl. the secret HTTP `endpoint`/`headers`).
-> - **Amplifier (side-effectful read):** `GET /tools` **auto-creates** built-in tool rows under the supplied `agentConfigId` ([route.ts:35](../../apps/console/app/api/admin/tools/route.ts)) — so a cross-org *read* also **writes** rows into the victim org's agent.
-> - **Blast radius:** the same `repo.raw` + client-`agentConfigId`, no-ownership-check pattern is in **every** sub-module admin route — `tools`, `tools/[name]`, `policies`, `policies/[name]`, `case-types`, `case-types/[name]`, `knowledge/sources`, `knowledge/sources/[id]`, `agent-configs/[id]`. The reproduction test covers only `tools`; the fix must cover all of them. There is **no `assertAgentInOrg` helper anywhere** (grep-confirmed) — it does not exist yet.
-> - **Threat model (scope it honestly):** requires a valid console session; it is a cross-tenant escalation by an **authenticated operator** of org A reaching org B — not an anonymous internet attacker. The customer-facing runtime (`app/api/messages/route.ts`) is **NOT** affected: it resolves `agentConfigId` from `session.agentConfigId` server-side and enforces an `orgId`-mismatch check ([messages/route.ts:198](../../apps/console/app/api/messages/route.ts)).
-> - **Reproduction (red, by design):** `app/api/admin/tools/__tests__/cross-org-isolation.test.ts` (untracked — coding team in progress). Faithfully models the post-migration schema (Tool has no `org_id`; AgentConfig keeps `orgId`) and asserts 403/404 + no-leak + no-write. **Fix = a single `assertAgentInOrg(agentConfigId, repo.orgId)` guard (join `agentConfigId → AgentConfig.orgId`, 403 on mismatch) called at the top of every sub-module route**, then flip the test to green and add the same red→green guard for `policies`/`case-types`/`knowledge`. This is the §P1 lane in `doc/2026-06-08-long-term-architecture-review.md`.
+### L5 — ✅ RESOLVED (see archive above)
 
 ### L6 — Unguarded re-parse of tool-input JSON in the loop → whole turn crashes — 🔴 HIGH (correctness)
 
@@ -95,10 +78,11 @@ Net: every prod `dispatch_case_agent` burns model tokens on an investigation the
 **What I did:** read the core engine (`loop.ts`, `tool-interceptor.ts`, `orchestrator.ts`, `react-loop.ts`, `conversation-loop.ts`, `stream-handler.ts`, `customer-messages.ts`, `policy.ts`), the admin `tools` route, and the new cross-org test, while evaluating whether the sub-agent fan-out is architecturally warranted (it is not — single-main-agent is the real runtime; concur with the Procedure refactor's D2 "retire").
 
 **Changes to this file (all signed, this pass):**
-- **L1** → re-verified **fixed in the working tree but uncommitted**; downgraded from 🔴 NOT-fixed to 🟢 fixed-pending-commit + a zh/en-only locale-coverage caveat. Commit `customer-messages.ts` + the `loop.ts`/`tool-interceptor.ts` edits and close it.
-- **L5** → **ESCALATED to CONFIRMED-EXPLOITABLE** with the exact route evidence (`tools/route.ts` GET/POST trust the client `agentConfigId` via `repo.raw`, no ownership check), the side-effectful-auto-gift amplifier, the full sub-module blast radius, and the red reproduction test pointer. Fix = one `assertAgentInOrg` guard across all sub-module routes (§P1).
+- **L1** → ✅ **COMMITTED & CLOSED** `5bd7326b`. `customer-messages.ts` locale-aware zh/en detector; hardcoded Mandarin replaced in `loop.ts` + `tool-interceptor.ts`. Residual caveat: CJK Han range matches JA kanji as zh.
+- **L2** → ✅ **COMMITTED & CLOSED** `5bd7326b`. ChunkLoadError auto-reload error boundaries (`global-error.tsx`, `error.tsx`, `app/_lib/chunk-error.ts`).
+- **L5** → ✅ **COMMITTED & CLOSED** `5bd7326b`. `assertAgentInOrg()` guard wired into all 11 sub-module admin routes; red reproduction test now anchors the fix.
 - **L6** *(new)* → unguarded `JSON.parse` of tool-input in `loop.ts:679` (outside any try) crashes the whole turn on `max_tokens`-truncated or alt-provider-malformed tool JSON; the twin parse in `stream-handler.ts:179` is guarded, this one isn't.
 - **L7** *(new)* → `dispatch_case_agent`'s production background sub-agent is detached, merged from the wrong orchestrator instance, gated by a zero-reader `needsContinuation` flag, and killed on recycle — wasted spend, results never surface. On the Phase-4 retire path; live until then.
 - **Lesson 5** *(new)* + a lower-severity floating-persistence note appended under "Broader open items".
 
-**Highest-leverage next action:** L5 — it is a confirmed cross-tenant read/write the moment a second real tenant transacts, and the guard is a small, well-scoped helper the reproduction test already specifies.
+**Next action:** L6 (unguarded JSON.parse crash) or L7 (dispatch_case_agent detached sub-agent) — both remain open.

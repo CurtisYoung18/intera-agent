@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-08 (Model page refactor ✅ · M1 lane complete) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-08 (L1/L2/L5 batch ✅ · All three lanes shipped) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -18,11 +18,17 @@
 
 | Lane | Session | Task | Files owned | Started |
 |------|---------|------|-------------|---------|
-| **BUGFIX-F8** | architect-leader | Customer-facing escalation message i18n (HARD_BUGS §L1) | `lib/agent/loop.ts`, `lib/agent/tool-interceptor.ts`, NEW `lib/agent/customer-messages.ts` + test | 2026-06-08 |
-| **BUGFIX-CHUNK** | architect-leader | ChunkLoadError deploy-window recovery (HARD_BUGS §L2) | NEW `app/global-error.tsx`, NEW `app/error.tsx` | 2026-06-08 |
-| **AUDIT-L5** | architect-leader | Tenant-isolation audit, agent-scoped model (HARD_BUGS §L5) | read-only audit + NEW guard test; route edits only if leak confirmed | 2026-06-08 |
+| ~~BUGFIX-F8~~ | ~~architect→coding~~ | ~~Customer-facing escalation message i18n (HARD_BUGS §L1)~~ | ~~`lib/agent/loop.ts`, `lib/agent/tool-interceptor.ts`, NEW `lib/agent/customer-messages.ts` + test~~ | ~~2026-06-08~~ |
+| ~~BUGFIX-CHUNK~~ | ~~architect→coding~~ | ~~ChunkLoadError deploy-window recovery (HARD_BUGS §L2)~~ | ~~NEW `app/global-error.tsx`, NEW `app/error.tsx`, NEW `app/_lib/chunk-error.ts`~~ | ~~2026-06-08~~ |
+| ~~AUDIT-L5~~ | ~~architect→coding~~ | ~~Tenant-isolation fix — assertAgentInOrg across all sub-module routes (HARD_BUGS §L5)~~ | ~~NEW `lib/api/assert-agent-in-org.ts`, NEW cross-org test, all sub-module routes~~ | ~~2026-06-08~~ |
 | ~~K1~~ | ~~architect~~ | ~~Knowledge page redesign~~ | ~~`page.tsx` (full rewrite)~~ | ~~2026-06-05~~ |
 | ~~M1~~ | ~~architect→coding~~ | ~~Model page refactor Phases 1-6~~ | ~~see plan~~ | ~~2026-06-08~~ |
+
+> **2026-06-08 (L1/L2/L5 batch):** All three HARD_BUGS lanes ✅ SHIPPED (`5bd7326b`). tsc 0, keyless 631/631 pass, build ✓, deploy ✓, Phase-2 prod verified (tools/case-types/knowledge/guardrails/integrations all render 0 errors).
+> - **L1** (F8 i18n escalation): `customer-messages.ts` locale-aware zh/en detector; hardcoded Mandarin replaced in `loop.ts` + `tool-interceptor.ts`.
+> - **L2** (ChunkLoadError): `global-error.tsx` + `error.tsx` boundaries with `sessionStorage`-debounced auto-reload; shared logic in `app/_lib/chunk-error.ts`.
+> - **L5** (cross-org isolation): `assertAgentInOrg()` guard wired into all 11 sub-module admin routes; red reproduction test (`cross-org-isolation.test.ts`) confirms the hole before the fix. Existing route test mocks updated with `agentConfig` to support the guard.
+> - **No active lanes** — ready for next dispatch.
 
 > **2026-06-08:** Model Page Long-Term Refactor ✅ SHIPPED — keyless green, tsc 0, build ✓, deploy ✓, migration applied. See [2026-06-08-model-page-long-term-refactor.md](../what's%20done/2026-06-08-model-page-long-term-refactor.md). **Residual:** Phase-2 browser verification skipped (Playwright locked).
 > ⚠️ **Correction (architect 2026-06-08):** the model page did **not** ship a draft→publish gate. The gate was built then **removed** (commit `f22adf59` "simplify model page — direct Save+cache-bust, remove draft gate"); the page autosaves directly to the active version (`model/page.tsx` → `apiClient PUT /api/admin/agent` + `bustConfigCache`). **`useDraftGate` does not exist in code.** Any plan that says "reuse the model-page `useDraftGate`" (e.g. the Procedure refactor's Phase 6) has an unfounded dependency — see that plan's annotated Phase 6 and [`doc/2026-06-08-long-term-architecture-review.md §2`](../2026-06-08-long-term-architecture-review.md).
