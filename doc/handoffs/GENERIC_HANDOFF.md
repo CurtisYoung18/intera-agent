@@ -1,10 +1,11 @@
 # Generic Handoff — Intera Agent
 
-**Last updated:** 2026-06-08 (architect: reconciled with the 2026-06-06 agent-scoped pivot) | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
+**Last updated:** 2026-06-08 (architect: reconciled with the Foundation Reset docs) | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
 
-> **Two handoffs live in this folder, and only two:**
+> **Coordination docs in this folder:**
 > 1. **`GENERIC_HANDOFF.md`** (this file) — stable project context. Changes rarely.
 > 2. **`MASTER_BUILD_HANDOFF.md`** — the live macro backlog: what's left, in what order, and which `doc/to-do/` guide covers each item.
+> 3. **`HARD_BUGS.md`** — open landmines and resolved bug lessons.
 >
 > Concrete, code-level task guides live in **[`doc/to-do/`](../../doc/to-do/)** — one file per task with exact paths, line numbers, and verification steps.
 
@@ -77,16 +78,16 @@ git pull --rebase origin main          # integrate other lanes' commits
 
 **Intera Agent** is a multi-tenant SaaS customer-service AI platform. Next.js monorepo (`apps/console` + `packages/shared`), self-hosted on an Ubuntu box, served at `https://demo.anytrans.ai`.
 
-The AI engine (`apps/console/lib/agent/loop.ts`) is a ReAct loop with streaming tool execution, a stage-based state machine, a policy/guardrail engine, and a LiveChat bridge. (The sub-agent fan-out is being retired and the stage machine replaced by a Procedure model — see [`doc/2026-06-08-long-term-architecture-review.md`](../2026-06-08-long-term-architecture-review.md) and [`doc/to-do/2026-06-08-case-type-procedure-orchestration-refactor.md`](../to-do/2026-06-08-case-type-procedure-orchestration-refactor.md).)
+The current tree still contains legacy stage / Policy / Guardrail / Skill code paths while the reset is pending. The target architecture is a **single Case Owner Agent** with CaseType + Procedure + Tool + Hook (`PreToolUse`, `PostToolUse`, `Stop`). Follow [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) and [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) for new work.
 
-> ⚠️ **2026-06-06 data-model pivot — config is now AGENT-scoped, not org-scoped.** Migration `20260606000000_agent_scoped_architecture` moved `Tool`/`Policy`/`CaseType`/`KnowledgeSource`/`ChannelBinding` from `org_id` to `agent_config_id` (old `org_id` columns dropped, old rows deleted), and dropped `policyHooks` + `capabilityBindings` from `AgentConfig`. **Consequence:** the `repoForOrg`/`scopedModel` proxy scopes by `orgId`, which these models no longer carry — so sub-module routes use `repo.raw.*` and scope by `agentConfigId` manually, with an orgId→agentConfig ownership check as the real isolation boundary. Treat that boundary as **unaudited** (HARD_BUGS §L5). `capabilityBindings` and `policyHooks` are **gone** — any doc that still mentions them (incl. older sections of this file's siblings and `v1.3` notes) is stale.
+> ⚠️ **2026-06-06 data-model pivot — config is now AGENT-scoped, not org-scoped.** Migration `20260606000000_agent_scoped_architecture` moved current sub-module config rows from `org_id` to `agent_config_id` (old `org_id` columns dropped, old rows deleted), and dropped `policyHooks` + `capabilityBindings` from `AgentConfig`. **Consequence:** the `repoForOrg`/`scopedModel` proxy scopes by `orgId`, which these models no longer carry — so sub-module routes use `repo.raw.*` and scope by `agentConfigId` manually, with an orgId→agentConfig ownership check as the real isolation boundary. L5 is resolved by `assertAgentInOrg()`, but keep this boundary in mind when editing admin sub-module routes. `capabilityBindings` and `policyHooks` are **gone**.
 
 ```
 apps/console/             ← the only app (apps/chat was deleted post-migration)
   app/api/messages/       ← main SSE entry point (LiveChat + API consumers)
   app/api/admin/          ← console admin CRUD + agent-configs + playground
   app/api/auth/           ← login / session / switch-org / logout
-  lib/agent/              ← core AI engine (AgentLoop, skills, policy, trace, memory)
+  lib/agent/              ← core AI engine (AgentLoop, legacy skills/policy code until Tool/Hook reset, trace, memory)
   lib/livechat/           ← LiveChat bridge (webhook → /api/messages → SSE)
   lib/session.ts          ← signed HMAC-SHA256 session token (no external dep)
   lib/auth.ts             ← getSession / getActiveOrgId / getActiveVendor (verified session only)
@@ -95,9 +96,9 @@ apps/console/             ← the only app (apps/chat was deleted post-migration
   components/             ← React (sidebar, docked-preview, admin editors)
 
 packages/shared/
-  prisma/schema.prisma    ← 22 models (Organization, AgentConfig, Case, ApiKey, …). AgentConfig owns Tool/Policy/CaseType/KnowledgeSource/ChannelBinding (agent-scoped since 2026-06-06)
-  types/index.ts          ← SSEEvent, SkillDefinition, AgentConfigData, …
-  defaults/index.ts       ← default system prompts, memory strategies, policy hooks
+  prisma/schema.prisma    ← 22 models (Organization, AgentConfig, Case, ApiKey, …). Agent-scoped config includes Tool/CaseType/KnowledgeSource/ChannelBinding plus legacy Policy until Hook reset.
+  types/index.ts          ← SSEEvent, AgentConfigData, legacy SkillDefinition until Tool reset, …
+  defaults/index.ts       ← default system prompts, memory strategies, legacy policy/hook defaults until reset
   ui/intera-logo.tsx      ← animated wordmark (INTERA ↔ AI, one fluid transition)
 ```
 
@@ -126,7 +127,7 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
   → all prisma writes → memory port (zero DB)
   → StreamingToolExecutor(…, dryRun) → operational tools mocked at dispatch entry
   → TraceWriter(…, dryRun) → no-ops actionTrace.create
-  → SkillRouter.create(orgId, dryRun) → skips knowledgeSource.update heal
+  → legacy SkillRouter.create(orgId, dryRun) → skips knowledgeSource.update heal
   → OrchestratorAgent.dispatchInBackground → guarded by if(!this.dryRun)
 ```
 
@@ -177,7 +178,7 @@ git push deploy main
 curl -s https://demo.anytrans.ai/api/health   # expect {"status":"ok","db":"connected"}
 ```
 
-**Test note:** `lib/livechat/__tests__/integration/db-integration.test.ts` fails locally — it targets a PostgreSQL instance not available from local dev. Pre-existing, unrelated; everything else should be green.
+**Test note:** local Postgres is now the expected dev DB. Bring it up with `docker compose up -d postgres` before DB integration tests.
 
 ### Phase 2 — Production verification procedure
 
@@ -226,7 +227,7 @@ cd ~/intera-agent && ./scripts/deploy.sh     # manual deploy if hook fails
 ## 6. Credentials & secrets
 
 - **Production test account:** `test@intera.dev` / `intera123` — admin on `default` org (Test). Use this for all production verification. This user has role `admin` (not `owner`), so some owner-only operations (e.g., changing owner roles) require the owner account.
-- **SSH:** `ssh ubuntu@43.134.51.138`. The password is stored in the team password manager. **Do NOT change the SSH password, do NOT rotate it, do NOT switch to key-only auth.** Use it as-is, always. This is a standing explicit user instruction — the SSH credential must remain untouched.
+- **SSH:** `ssh ubuntu@43.134.51.138`. The owner provided the SSH password in this Codex thread on 2026-06-08 for deployment use. If the credential is available in the current thread/session, use it without asking again. **Do NOT write the password into git, docs, `.env`, shell history, screenshots, logs, or command output. Do NOT change the SSH password, do NOT rotate it, do NOT switch to key-only auth.** Use it as-is, always. This is a standing explicit user instruction — the SSH credential must remain untouched.
 - **TLS bundle:** `/Users/curtis/Desktop/scs1751876232493_.anytrans.ai`.
 - **Server env:** `/etc/intera/console.env`.
 - Useful greps:

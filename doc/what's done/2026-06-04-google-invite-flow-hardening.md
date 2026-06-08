@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Google Invite Flow — Hardening Plan
 
 > **For the coding agent team:** This is an architect hand-off. Dispatch one sub-agent per task, review between tasks. Steps use checkbox (`- [ ]`) syntax. **Architect wrote the plan, not the code** — implement the changes yourselves following the precise direction + acceptance criteria below.

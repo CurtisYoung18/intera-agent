@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # LiveChat Per-Agent Integration — `channel_bindings` Consolidation Plan
 
 > **For the coding agent team:** Architect hand-off. Dispatch sub-agents per the wave plan; **one sub-agent per file** (never two on the same file at once). Steps use `- [ ]`. The architect wrote the plan and verified current state against the live tree (file:line evidence below). **You write the code**, following the direction + acceptance. Waves are ordered by risk: each wave is independently shippable and reviewable.

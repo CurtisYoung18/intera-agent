@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Playground renderHints Channel Key + Chat Residual Cleanup Plan
 
 > **For the coding agent team:** Architect hand-off. Three tasks — Tasks 1+2 are disjoint files (parallel); Task 3 touches the same file as Task 1 (serialize or single-owner). TDD where applicable. The architect wrote the plan — you write the code.

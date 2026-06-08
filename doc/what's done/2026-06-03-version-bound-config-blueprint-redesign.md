@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # 版本化配置 + 放射图/库页重构方案
 
 **日期：** 2026-06-03 | **角色：** 架构方案（不含逐行实现，交由 coding team 并行施工） | **状态：** 待 coding team 拆 to-do

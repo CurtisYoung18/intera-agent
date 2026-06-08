@@ -1,6 +1,6 @@
 # Hard Bugs & Landmines Registry
 
-> **Last updated:** 2026-06-08 (coding team: L1/L2/L5 shipped `5bd7326b`; L6 shipped `fb872f53`; L8 code-fixed + deployed `2d9249d9` by a parallel lane, registry close pending that lane; **L7 remains the open landmine**).
+> **Last updated:** 2026-06-08 (doc reset pass: L7 remains live until Foundation Reset F5 retires the detached customer-facing sub-agent path).
 > **Scope:** this file now tracks **open** landmines live in the tree. Fixed-and-verified bugs are reduced to a one-line archive pointer (full write-ups removed once confirmed).
 > **Line numbers drift** — cite by `file:symbol`/string, verify the symbol before relying on a line.
 
@@ -27,11 +27,11 @@
 
 ### L3 — `playground/page.tsx` god-component — 🟠 MEDIUM (maintainability)
 
-`wc -l apps/console/app/admin/playground/page.tsx` = **1587 lines** and growing (~1333 when first flagged). Hosts the (now-archived) Bug-1/Bug-2 fixes, the trace pipeline, session restore, multimodal input, and 8 raw `fetch()` calls — all churn concentrates here. Decomposition logged but never executed. FE analog of the `loop.ts` problem — see `doc/2026-06-08-long-term-architecture-review.md`.
+`wc -l apps/console/app/admin/playground/page.tsx` = **1587 lines** and growing (~1333 when first flagged). Hosts the (now-archived) Bug-1/Bug-2 fixes, the trace pipeline, session restore, multimodal input, and 8 raw `fetch()` calls — all churn concentrates here. Decomposition logged but never executed. FE analog of the `loop.ts` problem — see `doc/strategy/2026-06-08-long-term-architecture-review.md`.
 
-### L4 — Guardrail-status trace: code-fixed, prod live-confirm still open — 🟡 LOW (verification gap)
+### L4 — Legacy Guardrail-status trace: code-fixed, prod live-confirm still open — 🟡 LOW (verification gap)
 
-The AC2 fix is present — `trace-aggregator.ts` `deriveStatus` reads structured `payload.policyOutcome` before the legacy `detail` string (~L57-77), so a fired guardrail derives `block`/`warn` (no longer always-green). But live-prod confirm is "pending a guardrail-configured agent" — and prod has only 2 policies on `agent_default_v1`, none wired as a tripping guardrail yet (DB inventory 2026-06-08). Close it once a guardrail-bearing agent exists in prod.
+The AC2 fix is present — `trace-aggregator.ts` `deriveStatus` reads structured `payload.policyOutcome` before the legacy `detail` string (~L57-77), so a fired legacy guardrail derives `block`/`warn` (no longer always-green). But live-prod confirm is "pending a configured agent that trips it." During the Foundation Reset, this should be converted into Hook Scenario coverage rather than extended as a separate legacy guardrail lane.
 
 ### L5 — ✅ RESOLVED (see archive above)
 
@@ -45,7 +45,7 @@ The AC2 fix is present — `trace-aggregator.ts` `deriveStatus` reads structured
 2. **The continuation flag is dead.** `dispatchInBackground` sets `needsContinuation = true` "the worker will pick it up" ([orchestrator.ts:421](../../apps/console/lib/agent/orchestrator.ts)) — but **`needsContinuation` has zero readers** (grep-confirmed: only writes + Prisma typedefs; no cron/worker/route consumes it). The chain is severed.
 3. **Detached promise outlives the HTTP response.** On a server recycle/redeploy the background LLM calls + `prisma.chatMemory.upsert` ([orchestrator.ts:375](../../apps/console/lib/agent/orchestrator.ts)) are killed mid-flight (partial write); even when alive they do whole-JSON-column upserts on the sub-case row, racing any concurrent same-row writer.
 
-Net: every prod `dispatch_case_agent` burns model tokens on an investigation the customer never sees. *(Partial reader nuance: `policy.ts:244` does read `subagent:*` evidence to satisfy a `requireToolsAny` guardrail — so the data is not 100% write-only, but it is never surfaced as a customer-facing answer and no seeded case type relies on it.)* **This is the F1 "live-but-broken" finding made concrete; it is on the retire path** — Procedure-refactor **Phase 4 / D-a** strips the background spawn and turns `dispatch_case_agent` into an inline "open case" action. Until Phase 4 lands, treat the wasted spend + ChatMemory race as live.
+Net: every prod `dispatch_case_agent` burns model tokens on an investigation the customer never sees. *(Partial reader nuance: `policy.ts:244` does read `subagent:*` evidence to satisfy a legacy evidence rule — so the data is not 100% write-only, but it is never surfaced as a customer-facing answer and no seeded CaseType relies on it.)* **This is the F1 "live-but-broken" finding made concrete; it is now owned by Foundation Reset F5.** F5 should turn `dispatch_case_agent` into an inline "open/select Case + attach CaseType/Procedure" action and remove the detached background spawn. Until F5 lands, treat wasted spend + ChatMemory race as live.
 
 ### L8 — Model page: cleared prompt reappears after refresh — 🟠 MEDIUM (data loss illusion)
 

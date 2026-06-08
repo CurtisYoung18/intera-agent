@@ -1,6 +1,8 @@
 # Intera — AI 客服 SaaS 平台
 
-Intera 是一个以 **AI Agent 为核心**的多租户智能客服 SaaS。客户发起对话 → 自治 Agent 把问题当作一个 *case* 调查：检索知识、调用技能/工具、追问澄清、触发护栏时升级人工、端到端解决。
+Intera 是一个以 **AI Agent 为核心**的多租户智能客服 SaaS。客户发起对话 → 自治 Agent 把问题当作一个 `Case` 调查：检索知识、调用 Tools、追问澄清、触发 Hooks 时升级人工、端到端解决。
+
+长期目标：Intera Console 要成为 **客服 Agent 的 AgentOps Workbench**。第一阶段的对话式工具命名为 **ConfigPilot**：交付人员可以用自然语言检查、调优、测试并直接配置一个 Intera Agent，但它不开放服务器 shell、不读写服务器文件，只通过 typed admin / scenario / trace APIs 修改 Procedure、Tools、Hooks、Human Transfer，并输出 diff、验证记录和回滚路径。
 
 **技术栈**：Next.js 15 monorepo（`apps/console` + `packages/shared`）· TypeScript · Prisma 6 + PostgreSQL · 自托管 Ubuntu，服务 `demo.anytrans.ai`。
 
@@ -36,7 +38,7 @@ cp apps/console/.env.example apps/console/.env.local
 ### 4. 建表 + 种子
 ```bash
 npm run db:push    # 按 schema 建表
-npm run db:seed    # 写入 default Organization + 演示 Agent 配置 / Skills / Policies / CaseTypes
+npm run db:seed    # 写入 default Organization + 演示 Agent 配置 / Tools / Hooks / CaseTypes
 ```
 > `db:seed` 不是可选：它提供 `id='default'` 的组织和完整演示数据。
 

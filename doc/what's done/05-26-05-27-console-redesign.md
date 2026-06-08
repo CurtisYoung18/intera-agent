@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Console 重设计：从字段堆到抽象组织
 
 > **来源合并**: `console-audit-v5.md` + `console-config-scope.md` + `case-type-subagent-ux.md` + `console-redesign-master.md` + `policy-guardrails-fix.md` + `channels-dashboard-plan.md`

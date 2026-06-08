@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Agent 引擎架构重构：S1-S6 + CC 差距分析
 
 > **来源合并**: `s1-tool-result-invariant.md` + `s2-centralized-retry-fallback.md` + `s3-loop-slimming.md` + `s4-tool-interface-unification.md` + `s5-channel-binding.md` + `s6-console-visualization-parity.md` + `Intera Agent — 修复与测试计划.md` + `cc-vs-intera-gap-analysis.md`

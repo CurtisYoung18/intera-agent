@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # LiveChat 集成全链路：设计 → 实施 → Bug 修复
 
 > **来源合并**: `livechat-rich-ux.md` + `livechat-rich-ux-design.html` + `livechat-integration-deep.md` + `livechat-01/02/03.md` + `livechat-end-loop-fixes.md` + `livechat-widget-bugs.md` + `livechat-queue-silent-end.md`

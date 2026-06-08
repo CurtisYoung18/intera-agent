@@ -3,7 +3,7 @@
 **Date:** 2026-06-08 | **Author:** architect (review only — code executed by the coding-agent team) | **Branch:** `main`
 **Method:** code-first. Every claim below was checked against the working tree, not the handoffs (which `GENERIC_HANDOFF §0.6` warns may be stale). Citations are `file:symbol` (lines drift).
 
-> **Read order:** this is a *strategic* review (the "why we plateaued" and the sequence out). It sits above the tactical plans in `doc/to-do/`. It does **not** replace the owner-approved [`2026-06-08-case-type-procedure-orchestration-refactor.md`](to-do/2026-06-08-case-type-procedure-orchestration-refactor.md) — it frames it, endorses its core, and corrects one broken dependency.
+> **Read order:** this is a *strategic* review (the "why we plateaued" and the sequence out). It is now a diagnosis source for the active Foundation Reset, not the implementation plan. Dispatch coding work from [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md).
 
 ---
 
@@ -31,7 +31,7 @@ Intera was built fast by parallel coding agents shipping features lane-by-lane. 
   - `'cc'` (SOP) is fully wired and operator-selectable, but **no seed or default puts a case into it** — built, reachable, unused.
   - **Sub-agent fan-out is live-but-broken, which is worse than dead.** `dispatch_case_agent` still spawns a background sub-agent in production (`tool-interceptor.ts → orchestrator.dispatchInBackground`), but the coordination state it produces — `needsContinuation`, `agentTodos`, `dashboardVersion`/dashboard-diff — is **write-only**: persisted every turn (`messages/route.ts`), read by **no one** (`getAgentTodos`/`getDashboardVersion` have zero callers). The continuation chain is severed; background results never return to the customer.
 
-→ The owner-approved Procedure refactor targets exactly this. **Endorsed** (see §3). The one correction: it must *also* land the loop decomposition (G10/TODO-17), not defer it — the dual-ReAct-loop + misnamed-strategy structure is half the problem.
+→ The Foundation Reset targets exactly this by making ProcedureExecutor the single Case runtime and retiring detached customer-facing sub-agent fan-out. The older standalone Procedure plan is archived; its useful intent is absorbed by the reset.
 
 ### F2 — The agent-scoped pivot is under-reconciled with tenant isolation *(severity: correctness risk / high)*
 
@@ -43,7 +43,7 @@ Intera was built fast by parallel coding agents shipping features lane-by-lane. 
 
 - **14 stringified-JSON `String` columns** across the 3 core models (`AgentConfig.memoryStrategy`; `CaseType.{requiredFacts,stages,stageConfigs,orchestratorConfig,escalateOn,autoCloseConditions}`; `ChatMemory.{confirmedFacts,missingFacts,skillsCalled,skillResults,keyEvents,todos,agentTodos}`), and the pattern is pervasive platform-wide (`Tool`, `ChannelBinding`, `HumanTask`).
 - Consequences already visible: **`executionMode` schema comment says `"stage" | "step"` while the code only implements `'cc'`** — the blob/typed boundary drifts because nothing enforces it; orphaned references are unvalidated (the Procedure plan now has to hand-write a guardrail-orphan check the DB should give for free); migrations are brittle.
-- Direction: where a field has a **closed vocabulary** (Procedure actions, guardrail `when`, policy outcomes), make it typed/contract-validated at the seam (zod) even if it stays a JSON column physically. The Procedure refactor's `ProcedureAction` closed vocab is the first correct instance — generalize the principle.
+- Direction: where a field has a **closed vocabulary** (Procedure actions, Hook checkpoints, Hook decisions, Tool modes), make it typed/contract-validated at the seam (zod) even if it stays a JSON column physically. The reset's `ProcedureAction`, `HookCheckpoint`, and Tool mode contracts should generalize this principle.
 
 ### F4 — Vestigial state and dead config accreting *(severity: hygiene / medium, but a tax on every reader)*
 
@@ -74,61 +74,76 @@ Intera was built fast by parallel coding agents shipping features lane-by-lane. 
 
 ## 2. The stale-docs problem (governance debt)
 
-The handoffs are the team's source of truth, and three are materially wrong **right now** — which actively misdirects the coding team:
+The handoffs are the team's source of truth. At the time of this review, several were materially wrong and were actively misdirecting the coding team.
 
-| Doc | Problem | Impact |
-|---|---|---|
-| `GENERIC_HANDOFF.md` (2026-06-04) | Predates the 2026-06-06 agent-scoped pivot. §1/§2 still describe org-scoped config + `capabilityBindings` + the old engine. | New agents onboard to a data model that no longer exists. **High.** |
-| `MASTER_BUILD_HANDOFF.md` | Says model-page refactor "✅ SHIPPED — 6 phases." But the **draft→publish gate was built then removed** (`f22adf59 "remove draft gate"`); `useDraftGate` does not exist in code. | A downstream plan depends on it (next row). **High.** |
-| `to-do/2026-06-08-case-type-procedure-…refactor.md` | Phase 6 says "reuse model-page `useDraftGate`." That hook **does not exist** (removed). Several schema line refs also pre-date the model-page migration. | Phase 6 has an unfounded dependency; will fail at dispatch. **High.** |
-| `spec/Intera_Harness_架构梳理.md` (2026-05-13) | Philosophy still canonical; all routes/tool-names/app-split are pre-consolidation. | Reference-only; flag the header, don't rewrite. **Low.** |
+**2026-06-08 doc reset status:** the live map has now been cleaned:
 
-These are fixed cheaply (text), and they're load-bearing — proposed corrections in §4.
+- [`../handoffs/MASTER_BUILD_HANDOFF.md`](../handoffs/MASTER_BUILD_HANDOFF.md) points to Foundation Reset as the current macro priority.
+- [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) is rewritten as the current architecture source of truth.
+- The old standalone Procedure plan is archived at [`../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md`](../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md).
+- The Procedure supplement is merged into the architecture doc and archived at [`../archive/superseded/Intera_Customer_Service_Procedure_Model.md`](../archive/superseded/Intera_Customer_Service_Procedure_Model.md).
+- [`doc/README.md`](../README.md) now defines read order and current vocabulary.
 
----
-
-## 3. The Procedure refactor — endorsed, with corrections
-
-The owner-approved Procedure plan is **the right first structural move** — its diagnosis matches the code (F1), and "Procedure (soft order) + Hooks (hard gates), single inline agent" is both Fin-aligned and matches Intera's own canonical philosophy ("不做 Flow-Chatbot"). Endorsed. Three corrections before dispatch:
-
-1. **Break the Phase-6 `useDraftGate` dependency.** ✅ **Owner-approved 2026-06-08: drop the draft-gate** — ship the Procedure Builder against the existing version system (`agent-version-picker` fork/activate). The plan's §3.5 + Phase 6 are annotated accordingly.
-2. **Fold in the loop decomposition (G10), don't defer it.** Phase 5 already touches `loop.ts`; collapsing the dual ReAct loops + misnamed strategy objects into "Core loop + ProcedureExecutor on one engine" is the point. Deferring it leaves half the F1 debt standing.
-3. **Sequence it in parallel with a thin foundation slice (F6).** ✅ **Owner-approved 2026-06-08: parallel** — the Procedure plan's additive Phases 0–3 run concurrently with the P0 foundation lane on non-overlapping files; Phases 4–6 are **gated on the foundation landing** (they need SELECT-only-prod + real local-DB e2e).
+The governance lesson remains: coding teams cannot execute against a false map. Keep `to-do/` current and move replaced plans to `archive/superseded/`.
 
 ---
 
-## 4. Recommended long-term sequence (consolidation, not patches)
+## 3. From Procedure Plan To Foundation Reset
 
-Ordered by leverage. Each is a *direction* for a `doc/to-do/` plan, not a code diff.
+The older Procedure plan had the right core diagnosis:
 
-**P0 — Foundation: safe local DB + dev/prod parity.** *(unblocks everything; ~1 focused lane)*
-A real local Postgres (the `docker-compose.yml` Postgres:16 already exists — wire it as the dev `DATABASE_URL`); seed it; retire `sqlite-schema-compat.ts` (or make SQLite truly unsupported). Restore `SESSION_SECRET` to `.env.local`. Outcome: write-flows run locally, Phase-2 stops slipping, the Procedure refactor's verification phases become real.
+- Procedure is soft order, not a rigid flowchart.
+- Hook is the hard control layer.
+- Execution should be inline through one Case Owner Agent.
+- Detached customer-facing sub-agent fan-out should be retired.
 
-**P1 — Reconcile tenant isolation with the agent-scoped model (F2).** *(correctness; before a 2nd real tenant)*
-Decide the boundary: either give the seam an `agentConfig`-aware scoping mode, or formalize the orgId→agentConfig ownership check as a single guard helper every sub-module route calls. Add the cross-tenant guard test. Stop the `repo.raw.*` drift.
+The owner later expanded that into a broader Foundation Reset:
 
-**P2 — Execution-model collapse = the Procedure refactor (F1) + loop decomposition (G10).** *(the headline structural win)*
-As §3. One execution path; kill the write-only continuation state (F4); one ReAct engine.
+- `Policy` / `Guardrail` -> `Hook`
+- `Skill` -> `Tool`
+- checkpoints -> `PreToolUse`, `PostToolUse`, `Stop`
+- ProcedureStep-level Hook bindings
+- `.intera-agent.json` package support
+- ConfigPilot as a typed-API configuration writer
+- Scenario Lab as delivery validation
+- no long-term dual-read/dual-write compatibility for the old model
 
-**P3 — Config detyping where it's closed-vocabulary (F3).** *(rides on P2)*
-Procedure actions / guardrail `when` / policy outcomes get zod contracts at the seam; resolve the `executionMode` comment/code drift as it's deleted. Generalize the "closed vocab ⇒ validated" rule.
-
-**P4 — Cross-cutting hygiene (F4/F5/F7).** *(parallelizable, lower urgency)*
-Delete dead fields + duplicate migration; one trace aggregation for playground **and** ops; extract the shared FE `useResourceEditor` hook (load/error/save-state) and actually adopt `useApi`; begin decomposing `playground/page.tsx`. Consider a key-generation or namespaced-file approach for `dictionaries.ts` to de-serialize the parallel lanes.
-
-**Governance, continuous:** truth-up the three stale docs (§2 / §4-proposals) as the prerequisite for everything above — agents can't execute against a false map.
-
----
-
-## 5. Decisions — owner-approved 2026-06-08
-
-1. **Sequencing → PARALLEL.** P0 foundation lane runs concurrently with the Procedure plan's additive Phases 0–3 (non-overlapping files; declare lanes). Procedure Phases 4–6 gated on the foundation landing.
-2. **Procedure Phase 6 → DROP THE GATE.** Ship the Procedure Builder against the existing version system; no `useDraftGate`. Plan annotated.
-3. **Doc corrections → APPROVED (all three).** Applied 2026-06-08: `GENERIC_HANDOFF` (agent-scoped pivot callout), `MASTER_BUILD` (model-page draft-gate correction), Procedure plan (Phase-6 annotation). `HARD_BUGS.md` rewritten as a fixed + open-landmines registry.
-
-### Next architect deliverable
-Write the **P0 foundation plan** (`doc/to-do/2026-06-08-foundation-safe-local-db.md`): wire the existing `docker-compose.yml` Postgres:16 as the dev `DATABASE_URL`, seed it, restore `SESSION_SECRET` to `.env.local`, retire/replace `sqlite-schema-compat.ts`, and add the cross-tenant isolation guard test (F2/§L5). This is the lane that unblocks the Procedure refactor's verification.
+That broader reset is now the implementation source. Dispatch from [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md).
 
 ---
 
-*Companion: `doc/handoffs/HARD_BUGS.md` now tracks the live landmines surfaced here (F8 i18n, ChunkLoadError, playground god-component, guardrail live-confirm, isolation-seam gap).*
+## 4. Recommended Sequence Now
+
+Ordered by leverage:
+
+**P0 — Safe local DB + dev/prod parity.**
+Shipped 2026-06-08. See [`../what's done/2026-06-08-foundation-safe-local-db.md`](../what's%20done/2026-06-08-foundation-safe-local-db.md). This removed the worst verification blocker.
+
+**P1 — Foundation Reset domain model.**
+Active. Run F0-F8 from [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md). This is the main path to the commercial customer delivery chain.
+
+**P2 — Tenant isolation hardening around agent-scoped config.**
+L5 is code-fixed, but every new admin sub-module route should continue to prove orgId -> agentConfig ownership. Do not reintroduce raw agentConfig access without the guard.
+
+**P3 — ConfigPilot + Scenario delivery loop.**
+After the reset contracts settle, make the practical delivery loop excellent: propose diff, confirm, save through typed APIs, run Scenario, produce receipt, export package.
+
+**P4 — Cross-cutting hygiene.**
+Shared trace aggregation for playground and ops, FE editor-hook consolidation, playground decomposition, and dictionary churn reduction remain valuable after the reset.
+
+---
+
+## 5. Owner-Approved Decisions Captured
+
+- Parallel work is allowed, but lanes must declare owned files.
+- Old Procedure Phases 4-6 are not a separate dispatch target; they are absorbed into Foundation Reset lanes.
+- Keep names `Case`, `CaseType`, `Procedure`, and `Tool`.
+- Use `Hook`, not Policy/Guardrail, for new architecture.
+- Use `PreToolUse`, `PostToolUse`, and `Stop`; remove `preFinalize`.
+- ProcedureStep-level Hook binding is required in the UI and model.
+- First launch supports declarative, restricted JavaScript, and HTTP Hook handlers.
+- `.intera-agent.json` reserves future marketplace support but first serves internal delivery sharing.
+
+---
+
+*Companion docs: [`../handoffs/HARD_BUGS.md`](../handoffs/HARD_BUGS.md), [`../handoffs/MASTER_BUILD_HANDOFF.md`](../handoffs/MASTER_BUILD_HANDOFF.md), and [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md).*

@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Lane 1 · 统一能力绑定清单 + 运行时切换（地基）
 
 **来源：** [`doc/plans/2026-06-03-version-bound-config-blueprint-redesign.md`](../plans/2026-06-03-version-bound-config-blueprint-redesign.md) §2、§6.2

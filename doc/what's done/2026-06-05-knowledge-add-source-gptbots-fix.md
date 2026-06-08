@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Knowledge Add Source — GPTBots API Key Gate + Real KB Picker
 
 > **For the coding team:** One-shot. Fix the Add Source flow to require GPTBots API key first, then pick from real GPTBots KBs (not local DB sources). Execute end-to-end, then hand back for architect review.

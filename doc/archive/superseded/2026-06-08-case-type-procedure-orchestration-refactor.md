@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-06-08:** This plan is preserved for traceability only. Do not dispatch coding work from it. Its useful intent is absorbed by [`../../to-do/2026-06-08-foundation-reset-domain-model.md`](../../to-do/2026-06-08-foundation-reset-domain-model.md), which also carries the approved `Policy`/`Guardrail` -> `Hook`, `Skill` -> `Tool`, `.intera` package, and trace/event rename work. Relative links below may point to their old pre-archive locations.
+
 # Case-Type Orchestration Long-Term Refactor — Procedure-Driven Single Agent, Retire Sub-Agent Fan-out, Case-Type-Scoped Guardrails
 
 **Date:** 2026-06-08 | **Branch:** `main` | **Author:** architect (plan only — code executed by the coding-agent team) | **Status:** 📋 PLAN — awaiting owner review, then dispatch.
@@ -6,7 +8,7 @@
 >
 > **⛓️ Hard dependency:** This plan overlaps [`2026-06-08-model-page-long-term-refactor.md`](./2026-06-08-model-page-long-term-refactor.md) on `loop.ts`, `buildModePrompt.ts`, `prompt-resolver.ts`, and the case-types pages. **Do not run this plan's Phase 4–6 until the model-page refactor has landed (esp. its Phase 5 schema + Phase 2 prompt cleanup).** Phases 0–3 here are additive and can run in parallel on non-overlapping files if lanes are declared. This is "page 2/N" of the long-term console pass (playground was 1/N).
 >
-> 🧭 **Architect corrections (owner-approved 2026-06-08, from [`doc/2026-06-08-long-term-architecture-review.md`](../2026-06-08-long-term-architecture-review.md)):**
+> 🧭 **Architect corrections (owner-approved 2026-06-08, from [`doc/strategy/2026-06-08-long-term-architecture-review.md`](../../strategy/2026-06-08-long-term-architecture-review.md)):**
 > 1. **No draft-gate.** Phase 6 ships against the existing version system, not a `useDraftGate` hook (it was removed and does not exist). §3.5 + Phase 6 updated.
 > 2. **Parallel sequencing with the foundation lane (P0).** Phases 0–3 (additive) run **concurrently with the safe-local-DB / dev-prod-parity foundation lane** on non-overlapping files. **Gate Phases 4–6 on the foundation landing** — they need real local-DB e2e and SELECT-only prod (memory `project_local_db_is_production`), which the foundation provides. Without it, Phase 0/2/3/5 inherit the verification-skip pattern.
 > 3. **Fold in loop decomposition (G10/TODO-17).** Phase 5 already rewrites `loop.ts`; collapse the dual ReAct loops (`react-loop.ts`/`sub-agent.ts` vs the main `do…while`) and the misnamed `ConversationLoop`/`CaseAgentLoop` strategy objects into "Core loop + `ProcedureExecutor` on one engine" — don't defer it.

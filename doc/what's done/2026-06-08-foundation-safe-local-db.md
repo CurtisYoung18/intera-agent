@@ -1,8 +1,10 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # P0 Foundation — Safe Local DB + Dev/Prod Parity
 
 **Date:** 2026-06-08 | **Branch:** `main` | **Status:** ✅ SHIPPED (executed by coding-team-leader session; local-DB e2e proven)
 
-> The P0 lane from [`doc/2026-06-08-long-term-architecture-review.md §4`](../2026-06-08-long-term-architecture-review.md) — "the single highest-leverage unblock." Makes write-flows runnable locally so the two-phase verification (`GENERIC_HANDOFF §0.3`) stops slipping and the Procedure refactor's verification phases (Phase 0/2/3/5) become real. **Unblocks Procedure Phases 4–6** (incl. the L7 `dispatch_case_agent` retire).
+> The P0 lane from [`doc/strategy/2026-06-08-long-term-architecture-review.md §4`](../strategy/2026-06-08-long-term-architecture-review.md) — "the single highest-leverage unblock." Makes write-flows runnable locally so the two-phase verification (`GENERIC_HANDOFF §0.3`) stops slipping and the Procedure refactor's verification phases (Phase 0/2/3/5) become real. **Unblocks Procedure Phases 4–6** (incl. the L7 `dispatch_case_agent` retire).
 
 ## 1. The problem (was)
 - Local `DATABASE_URL` (in `.env.local`) tunneled to **production** Postgres (`5433:localhost:5432` SSH tunnel) — every local write hit prod (memory `project_local_db_is_production`).

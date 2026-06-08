@@ -1,3 +1,7 @@
+> **2026-06-08 说明**：本文保留为产品哲学原稿。它关于"Agent 是 Case Owner"、"不做僵硬 Flow-Chatbot"、"人工是后台资源"的原则仍然有效；具体实现规格以 [`Intera_Harness_架构梳理.md`](./Intera_Harness_架构梳理.md)、[`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) 和 `doc/handoffs/` 为准。当前目标执行模型是 **Single Case Owner Agent + Procedure + Hooks + Tools**，不是默认 sub-agent fan-out。
+>
+> **Ultra Goal**：Intera 的终局不是普通配置后台，而是客服 Agent 的 **AgentOps Workbench**。首发对话式入口是 ConfigPilot：交付人员未来应能通过受控对话界面配置、调优、测试、观测一个 Intera Agent，并对 Procedure、Tools、Hooks、Human Transfer 和 trace 形成可审计的 diff、receipt 与 rollback。ConfigPilot 只通过 typed admin / scenario / trace APIs 写配置，不开放服务器 shell 或文件读写。
+
 **文档目的**：帮助团队理解项目方向，统一对产品本质、差异化和设计原则的认知  
 
 **适用对象**：产品、研发、算法、实施、运营、管理层  
@@ -201,6 +205,8 @@ Agent 不只是负责说话，它要负责：
 > **给 Agent 提供可引用、可验证、可行动的证据。**
 
 ## 5.3 人工不是转接对象，而是后台资源
+
+> **2026-06-08 当前产品校准**：这段保留的是长期体验哲学。当前落地优先级是先把 `create_human_task` 做成稳定的一等转接/升级人工 tool；区别在于转接时要带上 Agent 已整理的问题、证据、风险点和推荐动作，减少裸转人工和重复描述。
 
 传统 AI 客服碰到问题不会处理时，会说：
 
@@ -1391,4 +1397,4 @@ Agent 可以调用哪些工具、哪些人工、哪些动作。
 2. 自动策略优化
 3. 多 Agent 协作后台
 4. 模板市场
-   1. 
+   1.

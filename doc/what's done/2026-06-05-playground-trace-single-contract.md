@@ -1,3 +1,5 @@
+> **Historical receipt note (2026-06-08):** This file is preserved as past-work evidence. It may contain old terms such as `Skill`, `Policy`, `Guardrail`, `stage`, or `sub-agent`, and some files still read like implementation plans. Do not dispatch new work from this file. Current work starts at [../README.md](../README.md), [../handoffs/MASTER_BUILD_HANDOFF.md](../handoffs/MASTER_BUILD_HANDOFF.md), and [../to-do/2026-06-08-foundation-reset-domain-model.md](../to-do/2026-06-08-foundation-reset-domain-model.md).
+
 # Playground Trace — Single-Contract Refactor (Implementation Plan)
 
 > **For the coding team:** This is a one-shot spec. Execute it end-to-end (spawn parallel sub-agents per the wave map below), then hand back for a single architect review. Target 95%; the **Architect-Reserved** items at the bottom are expected to come back to the architect. Steps use `- [ ]` for tracking.
