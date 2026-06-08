@@ -32,7 +32,7 @@ export const POST = defineRoute<PostInput>({
     await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
 
     if (templateId) {
-      const source = await repo.agentConfig.findUnique({ where: { id: templateId } })
+      const source = await repo.raw.agentConfig.findUnique({ where: { id: templateId } })
       if (source) {
         for (let attempt = 0; attempt < 3; attempt++) {
           const max = await repo.agentConfig.findFirst({ where: { name: source.name }, orderBy: { version: 'desc' }, select: { version: true } })
