@@ -1,6 +1,6 @@
 // Intera Harness - CaseAgentLoop
 // Case-specific execution engine: stage progression, sub-agent orchestration,
-// policy enforcement, and terminal case tool handling.
+// Hook enforcement, and terminal case tool handling.
 // Extracted from AgentLoop (loop.ts) as Phase 2 of the architectural split.
 //
 // Responsibilities:
@@ -17,7 +17,7 @@ import { StageExecutor, type TransitionEval } from './stage-executor'
 import { ProcedureExecutor } from './procedure-executor'
 import { OrchestratorAgent } from './orchestrator'
 import type { ChatMemoryManager } from './memory'
-import type { PolicyEngine } from './policy'
+import type { HookEngine } from './hook-engine'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
@@ -26,7 +26,7 @@ import type { LoopResult } from './loop'
 
 // ---------------------------------------------------------------------------
 // Service bag — injected by AgentLoop so CaseAgentLoop never owns the
-// mutable message list or policy engine directly.
+// mutable message list or Hook engine directly.
 // ---------------------------------------------------------------------------
 
 export interface CaseLoopServices {
@@ -38,7 +38,7 @@ export interface CaseLoopServices {
   config: AgentConfigData
   chatMemory: ChatMemoryManager
   /** Live accessor — called at usage time, never captured at construction. */
-  getPolicyEngine: () => PolicyEngine
+  getHookEngine: () => HookEngine
   traceWriter: TraceWriter
   toolRouter: ToolRouter
   /** Always returns the current message array (survives loadMessages replacement). */
@@ -98,6 +98,16 @@ export class CaseAgentLoop {
   // ── Public state ──────────────────────────────────────────────────────────
 
   get currentStage(): string { return this._currentStage }
+
+  getProcedureStepIdsForTool(toolName?: string): string[] {
+    if (!this.procedureExecutor) return []
+    return this.procedureExecutor.stepIdsForTool(toolName, this.services.chatMemory.getTodos())
+  }
+
+  getStopProcedureStepIds(): string[] {
+    if (!this.procedureExecutor) return []
+    return this.procedureExecutor.stepIdsForStop(this.services.chatMemory.getTodos())
+  }
 
   /**
    * True when the case is past the "created" discovery stage.
@@ -539,8 +549,8 @@ export class CaseAgentLoop {
 
   private buildHitCounts(): Map<string, number> {
     const m = new Map<string, number>()
-    const policyEngine = this.services.getPolicyEngine()
-    for (const name of policyEngine.getPolicyNames()) {
+    const hookEngine = this.services.getHookEngine()
+    for (const name of hookEngine.getHookNames()) {
       const c = this.services.chatMemory.getPolicyHitCount(name)
       if (c > 0) m.set(name, c)
     }
@@ -693,12 +703,15 @@ export class CaseAgentLoop {
       !this.services.chatMemory.getSkillsCalled().includes('create_human_task')
     ) {
       const blockedMsg =
-        '[POLICY] This case type requires human review before finalizing. ' +
+        '[HOOK: Stop] This case type requires human review before finalizing. ' +
         'Call create_human_task to escalate to a human specialist.'
-      await this.services.traceWriter.write('policy_hit', 'Finalize blocked: mandatory human review required', {})
+      await this.services.traceWriter.write('loop_decision', 'Finalize blocked: mandatory human review required', {
+        checkpoint: 'Stop',
+        requirement: 'mandatory_human_review',
+      })
       sendEvent({
         type: 'policy_blocked',
-        data: { toolName: 'finalize_case', policyNames: ['mandatory_human_review'] },
+        data: { toolName: 'finalize_case', hookNames: ['mandatory_human_review'] },
         timestamp: new Date().toISOString(),
       })
       this.services.addMessage(this.services.makeUserMessage(blockedMsg))
@@ -706,38 +719,63 @@ export class CaseAgentLoop {
     }
 
     const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
-    const policyEngine = this.services.getPolicyEngine()
-    const preFinalizeEval = await policyEngine.evaluate(
-      'preFinalize',
+    const hookEngine = this.services.getHookEngine()
+    const stopEval = await hookEngine.evaluate(
+      'Stop',
       {
-        toolName: 'finalize_case',
-        skillOutput: finalizedPayload,
-        confirmedFacts: this.services.chatMemory.getConfirmedFacts(),
-        toolsCalled: this.services.chatMemory.getSkillsCalled(),
-        toolResults: this.services.chatMemory.getSummary().skillResults as Record<string, unknown>,
+        checkpoint: 'Stop',
+        agentConfigId: this.services.agentConfigId,
+        caseId: this.services.caseId,
+        chatId: this.services.chatId ?? undefined,
+        caseType: {
+          type: this.caseSchema.type,
+          displayName: this.caseSchema.displayName,
+        },
+        procedureStepIds: this.getStopProcedureStepIds(),
+        tool: {
+          name: 'finalize_case',
+          input: finalizeResult.toolUse?.input,
+          output: finalizedPayload,
+        },
+        caseFacts: this.services.chatMemory.getConfirmedFacts(),
+        missingFacts: this.services.chatMemory.getMissingFacts(),
+        previousToolCalls: this.services.chatMemory.getSkillsCalled().map((name) => ({
+          name,
+          output: this.services.chatMemory.getSkillResult(name),
+        })),
+        traceSummary: this.services.chatMemory.getKeyEvents().slice(-10).map((event) => ({
+          at: event.at,
+          text: event.text,
+          source: event.source,
+        })),
+        replyDraft: typeof finalizedPayload === 'string' ? finalizedPayload : JSON.stringify(finalizedPayload),
+        metadata: {
+          currentStage: this._currentStage,
+          terminalTool: 'finalize_case',
+        },
       },
       this.buildHitCounts(),
     )
 
-    if (preFinalizeEval.summary === 'blocked' || preFinalizeEval.summary === 'escalated') {
-      for (const r of preFinalizeEval.results) {
-        if (r.result !== 'pass') this.services.chatMemory.recordPolicyHit(r.policyName)
+    if (stopEval.summary === 'block' || stopEval.summary === 'escalate') {
+      for (const r of stopEval.results) {
+        if (r.action !== 'allow') this.services.chatMemory.recordPolicyHit(r.hookName)
       }
       await this.services.traceWriter.write(
-        'policy_hit',
-        'Finalize blocked',
-        preFinalizeEval as unknown as Record<string, unknown>,
+        'loop_decision',
+        'Finalize blocked by Stop Hook',
+        stopEval as unknown as Record<string, unknown>,
       )
       sendEvent({
         type: 'error',
-        data: `Finalize blocked by policy: ${preFinalizeEval.results
-          .filter((r) => r.result === 'blocked')
-          .map((r) => r.policyName)
+        data: `Finalize blocked by Stop Hook: ${stopEval.results
+          .filter((r) => r.action === 'block' || r.action === 'escalate')
+          .map((r) => r.hookName)
           .join(', ')}`,
         timestamp: new Date().toISOString(),
       })
-      if (preFinalizeEval.feedbackMessage) {
-        this.services.addMessage(this.services.makeUserMessage(preFinalizeEval.feedbackMessage))
+      if (stopEval.feedbackMessage) {
+        this.services.addMessage(this.services.makeUserMessage(stopEval.feedbackMessage))
       }
       return { type: 'continue' }
     }
@@ -811,8 +849,9 @@ export class CaseAgentLoop {
 
   /**
    * Apply an evaluator-approved stage transition.
-   * Updates currentStage, resets nudgeCount, reloads stage guardrails,
-   * and dispatches any sub-agents configured for the new stage.
+   * Updates currentStage, resets nudgeCount, and dispatches any sub-agents
+   * configured for the new stage. Hook activation is owned by HookBinding
+   * scope, not legacy stage config mutation.
    *
    * Returns true if a transition actually occurred.
    */
@@ -852,13 +891,6 @@ export class CaseAgentLoop {
       },
       timestamp: new Date().toISOString(),
     })
-
-    const policyEngine = this.services.getPolicyEngine()
-    policyEngine.clearStageGuardrails()
-    const stageGuardrails = this.stageExecutor.getStageGuardrails(this._currentStage)
-    if (stageGuardrails.length > 0) {
-      policyEngine.loadStageGuardrails(stageGuardrails)
-    }
 
     if (this.orchestrator?.isEnabled()) {
       const stageCfg = this.stageExecutor.getStageConfig(this._currentStage)

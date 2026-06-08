@@ -12,7 +12,7 @@ import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, Ag
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { ChatMemoryManager, ChatSessionManager } from './memory'
-import { PolicyEngine } from './policy'
+import { HookEngine, type HookEvaluationResult } from './hook-engine'
 import { ToolRouter } from './tools'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
@@ -32,6 +32,7 @@ import { consumeStream, buildToolUsesFromBlocks, type StreamContentBlock, type S
 import { profileKey } from './identity'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
+import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks'
 
 // ---------------------------------------------------------------------------
 // StreamingTextSanitizer
@@ -43,8 +44,8 @@ import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
 import { makeUserMessage, buildApiMessages } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
-import { buildToolResultMessageFromSynthesis, buildPolicyFeedbackMessage } from './tool-result-manager'
-import { interceptToolResults, processPendingGuardrailToolCalls as guardrailToolCalls, processDispatchSubagent as dispatchSubagent, type ToolInterceptorContext } from './tool-interceptor'
+import { buildToolResultMessageFromSynthesis, buildPolicyFeedbackMessage as buildHookFeedbackMessage } from './tool-result-manager'
+import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, processDispatchSubagent as dispatchSubagent, type ToolInterceptorContext } from './tool-interceptor'
 import { runReActLoop } from './react-loop'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 
@@ -54,7 +55,7 @@ import { escalationMessageFor, latestUserText } from './customer-messages'
 
 export interface AgentLoopDeps {
   config: AgentConfigData
-  /** AgentConfig ID for scoped Tool + Policy loading. */
+  /** AgentConfig ID for scoped Tool + Hook loading. */
   configId: string
   caseId: string
   orgId: string
@@ -92,7 +93,7 @@ export interface LoopResult {
 export class AgentLoop {
   private messages: Message[] = []
   private chatMemory: ChatMemoryManager
-  private policyEngine!: PolicyEngine
+  private hookEngine!: HookEngine
   private toolRouter: ToolRouter
   /** Case-specific execution engine — null in Core (discovery) mode. */
   private caseLoop: CaseAgentLoop | null = null
@@ -155,7 +156,7 @@ export class AgentLoop {
       chatId: this.deps.chatId,
       config: this.deps.config,
       chatMemory: this.chatMemory,
-      getPolicyEngine: () => this.policyEngine,
+      getHookEngine: () => this.hookEngine,
       traceWriter: this.traceWriter,
       toolRouter: this.toolRouter,
       getMessages: () => this.messages,
@@ -164,11 +165,15 @@ export class AgentLoop {
     }
   }
 
-  /** Create and initialize an AgentLoop — loads skills/policies from DB. */
+  /** Create and initialize an AgentLoop — loads Tools/Hooks from DB. */
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
     loop.toolRouter = await ToolRouter.create(deps.configId, deps.dryRun ?? false)
-    loop.policyEngine = await PolicyEngine.create(deps.configId, deps.caseSchema?.guardrails)
+    loop.hookEngine = await HookEngine.create(deps.configId, {
+      caseType: deps.caseSchema
+        ? { type: deps.caseSchema.type, displayName: deps.caseSchema.displayName }
+        : null,
+    })
     return loop
   }
 
@@ -219,7 +224,8 @@ export class AgentLoop {
     let usage: Record<string, unknown> | null = null
     // S1 tool-result invariant: track why each tool_use didn't produce a real result
     const missingReasons = new Map<string, import('./tool-result-invariant').SynthesisReason>()
-    const pendingPolicyFeedback: string[] = []
+    const pendingHookFeedback: string[] = []
+    let stopRetryCount = 0
 
     do {
       this.iterationCount++
@@ -251,11 +257,11 @@ export class AgentLoop {
         }
       } catch { /* session-store unavailable (e.g. build-time), skip */ }
 
-      // ── Graduated policy escalation check ─────────────────────
-      // If any policy has been violated 3+ times in this session, escalate.
+      // ── Graduated Hook escalation check ─────────────────────
+      // If any Hook has been hit 3+ times in this session, escalate.
       const buildHitCounts = (): Map<string, number> => {
         const m = new Map<string, number>()
-        for (const name of this.policyEngine.getPolicyNames()) {
+        for (const name of this.hookEngine.getHookNames()) {
           const c = this.chatMemory.getPolicyHitCount(name)
           if (c > 0) m.set(name, c)
         }
@@ -263,19 +269,19 @@ export class AgentLoop {
       }
       {
         const hitCounts = buildHitCounts()
-        let maxPolicyHits = 0
+        let maxHookHits = 0
         for (const count of hitCounts.values()) {
-          if (count > maxPolicyHits) maxPolicyHits = count
+          if (count > maxHookHits) maxHookHits = count
         }
-        if (maxPolicyHits >= 3) {
-          await this.traceWriter.write('loop_decision', 'Exit: max policy violations', {
-            policyEscalation: true,
-            maxPolicyHits,
+        if (maxHookHits >= 3) {
+          await this.traceWriter.write('loop_decision', 'Exit: max Hook hits', {
+            hookEscalation: true,
+            maxHookHits,
             iteration: this.iterationCount,
           })
           sendEvent({
             type: 'error',
-            data: `Agent repeatedly violated policies (${maxPolicyHits} hits) — needs human intervention`,
+            data: `Agent repeatedly hit Hooks (${maxHookHits} hits) - needs human intervention`,
             timestamp: new Date().toISOString(),
           })
           return {
@@ -283,7 +289,7 @@ export class AgentLoop {
             caseStatus: 'escalated',
             transition: 'error',
             currentStage: this.currentStage,
-            reason: 'max_policy_violations',
+            reason: 'max_hook_hits',
           }
         }
       }
@@ -367,6 +373,28 @@ export class AgentLoop {
       let assistantMessage: AssistantMessage | null = null
       let assistantPushed = false
       let fullText = ''
+      const visibleTextBuffer: string[] = []
+      const streamSendEvent = (event: SSEEvent) => {
+        if (event.type === 'text_delta') {
+          visibleTextBuffer.push(String(event.data ?? ''))
+          return
+        }
+        sendEvent(event)
+      }
+      const flushVisibleText = () => {
+        for (const chunk of visibleTextBuffer) {
+          if (!chunk) continue
+          sendEvent({
+            type: 'text_delta',
+            data: chunk,
+            timestamp: new Date().toISOString(),
+          })
+        }
+        visibleTextBuffer.length = 0
+      }
+      const discardVisibleText = () => {
+        visibleTextBuffer.length = 0
+      }
       // Reset per-iteration
       stopReason = null
       usage = null
@@ -420,7 +448,7 @@ export class AgentLoop {
         )
       } catch (err) {
         // P1-4: Transient LLM API errors should NOT trigger escalated/transfer.
-        // Only intentional handoffs (policy escalation, max_nudges) should escalate.
+        // Only intentional handoffs (Hook escalation, max_nudges) should escalate.
         if (err instanceof FallbackTriggeredError) {
           sendEvent({ type: 'error', data: `Model fallback exhausted: ${err.originalModel}`, timestamp: new Date().toISOString() })
           return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: 'llm_fallback_exhausted' }
@@ -474,45 +502,44 @@ export class AgentLoop {
 
       try {
         const streamResult = await consumeStream(stream, blocks, {
-          sendEvent,
+          sendEvent: streamSendEvent,
           sanitizeChunk: (text: string) => textSanitizer.feed(text),
           flushSanitizer: () => textSanitizer.flush(),
           recordFirstToken: () => this.profiler.recordFirstToken(),
           emitThinking: this.deps.emitThinking ?? false,
           onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
-            // PreTool policy check
-            const preToolEval = await this.policyEngine.evaluate('preTool', {
-              toolName: toolUse.name,
-              skillInput: toolUse.input,
-              confirmedFacts: this.chatMemory.getConfirmedFacts(),
-              toolsCalled: this.chatMemory.getSkillsCalled(),
-              toolResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
+            // PreToolUse Hook checkpoint
+            const preHookEval = await this.hookEngine.evaluate('PreToolUse', {
+              ...this.buildHookContext('PreToolUse', {
+                toolName: toolUse.name,
+                toolInput: toolUse.input,
+              }),
             }, buildHitCounts())
 
-            if (preToolEval.summary === 'blocked') {
-              // Record policy hit for graduated response
-              const blockingPolicies: string[] = []
-              for (const r of preToolEval.results) {
-                if (r.result !== 'pass') {
-                  this.chatMemory.recordPolicyHit(r.policyName)
-                  if (r.result === 'blocked') blockingPolicies.push(r.policyName)
+            if (preHookEval.summary === 'block') {
+              // Record Hook hit for graduated response
+              const blockingHooks: string[] = []
+              for (const r of preHookEval.results) {
+                if (r.action !== 'allow') {
+                  this.chatMemory.recordPolicyHit(r.hookName)
+                  if (r.action === 'block') blockingHooks.push(r.hookName)
                 }
               }
               await this.traceWriter.write(
-                'policy_hit',
-                `Blocked: ${toolUse.name}`,
-                preToolEval as unknown as Record<string, unknown>,
+                'loop_decision',
+                `Hook blocked Tool: ${toolUse.name}`,
+                preHookEval as unknown as Record<string, unknown>,
               )
               sendEvent({
                 type: 'policy_blocked',
-                data: { toolName: toolUse.name, policyNames: blockingPolicies },
+                data: { toolName: toolUse.name, hookNames: blockingHooks },
                 timestamp: new Date().toISOString(),
               })
               // S1: record missing reason — post-stream synthesis will build the tool_result.
               // The feedback message comes AFTER the tool_result, not instead of it.
               missingReasons.set(toolUse.id, 'policy_blocked')
-              if (preToolEval.feedbackMessage) {
-                pendingPolicyFeedback.push(preToolEval.feedbackMessage)
+              if (preHookEval.feedbackMessage) {
+                pendingHookFeedback.push(preHookEval.feedbackMessage)
               }
               if (!assistantPushed && am) {
                 this.messages.push(am)
@@ -521,31 +548,31 @@ export class AgentLoop {
               return
             }
 
-            // G11: preTool escalated with pendingToolCalls (e.g. onUnavailable→invoke_tool)
-            if (preToolEval.pendingToolCalls && preToolEval.pendingToolCalls.length > 0) {
-              for (const r of preToolEval.results) {
-                if (r.result !== 'pass') this.chatMemory.recordPolicyHit(r.policyName)
+            // PreToolUse escalated with pendingToolCalls (for example: create_human_task).
+            if (preHookEval.pendingToolCalls && preHookEval.pendingToolCalls.length > 0) {
+              for (const r of preHookEval.results) {
+                if (r.action !== 'allow') this.chatMemory.recordPolicyHit(r.hookName)
               }
               await this.traceWriter.write(
-                'policy_hit',
-                `Escalated (preTool): ${toolUse.name}`,
-                preToolEval as unknown as Record<string, unknown>,
+                'loop_decision',
+                `Hook escalated Tool: ${toolUse.name}`,
+                preHookEval as unknown as Record<string, unknown>,
               )
               sendEvent({
                 type: 'policy_blocked',
-                data: { toolName: toolUse.name, policyNames: preToolEval.results.filter(r => r.result === 'escalated').map(r => r.policyName) },
+                data: { toolName: toolUse.name, hookNames: preHookEval.results.filter(r => r.action === 'escalate').map(r => r.hookName) },
                 timestamp: new Date().toISOString(),
               })
               missingReasons.set(toolUse.id, 'policy_escalated')
-              if (preToolEval.feedbackMessage) {
-                pendingPolicyFeedback.push(preToolEval.feedbackMessage)
+              if (preHookEval.feedbackMessage) {
+                pendingHookFeedback.push(preHookEval.feedbackMessage)
               }
               if (!assistantPushed && am) {
                 this.messages.push(am)
                 assistantPushed = true
               }
               // Process the escalation
-              await guardrailToolCalls(this.buildToolInterceptorContext(), preToolEval, sendEvent)
+              await hookToolCalls(this.buildToolInterceptorContext(), preHookEval, sendEvent)
               return
             }
 
@@ -643,6 +670,64 @@ export class AgentLoop {
         this.profiler.addToolExecution(tr.latencyMs || 0)
       }
 
+      let stopBlockedThisIteration = false
+      if (fullText.trim().length > 0) {
+        const stopEval = await this.hookEngine.evaluate('Stop', {
+          ...this.buildHookContext('Stop', {
+            replyDraft: fullText,
+          }),
+        }, buildHitCounts())
+
+        await this.traceWriter.write(
+          'loop_decision',
+          `Hook checkpoint Stop: ${stopEval.summary}`,
+          stopEval as unknown as Record<string, unknown>,
+        )
+
+        if (stopEval.summary === 'warn' || stopEval.summary === 'allow') {
+          for (const r of stopEval.results) {
+            if (r.action === 'warn') this.chatMemory.recordPolicyHit(r.hookName)
+          }
+          flushVisibleText()
+          if (stopEval.feedbackMessage && stopEval.summary === 'warn') {
+            pendingHookFeedback.push(stopEval.feedbackMessage)
+          }
+        } else {
+          stopBlockedThisIteration = true
+          discardVisibleText()
+          for (const r of stopEval.results) {
+            if (r.action !== 'allow') this.chatMemory.recordPolicyHit(r.hookName)
+          }
+          assistantMessage.content = ''
+
+          if (toolResults.length === 0) {
+            const stopAction = await this.handleStopBlocked(
+              stopEval,
+              stopRetryCount,
+              sendEvent,
+            )
+            if (stopAction.kind === 'retry') {
+              stopRetryCount++
+              if (stopAction.feedbackMessage) {
+                this.messages.push(makeUserMessage(stopAction.feedbackMessage))
+              }
+              stopReason = null
+              continue
+            }
+            this.compactUserProfile().catch(() => {})
+            this.persistChatSession().catch(() => {})
+            return stopAction.result
+          }
+
+          if (stopEval.feedbackMessage) {
+            pendingHookFeedback.push(stopEval.feedbackMessage)
+          }
+          if (stopEval.pendingToolCalls?.length) {
+            await hookToolCalls(this.buildToolInterceptorContext(), stopEval, sendEvent)
+          }
+        }
+      }
+
       // ── Ensure assistant message is pushed before tool results ──
       // For blocked/escalated tools, the message was already pushed in onToolUseCompleted.
       // For normal tools, we push it here so the tool_result message comes after it.
@@ -698,11 +783,11 @@ export class AgentLoop {
           this.messages.push(buildToolResultMessageFromSynthesis(synthesisBlocks))
         }
 
-        // Push pending policy feedback AFTER the tool_result message
-        for (const feedback of pendingPolicyFeedback) {
-          this.messages.push(buildPolicyFeedbackMessage(feedback))
+        // Push pending Hook feedback AFTER the tool_result message
+        for (const feedback of pendingHookFeedback) {
+          this.messages.push(buildHookFeedbackMessage(feedback))
         }
-        pendingPolicyFeedback.length = 0
+        pendingHookFeedback.length = 0
         missingReasons.clear()
 
         // Dev-only invariant assertion
@@ -730,6 +815,13 @@ export class AgentLoop {
           currentStage: this.currentStage,
           reason: 'stream_error',
         }
+      }
+
+      if (stopBlockedThisIteration && toolResults.length > 0) {
+        await this.traceWriter.write('loop_decision', 'Stop Hook blocked streamed reply; continuing for repair', {
+          iteration: this.iterationCount,
+          toolCount: toolResults.length,
+        })
       }
 
       // ── Intercept dispatch_subagent (CC mode sub-agent dispatch) ──
@@ -922,54 +1014,56 @@ export class AgentLoop {
         )
       }
 
-      // ── PostTool policy evaluation (batched LLM, single call) ──
+      // ── PostToolUse Hook evaluation ──
       if (toolResults.length > 0) {
         // Tools were called — reset nudge count (LLM is complying)
         if (this.nudgeCount > 0) this.nudgeCount = 0
         try {
-        const ctxSummary = toolResults
-          .map((r) => `[${r.name}]: ${JSON.stringify(unwrapToolExecutionPayload(r.output))}`)
-          .join('\n')
-        const executedSkills = toolResults.map((r) => r.name)
-        const postToolEval = await this.policyEngine.evaluate('postTool', {
-          skillOutput: ctxSummary,
-          confirmedFacts: this.chatMemory.getConfirmedFacts(),
-          executedSkills,
-          toolsCalled: this.chatMemory.getSkillsCalled(),
-          toolResults: this.chatMemory.getSummary().skillResults as Record<string, unknown>,
-        }, buildHitCounts())
+          for (const result of toolResults) {
+            const payload = unwrapToolExecutionPayload(result.output)
+            const postHookEval = await this.hookEngine.evaluate('PostToolUse', {
+              ...this.buildHookContext('PostToolUse', {
+                toolName: result.name,
+                toolInput: result.toolUse?.input,
+                toolOutput: payload,
+                toolError: (result.output as { error?: string })?.error,
+              }),
+            }, buildHitCounts())
 
-        for (const r of postToolEval.results) {
-          if (r.result !== 'pass') {
-            this.chatMemory.recordPolicyHit(r.policyName)
-            await this.traceWriter.write(
-              'policy_hit',
-              `${r.result === 'escalated' ? 'Escalated' : 'Blocked'}: ${r.policyName}`,
-              { result: r.result, reason: r.reason, model: r.modelUsed },
-            )
+            for (const r of postHookEval.results) {
+              if (r.action !== 'allow') {
+                this.chatMemory.recordPolicyHit(r.hookName)
+                await this.traceWriter.write(
+                  'loop_decision',
+                  `Hook ${r.action}: ${r.hookName}`,
+                  {
+                    checkpoint: 'PostToolUse',
+                    result: r.action,
+                    reason: r.reason,
+                    toolName: result.name,
+                    model: r.modelUsed,
+                  },
+                )
+              }
+            }
+
+            // Inject Hook feedback into message stream
+            if (postHookEval.feedbackMessage) {
+              this.messages.push(makeUserMessage(postHookEval.feedbackMessage))
+            }
+
+            if (postHookEval.pendingToolCalls && postHookEval.pendingToolCalls.length > 0) {
+              await hookToolCalls(this.buildToolInterceptorContext(), postHookEval, sendEvent)
+            }
+
+            if (!postHookEval.pendingToolCalls || postHookEval.pendingToolCalls.length === 0) {
+              if (postHookEval.summary === 'escalate') {
+                await hookToolCalls(this.buildToolInterceptorContext(), postHookEval, sendEvent)
+              }
+            }
           }
-        }
-
-        // Inject policy feedback into message stream
-        if (postToolEval.feedbackMessage) {
-          this.messages.push(makeUserMessage(postToolEval.feedbackMessage))
-        }
-
-        // G11: Process pending tool calls from guardrail hooks (generalized escalate path).
-        // Each pendingToolCall represents a hook resolving to invoke_tool (e.g. create_human_task).
-        // Reuses the existing auto-escalate infrastructure (pendingEscalation → waiting_human return).
-        if (postToolEval.pendingToolCalls && postToolEval.pendingToolCalls.length > 0) {
-          await guardrailToolCalls(this.buildToolInterceptorContext(), postToolEval, sendEvent)
-        }
-
-        // Legacy: auto-escalate on escalated summary (backward compat for hooks without invoke_tool).
-        if (!postToolEval.pendingToolCalls || postToolEval.pendingToolCalls.length === 0) {
-          if (postToolEval.summary === 'escalated') {
-            await guardrailToolCalls(this.buildToolInterceptorContext(), postToolEval, sendEvent)
-          }
-        }
-        } catch (policyErr) {
-          console.error('[AgentLoop] PostTool evaluation failed:', policyErr)
+        } catch (hookErr) {
+          console.error('[AgentLoop] PostToolUse Hook evaluation failed:', hookErr)
         }
       }
 
@@ -1027,7 +1121,7 @@ export class AgentLoop {
           caseStatus: 'escalated',
           transition: 'waiting_human',
           currentStage: this.currentStage,
-          reason: 'auto_escalated_by_policy',
+          reason: 'auto_escalated_by_hook',
         }
       }
 
@@ -1079,6 +1173,157 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
+
+  private buildHookContext(
+    checkpoint: HookCheckpoint,
+    options: {
+      toolName?: string
+      toolInput?: unknown
+      toolOutput?: unknown
+      toolError?: string
+      replyDraft?: string
+      procedureStepIds?: string[]
+    } = {},
+  ): HookContext {
+    const procedureStepIds = options.procedureStepIds ??
+      (checkpoint === 'Stop'
+        ? this.caseLoop?.getStopProcedureStepIds()
+        : this.caseLoop?.getProcedureStepIdsForTool(options.toolName)) ??
+      []
+
+    return {
+      checkpoint,
+      agentConfigId: this.deps.configId,
+      caseId: this.deps.caseId,
+      chatId: this.deps.chatId ?? undefined,
+      caseType: this.deps.caseSchema
+        ? {
+            type: this.deps.caseSchema.type,
+            displayName: this.deps.caseSchema.displayName,
+          }
+        : undefined,
+      procedureStepIds,
+      tool: options.toolName
+        ? {
+            name: options.toolName,
+            input: options.toolInput,
+            output: options.toolOutput,
+            error: options.toolError,
+          }
+        : undefined,
+      caseFacts: this.chatMemory.getConfirmedFacts(),
+      missingFacts: this.chatMemory.getMissingFacts(),
+      previousToolCalls: this.chatMemory.getSkillsCalled().map((name) => ({
+        name,
+        output: this.chatMemory.getSkillResult(name),
+      })),
+      traceSummary: this.chatMemory.getKeyEvents().slice(-10).map((event) => ({
+        at: event.at,
+        text: event.text,
+        source: event.source,
+      })),
+      replyDraft: options.replyDraft,
+      metadata: {
+        currentStage: this.currentStage,
+        iteration: this.iterationCount,
+      },
+    }
+  }
+
+  private async handleStopBlocked(
+    stopEval: HookEvaluationResult,
+    stopRetryCount: number,
+    sendEvent: (event: SSEEvent) => void,
+  ): Promise<
+    | { kind: 'retry'; feedbackMessage?: string }
+    | { kind: 'terminal'; result: LoopResult }
+  > {
+    const maxStopRetries = this.getMaxStopRetries()
+    const shouldRetry = stopEval.summary === 'block' && stopRetryCount < maxStopRetries
+
+    await this.traceWriter.write('loop_decision', shouldRetry ? 'Stop Hook retry' : 'Stop Hook fallback', {
+      checkpoint: 'Stop',
+      summary: stopEval.summary,
+      retry: stopRetryCount,
+      maxStopRetries,
+      hookNames: stopEval.results.filter((r) => r.action !== 'allow').map((r) => r.hookName),
+    })
+
+    if (shouldRetry) {
+      sendEvent({
+        type: 'withheld',
+        data: 'Reply held for Hook repair.',
+        timestamp: new Date().toISOString(),
+      })
+      return { kind: 'retry', feedbackMessage: stopEval.feedbackMessage }
+    }
+
+    const safeMessage = stopEval.summary === 'escalate'
+      ? escalationMessageFor(latestUserText(this.messages))
+      : 'I need to route this to a human specialist to make sure we give you an accurate answer. A teammate will review the case and follow up.'
+
+    try {
+      const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+      await this.persistence.ensureCase({
+        id: this.deps.caseId,
+        orgId: this.deps.orgId,
+        userId: this.deps.userId,
+        type: resolvedCaseType,
+        status: 'escalated',
+        blocker: `Stop Hook fallback: ${stopEval.results.map((r) => r.hookName).join(', ')}`,
+        chatId: this.deps.chatId ?? this.deps.caseId,
+      })
+      await this.persistence.createHumanTask({
+        caseId: this.deps.caseId,
+        queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+        question: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
+        status: 'pending',
+      })
+    } catch (err) {
+      console.error('[AgentLoop] Failed to create Stop Hook fallback human task:', err)
+    }
+
+    const fallbackMessage: AssistantMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: safeMessage,
+      createdAt: new Date(),
+      isStreaming: false,
+    }
+    this.messages.push(fallbackMessage)
+
+    sendEvent({
+      type: 'text_delta',
+      data: safeMessage,
+      timestamp: new Date().toISOString(),
+    })
+    sendEvent({
+      type: 'message_stop',
+      data: { reason: 'stop_hook_fallback', stage: this.currentStage },
+      timestamp: new Date().toISOString(),
+    })
+    sendEvent({
+      type: 'escalated',
+      data: { stage: this.currentStage, reason: 'stop_hook_fallback' },
+      timestamp: new Date().toISOString(),
+    })
+
+    return {
+      kind: 'terminal',
+      result: {
+        messages: this.messages,
+        caseStatus: 'escalated',
+        transition: 'waiting_human',
+        currentStage: this.currentStage,
+        reason: 'stop_hook_fallback',
+      },
+    }
+  }
+
+  private getMaxStopRetries(): number {
+    const raw = (this.deps.config as AgentConfigData & { maxStopRetries?: unknown }).maxStopRetries
+    return typeof raw === 'number' && raw >= 0 ? Math.floor(raw) : 2
+  }
 
   private buildToolInterceptorContext(): ToolInterceptorContext {
     return {
@@ -1308,7 +1553,7 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
 
   /**
-   * Run a policy-driven ReAct loop.
+   * Run a strategy-driven ReAct loop.
    *
    * Delegates all behavior decisions (prompt assembly, tool filtering,
    * continuation, terminal tools) to the `ExecutionStrategy`, making the core

@@ -1,10 +1,9 @@
-// Playground guardrail-trace e2e (AC-F).
-// Proves a guardrail block produces a policy_hit (blocked) record
-// in the port traces[] → Guardrails stage fired:true, status:'block'.
+// Playground Hook block e2e (AC-F reset).
+// Proves a PreToolUse Hook block prevents Tool execution and is surfaced by
+// the playground result as a blocked turn.
 //
-// Unlike AC2 (trace-contract) which tests the aggregator with synthetic records,
-// AC-F drives the REAL pipeline: LLM emits tool_use → PolicyEngine.evaluate
-// → TraceWriter.write('policy_hit') → aggregateTraces → Guardrails stage.
+// Unlike trace-contract tests that use synthetic records, this drives the REAL
+// pipeline: LLM emits tool_use -> HookEngine.evaluate -> blocked SSE/result.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -27,11 +26,11 @@ const h = vi.hoisted(() => {
     { type: 'message_stop' },
   ]
 
-  // Turn 2: after guardrail blocks, model produces final text
+  // Turn 2: after Hook blocks, model produces final text
   const endTurnEvents = [
     { type: 'message_start', message: { id: 'm2', role: 'assistant', model: 'claude-sonnet-4-6', usage: { input_tokens: 200, output_tokens: 0 } } },
     { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'I cannot search that knowledge base due to policy restrictions.' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'I cannot perform that action. I can route this to a human specialist if needed.' } },
     { type: 'content_block_stop', index: 0 },
     { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 15 } },
     { type: 'message_stop' },
@@ -52,7 +51,7 @@ const h = vi.hoisted(() => {
   return { fakeClient, resetStreams }
 })
 
-// ── Mock prisma: policy.findMany returns a guardrail that denies kb_search_org ──
+// ── Mock prisma: hookBinding.findMany returns a PreToolUse Hook that denies refund_money ──
 vi.mock('@intera/shared/prisma', () => {
   const writes: string[] = []
 
@@ -61,22 +60,35 @@ vi.mock('@intera/shared/prisma', () => {
       get: (_t, op: string) =>
         vi.fn(async () => {
           if (typeof op === 'string' && op.startsWith('find')) {
-            // Return a guardrail policy that denies kb_search_org
-            if (model === 'policy' && op === 'findMany') {
+            if (model === 'tool' && op === 'findMany') return []
+            if (model === 'caseType' && op === 'findUnique') return null
+            // Return an active Hook binding that denies refund_money.
+            if (model === 'hookBinding' && op === 'findMany') {
               return [{
-                id: 'pol_guard_1',
-                name: 'no_high_risk_account_change',
-                orgId: 'org1',
+                scopeType: 'agent',
+                scopeKey: 'agent',
                 enabled: true,
-                hook: 'preTool',
-                guardrailConfig: JSON.stringify({
-                  when: 'preTool',
-                  match: { tools: ['refund_money'] },
-                  check: { kind: 'rule', denyTools: ['refund_money'] },
-                  onViolation: { action: 'block', guidance: 'Refunds are not allowed from the agent.' },
-                  onUnavailable: { action: 'closed' },
-                }),
-                rule: null,
+                hook: {
+                  id: 'hook_guard_1',
+                  name: 'no_high_risk_account_change',
+                  description: 'Block high-risk account changes',
+                  checkpoint: 'PreToolUse',
+                  handlerKind: 'declarative',
+                  handler: JSON.stringify({
+                    kind: 'declarative',
+                    check: {
+                      kind: 'rule',
+                      match: { tools: ['refund_money'] },
+                      denyTools: ['refund_money'],
+                    },
+                    effect: {
+                      decision: 'block',
+                      guidance: 'Refunds are not allowed from the agent.',
+                    },
+                  }),
+                  severity: 'critical',
+                  enabled: true,
+                },
               }]
             }
             if (model === 'agentConfig' && op === 'findFirst') return null
@@ -107,7 +119,7 @@ vi.mock('@/lib/agent/api/provider-config', () => ({
   createClient: () => h.fakeClient,
 }))
 
-// Mock loadAgentConfig; guardrail activation now comes from PolicyEngine safety floor / case type.
+// Mock loadAgentConfig.
 vi.mock('@/lib/agent/config-loader', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/lib/agent/config-loader')>()
   return {
@@ -120,7 +132,6 @@ vi.mock('@/lib/agent/config-loader', async (importOriginal) => {
       coreSystemPrompt: 'You are a helpful assistant.',
       extendedThinking: false,
       memoryStrategy: { l1MaxMessages: 20, autocompactThresholdTokens: 50000 },
-      policyHooks: {},
       capabilityBindings: JSON.stringify({ tools: [], caseTypes: [], knowledge: [] }),
       name: 'Test Agent',
     })),
@@ -148,8 +159,8 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('Playground guardrail-trace e2e (AC-F)', () => {
-  it('AC-F — guardrail block produces fired Guardrails stage with status:block', async () => {
+describe('Playground Hook block e2e (AC-F reset)', () => {
+  it('AC-F — PreToolUse Hook block marks the playground turn as blocked', async () => {
     vi.spyOn(OrchestratorAgent.prototype, 'planInvestigation').mockResolvedValue([{ id: 't1' } as never])
     vi.spyOn(OrchestratorAgent.prototype, 'dispatchInBackground').mockImplementation((() => undefined) as never)
 
@@ -159,12 +170,8 @@ describe('Playground guardrail-trace e2e (AC-F)', () => {
     const traceEvent = events.find((e: any) => e.type === 'trace') as any
     expect(traceEvent).toBeDefined()
 
-    const trace = traceEvent.data.trace || []
-
-    // AC-F: Guardrails stage is fired:true with status:block
-    const guardsStage = trace.find((s: any) => s.stage === 'Guardrails')
-    expect(guardsStage).toBeDefined()
-    expect(guardsStage.fired).toBe(true)
-    expect(guardsStage.status).toBe('block')
+    expect(traceEvent.data.blocked).toBe(true)
+    expect(events.some((e: any) => e.type === 'policy_blocked' && e.data?.hookNames?.includes('no_high_risk_account_change'))).toBe(true)
+    expect(events.some((e: any) => e.type === 'tool_executing' && e.data?.name === 'refund_money')).toBe(false)
   })
 })

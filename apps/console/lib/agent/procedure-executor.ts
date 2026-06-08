@@ -147,8 +147,40 @@ export class ProcedureExecutor {
     return requiredToolTargets(this.procedure)
   }
 
+  /** Step ids that are relevant for a Tool checkpoint in the current turn. */
+  stepIdsForTool(toolName: string | undefined, todos: TodoItem[]): string[] {
+    if (!toolName) return this.activeTodoStepIds(todos)
+    const matchingTargets = this.procedure.steps
+      .filter((s) => (s.action === 'use' || s.action === 'read') && s.target === toolName)
+      .map((s) => s.id)
+    return [...new Set([...matchingTargets, ...this.activeTodoStepIds(todos)])]
+  }
+
+  /** Step ids that should be in scope for Stop checks in the current turn. */
+  stepIdsForStop(todos: TodoItem[]): string[] {
+    const active = this.activeTodoStepIds(todos)
+    const completed = todos
+      .filter((todo) => todo.status === 'completed')
+      .map((todo) => todo.id)
+    return [...new Set([...active, ...completed])]
+  }
+
   /** Completion gate — see {@link isProcedureComplete}. */
   isComplete(state: { calledTools: string[]; finalized: boolean }): boolean {
     return isProcedureComplete(this.procedure, state)
+  }
+
+  private activeTodoStepIds(todos: TodoItem[]): string[] {
+    const ids = new Set(this.procedure.steps.map((step) => step.id))
+    const active = todos
+      .filter((todo) => ids.has(todo.id) && (todo.status === 'pending' || todo.status === 'in_progress'))
+      .map((todo) => todo.id)
+    if (active.length > 0) return active
+
+    const firstUnfinished = this.procedure.steps.find((step) => {
+      const todo = todos.find((t) => t.id === step.id)
+      return !todo || (todo.status !== 'completed' && todo.status !== 'cancelled')
+    })
+    return firstUnfinished ? [firstUnfinished.id] : []
   }
 }

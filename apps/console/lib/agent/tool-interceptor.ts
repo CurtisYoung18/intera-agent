@@ -8,7 +8,8 @@
 // the ReAct loop body focused on control flow.
 
 import { prisma } from '@intera/shared/prisma'
-import type { Message, SSEEvent, AgentConfigData, CaseSchemaConfig, CaseStatus, PolicyEvaluationResult } from '@intera/shared/types'
+import type { Message, SSEEvent, AgentConfigData, CaseSchemaConfig, CaseStatus } from '@intera/shared/types'
+import type { HookEvaluationResult } from './hook-engine'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
 import type { PersistencePort } from './persistence-port'
@@ -315,26 +316,26 @@ async function handleRequestUserInput(
 }
 
 // ---------------------------------------------------------------------------
-// processPendingGuardrailToolCalls
+// processPendingHookToolCalls
 // ---------------------------------------------------------------------------
 
-export async function processPendingGuardrailToolCalls(
+export async function processPendingHookToolCalls(
   ctx: ToolInterceptorContext,
-  policyEval: PolicyEvaluationResult,
+  hookEval: HookEvaluationResult,
   sendEvent: (event: SSEEvent) => void,
 ): Promise<void> {
-  const escalatedResults = policyEval.results.filter((r) => r.result === 'escalated')
+  const escalatedResults = hookEval.results.filter((r) => r.action === 'escalate')
   const escalatedReasons = escalatedResults
-    .map((r) => `${r.policyName}: ${r.reason || 'guardrail escalation'}`)
+    .map((r) => `${r.hookName}: ${r.reason || 'Hook escalation'}`)
     .join('; ')
 
-  await ctx.traceWriter.write('loop_decision', 'Auto-escalate from guardrail policy', {
-    policyNames: escalatedResults.map((r) => r.policyName),
+  await ctx.traceWriter.write('loop_decision', 'Auto-escalate from Hook', {
+    hookNames: escalatedResults.map((r) => r.hookName),
     reasons: escalatedReasons,
-    pendingToolCalls: policyEval.pendingToolCalls,
+    pendingToolCalls: hookEval.pendingToolCalls,
   })
 
-  const pendingCalls = policyEval.pendingToolCalls || []
+  const pendingCalls = hookEval.pendingToolCalls || []
   for (const ptc of pendingCalls) {
     if (ptc.tool === 'create_human_task') {
       try {
@@ -345,22 +346,22 @@ export async function processPendingGuardrailToolCalls(
           userId: ctx.userId,
           type: resolvedCaseType,
           status: 'escalated',
-          blocker: `Guardrail escalation (${ptc.hookName}): ${ptc.reason}`,
+          blocker: `Hook escalation (${ptc.hookName}): ${ptc.reason}`,
           chatId: ctx.chatId ?? ctx.caseId,
         })
         await ctx.persistence.createHumanTask({
           caseId: ctx.caseId,
           queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
-          question: `Auto-escalated by guardrail "${ptc.hookName}". ${ptc.reason}. Skills called: ${ctx.chatMemory.getSkillsCalled().join(', ')}.`,
+          question: `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getSkillsCalled().join(', ')}.`,
           status: 'pending',
         })
       } catch (err) {
-        console.error('[ToolInterceptor] Failed to auto-create human task from guardrail:', err)
+        console.error('[ToolInterceptor] Failed to auto-create human task from Hook:', err)
       }
     }
   }
 
-  // Legacy fallback: escalated results but no pendingToolCalls
+  // Fallback: escalated results but no pendingToolCalls
   if (pendingCalls.length === 0 && escalatedResults.length > 0) {
     try {
       const resolvedCaseType = ctx.caseSchema?.type || 'general'
@@ -370,17 +371,17 @@ export async function processPendingGuardrailToolCalls(
         userId: ctx.userId,
         type: resolvedCaseType,
         status: 'escalated',
-        blocker: `Policy escalation: ${escalatedReasons}`,
+        blocker: `Hook escalation: ${escalatedReasons}`,
         chatId: ctx.chatId ?? ctx.caseId,
       })
       await ctx.persistence.createHumanTask({
         caseId: ctx.caseId,
         queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
-        question: `Auto-escalated by policy. ${escalatedReasons}. Skills called: ${ctx.chatMemory.getSkillsCalled().join(', ')}.`,
+        question: `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getSkillsCalled().join(', ')}.`,
         status: 'pending',
       })
     } catch (err) {
-      console.error('[ToolInterceptor] Failed to auto-create human task from legacy escalation:', err)
+      console.error('[ToolInterceptor] Failed to auto-create human task from Hook escalation:', err)
     }
   }
 
