@@ -912,7 +912,7 @@ export class AgentLoop {
         await this.traceWriter.write(
           'skill_result',
           `Tool: ${result.name}`,
-          { output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, skillName: result.name, input: result.toolUse?.input },
+          { skillName: result.name, output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, input: result.toolUse?.input, renderHints: result.renderHints },
         )
       }
 

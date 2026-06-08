@@ -38,6 +38,7 @@ export interface ToolExecutionResult {
   output: unknown
   latencyMs: number
   toolUse?: ToolUse
+  renderHints?: ToolDefinition['renderHints']
 }
 
 /**
@@ -199,7 +200,7 @@ export class StreamingToolExecutor {
             'error',
             tool.definition.renderHints,
           )
-          this.results.push({ name: tool.name, output: tool.result, latencyMs: 0, toolUse: { id: tool.id, name: tool.name, input: tool.input, status: 'error' as const } })
+          this.results.push({ name: tool.name, output: tool.result, latencyMs: 0, toolUse: { id: tool.id, name: tool.name, input: tool.input, status: 'error' as const }, renderHints: tool.definition.renderHints })
           return
         }
         // Use the parsed (and potentially default-filled) input
@@ -229,7 +230,7 @@ export class StreamingToolExecutor {
           'completed',
           tool.definition.renderHints,
         )
-        this.results.push({ name: tool.name, output: tool.result, latencyMs: 1, toolUse: { id: tool.id, name: tool.name, input: tool.input, status: 'completed' as const } })
+        this.results.push({ name: tool.name, output: tool.result, latencyMs: 1, toolUse: { id: tool.id, name: tool.name, input: tool.input, status: 'completed' as const }, renderHints: tool.definition.renderHints })
         return
       }
       // system_info tools: allowed to execute for real in dryRun mode
@@ -282,6 +283,7 @@ export class StreamingToolExecutor {
       output: tool.result,
       latencyMs: tool.result.latencyMs,
       toolUse: completedToolUse,
+      renderHints: tool.definition.renderHints,
     })
   }
 
