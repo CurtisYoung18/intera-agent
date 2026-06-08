@@ -201,12 +201,14 @@ export default function PlaygroundPage() {
     let cancelled = false
 
     async function loadSession(sessionChatId: string) {
-      const detailRes = await fetch(`/api/admin/playground/sessions/${sessionChatId}`)
+      const cid = configId
+      const detailRes = await fetch(`/api/admin/playground/sessions/${sessionChatId}?configId=${encodeURIComponent(cid || 'default')}`)
       if (!detailRes.ok || cancelled) return
       const { data: detailData } = await detailRes.json() as { data: {
         chatId: string
         messages: Array<{ id: string; role: string; content: string; contentBlocks?: unknown; createdAt: string }>
         traces: Array<{ id: string; actionType: string; title: string; detail: string; payload: string; createdAt: string }>
+        renderHintsMap: Record<string, unknown>
       } }
       if (cancelled) return
       setChatId(detailData.chatId)
@@ -238,6 +240,35 @@ export default function PlaygroundPage() {
           currentGroup.push(trace)
         }
         if (currentGroup.length > 0) turnGroups.push(currentGroup)
+
+        // Rebuild liveTools from the last turn's skill_result traces so
+        // RenderHintCard components survive page refresh. During live use
+        // liveTools resets per turn — only the final turn's hints are shown.
+        if (turnGroups.length > 0) {
+          const lastTurn = turnGroups[turnGroups.length - 1]
+          const rebuiltTools: LiveTool[] = []
+          const seenNames = new Set<string>()
+          for (const trace of lastTurn) {
+            if (trace.actionType !== 'skill_result') continue
+            let payload: Record<string, unknown> = {}
+            try { payload = JSON.parse(trace.payload || '{}') } catch {}
+            const skillName = (payload.skillName as string) || trace.title?.replace(/^Skill result: /, '') || ''
+            if (!skillName || seenNames.has(skillName)) continue
+            seenNames.add(skillName)
+            const renderHints = detailData.renderHintsMap?.[skillName] as LiveTool['renderHints'] | undefined
+            rebuiltTools.push({
+              name: skillName,
+              status: 'done',
+              startedAt: new Date(trace.createdAt).getTime(),
+              finishedAt: new Date(trace.createdAt).getTime(),
+              result: payload.output ?? undefined,
+              renderHints: renderHints ?? undefined,
+            })
+          }
+          if (rebuiltTools.length > 0) {
+            setLiveTools(rebuiltTools)
+          }
+        }
 
         // Aggregate each turn's traces
         const restoredTraces = turnGroups.map((group) => {

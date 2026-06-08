@@ -4,11 +4,28 @@
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { getActiveVendor } from '@/lib/auth'
+import { z } from 'zod'
 
-export const GET = defineRoute<void, { chatId: string }>({
+/** Extract agent config id from chatId format pg_{configId}_{timestamp}_{random}. */
+function extractConfigId(chatId: string): string | null {
+  if (!chatId.startsWith('pg_')) return null
+  const rest = chatId.slice(3)
+  const parts = rest.split('_')
+  // Last part is random, second-to-last is numeric timestamp
+  if (parts.length < 3) return null
+  return parts.slice(0, -2).join('_')
+}
+
+const querySchema = z.object({
+  configId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'GET',
+  inputSchema: querySchema,
+  parseQuery: true,
   requireRole: ['admin', 'owner', 'operator'],
-  async handler({ params, repo }) {
+  async handler({ input, params, repo }) {
     const vendor = await getActiveVendor()
     if (!vendor?.isAuthed || !vendor.userId) {
       throw new NotFoundError('Session not found')
@@ -33,6 +50,29 @@ export const GET = defineRoute<void, { chatId: string }>({
       select: { id: true, actionType: true, title: true, detail: true, payload: true, createdAt: true },
     })
 
+    // Load tool renderHints for the agent config so the frontend can
+    // rebuild liveTools (RenderHintCard components) on session restore.
+    const configId = input?.configId || extractConfigId(params.chatId)
+    let renderHintsMap: Record<string, unknown> = {}
+    if (configId) {
+      try {
+        const tools = await repo.raw.tool.findMany({
+          where: {
+            agentConfigId: configId,
+            renderHints: { not: null },
+          },
+          select: { name: true, renderHints: true },
+        })
+        for (const tool of tools) {
+          try {
+            if (tool.renderHints) {
+              renderHintsMap[tool.name] = JSON.parse(tool.renderHints)
+            }
+          } catch { /* ignore invalid JSON */ }
+        }
+      } catch { /* non-critical; best-effort */ }
+    }
+
     return apiOk({
       chatId: params.chatId,
       messages: messages.map((m) => ({
@@ -50,6 +90,7 @@ export const GET = defineRoute<void, { chatId: string }>({
         payload: t.payload,
         createdAt: t.createdAt.toISOString(),
       })),
+      renderHintsMap,
     })
   },
 })
