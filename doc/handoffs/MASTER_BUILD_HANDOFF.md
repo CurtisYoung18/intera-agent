@@ -23,6 +23,8 @@
 | ~~AUDIT-L5~~ | ~~architect→coding~~ | ~~Tenant-isolation fix — assertAgentInOrg across all sub-module routes (HARD_BUGS §L5)~~ | ~~NEW `lib/api/assert-agent-in-org.ts`, NEW cross-org test, all sub-module routes~~ | ~~2026-06-08~~ |
 | ~~K1~~ | ~~architect~~ | ~~Knowledge page redesign~~ | ~~`page.tsx` (full rewrite)~~ | ~~2026-06-05~~ |
 | ~~M1~~ | ~~architect→coding~~ | ~~Model page refactor Phases 1-6~~ | ~~see plan~~ | ~~2026-06-08~~ |
+| DOC-PROCEDURE | codex | Procedure / single Case Owner docs + spec correction | `doc/spec/Intera_Customer_Service_Procedure_Model.md`, `doc/spec/Intera_Harness_架构梳理.md`, `doc/spec/LiveChat 客户对话流程（Sampled Flow）.md` | 2026-06-08 |
+| PROC-PHASE1 | coding-team-leader | Procedure refactor **Phase 1** — Procedure contract/types + additive `CaseType` columns (no behavior change). Owns `schema.prisma` exclusively (Phases 1 & 5). | `packages/shared/types/index.ts`, `packages/shared/contracts/case-types.ts`, `packages/shared/prisma/schema.prisma`, NEW `packages/shared/contracts/__tests__/procedure-contract.test.ts`, `apps/console/app/api/admin/case-types/__tests__/case-types-route.test.ts` | 2026-06-08 |
 
 > **2026-06-08 (L1/L2/L5 batch):** All three HARD_BUGS lanes ✅ SHIPPED (`5bd7326b`). tsc 0, keyless 631/631 pass, build ✓, deploy ✓, Phase-2 prod verified (tools/case-types/knowledge/guardrails/integrations all render 0 errors).
 > - **L1** (F8 i18n escalation): `customer-messages.ts` locale-aware zh/en detector; hardcoded Mandarin replaced in `loop.ts` + `tool-interceptor.ts`.
