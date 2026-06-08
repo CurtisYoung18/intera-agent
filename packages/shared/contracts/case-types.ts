@@ -30,6 +30,17 @@ export const procedureSchema = z.object({
 })
 export type ProcedureContract = z.infer<typeof procedureSchema>
 
+// Platform-owned guardrail names that can be activated by case types even when
+// no editable Policy row exists. Runtime code provides safe fallback hooks.
+export const SAFETY_FLOOR_GUARDRAIL_NAMES = [
+  'no_high_risk_account_change',
+] as const
+
+export const BUILT_IN_GUARDRAIL_NAMES = [
+  ...SAFETY_FLOOR_GUARDRAIL_NAMES,
+  'human_review_before_finalize',
+] as const
+
 /** Safe runtime parse of a `CaseType.procedure` JSON string → typed Procedure, or null. Never throws. */
 export function parseProcedure(json: string | null | undefined): ProcedureContract | null {
   if (!json) return null

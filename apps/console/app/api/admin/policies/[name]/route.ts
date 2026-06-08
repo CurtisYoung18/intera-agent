@@ -3,9 +3,10 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
-import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { ConflictError, defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { parseGuardrails } from '@intera/shared/contracts/case-types'
 
 interface PolicyParams { name: string }
 
@@ -74,6 +75,19 @@ export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, PolicyParams>(
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })
     if (!existing) throw new NotFoundError(`Policy "${params.name}" not found`)
+    const caseTypes = await repo.raw.caseType.findMany({
+      where: { agentConfigId },
+      select: { type: true, displayName: true, guardrails: true },
+    })
+    const referencingCaseTypes = caseTypes.filter((ct: { guardrails?: string | null }) =>
+      parseGuardrails(ct.guardrails).includes(params.name),
+    )
+    if (referencingCaseTypes.length > 0) {
+      const refs = referencingCaseTypes
+        .map((ct: { type: string; displayName?: string | null }) => ct.type || ct.displayName || 'unknown')
+        .join(', ')
+      throw new ConflictError(`Policy "${params.name}" is activated by case type(s): ${refs}`)
+    }
     await repo.raw.policy.delete({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })

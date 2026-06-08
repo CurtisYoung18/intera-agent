@@ -3,16 +3,49 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
-import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { procedureSchema } from '@intera/shared/contracts/case-types'
+import {
+  BUILT_IN_GUARDRAIL_NAMES,
+  findOrphanGuardrails,
+  parseGuardrails,
+  procedureSchema,
+} from '@intera/shared/contracts/case-types'
 
 interface CaseTypeParams { name: string }
 
 const stringifyMaybe = (val: unknown): string => {
   if (typeof val === 'string') return val
   return JSON.stringify(val ?? '')
+}
+
+const normalizeGuardrailInput = (val: string | string[] | undefined): string[] => {
+  if (Array.isArray(val)) return val
+  return parseGuardrails(val)
+}
+
+async function validateGuardrailRefs(
+  repo: any,
+  agentConfigId: string,
+  input: string | string[] | undefined,
+): Promise<string[]> {
+  const names = normalizeGuardrailInput(input)
+  const policies = await repo.raw.policy.findMany({
+    where: { agentConfigId },
+    select: { name: true },
+  })
+  const knownNames = [
+    ...policies.map((p: { name: string }) => p.name),
+    ...BUILT_IN_GUARDRAIL_NAMES,
+  ]
+  const orphanNames = findOrphanGuardrails(names, knownNames)
+  if (orphanNames.length > 0) {
+    throw new ValidationError(`Unknown guardrail(s): ${orphanNames.join(', ')}`, {
+      guardrails: `Unknown guardrail(s): ${orphanNames.join(', ')}`,
+    })
+  }
+  return names
 }
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
@@ -83,7 +116,10 @@ export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
       data.procedure = fields.procedure ? stringifyMaybe(fields.procedure) : null
       if (fields.procedure) data.executionMode = 'cc'
     }
-    if (fields.guardrails !== undefined) data.guardrails = stringifyMaybe(fields.guardrails)
+    if (fields.guardrails !== undefined) {
+      const guardrails = await validateGuardrailRefs(repo, agentConfigId, fields.guardrails)
+      data.guardrails = JSON.stringify(guardrails)
+    }
     if (fields.maxAutoTurns !== undefined) data.maxAutoTurns = Math.max(1, Math.min(50, Number(fields.maxAutoTurns) || 10))
     const ct = await repo.raw.caseType.update({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },

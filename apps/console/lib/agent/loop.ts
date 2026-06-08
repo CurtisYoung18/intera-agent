@@ -168,7 +168,7 @@ export class AgentLoop {
   static async create(deps: AgentLoopDeps): Promise<AgentLoop> {
     const loop = new AgentLoop(deps)
     loop.toolRouter = await ToolRouter.create(deps.configId, deps.dryRun ?? false)
-    loop.policyEngine = await PolicyEngine.create(deps.configId)
+    loop.policyEngine = await PolicyEngine.create(deps.configId, deps.caseSchema?.guardrails)
     return loop
   }
 

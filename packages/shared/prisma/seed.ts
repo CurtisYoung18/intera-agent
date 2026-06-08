@@ -157,6 +157,21 @@ const SEED_POLICIES = [
     }),
     enabled: true,
   },
+  {
+    name: 'human_review_before_finalize',
+    description: 'Require human review before case finalization when activated by a case type',
+    hook: 'preFinalize',
+    rule: JSON.stringify({ requireTools: ['create_human_task'] }),
+    guardrailConfig: JSON.stringify({
+      when: 'preFinalize',
+      match: { tools: [] },
+      check: { kind: 'rule', requireTools: ['create_human_task'] },
+      onViolation: { action: 'block', guidance: 'Human review is required before finalizing this case.' },
+      onUnavailable: { action: 'closed' },
+      guidance: 'Call create_human_task before finalizing this case.',
+    }),
+    enabled: true,
+  },
 ]
 
 const SEED_CASE_TYPES = [
@@ -169,6 +184,7 @@ const SEED_CASE_TYPES = [
     stages: '["created","resolved"]',
     defaultGoal: 'Answer the customer question accurately using knowledge base and available tools.',
     escalateOn: '[]',
+    guardrails: '[]',
     enabled: true,
     requireHumanReview: false,
   },
@@ -182,6 +198,7 @@ const SEED_CASE_TYPES = [
     stages: '["created","collecting","investigating","resolved"]',
     defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
+    guardrails: '["investigate_before_resolve","human_review_before_finalize"]',
     enabled: true,
     requireHumanReview: true,
   },
@@ -288,6 +305,7 @@ async function seedAgentConfig(orgId: string, agentId: string) {
         stages: ct.stages,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
+        guardrails: ct.guardrails ?? '[]',
         enabled: ct.enabled,
         requireHumanReview: ct.requireHumanReview ?? false,
       },
@@ -301,6 +319,7 @@ async function seedAgentConfig(orgId: string, agentId: string) {
         stages: ct.stages,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
+        guardrails: ct.guardrails ?? '[]',
         enabled: ct.enabled,
         requireHumanReview: ct.requireHumanReview ?? false,
       },

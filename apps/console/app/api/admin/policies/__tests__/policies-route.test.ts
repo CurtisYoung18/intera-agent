@@ -13,6 +13,15 @@ const h = vi.hoisted(() => {
       { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', description: 'Test agent only', hook: 'preTool', rule: '{}', enabled: true, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
+  const caseTypesByAgent: Record<string, Record<string, unknown>[]> = {
+    'agent_default_v1': [
+      { id: 'ct1', agentConfigId: 'agent_default_v1', type: 'deposit_issue', displayName: 'Deposit', guardrails: '["review_required"]' },
+      { id: 'ct2', agentConfigId: 'agent_default_v1', type: 'general_inquiry', displayName: 'General', guardrails: '[]' },
+    ],
+    'test-agent': [
+      { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Org B Type', guardrails: '["org_b_policy"]' },
+    ],
+  }
   const agentConfigs: Record<string, { id: string; orgId: string }> = {
     'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
     'test-agent': { id: 'test-agent', orgId: 'test-org' },
@@ -20,7 +29,7 @@ const h = vi.hoisted(() => {
   const createdPolicies: Record<string, unknown>[] = []
   const mockGetSession = vi.fn()
 
-  return { policiesByAgent, agentConfigs, createdPolicies, mockGetSession }
+  return { policiesByAgent, caseTypesByAgent, agentConfigs, createdPolicies, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
@@ -71,6 +80,13 @@ vi.mock('@/lib/db/repo-for-org', () => ({
             policies.splice(idx, 1)
           }),
         },
+        caseType: {
+          findMany: vi.fn(async (args?: any) => {
+            const where = args?.where || {}
+            const agentConfigId = where.agentConfigId as string | undefined
+            return agentConfigId ? (h.caseTypesByAgent[agentConfigId] ?? []) : []
+          }),
+        },
         organization: {
           upsert: vi.fn(async () => ({ id: orgId, name: 'Demo Org' })),
         },
@@ -117,6 +133,13 @@ beforeEach(() => {
   ]
   h.policiesByAgent['test-agent'] = [
     { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', description: 'Test agent only', hook: 'preTool', rule: '{}', enabled: true, createdAt: new Date(), updatedAt: new Date() },
+  ]
+  h.caseTypesByAgent['agent_default_v1'] = [
+    { id: 'ct1', agentConfigId: 'agent_default_v1', type: 'deposit_issue', displayName: 'Deposit', guardrails: '["review_required"]' },
+    { id: 'ct2', agentConfigId: 'agent_default_v1', type: 'general_inquiry', displayName: 'General', guardrails: '[]' },
+  ]
+  h.caseTypesByAgent['test-agent'] = [
+    { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Org B Type', guardrails: '["org_b_policy"]' },
   ]
 })
 
@@ -173,10 +196,19 @@ describe('G2 — Tenant isolation', () => {
 
 describe('G3 — Mutations', () => {
   it('DELETE removes policy and returns success', async () => {
-    const res = await DELETE(makeRequestForAgent('agent_default_v1'), routeCtx('review_required'))
+    const res = await DELETE(makeRequestForAgent('agent_default_v1'), routeCtx('fraud_check'))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.success).toBe(true)
+  })
+
+  it('DELETE blocks when a case type activates the policy', async () => {
+    const res = await DELETE(makeRequestForAgent('agent_default_v1'), routeCtx('review_required'))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('conflict')
+    expect(body.error.message).toContain('deposit_issue')
+    expect(res.status).toBe(409)
   })
 
   it('PUT updates policy description', async () => {

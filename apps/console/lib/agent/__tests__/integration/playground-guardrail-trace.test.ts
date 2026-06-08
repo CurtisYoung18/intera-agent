@@ -18,10 +18,10 @@ const h = vi.hoisted(() => {
     }
   }
 
-  // Turn 1: model tries to use the guardrail-denied tool (kb_search_org)
+  // Turn 1: model tries to use a safety-floor-denied high-risk tool.
   const toolUseEvents = [
     { type: 'message_start', message: { id: 'm1', role: 'assistant', model: 'claude-sonnet-4-6', usage: { input_tokens: 150, output_tokens: 0 } } },
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu1', name: 'kb_search_org', input: { query: 'test' } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu1', name: 'refund_money', input: { amount: 100 } } },
     { type: 'content_block_stop', index: 0 },
     { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 12 } },
     { type: 'message_stop' },
@@ -65,15 +65,15 @@ vi.mock('@intera/shared/prisma', () => {
             if (model === 'policy' && op === 'findMany') {
               return [{
                 id: 'pol_guard_1',
-                name: 'deny_kb_search',
+                name: 'no_high_risk_account_change',
                 orgId: 'org1',
                 enabled: true,
                 hook: 'preTool',
                 guardrailConfig: JSON.stringify({
                   when: 'preTool',
-                  match: { tools: ['kb_search_org'] },
-                  check: { kind: 'rule', denyTools: ['kb_search_org'] },
-                  onViolation: { action: 'block', guidance: 'Knowledge base search is not allowed.' },
+                  match: { tools: ['refund_money'] },
+                  check: { kind: 'rule', denyTools: ['refund_money'] },
+                  onViolation: { action: 'block', guidance: 'Refunds are not allowed from the agent.' },
                   onUnavailable: { action: 'closed' },
                 }),
                 rule: null,
@@ -107,7 +107,7 @@ vi.mock('@/lib/agent/api/provider-config', () => ({
   createClient: () => h.fakeClient,
 }))
 
-// Mock loadAgentConfig to return config with guardrails capabilityBindings
+// Mock loadAgentConfig; guardrail activation now comes from PolicyEngine safety floor / case type.
 vi.mock('@/lib/agent/config-loader', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/lib/agent/config-loader')>()
   return {
@@ -121,12 +121,7 @@ vi.mock('@/lib/agent/config-loader', async (importOriginal) => {
       extendedThinking: false,
       memoryStrategy: { l1MaxMessages: 20, autocompactThresholdTokens: 50000 },
       policyHooks: {},
-      capabilityBindings: JSON.stringify({
-        guardrails: { preTool: ['deny_kb_search'], postTool: [], preFinalize: [] },
-        tools: [],
-        caseTypes: [],
-        knowledge: [],
-      }),
+      capabilityBindings: JSON.stringify({ tools: [], caseTypes: [], knowledge: [] }),
       name: 'Test Agent',
     })),
   }

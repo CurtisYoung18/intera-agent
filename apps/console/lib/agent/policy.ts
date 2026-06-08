@@ -29,12 +29,51 @@ import type {
 } from '@intera/shared/types'
 import { withRetry, CannotRetryError } from './api/with-retry'
 import { writeAudit } from '@/lib/audit'
+import {
+  BUILT_IN_GUARDRAIL_NAMES,
+  SAFETY_FLOOR_GUARDRAIL_NAMES,
+} from '@intera/shared/contracts/case-types'
 
 // ── Platform-owned safety constants (§7.6) ────────────────────────────────
 
 const HIGH_RISK_TOOLS = new Set(['refund_money', 'change_ban_status', 'delete_account'])
 const SAFE_TOOL_ALLOWLIST = new Set(['create_human_task', 'ask_user_questions'])
 const DEFAULT_FALLBACK_TOOL = 'create_human_task'
+const SAFETY_FLOOR_GUARDRAILS = new Set<string>(SAFETY_FLOOR_GUARDRAIL_NAMES)
+const BUILT_IN_GUARDRAILS = new Set<string>(BUILT_IN_GUARDRAIL_NAMES)
+
+const BUILT_IN_GUARDRAIL_HOOKS: Record<string, GuardrailHook> = {
+  no_high_risk_account_change: {
+    when: 'preTool',
+    match: { tools: [...HIGH_RISK_TOOLS] },
+    check: { kind: 'rule', denyTools: [...HIGH_RISK_TOOLS] },
+    onViolation: {
+      action: 'block',
+      guidance: 'High-risk account changes are not allowed. Escalate to a human if needed.',
+    },
+    onUnavailable: { action: 'closed' },
+    guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
+  },
+  human_review_before_finalize: {
+    when: 'preFinalize',
+    match: { tools: [] },
+    check: { kind: 'rule', requireTools: ['create_human_task'] },
+    onViolation: {
+      action: 'block',
+      guidance: 'Human review is required before finalizing this case.',
+    },
+    onUnavailable: { action: 'closed' },
+    guidance: 'Call create_human_task before finalizing this case.',
+  },
+}
+
+function cloneBuiltInHook(name: string): (GuardrailHook & { __name?: string }) | null {
+  const hook = BUILT_IN_GUARDRAIL_HOOKS[name]
+  if (!hook) return null
+  const cloned = JSON.parse(JSON.stringify(hook)) as GuardrailHook & { __name?: string }
+  cloned.__name = name
+  return cloned
+}
 
 // ── Public interfaces ─────────────────────────────────────────────────────
 
@@ -93,14 +132,20 @@ export class PolicyEngine {
     this.llmClient = createAgentClient(this.policyModel)
   }
 
-  static async create(agentConfigId: string): Promise<PolicyEngine> {
+  static async create(agentConfigId: string, activeGuardrailNames?: string[]): Promise<PolicyEngine> {
     const engine = new PolicyEngine(agentConfigId)
+    const activeNames = new Set<string>([
+      ...SAFETY_FLOOR_GUARDRAILS,
+      ...(activeGuardrailNames ?? []),
+    ])
+    const loadedNames = new Set<string>()
 
     try {
       const { prisma } = await import('@intera/shared/prisma')
       const dbPolicies = await prisma.policy.findMany({ where: { agentConfigId, enabled: true } })
 
       for (const p of dbPolicies) {
+        if (!activeNames.has(p.name)) continue
         if (p.guardrailConfig) {
           try {
             const hook: GuardrailHook = JSON.parse(p.guardrailConfig)
@@ -110,6 +155,7 @@ export class PolicyEngine {
             }
             (hook as any).__name = p.name
             engine.hooks.push(hook)
+            loadedNames.add(p.name)
           } catch (err) {
             console.warn(`[PolicyEngine] Failed to parse guardrailConfig for "${p.name}":`, err)
           }
@@ -117,6 +163,16 @@ export class PolicyEngine {
       }
     } catch (err) {
       console.warn('[PolicyEngine] Failed to load policies from DB:', err)
+    }
+
+    for (const name of activeNames) {
+      if (loadedNames.has(name)) continue
+      if (!BUILT_IN_GUARDRAILS.has(name)) continue
+      const fallback = cloneBuiltInHook(name)
+      if (fallback) {
+        engine.setHook(fallback)
+        loadedNames.add(name)
+      }
     }
 
     return engine

@@ -17,9 +17,18 @@ const h = vi.hoisted(() => {
     'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
     'test-agent': { id: 'test-agent', orgId: 'test-org' },
   }
+  const policiesByAgent: Record<string, Record<string, unknown>[]> = {
+    'agent_default_v1': [
+      { id: 'p1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
+      { id: 'p2', agentConfigId: 'agent_default_v1', name: 'no_high_risk_account_change', enabled: true },
+    ],
+    'test-agent': [
+      { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', enabled: true },
+    ],
+  }
   const mockGetSession = vi.fn()
 
-  return { typesByAgent, agentConfigs, mockGetSession }
+  return { typesByAgent, agentConfigs, policiesByAgent, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
@@ -67,6 +76,13 @@ vi.mock('@/lib/db/repo-for-org', () => ({
             const idx = types.findIndex((t: any) => t.type === type)
             if (idx === -1) throw new Error('Not found')
             types.splice(idx, 1)
+          }),
+        },
+        policy: {
+          findMany: vi.fn(async (args?: any) => {
+            const where = args?.where || {}
+            const agentConfigId = where.agentConfigId as string | undefined
+            return agentConfigId ? (h.policiesByAgent[agentConfigId] ?? []) : []
           }),
         },
         organization: {
@@ -117,6 +133,13 @@ beforeEach(() => {
   h.typesByAgent['test-agent'] = [
     { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
   ]
+  h.policiesByAgent['agent_default_v1'] = [
+    { id: 'p1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
+    { id: 'p2', agentConfigId: 'agent_default_v1', name: 'no_high_risk_account_change', enabled: true },
+  ]
+  h.policiesByAgent['test-agent'] = [
+    { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', enabled: true },
+  ]
 })
 
 describe('G1 — Uniform envelope', () => {
@@ -141,6 +164,30 @@ describe('G1 — Uniform envelope', () => {
     expect(body.ok).toBe(true)
     expect(body.data.caseType.type).toBe('new_type')
     expect(res.status).toBe(201)
+  })
+
+  it('POST rejects guardrails that are not in the agent policy set', async () => {
+    const res = await POST(makeRequest({
+      agentConfigId: 'agent_default_v1',
+      type: 'bad_guardrail_ref',
+      guardrails: ['ghost_rule'],
+    }))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(body.error.message).toContain('ghost_rule')
+    expect(res.status).toBe(400)
+  })
+
+  it('POST accepts platform built-in guardrails even without a Policy row', async () => {
+    const res = await POST(makeRequest({
+      agentConfigId: 'agent_default_v1',
+      type: 'reviewed_case',
+      guardrails: ['human_review_before_finalize'],
+    }))
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.data.caseType.guardrails).toBe('["human_review_before_finalize"]')
   })
 })
 
@@ -176,6 +223,17 @@ describe('G3 — Mutations', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.caseType.displayName).toBe('Updated Refund')
+  })
+
+  it('PUT rejects dangling guardrail references', async () => {
+    const res = await PUT(makeRequestForAgent('agent_default_v1', {
+      agentConfigId: 'agent_default_v1',
+      guardrails: ['investigate_before_resolve', 'missing_guardrail'],
+    }), routeCtx('refund_request'))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(body.error.message).toContain('missing_guardrail')
   })
 })
 
