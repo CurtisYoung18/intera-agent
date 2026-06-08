@@ -58,6 +58,41 @@ export interface StreamConsumeOutput {
 }
 
 // ---------------------------------------------------------------------------
+// Tool-input parsing (shared, guarded)
+// ---------------------------------------------------------------------------
+
+/**
+ * Safely parse a tool_use block's accumulated input JSON.
+ *
+ * Tool input arrives as streamed `input_json_delta` fragments accumulated into
+ * `block.content`. That string can be incomplete or malformed in normal
+ * operation: `stop_reason:'max_tokens'` truncates a tool_use mid-stream, or a
+ * non-Anthropic provider (MiniMax/DeepSeek) streams divergent partial_json.
+ * Never throw on a bad payload — fall back to `{}` so the turn can synthesize an
+ * error tool_result instead of crashing the whole turn (L6).
+ */
+export function parseToolInput(content: string | null | undefined): Record<string, unknown> {
+  try {
+    return JSON.parse(content || '{}')
+  } catch {
+    // Malformed/truncated JSON — caller runs the tool / synthesizes a result with empty input.
+    return {}
+  }
+}
+
+/**
+ * Build the `ToolUse[]` used by the loop's post-stream S1 synthesis from the
+ * accumulated content blocks. The stream handler does not populate
+ * `assistantMessage.toolUses`, so the loop re-derives them from the blocks map.
+ * Each input is parsed via the guarded {@link parseToolInput} — never throws.
+ */
+export function buildToolUsesFromBlocks(blocks: StreamContentBlock[]): ToolUse[] {
+  return blocks
+    .filter((b) => b.type === 'tool_use')
+    .map((b) => ({ id: b.id, name: b.name, input: parseToolInput(b.content) }))
+}
+
+// ---------------------------------------------------------------------------
 // consumeStream
 // ---------------------------------------------------------------------------
 
@@ -174,17 +209,10 @@ export async function consumeStream(
         stoppedBlock.completed = true
 
         if (stoppedBlock.type === 'tool_use') {
-          let input: Record<string, unknown> = {}
-          try {
-            input = JSON.parse(stoppedBlock.content || '{}')
-          } catch {
-            // Malformed JSON — tool will run with empty input
-          }
-
           const toolUse: ToolUse = {
             id: stoppedBlock.id,
             name: stoppedBlock.name,
-            input,
+            input: parseToolInput(stoppedBlock.content),
           }
 
           // Delegate all business logic to the caller

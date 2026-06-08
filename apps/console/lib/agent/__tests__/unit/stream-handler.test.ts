@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { consumeStream, type StreamConsumeCallbacks, type StreamContentBlock } from '../../stream-handler'
+import {
+  consumeStream,
+  parseToolInput,
+  buildToolUsesFromBlocks,
+  type StreamConsumeCallbacks,
+  type StreamContentBlock,
+} from '../../stream-handler'
 import { createMockStream, mockTextStream, mockToolUseStream } from '../mocks/anthropic'
 
 function makeCallbacks(overrides?: Partial<StreamConsumeCallbacks>): StreamConsumeCallbacks {
@@ -158,5 +164,77 @@ describe('consumeStream', () => {
     await consumeStream(stream as any, blocks, cbs)
 
     expect(flushSanitizer).toHaveBeenCalled()
+  })
+})
+
+// ── L6 guard: tool-input parsing must never throw ──────────────────────────
+// Tool input arrives as streamed input_json fragments. That payload can be
+// incomplete/malformed in normal operation — stop_reason:'max_tokens' truncates
+// a tool_use mid-stream, or a non-Anthropic provider (MiniMax/DeepSeek) streams
+// divergent partial_json. The post-stream S1 synthesis re-derives ToolUse[] from
+// the blocks; an unguarded JSON.parse there (loop.ts) crashed the whole turn.
+// These guard the shared, guarded parse used by both the stream handler and the
+// loop's synthesis step.
+describe('parseToolInput (L6)', () => {
+  it('parses valid tool input JSON', () => {
+    expect(parseToolInput('{"orderId":"ORD-1"}')).toEqual({ orderId: 'ORD-1' })
+  })
+
+  it('falls back to {} on truncated/malformed JSON instead of throwing', () => {
+    expect(() => parseToolInput('{"orderId": "OR')).not.toThrow()
+    expect(parseToolInput('{"orderId": "OR')).toEqual({})
+  })
+
+  it('falls back to {} on empty or nullish content', () => {
+    expect(parseToolInput('')).toEqual({})
+    expect(parseToolInput(undefined)).toEqual({})
+    expect(parseToolInput(null)).toEqual({})
+  })
+})
+
+describe('buildToolUsesFromBlocks (L6)', () => {
+  it('builds ToolUse[] from a valid tool_use stream', async () => {
+    const cbs = makeCallbacks()
+    const blocks = new Map<number, StreamContentBlock>()
+    await consumeStream(mockToolUseStream('query_order', { orderId: 'ORD-1' }) as any, blocks, cbs)
+
+    expect(buildToolUsesFromBlocks([...blocks.values()])).toEqual([
+      { id: 'tool_001', name: 'query_order', input: { orderId: 'ORD-1' } },
+    ])
+  })
+
+  it('does not throw on a max_tokens-truncated tool_use — yields {} input for error synthesis', async () => {
+    const cbs = makeCallbacks()
+    const blocks = new Map<number, StreamContentBlock>()
+    // tool_use whose input_json was cut off mid-stream (truncated → invalid JSON),
+    // ended by stop_reason:'max_tokens' — the exact L6 crash condition.
+    const stream = createMockStream([
+      { type: 'message_start', message: { id: 'msg_1', model: 'm', role: 'assistant', content: [] } },
+      {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 'tool_001', name: 'query_order', index: 0 },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '{"orderId": "OR' },
+      },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { type: 'message_delta', stop_reason: 'max_tokens' }, usage: { input_tokens: 100, output_tokens: 4096 } },
+      { type: 'message_stop' },
+    ])
+    await consumeStream(stream as any, blocks, cbs)
+
+    const toolUses = buildToolUsesFromBlocks([...blocks.values()])
+    expect(toolUses).toEqual([{ id: 'tool_001', name: 'query_order', input: {} }])
+  })
+
+  it('ignores non-tool_use blocks', async () => {
+    const cbs = makeCallbacks()
+    const blocks = new Map<number, StreamContentBlock>()
+    await consumeStream(mockTextStream('just text') as any, blocks, cbs)
+
+    expect(buildToolUsesFromBlocks([...blocks.values()])).toEqual([])
   })
 })

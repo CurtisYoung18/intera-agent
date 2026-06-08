@@ -28,7 +28,7 @@ import type { ExecutionStrategy } from './strategies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { buildModelList } from './build-model-list'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
-import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
+import { consumeStream, buildToolUsesFromBlocks, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
 import { profileKey } from './identity'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
@@ -673,11 +673,10 @@ export class AgentLoop {
 
         // Build ToolUse[] from blocks (assistantMessage.toolUses is not populated
         // by the stream handler — we must extract from the blocks map directly).
-        const toolUses: ToolUse[] = toolUseBlocks.map((b) => ({
-          id: (b as { id: string }).id,
-          name: (b as { name: string }).name,
-          input: JSON.parse((b as unknown as { content: string }).content || '{}'),
-        }))
+        // L6: parse is guarded (parseToolInput → {} on bad JSON). A max_tokens-
+        // truncated or alt-provider-malformed tool_use must synthesize an error
+        // tool_result below, not throw out of the loop and kill the whole turn.
+        const toolUses: ToolUse[] = buildToolUsesFromBlocks(toolUseBlocks as unknown as StreamContentBlock[])
 
         // Populate toolUses on assistantMessage so buildApiMessages can include
         // them as content blocks for the next API call (required by Anthropic API).
