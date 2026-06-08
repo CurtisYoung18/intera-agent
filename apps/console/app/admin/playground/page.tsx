@@ -13,6 +13,7 @@ import type { LifecycleNotice } from '@intera/shared/types'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { apiClient } from '@/lib/api/client'
+import { useSession } from '@/lib/hooks/use-session'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
@@ -77,6 +78,16 @@ function detectMemoryTier(ms: any): string {
 
 export default function PlaygroundPage() {
   const { selectedAgentId, selectAgent } = useAgentContext()
+  const { userId, orgId } = useSession()
+  const scopeId = userId || orgId || 'default'
+
+  // Scoped localStorage keys — prevents chat history from leaking across orgs/agents
+  const lsk = useMemo(() => ({
+    chatId: `pg_chatId_${scopeId}_${selectedAgentId ?? ''}`,
+    formRequest: `pg_formRequest_${scopeId}_${selectedAgentId ?? ''}`,
+    traceCollapsed: `pg_trace_collapsed_${scopeId}`,
+  }), [scopeId, selectedAgentId])
+
   const [agentList, setAgentList] = useState<AgentListItem[]>([])
   const [selectedIsActive, setSelectedIsActive] = useState(true)
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
@@ -107,8 +118,8 @@ export default function PlaygroundPage() {
     try { return localStorage.getItem('pg_trace_collapsed') === 'true' } catch { return true }
   })
   useEffect(() => {
-    try { localStorage.setItem('pg_trace_collapsed', String(sidebarCollapsed)) } catch {}
-  }, [sidebarCollapsed])
+    try { localStorage.setItem(lsk.traceCollapsed, String(sidebarCollapsed)) } catch {}
+  }, [sidebarCollapsed, lsk.traceCollapsed])
   const [error, setError] = useState('')
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [toastMessage, setToastMessage] = useState('')
@@ -128,7 +139,10 @@ export default function PlaygroundPage() {
   useEffect(() => { showThinkingRef.current = showThinking }, [showThinking])
   const chatIdRef = useRef<string | null>(null)
   useEffect(() => { chatIdRef.current = chatId }, [chatId])
+  const lskRef = useRef(lsk)
+  useEffect(() => { lskRef.current = lsk }, [lsk])
   const prevAgentIdRef = useRef<string | null>(null)
+  const prevOrgIdRef = useRef<string | null>(null)
   const hasRestoredRef = useRef(false)
   const isRestoringRef = useRef(false)
   const prevAgentConfigIdRef = useRef<string | null>(null)
@@ -149,32 +163,41 @@ export default function PlaygroundPage() {
     respondingRef.current = responding
   }, [responding])
 
-  // ── Restore session on mount + agent switch ──
+  // ── Restore session on mount + agent/org switch ──
   useEffect(() => {
-    // On mount, if chatId exists from localStorage, restore that session directly.
-    // On agent switch (selectedAgentId changes), clear and search for latest session.
-    // prevAgentIdRef starts null → null !== anything is true, so guard with != null
-    // to skip the initial context load (undefined → realId).
     const isAgentSwitch = hasRestoredRef.current && prevAgentIdRef.current != null && prevAgentIdRef.current !== selectedAgentId
+    // Only treat as org switch when moving between two real org ids (skip initial 'default' → real transition)
+    const isOrgSwitch = hasRestoredRef.current && prevOrgIdRef.current != null && prevOrgIdRef.current !== orgId && prevOrgIdRef.current !== 'default'
+    const isSwitch = isAgentSwitch || isOrgSwitch
     hasRestoredRef.current = true
     prevAgentIdRef.current = selectedAgentId
+    prevOrgIdRef.current = orgId
 
     // Skip if restore is already in-flight (context loaded while fetch is running)
-    if (!isAgentSwitch && isRestoringRef.current) return
+    if (!isSwitch && isRestoringRef.current) return
 
-    if (isAgentSwitch) {
+    if (isSwitch) {
       setChatId(null)
       setChatMessages([])
+      setTurnTraces([])
       setTurnTotalMs([])
+      prevTurnCountRef.current = 0
       setReply('')
       setError('')
       setLiveTools([])
       setSavedChatId(null)
-      try { localStorage.removeItem('pg_chatId') } catch {}
+      setFormRequest(null)
+      try {
+        // Remove both the old unscoped key (migration) and the current scoped key
+        localStorage.removeItem('pg_chatId')
+        localStorage.removeItem('pg_formRequest')
+        localStorage.removeItem(lsk.chatId)
+        localStorage.removeItem(lsk.formRequest)
+      } catch {}
     }
 
     const configId = selectedAgentId
-    const initialChatId = isAgentSwitch ? null : chatId
+    const initialChatId = isSwitch ? null : chatId
     let cancelled = false
 
     async function loadSession(sessionChatId: string) {
@@ -187,7 +210,7 @@ export default function PlaygroundPage() {
       } }
       if (cancelled) return
       setChatId(detailData.chatId)
-      try { localStorage.setItem('pg_chatId', detailData.chatId) } catch {}
+      try { localStorage.setItem(lsk.chatId, detailData.chatId) } catch {}
       setChatMessages(detailData.messages.map((m) => ({
         role: m.role === 'assistant' ? 'agent' as const : 'user' as const,
         content: m.content,
@@ -261,10 +284,9 @@ export default function PlaygroundPage() {
       } catch { /* session restore is best-effort */ }
     }
     restore().finally(() => { isRestoringRef.current = false })
-    // Only cancel in-flight fetch when actually switching agents,
-    // not when context loads and re-runs the effect during initial restore.
-    return () => { if (isAgentSwitch) cancelled = true }
-  }, [selectedAgentId])
+    // Cancel in-flight fetch when switching agent or org
+    return () => { if (isSwitch) cancelled = true }
+  }, [selectedAgentId, orgId, lsk.chatId, lsk.formRequest])
 
   // Auto-expand latest turn; collapse older turns when a NEW turn starts; error tools default expanded
   const prevTurnCountRef = useRef(0)
@@ -440,7 +462,7 @@ export default function PlaygroundPage() {
     setTurnTotalMs(prev => [...prev, 0])
     setLiveTools([])
     setFormRequest(null)
-    try { localStorage.removeItem('pg_formRequest') } catch {}
+    try { localStorage.removeItem(lskRef.current.formRequest) } catch {}
     setError('')
     setResponding(true)
     setSidebarCollapsed(false)
@@ -496,7 +518,7 @@ export default function PlaygroundPage() {
               const d = event.data as { chatId: string; caseId: string }
               if (d?.chatId && !chatIdRef.current) {
                 setChatId(d.chatId)
-                try { localStorage.setItem('pg_chatId', d.chatId) } catch {}
+                try { localStorage.setItem(lskRef.current.chatId, d.chatId) } catch {}
               }
             }
             else if (event.type === 'error') {
@@ -531,7 +553,7 @@ export default function PlaygroundPage() {
                 skillCallId: d?.skillCallId || '',
               }
               setFormRequest(fr)
-              try { localStorage.setItem('pg_formRequest', JSON.stringify(fr)) } catch {}
+              try { localStorage.setItem(lskRef.current.formRequest, JSON.stringify(fr)) } catch {}
             }
             else if (event.type === 'trace') {
               const t = event.data.trace || []
@@ -700,7 +722,7 @@ export default function PlaygroundPage() {
                 setLiveTools([])
                 setSavedChatId(null)
                 setFormRequest(null)
-                try { localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
+                try { localStorage.removeItem(lsk.chatId); localStorage.removeItem(lsk.formRequest); localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
               }}
               disabled={!chatId}
               title="Reset session"
