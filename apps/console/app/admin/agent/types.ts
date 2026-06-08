@@ -28,7 +28,7 @@ export interface MemoryStrategy {
   keyEventMaxChars: number
   tokensPerKeyEvent: number
   tokensPerFact: number
-  tokensPerSkill: number
+  tokensPerTool: number
   cjkCharPerToken: number
   latinCharPerToken: number
   minTokenEstimate: number
@@ -67,7 +67,7 @@ export interface ModelInfo {
 }
 
 export const DEFAULT_MEMORY: MemoryStrategy = {
-  l1MaxMessages: 12,
+  l1MaxMessages: 20,
   l2SummaryMaxTokens: 2000,
   l4MaxHistoricalCases: 5,
   keyEventExtractionPrompt: 'Extract key events from the conversation',
@@ -89,14 +89,14 @@ export const DEFAULT_MEMORY: MemoryStrategy = {
   compactTemperature: 0.3,
   compactMaxTokensCap: 4096,
   compactMinSummaryLength: 100,
-  compactionKeepMin: 10,
+  compactionKeepMin: 20,
   compactionKeepRatio: 0.65,
-  compactableTools: ['query_order_status', 'query_payment_channel_status', 'search_delay_notice', 'ocr_receipt'],
+  compactableTools: [],
   factExtractionPrompt: '',
   keyEventMaxChars: 100,
   tokensPerKeyEvent: 20,
   tokensPerFact: 15,
-  tokensPerSkill: 30,
+  tokensPerTool: 30,
   cjkCharPerToken: 1.5,
   latinCharPerToken: 4,
   minTokenEstimate: 100,

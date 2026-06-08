@@ -163,7 +163,7 @@ For general / catalog / how-to questions (what promotions, games, or payment met
 
 export const DEFAULT_MEMORY_STRATEGY = {
   // Retention
-  l1MaxMessages: 12,
+  l1MaxMessages: 20,
   l2SummaryMaxTokens: 2000,
   l4MaxHistoricalCases: 5,
   keyEventExtractionPrompt: 'Extract key events from the conversation',
@@ -202,14 +202,9 @@ export const DEFAULT_MEMORY_STRATEGY = {
   compactTemperature: 0.3,
   compactMaxTokensCap: 4096,
   compactMinSummaryLength: 100,
-  compactionKeepMin: 6,
+  compactionKeepMin: 20,
   compactionKeepRatio: 0.65,
-  compactableTools: [
-    'get_latest_deposit',
-    'get_withdraw_conditions',
-    'get_active_promotions',
-        // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
-  ],
+  compactableTools: [],
 
   // Fact extraction (LLM-based, replaces regex/keyword patterns)
   factExtractionPrompt: '',
@@ -219,7 +214,7 @@ export const DEFAULT_MEMORY_STRATEGY = {
   // Token estimation
   tokensPerKeyEvent: 20,
   tokensPerFact: 15,
-  tokensPerSkill: 30,
+  tokensPerTool: 30,
   cjkCharPerToken: 1.5,
   latinCharPerToken: 4,
   minTokenEstimate: 100,

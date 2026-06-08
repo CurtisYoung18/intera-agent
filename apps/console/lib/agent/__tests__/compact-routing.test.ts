@@ -50,7 +50,7 @@ function makeStrategy(overrides: Partial<MemoryStrategy> = {}): MemoryStrategy {
     keyEventMaxChars: 100,
     tokensPerKeyEvent: 20,
     tokensPerFact: 15,
-    tokensPerSkill: 30,
+    tokensPerTool: 30,
     cjkCharPerToken: 1.5,
     latinCharPerToken: 4,
     minTokenEstimate: 100,

@@ -158,7 +158,7 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
               <div className="grid grid-cols-2 gap-3">
                 <NumField label="Tokens/Key Event" tooltip="" value={ms.tokensPerKeyEvent} onChange={v => updateMem('tokensPerKeyEvent', v)} unit="" />
                 <NumField label="Tokens/Fact" tooltip="" value={ms.tokensPerFact} onChange={v => updateMem('tokensPerFact', v)} unit="" />
-                <NumField label="Tokens/Skill" tooltip="" value={ms.tokensPerSkill} onChange={v => updateMem('tokensPerSkill', v)} unit="" />
+                <NumField label="Tokens/Tool" tooltip="" value={ms.tokensPerTool} onChange={v => updateMem('tokensPerTool', v)} unit="" />
                 <NumField label="CJK Char/Token" tooltip="" value={ms.cjkCharPerToken} onChange={v => updateMem('cjkCharPerToken', v)} unit="" step={0.1} />
                 <NumField label="Latin Char/Token" tooltip="" value={ms.latinCharPerToken} onChange={v => updateMem('latinCharPerToken', v)} unit="" step={0.1} />
                 <NumField label="Min Token Estimate" tooltip="" value={ms.minTokenEstimate} onChange={v => updateMem('minTokenEstimate', v)} unit="tokens" />

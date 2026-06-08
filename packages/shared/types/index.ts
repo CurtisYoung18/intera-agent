@@ -391,7 +391,7 @@ export interface MemoryStrategy {
   // ── Token estimation ──
   tokensPerKeyEvent: number
   tokensPerFact: number
-  tokensPerSkill: number
+  tokensPerTool: number
   cjkCharPerToken: number
   latinCharPerToken: number
   minTokenEstimate: number

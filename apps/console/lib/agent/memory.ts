@@ -398,7 +398,7 @@ export class ChatMemoryManager {
     let tokens = 0
     tokens += this.keyEvents.length * s.tokensPerKeyEvent
     tokens += Object.keys(this.confirmedFacts).length * s.tokensPerFact
-    tokens += this.skillsCalled.length * s.tokensPerSkill
+    tokens += this.skillsCalled.length * s.tokensPerTool
     tokens += this.summary.length / s.latinCharPerToken
     for (const content of messageContents) {
       const cjkChars = (content.match(/[一-鿿]/g) || []).length
