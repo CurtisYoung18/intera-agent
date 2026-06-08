@@ -1,13 +1,13 @@
 // GET + PUT + POST /api/admin/agent — Agent config CRUD (upsert)
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 // POST is an alias for PUT (apiClient defaults to POST when body is present).
-// Removed policyHooks and capabilityBindings (sub-modules are now agentConfigId-scoped).
+// Phase 5 (2026-06-08): systemPrompt, caseAddendum, useLegacyCasePrompt, debugMode, invariantCheck dropped.
 
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { DEFAULT_MODEL, DEFAULT_SYSTEM_PROMPT, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import { DEFAULT_MODEL, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 
 const getQuerySchema = z.object({
@@ -29,15 +29,12 @@ export const GET = defineRoute({
       await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
       config = await repo.agentConfig.create({
         data: {
-          systemPrompt: DEFAULT_SYSTEM_PROMPT,
           model: DEFAULT_MODEL,
           temperature: 0.5,
           thinkingBudget: 4096,
           maxIterations: 20,
           maxOutputTokens: 4096,
           extendedThinking: false,
-          caseAddendum: null,
-          useLegacyCasePrompt: false,
           resumePrompt: null,
           memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
         } as any,
@@ -54,15 +51,10 @@ const putSchema = z.object({
   thinkingBudget: z.number().optional(),
   maxIterations: z.number().optional(),
   maxOutputTokens: z.number().optional(),
-  systemPrompt: z.string().optional(),
   coreSystemPrompt: z.string().nullable().optional(),
-  caseAddendum: z.string().nullable().optional(),
-  useLegacyCasePrompt: z.boolean().optional(),
   extendedThinking: z.boolean().optional(),
   memoryStrategy: z.union([z.string(), z.record(z.unknown())]).optional(),
   resumePrompt: z.string().nullable().optional(),
-  debugMode: z.boolean().optional(),
-  invariantCheck: z.boolean().optional(),
 })
 type PutInput = z.infer<typeof putSchema>
 
@@ -85,15 +77,10 @@ function agentUpdateHandler(agentId: string | null) {
     if (input.thinkingBudget !== undefined) data.thinkingBudget = input.thinkingBudget
     if (input.maxIterations !== undefined) data.maxIterations = input.maxIterations
     if (input.maxOutputTokens !== undefined) data.maxOutputTokens = input.maxOutputTokens
-    if (input.systemPrompt !== undefined) data.systemPrompt = input.systemPrompt
     if (input.coreSystemPrompt !== undefined) data.coreSystemPrompt = input.coreSystemPrompt
-    if (input.caseAddendum !== undefined) data.caseAddendum = input.caseAddendum
-    if (input.useLegacyCasePrompt !== undefined) data.useLegacyCasePrompt = input.useLegacyCasePrompt
     if (input.extendedThinking !== undefined) data.extendedThinking = input.extendedThinking
     if (input.memoryStrategy !== undefined) data.memoryStrategy = toJsonIfObject(input.memoryStrategy)
     if (input.resumePrompt !== undefined) data.resumePrompt = input.resumePrompt
-    if (input.debugMode !== undefined) data.debugMode = input.debugMode
-    if (input.invariantCheck !== undefined) data.invariantCheck = input.invariantCheck
 
     const existing = agentId
       ? await repo.agentConfig.findUnique({ where: { id: agentId } })
@@ -104,18 +91,14 @@ function agentUpdateHandler(agentId: string | null) {
     } else {
       config = await repo.agentConfig.create({
         data: {
-          systemPrompt: input.systemPrompt || '',
-          coreSystemPrompt: input.coreSystemPrompt ?? null,
-          caseAddendum: input.caseAddendum ?? null,
-          useLegacyCasePrompt: input.useLegacyCasePrompt ?? false,
           model: input.model || DEFAULT_MODEL,
           temperature: input.temperature ?? 0.5,
           thinkingBudget: input.thinkingBudget ?? 4096,
           maxIterations: input.maxIterations ?? 20,
           maxOutputTokens: input.maxOutputTokens ?? 4096,
+          coreSystemPrompt: input.coreSystemPrompt ?? null,
           extendedThinking: input.extendedThinking ?? false,
           resumePrompt: input.resumePrompt ?? null,
-          debugMode: input.debugMode ?? false,
           memoryStrategy: input.memoryStrategy ? toJsonIfObject(input.memoryStrategy) || JSON.stringify({}) : JSON.stringify(DEFAULT_MEMORY_STRATEGY),
         } as any,
       })

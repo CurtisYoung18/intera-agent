@@ -10,7 +10,6 @@ import { PrismaClient } from '@prisma/client'
 import { hashSync } from 'bcryptjs'
 import {
   DEFAULT_MODEL,
-  DEFAULT_SYSTEM_PROMPT,
   CORE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
 } from '../defaults/index'
@@ -204,17 +203,14 @@ async function seedAgentConfig(orgId: string, agentId: string) {
     name: 'Default',
     version: 1,
     isActive: true,
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
     coreSystemPrompt: CORE_SYSTEM_PROMPT,
-    caseAddendum: null,
-    useLegacyCasePrompt: false,
     model: DEFAULT_MODEL,
     temperature: 0.5,
     thinkingBudget: 4096,
     maxIterations: 20,
     maxOutputTokens: 4096,
     memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-    showThinking: true,
+    extendedThinking: true,
     resumePrompt:
       '[Human task resolved — operator closed the case]\nIMPORTANT: translate the verdict into plain, friendly customer language and send it now.',
   }

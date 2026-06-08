@@ -43,10 +43,10 @@ export const POST = defineRoute<PostInput>({
                 name: source.name, version: newVersion, isActive: false, parentId: source.id,
                 model: source.model, temperature: source.temperature, thinkingBudget: source.thinkingBudget,
                 maxIterations: source.maxIterations, maxOutputTokens: source.maxOutputTokens,
-                systemPrompt: source.systemPrompt, coreSystemPrompt: source.coreSystemPrompt,
+                coreSystemPrompt: source.coreSystemPrompt,
                 extendedThinking: source.extendedThinking, memoryStrategy: source.memoryStrategy,
                 gptbotsApiKey: source.gptbotsApiKey,
-                invariantCheck: source.invariantCheck, resumePrompt: source.resumePrompt, debugMode: source.debugMode,
+                resumePrompt: source.resumePrompt,
               },
               select: AGENT_CARD_SELECT,
             })
@@ -63,7 +63,7 @@ export const POST = defineRoute<PostInput>({
 
     try {
       const created = await (repo.agentConfig.create as any)({
-        data: { name: requestedName, version: 1, isActive: true, parentId: null, model: DEFAULT_MODEL, systemPrompt: '', memoryStrategy: '{}' },
+        data: { name: requestedName, version: 1, isActive: true, parentId: null, model: DEFAULT_MODEL, memoryStrategy: '{}' },
         select: AGENT_CARD_SELECT,
       })
       await audit({ action: 'agent_config.create', target: `agent_config:${created.id}`, after: created as Record<string, unknown> })

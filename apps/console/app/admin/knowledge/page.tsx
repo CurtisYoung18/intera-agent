@@ -412,7 +412,7 @@ export default function KnowledgePage() {
         : `/api/admin/knowledge/sources/${editingSource.id}`
       const method = isNew ? 'POST' : 'PUT'
 
-      await apiClient(url, { method, body: editingSource })
+      await apiClient(url, { method, body: { ...editingSource, agentConfigId } })
       setEditingSource(null)
       setSaveError(null)
       fetchSources()
@@ -433,7 +433,7 @@ export default function KnowledgePage() {
     if (!id) return
     setConfirmDeleteId(null)
     try {
-      await apiClient(`/api/admin/knowledge/sources/${id}`, { method: 'DELETE' })
+      await apiClient(`/api/admin/knowledge/sources/${id}?agentConfigId=${encodeURIComponent(agentConfigId ?? '')}`, { method: 'DELETE' })
       fetchSources()
     } catch {
       setError(t('knowledge.deleteFailed'))
@@ -444,7 +444,7 @@ export default function KnowledgePage() {
     try {
       await apiClient(`/api/admin/knowledge/sources/${source.id}`, {
         method: 'PUT',
-        body: { enabled: !source.enabled },
+        body: { agentConfigId, enabled: !source.enabled },
       })
       fetchSources()
     } catch {
