@@ -5,7 +5,7 @@
 
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { defineRoute } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { DEFAULT_MODEL, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
@@ -22,7 +22,8 @@ export const GET = defineRoute({
     const agentId = input.agentId ?? null
 
     let config = agentId
-      ? await repo.agentConfig.findUnique({ where: { id: agentId } })
+      // Use raw findUnique — `id` is globally unique, org scoping would miss cross-org configs
+      ? await repo.raw.agentConfig.findUnique({ where: { id: agentId } })
       : await repo.agentConfig.findFirst({ where: { isActive: true } })
 
     if (!config) {
@@ -82,27 +83,14 @@ function agentUpdateHandler(agentId: string | null) {
     if (input.memoryStrategy !== undefined) data.memoryStrategy = toJsonIfObject(input.memoryStrategy)
     if (input.resumePrompt !== undefined) data.resumePrompt = input.resumePrompt
 
+    // Use raw for lookup by globally-unique `id`; org-scoped fields would miss configs in other orgs.
     const existing = agentId
-      ? await repo.agentConfig.findUnique({ where: { id: agentId } })
+      ? await repo.raw.agentConfig.findUnique({ where: { id: agentId } })
       : await repo.agentConfig.findFirst({ where: { isActive: true } })
-    let config
-    if (existing) {
-      config = await repo.agentConfig.update({ where: { id: existing.id }, data: data as any })
-    } else {
-      config = await repo.agentConfig.create({
-        data: {
-          model: input.model || DEFAULT_MODEL,
-          temperature: input.temperature ?? 0.5,
-          thinkingBudget: input.thinkingBudget ?? 4096,
-          maxIterations: input.maxIterations ?? 20,
-          maxOutputTokens: input.maxOutputTokens ?? 4096,
-          coreSystemPrompt: input.coreSystemPrompt ?? null,
-          extendedThinking: input.extendedThinking ?? false,
-          resumePrompt: input.resumePrompt ?? null,
-          memoryStrategy: input.memoryStrategy ? toJsonIfObject(input.memoryStrategy) || JSON.stringify({}) : JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-        } as any,
-      })
-    }
+
+    if (!existing) throw new NotFoundError('Config not found')
+
+    const config = await repo.raw.agentConfig.update({ where: { id: existing.id }, data: data as any })
 
     return apiOk({ config })
   },
