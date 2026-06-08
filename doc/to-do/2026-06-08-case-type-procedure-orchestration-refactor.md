@@ -148,12 +148,14 @@ New `apps/console/lib/agent/procedure-executor.ts` replacing `stage-executor.ts`
 
 > Two-phase verification per [`GENERIC_HANDOFF §0.3`](../handoffs/GENERIC_HANDOFF.md): Phase-1 local gate (`tsc` 0 · keyless `npm test` green · `build:console`) **and** Phase-2 prod browser verification on `demo.anytrans.ai`. Every safety/isolation change ships an e2e guard test with red→green proof (§0.4).
 
-### Phase 0 — Read-only inventory (architect, no code)
+### Phase 0 — Read-only inventory (architect, no code) — ✅ DONE 2026-06-08
+> **Inventory:** prod (owner-confirmed read, memory `project_local_db_is_production`) + local seed = **2 case types only** (`deposit_issue`, `general_inquiry`), both `executionMode='stage'`, **no `sop`, empty `stageConfigs`** → **D4 "seeds discardable" confirmed** (no org-authored content to preserve). Per-agent guardrail set (the activation-list source) = `investigate_before_resolve` (preFinalize) + `no_high_risk_account_change` (preTool). No case type on `executionMode='cc'`. Formal prod SELECT-only re-query deferred to pre-Phase-5 (needs tunnel creds; current state already greenlights additive Phases 1–3).
 - **Goal:** evidence before destruction (esp. validate D4 "seeds discardable").
 - **Steps:** read-only, **SELECT-only** via prod tunnel (local `DATABASE_URL` → prod — see memory `project_local_db_is_production`; **no writes**): `SELECT agent_config_id, type, "executionMode", (sop IS NOT NULL) AS has_sop, length(stage_configs) FROM case_types;` — confirm no org-authored case type carries hand-tuned `stageConfigs`/`sop` worth preserving. `SELECT name FROM policies WHERE enabled;` — catalog guardrail names for the activation lists. Confirm no case type already on `executionMode='cc'` in prod.
 - **Verify:** inventory pasted into this doc before Phase 5 runs. If precious org case types exist, escalate to owner (D4 assumed throwaway).
 
-### Phase 1 — Procedure contract + additive schema (no behavior change)
+### Phase 1 — Procedure contract + additive schema (no behavior change) — ✅ SHIPPED 2026-06-08 (`6e317b33`)
+> Types (`ProcedureAction`/`ProcedureStep`/`Procedure` in `types/index.ts`); zod (`procedureSchema`/`procedureStepSchema` + `parseProcedure`/`parseGuardrails`/`findOrphanGuardrails` in `contracts/case-types.ts`); additive `CaseType.{procedure,guardrails,maxAutoTurns}` (migration `20260608000001`, applied on prod). 12 guard tests (red→green). tsc 0 · keyless 649 · build ✓ · `/admin/case-types` no regression. Fields dormant until Phase 2.
 - **Goal:** land the `Procedure`/`ProcedureStep` types + zod contract + additive `CaseType.procedure`/`guardrails`/`maxAutoTurns` columns. Old fields untouched.
 - **Guard tests (red→green):** zod round-trips a Procedure; validation **rejects** an unknown `action` and a step missing `id`; `guardrails[]` validation **rejects** a name not in the agent's policy set (orphan check).
 - **Verify:** Phase-1 local gate; `db:generate` (standalone embed gotcha #1); deploy; no operator-visible change.
