@@ -101,12 +101,13 @@ function KnowledgeTabs({ activeTab, onTabChange, sourceCount }: {
 
 // ── GPTBots Connection (Collapsible) ───────────────────────────────────
 
-function GptBotsConnection({ gptConnected, gptKbs, gptKbsLoading, onRefresh, onKeySaved }: {
+function GptBotsConnection({ gptConnected, gptKbs, gptKbsLoading, onRefresh, onKeySaved, agentConfigId }: {
   gptConnected: boolean | null
   gptKbs: GptBotKb[]
   gptKbsLoading: boolean
   onRefresh: () => void
   onKeySaved: () => void
+  agentConfigId: string | null
 }) {
   const [expanded, setExpanded] = useState(false)
 

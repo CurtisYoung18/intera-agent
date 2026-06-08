@@ -1,25 +1,30 @@
 // GET + PUT /api/admin/knowledge/gptbots — Proxy GPTBots knowledge base list + API key management
-// Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
+// Scoped by agentConfigId (agent-level GPTBots key).
 
 import { z } from 'zod'
 import { defineRoute, RouteError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { DEFAULT_MODEL } from '@intera/shared/defaults'
 
 const GPTBOTS_KB_API = 'https://api-sg.gptbots.ai/v1/bot/knowledge/base/page'
 
-async function getApiKey(repo: any): Promise<string | null> {
+async function getApiKey(repo: any, agentConfigId?: string): Promise<string | null> {
   try {
-    const config = await repo.agentConfig.findFirst({ where: { isActive: true }, select: { gptbotsApiKey: true } })
-    if (config?.gptbotsApiKey) return config.gptbotsApiKey
+    if (agentConfigId) {
+      const config = await repo.agentConfig.findUnique({ where: { id: agentConfigId }, select: { gptbotsApiKey: true } })
+      if (config?.gptbotsApiKey) return config.gptbotsApiKey
+    }
   } catch { /* DB may not be ready */ }
   return process.env.GPTBOTS_API_KEY ?? null
 }
 
+const getQuerySchema = z.object({ agentConfigId: z.string().optional() })
+
 export const GET = defineRoute({
   method: 'GET',
-  async handler({ repo }) {
-    const apiKey = await getApiKey(repo)
+  inputSchema: getQuerySchema,
+  parseQuery: true,
+  async handler({ input, repo }) {
+    const apiKey = await getApiKey(repo, input.agentConfigId)
     if (!apiKey) return apiOk({ data: [], total: 0, note: 'GPTBots API key not configured' })
 
     const response = await fetch(GPTBOTS_KB_API, {
@@ -33,24 +38,20 @@ export const GET = defineRoute({
   },
 })
 
-const putSchema = z.object({ apiKey: z.string().nullable().optional() })
+const putSchema = z.object({
+  apiKey: z.string().nullable().optional(),
+  agentConfigId: z.string().min(1, 'agentConfigId is required'),
+})
 
 export const PUT = defineRoute({
   method: 'PUT',
   inputSchema: putSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, repo }) {
-    const existing = await repo.agentConfig.findFirst({ where: { isActive: true } })
-    if (existing) {
-      await repo.agentConfig.update({
-        where: { id: existing.id },
-        data: { gptbotsApiKey: input.apiKey || null } as any,
-      })
-    } else {
-      await repo.agentConfig.create({
-        data: { model: DEFAULT_MODEL, gptbotsApiKey: input.apiKey || null, systemPrompt: '', memoryStrategy: '{}' } as any,
-      })
-    }
+    await repo.raw.agentConfig.update({
+      where: { id: input.agentConfigId },
+      data: { gptbotsApiKey: input.apiKey || null },
+    })
     return apiOk({ ok: true })
   },
 })
