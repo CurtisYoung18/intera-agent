@@ -367,7 +367,8 @@ export default function KnowledgePage() {
   const fetchGptKbs = useCallback(async () => {
     setGptKbsLoading(true)
     try {
-      const r = await apiClient<{ knowledge_base?: GptBotKb[]; error?: string }>('/api/admin/knowledge/gptbots')
+      const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+      const r = await apiClient<{ knowledge_base?: GptBotKb[]; error?: string }>(`/api/admin/knowledge/gptbots${params}`)
       if (r.data.knowledge_base) {
         setGptKbs(r.data.knowledge_base)
         setGptConnected(true)
