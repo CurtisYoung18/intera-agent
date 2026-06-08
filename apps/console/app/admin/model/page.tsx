@@ -40,6 +40,8 @@ export default function ModelPage() {
   const [mainModels, setMainModels] = useState<ModelInfo[]>([])
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [assembledPreview, setAssembledPreview] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const { orgId } = useSession()
 
   // Fetch config + models
@@ -70,6 +72,16 @@ export default function ModelPage() {
       .finally(() => setLoading(false))
   }, [agentId, t])
 
+  // Initial preview fetch
+  useEffect(() => {
+    if (!agentId) return
+    setPreviewLoading(true)
+    apiClient(`/api/admin/agent/assembled-prompt?agentId=${agentId}`)
+      .then((r: any) => setAssembledPreview(r.data?.discovery || null))
+      .catch(() => setAssembledPreview(null))
+      .finally(() => setPreviewLoading(false))
+  }, [agentId])
+
   const handleSave = useCallback(async () => {
     if (!agentId || !config) return
     setSaving(true)
@@ -78,6 +90,12 @@ export default function ModelPage() {
       await apiClient(`/api/admin/agent?agentId=${agentId}`, { body: config })
       await bustConfigCache(orgId)
       setSaveResult('saved')
+      // Refresh preview after save
+      setPreviewLoading(true)
+      apiClient(`/api/admin/agent/assembled-prompt?agentId=${agentId}`)
+        .then((r: any) => setAssembledPreview(r.data?.discovery || null))
+        .catch(() => {})
+        .finally(() => setPreviewLoading(false))
       setTimeout(() => setSaveResult('idle'), 2500)
     } catch {
       setSaveResult('error')
@@ -278,6 +296,26 @@ export default function ModelPage() {
                   <span className="text-[11px] font-medium text-vermillion">{t('common.saveError')}</span>
                 )}
               </div>
+            </DrawerSection>
+
+            {/* ── Assembled Prompt Preview ── */}
+            <DrawerSection
+              accent="#5b8af7"
+              title={t('model.assembledPreviewTitle')}
+              lead={t('model.assembledPreviewHelp')}
+            >
+              {previewLoading ? (
+                <div className="flex items-center gap-2 text-[12px] text-[var(--fog)] py-2">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>{t('model.saving')}</span>
+                </div>
+              ) : assembledPreview ? (
+                <pre className="text-[11px] leading-relaxed text-[var(--mist)] whitespace-pre-wrap font-mono rounded-xl border border-lavender/20 bg-[var(--slate)]/50 p-4 max-h-96 overflow-y-auto">
+                  {assembledPreview}
+                </pre>
+              ) : (
+                <span className="text-[11px] text-[var(--fog)]">{t('model.assembledPreviewEmpty')}</span>
+              )}
             </DrawerSection>
           </DrawerShell>
         </div>
