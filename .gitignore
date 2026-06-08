@@ -6,6 +6,11 @@ dev.db.bak
 dev.db.backup-*
 .env.local
 .env*.local
+# local env backups (may contain prod credentials) — never commit
+*.bak.*
+*.bak
+# Playwright/Chrome MCP saved auth state
+auth.json
 test-assets/
 .playwright-mcp/
 /*.png

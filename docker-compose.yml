@@ -1,5 +1,6 @@
-version: "3.9"
-
+# Local dev database for Intera (safe-local-DB foundation, 2026-06-08).
+# Usage: docker compose up -d postgres  → Postgres 16 on host port 5434.
+# Point .env.local + packages/shared/.env DATABASE_URL at postgresql://intera:intera@localhost:5434/intera
 services:
   postgres:
     image: postgres:16

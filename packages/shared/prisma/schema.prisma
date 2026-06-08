@@ -1,8 +1,10 @@
 // Intera Harness - Prisma Schema
 // Agentic Customer Service Platform
 //
-// Table names use explicit @@map for PostgreSQL compatibility
-// SQLite is the local dev database; production targets Neon PostgreSQL
+// Table names use explicit @@map for PostgreSQL compatibility.
+// Local dev uses a Dockerized Postgres 16 (docker compose up -d postgres → host port 5434);
+// production is the self-hosted Ubuntu Postgres. The legacy SQLite dev shim is retired
+// (the postgresql datasource cannot use a file: URL). See doc/to-do/2026-06-08-foundation-safe-local-db.md.
 
 generator client {
   provider = "prisma-client-js"

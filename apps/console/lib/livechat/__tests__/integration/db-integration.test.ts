@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 
 // These tests require a live PostgreSQL database (local, via docker compose).
-// The local DATABASE_URL is set below; make sure the schema is pushed first:
-//   npx prisma db push --schema=packages/shared/prisma/schema.prisma
-
-const LOCAL_DATABASE_URL = 'postgresql://intera:intera@localhost:5432/intera'
+// Bring it up + push the schema first (host port 5434 — see docker-compose.yml):
+//   docker compose up -d postgres
+//   npx prisma db push --schema=packages/shared/prisma/schema.prisma --accept-data-loss
+const LOCAL_DATABASE_URL = 'postgresql://intera:intera@localhost:5434/intera'
 
 const TEST_CHAT_ID = `test-chat-${Date.now()}`
 const TEST_CUSTOMER = 'default'
