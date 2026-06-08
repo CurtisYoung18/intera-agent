@@ -118,7 +118,6 @@ vi.mock('@/lib/agent/config-loader', async (importOriginal) => {
       thinkingBudget: 10000,
       maxIterations: 5,
       coreSystemPrompt: 'You are a helpful assistant.',
-      coreSystemPrompt: 'You are a helpful assistant.',
       extendedThinking: false,
       memoryStrategy: { l1MaxMessages: 20, autocompactThresholdTokens: 50000 },
       policyHooks: {},

@@ -12,6 +12,13 @@ import { useSession } from '@/lib/hooks/use-session'
 import { PageLoader } from '@/components/ui/page-loader'
 import type { ModelInfo } from '@/app/admin/agent/types'
 
+/** Strip {{...}} tokens from prompt text — system injects them deterministically. */
+function stripTokens(text: string): string {
+  return text.replace(/\s*\{\{[a-z_]+\}\}\s*/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+const CLEAN_CORE_PROMPT = stripTokens(CORE_SYSTEM_PROMPT)
+
 interface ModelConfig {
   model: string
   temperature: number
@@ -90,7 +97,7 @@ export default function ModelPage() {
           thinkingBudget: raw.thinkingBudget ?? 4096,
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
-          coreSystemPrompt: raw.coreSystemPrompt ? String(raw.coreSystemPrompt) : CORE_SYSTEM_PROMPT,
+          coreSystemPrompt: raw.coreSystemPrompt ? stripTokens(String(raw.coreSystemPrompt)) : CLEAN_CORE_PROMPT,
           extendedThinking: raw.extendedThinking ?? false,
           resumePrompt: raw.resumePrompt || '',
         })
@@ -221,14 +228,14 @@ export default function ModelPage() {
           {isActiveVersion ? (
             <div className="flex items-center gap-2 rounded-xl border border-lavender/30 bg-lavender/[0.04] px-3 py-2">
               <span className="text-[11px] font-medium text-[var(--fog)]">
-                {t('model.viewingLive') || 'Viewing live version — read-only'}
+                {t('model.viewingLive')}
               </span>
               <button
                 onClick={handleEditAsDraft}
                 className="flex items-center gap-1.5 rounded-lg border border-lavender/30 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
               >
                 <Pencil className="w-3 h-3" />
-                {t('model.editAsDraft') || 'Edit as draft'}
+                {t('model.editAsDraft')}
               </button>
             </div>
           ) : (
@@ -247,7 +254,7 @@ export default function ModelPage() {
                 ) : (
                   <Save className="w-3 h-3" />
                 )}
-                {saving ? (t('model.saving') || 'Saving...') : isDirty ? (t('model.save') || 'Save') : (t('model.saved') || 'Saved')}
+                {saving ? (t('model.saving')) : isDirty ? (t('model.save')) : (t('model.saved'))}
               </button>
               <button
                 onClick={() => setShowPublishDialog(true)}
@@ -259,11 +266,11 @@ export default function ModelPage() {
                 ) : (
                   <Rocket className="w-3 h-3" />
                 )}
-                {t('model.publish') || 'Publish'}
+                {t('model.publish')}
               </button>
               {lastSavedAt && (
                 <span className="text-[10px] text-[var(--smoke)]">
-                  {t('model.lastSaved') || 'Last saved'}: {lastSavedAt.toLocaleTimeString()}
+                  {t('model.lastSaved')}: {lastSavedAt.toLocaleTimeString()}
                 </span>
               )}
             </div>
@@ -275,15 +282,15 @@ export default function ModelPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
             <div className="rounded-2xl bg-white p-6 shadow-xl border border-black/[0.08] w-full max-w-md">
               <h2 className="text-[16px] font-semibold text-[var(--mist)] mb-2">
-                {t('model.publishTitle') || 'Publish Version'}
+                {t('model.publishTitle')}
               </h2>
               <p className="text-[12px] text-[var(--fog)] mb-4">
-                {t('model.publishHelp') || 'This will make this draft the live version. All active conversations will use the new configuration. A commit message is required.'}
+                {t('model.publishHelp')}
               </p>
               <textarea
                 value={publishNote}
                 onChange={(e) => setPublishNote(e.target.value)}
-                placeholder={t('model.publishNotePlaceholder') || 'Describe what changed in this version...'}
+                placeholder={t('model.publishNotePlaceholder')}
                 rows={3}
                 className="glass-input-console w-full text-[12px] mb-4 rounded-lg border border-black/[0.08] p-2"
               />
@@ -299,7 +306,7 @@ export default function ModelPage() {
                   disabled={publishing || !publishNote.trim()}
                   className="rounded-lg bg-lavender px-4 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-40"
                 >
-                  {publishing ? (t('model.publishing') || 'Publishing...') : (t('model.confirmPublish') || 'Publish')}
+                  {publishing ? (t('model.publishing')) : (t('model.confirmPublish'))}
                 </button>
               </div>
             </div>
@@ -372,7 +379,7 @@ export default function ModelPage() {
                     />
                     <span className="text-[12px] text-[var(--mist)]">
                       {t('model.extendedThinking')}
-                      {!supportsThinking && <span className="ml-1 text-[10px] text-[var(--smoke)]">— {t('model.showThinkingUnsupported') || 'current model does not support extended thinking'}</span>}
+                      {!supportsThinking && <span className="ml-1 text-[10px] text-[var(--smoke)]">— {t('model.extendedThinkingUnsupported')}</span>}
                     </span>
                   </label>
                 )
@@ -390,7 +397,7 @@ export default function ModelPage() {
                 type="button"
                 onClick={() => {
                   if (window.confirm(t('model.promptResetConfirm')))
-                    update('coreSystemPrompt', CORE_SYSTEM_PROMPT)
+                    update('coreSystemPrompt', CLEAN_CORE_PROMPT)
                 }}
                 className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
               >
@@ -418,8 +425,8 @@ export default function ModelPage() {
           {/* ── Assembled Prompt Preview ── */}
           <DrawerSection
             accent="#5b8af7"
-            title={t('model.assembledPreviewTitle') || 'Assembled Prompt'}
-            lead={t('model.assembledPreviewHelp') || 'Read-only preview of the final system prompt with all context blocks injected. Tokens are resolved by the system — you do not need to place them in your prompt.'}
+            title={t('model.assembledPreviewTitle')}
+            lead={t('model.assembledPreviewHelp')}
           >
             <div className="rounded-xl border border-lavender/20 bg-[var(--slate)]/50 p-4 max-h-96 overflow-y-auto">
               {previewLoading ? (
@@ -432,7 +439,7 @@ export default function ModelPage() {
                   {assembledPreview}
                 </pre>
               ) : (
-                <span className="text-[11px] text-[var(--fog)]">{t('model.assembledPreviewEmpty') || 'Save the prompt to generate a preview.'}</span>
+                <span className="text-[11px] text-[var(--fog)]">{t('model.assembledPreviewEmpty')}</span>
               )}
             </div>
           </DrawerSection>
