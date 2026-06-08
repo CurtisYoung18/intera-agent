@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { procedureSchema } from '@intera/shared/contracts/case-types'
 
 interface CaseTypeParams { name: string }
 
@@ -49,6 +50,10 @@ const updateSchema = z.object({
   executionMode: z.string().optional(),
   sop: z.string().nullable().optional(),
   sopMaxAutoTurns: z.number().optional(),
+  // ── Procedure refactor (Phase 2, additive) ──
+  procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
+  guardrails: z.union([z.string(), z.array(z.string())]).optional(),
+  maxAutoTurns: z.number().optional(),
 })
 type UpdateInput = z.infer<typeof updateSchema>
 
@@ -73,6 +78,13 @@ export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
     if (fields.executionMode !== undefined) data.executionMode = fields.executionMode === 'cc' ? 'cc' : 'stage'
     if (fields.sop !== undefined) data.sop = fields.sop || null
     if (fields.sopMaxAutoTurns !== undefined) data.sopMaxAutoTurns = Math.max(1, Math.min(50, Number(fields.sopMaxAutoTurns) || 10))
+    // ── Procedure refactor (Phase 2) ── setting a procedure flips the case to the cc/Procedure path.
+    if (fields.procedure !== undefined) {
+      data.procedure = fields.procedure ? stringifyMaybe(fields.procedure) : null
+      if (fields.procedure) data.executionMode = 'cc'
+    }
+    if (fields.guardrails !== undefined) data.guardrails = stringifyMaybe(fields.guardrails)
+    if (fields.maxAutoTurns !== undefined) data.maxAutoTurns = Math.max(1, Math.min(50, Number(fields.maxAutoTurns) || 10))
     const ct = await repo.raw.caseType.update({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
       data,

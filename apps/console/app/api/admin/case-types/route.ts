@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
+import { procedureSchema } from '@intera/shared/contracts/case-types'
 
 const stringifyMaybe = (val: unknown): string => {
   if (typeof val === 'string') return val
@@ -48,6 +49,10 @@ const createSchema = z.object({
   executionMode: z.string().optional().default('stage'),
   sop: z.string().nullable().optional(),
   sopMaxAutoTurns: z.number().optional().default(10),
+  // ── Procedure refactor (Phase 2, additive) ──
+  procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
+  guardrails: z.union([z.string(), z.array(z.string())]).optional().default('[]'),
+  maxAutoTurns: z.number().optional().default(10),
 })
 type CreateInput = z.infer<typeof createSchema>
 
@@ -73,9 +78,13 @@ export const POST = defineRoute<CreateInput>({
         autoCloseConditions: fields.autoCloseConditions ? stringifyMaybe(fields.autoCloseConditions) : null,
         enabled: fields.enabled !== false,
         requireHumanReview: fields.requireHumanReview === true,
-        executionMode: fields.executionMode === 'cc' ? 'cc' : 'stage',
+        // A typed Procedure runs the structured single-agent path → store as 'cc'.
+        executionMode: fields.procedure ? 'cc' : fields.executionMode === 'cc' ? 'cc' : 'stage',
         sop: fields.sop ?? null,
         sopMaxAutoTurns: Math.max(1, Math.min(50, Number(fields.sopMaxAutoTurns) || 10)),
+        procedure: fields.procedure ? stringifyMaybe(fields.procedure) : null,
+        guardrails: stringifyMaybe(fields.guardrails ?? '[]'),
+        maxAutoTurns: Math.max(1, Math.min(50, Number(fields.maxAutoTurns) || 10)),
       },
     })
     await audit({ action: 'case_type.create', target: `case_type:${ct.type}`, after: ct as Record<string, unknown> })

@@ -13,6 +13,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
+import { parseProcedure, parseGuardrails } from '@intera/shared/contracts/case-types'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 
 // Verify env vars at module load (logged once per cold start)
@@ -62,11 +63,16 @@ function schemaFromCaseTypeRow(caseType: {
   executionMode?: string | null
   sop?: string | null
   requireHumanReview?: boolean
+  procedure?: string | null
+  guardrails?: string | null
+  maxAutoTurns?: number | null
 }): CaseSchemaConfig {
   const stages = parseMemoryJson(caseType.stages) as string[]
   const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
   const stageConfigs = parseMemoryJson(caseType.stageConfigs) as Record<string, unknown> | null
   const orchestrator = parseMemoryJson(caseType.orchestratorConfig) as Record<string, unknown> | null
+  const procedure = parseProcedure(caseType.procedure)
+  const guardrails = parseGuardrails(caseType.guardrails)
 
   return {
     type: caseType.type,
@@ -83,6 +89,9 @@ function schemaFromCaseTypeRow(caseType: {
     requireHumanReview: caseType.requireHumanReview === true,
     executionMode: (caseType.executionMode as 'stage' | 'cc' | undefined) || 'stage',
     sop: caseType.sop || undefined,
+    procedure: procedure ?? undefined,
+    guardrails,
+    maxAutoTurns: typeof caseType.maxAutoTurns === 'number' ? caseType.maxAutoTurns : undefined,
   }
 }
 

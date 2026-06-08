@@ -64,12 +64,14 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
   }
 
   if (caseSchema?.executionMode === 'cc') {
+    // Procedure refactor (Phase 2): a typed Procedure renders the structured step
+    // checklist; otherwise fall back to the legacy free-text SOP. Same cc execution
+    // path (no stage machine, hooks gate finalize) — only the prompt differs.
+    const prompt = caseLoop!.isProcedureMode()
+      ? caseLoop!.buildProcedurePrompt(systemPrompt, chatMemory.getTodos(), chatMemory.getConfirmedFacts())
+      : caseLoop!.buildSopPrompt(systemPrompt, chatMemory.getTodos(), chatMemory.getConfirmedFacts())
     return {
-      prompt: caseLoop!.buildSopPrompt(
-        systemPrompt,
-        chatMemory.getTodos(),
-        chatMemory.getConfirmedFacts(),
-      ),
+      prompt,
       tools: caseLoop!.filterSopTools(allTools),
     }
   }

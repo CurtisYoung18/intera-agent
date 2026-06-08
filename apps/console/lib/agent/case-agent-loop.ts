@@ -14,6 +14,7 @@ import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { Message, SSEEvent, CaseSchemaConfig, TodoItem } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StageExecutor, type TransitionEval } from './stage-executor'
+import { ProcedureExecutor } from './procedure-executor'
 import { OrchestratorAgent } from './orchestrator'
 import type { ChatMemoryManager } from './memory'
 import type { PolicyEngine } from './policy'
@@ -64,6 +65,7 @@ export type CaseToolResult =
 
 export class CaseAgentLoop {
   private stageExecutor: StageExecutor
+  private procedureExecutor: ProcedureExecutor | null = null
   private orchestrator: OrchestratorAgent | null = null
   private _currentStage: string
 
@@ -78,6 +80,12 @@ export class CaseAgentLoop {
       services.chatMemory,
       bootstrapNewCase,
     )
+    // Procedure refactor (Phase 2, additive): when the case type carries a typed
+    // Procedure, it runs the structured single-agent path (rendered via the cc prompt
+    // branch). Case types without a procedure keep the legacy stage/sop behaviour.
+    if (caseSchema.procedure && caseSchema.procedure.steps.length > 0) {
+      this.procedureExecutor = new ProcedureExecutor(caseSchema.procedure, caseSchema.type)
+    }
     this._currentStage = this.stageExecutor.getCurrentStage()
     this.orchestrator = new OrchestratorAgent(
       caseSchema,
@@ -117,6 +125,24 @@ export class CaseAgentLoop {
   /** True when this case type uses SOP-driven autonomous todo execution. */
   isSopMode(): boolean {
     return this.caseSchema.executionMode === 'cc'
+  }
+
+  /** True when this case type carries a typed Procedure (structured-SOP path). */
+  isProcedureMode(): boolean {
+    return this.procedureExecutor !== null
+  }
+
+  /** Tool targets the Procedure hard-requires before completion (empty when not in procedure mode). */
+  procedureRequiredTools(): string[] {
+    return this.procedureExecutor?.requiredTools() ?? []
+  }
+
+  /**
+   * Build the Procedure-mode system prompt (structured successor to buildSopPrompt).
+   * Renders the ordered steps + todos + facts; only called when isProcedureMode().
+   */
+  buildProcedurePrompt(basePrompt: string, todos: TodoItem[], facts: Record<string, unknown>): string {
+    return this.procedureExecutor!.buildPrompt(basePrompt, this._currentStage, todos, facts)
   }
 
   /**
