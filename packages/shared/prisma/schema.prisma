@@ -22,7 +22,7 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   apiKey    String?
-  password  String?  // bcrypt hash — null means no password needed for Console
+  password  String? // bcrypt hash — null means no password needed for Console
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -38,8 +38,8 @@ model Organization {
 model ApiKey {
   id            String    @id @default(cuid())
   orgId         String    @map("org_id")
-  name          String    // "production" | "staging" | 渠道名
-  prefix        String    // 明文前 8 位，便于 UI 识别，如 "intera_sk_live_a1b2"
+  name          String // "production" | "staging" | 渠道名
+  prefix        String // 明文前 8 位，便于 UI 识别，如 "intera_sk_live_a1b2"
   hash          String    @unique // sha256(fullKey)
   agentConfigId String?   @map("agent_config_id") // 绑定到具体 AgentConfig；null = org 默认
   lastUsedAt    DateTime? @map("last_used_at")
@@ -55,49 +55,49 @@ model ApiKey {
 // Agent 编排配置
 // ============================================
 model AgentConfig {
-  id         String   @id @default(cuid())
-  orgId String  @map("org_id")
-  name       String  @default("Default")
+  id    String @id @default(cuid())
+  orgId String @map("org_id")
+  name  String @default("Default")
 
   /// Version number — multiple rows per (orgId, name) form a linear version history.
   /// The row where isActive = true is the one runtime traffic uses.
-  version  Int      @default(1)
+  version  Int     @default(1)
   /// Points to the row this version was forked from. Null for v1 (root).
   parentId String?
   /// Exactly one row per (orgId, name) has isActive = true.
   /// Enforced in app code via atomic transactions on /activate.
-  isActive Boolean  @default(true)
+  isActive Boolean @default(true)
 
   parent   AgentConfig?  @relation("AgentVersions", fields: [parentId], references: [id], onDelete: SetNull)
   children AgentConfig[] @relation("AgentVersions")
 
   // Agent-scoped sub-modules
-  tools             Tool[]
-  policies          Policy[]
-  caseTypes         CaseType[]
-  knowledgeSources  KnowledgeSource[]
-  channelBindings   ChannelBinding[]
+  tools            Tool[]
+  hooks            Hook[]
+  caseTypes        CaseType[]
+  knowledgeSources KnowledgeSource[]
+  channelBindings  ChannelBinding[]
 
-  model          String
-  temperature    Float   @default(0.5)
-  thinkingBudget Int     @default(4096)
-  maxIterations  Int     @default(20)
+  model            String
+  temperature      Float   @default(0.5)
+  thinkingBudget   Int     @default(4096)
+  maxIterations    Int     @default(20)
   coreSystemPrompt String? // Core/discovery prompt (no active case); falls back to CORE_SYSTEM_PROMPT default when empty
   extendedThinking Boolean @default(false) @map("showThinking")
 
-  maxOutputTokens       Int? // default 4096
-  resumePrompt          String? // synthetic message for human task resume
+  maxOutputTokens Int? // default 4096
+  resumePrompt    String? // synthetic message for human task resume
 
   // JSON fields
-  memoryStrategy     String  // MemoryStrategy
-  gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
+  memoryStrategy String // MemoryStrategy
+  gptbotsApiKey  String? // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
 
   /// Version release note — set when a version is published/activated
-  releaseNote  String?   @map("release_note")
+  releaseNote String?   @map("release_note")
   /// When this version was published (made active)
-  publishedAt  DateTime? @map("published_at")
+  publishedAt DateTime? @map("published_at")
   /// User ID of who published this version
-  publishedBy  String?   @map("published_by")
+  publishedBy String?   @map("published_by")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -112,8 +112,8 @@ model AgentConfig {
 // Case 类型定义（动态状态机）
 // ============================================
 model CaseType {
-  id             String   @id @default(cuid())
-  agentConfigId  String   @map("agent_config_id")
+  id            String @id @default(cuid())
+  agentConfigId String @map("agent_config_id")
 
   type        String
   displayName String
@@ -160,8 +160,8 @@ model CaseType {
 // Tool 注册中心
 // ============================================
 model Tool {
-  id         String   @id @default(cuid())
-  agentConfigId String  @map("agent_config_id")
+  id            String @id @default(cuid())
+  agentConfigId String @map("agent_config_id")
 
   name        String
   description String
@@ -194,23 +194,74 @@ model Tool {
 }
 
 // ============================================
-// Policy 规则配置
+// Hook 控制层 — Policy/Guardrail reset target
 // ============================================
-model Policy {
-  id             String   @id @default(cuid())
-  agentConfigId  String   @map("agent_config_id")
+model Hook {
+  id            String @id @default(cuid())
+  agentConfigId String @map("agent_config_id")
 
   name        String
+  displayName String?
   description String?
-  hook        String // "preTool" | "postTool" | "preFinalize" — @deprecated, prefer guardrailConfig.when
-  rule        String // JSON: @deprecated PolicyRule — superseded by guardrailConfig (G11)
-  guardrailConfig String? // JSON: GuardrailHook (G11 configurable guardrail primitive)
+
+  checkpoint  String // PreToolUse | PostToolUse | Stop
+  handlerKind String // declarative | code | http
+  handler     String // JSON: HookHandler
   enabled     Boolean @default(true)
+  severity    String  @default("medium") // low | medium | high | critical
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  agentConfig AgentConfig @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+  agentConfig AgentConfig   @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+  bindings    HookBinding[]
+
+  @@unique([agentConfigId, name])
+  @@index([agentConfigId, checkpoint])
+  @@map("hooks")
+}
+
+model HookBinding {
+  id            String @id @default(cuid())
+  agentConfigId String @map("agent_config_id")
+  hookId        String @map("hook_id")
+
+  scopeType String // agent | caseType | procedureStep | tool
+  scopeKey  String // agent | caseType:<id> | procedureStep:<caseTypeId>:<stepId> | tool:<id>
+
+  caseTypeId      String? @map("case_type_id")
+  procedureStepId String? @map("procedure_step_id")
+  toolId          String? @map("tool_id")
+
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hook Hook @relation(fields: [hookId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, hookId, scopeKey])
+  @@index([agentConfigId, scopeType])
+  @@index([agentConfigId, scopeKey])
+  @@map("hook_bindings")
+}
+
+// ============================================
+// Legacy Policy rows — migration input for Hook backfill.
+// F2/F4 own runtime/API removal after HookEngine and /api/admin/hooks land.
+// ============================================
+model Policy {
+  id            String @id @default(cuid())
+  agentConfigId String @map("agent_config_id")
+
+  name            String
+  description     String?
+  hook            String // "preTool" | "postTool" | "preFinalize" — @deprecated, prefer guardrailConfig.when
+  rule            String // JSON: @deprecated PolicyRule — superseded by guardrailConfig (G11)
+  guardrailConfig String? // JSON: GuardrailHook (G11 configurable guardrail primitive)
+  enabled         Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([agentConfigId, name])
   @@map("policies")
@@ -220,12 +271,12 @@ model Policy {
 // Case（工单）
 // ============================================
 model Case {
-  id         String   @id @default(cuid())
-  orgId String  @map("org_id") @default("default")
-  userId     String
+  id     String @id @default(cuid())
+  orgId  String @default("default") @map("org_id")
+  userId String
   /// Groups all cases that belong to the same chat session.
   /// Generated once per page-load by the frontend and forwarded with every message.
-  chatId     String
+  chatId String
 
   type    String
   status  String  @default("created")
@@ -281,20 +332,20 @@ model ChatMemory {
 // User Profile — AI-maintained Markdown user portrait (per userId, cross-chat)
 // ============================================
 model UserProfile {
-  id       String @id @default(cuid())
-  userId   String @unique
-  orgId String @default("default")
+  id     String @id @default(cuid())
+  userId String @unique
+  orgId  String @default("default")
 
   /// Free-form Markdown maintained by the compact engine and operators
-  profile  String @default("")
+  profile String @default("")
 
   /// Structured JSON sections derived from profile Markdown (see contract.ts: ProfileSections)
   sections String @default("{}")
 
-  totalChats     Int @default(0)
-  totalCases     Int @default(0)
-  resolvedCases  Int @default(0)
-  escalatedCases Int @default(0)
+  totalChats     Int       @default(0)
+  totalCases     Int       @default(0)
+  resolvedCases  Int       @default(0)
+  escalatedCases Int       @default(0)
   lastCaseType   String?
   firstSeenAt    DateTime?
   lastSeenAt     DateTime?
@@ -329,9 +380,9 @@ model Message {
 // 操作追踪
 // ============================================
 model ActionTrace {
-  id     String @id @default(cuid())
+  id     String  @id @default(cuid())
   caseId String
-  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case   Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   chatId String?
 
   actionType String
@@ -350,19 +401,19 @@ model ActionTrace {
 // 知识检索 — 知识源配置（GPTBots / 外部 RAG）
 // ============================================
 model KnowledgeSource {
-  id             String   @id @default(cuid())
-  agentConfigId  String   @map("agent_config_id")
+  id            String @id @default(cuid())
+  agentConfigId String @map("agent_config_id")
 
   name        String // 显示名称
   description String?
 
   // GPTBots API 检索参数
-  groupIds       String  @default("[]") // JSON: string[] — GPTBots 知识库 group_id
-  dataIds        String? // JSON: string[] — 可选，限定文档范围
-  embeddingRate  Float   @default(0.9)
-  topK           Int     @default(5)
-  rerankVersion  String? // "Jina-reranker-v2-base-multilingual" | "BGE-Rerank" | etc.
-  docCorrelation Float? // 相关性阈值 0.1-0.95
+  groupIds         String  @default("[]") // JSON: string[] — GPTBots 知识库 group_id
+  dataIds          String? // JSON: string[] — 可选，限定文档范围
+  embeddingRate    Float   @default(0.9)
+  topK             Int     @default(5)
+  rerankVersion    String? // "Jina-reranker-v2-base-multilingual" | "BGE-Rerank" | etc.
+  docCorrelation   Float? // 相关性阈值 0.1-0.95
   modelControlTopK Boolean @default(false) // 是否允许模型自行控制 topK
 
   // 可选：关联到某个 caseType（如 deposit_issue）
@@ -385,12 +436,12 @@ model KnowledgeSource {
 // ============================================
 model ExternalConversation {
   id             String   @id @default(cuid())
-  orgId     String   @map("org_id") @default("default")
-  platform       String   // 'livechat' | 'intercom' | 'tawk'
+  orgId          String   @default("default") @map("org_id")
+  platform       String // 'livechat' | 'intercom' | 'tawk'
   externalChatId String
   internalCaseId String?
   status         String   @default("active") // active|transferred|closed
-  bridgeState    String   @default("idle")   // idle|thinking|waiting_choice|waiting_form|transferred
+  bridgeState    String   @default("idle") // idle|thinking|waiting_choice|waiting_form|transferred
   textBuffer     String   @default("")
   metadata       Json?
   createdAt      DateTime @default(now())
@@ -434,7 +485,7 @@ model HumanTask {
 // ============================================
 model WebhookEvent {
   id          String   @id // external event id from webhook payload (e.g. LiveChat event.id)
-  platform    String   // 'livechat' | 'slack' | ...
+  platform    String // 'livechat' | 'slack' | ...
   processedAt DateTime @default(now())
 
   @@index([platform, processedAt])
@@ -447,7 +498,7 @@ model WebhookEvent {
 model LiveChatPendingEvent {
   id          String   @id @default(cuid())
   chatId      String
-  orgId  String   @map("org_id") @default("default")
+  orgId       String   @default("default") @map("org_id")
   payload     Json
   attempt     Int      @default(0)
   lastError   String?
@@ -464,7 +515,7 @@ model LiveChatPendingEvent {
 model ChatSession {
   id             String   @id @default(cuid())
   chatId         String   @unique
-  orgId          String   @map("org_id") @default("default")
+  orgId          String   @default("default") @map("org_id")
   confirmedFacts String   @default("{}")
   summary        String?
   keyEvents      String   @default("[]")
@@ -480,17 +531,17 @@ model ChatSession {
 model ChannelBinding {
   id                  String   @id @default(cuid())
   agentConfigId       String   @map("agent_config_id")
-  channel             String   // 'web-chat' | 'livechat' | 'slack' | 'discord' | 'whatsapp'
+  channel             String // 'web-chat' | 'livechat' | 'slack' | 'discord' | 'whatsapp'
   enabled             Boolean  @default(false)
   credentials         String   @default("{}") // JSON — secrets/connection (LiveChatCredentials etc.)
   botAccessToken      String?  @map("bot_access_token") // denormalized from credentials for common queries
-  licenseId           String?  @map("license_id")       // denormalized from credentials for common queries
-  toolOverrides       String?  // JSON: Record<string, RenderHint>
-  defaults            String?  // JSON: { plain?, card?, form? }
-  channelSkillBinding String?  // JSON: string[] — allowlist of tool names
+  licenseId           String?  @map("license_id") // denormalized from credentials for common queries
+  toolOverrides       String? // JSON: Record<string, RenderHint>
+  defaults            String? // JSON: { plain?, card?, form? }
+  channelSkillBinding String? // JSON: string[] — allowlist of tool names
   /// Human Ops: escalation strategy per channel
-  transferStrategy    String?  // 'transfer_chat' | 'consult' | 'silent_task'
-  transferTarget      String?  // JSON: { type: 'group'|'agent'|'queue', ids: [...] }
+  transferStrategy    String? // 'transfer_chat' | 'consult' | 'silent_task'
+  transferTarget      String? // JSON: { type: 'group'|'agent'|'queue', ids: [...] }
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -504,18 +555,18 @@ model ChannelBinding {
 // D1 — User identity
 // ============================================
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   name         String?
-  googleSub    String?  @unique @map("google_sub")
-  passwordHash String?  @map("password_hash")
+  googleSub    String? @unique @map("google_sub")
+  passwordHash String? @map("password_hash")
 
-  memberships      Membership[]
-  auditLogs        AuditLog[]    @relation("ActorAuditLogs")
-  sentInvitations  Invitation[]
+  memberships     Membership[]
+  auditLogs       AuditLog[]   @relation("ActorAuditLogs")
+  sentInvitations Invitation[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("users")
 }
@@ -524,15 +575,15 @@ model User {
 // D1 — Organization membership
 // ============================================
 model Membership {
-  id         String   @id @default(cuid())
-  userId     String   @map("user_id")
-  orgId      String   @map("org_id")
-  role       String   // owner|admin|operator|viewer
-  invitedAt  DateTime @default(now())  @map("invited_at")
-  acceptedAt DateTime?                  @map("accepted_at")
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  orgId      String    @map("org_id")
+  role       String // owner|admin|operator|viewer
+  invitedAt  DateTime  @default(now()) @map("invited_at")
+  acceptedAt DateTime? @map("accepted_at")
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId])
   @@index([orgId])
@@ -547,13 +598,13 @@ model AuditLog {
   id          String   @id @default(cuid())
   actorUserId String   @map("actor_user_id")
   orgId       String   @map("org_id")
-  action      String   // e.g. "skill.create", "skill.update", "skill.delete"
-  target      String   // e.g. "skill:my_skill_name"
-  before      Json?    // snapshot before mutation
-  after       Json?    // snapshot after mutation
+  action      String // e.g. "skill.create", "skill.update", "skill.delete"
+  target      String // e.g. "skill:my_skill_name"
+  before      Json? // snapshot before mutation
+  after       Json? // snapshot after mutation
   createdAt   DateTime @default(now())
 
-  actor       User     @relation("ActorAuditLogs", fields: [actorUserId], references: [id], onDelete: Cascade)
+  actor User @relation("ActorAuditLogs", fields: [actorUserId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([actorUserId])
@@ -566,19 +617,19 @@ model AuditLog {
 // ============================================
 model Invitation {
   id        String   @id @default(cuid())
-  email     String?  // null = share link (anyone can use); non-null = email-bound invite
+  email     String? // null = share link (anyone can use); non-null = email-bound invite
   orgId     String   @map("org_id")
   invitedBy String   @map("invited_by")
   role      String   @default("viewer") // owner|admin|operator|viewer
   token     String   @unique
   state     String   @default("pending") // pending|accepted|expired
-  maxUses   Int?     // null = unlimited (only meaningful for share links)
+  maxUses   Int? // null = unlimited (only meaningful for share links)
   useCount  Int      @default(0)
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now())
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  inviter   User         @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  inviter User         @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
 
   @@unique([email, orgId])
   @@index([token])

@@ -1,6 +1,7 @@
 // Case Types domain contract — request/response zod schemas for /api/admin/case-types
 
 import { z } from 'zod'
+import { stableNameSchema } from './hooks'
 
 // ── Procedure (single-agent ordered SOP — Procedure refactor, Phase 1, additive) ──
 // Mirrors the plain TS `Procedure`/`ProcedureStep`/`ProcedureAction` in @intera/shared/types
@@ -30,8 +31,8 @@ export const procedureSchema = z.object({
 })
 export type ProcedureContract = z.infer<typeof procedureSchema>
 
-// Platform-owned guardrail names that can be activated by case types even when
-// no editable Policy row exists. Runtime code provides safe fallback hooks.
+// Legacy platform-owned guardrail names. F1 migrates these activations into
+// HookBinding rows; old API/runtime routes keep reading them until F2/F4 land.
 export const SAFETY_FLOOR_GUARDRAIL_NAMES = [
   'no_high_risk_account_change',
 ] as const
@@ -54,7 +55,7 @@ export function parseProcedure(json: string | null | undefined): ProcedureContra
   return r.success ? r.data : null
 }
 
-/** Safe runtime parse of a `CaseType.guardrails` JSON string[] → names, or [] on garbage. Never throws. */
+/** @deprecated Legacy backfill helper for CaseType.guardrails JSON string[] → names. Never throws. */
 export function parseGuardrails(json: string | null | undefined): string[] {
   if (!json) return []
   let raw: unknown
@@ -68,9 +69,8 @@ export function parseGuardrails(json: string | null | undefined): string[] {
 }
 
 /**
- * Orphan check for case-type guardrail activation (D5): returns the referenced
- * guardrail names that are NOT in the agent's policy set. Used by the case-types
- * API to reject/surface dangling references when a guardrail is renamed/deleted.
+ * @deprecated Legacy CaseType.guardrails orphan check. New activation uses
+ * HookBinding rows and stable Hook names.
  */
 export function findOrphanGuardrails(
   guardrailNames: string[],
@@ -83,7 +83,7 @@ export function findOrphanGuardrails(
 // ── Case type item ──
 export const caseTypeItemSchema = z.object({
   id: z.string(),
-  type: z.string(),
+  type: stableNameSchema,
   displayName: z.string(),
   description: z.string().nullable().optional(),
   icon: z.string(),
@@ -117,7 +117,7 @@ export type CaseTypesListResponse = z.infer<typeof caseTypesListResponseSchema>
 
 // ── POST /api/admin/case-types request body ──
 export const caseTypeCreateRequestSchema = z.object({
-  type: z.string().min(1, 'Type is required'),
+  type: stableNameSchema,
   displayName: z.string().optional(),
   description: z.string().nullable().optional(),
   icon: z.string().optional().default('\u{1F4CB}'),
@@ -154,7 +154,7 @@ export type CaseTypeGetResponse = z.infer<typeof caseTypeGetResponseSchema>
 
 // ── PUT /api/admin/case-types/[name] request body ──
 export const caseTypeUpdateRequestSchema = z.object({
-  type: z.string().optional(),
+  type: stableNameSchema.optional(),
   displayName: z.string().optional(),
   description: z.string().nullable().optional(),
   icon: z.string().optional(),
@@ -182,3 +182,20 @@ export const caseTypeUpdateResponseSchema = z.object({
   caseType: caseTypeItemSchema,
 })
 export type CaseTypeUpdateResponse = z.infer<typeof caseTypeUpdateResponseSchema>
+
+// ── .intera-agent.json CaseType section ──
+export const templateCaseTypeSchema = z.object({
+  type: stableNameSchema,
+  displayName: z.string(),
+  description: z.string().optional(),
+  icon: z.string().optional(),
+  requiredFacts: z.array(z.string()).default([]),
+  defaultGoal: z.string().default(''),
+  escalateOn: z.array(z.string()).default([]),
+  autoCloseConditions: z.record(z.unknown()).optional(),
+  enabled: z.boolean().default(true),
+  procedure: procedureSchema.optional(),
+  maxAutoTurns: z.number().int().positive().default(10),
+  legacy: z.record(z.unknown()).optional(),
+})
+export type TemplateCaseType = z.infer<typeof templateCaseTypeSchema>

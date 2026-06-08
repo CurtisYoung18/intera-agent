@@ -123,54 +123,104 @@ const SEED_TOOLS = [
   },
 ]
 
-const SEED_POLICIES = [
+const SEED_HOOKS = [
   {
     name: 'no_high_risk_account_change',
     description: 'Block high-risk account mutations (refund, ban, delete) in preTool phase',
-    hook: 'preTool',
-    rule: JSON.stringify({ denyTools: ['refund_money', 'change_ban_status', 'delete_account'] }),
-    guardrailConfig: JSON.stringify({
-      when: 'preTool',
-      match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
-      check: { kind: 'rule', denyTools: ['refund_money', 'change_ban_status', 'delete_account'] },
-      onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
-      onUnavailable: { action: 'closed' },
-      guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
+    checkpoint: 'PreToolUse',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
+        denyTools: ['refund_money', 'change_ban_status', 'delete_account'],
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'High-risk account changes are not allowed. Escalate to human if needed.',
+      },
     }),
+    severity: 'critical',
     enabled: true,
+    legacyPolicy: {
+      hook: 'preTool',
+      rule: JSON.stringify({ denyTools: ['refund_money', 'change_ban_status', 'delete_account'] }),
+      guardrailConfig: JSON.stringify({
+        when: 'preTool',
+        match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
+        check: { kind: 'rule', denyTools: ['refund_money', 'change_ban_status', 'delete_account'] },
+        onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
+        onUnavailable: { action: 'closed' },
+        guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
+      }),
+    },
   },
   {
     name: 'investigate_before_resolve',
     description: 'Require evidence gathering before case finalization',
-    hook: 'preFinalize',
-    rule: JSON.stringify({ requireToolsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status', 'search_knowledge_base'] }),
-    guardrailConfig: JSON.stringify({
-      when: 'preFinalize',
-      match: { tools: [] },
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
       check: {
         kind: 'ai',
         evaluationPrompt:
           'Check whether the finalize conclusion cites evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.',
       },
-      onViolation: { action: 'block', guidance: 'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or knowledge base articles.' },
-      onUnavailable: { action: 'open' },
+      effect: {
+        decision: 'block',
+        guidance: 'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or knowledge base articles.',
+      },
     }),
+    severity: 'high',
     enabled: true,
+    legacyPolicy: {
+      hook: 'preFinalize',
+      rule: JSON.stringify({ requireToolsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status', 'search_knowledge_base'] }),
+      guardrailConfig: JSON.stringify({
+        when: 'preFinalize',
+        match: { tools: [] },
+        check: {
+          kind: 'ai',
+          evaluationPrompt:
+            'Check whether the finalize conclusion cites evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.',
+        },
+        onViolation: { action: 'block', guidance: 'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or knowledge base articles.' },
+        onUnavailable: { action: 'open' },
+      }),
+    },
   },
   {
     name: 'human_review_before_finalize',
     description: 'Require human review before case finalization when activated by a case type',
-    hook: 'preFinalize',
-    rule: JSON.stringify({ requireTools: ['create_human_task'] }),
-    guardrailConfig: JSON.stringify({
-      when: 'preFinalize',
-      match: { tools: [] },
-      check: { kind: 'rule', requireTools: ['create_human_task'] },
-      onViolation: { action: 'block', guidance: 'Human review is required before finalizing this case.' },
-      onUnavailable: { action: 'closed' },
-      guidance: 'Call create_human_task before finalizing this case.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        requireTools: ['create_human_task'],
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Call create_human_task before finalizing this case.',
+      },
     }),
+    severity: 'high',
     enabled: true,
+    legacyPolicy: {
+      hook: 'preFinalize',
+      rule: JSON.stringify({ requireTools: ['create_human_task'] }),
+      guardrailConfig: JSON.stringify({
+        when: 'preFinalize',
+        match: { tools: [] },
+        check: { kind: 'rule', requireTools: ['create_human_task'] },
+        onViolation: { action: 'block', guidance: 'Human review is required before finalizing this case.' },
+        onUnavailable: { action: 'closed' },
+        guidance: 'Call create_human_task before finalizing this case.',
+      }),
+    },
   },
 ]
 
@@ -184,7 +234,7 @@ const SEED_CASE_TYPES = [
     stages: '["created","resolved"]',
     defaultGoal: 'Answer the customer question accurately using knowledge base and available tools.',
     escalateOn: '[]',
-    guardrails: '[]',
+    hookBindings: [],
     enabled: true,
     requireHumanReview: false,
   },
@@ -198,7 +248,7 @@ const SEED_CASE_TYPES = [
     stages: '["created","collecting","investigating","resolved"]',
     defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
-    guardrails: '["investigate_before_resolve","human_review_before_finalize"]',
+    hookBindings: ['investigate_before_resolve', 'human_review_before_finalize'],
     enabled: true,
     requireHumanReview: true,
   },
@@ -269,33 +319,83 @@ async function seedAgentConfig(orgId: string, agentId: string) {
   }
   console.log(`  ✓ ${SEED_TOOLS.length} Tools (${agentId})`)
 
-  // Policies — agent-scoped
-  for (const p of SEED_POLICIES) {
+  // Temporary dual-seed for current runtime compatibility. F2 removes the
+  // PolicyEngine path; until then fresh seeds still need Policy rows.
+  for (const h of SEED_HOOKS) {
     await prisma.policy.upsert({
-      where: { agentConfigId_name: { agentConfigId: agentId, name: p.name } },
+      where: { agentConfigId_name: { agentConfigId: agentId, name: h.name } },
       update: {
-        description: p.description,
-        hook: p.hook,
-        rule: p.rule,
-        guardrailConfig: p.guardrailConfig,
-        enabled: p.enabled,
+        description: h.description,
+        hook: h.legacyPolicy.hook,
+        rule: h.legacyPolicy.rule,
+        guardrailConfig: h.legacyPolicy.guardrailConfig,
+        enabled: h.enabled,
       },
       create: {
         agentConfigId: agentId,
-        name: p.name,
-        description: p.description,
-        hook: p.hook,
-        rule: p.rule,
-        guardrailConfig: p.guardrailConfig,
-        enabled: p.enabled,
+        name: h.name,
+        description: h.description,
+        hook: h.legacyPolicy.hook,
+        rule: h.legacyPolicy.rule,
+        guardrailConfig: h.legacyPolicy.guardrailConfig,
+        enabled: h.enabled,
       },
     })
   }
-  console.log(`  ✓ ${SEED_POLICIES.length} Policies (${agentId})`)
+  console.log(`  ✓ ${SEED_HOOKS.length} Legacy Policies (${agentId})`)
+
+  // Hooks — agent-scoped
+  for (const h of SEED_HOOKS) {
+    await prisma.hook.upsert({
+      where: { agentConfigId_name: { agentConfigId: agentId, name: h.name } },
+      update: {
+        description: h.description,
+        checkpoint: h.checkpoint,
+        handlerKind: h.handlerKind,
+        handler: h.handler,
+        severity: h.severity,
+        enabled: h.enabled,
+      },
+      create: {
+        agentConfigId: agentId,
+        name: h.name,
+        description: h.description,
+        checkpoint: h.checkpoint,
+        handlerKind: h.handlerKind,
+        handler: h.handler,
+        severity: h.severity,
+        enabled: h.enabled,
+      },
+    })
+  }
+  console.log(`  ✓ ${SEED_HOOKS.length} Hooks (${agentId})`)
+
+  const safetyHook = await prisma.hook.findUnique({
+    where: { agentConfigId_name: { agentConfigId: agentId, name: 'no_high_risk_account_change' } },
+  })
+  if (safetyHook) {
+    await prisma.hookBinding.upsert({
+      where: {
+        agentConfigId_hookId_scopeKey: {
+          agentConfigId: agentId,
+          hookId: safetyHook.id,
+          scopeKey: 'agent',
+        },
+      },
+      update: { enabled: true, scopeType: 'agent' },
+      create: {
+        agentConfigId: agentId,
+        hookId: safetyHook.id,
+        scopeType: 'agent',
+        scopeKey: 'agent',
+        enabled: true,
+      },
+    })
+  }
 
   // Case Types — agent-scoped
   for (const ct of SEED_CASE_TYPES) {
-    await prisma.caseType.upsert({
+    const caseType = await prisma.caseType.upsert({
       where: { agentConfigId_type: { agentConfigId: agentId, type: ct.type } },
       update: {
         displayName: ct.displayName,
@@ -305,7 +405,7 @@ async function seedAgentConfig(orgId: string, agentId: string) {
         stages: ct.stages,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
-        guardrails: ct.guardrails ?? '[]',
+        guardrails: JSON.stringify(ct.hookBindings ?? []),
         enabled: ct.enabled,
         requireHumanReview: ct.requireHumanReview ?? false,
       },
@@ -319,11 +419,40 @@ async function seedAgentConfig(orgId: string, agentId: string) {
         stages: ct.stages,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
-        guardrails: ct.guardrails ?? '[]',
+        guardrails: JSON.stringify(ct.hookBindings ?? []),
         enabled: ct.enabled,
         requireHumanReview: ct.requireHumanReview ?? false,
       },
     })
+
+    for (const hookName of ct.hookBindings ?? []) {
+      const hook = await prisma.hook.findUnique({
+        where: { agentConfigId_name: { agentConfigId: agentId, name: hookName } },
+      })
+      if (!hook) continue
+      await prisma.hookBinding.upsert({
+        where: {
+          agentConfigId_hookId_scopeKey: {
+            agentConfigId: agentId,
+            hookId: hook.id,
+            scopeKey: `caseType:${caseType.id}`,
+          },
+        },
+        update: {
+          enabled: true,
+          scopeType: 'caseType',
+          caseTypeId: caseType.id,
+        },
+        create: {
+          agentConfigId: agentId,
+          hookId: hook.id,
+          scopeType: 'caseType',
+          scopeKey: `caseType:${caseType.id}`,
+          caseTypeId: caseType.id,
+          enabled: true,
+        },
+      })
+    }
   }
   console.log(`  ✓ ${SEED_CASE_TYPES.length} Case Types (${agentId})`)
 }

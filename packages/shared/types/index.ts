@@ -62,7 +62,7 @@ export interface Attachment {
 }
 
 // ============================================
-// Tool / Skill Types
+// Tool Types
 // ============================================
 
 export interface ToolUse {
@@ -89,19 +89,30 @@ export interface ToolDefinition {
   inputSchema: Tool['input_schema']
   outputSchema?: Record<string, unknown>
   // Runtime config
-  mode: 'static' | 'http' | 'engine_managed' | 'channel'
+  mode:
+    | 'static_fixture'
+    | 'http'
+    | 'system_managed'
+    | 'channel'
+    | 'workflow'
+    | 'code_transform'
+    // Legacy runtime values kept until F3 completes the Tool runtime rename.
+    | 'static'
+    | 'engine_managed'
   endpoint?: string
   httpMethod?: 'GET' | 'POST'
   headers?: Record<string, string>
   timeoutMs?: number
+  staticFixture?: unknown
+  /** @deprecated Legacy DB/runtime field; expose `staticFixture` in new contracts. */
   mockFixture?: unknown
   isConcurrencySafe: boolean
   enabled: boolean
   /** Category for tool access control: system_info tools are always available to the main agent;
    *  operational tools can be toggled per-console. Null = legacy (treated as operational). */
   toolCategory?: 'system_info' | 'operational'
-  /** Customer-visible label shown in the chat spinner while this skill is executing.
-   *  When absent, the skill name is formatted and used as a fallback. */
+  /** Customer-visible label shown in the chat spinner while this tool is executing.
+   *  When absent, the tool name is formatted and used as a fallback. */
   displayVerb?: { text: string; icon: SpinnerIcon }
   // Zod validation — catches type errors at runtime, feeds back to LLM for correction
   // Pattern from Claude Code: tool.inputSchema.safeParse(input)
@@ -122,7 +133,11 @@ export interface ChatMemoryData {
   caseId: string
   confirmedFacts: Record<string, unknown>
   missingFacts: string[]
+  toolsCalled?: string[]
+  toolResults?: Record<string, unknown>
+  /** @deprecated Legacy runtime field; F3 renames persistence and events to toolsCalled. */
   skillsCalled: string[]
+  /** @deprecated Legacy runtime field; F3 renames persistence and events to toolResults. */
   skillResults: Record<string, unknown>
   keyEvents: KeyEvent[]
   summary?: string
@@ -411,7 +426,11 @@ export type SSEEventType =
   | 'text_delta'
   | 'tool_executing'
   | 'tool_progress'
+  | 'tool_call'
+  | 'tool_result'
+  /** @deprecated Historical event name; new runtime emissions should use tool_call. */
   | 'skill_call'
+  /** @deprecated Historical event name; new runtime emissions should use tool_result. */
   | 'skill_result'
   | 'memory_update'
   | 'case_status'
