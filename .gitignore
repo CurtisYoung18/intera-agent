@@ -25,3 +25,4 @@ debug-logs
 .claude/worktrees/
 pnpm-lock.yaml
 coverage/
+.intera-agent-runtime/

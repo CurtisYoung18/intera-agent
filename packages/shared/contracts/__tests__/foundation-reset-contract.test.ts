@@ -11,6 +11,11 @@ import {
   mapLegacyHookCheckpoint,
 } from '../hooks'
 import { interaAgentTemplateV1Schema } from '../agent-template'
+import {
+  scenarioObservedEvidenceSchema,
+  scenarioReceiptSchema,
+  templateScenarioSchema,
+} from '../scenarios'
 import { normalizeToolMode, templateToolSchema } from '../tools'
 
 describe('Hook contract', () => {
@@ -147,6 +152,51 @@ describe('Tool and package contracts', () => {
       agent: {},
       skills: [],
     })).toThrow()
+  })
+})
+
+describe('Scenario contract', () => {
+  it('validates multi-turn expectations and receipt evidence', () => {
+    const scenario = templateScenarioSchema.parse({
+      name: 'deposit_pending_handoff',
+      turns: [
+        { role: 'user', content: 'My deposit is missing' },
+        { role: 'assistant', content: 'I will transfer this case.' },
+      ],
+      expected: {
+        caseType: 'deposit_issue',
+        toolCalls: [{ name: 'get_latest_deposit', minCalls: 1, maxCalls: 1 }],
+        hooks: [{ hookName: 'investigate_before_resolve', checkpoint: 'Stop', decision: 'allow' }],
+        humanTransfer: true,
+        forbiddenPhrases: ['guaranteed compensation'],
+        finalStatus: 'waiting_human',
+      },
+    })
+    expect(scenario.turns).toHaveLength(2)
+    expect(scenario.expected.toolCalls?.[0].name).toBe('get_latest_deposit')
+
+    const evidence = scenarioObservedEvidenceSchema.parse({
+      toolsCalled: ['get_latest_deposit'],
+      hookDecisions: [{ hookName: 'investigate_before_resolve', checkpoint: 'Stop', decision: 'allow' }],
+      knowledgeHits: [{ source: 'gptbots', title: 'Deposit FAQ' }],
+      humanTransfer: true,
+      handoff: [{ required: true, reason: 'unclear provider evidence' }],
+      finalResponse: 'I will transfer this case.',
+      finalStatus: 'waiting_human',
+    })
+    expect(evidence.handoff[0].required).toBe(true)
+
+    const receipt = scenarioReceiptSchema.parse({
+      scenarioName: 'deposit_pending_handoff',
+      runId: 'scn_1',
+      status: 'passed',
+      startedAt: '2026-06-08T00:00:00.000Z',
+      finishedAt: '2026-06-08T00:00:01.000Z',
+      evidence,
+      checks: [{ name: 'tool:get_latest_deposit', passed: true }],
+    })
+    expect(receipt.evidence.knowledgeHits[0]).toMatchObject({ source: 'gptbots' })
+    expect(receipt.checks[0].passed).toBe(true)
   })
 })
 
