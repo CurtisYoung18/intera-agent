@@ -1,6 +1,6 @@
 # Hard Bugs & Landmines Registry
 
-> **Last updated:** 2026-06-08 (coding team: L1/L2/L5 shipped `5bd7326b`; L6/L7 remain open).
+> **Last updated:** 2026-06-08 (coding team: L1/L2/L5 shipped `5bd7326b`; L6 shipped `fb872f53`; L8 code-fixed + deployed `2d9249d9` by a parallel lane, registry close pending that lane; **L7 remains the open landmine**).
 > **Scope:** this file now tracks **open** landmines live in the tree. Fixed-and-verified bugs are reduced to a one-line archive pointer (full write-ups removed once confirmed).
 > **Line numbers drift** — cite by `file:symbol`/string, verify the symbol before relying on a line.
 
@@ -13,6 +13,7 @@
 - **L1 — Hardcoded Chinese escalation message (F8)** — fixed `5bd7326b`. `customer-messages.ts` locale-aware zh/en detector; hardcoded Mandarin replaced by `escalationMessageFor(latestUserText(…))` in `loop.ts` + `tool-interceptor.ts`. Residual caveat: `detectCustomerLocale` is zh/en-only on CJK Han range — JA kanji matches zh; KO/TH/AR fall to en. Flag if JA/KO tenant onboarded.
 - **L2 — ChunkLoadError deploy-window recovery** — fixed `5bd7326b`. `global-error.tsx` + `error.tsx` error boundaries with `sessionStorage`-debounced auto-reload; shared logic in `app/_lib/chunk-error.ts`.
 - **L5 — Tenant-isolation cross-org read/write exploit** — fixed `5bd7326b`. `assertAgentInOrg()` guard (joining `agentConfigId → AgentConfig.orgId` via org-scoped proxy, 404 on mismatch) wired into all 11 sub-module admin routes: `tools`, `policies`, `case-types`, `knowledge/sources`, `knowledge/gptbots`, `livechat/config`, `livechat/groups`, `agent`. Red reproduction test (`cross-org-isolation.test.ts`) confirms the hole pre-fix; existing route tests updated with `agentConfig` mock.
+- **L6 — Unguarded re-parse of tool-input JSON in the loop → whole turn crashes** — fixed `fb872f53`. Unified both tool-input parses behind shared guarded helpers in `stream-handler.ts`: `parseToolInput()` (try/catch → `{}`) + `buildToolUsesFromBlocks()`; the stream handler's first parse and the loop's S1 synthesis (was `loop.ts:679`) now both use them, so a `max_tokens`-truncated or alt-provider-malformed `tool_use` synthesizes an error `tool_result` instead of throwing out of `runReActLoop`. Guard test (red→green, `unit/stream-handler.test.ts`): a truncated tool_use through real `consumeStream` yields `{input:{}}` without throwing. **Phase-1:** tsc 0 · keyless 637 passed · build ✓. **Phase-2 (prod demo.anytrans.ai):** playground 4-tool turn on deepseek-v4-flash (alt-provider) completes end-to-end, no crash/regression.
 
 ---
 
@@ -34,18 +35,7 @@ The AC2 fix is present — `trace-aggregator.ts` `deriveStatus` reads structured
 
 ### L5 — ✅ RESOLVED (see archive above)
 
-### L6 — Unguarded re-parse of tool-input JSON in the loop → whole turn crashes — 🔴 HIGH (correctness)
-
-The S1 tool-result synthesis block in `loop.ts` re-derives each `tool_use`'s input by **parsing the raw accumulated stream content a second time, without a try/catch**:
-
-- `apps/console/lib/agent/loop.ts:679` — `input: JSON.parse((b as unknown as { content: string }).content || '{}')` inside the `toolUses` map.
-
-This sits **outside** the stream `try/catch` (which closes ~`loop.ts:600`) and outside any other guard, so a throw propagates straight out of `AgentLoop.run()` and kills the turn (case left mid-stage). The first parse of the *same* string — `stream-handler.ts:179` — **is** wrapped in try/catch and falls back to `{}`; the loop's second parse is not. It throws whenever `b.content` is not valid JSON:
-
-- **`stop_reason: 'max_tokens'` mid-`tool_use`** — the model is cut off while streaming `input_json`, leaving truncated JSON. With the default `maxOutputTokens` 4096 + extended thinking + multi-tool turns this is reachable in normal operation. Note the loop treats `max_tokens` as a clean turn end ([loop.ts:1037](../../apps/console/lib/agent/loop.ts)), so it does *not* defend against the truncation it implies.
-- **Alt-provider malformed `partial_json`** — `stream-handler.ts:99` explicitly notes MiniMax/DeepSeek diverge on how they stream tool input; a malformed stream from a non-Anthropic provider trips the same line.
-
-**Fix:** don't re-parse — the stream handler already produced `toolUse.input` for each completed block; thread those through instead. If a re-parse must stay, wrap it in the same try/catch (`catch → {}`) as `stream-handler.ts:179`. Add a guard test: a stream whose final `tool_use` block carries truncated `input_json` must synthesize an error `tool_result`, not throw.
+### L6 — ✅ RESOLVED `fb872f53` (see archive above)
 
 ### L7 — `dispatch_case_agent` spawns a detached background sub-agent in production whose work is silently discarded — 🟠 MEDIUM-HIGH (wasted spend + severed continuation)
 
@@ -93,4 +83,4 @@ When the user clears the Core Prompt and saves, the server stores `coreSystemPro
 - **L7** *(new)* → `dispatch_case_agent`'s production background sub-agent is detached, merged from the wrong orchestrator instance, gated by a zero-reader `needsContinuation` flag, and killed on recycle — wasted spend, results never surface. On the Phase-4 retire path; live until then.
 - **Lesson 5** *(new)* + a lower-severity floating-persistence note appended under "Broader open items".
 
-**Next action:** L6 (unguarded JSON.parse crash) or L7 (dispatch_case_agent detached sub-agent) — both remain open.
+**Next action:** ~~L6~~ ✅ closed `fb872f53` (coding-team-leader session, two-phase verified). **L7** (dispatch_case_agent detached sub-agent — on Procedure Phase-4 retire path) is the remaining open landmine. *(L8 code-fixed + deployed `2d9249d9` by a parallel lane; its detailed entry below + close is that lane's to finalize. L3/L4 lower priority.)*
