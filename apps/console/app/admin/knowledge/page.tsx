@@ -137,7 +137,7 @@ function GptBotsConnection({ gptConnected, gptKbs, gptKbsLoading, onRefresh, onK
       {/* Expanded: key input + refresh */}
       {expanded && (
         <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] space-y-3">
-          <ApiKeyInput onSaved={onKeySaved} />
+          <ApiKeyInput onSaved={onKeySaved} agentConfigId={agentConfigId} />
           <div className="flex items-center justify-between">
             {gptConnected && gptKbs.length > 0 && (
               <span className="text-[11px] text-[var(--fog)] truncate mr-2">
@@ -888,7 +888,7 @@ export default function KnowledgePage() {
 
 // ── API Key Input ───────────────────────────────────────────────────────
 
-function ApiKeyInput({ onSaved }: { onSaved: () => void }) {
+function ApiKeyInput({ onSaved, agentConfigId }: { onSaved: () => void; agentConfigId: string | null }) {
   const [key, setKey] = useState('')
   const [show, setShow] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -897,7 +897,7 @@ function ApiKeyInput({ onSaved }: { onSaved: () => void }) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await apiClient('/api/admin/knowledge/gptbots', { method: 'PUT', body: { apiKey: key } })
+      await apiClient('/api/admin/knowledge/gptbots', { method: 'PUT', body: { apiKey: key, agentConfigId: agentConfigId ?? '' } })
       setStatus('saved')
       setTimeout(() => setStatus('idle'), 2000)
       onSaved()

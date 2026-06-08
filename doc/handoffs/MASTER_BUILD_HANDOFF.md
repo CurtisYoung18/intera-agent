@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-04 (Wave 1 + D2 SSO/invites ✅ · G11 guardrail ✅ · UX punch-list ✅ · **Console↔Backend migration ✅** — 58/60 routes, 0 raw fetch in pages) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
+**Last updated:** 2026-06-08 (Model page refactor ✅ · M1 lane complete) | **Branch:** `main` | **Target:** `https://demo.anytrans.ai`
 
 > This file is the single source of truth for project status. Read [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) for project context. Task-level guides live in [`doc/to-do/`](../to-do/) (completed → [`doc/what's done/`](../what's%20done/)).
 
@@ -17,8 +17,10 @@
 | Lane | Session | Task | Files owned | Started |
 |------|---------|------|-------------|---------|
 | ~~K1~~ | ~~architect~~ | ~~Knowledge page redesign~~ | ~~`page.tsx` (full rewrite)~~ | ~~2026-06-05~~ |
-| M1 | architect→coding | Model page refactor Phases 1-6 | `build-model-list.ts`, `prompt-resolver.ts`, `buildModePrompt.ts`, `loop.ts`, `stream-handler.ts`, `debug-logger.ts`, `config-loader.ts`, `model/page.tsx`, `playground/page.tsx`, `messages/route.ts`, `dictionaries.ts`, `schema.prisma` (Phase 5 only), `types/index.ts`, `seed.ts` | 2026-06-08 |
+| ~~M1~~ | ~~architect→coding~~ | ~~Model page refactor Phases 1-6~~ | ~~see plan~~ | ~~2026-06-08~~ |
 
+> **2026-06-08:** Model Page Long-Term Refactor ✅ SHIPPED — 6 phases, 606/634 keyless green, tsc 0, build ✓, deploy ✓, migration applied. See [2026-06-08-model-page-long-term-refactor.md](../what's%20done/2026-06-08-model-page-long-term-refactor.md). **Residual:** Phase-2 browser verification skipped (Playwright locked).
+>
 > **2026-06-05:** Playground Trace & UX Hardening ✅ SHIPPED — architect-reviewed. 22 commits, Wave 0 (8 lanes) + Wave 1 (2 lanes). tsc clean, keyless 620/641 pass. See [2026-06-05-playground-trace-ux-hardening.md](../what's%20done/2026-06-05-playground-trace-ux-hardening.md).
 >
 > **2026-06-05 (architect deep-review — long-term console pass, page 1/N = Playground):** beneath the shipped UX polish, the playground **trace data pipeline is a parallel reconstruction from SSE**, not the production `TraceWriter` path. Vocabulary has drifted (`trace-aggregator` keys on `policy_hit`/`skill_called`/`stage_eval` — which **no SSE event emits**) while `TraceWriter` is no-op'd in dry-run. Live-confirmed on prod: same turn shows 3 tools in "Live activity" but 0 in "Behavior trace" (split-brain); guardrail-blind trace; fabricated `13ms` timing. **Single-contract refactor ✅ SHIPPED + architect-verified 2026-06-05** (routed `TraceWriter` through `PersistencePort`; +2 architect-fixed regressions; live prod-verified) → [2026-06-05-playground-trace-single-contract.md](../what's%20done/2026-06-05-playground-trace-single-contract.md). Other playground landmines logged for later waves: dry-run isolation = scattered `if(this.dryRun)` guards (not a seam); vision-gate detection duplicated with two divergent methods; `runTurn` stale-closure (images silently dropped); 1333-line god-component; deploy-window chunk-load 400 (no `ChunkLoadError` recovery).
