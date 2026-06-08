@@ -28,7 +28,7 @@ import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 
-type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'agentConfig' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'model' | 'memory' | 'members' | 'integrations' | 'organization'
+type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'model' | 'memory' | 'members' | 'integrations' | 'organization'
 
 interface NavItem {
   href: string

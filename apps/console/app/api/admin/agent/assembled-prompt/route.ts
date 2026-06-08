@@ -29,9 +29,6 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
     const discoveryResult = await buildModePrompt({
       orgId: repo.orgId,
       coreSystemPrompt: config.coreSystemPrompt,
-      systemPrompt: config.systemPrompt,
-      caseAddendum: config.caseAddendum,
-      useLegacyCasePrompt: config.useLegacyCasePrompt,
       hasActiveCase: false,
       caseSchema: null,
       caseState: null,

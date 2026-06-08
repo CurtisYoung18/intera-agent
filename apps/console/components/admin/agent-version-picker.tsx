@@ -14,12 +14,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
 import {
-  ChevronDown, GitBranch, ExternalLink, Loader2, AlertCircle, Trash2, Play, X, Bot,
+  ChevronDown, GitBranch, Loader2, AlertCircle, Trash2, Play, X, Bot,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { useAgentContext } from '@/lib/agent/agent-context'
 
 interface AgentVersion {
   id: string
@@ -70,8 +68,6 @@ export default function AgentVersionPicker({
   onAgentsChanged,
 }: AgentVersionPickerProps) {
   const { t } = useConsoleLocale()
-  const { selectAgent } = useAgentContext()
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number; minWidth: number } | null>(null)
   const [allVersions, setAllVersions] = useState<AgentVersion[]>([])
@@ -267,13 +263,6 @@ export default function AgentVersionPicker({
     }
   }
 
-  const handleOpenEditor = () => {
-    if (!agentId) return
-    selectAgent(agentId)
-    router.push(`/admin/agent?agentId=${agentId}`)
-    setOpen(false)
-  }
-
   const hasCurrent = !!current
   const showFullList = !hasCurrent && allVersions.length > 0
 
@@ -442,7 +431,6 @@ export default function AgentVersionPicker({
                 onSwitch={handleSwitch}
                 onActivate={handleActivate}
                 onDelete={handleDelete}
-                onOpenEditor={(id) => { selectAgent(id); router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
                 busyId={busyId}
                 t={t}
               />
@@ -456,7 +444,6 @@ export default function AgentVersionPicker({
                   onSwitch={handleSwitch}
                   onActivate={handleActivate}
                   onDelete={handleDelete}
-                  onOpenEditor={(id) => { selectAgent(id); router.push(`/admin/agent?agentId=${id}`); setOpen(false) }}
                   busy={busyId === v.id}
                   t={t}
                 />
@@ -493,26 +480,6 @@ export default function AgentVersionPicker({
                 <GitBranch size={11} />
               )}
               {t('agentVersion.forkAsNew')}
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenEditor}
-              disabled={!agentId}
-              style={{
-                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                padding: '9px 8px',
-                fontSize: 11, fontWeight: 600, color: 'var(--fog)',
-                background: 'transparent', border: 'none',
-                cursor: !agentId ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-                opacity: !agentId ? 0.4 : 1,
-                transition: 'background 0.12s',
-              }}
-              onMouseEnter={e => { if (agentId) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <ExternalLink size={11} />
-              {t('agentVersion.openEditor')}
             </button>
           </div>
         </div>,
@@ -598,7 +565,6 @@ function VersionRow({
   onSwitch,
   onActivate,
   onDelete,
-  onOpenEditor,
   busy,
   t,
 }: {
@@ -608,7 +574,6 @@ function VersionRow({
   onSwitch: (id: string) => void
   onActivate: (id: string) => void
   onDelete: (id: string) => void
-  onOpenEditor: (id: string) => void
   busy: boolean
   t: (key: string, vars?: Record<string, string | number>) => string
 }) {
@@ -671,12 +636,6 @@ function VersionRow({
               disabled={busy}
             />
           )}
-          <IconBtn
-            icon={ExternalLink}
-            title={t('agentVersion.openEditor')}
-            onClick={() => onOpenEditor(v.id)}
-            disabled={busy}
-          />
           {canDelete && (
             <IconBtn
               icon={Trash2}
@@ -713,7 +672,6 @@ function FullList({
   onSwitch,
   onActivate,
   onDelete,
-  onOpenEditor,
   busyId,
   t,
 }: {
@@ -722,7 +680,6 @@ function FullList({
   onSwitch: (id: string) => void
   onActivate: (id: string) => void
   onDelete: (id: string) => void
-  onOpenEditor: (id: string) => void
   busyId: string | null
   t: (key: string, vars?: Record<string, string | number>) => string
 }) {
@@ -764,7 +721,6 @@ function FullList({
               onSwitch={onSwitch}
               onActivate={onActivate}
               onDelete={onDelete}
-              onOpenEditor={onOpenEditor}
               busy={busyId === v.id}
               t={t}
             />

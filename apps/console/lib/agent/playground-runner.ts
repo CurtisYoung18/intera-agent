@@ -6,7 +6,7 @@ import { AgentLoop } from './loop'
 import { type TraceRecord, createPrismaPersistence } from './persistence-port'
 import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
 import type { SSEEvent, CaseSchemaConfig, ContentBlock } from '@intera/shared/types'
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
+import { DEFAULT_MODEL } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext } from './prompt-resolver'
 import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
@@ -59,18 +59,12 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(input.configId)
-  if (pc.emitThinking !== undefined) { (agentConfig as any).showThinking = pc.emitThinking }
-  const systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
+  if (pc.emitThinking !== undefined) { (agentConfig as any).extendedThinking = pc.emitThinking }
 
   // ── Unified prompt assembly (matches production messages/route.ts) ──
-  // Fixes bug: coreSystemPrompt was hardcoded to CORE_SYSTEM_PROMPT,
-  // ignoring DB-configured coreSystemPrompt. Now reads from DB via buildModePrompt.
   const assembled = await buildModePrompt({
     orgId,
     coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
-    systemPrompt: agentConfig.systemPrompt ?? null,
-    caseAddendum: (agentConfig as any).caseAddendum ?? null,
-    useLegacyCasePrompt: (agentConfig as any).useLegacyCasePrompt ?? true,
     hasActiveCase: true, // playground always simulates a case
     caseSchema: null,
     caseState: null,

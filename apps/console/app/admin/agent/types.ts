@@ -48,15 +48,10 @@ export interface AgentConfigData {
   thinkingBudget: number
   maxIterations: number
   maxOutputTokens: number
-  systemPrompt: string
   coreSystemPrompt: string
-  caseAddendum: string
-  useLegacyCasePrompt: boolean
-  showThinking: boolean
+  extendedThinking: boolean
   memoryStrategy: MemoryStrategy
   resumePrompt: string
-  debugMode: boolean
-  invariantCheck: boolean
 }
 
 export interface ModelInfo {

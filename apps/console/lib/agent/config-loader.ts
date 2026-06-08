@@ -1,10 +1,12 @@
 // Shared AgentConfig loader — used by messages/route.ts and playground-runner.ts.
 // Single source of truth for DB → AgentConfigData mapping.
+//
+// Phase 5 (2026-06-08): systemPrompt, debugMode, invariantCheck columns dropped.
+// showThinking renamed to extendedThinking.
 
 import { prisma } from '@intera/shared/prisma'
 import { getCachedConfig, setCachedConfig } from '@/lib/agent/config-cache'
 import {
-  DEFAULT_SYSTEM_PROMPT,
   DEFAULT_MODEL,
   DEFAULT_MEMORY_STRATEGY,
 } from '@intera/shared/defaults'
@@ -24,8 +26,7 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
   thinkingBudget: 4096,
   maxIterations: 20,
   maxOutputTokens: 4096,
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  showThinking: false,
+  extendedThinking: false,
   memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY },
   resumePrompt: '',
 }
@@ -49,15 +50,12 @@ export async function loadAgentConfig(
         thinkingBudget: dbConfig.thinkingBudget,
         maxIterations: dbConfig.maxIterations,
         maxOutputTokens: (r.maxOutputTokens as number) ?? 4096,
-        systemPrompt: dbConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
         coreSystemPrompt: r.coreSystemPrompt ? String(r.coreSystemPrompt) : undefined,
-        showThinking: dbConfig.showThinking,
+        extendedThinking: dbConfig.extendedThinking ?? false,
         memoryStrategy:
           (parseNonEmptyJson(dbConfig.memoryStrategy) as unknown as AgentConfigData['memoryStrategy']) ||
           DEFAULT_AGENT_CONFIG.memoryStrategy,
         resumePrompt: r.resumePrompt ? String(r.resumePrompt) : '',
-        debugMode: Boolean(r.debugMode),
-        invariantCheck: Boolean(r.invariantCheck),
       }
       setCachedConfig(agentConfigId ?? undefined, config)
       return config

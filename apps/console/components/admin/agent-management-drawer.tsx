@@ -18,7 +18,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Bot, Plus, Trash2, Check, Pencil, X, Loader2, AlertCircle, ChevronDown,
-  ExternalLink, GitBranch, Play, Layers,
+  GitBranch, Play, Layers,
 } from 'lucide-react'
 import SlidePanel from '@/components/ui/slide-panel'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -685,12 +685,6 @@ function NameCard({
                       disabled={isBusy}
                     />
                   )}
-                  <DrawerIconBtn
-                    icon={ExternalLink}
-                    title={t('agentVersion.openEditor')}
-                    onClick={() => onEdit(v)}
-                    disabled={isBusy}
-                  />
                   <DrawerIconBtn
                     icon={GitBranch}
                     title={t('agentVersion.fork')}

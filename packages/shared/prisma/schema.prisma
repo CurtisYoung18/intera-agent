@@ -80,20 +80,15 @@ model AgentConfig {
   temperature    Float   @default(0.5)
   thinkingBudget Int     @default(4096)
   maxIterations  Int     @default(20)
-  systemPrompt   String  // Case base prompt (active-case mode) — @deprecated Phase 1: useLegacyCasePrompt=true paths only; Phase 2: remove
   coreSystemPrompt String? // Core/discovery prompt (no active case); falls back to CORE_SYSTEM_PROMPT default when empty
-  caseAddendum   String? // Optional short addendum appended to core prompt when a case is active (base+append model)
-  useLegacyCasePrompt Boolean @default(false) // false = base+append (coreSystemPrompt + caseAddendum); true = old swap behavior (systemPrompt) — @deprecated
-  showThinking   Boolean @default(false)
+  extendedThinking Boolean @default(false) @map("show_thinking")
 
   maxOutputTokens       Int? // default 4096
   resumePrompt          String? // synthetic message for human task resume
-  debugMode             Boolean @default(false) // write full API request/response to debug-logs/
 
   // JSON fields
   memoryStrategy     String  // MemoryStrategy
   gptbotsApiKey      String?  // per-org GPTBots API key (overrides GPTBOTS_API_KEY env var)
-  invariantCheck     Boolean  @default(false) // S1 tool-result invariant assertion in dev/prod
 
   /// Version release note — set when a version is published/activated
   releaseNote  String?   @map("release_note")

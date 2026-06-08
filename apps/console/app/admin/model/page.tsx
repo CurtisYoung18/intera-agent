@@ -19,10 +19,8 @@ interface ModelConfig {
   maxIterations: number
   maxOutputTokens: number
   coreSystemPrompt: string
-  showThinking: boolean
+  extendedThinking: boolean
   resumePrompt: string
-  debugMode: boolean
-  invariantCheck: boolean
 }
 
 export default function ModelPage() {
@@ -62,10 +60,8 @@ export default function ModelPage() {
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
           coreSystemPrompt: raw.coreSystemPrompt ? String(raw.coreSystemPrompt) : CORE_SYSTEM_PROMPT,
-          showThinking: raw.showThinking ?? false,
+          extendedThinking: raw.extendedThinking ?? false,
           resumePrompt: raw.resumePrompt || '',
-          debugMode: Boolean(raw.debugMode),
-          invariantCheck: Boolean(raw.invariantCheck),
         })
         setMainModels(modelsData.models || [])
         setError(null)
@@ -245,36 +241,18 @@ export default function ModelPage() {
                   <label className={`flex items-center gap-2 rounded-lg px-1 py-0.5 ${supportsThinking ? 'cursor-pointer hover:bg-white/50' : 'cursor-not-allowed opacity-50'}`}>
                     <input
                       type="checkbox"
-                      checked={!!config.showThinking && supportsThinking}
+                      checked={!!config.extendedThinking && supportsThinking}
                       disabled={!supportsThinking}
-                      onChange={(e) => update('showThinking', e.target.checked)}
+                      onChange={(e) => update('extendedThinking', e.target.checked)}
                       className="accent-indigo rounded"
                     />
                     <span className="text-[12px] text-[var(--mist)]">
-                      {t('model.showThinking')}
+                      {t('model.extendedThinking')}
                       {!supportsThinking && <span className="ml-1 text-[10px] text-[var(--smoke)]">— {t('model.showThinkingUnsupported') || 'current model does not support extended thinking'}</span>}
                     </span>
                   </label>
                 )
               })()}
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-white/50">
-                <input
-                  type="checkbox"
-                  checked={!!config.invariantCheck}
-                  onChange={(e) => update('invariantCheck', e.target.checked)}
-                  className="accent-indigo rounded"
-                />
-                <span className="text-[12px] text-[var(--mist)]">{t('model.invariantCheck')}</span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-white/50">
-                <input
-                  type="checkbox"
-                  checked={!!config.debugMode}
-                  onChange={(e) => update('debugMode', e.target.checked)}
-                  className="accent-indigo rounded"
-                />
-                <span className="text-[12px] text-[var(--mist)]">{t('model.debugMode')}</span>
-              </label>
             </DrawerCheckboxRail>
           </DrawerSection>
 

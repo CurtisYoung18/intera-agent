@@ -465,6 +465,7 @@ export default function KnowledgePage() {
       await apiClient('/api/admin/knowledge/sources', {
         method: 'POST',
         body: {
+          agentConfigId,
           name: kb.name,
           description: kb.desc || null,
           groupIds: JSON.stringify([kb.id]),

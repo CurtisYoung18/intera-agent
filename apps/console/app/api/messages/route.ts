@@ -25,9 +25,7 @@ if (AUTH_SET && URL_SET) {
 }
 
 import {
-  DEFAULT_SYSTEM_PROMPT,
   CORE_SYSTEM_PROMPT,
-  CASE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
   HARNESS_DEFAULT_RESUME_PROMPT_APPEND,
 } from '@intera/shared/defaults'
@@ -364,7 +362,7 @@ export async function POST(request: NextRequest) {
         // Unified assembly via buildModePrompt — single source of truth
         // shared with playground-runner.ts. Eliminates dual-path drift.
         let coreSystemPrompt: string = CORE_SYSTEM_PROMPT
-        let systemPrompt: string = CASE_SYSTEM_PROMPT
+        let systemPrompt: string = ''
 
         // Stream progress immediately so the user sees movement (CC pattern)
         sendEvent({ type: 'stream_request_start', data: null, timestamp: new Date().toISOString() })
@@ -689,9 +687,6 @@ export async function POST(request: NextRequest) {
         const assembled = await buildModePrompt({
           orgId: resolvedOrgId,
           coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
-          systemPrompt: agentConfig.systemPrompt ?? null,
-          caseAddendum: (agentConfig as any).caseAddendum ?? null,
-          useLegacyCasePrompt: (agentConfig as any).useLegacyCasePrompt ?? true,
           hasActiveCase: isCaseActive,
           caseSchema,
           caseState: isCaseActive

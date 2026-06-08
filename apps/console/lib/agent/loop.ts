@@ -180,8 +180,11 @@ export class AgentLoop {
     rawSendEvent: (event: SSEEvent) => void,
     contentBlocks?: import('@intera/shared/types').ContentBlock[],
   ): Promise<LoopResult> {
-    // One-time log on first run
-    if (this.deps.config.debugMode) {
+    // Dev/diagnostic flags — env-only, not in operator config (Phase 4)
+    const debugLogsEnabled = process.env.INTERA_DEBUG_LOGS === '1'
+    const invariantCheckEnabled = process.env.INTERA_INVARIANT_CHECK === '1'
+
+    if (debugLogsEnabled) {
       console.log(`[DebugMode] ENABLED for case ${this.deps.caseId} — writing full API payloads to debug-logs/`)
     }
 
@@ -216,7 +219,6 @@ export class AgentLoop {
     // S1 tool-result invariant: track why each tool_use didn't produce a real result
     const missingReasons = new Map<string, import('./tool-result-invariant').SynthesisReason>()
     const pendingPolicyFeedback: string[] = []
-    const invariantCheckEnabled = this.deps.config.invariantCheck === true || (typeof process !== 'undefined' && process.env.INTERA_INVARIANT_CHECK === '1')
 
     do {
       this.iterationCount++
@@ -376,7 +378,7 @@ export class AgentLoop {
 
       const apiMessages = this.buildApiMessages()
 
-      if (this.deps.config.debugMode) {
+      if (debugLogsEnabled) {
         console.log('[DebugMode] stagePrompt:', stagePrompt.slice(0, 3000))
         console.log('[DebugMode] stageTools:', stageTools.map(t => t.name).join(', '))
         console.log('[DebugMode] isCaseActive:', isCaseActive, 'stage:', this.currentStage)
@@ -394,7 +396,7 @@ export class AgentLoop {
               messages: apiMessages,
               tools: stageTools,
               tool_choice: { type: 'auto' as const, disable_parallel_tool_use: false },
-              ...(this.deps.config.showThinking &&
+              ...(this.deps.config.extendedThinking &&
                 (buildModelList().find(m => m.id === ctx.model)?.supportsThinking ?? false) ? {
                 thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
               } : {}),
@@ -439,7 +441,7 @@ export class AgentLoop {
 
       // Debug: full API request
       let debugSeq = -1
-      if (this.deps.config.debugMode) {
+      if (debugLogsEnabled) {
         console.log(`[DebugMode] Writing request log for case ${this.deps.caseId} iteration ${this.iterationCount}`)
         debugSeq = writeDebugRequest(this.deps.caseId, this.iterationCount, this.deps.config.model, {
           system: stagePrompt,
@@ -608,7 +610,7 @@ export class AgentLoop {
       ) {
         const calledToolNames = [...blocks.values()].filter(b => b.type === 'tool_use').map(b => b.name)
         // Debug: full API response
-        if (this.deps.config.debugMode) {
+        if (debugLogsEnabled) {
           writeDebugResponse(this.deps.caseId, this.iterationCount, this.deps.config.model, debugSeq, {
             stop_reason: stopReason,
             usage,

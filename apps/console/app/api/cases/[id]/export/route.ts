@@ -62,7 +62,7 @@ export const GET = defineRoute<void, { id: string }>({
       sections.push(`- **Temperature**: ${agentConfig.temperature}`)
       sections.push(`- **Thinking Budget**: ${agentConfig.thinkingBudget}`)
       sections.push(`- **Max Iterations**: ${agentConfig.maxIterations}`)
-      sections.push(`- **Show Thinking**: ${agentConfig.showThinking}`)
+      sections.push(`- **Extended Thinking**: ${agentConfig.extendedThinking}`)
       sections.push('')
     }
 

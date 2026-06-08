@@ -319,19 +319,13 @@ export interface AgentConfigData {
   thinkingBudget: number
   maxIterations: number
   maxOutputTokens?: number
-  systemPrompt: string
   /** Core/discovery prompt (no active case). Falls back to CORE_SYSTEM_PROMPT default when empty. */
   coreSystemPrompt?: string
-  showThinking: boolean
+  extendedThinking: boolean
   memoryStrategy: MemoryStrategy
   resumePrompt?: string
-  /** When enabled, writes full API request/response payloads to debug-logs/<caseId>/ for troubleshooting. */
-  debugMode?: boolean
-  /** When enabled, asserts the S1 tool-result invariant after every iteration (catches unmatched tool_use before API rejections). */
-  invariantCheck?: boolean
   /** Fallback model to use when the primary model is overloaded (consecutive 529s). */
   fallbackModel?: string
-
 }
 
 export interface MemoryStrategy {

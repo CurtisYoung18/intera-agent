@@ -35,7 +35,7 @@ export const GET = defineRoute({
           thinkingBudget: 4096,
           maxIterations: 20,
           maxOutputTokens: 4096,
-          showThinking: false,
+          extendedThinking: false,
           caseAddendum: null,
           useLegacyCasePrompt: false,
           resumePrompt: null,
@@ -58,7 +58,7 @@ const putSchema = z.object({
   coreSystemPrompt: z.string().nullable().optional(),
   caseAddendum: z.string().nullable().optional(),
   useLegacyCasePrompt: z.boolean().optional(),
-  showThinking: z.boolean().optional(),
+  extendedThinking: z.boolean().optional(),
   memoryStrategy: z.union([z.string(), z.record(z.unknown())]).optional(),
   resumePrompt: z.string().nullable().optional(),
   debugMode: z.boolean().optional(),
@@ -89,7 +89,7 @@ function agentUpdateHandler(agentId: string | null) {
     if (input.coreSystemPrompt !== undefined) data.coreSystemPrompt = input.coreSystemPrompt
     if (input.caseAddendum !== undefined) data.caseAddendum = input.caseAddendum
     if (input.useLegacyCasePrompt !== undefined) data.useLegacyCasePrompt = input.useLegacyCasePrompt
-    if (input.showThinking !== undefined) data.showThinking = input.showThinking
+    if (input.extendedThinking !== undefined) data.extendedThinking = input.extendedThinking
     if (input.memoryStrategy !== undefined) data.memoryStrategy = toJsonIfObject(input.memoryStrategy)
     if (input.resumePrompt !== undefined) data.resumePrompt = input.resumePrompt
     if (input.debugMode !== undefined) data.debugMode = input.debugMode
@@ -113,7 +113,7 @@ function agentUpdateHandler(agentId: string | null) {
           thinkingBudget: input.thinkingBudget ?? 4096,
           maxIterations: input.maxIterations ?? 20,
           maxOutputTokens: input.maxOutputTokens ?? 4096,
-          showThinking: input.showThinking ?? false,
+          extendedThinking: input.extendedThinking ?? false,
           resumePrompt: input.resumePrompt ?? null,
           debugMode: input.debugMode ?? false,
           memoryStrategy: input.memoryStrategy ? toJsonIfObject(input.memoryStrategy) || JSON.stringify({}) : JSON.stringify(DEFAULT_MEMORY_STRATEGY),

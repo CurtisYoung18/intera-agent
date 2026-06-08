@@ -44,7 +44,7 @@ export const POST = defineRoute<PostInput>({
                 model: source.model, temperature: source.temperature, thinkingBudget: source.thinkingBudget,
                 maxIterations: source.maxIterations, maxOutputTokens: source.maxOutputTokens,
                 systemPrompt: source.systemPrompt, coreSystemPrompt: source.coreSystemPrompt,
-                showThinking: source.showThinking, memoryStrategy: source.memoryStrategy,
+                extendedThinking: source.extendedThinking, memoryStrategy: source.memoryStrategy,
                 gptbotsApiKey: source.gptbotsApiKey,
                 invariantCheck: source.invariantCheck, resumePrompt: source.resumePrompt, debugMode: source.debugMode,
               },

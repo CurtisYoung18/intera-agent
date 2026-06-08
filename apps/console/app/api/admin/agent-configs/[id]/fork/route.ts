@@ -36,7 +36,7 @@ export const POST = defineRoute<void, AgentConfigParams>({
             maxOutputTokens: source.maxOutputTokens,
             systemPrompt: source.systemPrompt,
             coreSystemPrompt: source.coreSystemPrompt,
-            showThinking: source.showThinking,
+            extendedThinking: source.extendedThinking,
             memoryStrategy: source.memoryStrategy,
             gptbotsApiKey: source.gptbotsApiKey,
             invariantCheck: source.invariantCheck,
