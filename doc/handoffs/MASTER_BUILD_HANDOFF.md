@@ -17,6 +17,7 @@
 | Lane | Session | Task | Files owned | Started |
 |------|---------|------|-------------|---------|
 | ~~K1~~ | ~~architect~~ | ~~Knowledge page redesign~~ | ~~`page.tsx` (full rewrite)~~ | ~~2026-06-05~~ |
+| M1 | architect→coding | Model page refactor Phases 1-6 | `build-model-list.ts`, `prompt-resolver.ts`, `buildModePrompt.ts`, `loop.ts`, `stream-handler.ts`, `debug-logger.ts`, `config-loader.ts`, `model/page.tsx`, `playground/page.tsx`, `messages/route.ts`, `dictionaries.ts`, `schema.prisma` (Phase 5 only), `types/index.ts`, `seed.ts` | 2026-06-08 |
 
 > **2026-06-05:** Playground Trace & UX Hardening ✅ SHIPPED — architect-reviewed. 22 commits, Wave 0 (8 lanes) + Wave 1 (2 lanes). tsc clean, keyless 620/641 pass. See [2026-06-05-playground-trace-ux-hardening.md](../what's%20done/2026-06-05-playground-trace-ux-hardening.md).
 >

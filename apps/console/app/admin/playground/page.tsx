@@ -508,7 +508,7 @@ export default function PlaygroundPage() {
     try {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
-      body.config = { debug: debugMode, showThinking: showThinkingRef.current }
+      body.config = { debug: debugMode, emitThinking: showThinkingRef.current }
       if (chatIdRef.current) body.chatId = chatIdRef.current
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({

@@ -20,7 +20,7 @@ describe('Smoke — Stream Handler (E1-1)', () => {
       sanitizeChunk: (t) => t,
       flushSanitizer: () => '',
       recordFirstToken: () => {},
-      showThinking: false,
+      emitThinking: false,
       onToolUseCompleted: () => Promise.resolve(),
     }
 
@@ -40,7 +40,7 @@ describe('Smoke — Stream Handler (E1-1)', () => {
       sanitizeChunk: (t) => t,
       flushSanitizer: () => '',
       recordFirstToken: () => {},
-      showThinking: false,
+      emitThinking: false,
       onToolUseCompleted: async (tu) => {
         toolCalled = true
         toolName = tu.name

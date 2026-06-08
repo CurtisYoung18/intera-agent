@@ -17,8 +17,8 @@ import { buildModelList } from './build-model-list'
 export interface PlaygroundConfig {
   /** Override agentConfig.debugMode for trace detail. */
   debug?: boolean
-  /** Override agentConfig.showThinking to force thinking output for this turn. */
-  showThinking?: boolean
+  /** Force thinking output (both request + emit) for this turn. */
+  emitThinking?: boolean
 }
 
 const MAX_PLAYGROUND_SESSIONS = 5
@@ -59,7 +59,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(input.configId)
-  if (pc.showThinking !== undefined) { (agentConfig as any).showThinking = pc.showThinking }
+  if (pc.emitThinking !== undefined) { (agentConfig as any).showThinking = pc.emitThinking }
   const systemPrompt = agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT
 
   // ── Unified prompt assembly (matches production messages/route.ts) ──
@@ -142,6 +142,7 @@ export async function* runPlaygroundTurn(input: {
     bootstrapNewCase,
     persistence,     // ← Prisma port
     dryRun: true,    // ← operational tools mocked, system_info allowed
+    emitThinking: pc.emitThinking ?? false,
   })
 
   // ── Load conversation history from DB ──

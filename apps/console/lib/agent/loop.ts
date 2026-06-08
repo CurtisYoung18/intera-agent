@@ -26,6 +26,7 @@ import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
 import type { ExecutionStrategy } from './strategies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
+import { buildModelList } from './build-model-list'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
 import { profileKey } from './identity'
@@ -70,6 +71,8 @@ export interface AgentLoopDeps {
   persistence?: import('./persistence-port').PersistencePort
   /** Dry-run mode — operational tools mocked, system_info allowed. Playground only. */
   dryRun?: boolean
+  /** Emit thinking_delta SSE to frontend. Default false (prod never emits). Playground sets per-turn. */
+  emitThinking?: boolean
 }
 
 export interface LoopResult {
@@ -391,7 +394,8 @@ export class AgentLoop {
               messages: apiMessages,
               tools: stageTools,
               tool_choice: { type: 'auto' as const, disable_parallel_tool_use: false },
-              ...(this.deps.config.showThinking ? {
+              ...(this.deps.config.showThinking &&
+                (buildModelList().find(m => m.id === ctx.model)?.supportsThinking ?? false) ? {
                 thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
               } : {}),
             }, { signal: this.abortController.signal })
@@ -471,7 +475,7 @@ export class AgentLoop {
           sanitizeChunk: (text: string) => textSanitizer.feed(text),
           flushSanitizer: () => textSanitizer.flush(),
           recordFirstToken: () => this.profiler.recordFirstToken(),
-          showThinking: this.deps.config.showThinking,
+          emitThinking: this.deps.emitThinking ?? false,
           onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
             // PreTool policy check
             const preToolEval = await this.policyEngine.evaluate('preTool', {

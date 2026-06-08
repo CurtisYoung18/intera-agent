@@ -1403,6 +1403,9 @@ export const en: Record<string, string> = {
   'model.promptAutosaveHint': 'Changes save automatically shortly after edits.',
   'model.saved': 'Saved',
   'model.saving': 'Saving...',
+  'model.assembledPreviewTitle': 'Assembled Prompt',
+  'model.assembledPreviewHelp': 'Read-only preview of the final system prompt with all context blocks injected. Tokens are resolved by the system — you do not need to place them in your prompt.',
+  'model.assembledPreviewEmpty': 'Save the prompt to generate a preview.',
 
 
   // ── Memory page (independent) ─────────────────────────────────
@@ -2882,6 +2885,9 @@ export const zh: Record<string, string> = {
   'model.promptAutosaveHint': '修改后会短暂延迟自动保存。',
   'model.saved': '已保存',
   'model.saving': '保存中...',
+  'model.assembledPreviewTitle': '组装后提示词',
+  'model.assembledPreviewHelp': '最终系统提示词的只读预览，所有上下文块已注入。系统自动解析占位符 — 您无需在提示词中放置标记。',
+  'model.assembledPreviewEmpty': '保存提示词后即可生成预览。',
 
 
   // ── Memory page (independent) ─────────────────────────────────

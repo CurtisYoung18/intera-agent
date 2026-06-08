@@ -8,7 +8,7 @@ function makeCallbacks(overrides?: Partial<StreamConsumeCallbacks>): StreamConsu
     sanitizeChunk: (text: string) => text,
     flushSanitizer: () => '',
     recordFirstToken: vi.fn(),
-    showThinking: false,
+    emitThinking: false,
     onToolUseCompleted: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
@@ -97,9 +97,9 @@ describe('consumeStream', () => {
     expect(recordFirstToken).toHaveBeenCalledTimes(1)
   })
 
-  it('emits thinking_delta when showThinking is true', async () => {
+  it('emits thinking_delta when emitThinking is true', async () => {
     const sendEvent = vi.fn()
-    const cbs = makeCallbacks({ sendEvent, showThinking: true })
+    const cbs = makeCallbacks({ sendEvent, emitThinking: true })
     const blocks = new Map<number, StreamContentBlock>()
 
     // Create a stream with thinking content
@@ -123,9 +123,9 @@ describe('consumeStream', () => {
     expect(thinkingEvents.length).toBeGreaterThan(0)
   })
 
-  it('suppresses thinking_delta when showThinking is false', async () => {
+  it('suppresses thinking_delta when emitThinking is false', async () => {
     const sendEvent = vi.fn()
-    const cbs = makeCallbacks({ sendEvent, showThinking: false })
+    const cbs = makeCallbacks({ sendEvent, emitThinking: false })
     const blocks = new Map<number, StreamContentBlock>()
 
     const stream = createMockStream([

@@ -29,7 +29,7 @@ describe('E7 — Integration: Stream + Retry + Invariant', () => {
       sanitizeChunk: (t) => t,
       flushSanitizer: () => '',
       recordFirstToken: () => {},
-      showThinking: false,
+      emitThinking: false,
       onToolUseCompleted: async () => {},
     }
 
@@ -69,7 +69,7 @@ describe('E7 — Integration: Stream + Retry + Invariant', () => {
       sanitizeChunk: (t) => t,
       flushSanitizer: () => '',
       recordFirstToken: () => {},
-      showThinking: false,
+      emitThinking: false,
       onToolUseCompleted: async () => {},
     }
 

@@ -19,7 +19,6 @@ interface ModelConfig {
   maxIterations: number
   maxOutputTokens: number
   coreSystemPrompt: string
-  caseAddendum: string
   showThinking: boolean
   resumePrompt: string
   debugMode: boolean
@@ -35,6 +34,8 @@ export default function ModelPage() {
   const [error, setError] = useState<string | null>(null)
   const [mainModels, setMainModels] = useState<ModelInfo[]>([])
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+  const [assembledPreview, setAssembledPreview] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const configRef = useRef(config)
   const { orgId } = useSession()
@@ -61,7 +62,6 @@ export default function ModelPage() {
           maxIterations: raw.maxIterations ?? 20,
           maxOutputTokens: raw.maxOutputTokens ?? 4096,
           coreSystemPrompt: raw.coreSystemPrompt ? String(raw.coreSystemPrompt) : CORE_SYSTEM_PROMPT,
-          caseAddendum: String(raw.caseAddendum ?? ''),
           showThinking: raw.showThinking ?? false,
           resumePrompt: raw.resumePrompt || '',
           debugMode: Boolean(raw.debugMode),
@@ -73,6 +73,16 @@ export default function ModelPage() {
       .catch((err: Error) => setError(err.message || t('common.failedLoad')))
       .finally(() => setLoading(false))
   }, [agentId, t])
+
+  // Fetch assembled prompt preview on config load
+  useEffect(() => {
+    if (!agentId || !config) return
+    setPreviewLoading(true)
+    apiClient(`/api/admin/agent/assembled-prompt?agentId=${agentId}`)
+      .then((r: any) => setAssembledPreview(r.data?.discovery || null))
+      .catch(() => setAssembledPreview(null))
+      .finally(() => setPreviewLoading(false))
+  }, [agentId, config?.coreSystemPrompt]) // refresh when prompt changes
 
   // Flush pending save on unmount (navigation/blur)
   useEffect(() => {
@@ -228,15 +238,25 @@ export default function ModelPage() {
               />
             </div>
             <DrawerCheckboxRail accent="#8b6ff5">
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-white/50">
-                <input
-                  type="checkbox"
-                  checked={!!config.showThinking}
-                  onChange={(e) => update('showThinking', e.target.checked)}
-                  className="accent-indigo rounded"
-                />
-                <span className="text-[12px] text-[var(--mist)]">{t('model.showThinking')}</span>
-              </label>
+              {(() => {
+                const selectedModel = mainModels.find(m => m.id === config.model)
+                const supportsThinking = selectedModel?.supportsThinking ?? false
+                return (
+                  <label className={`flex items-center gap-2 rounded-lg px-1 py-0.5 ${supportsThinking ? 'cursor-pointer hover:bg-white/50' : 'cursor-not-allowed opacity-50'}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!config.showThinking && supportsThinking}
+                      disabled={!supportsThinking}
+                      onChange={(e) => update('showThinking', e.target.checked)}
+                      className="accent-indigo rounded"
+                    />
+                    <span className="text-[12px] text-[var(--mist)]">
+                      {t('model.showThinking')}
+                      {!supportsThinking && <span className="ml-1 text-[10px] text-[var(--smoke)]">— {t('model.showThinkingUnsupported') || 'current model does not support extended thinking'}</span>}
+                    </span>
+                  </label>
+                )
+              })()}
               <label className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-white/50">
                 <input
                   type="checkbox"
@@ -283,11 +303,6 @@ export default function ModelPage() {
                 onChange={(v) => update('coreSystemPrompt', v)}
                 spellCheck={false}
                 className={`w-full ${drawerFieldClass(true)}`}
-                highlights={[
-                  { pattern: /\{\{available_tools\}\}/g, color: '#7c5ce7' },
-                  { pattern: /\{\{case_types\}\}/g, color: '#2ea04a' },
-                  { pattern: /\{\{session_binding\}\}/g, color: '#5b8af7' },
-                ]}
               />
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
                 <span>{t('model.promptAutosaveHint')}</span>
@@ -298,33 +313,28 @@ export default function ModelPage() {
             </div>
           </DrawerSection>
 
-          {/* ── Case Addendum ── */}
+          {/* ── Assembled Prompt Preview ── */}
           <DrawerSection
-            accent="#d4912e"
-            title={t('model.caseAddendumTitle')}
-            lead={t('model.caseAddendumHelp')}
+            accent="#5b8af7"
+            title={t('model.assembledPreviewTitle') || 'Assembled Prompt'}
+            lead={t('model.assembledPreviewHelp') || 'Read-only preview of the final system prompt with all context blocks injected. Tokens are resolved by the system — you do not need to place them in your prompt.'}
           >
-            <div className="flex flex-col gap-3">
-              <HighlightedTextarea
-                id="case-addendum-textarea"
-                value={config.caseAddendum}
-                onChange={(v) => update('caseAddendum', v)}
-                spellCheck={false}
-                className={`w-full ${drawerFieldClass(true)}`}
-                highlights={[
-                  { pattern: /\{\{case_schema\}\}/g, color: '#d4912e' },
-                  { pattern: /\{\{case_state\}\}/g, color: '#e64539' },
-                  { pattern: /\{\{confirmed_facts\}\}/g, color: '#14b8a6' },
-                ]}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
-                <span>{t('model.promptAutosaveHint')}</span>
-                <span className="font-mono tabular-nums opacity-95">
-                  {config.caseAddendum?.length ?? 0} chars
-                </span>
-              </div>
+            <div className="rounded-xl border border-lavender/20 bg-[var(--slate)]/50 p-4 max-h-96 overflow-y-auto">
+              {previewLoading ? (
+                <div className="flex items-center gap-2 text-[12px] text-[var(--fog)]">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Loading preview...</span>
+                </div>
+              ) : assembledPreview ? (
+                <pre className="text-[11px] leading-relaxed text-[var(--mist)] whitespace-pre-wrap font-mono">
+                  {assembledPreview}
+                </pre>
+              ) : (
+                <span className="text-[11px] text-[var(--fog)]">{t('model.assembledPreviewEmpty') || 'Save the prompt to generate a preview.'}</span>
+              )}
             </div>
           </DrawerSection>
+
         </DrawerShell>
       </div>
       </PageLoader>

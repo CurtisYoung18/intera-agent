@@ -36,7 +36,7 @@ export interface StreamConsumeCallbacks {
   recordFirstToken(): void
 
   /** Whether to emit thinking_delta events to the frontend. */
-  showThinking: boolean
+  emitThinking: boolean
 
   /**
    * Called when a tool_use block completes (content_block_stop).
@@ -156,7 +156,7 @@ export async function consumeStream(
           cb.content += d.partial_json
         } else if (d.type === 'thinking_delta') {
           cb.content += d.thinking
-          if (cbs.showThinking) {
+          if (cbs.emitThinking) {
             cbs.sendEvent({
               type: 'thinking_delta',
               data: d.thinking,

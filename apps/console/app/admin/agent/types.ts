@@ -64,6 +64,8 @@ export interface ModelInfo {
   name: string
   provider: string
   providerLabel: string
+  supportsVision: boolean
+  supportsThinking: boolean
 }
 
 export const DEFAULT_MEMORY: MemoryStrategy = {
