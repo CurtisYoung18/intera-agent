@@ -256,7 +256,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Aggregate traces ──
   const totalMs = Date.now() - startTime
-  const trace = aggregateTraces(traces, startTime, pc.debug ?? agentConfig.debugMode ?? false, applicableStages)
+  const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages)
   const caseType = ''
 
   const result: PlaygroundResult = { turnId, caseType, reply, blocked, trace, resolvedModel, applicableStages, totalMs }

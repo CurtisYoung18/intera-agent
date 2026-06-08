@@ -117,9 +117,9 @@ vi.mock('@/lib/agent/config-loader', async (importOriginal) => {
       temperature: 0.5,
       thinkingBudget: 10000,
       maxIterations: 5,
-      systemPrompt: 'You are a helpful assistant.',
       coreSystemPrompt: 'You are a helpful assistant.',
-      showThinking: false,
+      coreSystemPrompt: 'You are a helpful assistant.',
+      extendedThinking: false,
       memoryStrategy: { l1MaxMessages: 20, autocompactThresholdTokens: 50000 },
       policyHooks: {},
       capabilityBindings: JSON.stringify({

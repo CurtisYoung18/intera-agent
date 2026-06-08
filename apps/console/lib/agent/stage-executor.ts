@@ -98,7 +98,7 @@ export class StageExecutor {
 
   buildStagePrompt(stage: string, basePrompt?: string): string {
     const cfg = this.getStageConfig(stage)
-    const base = basePrompt || this.agentConfig.systemPrompt
+    const base = basePrompt || this.agentConfig.coreSystemPrompt || ''
 
     if (!cfg) return base
 

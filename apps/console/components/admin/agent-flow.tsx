@@ -55,7 +55,7 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
       <SlidePanel open={!!activeSection} onClose={() => setActiveSection(null)} title={panelTitle}>
         {activeSection === 'prompt' && (
           <div className="space-y-3">
-            <textarea value={config.systemPrompt} onChange={e => update('systemPrompt', e.target.value)}
+            <textarea value={config.coreSystemPrompt || ''} onChange={e => update('coreSystemPrompt', e.target.value)}
               rows={22} className="glass-input-console text-[13px] leading-relaxed font-mono resize-y" placeholder="Enter system prompt…" />
           </div>
         )}
@@ -77,10 +77,10 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
               <NumField label="Max Output Tokens" tooltip="" value={config.maxOutputTokens} onChange={v => update('maxOutputTokens', v)} unit="tokens" />
             </div>
             <div className="flex gap-4 flex-wrap">
-              {(['showThinking'] as const).map(key => (
+              {(['extendedThinking'] as const).map(key => (
                 <label key={key} className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={!!config[key]} onChange={e => update(key, e.target.checked)} className="accent-indigo rounded" />
-                  <span className="text-[12px] text-[var(--fog)]">{key === 'showThinking' ? 'Show Thinking' : ''}</span>
+                  <span className="text-[12px] text-[var(--fog)]">Extended Thinking</span>
                 </label>
               ))}
             </div>

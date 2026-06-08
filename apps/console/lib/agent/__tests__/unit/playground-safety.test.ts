@@ -117,7 +117,7 @@ describe('Playground safety invariants', () => {
       caseId: 'test',
       orgId: 'org1',
       userId: 'u1',
-      systemPrompt: 'test',
+      coreSystemPrompt: 'test',
       persistence: port,
       dryRun: true,
     }

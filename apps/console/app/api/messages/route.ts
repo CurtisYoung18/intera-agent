@@ -682,7 +682,7 @@ export async function POST(request: NextRequest) {
         })
 
         // ── Unified prompt assembly (base+append model) ──
-        // Replaces the old dual resolvePrompt + fragile !== DEFAULT_SYSTEM_PROMPT check.
+        // Unified assembly via buildModePrompt — single source of truth
         const isCaseActive = !!caseSchema && !!resolvedCaseState
         const assembled = await buildModePrompt({
           orgId: resolvedOrgId,

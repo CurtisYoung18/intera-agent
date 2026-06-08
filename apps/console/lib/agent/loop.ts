@@ -58,7 +58,7 @@ export interface AgentLoopDeps {
   caseId: string
   orgId: string
   userId: string
-  /** Case-execution prompt (used when case is active). Resolved from CASE_SYSTEM_PROMPT or DB custom prompt. */
+  /** Case-execution prompt (used when case is active). Assembled by buildModePrompt. */
   systemPrompt: string
   /** Core/discovery prompt (used when no case is active). Resolved from CORE_SYSTEM_PROMPT. Falls back to systemPrompt if unset. */
   coreSystemPrompt?: string

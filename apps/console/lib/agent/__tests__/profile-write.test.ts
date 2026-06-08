@@ -77,13 +77,13 @@ function createLoop(options?: { existingProfile?: string; enableChatMemory?: boo
     thinkingBudget: 4096,
     maxIterations: 10,
     maxOutputTokens: 4096,
-    systemPrompt: 'You are helpful.',
-    showThinking: false,
+    coreSystemPrompt: 'You are helpful.',
+    extendedThinking: false,
     memoryStrategy: {
       ...DEFAULT_MEMORY_STRATEGY,
       enableChatMemory: options?.enableChatMemory ?? true,
     },
-    debugMode: false,
+    
   }
 
   const deps = {
@@ -92,7 +92,7 @@ function createLoop(options?: { existingProfile?: string; enableChatMemory?: boo
     caseId: 'test-case-001',
     orgId: 'test-org',
     userId: 'test-user',
-    systemPrompt: 'You are helpful.',
+    coreSystemPrompt: 'You are helpful.',
     coreSystemPrompt: 'You are helpful.',
     caseSchema: null,
     chatId: 'test-chat-001',
@@ -220,10 +220,10 @@ describe('compactUserProfile — dual-write (C3)', () => {
       thinkingBudget: 4096,
       maxIterations: 10,
       maxOutputTokens: 4096,
-      systemPrompt: 'You are helpful.',
-      showThinking: false,
+      coreSystemPrompt: 'You are helpful.',
+      extendedThinking: false,
       memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, enableChatMemory: true },
-      debugMode: false,
+      
     }
 
     const deps = {
@@ -232,7 +232,7 @@ describe('compactUserProfile — dual-write (C3)', () => {
       caseId: 'test-case-001',
       orgId: 'test-org',
       userId: 'test-user',
-      systemPrompt: 'You are helpful.',
+      coreSystemPrompt: 'You are helpful.',
       coreSystemPrompt: 'You are helpful.',
       caseSchema: null,
       chatId: 'test-chat-001',
@@ -274,10 +274,10 @@ describe('compactUserProfile — dual-write (C3)', () => {
       thinkingBudget: 4096,
       maxIterations: 10,
       maxOutputTokens: 4096,
-      systemPrompt: 'You are helpful.',
-      showThinking: false,
+      coreSystemPrompt: 'You are helpful.',
+      extendedThinking: false,
       memoryStrategy: { ...DEFAULT_MEMORY_STRATEGY, enableChatMemory: true },
-      debugMode: false,
+      
     }
 
     // userId is undefined → profileKey returns null
@@ -287,7 +287,7 @@ describe('compactUserProfile — dual-write (C3)', () => {
       caseId: 'test-case-001',
       orgId: 'test-org',
       userId: '',
-      systemPrompt: 'You are helpful.',
+      coreSystemPrompt: 'You are helpful.',
       coreSystemPrompt: 'You are helpful.',
       caseSchema: null,
       chatId: null,

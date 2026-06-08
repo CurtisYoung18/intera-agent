@@ -174,7 +174,7 @@ async function handleDispatchCaseAgent(
     const subAgentConfig: import('@intera/shared/types').SubAgentConfig = {
       name: `case_agent_${caseType}`,
       model: ctx.config.model,
-      systemPrompt: ctx.config.systemPrompt,
+      systemPrompt: ctx.config.coreSystemPrompt || '',
       skills: Array.from(stageSkillNames),
       taskTemplate: taskPrompt,
       parallel: true,

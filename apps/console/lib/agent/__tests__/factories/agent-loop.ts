@@ -11,10 +11,10 @@ export function makeDefaultConfig(overrides?: Partial<AgentConfigData>): AgentCo
     thinkingBudget: 4096,
     maxIterations: 10,
     maxOutputTokens: 4096,
-    systemPrompt: 'You are a helpful assistant.',
-    showThinking: false,
+    coreSystemPrompt: 'You are a helpful assistant.',
+    extendedThinking: false,
     memoryStrategy: DEFAULT_MEMORY_STRATEGY,
-    debugMode: false,
+    
     ...overrides,
   }
 }
