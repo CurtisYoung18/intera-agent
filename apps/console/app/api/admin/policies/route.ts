@@ -1,62 +1,23 @@
-// GET + POST /api/admin/policies — List and create policies
-// Migrated to defineRoute (G1 contract seam + G2 tenant scoping + G3 audit).
-// Scoped by agentConfigId (not orgId).
+// Legacy Policy admin API retired by Foundation Reset F4.
+// Use /api/admin/hooks instead.
 
-import { z } from 'zod'
-import { defineRoute } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
-import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
+import { defineRoute, RouteError } from '@/lib/api/define-route'
 
-const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
+function policiesGone(): never {
+  throw new RouteError('not_found', 'Policies are retired. Use /api/admin/hooks.', undefined, 410)
+}
 
-export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
+export const GET = defineRoute({
   method: 'GET',
-  inputSchema: getQuerySchema,
-  parseQuery: true,
-  async handler({ input, repo }) {
-    const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
-
-    const policies = await repo.raw.policy.findMany({
-      where: { agentConfigId },
-      orderBy: { name: 'asc' },
-    })
-    return apiOk({ policies })
+  async handler() {
+    return policiesGone()
   },
 })
 
-const createSchema = z.object({
-  agentConfigId: z.string().min(1, 'agentConfigId is required'),
-  name: z.string().min(1, 'Name is required'),
-  description: z.string().nullable().optional(),
-  hook: z.string().optional().default('preTool'),
-  rule: z.union([z.string(), z.record(z.unknown())]).optional().default('{}'),
-  guardrailConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
-  enabled: z.boolean().optional().default(true),
-})
-type CreateInput = z.infer<typeof createSchema>
-
-export const POST = defineRoute<CreateInput>({
+export const POST = defineRoute({
   method: 'POST',
-  inputSchema: createSchema,
-  async handler({ input, repo, audit }) {
-    const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
-    const guardrailConfigStr = fields.guardrailConfig
-      ? (typeof fields.guardrailConfig === 'string' ? fields.guardrailConfig : JSON.stringify(fields.guardrailConfig))
-      : null
-    const policy = await repo.raw.policy.create({
-      data: {
-        agentConfigId,
-        name: fields.name,
-        description: fields.description ?? null,
-        hook: fields.hook ?? 'preTool',
-        rule: typeof fields.rule === 'string' ? fields.rule : JSON.stringify(fields.rule ?? {}),
-        guardrailConfig: guardrailConfigStr,
-        enabled: fields.enabled ?? true,
-      },
-    })
-    await audit({ action: 'policy.create', target: `policy:${policy.name}`, after: policy as Record<string, unknown> })
-    return apiCreated({ policy })
+  requireRole: ['admin', 'owner'],
+  async handler() {
+    return policiesGone()
   },
 })
