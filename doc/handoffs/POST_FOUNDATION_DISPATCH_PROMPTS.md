@@ -558,6 +558,11 @@ Mental model:
 - Interleaved customer messages use generic epoch-based reconciliation, not semantic intent classification. Runtime does not decide whether a new message is a correction, cancellation, supplement, or new problem; it only tracks whether a Tool/action/step was based on the latest input epoch.
 - R3 first version should not add a Prisma `ProcedureRun` table unless the coordinator explicitly approves a schema lane. Use `session-store` as the runtime authority for active ProcedureRun state. Durable `ActionTrace` may record evidence/audit events, but canonical active/paused ProcedureRun state is session lifecycle state.
 - One chat/session can have one active ProcedureRun plus paused/pending ProcedureRuns. Do not create one durable Case per ProcedureRun and do not revive detached Procedure agents.
+- Keep three layers separate:
+  - `ProcedureRunState` is runtime authority for active/paused runs, currentStepId, inputEpoch, needsReconcile, stale evidence, and step status.
+  - `ChatMemory` is chat-scoped working memory from compact(case) and `remember(scope="chat")`. It can help the model recover context but cannot decide canonical ProcedureRun step/state.
+  - `UserProfile` is cross-chat long-term profile from compact(profile)/mergeProfile and `remember(scope="user")`. It must not store current ProcedureRun runtime state.
+- Compact and memory are context layers, not the ProcedureRun state machine.
 
 Tasks:
 0. Before editing, inspect the reference-only CC files mentioned in the owner/architect notes only to understand semantics: command queue metadata/priority, explicit interrupt controls, hook lifecycle schemas, prompt static/dynamic boundary, and real memory. Do not copy implementation code.
@@ -588,13 +593,18 @@ Tasks:
 15a. Remove default prompt copy that forces `finalize_case` after human resume. Human/form results are timeline input events; the Agent must reconcile current epoch before any terminal action.
 15b. Make `start_procedure(procedureId)` idempotent by request/event id and active run state. Repeated model calls, retries, stale tool results, or duplicated network requests should return the existing active/paused run or a safe no-op instead of creating duplicate pending/paused ProcedureRuns.
 16. Add `remember` with explicit `scope: "chat" | "user"`, key/value or facts payload, and a reason. Chat scope must feed `read_chat_memory`; user scope must feed `read_user_profile`.
+16a. Reject or ignore attempts to use `remember` for ProcedureRun runtime state such as currentStepId, needsReconcile, active/paused/completed run state, stale evidence promotion, or pending ProcedureRun authority.
 17. Make `read_chat_memory`, `read_user_profile`, and `remember` real system-managed Tools. Do not leave them as executor placeholders returning `{ ok: true, handled: "system_managed" }`. Either fill tool_result output in the executor with context-aware services or intercept and replace the tool_result before the model sees it.
+17a. `read_chat_memory` should return chat-scoped confirmed facts, tools run, key events, compact summary, and open items. It must label memory as context, not ProcedureRun authority.
+17b. `read_user_profile` should return identity, contact details, preferences, long-term history, and behavior patterns. It must not return active ProcedureRun runtime state.
+17c. Harden compact output format for case/chat compacting. Prefer a strict text envelope such as `<summary>...</summary>` and keep compact tool-free. Compact may summarize confirmed facts, tools observed, open items, latest customer messages, and suggested next steps, but it must not assert canonical `currentStepId`, clear `needsReconcile`, complete active runs, or promote stale tool results.
 18. Update default prompts and prompt resolver copy from Case/CaseType language to Procedure catalog + ProcedureRun/current task language where model-facing.
 19. Change `buildPromptContext` and related prompt assembly params from ambiguous `orgId` to explicit `agentConfigId` where DB queries use `caseType.agentConfigId`.
 20. Ensure seed Procedures use the current parser schema `{ steps: [{ id, action, target, ... }] }`, or add explicit legacy parser compatibility with tests. Do not ship seeded Procedures that parse to null.
 21. Ensure `ProcedureRun` active/paused/completed state is not persisted as public `confirmedFacts`, durable UserProfile memory, or unfiltered API/export payloads. If any temporary internal key remains in ChatMemory/toolResults, filter it from case export, case detail contracts, dashboards, compact summaries, and public memory APIs.
-22. Document the R3 V1 deployment boundary near session-store: in-memory ProcedureRun state is acceptable only for single-process / restart-loses-active-runtime assumptions. Multi-instance or restart-resilient runtime requires Redis/lease or a later schema lane.
-23. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
+22. When old raw `tool_result` blocks remain in the LLM message window or survive as summaries/memory, mark ProcedureRun evidence in the dynamic overlay as canonical, evidence_only, stale, or superseded. Model-visible history must not be enough to advance a step.
+23. Document the R3 V1 deployment boundary near session-store: in-memory ProcedureRun state is acceptable only for single-process / restart-loses-active-runtime assumptions. Multi-instance or restart-resilient runtime requires Redis/lease or a later schema lane.
+24. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
 
 Acceptance:
 - Tool definitions shown to the model include `start_procedure`, `finalize_procedure`, `remember`, `read_chat_memory`, `read_user_profile`, `ask_user_questions`, and `create_human_task`.
@@ -616,10 +626,13 @@ Acceptance:
 - A reconcile-action test proves `reconcile_procedure_input({ upToInputEpoch })` is the only way to clear `needsReconcile`, clears it only up to the current epoch, and does not write chat/user memory.
 - A prompt-tail test proves unreconciled timeline events are appended without classifying them as supplement/correction/cancel/new issue.
 - A HookEngine test proves the engine instance stays stable while dynamic ProcedureRun/caseType/currentStep context changes per evaluation.
+- A stale-visible-tool-result test proves that even if an old `tool_result` remains in the LLM message window or compact summary, runtime marks it evidence_only/stale and does not advance ProcedureRun until `reconcile_procedure_input` clears the current inputEpoch.
 - A human/form timeline test proves human task results and form answers increment inputEpoch and cannot force finalization over newer customer input.
 - An idempotency test proves repeated `start_procedure` requests with the same request/event id or same active run return the existing run/no-op without duplicate ProcedureRuns.
 - A system Tool registry test proves DB rows named like locked system Tools cannot shadow `start_procedure`, `finalize_procedure`, `remember`, `read_chat_memory`, or `read_user_profile`.
 - A memory tool test proves `remember(scope="chat")` is visible to `read_chat_memory`, and `remember(scope="user")` is visible to `read_user_profile`.
+- A memory-boundary test proves `remember`, `read_chat_memory`, `read_user_profile`, and compact summaries cannot create, resume, complete, clear reconcile, or change the canonical currentStepId of a ProcedureRun.
+- A compact-format test proves compact returns the expected strict summary envelope and does not emit ProcedureRun authority fields.
 - A prompt resolver test proves Procedure catalog queries use `agentConfigId`, not orgId.
 - A seed/parser test proves seeded Procedures parse into non-null Procedure definitions.
 - An export/API test proves internal ProcedureRun keys are not leaked through case export or case detail payloads.

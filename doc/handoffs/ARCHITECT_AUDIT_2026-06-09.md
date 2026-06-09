@@ -102,9 +102,13 @@ Required direction:
 - Treat human task results and form answers as input events that increment epoch; do not force terminal action from old human/default resume prompt copy if newer customer input exists.
 - Make `start_procedure` idempotent by request/event id and active run state.
 - Use session-store as R3 V1 runtime authority unless a schema lane is explicitly approved; filter any temporary internal state from case export, case detail payloads, dashboards, compaction, and public memory APIs.
+- Keep compact, ChatMemory, UserProfile, and raw model-visible `tool_result` history out of ProcedureRun authority. They can provide context/evidence, but cannot create, resume, complete, clear reconcile, advance currentStepId, or promote stale evidence.
+- Label ProcedureRun evidence in the dynamic overlay as canonical, evidence_only, stale, or superseded, because old `tool_result` blocks may still be visible to the model through the message window or summary.
 - Document that in-memory ProcedureRun state is only acceptable for a single-process/restart-loses-active-runtime first slice; multi-instance or restart-resilient deployment requires Redis/lease or schema work.
 - Keep HookEngine stable and pass active ProcedureRun/caseType/currentStep/reconcile data through HookContext per evaluation instead of recreating HookEngine to switch Procedure context.
 - Make `read_chat_memory`, `read_user_profile`, and `remember` real read/write tools in R3, or do not advertise the loop as closed.
+- Enforce memory boundaries: `remember(scope="chat")` writes ChatMemory, `remember(scope="user")` writes UserProfile, and neither writes ProcedureRun runtime state.
+- Harden compact output with a strict text envelope such as `<summary>...</summary>` where practical. Compact may summarize facts, observed tools, open items, latest customer messages, and suggested next steps, but not canonical ProcedureRun fields.
 - Fix prompt context naming so Procedure catalog queries use explicit `agentConfigId`, and ensure seeded Procedures parse under the current Procedure schema.
 
 Dispatch: use `R3 - ProcedureRun runtime overlay, system Tools rename, and remember`.

@@ -202,6 +202,7 @@ R3 implementation boundary:
 - A chat/session may have one active ProcedureRun plus paused/pending ProcedureRuns.
 - Durable `ActionTrace` can record evidence/audit events, but active ProcedureRun state must not leak through confirmedFacts, UserProfile, case export, case detail payloads, or public memory APIs.
 - If a temporary internal mirror remains in ChatMemory/toolResults, API/export/compact/dashboard readers must filter it.
+- `ProcedureRunState` is the only authority for active run state. Compact summaries, ChatMemory, UserProfile, and raw model-visible tool_result history can provide context/evidence but cannot create, resume, complete, clear reconcile, or advance a ProcedureRun.
 
 Do not add semantic intent classification for interleaved messages. Runtime should not decide whether the new message is a correction, cancellation, supplement, or a new issue. It should maintain a generic version invariant:
 
@@ -297,6 +298,42 @@ Implications for Intera:
 - Customer form results and human task results are input events. They increment `inputEpoch` and require the Agent to reconcile current state before any terminal action.
 - `start_procedure(procedureId)` must be idempotent by request/event id and active run state. Retries or duplicate network requests should return the existing run or no-op safely, not create duplicate pending runs.
 - R3 V1 may keep ProcedureRun state in memory/session-store only under a single-process, restart-loses-active-runtime assumption. Multi-instance or restart-resilient deployment requires Redis/lease or a later schema lane.
+
+### 3.5 Runtime, Chat Memory, And User Profile Boundaries
+
+These three layers must stay separate:
+
+| Layer | Scope | Can contain | Must not do |
+|---|---|---|---|
+| `ProcedureRunState` | Current runtime/session | active/paused run, currentStepId, inputEpoch, needsReconcile, step status, stale/canonical evidence | Be restored from compact summary or public memory |
+| `ChatMemory` | Current chat | confirmed facts, tools run, key events, compact summary, open items, `remember(scope="chat")` facts | Decide canonical ProcedureRun step/state |
+| `UserProfile` | Cross-chat user | identity, contact info, preferences, long-term history, behavior patterns, `remember(scope="user")` facts | Store current ProcedureRun runtime state |
+
+Compact may summarize:
+
+- confirmed facts
+- tools observed and results in plain language
+- open items
+- latest customer messages
+- suggested next steps
+
+Compact must not assert:
+
+- `currentStepId = ...`
+- `needsReconcile = false`
+- active run completed
+- stale tool result advanced a step
+- paused/pending ProcedureRun authority
+
+Use a strict text envelope for compact output where practical:
+
+```text
+<summary>
+...
+</summary>
+```
+
+Old `tool_result` blocks may remain visible to the model through the message window, summary, or ChatMemory. Visibility does not make them canonical. The ProcedureRun overlay should label evidence as `canonical`, `evidence_only`, `stale`, or `superseded`; only canonical/fresh runtime evidence may advance a step.
 
 ---
 

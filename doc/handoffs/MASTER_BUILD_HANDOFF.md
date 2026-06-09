@@ -131,6 +131,8 @@ Recommended coding-team shape:
 - Brain owns memory and compact configuration. Expose strategy-level controls first: Memory Mode, Compact model, Preserve rules, Fact extraction rules, Profile, and Compact Test. Keep raw token thresholds and circuit-breaker knobs under Advanced.
 - `confirmedFacts` are business facts. `ProcedureRun`/runtime state is not a business fact and must not be stored in confirmedFacts.
 - `ProcedureRun` state is session-lifecycle runtime state. It may be summarized into chat memory when useful, but the canonical active/paused/completed ProcedureRun state belongs to the runtime-managed Procedure Run Tracker.
+- Compact, ChatMemory, UserProfile, and model-visible raw `tool_result` history are context/evidence layers, not ProcedureRun authority. They must not create, resume, complete, clear reconcile, advance currentStepId, or promote stale evidence.
+- Memory boundary: `ProcedureRunState` answers "where execution is now"; `ChatMemory` answers "what this chat has remembered"; `UserProfile` answers "who this user is over time."
 - Procedure is a runtime overlay, not a prompt-mode transformation. `start_procedure` creates/selects a ProcedureRun; it must not replace the stable Core Agent prompt or prepend a dynamic Procedure header before that prompt.
 - R3 should follow a runtime-protocol model inspired by Claude Code semantics, not copied source code: structured queue events, epoch/uuid/origin metadata, explicit control interrupts only, stable Hook lifecycle with dynamic context, stable/dynamic prompt boundary, and real memory tools.
 - Keep context in three layers: stable Core Agent prompt; stable/cacheable Procedure definition; dynamic ProcedureRun state appended at the prompt tail.
@@ -148,6 +150,8 @@ Recommended coding-team shape:
 - In-memory ProcedureRun state is an R3 V1 deployment tradeoff for single-process/restart-loses-active-runtime only; multi-instance or restart resilience needs Redis/lease or a later schema lane.
 - HookEngine should be stable for the AgentConfig; active ProcedureRun/caseType/currentStep/reconcile context is passed through `HookContext` per evaluation.
 - `read_chat_memory`, `read_user_profile`, and `remember` must be real system Tools before being advertised as a product loop. Placeholder `{ ok: true, handled: "system_managed" }` results are not enough.
+- `remember(scope="chat")` writes ChatMemory only; `remember(scope="user")` writes UserProfile only; neither may write ProcedureRun runtime state.
+- Compact output should be tool-free and strict enough to parse/QA, preferably inside `<summary>...</summary>`. It can summarize facts, tools observed, open items, latest customer messages, and suggested next steps, but not canonical ProcedureRun state.
 - Do not introduce a standalone LLM ProcedureRouter. The main Agent should selectively load the compact Procedure catalog plus active/paused ProcedureRun state and choose the next action inside the normal ReAct loop.
 - `record_facts` is not the product name. The controlled memory-write tool should be `remember`, with explicit `scope: "chat" | "user"`. `remember(scope="chat")` writes what `read_chat_memory` later reads; `remember(scope="user")` writes what `read_user_profile` later reads.
 - Runtime-managed capabilities should be visible to delivery staff as locked/auditable platform capabilities, but not editable business Tools. P0 capability examples: Procedure Run Tracker, Hook Engine, Memory Extractor, Scenario Runner.
