@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_MEMORY } from '@/app/admin/agent/types'
 import type { ModelInfo } from '@/app/admin/agent/types'
+import { DEFAULT_MODEL } from '@intera/shared/defaults'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
@@ -152,21 +153,28 @@ function renderModelOptions(models: ModelInfo[], fallbackModel: string) {
   }
 
   const groups = new Map<string, ModelInfo[]>()
+  let hasFallback = false
   for (const model of models) {
+    if (model.id === fallbackModel) hasFallback = true
     const group = groups.get(model.provider) || []
     group.push(model)
     groups.set(model.provider, group)
   }
 
-  return Array.from(groups.entries()).map(([provider, providerModels]) => (
-    <optgroup key={provider} label={providerModels[0]?.providerLabel || provider}>
-      {providerModels.map((model) => (
-        <option key={model.id} value={model.id}>
-          {model.name}
-        </option>
+  return (
+    <>
+      {!hasFallback ? <option value={fallbackModel}>{fallbackModel}</option> : null}
+      {Array.from(groups.entries()).map(([provider, providerModels]) => (
+        <optgroup key={provider} label={providerModels[0]?.providerLabel || provider}>
+          {providerModels.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.name}
+            </option>
+          ))}
+        </optgroup>
       ))}
-    </optgroup>
-  ))
+    </>
+  )
 }
 
 function panelClass(extra = '') {
@@ -192,6 +200,7 @@ export default function MemoryStrategyWorkspace({
   const [section, setSection] = useState<BrainMemorySection>(initialSection)
   const [memory, setMemory] = useState<MemoryStrategyUi>(() => normalizeMemoryStrategy(DEFAULT_MEMORY))
   const [memoryMode, setMemoryMode] = useState<MemoryMode>('balanced')
+  const [primaryModel, setPrimaryModel] = useState<string>(DEFAULT_MODEL)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -217,10 +226,18 @@ export default function MemoryStrategyWorkspace({
       .then(([agentResult, modelsResult]) => {
         if (cancelled) return
         const raw = (agentResult.data as any).config || {}
+        const modelsData = (modelsResult.data as any).models || []
         const nextMemory = normalizeMemoryStrategy(raw.memoryStrategy)
         setMemory(nextMemory)
         setMemoryMode(detectMemoryMode(nextMemory))
-        setModels((modelsResult.data as any).models || [])
+        setModels(modelsData)
+        const loadedModel =
+          typeof raw.model === 'string' && raw.model.trim()
+            ? raw.model.trim()
+            : modelsData[0]?.id
+              ? String(modelsData[0].id)
+              : DEFAULT_MODEL
+        setPrimaryModel(loadedModel)
         setDirty(false)
         setSaveStatus('idle')
         setError(null)
@@ -277,9 +294,10 @@ export default function MemoryStrategyWorkspace({
     if (!agentId) return
     setSaveStatus('saving')
     try {
+      const payload = { model: primaryModel, memoryStrategy: JSON.stringify(memory) }
       await apiClient(`/api/admin/agent?agentId=${agentId}`, {
         method: 'PUT',
-        body: { memoryStrategy: JSON.stringify(memory) },
+        body: payload,
       })
       await bustConfigCache(orgId)
       setDirty(false)
@@ -288,7 +306,14 @@ export default function MemoryStrategyWorkspace({
     } catch {
       setSaveStatus('error')
     }
-  }, [agentId, memory, orgId])
+  }, [agentId, memory, orgId, primaryModel])
+
+  const setPrimaryModelValue = useCallback((value: string) => {
+    setPrimaryModel(value)
+    setDirty(true)
+    setSaveStatus('idle')
+    setCompactResult(null)
+  }, [])
 
   const runTest = useCallback(() => {
     setCompactResult(runCompactFixture(sample, memory))
@@ -372,10 +397,12 @@ export default function MemoryStrategyWorkspace({
             memory={memory}
             memoryMode={memoryMode}
             activeMode={activeMode}
+            primaryModel={primaryModel}
             models={models}
             showAdvanced={showAdvanced}
             setShowAdvanced={setShowAdvanced}
             applyMode={applyMode}
+            setPrimaryModel={setPrimaryModelValue}
             setMemoryField={setMemoryField}
             setNumberField={setNumberField}
           />
@@ -409,20 +436,24 @@ function MemoryPanel({
   memory,
   memoryMode,
   activeMode,
+  primaryModel,
   models,
   showAdvanced,
   setShowAdvanced,
   applyMode,
+  setPrimaryModel,
   setMemoryField,
   setNumberField,
 }: {
   memory: MemoryStrategyUi
   memoryMode: MemoryMode
   activeMode: MemoryMode
+  primaryModel: string
   models: ModelInfo[]
   showAdvanced: boolean
   setShowAdvanced: (value: boolean) => void
   applyMode: (mode: MemoryMode) => void
+  setPrimaryModel: (model: string) => void
   setMemoryField: <K extends keyof MemoryStrategyUi>(field: K, value: MemoryStrategyUi[K], affectsMode?: boolean) => void
   setNumberField: (field: keyof MemoryStrategyUi, value: number, affectsMode?: boolean) => void
 }) {
@@ -446,7 +477,20 @@ function MemoryPanel({
           ) : null}
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          <label className="space-y-1.5">
+            <span className="text-[12px] font-medium text-[var(--mist)]">Primary model</span>
+            <select
+              value={primaryModel}
+              onChange={(event) => setPrimaryModel(event.target.value)}
+              className={fieldClass()}
+            >
+              {renderModelOptions(models, primaryModel)}
+            </select>
+            <span className="block text-[11px] leading-snug text-[var(--fog)]">
+              The runtime model used for agent-facing responses.
+            </span>
+          </label>
           {MODE_OPTIONS.map((option) => {
             const active = memoryMode === option.id || (option.id === 'custom' && activeMode === 'custom')
             return (

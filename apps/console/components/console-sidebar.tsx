@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Search,
   Loader2,
+  Sparkles,
   Plug,
   Users2,
   FlaskConical,
@@ -46,6 +47,7 @@ type NavSlug =
   | 'release'
   | 'pilotLab'
   | 'components'
+  | 'playground'
   | 'brain'
   | 'caseTypes'
   | 'tools'
@@ -60,6 +62,7 @@ const BUILD_ITEMS: NavItem[] = [
   { href: '/build/release', slug: 'release', icon: FlaskConical, color: '#8b6ff5', matchPattern: '/build/release' },
   { href: '/build/pilot-lab', slug: 'pilotLab', icon: MessageSquare, color: '#6366f1', matchPattern: '/build/pilot-lab' },
   { href: '/build/components', slug: 'components', icon: Layers, color: '#5b8af7', matchPattern: '/build/components' },
+  { href: '/build/playground', slug: 'playground', icon: Sparkles, color: '#0ea5e9', matchPattern: '/build/playground' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
@@ -81,6 +84,7 @@ function navLabel(t: (key: string, vars?: Record<string, string | number>) => st
     release: t('sidebar.release'),
     pilotLab: t('sidebar.pilotLab'),
     components: t('sidebar.components'),
+    playground: t('sidebar.playground'),
     brain: t('sidebar.brain'),
     caseTypes: t('sidebar.procedures'),
     tools: t('sidebar.tools'),
