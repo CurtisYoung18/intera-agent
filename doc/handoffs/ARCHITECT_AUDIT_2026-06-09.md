@@ -90,6 +90,11 @@ Required direction:
 - Update the timeline after Tool results, Hook decisions, human tasks, `remember`, and `finalize_procedure`.
 - Handle interleaved messages with generic epoch-based reconciliation: each input event increments `inputEpoch`; Tool/action/finalize attempts record `basedOnInputEpoch`; stale results become evidence but cannot advance steps until the latest input events are reconciled.
 - Do not add an interleaved-message intent classifier. The runtime tracks version freshness, not whether a new message is a supplement, correction, cancellation, or new issue.
+- Increment `inputEpoch` when messages/form results/human results are enqueued, not when AgentLoop drains them. Streaming Tool execution can finish before drain sees the new input.
+- Use session-store as R3 V1 runtime authority unless a schema lane is explicitly approved; filter any temporary internal state from case export, case detail payloads, dashboards, compaction, and public memory APIs.
+- Keep HookEngine stable and pass active ProcedureRun/caseType/currentStep/reconcile data through HookContext per evaluation instead of recreating HookEngine to switch Procedure context.
+- Make `read_chat_memory`, `read_user_profile`, and `remember` real read/write tools in R3, or do not advertise the loop as closed.
+- Fix prompt context naming so Procedure catalog queries use explicit `agentConfigId`, and ensure seeded Procedures parse under the current Procedure schema.
 
 Dispatch: use `R3 - ProcedureRun runtime overlay, system Tools rename, and remember`.
 

@@ -191,6 +191,14 @@ Runtime owns the timeline. The model may propose actions, but runtime is the jud
 - whether a new user message continues, supplements, pauses, resumes, or starts a Procedure
 - when Tool evidence advances or blocks a step
 
+R3 implementation boundary:
+
+- First version should not add a Prisma `ProcedureRun` table unless a schema lane is explicitly approved.
+- Authoritative active/paused ProcedureRun state belongs in runtime/session-store.
+- A chat/session may have one active ProcedureRun plus paused/pending ProcedureRuns.
+- Durable `ActionTrace` can record evidence/audit events, but active ProcedureRun state must not leak through confirmedFacts, UserProfile, case export, case detail payloads, or public memory APIs.
+- If a temporary internal mirror remains in ChatMemory/toolResults, API/export/compact/dashboard readers must filter it.
+
 Do not add semantic intent classification for interleaved messages. Runtime should not decide whether the new message is a correction, cancellation, supplement, or a new issue. It should maintain a generic version invariant:
 
 ```text
@@ -200,7 +208,10 @@ Every ProcedureRun step advance must be based on the latest inputEpoch.
 Epoch rules:
 
 - Every customer message, customer form result, and human task result increments `inputEpoch`.
+- `inputEpoch` increments when the input is enqueued/received, not when the AgentLoop later drains the queue.
+- `session-store` must expose the latest input epoch and queued timeline events so a streaming Tool result can detect stale input while the loop is still running.
 - Every Tool call/action/finalize attempt records `basedOnInputEpoch`.
+- Tool calls record `basedOnInputEpoch` at enqueue/start time because streaming Tool execution begins before all results are drained.
 - If a Tool result returns after `inputEpoch` has advanced, save the result as evidence but do not automatically complete or advance the step.
 - Mark `needsReconcile = true`.
 - The next prompt tail lists unreconciled timeline events and asks the same Core Agent to reconcile before more Tools or finalization.
@@ -224,6 +235,16 @@ requestedTool + active ProcedureRun + currentStepId
   -> Tool executes or is blocked/rewritten
   -> ProcedureRun timeline updates
 ```
+
+HookEngine should stay stable for the AgentConfig. Dynamic Procedure/caseType/currentStep/reconcile data flows through `HookContext` per evaluation. Do not represent active Procedure state by recreating HookEngine.
+
+ProcedureStep Hook scope comes from the runtime timeline:
+
+```text
+activeProcedureRun.currentStepId + requestedTool
+```
+
+It should not be inferred from model todos or from "all Procedure steps that target this Tool."
 
 Reconcile gate:
 
