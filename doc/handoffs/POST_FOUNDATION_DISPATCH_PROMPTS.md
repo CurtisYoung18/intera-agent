@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-06-09
 **Purpose:** copy one prompt into a zero-context Codex session after the shipped F1-F7/UX0 foundation reset.
-**Baseline:** local `main` at or after `c4c7365c foundation: cut dispatch to inline procedures`.
+**Baseline:** local `main` at or after `810ac9cd R2 remove legacy policy runtime`.
 
 The old [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) file is historical. Do not redispatch F1-F7 from it.
 
@@ -40,6 +40,10 @@ Current shipped baseline includes:
 - U1 Build / Operate / Settings shell and redirects.
 - C1 Procedure Builder with ProcedureStep Hook binding UI.
 - R1 dispatch_case_agent cut to inline Procedure start/select; no customer-facing background sub-agent dispatch.
+- U2 Release command center and Config Diff Viewer.
+- U3 Pilot Lab, Scenario receipts, and ConfigPilot shell.
+- B1 Brain Memory strategy workspace.
+- R2 physical legacy cleanup: Policy/stage/sub-agent/skills physical runtime removed, with migration backfills/archive tables.
 
 Design direction correction:
 - Use a unified light-first visual system across the entire Intera Console.
@@ -47,6 +51,18 @@ Design direction correction:
 - Use warm light canvas, graphite text, muted cyan accent, restrained amber/green/red signals, 8px controls, subtle row dividers, compact grouping, and slightly cooler or denser light surfaces where focus is needed.
 - Dark surfaces are allowed only for small functional code editors, JSON previews, and terminal-like raw trace payload viewers.
 - Product pages, drawers, receipts, Diff Viewer, and trace panels should remain light.
+
+Product/runtime decisions:
+- Case is no longer a product-level concept. Code may keep durable Case shells temporarily where Message/ActionTrace persistence requires them, but UI/copy/future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory.
+- ProcedureRun state is session-lifecycle runtime state, not business memory. Do not store active/paused/completed ProcedureRun state inside confirmedFacts.
+- confirmedFacts are business facts only.
+- The runtime should expose ProcedureRun context to the main Agent as dynamic procedure todos/current state. The Agent decides whether a new message continues, supplements, pauses, resumes, or starts a Procedure inside the normal ReAct loop.
+- Do not add a standalone LLM ProcedureRouter unless the owner explicitly reopens that decision.
+- `record_facts` is not the target product/tool name. Use a controlled `remember` tool with explicit `scope: "chat" | "user"` if this lane adds memory writes.
+- `remember(scope="chat")` writes what `read_chat_memory` can read. `remember(scope="user")` writes what `read_user_profile` can read.
+- `finalize_case` should be retired/renamed toward `finalize_procedure` in new code and copy.
+- Runtime-managed capabilities should be visible to delivery staff as locked/auditable platform capabilities, not editable business Tools. P0 examples: Procedure Run Tracker, Hook Engine, Memory Extractor, Scenario Runner.
+- Agent-callable immutable system Tools should be visible as locked Tools. P0 examples: `start_procedure`, `finalize_procedure`, `ask_user_questions`, `create_human_task`, `read_chat_memory`, `read_user_profile`, and `remember`.
 
 Do not redo F1-F7 work.
 Do not preserve long-term Policy/Guardrail/Skill/stage/sub-agent compatibility unless this prompt explicitly asks for a temporary adapter.
@@ -79,9 +95,10 @@ End with:
 | Wave | Lanes | Can run in parallel? |
 |---|---|---|
 | 1 | R1, C1, U1 | Shipped locally. Do not redispatch unless explicitly repairing. |
-| 2 | U2, U3, B1 | Yes if ownership is respected. B1 owns Brain/Memory only. |
-| 3 | R2 | After R1 + C1 are green. Physical deletion lane is exclusive for schema/types/runtime leftovers. |
-| 4 | Q1 | Last. Broad copy/docs/i18n/browser sweep. |
+| 2 | U2, U3, B1 | Shipped locally. Do not redispatch unless explicitly repairing. |
+| 3 | R2 | Shipped locally. Do not redispatch unless explicitly repairing. |
+| 4 | Q1 | Next. Broad copy/docs/i18n/browser sweep after R2. |
+| 5 | Q2, P1 | After Q1, or parallel only with strict ownership. Q2 is UI polish; P1 is ConfigPilot typed tools. |
 
 Coordinator rule: prefer fewer concurrent runtime sessions. One runtime owner is worth more than five clever merge conflicts.
 
@@ -90,6 +107,11 @@ Current local post-foundation commits:
 - `d99ef834 ux: add build operate settings shell`
 - `f24b2fd9 C1: Procedure Step hooks UI + guardrail-to-hook validation consistency`
 - `c4c7365c foundation: cut dispatch to inline procedures`
+- `6b3a7c2c U3: add pilot lab workspace`
+- `baa74ba7 U2: add release command center`
+- `575950f7 B1: add Brain memory strategy workspace`
+- `b97c1e83 docs: update post-foundation dispatch handoffs`
+- `810ac9cd R2 remove legacy policy runtime`
 
 ---
 
@@ -322,8 +344,8 @@ Product decisions:
 - Memory config is strategy-first: Short / Balanced / Long / Custom.
 - Preserve rules are more important than raw token thresholds.
 - confirmedFacts are business facts. Do not store procedureRun/runtime state inside confirmedFacts.
-- procedureRun belongs to structured working memory/runtime state.
-- P0 should not expose a free-form record_facts system tool unless explicitly approved; facts should come from user extraction, form answers, tool-result mapping, and human-task answers.
+- ProcedureRun belongs to session-lifecycle runtime state, not durable business memory.
+- If this lane mentions memory-write tooling, use `remember`, not `record_facts`. `remember` must require `scope: "chat" | "user"` and must not be used to persist ProcedureRun state.
 
 Tasks:
 1. Move or wrap the existing /admin/memory experience under /build/components/brain as Brain > Memory.
@@ -367,7 +389,8 @@ Acceptance:
 ```text
 Lane: R2 - Physical legacy cleanup
 
-Start only after R1 and C1 are committed and green.
+Status:
+Shipped locally as 810ac9cd R2 remove legacy policy runtime. Do not redispatch unless explicitly repairing.
 
 Goal:
 Physically remove the old long-term model: Policy table/model, CaseType.guardrails/stage/sub-agent/SOP fields, ChatMemory skills*/continuation fields, stage runtime files, and sub-agent runtime files.
@@ -401,12 +424,119 @@ Tasks:
 5. Remove stage/sub-agent runtime files or leave tiny throwing shims only if imports need a transitional compile step.
 6. Update seed/defaults to current Hook/Tool/Procedure vocabulary only.
 7. Update import/export legacy namespace if physical fields disappear.
+8. Do not promote Case as a product concept while cleaning schema/runtime leftovers. If durable Case shells remain because Message/ActionTrace require caseId, document them as transitional persistence.
+9. Do not store ProcedureRun state in confirmedFacts or durable user profile memory.
+10. Rename or prepare new-code paths away from `finalize_case` toward `finalize_procedure` where safe within this lane.
 
 Acceptance:
 - Fresh migrate + seed passes on Postgres.
 - Existing non-empty migrated DB path is covered or clearly documented.
 - grep shows no live code imports deleted stage/sub-agent runtime.
 - Typecheck, keyless full test, build pass.
+```
+
+---
+
+## P1 - ConfigPilot typed configuration tools
+
+```text
+Lane: P1 - ConfigPilot typed configuration tools
+
+Start after Q1, unless the coordinator explicitly confirms Q1 has no overlapping API/component ownership. This lane can run alongside Q2 only if it owns APIs and ConfigPilot components cleanly.
+
+Goal:
+Make ConfigPilot a permission-bound configuration assistant that can inspect the current Agent, propose draft changes, show a diff, and apply accepted changes through typed admin APIs. ConfigPilot must not publish.
+
+Owned files:
+- apps/console/components/config-pilot/**
+- apps/console/app/build/pilot-lab/**
+- apps/console/app/api/admin/config-pilot/**
+- apps/console/app/api/admin/agent-configs/**
+- apps/console/app/api/admin/case-types/**
+- apps/console/app/api/admin/tools/**
+- apps/console/app/api/admin/hooks/**
+- apps/console/app/api/admin/scenarios/**
+- focused ConfigPilot API/UI tests
+
+Do not touch:
+- packages/shared/prisma/schema.prisma unless the coordinator explicitly assigns a schema slice
+- apps/console/lib/agent/** runtime loop files
+- release page layout except a shared ConfigPilot drawer trigger if unavoidable
+- global IA/sidebar
+
+Product constraints:
+- ConfigPilot may read the full current Agent configuration allowed by the user's permissions.
+- ConfigPilot may propose changes to Brain, prompts/model settings, memory strategy, Procedures, Tools, Hooks, Knowledge references, Integrations, Scenarios, and package drafts.
+- Every write must follow: read current config -> propose -> diff -> explicit user accept -> typed API write draft -> mark validation stale.
+- ConfigPilot must never self-publish, activate, deploy, or bypass Scenario validation.
+- ConfigPilot must never raw-write the DB from model output. Use typed endpoints and zod contracts.
+- Secrets must be shown as references/placeholders only.
+- Runtime-managed capabilities are visible but locked. ConfigPilot cannot edit Procedure Run Tracker, Hook Engine, Memory Extractor, or Scenario Runner behavior.
+
+Tasks:
+1. Add a ConfigPilot read endpoint that returns the active/draft Agent configuration summary with permissions and locked capability metadata.
+2. Add a proposal endpoint that accepts a natural-language operator request and returns a structured proposed change plus target surface.
+3. Add or reuse a diff viewer so the user can inspect exactly what will change before accepting.
+4. Add an apply endpoint that accepts only typed patches for known surfaces and writes draft config through existing admin services.
+5. Mark validation stale after accepted writes.
+6. Add focused tests for permission checks, accept-required behavior, typed patch validation, stale-validation marking, and no-publish guarantee.
+7. Update the ConfigPilot drawer/workbench UI to show current context, proposed changes, accept/reject, and receipt/run suggestions.
+
+Acceptance:
+- A delivery user can ask ConfigPilot to make a small Procedure/Hook/Tool/Memory draft change and must accept before it is applied.
+- A rejected proposal writes nothing.
+- Direct publish/activation attempts are refused.
+- Locked runtime-managed capabilities render visibly but are not editable.
+- Typecheck, keyless full test, build, and browser smoke for Pilot Lab/ConfigPilot pass.
+```
+
+---
+
+## Q2 - Light-first UI polish pass
+
+```text
+Lane: Q2 - Light-first UI polish pass
+
+Start after Q1, or run alongside Q1 only if Q1 owns dictionaries/docs while Q2 owns visual components and does not touch API/runtime/schema.
+
+Goal:
+Apply the approved designer direction across the existing Build workspace without changing IA, schema, runtime behavior, or API contracts.
+
+Owned files:
+- apps/console/app/build/release/**
+- apps/console/app/build/pilot-lab/**
+- apps/console/app/build/components/page.tsx
+- apps/console/components/release/**
+- apps/console/components/config-diff/**
+- apps/console/components/config-pilot/**
+- apps/console/components/scenario-receipts/**
+- shared UI primitive CSS only if required and coordinated
+- focused visual/UI tests where existing patterns support them
+
+Do not touch:
+- packages/shared/**
+- apps/console/lib/agent/**
+- apps/console/app/api/**
+- global IA in console-sidebar unless the coordinator explicitly asks
+
+Design target:
+- Borrow the designer sketch's calmer enterprise density, typography rhythm, compact row grouping, and right-side ConfigPilot rail.
+- Keep the current approved IA: Build has Release, Pilot Lab, Components. Component submodules stay inside the Components hub, not the global sidebar.
+- Use unified light-first surfaces. No dark product panels.
+- Prefer tables, grouped rows, subtle dividers, status color, and generous but efficient spacing over decorative cards.
+- Keep controls at 8px radius or less unless existing primitives require otherwise.
+
+Tasks:
+1. Normalize page headers, agent/version selectors, status chips, and command areas across Release and Pilot Lab.
+2. Polish Config Diff Viewer and Scenario receipts into compact grouped light surfaces.
+3. Add or refine a right ConfigPilot rail/drawer pattern without making it mandatory on every viewport.
+4. Improve responsive layout at 1440px, 1280px, 1024px, and mobile width where practical.
+5. Remove any leftover dark immersive workspace styling from P0 product pages, except small code/JSON/raw payload viewers.
+
+Acceptance:
+- Release, Pilot Lab, ConfigPilot, Diff Viewer, and Scenario receipt surfaces look like one product.
+- No IA changes.
+- Typecheck, keyless full test, build, and browser screenshots pass.
 ```
 
 ---
