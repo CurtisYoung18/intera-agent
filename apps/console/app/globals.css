@@ -172,6 +172,154 @@
 }
 
 /* ============================================
+   Q2 light-first polish primitives
+   Used only by Build/Pilot Lab owned surfaces.
+   ============================================ */
+
+.intera-q2-page {
+  background: color-mix(in srgb, var(--color-bg-app) 62%, white 38%);
+}
+
+.intera-q2-panel {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-surface);
+  box-shadow: 0 1px 2px rgba(21, 23, 25, 0.03);
+}
+
+.intera-q2-row {
+  border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
+  background: color-mix(in srgb, var(--color-bg-surface) 92%, white 8%);
+}
+
+.intera-q2-row:first-child {
+  border-top: 0;
+}
+
+.intera-q2-rail {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-surface);
+  box-shadow: 0 1px 2px rgba(21, 23, 25, 0.03);
+}
+
+.intera-q2-button {
+  border-radius: var(--radius-control);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+.intera-organic-loader {
+  display: inline-block;
+  color: var(--color-accent-primary);
+  overflow: visible;
+  vertical-align: middle;
+}
+
+.intera-organic-loader .ink {
+  fill: currentColor;
+}
+
+.intera-organic-loader .stroke {
+  fill: none;
+  stroke: currentColor;
+}
+
+@keyframes intera-l01-a {
+  0%, 100% { transform: translate(18px, 32px); }
+  50% { transform: translate(46px, 32px); }
+}
+
+@keyframes intera-l01-b {
+  0%, 100% { transform: translate(46px, 32px); }
+  50% { transform: translate(18px, 32px); }
+}
+
+@keyframes intera-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes intera-splat {
+  0%, 100% { transform: scale(0.62); }
+  50% { transform: scale(1); }
+}
+
+@keyframes intera-pulse {
+  0%, 100% { transform: scale(0.76); opacity: 0.72; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes intera-ring-pulse {
+  0% { transform: scale(0.28); opacity: 0.88; }
+  100% { transform: scale(1.16); opacity: 0; }
+}
+
+@keyframes intera-token-flash {
+  0%, 100% { background: transparent; }
+  22% { background: color-mix(in srgb, var(--color-accent-primary) 17%, transparent); }
+}
+
+.intera-organic-loader .origin {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.intera-organic-loader[data-variant="01"] .a { animation: intera-l01-a 1.8s cubic-bezier(.5, 0, .5, 1) infinite; }
+.intera-organic-loader[data-variant="01"] .b { animation: intera-l01-b 1.8s cubic-bezier(.5, 0, .5, 1) infinite; }
+.intera-organic-loader[data-variant="02"] .ring { animation: intera-spin 2.4s linear infinite; }
+.intera-organic-loader[data-variant="05"] .splat { animation: intera-splat 2s ease-in-out infinite; }
+.intera-organic-loader[data-variant="06"] .ring { animation: intera-spin 1.6s linear infinite; }
+.intera-organic-loader[data-variant="10"] .jelly { animation: intera-pulse 2.4s ease-in-out infinite; }
+.intera-organic-loader[data-variant="11"] .petals { animation: intera-spin 3s linear infinite; }
+.intera-organic-loader[data-variant="12"] .r1 { animation: intera-ring-pulse 2.4s ease-out infinite; }
+.intera-organic-loader[data-variant="12"] .r2 { animation: intera-ring-pulse 2.4s ease-out -0.8s infinite; }
+.intera-organic-loader[data-variant="12"] .r3 { animation: intera-ring-pulse 2.4s ease-out -1.6s infinite; }
+.intera-organic-loader[data-variant="17"] .c1 { animation: intera-pulse 1.8s ease-in-out infinite; }
+.intera-organic-loader[data-variant="17"] .c2 { animation: intera-pulse 1.8s ease-in-out -0.45s infinite; }
+.intera-organic-loader[data-variant="17"] .c3 { animation: intera-pulse 1.8s ease-in-out -0.9s infinite; }
+.intera-organic-loader[data-variant="17"] .c4 { animation: intera-pulse 1.8s ease-in-out -1.35s infinite; }
+.intera-organic-loader[data-variant="20"] .d1 { animation: intera-pulse 1.4s ease-in-out 0s infinite; }
+.intera-organic-loader[data-variant="20"] .d2 { animation: intera-pulse 1.4s ease-in-out -0.16s infinite; }
+.intera-organic-loader[data-variant="20"] .d3 { animation: intera-pulse 1.4s ease-in-out -0.32s infinite; }
+.intera-organic-loader[data-variant="20"] .d4 { animation: intera-pulse 1.4s ease-in-out -0.48s infinite; }
+.intera-organic-loader[data-variant="20"] .d5 { animation: intera-pulse 1.4s ease-in-out -0.64s infinite; }
+.intera-organic-loader[data-variant="20"] .d6 { animation: intera-pulse 1.4s ease-in-out -0.8s infinite; }
+.intera-organic-loader[data-variant="20"] .d7 { animation: intera-pulse 1.4s ease-in-out -0.96s infinite; }
+.intera-organic-loader[data-variant="20"] .d8 { animation: intera-pulse 1.4s ease-in-out -1.12s infinite; }
+
+.intera-token-stream {
+  color: var(--color-text-primary);
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.intera-token-stream .tok {
+  border-radius: 3px;
+  animation: intera-token-flash 1.35s ease-out both;
+}
+
+.intera-token-stream .caret {
+  display: inline-block;
+  width: 0.52em;
+  height: 1.02em;
+  margin-left: 2px;
+  background: var(--color-text-primary);
+  vertical-align: -2px;
+  animation: blink 1.05s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intera-organic-loader *,
+  .intera-token-stream .tok,
+  .intera-token-stream .caret {
+    animation: none !important;
+  }
+}
+
+/* ============================================
    Intera Console — iOS Liquid Glass
    Light mode only. Frosted translucency.
    ============================================ */

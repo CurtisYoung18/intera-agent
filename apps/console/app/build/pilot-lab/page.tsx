@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Bot, CheckCircle2, ClipboardList, FileJson, FlaskConical, Loader2, Play, Plus, RefreshCw, Save, Trash2, XCircle } from 'lucide-react'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
 import { ConfigPilotDrawer, ConfigPilotWorkbench } from '@/components/config-pilot/config-pilot-workbench'
 import { ReceiptStatusIcon, ScenarioReceiptPanel } from '@/components/scenario-receipts/scenario-receipt-panel'
 import EmptyState from '@/components/ui/empty-state'
@@ -229,37 +230,42 @@ export default function PilotLabPage() {
   }, [load])
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg-app)] px-6 py-7 text-[var(--color-text-primary)] lg:px-8">
-      <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
+    <div className="intera-q2-page min-h-screen px-5 py-6 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <VersionContextBar />
 
-        <header className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-5 py-5 shadow-[var(--shadow-raised)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-[var(--color-accent-primary)]">Build / Pilot Lab</p>
-              <h1 className="mt-1 text-2xl font-semibold">Pilot Lab</h1>
-              <p className="mt-2 max-w-3xl text-sm text-[var(--color-text-secondary)]">Run saved Scenarios, inspect receipts, and let ConfigPilot draft safe changes before validation.</p>
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
+              <span>Build</span>
+              <span className="text-[var(--color-border-strong)]">/</span>
+              <span className="text-[var(--color-text-primary)]">Pilot Lab</span>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <ValidationBadge validation={validation} />
-              <button type="button" onClick={load} className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 text-sm font-medium hover:bg-[var(--color-bg-surface-muted)]">
-                <RefreshCw size={15} /> Refresh
-              </button>
-              <button type="button" onClick={() => setDrawerOpen(true)} className="inline-flex h-9 items-center gap-2 rounded-md border border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] px-3 text-sm font-medium text-[var(--color-accent-primary)] hover:bg-[rgba(53,127,124,0.12)]">
-                <Bot size={15} /> ConfigPilot
-              </button>
-              <button type="button" onClick={newScenario} className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90">
-                <Plus size={15} /> New Test Scenario
-              </button>
-            </div>
+            <h1 className="mt-4 text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">Pilot Lab</h1>
+            <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">Run saved Scenarios, inspect receipts, and let ConfigPilot draft safe changes before validation.</p>
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <ValidationBadge validation={validation} />
+            <button type="button" onClick={load} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
+              <RefreshCw size={15} /> Refresh
+            </button>
+            <button type="button" onClick={() => setDrawerOpen(true)} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] px-3 text-[13px] font-medium text-[var(--color-accent-primary)] hover:bg-[rgba(53,127,124,0.12)]">
+              <Bot size={15} /> ConfigPilot
+            </button>
+            <button type="button" onClick={newScenario} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-[13px] font-medium text-white hover:opacity-90">
+              <Plus size={15} /> New Test Scenario
+            </button>
+          </div>
+        </header>
+
+        <section className="intera-q2-panel overflow-hidden">
+          <div className="grid divide-y divide-[var(--color-border-subtle)] md:grid-cols-4 md:divide-x md:divide-y-0">
             <MetricTile label="Test Scenarios" value={scenarios.length.toString()} />
             <MetricTile label="Receipts" value={receipts.length.toString()} />
             <MetricTile label="Passing" value={passingReceipts.toString()} tone="success" />
             <MetricTile label="Needs review" value={failingReceipts.toString()} tone={failingReceipts > 0 ? 'danger' : 'neutral'} />
           </div>
-        </header>
+        </section>
 
         {(error || notice) && (
           <div className="grid gap-2">
@@ -268,28 +274,28 @@ export default function PilotLabPage() {
           </div>
         )}
 
-        <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_420px]">
+        <div className="grid gap-5 xl:grid-cols-[256px_minmax(0,1fr)_380px] 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
           <aside className="grid gap-4">
-            <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-2 shadow-[var(--shadow-raised)]">
+            <section className="intera-q2-panel p-2">
               <PilotAreaButton active={activeArea === 'config-pilot'} icon={Bot} label="ConfigPilot Workspace" onClick={() => setActiveArea('config-pilot')} />
               <PilotAreaButton active={activeArea === 'free-test'} icon={FlaskConical} label="Free Test" onClick={() => setActiveArea('free-test')} />
               <PilotAreaButton active={activeArea === 'test-cases'} icon={ClipboardList} label="Test Scenarios" onClick={() => setActiveArea('test-cases')} />
               <PilotAreaButton active={activeArea === 'receipts'} icon={FileJson} label="Receipts" onClick={() => setActiveArea('receipts')} />
             </section>
 
-            <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-raised)]">
+            <section className="intera-q2-panel overflow-hidden">
               <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-4 py-3">
                 <h2 className="text-sm font-semibold">Scenario index</h2>
-                {loading && <Loader2 size={14} className="animate-spin text-[var(--color-text-tertiary)]" />}
+                {loading && <OrganicLoader variant="02" size={16} className="text-[var(--color-text-tertiary)]" />}
               </div>
-              <div className="max-h-[520px] overflow-y-auto p-2">
+              <div className="max-h-[520px] overflow-y-auto">
                 {loading ? (
                   <div className="p-3 text-sm text-[var(--color-text-tertiary)]">Loading Scenarios</div>
                 ) : scenarios.length === 0 ? (
                   <EmptyState icon={ClipboardList} title="No Test Scenarios" description="Create a Scenario or ask ConfigPilot for a draft." />
                 ) : (
                   scenarios.map((scenario) => (
-                    <button key={scenario.id} type="button" onClick={() => selectScenario(scenario)} className={`mb-2 w-full rounded-md border px-3 py-3 text-left transition ${selectedName === scenario.name ? 'border-[var(--color-accent-primary)] bg-[rgba(53,127,124,0.08)]' : 'border-transparent hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-surface-muted)]'}`}>
+                    <button key={scenario.id} type="button" onClick={() => selectScenario(scenario)} className={`intera-q2-row w-full px-3 py-3 text-left transition ${selectedName === scenario.name ? 'bg-[rgba(53,127,124,0.08)]' : 'hover:bg-[var(--color-bg-surface-muted)]'}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold">{scenario.displayName || scenario.name}</p>
@@ -318,13 +324,38 @@ export default function PilotLabPage() {
             )}
           </main>
 
-          <aside className="min-w-0">
+          <aside className="min-w-0 space-y-4">
+            <PilotLabRail running={Boolean(running)} activeArea={activeArea} onOpenDrawer={() => setDrawerOpen(true)} />
             <ScenarioReceiptPanel compact receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceipt?.runId ?? null} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
           </aside>
         </div>
       </div>
       <ConfigPilotDrawer open={drawerOpen} agentConfigId={agentConfigId} onClose={() => setDrawerOpen(false)} onScenarioSaved={handleConfigPilotSaved} />
     </div>
+  )
+}
+
+function PilotLabRail({ running, activeArea, onOpenDrawer }: { running: boolean; activeArea: PilotArea; onOpenDrawer: () => void }) {
+  return (
+    <aside className="intera-q2-rail p-4">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-white/75 text-[var(--color-accent-primary)]">
+          <OrganicLoader variant={running ? '17' : '11'} size={24} title={running ? 'Scenario running loader' : 'ConfigPilot rail loader'} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">{running ? 'Scenario running' : 'ConfigPilot rail'}</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+            {running ? 'Pilot Lab is collecting observed evidence and receipt checks.' : `Context: ${activeArea.replace('-', ' ')}.`}
+          </p>
+        </div>
+      </div>
+      <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+        <TokenStreamPreview text={running ? 'Running Scenario token stream.' : 'Ask for a focused draft, then review the diff.'} />
+      </p>
+      <button type="button" onClick={onOpenDrawer} className="intera-q2-button mt-4 inline-flex h-9 w-full items-center justify-center gap-2 border border-[rgba(53,127,124,0.22)] bg-white/75 px-3 text-sm font-medium text-[var(--color-accent-primary)] hover:bg-white">
+        <Bot size={15} /> Open ConfigPilot
+      </button>
+    </aside>
   )
 }
 
@@ -348,7 +379,7 @@ function TestCaseEditorPanel({
   onRun: () => void
 }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-raised)]">
+    <section className="intera-q2-panel overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div>
           <p className="text-xs font-medium text-[var(--color-text-tertiary)]">{selectedScenario ? 'Saved Test Scenario' : 'New Test Scenario'}</p>
@@ -356,26 +387,26 @@ function TestCaseEditorPanel({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {selectedScenario && (
-            <button type="button" onClick={onRun} disabled={running} className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 text-sm font-medium hover:bg-[var(--color-bg-surface-muted)] disabled:opacity-60">
-              {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} {running ? 'Running' : 'Run'}
+            <button type="button" onClick={onRun} disabled={running} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-sm font-medium hover:bg-[var(--color-bg-surface-muted)] disabled:opacity-60">
+              {running ? <OrganicLoader variant="06" size={15} /> : <Play size={15} />} {running ? 'Running' : 'Run'}
             </button>
           )}
           {selectedScenario && (
-            <button type="button" onClick={onDelete} className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50">
+            <button type="button" onClick={onDelete} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50">
               <Trash2 size={15} /> Delete
             </button>
           )}
-          <button type="button" onClick={onSave} disabled={saving || !editor.name.trim()} className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+          <button type="button" onClick={onSave} disabled={saving || !editor.name.trim()} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} {saving ? 'Saving' : 'Save draft'}
           </button>
         </div>
       </div>
       <div className="grid gap-4 p-5">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))]">
           <Field label="Name" value={editor.name} onChange={(value) => setEditor((prev) => ({ ...prev, name: value }))} placeholder="deposit_missing_evidence" />
           <Field label="Display name" value={editor.displayName} onChange={(value) => setEditor((prev) => ({ ...prev, displayName: value }))} placeholder="Deposit missing evidence" />
         </div>
-        <div className="grid gap-4 md:grid-cols-[1fr_140px_180px]">
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr))]">
           <Field label="Description" value={editor.description} onChange={(value) => setEditor((prev) => ({ ...prev, description: value }))} placeholder="Covers provider evidence and handoff" />
           <Field label="Locale" value={editor.locale} onChange={(value) => setEditor((prev) => ({ ...prev, locale: value }))} placeholder="en-US" />
           <Field label="Tags" value={editor.tags} onChange={(value) => setEditor((prev) => ({ ...prev, tags: value }))} placeholder="gaming, deposit" />
@@ -384,7 +415,7 @@ function TestCaseEditorPanel({
           <input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor((prev) => ({ ...prev, enabled: event.target.checked }))} />
           Enabled
         </label>
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr))]">
           <TextArea label="Turns JSON" value={editor.turnsJson} onChange={(value) => setEditor((prev) => ({ ...prev, turnsJson: value }))} rows={13} />
           <TextArea label="Expected outcome JSON" value={editor.expectedJson} onChange={(value) => setEditor((prev) => ({ ...prev, expectedJson: value }))} rows={13} />
         </div>
@@ -407,17 +438,22 @@ function FreeTestPanel({
   onRun: () => void
 }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-raised)]">
+    <section className="intera-q2-panel overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div>
           <p className="text-xs font-medium text-[var(--color-text-tertiary)]">Free Test</p>
           <h2 className="mt-1 text-lg font-semibold">Run with observed evidence</h2>
         </div>
-        <button type="button" onClick={onRun} disabled={!selectedScenario || running} className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
-          {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} Run Free Test
+        <button type="button" onClick={onRun} disabled={!selectedScenario || running} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+          {running ? <OrganicLoader variant="05" size={15} /> : <Play size={15} />} Run Free Test
         </button>
       </div>
       <div className="grid gap-4 p-5">
+        {running && (
+          <div className="rounded-md border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.06)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+            <TokenStreamPreview text="Running observed evidence through Scenario validation." />
+          </div>
+        )}
         <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3">
           <p className="text-sm font-medium text-[var(--color-text-primary)]">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Select a Test Scenario first'}</p>
           <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Observed evidence is sent to the Scenario run API and compared against saved expectations.</p>
@@ -440,27 +476,27 @@ function PilotAreaButton({ active, icon: Icon, label, onClick }: { active: boole
 function MetricTile({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'success' | 'danger' }) {
   const toneClass = tone === 'success' ? 'text-emerald-700' : tone === 'danger' ? 'text-red-700' : 'text-[var(--color-text-primary)]'
   return (
-    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-white px-4 py-3">
-      <p className="text-xs text-[var(--color-text-tertiary)]">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${toneClass}`}>{value}</p>
+    <div className="min-w-0 px-5 py-4">
+      <p className="text-[12px] text-[var(--color-text-tertiary)]">{label}</p>
+      <p className={`mt-2 text-[24px] font-semibold leading-none ${toneClass}`}>{value}</p>
     </div>
   )
 }
 
 function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
-    <label className="grid gap-1 text-sm">
+    <label className="grid min-w-0 gap-1 text-sm">
       <span className="font-medium text-[var(--color-text-secondary)]">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-10 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 text-sm outline-none focus:border-[var(--color-accent-primary)]" />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-10 min-w-0 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 text-sm outline-none focus:border-[var(--color-accent-primary)]" />
     </label>
   )
 }
 
 function TextArea({ label, value, onChange, rows }: { label: string; value: string; onChange: (value: string) => void; rows: number }) {
   return (
-    <label className="grid gap-1 text-sm">
+    <label className="grid min-w-0 gap-1 text-sm">
       <span className="font-medium text-[var(--color-text-secondary)]">{label}</span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={rows} className="w-full rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-[var(--color-accent-primary)]" />
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={rows} className="w-full min-w-0 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-[var(--color-accent-primary)]" />
     </label>
   )
 }

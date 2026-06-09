@@ -143,7 +143,7 @@ async function renderReleaseCommandCenter() {
   await act(async () => {
     render(<ReleaseCommandCenter />)
   })
-  await screen.findByText('Release command center')
+  await screen.findByText('Manage versions, validate quality, and publish with confidence.')
 }
 
 beforeEach(() => {
@@ -161,8 +161,8 @@ describe('ReleaseCommandCenter', () => {
     installFetchMock()
     await renderReleaseCommandCenter()
 
-    expect(screen.getByText('Live Agent version')).toBeDefined()
-    expect(screen.getByText('Draft version')).toBeDefined()
+    expect(screen.getByText('Live Version')).toBeDefined()
+    expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
     expect(screen.getByText('Changed since last validation')).toBeDefined()
     expect(screen.getByText('deposit_happy_path')).toBeDefined()
     expect(screen.getByText('get_deposit_status')).toBeDefined()

@@ -21,7 +21,7 @@ export function ScenarioReceiptPanel({
 }: ScenarioReceiptPanelProps) {
   if (!receipt) {
     return (
-      <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5">
+      <div className="intera-q2-panel p-5">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--color-bg-surface-muted)] text-[var(--color-text-tertiary)]">
             <FileJson size={16} />
@@ -40,7 +40,7 @@ export function ScenarioReceiptPanel({
   const remainingChecks = receipt.checks.filter((check) => !isPhraseCheck(check))
 
   return (
-    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-raised)]">
+    <div className="intera-q2-panel overflow-hidden">
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -50,15 +50,15 @@ export function ScenarioReceiptPanel({
           </div>
           <ReceiptStatusBadge status={receipt.status} />
         </div>
-        <div className="mt-4 grid gap-2 text-xs text-[var(--color-text-tertiary)] sm:grid-cols-2">
-          <span>Run: {receipt.runId}</span>
-          <span>Started: {formatDate(receipt.startedAt)}</span>
-          {receipt.finishedAt && <span>Finished: {formatDate(receipt.finishedAt)}</span>}
-          {receipt.traceId && <span>Trace: {receipt.traceId}</span>}
+        <div className="mt-4 grid overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2">
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Run: {receipt.runId}</span>
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">Started: {formatDate(receipt.startedAt)}</span>
+          {receipt.finishedAt && <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r sm:border-b-0">Finished: {formatDate(receipt.finishedAt)}</span>}
+          {receipt.traceId && <span className="px-3 py-2">Trace: {receipt.traceId}</span>}
         </div>
       </div>
 
-      <div className={`grid gap-4 p-5 ${compact ? '' : 'xl:grid-cols-2'}`}>
+      <div className={`grid ${compact ? '' : 'xl:grid-cols-2'}`}>
         <EvidenceSection icon={Wrench} title="Tool calls" empty="No tool calls recorded.">
           <TokenList values={evidence.toolsCalled} tone="cyan" />
         </EvidenceSection>
@@ -66,7 +66,7 @@ export function ScenarioReceiptPanel({
         <EvidenceSection icon={ShieldCheck} title="Hook decisions" empty="No Hook decisions recorded." isEmpty={evidence.hookDecisions.length === 0}>
           <div className="grid gap-2">
             {evidence.hookDecisions.map((hook, index) => (
-              <div key={`${hook.hookName}-${hook.checkpoint}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2">
+              <div key={`${hook.hookName}-${hook.checkpoint}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="font-semibold text-[var(--color-text-primary)]">{hook.hookName}</span>
                   <span className="rounded-full bg-white px-2 py-0.5 text-[var(--color-text-secondary)]">{hook.checkpoint}</span>
@@ -81,7 +81,7 @@ export function ScenarioReceiptPanel({
         <EvidenceSection icon={Search} title="Knowledge evidence" empty="No knowledge evidence recorded." isEmpty={evidence.knowledgeHits.length === 0}>
           <div className="grid gap-2">
             {evidence.knowledgeHits.map((hit, index) => (
-              <div key={index} className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2">
+              <div key={index} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
                 <p className="text-xs font-medium text-[var(--color-text-primary)]">{knowledgeTitle(hit, index)}</p>
                 <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-[var(--primitive-deep-950)] p-2 font-mono text-[11px] leading-4 text-[var(--color-workspace-text)]">{stringify(hit)}</pre>
               </div>
@@ -96,7 +96,7 @@ export function ScenarioReceiptPanel({
               <span className="font-medium text-[var(--color-text-primary)]">{evidence.humanTransfer ? 'Human transfer required' : 'No transfer'}</span>
             </div>
             {evidence.handoff.map((handoff, index) => (
-              <div key={index} className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+              <div key={index} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
                 <p>{handoff.reason ?? handoff.target ?? handoff.queue ?? 'Handoff evidence'}</p>
                 {(handoff.queue || handoff.target) && <p className="mt-1 text-[var(--color-text-tertiary)]">Queue: {handoff.queue ?? 'none'} · Target: {handoff.target ?? 'none'}</p>}
               </div>
@@ -106,7 +106,7 @@ export function ScenarioReceiptPanel({
 
         <EvidenceSection icon={CircleDot} title="Final status" empty="No final status recorded.">
           <div className="grid gap-2">
-            <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2 text-sm text-[var(--color-text-primary)]">
+            <div className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-sm text-[var(--color-text-primary)]">
               {evidence.finalStatus ?? 'Not recorded'}
             </div>
             {evidence.finalResponse && <p className="rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-sm leading-5 text-[var(--color-text-secondary)]">{evidence.finalResponse}</p>}
@@ -118,7 +118,7 @@ export function ScenarioReceiptPanel({
         </EvidenceSection>
       </div>
 
-      <div className="border-t border-[var(--color-border-subtle)] px-5 py-4">
+      <div className="border-t border-[var(--color-border-subtle)] bg-white/35 px-5 py-4">
         <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Expectation checks</h3>
         {remainingChecks.length === 0 ? (
           <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">No additional expectation checks.</p>
@@ -128,11 +128,11 @@ export function ScenarioReceiptPanel({
       </div>
 
       {receipts.length > 1 && onSelectReceipt && (
-        <div className="border-t border-[var(--color-border-subtle)] px-5 py-4">
+        <div className="border-t border-[var(--color-border-subtle)] bg-white/35 px-5 py-4">
           <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Recent runs</h3>
           <div className="mt-3 grid gap-2">
             {receipts.slice(0, 6).map((item) => (
-              <button key={item.runId} type="button" onClick={() => onSelectReceipt(item)} className={`flex items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition ${selectedRunId === item.runId ? 'border-[var(--color-accent-primary)] bg-[rgba(53,127,124,0.08)]' : 'border-[var(--color-border-subtle)] bg-white hover:bg-[var(--color-bg-surface-muted)]'}`}>
+              <button key={item.runId} type="button" onClick={() => onSelectReceipt(item)} className={`intera-q2-button flex items-center justify-between border px-3 py-2 text-left text-xs transition ${selectedRunId === item.runId ? 'border-[var(--color-accent-primary)] bg-[rgba(53,127,124,0.08)]' : 'border-[var(--color-border-subtle)] bg-white hover:bg-[var(--color-bg-surface-muted)]'}`}>
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-[var(--color-text-primary)]">{item.scenarioName}</span>
                   <span className="mt-0.5 block text-[var(--color-text-tertiary)]">{formatDate(item.startedAt)}</span>
@@ -181,7 +181,7 @@ function EvidenceSection({
 }) {
   const emptyState = isEmpty ?? false
   return (
-    <section className="rounded-lg border border-[var(--color-border-subtle)] bg-white p-4">
+    <section className="border-b border-[var(--color-border-subtle)] bg-white/45 p-4 last:border-b-0">
       <div className="mb-3 flex items-center gap-2">
         <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-bg-surface-muted)] text-[var(--color-accent-primary)]">
           <Icon size={14} />

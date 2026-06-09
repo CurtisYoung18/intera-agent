@@ -130,6 +130,17 @@ export default function ConsoleSidebar() {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)')
+    const collapseForNarrowViewport = () => {
+      if (media.matches) setCollapsed(true)
+    }
+
+    collapseForNarrowViewport()
+    media.addEventListener('change', collapseForNarrowViewport)
+    return () => media.removeEventListener('change', collapseForNarrowViewport)
+  }, [])
+
   const handleAgentSelect = (id: string) => {
     selectAgent(id)
   }

@@ -1,11 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8b6ff5"/>
-      <stop offset="1" stop-color="#5b8af7"/>
+    <linearGradient id="fvRing" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#1d343b"></stop>
+      <stop offset="0.5" stop-color="#2f8f99"></stop>
+      <stop offset="1" stop-color="#7fcdd4"></stop>
+    </linearGradient>
+    <linearGradient id="fvStem" x1="0" y1="1" x2="0.4" y2="0">
+      <stop offset="0" stop-color="#16282e"></stop>
+      <stop offset="1" stop-color="#244852"></stop>
+    </linearGradient>
+    <linearGradient id="fvTile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdfaf5"></stop>
+      <stop offset="1" stop-color="#f3ece2"></stop>
     </linearGradient>
   </defs>
-  <circle cx="32" cy="32" r="32" fill="url(#bg)"/>
-  <!-- Bold sans-serif "I" as path — no font dependency -->
-  <path d="M25 16 h14 v7 h-10 v18 h10 v7 h-14 v-7 h10 v-18 h-10 z" fill="#FFFFFF"/>
+
+  <rect x="1.5" y="1.5" width="61" height="61" rx="15" fill="url(#fvTile)" stroke="rgba(0,0,0,0.07)" stroke-width="1"></rect>
+
+  <path d="M39.5,50.5 A20,20 0 1 1 49.7,41.4" fill="none" stroke="url(#fvRing)" stroke-width="5.6" stroke-linecap="round"></path>
+
+  <rect x="29.3" y="29.2" width="5" height="14.8" rx="2.5" fill="url(#fvStem)"></rect>
+  <circle cx="31.8" cy="24" r="2.9" fill="#2e9bab"></circle>
 </svg>

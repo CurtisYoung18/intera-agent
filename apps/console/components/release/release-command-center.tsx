@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle,
@@ -9,13 +9,16 @@ import {
   FileDown,
   GitCompare,
   Loader2,
+  MoreHorizontal,
   PackageOpen,
   RotateCcw,
+  SendHorizontal,
   Upload,
   Wand2,
   X,
 } from 'lucide-react'
 import ConfigDiffViewer, { type ConfigDiffGroup, type ConfigDiffItem } from '@/components/config-diff/config-diff-viewer'
+import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import type { InteraAgentTemplateV1 } from '@intera/shared/contracts/agent-template'
 import type { ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
@@ -484,19 +487,40 @@ export default function ReleaseCommandCenter() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-7 sm:px-8">
-      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">Build / Release</p>
-          <h1 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-[var(--color-text-primary)]">Release command center</h1>
-          <p className="mt-2 max-w-3xl text-[13px] leading-5 text-[var(--color-text-secondary)]">Publish deliberately, inspect draft changes, validate with Scenario receipts, and move packages through import/export without leaving the Build workspace.</p>
+    <main className="intera-q2-page mx-auto max-w-[1536px] px-5 py-6 text-[var(--color-text-primary)] sm:px-8">
+      <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
+            <span>Build</span>
+            <span className="text-[var(--color-border-strong)]">/</span>
+            <span className="text-[var(--color-text-primary)]">Release</span>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{data.current?.name ?? data.live?.name ?? 'Agent'}</h1>
+            <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(data.current?.isActive ? 'success' : 'warning')}`}>
+              {data.current?.isActive ? 'Active' : 'Draft'}
+            </span>
+          </div>
+          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">Manage versions, validate quality, and publish with confidence.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setPilotOpen(true)} className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/80 px-3 py-2 text-[12px] font-medium text-[var(--color-text-primary)] shadow-sm transition hover:border-[var(--color-accent-primary)]/40">
-            <Wand2 className="h-4 w-4 text-[var(--color-accent-primary)]" />
-            ConfigPilot
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="intera-q2-button flex min-h-11 items-center gap-3 border border-[var(--color-border-subtle)] bg-white px-4 text-[13px] shadow-[0_1px_2px_rgba(21,23,25,0.04)]">
+            <span className="text-[var(--color-text-tertiary)]">Agent</span>
+            <select
+              aria-label="Release agent version"
+              value={data.current?.id ?? ''}
+              onChange={(event) => selectAgent(event.target.value)}
+              className="min-w-[190px] bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
+            >
+              {data.configs.map((config) => (
+                <option key={config.id} value={config.id}>{config.name} v{config.version}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" aria-label="Release actions" className="intera-q2-button flex h-11 w-11 items-center justify-center border border-[var(--color-border-subtle)] bg-white text-[var(--color-text-secondary)]">
+            <MoreHorizontal className="h-4 w-4" />
           </button>
-          <Link href="/build/pilot-lab" className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-[12px] text-[var(--color-text-secondary)] transition hover:text-[var(--color-text-primary)]">Open Pilot Lab</Link>
         </div>
       </div>
 
@@ -504,80 +528,45 @@ export default function ReleaseCommandCenter() {
         <div className={`mb-4 rounded-[var(--radius-control)] border px-4 py-3 text-[13px] ${error ? toneClass('danger') : toneClass('success')}`}>{error || notice}</div>
       ) : null}
 
-      <section className="mb-5 grid gap-4 lg:grid-cols-[1fr_1fr_360px]">
-        <VersionCard title="Live Agent version" version={data.live} tone="success" meta={[
-          ['Published', formatDate(data.live?.publishedAt, 'Not published')],
-          ['Publisher', data.live?.publishedBy || 'Unknown'],
-          ['Release note', data.live?.releaseNote || 'No release note'],
-        ]} />
-        <VersionCard title="Draft version" version={data.draft} tone={data.draft?.isActive ? 'neutral' : 'warning'} meta={[
-          ['Updated', formatDate(data.draft?.updatedAt, 'Not updated')],
-          ['Parent', data.draft?.parentId || 'No parent version'],
-          ['State', data.draft?.isActive ? 'Currently live' : 'Draft can be published'],
-        ]} />
-        <section className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-raised)]">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Validation status</p>
-          <div className="mt-3 flex items-center gap-2">
-            <span className={`rounded-full border px-2.5 py-1 text-[12px] font-medium ${toneClass(validationTone(validationState))}`}>{validationState}</span>
-            {validationState === 'Validated' ? <CheckCircle2 className="h-4 w-4 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-4 w-4 text-[var(--color-signal-warning)]" />}
-          </div>
-          <dl className="mt-4 space-y-2 text-[12px]">
-            <InfoRow label="Last validated" value={formatDate(validation?.lastValidatedAt, 'Never')} />
-            <InfoRow label="Changed at" value={formatDate(validation?.changedAt, 'No tracked change')} />
-            <InfoRow label="Receipt" value={validation?.lastReceiptId || 'No receipt'} />
-          </dl>
-          {overrideRequired ? <p className="mt-4 rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-signal-warning)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--color-signal-warning)_11%,white)] px-3 py-2 text-[12px] leading-5 text-[var(--color-text-primary)]">Changed-since-validation warning: publishing requires a non-empty override reason.</p> : null}
-        </section>
-      </section>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
+          <ReleaseSummaryStrip
+            live={data.live}
+            draft={data.draft}
+            validationState={validationState}
+            validation={validation}
+            latestReceipt={latestReceipt}
+            onOpenPilot={() => setPilotOpen(true)}
+          />
 
-      <section className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <section className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-raised)]">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Package actions</p>
-              <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">Import, export, duplicate, publish</h2>
-              <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">These controls call the existing package and version endpoints. Live activation is explicit and never happens from import or draft save.</p>
-            </div>
-            <input ref={importInputRef} aria-label="Import .intera-agent.json file" type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => handleImport(event.target.files?.[0])} />
+          <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+            <ConfigDiffViewer groups={diffGroups} subtitle={`${data.live ? `${data.live.name} v${data.live.version}` : 'No live version'} compared with ${data.draft ? `v${data.draft.version}` : 'no draft'}.`} />
+            <LatestReceiptCard latestReceipt={latestReceipt} />
           </div>
-          <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export package" busy={busyAction === 'export'} onClick={handleExport} />
-            <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={() => importInputRef.current?.click()} />
-            <ActionButton icon={<Copy className="h-4 w-4" />} label="Duplicate Version" busy={busyAction === 'duplicate'} onClick={handleDuplicate} />
-            <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish draft" busy={busyAction === 'publish'} disabled={!canPublish} onClick={() => setPublishOpen(true)} />
-            <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!data.rollbackCandidate} onClick={() => setRollbackOpen(true)} />
-          </div>
-          {publishDisabledReason ? <p className="mt-3 text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
-        </section>
 
-        <section className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-raised)]">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Latest Scenario receipt</p>
-          {latestReceipt ? (
-            <div className="mt-3">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</h2>
-                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${toneClass(receiptTone(latestReceipt.status))}`}>{latestReceipt.status}</span>
-              </div>
-              <dl className="mt-4 space-y-2 text-[12px]">
-                <InfoRow label="Run ID" value={latestReceipt.runId} />
-                <InfoRow label="Finished" value={formatDate(latestReceipt.finishedAt ?? latestReceipt.startedAt)} />
-                <InfoRow label="Trace" value={latestReceipt.traceId || 'No trace linked'} />
-                <InfoRow label="Summary" value={latestReceipt.summary || `${latestReceipt.checks.length} checks recorded`} />
-              </dl>
-            </div>
-          ) : (
-            <p className="mt-3 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">No Scenario receipt has been recorded for this draft yet. Run Pilot Lab validation before publishing or provide an override reason.</p>
-          )}
-        </section>
-      </section>
+          <PackageActionsPanel
+            busyAction={busyAction}
+            canPublish={canPublish}
+            importInputRef={importInputRef}
+            publishDisabledReason={publishDisabledReason}
+            rollbackCandidate={data.rollbackCandidate}
+            onDuplicate={handleDuplicate}
+            onExport={handleExport}
+            onImport={(file) => handleImport(file)}
+            onImportClick={() => importInputRef.current?.click()}
+            onPublish={() => setPublishOpen(true)}
+            onRollback={() => setRollbackOpen(true)}
+          />
+        </div>
+
+        <ReleaseConfigPilotRail validationState={validationState} latestReceipt={latestReceipt} onOpen={() => setPilotOpen(true)} />
+      </div>
 
       {Object.keys(data.templateErrors).length > 0 ? (
-        <section className="mb-5 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
+        <section className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
           Template diff placeholders are isolated because export failed for: {Object.entries(data.templateErrors).map(([id, message]) => `${id} (${message})`).join(', ')}
         </section>
       ) : null}
-
-      <ConfigDiffViewer groups={diffGroups} subtitle={`${data.live ? `${data.live.name} v${data.live.version}` : 'No live version'} compared with ${data.draft ? `v${data.draft.version}` : 'no draft'}.`} />
 
       {publishOpen ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 px-4 backdrop-blur-sm">
@@ -628,30 +617,274 @@ export default function ReleaseCommandCenter() {
 
       {pilotOpen ? (
         <LightDrawer title="ConfigPilot drawer" eyebrow="Placeholder entry" onClose={() => setPilotOpen(false)}>
-          <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">U3 will land the full ConfigPilot workspace. For U2, this entry point is intentionally isolated: propose package-safe changes, review the diff, then apply through typed APIs before returning here to validate and publish.</p>
+          <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">ConfigPilot proposes package-safe changes, reviewable diffs, and typed draft saves. Publishing stays in Release after Scenario validation.</p>
           <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_7%,white)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-            Suggested prompt: "Compare the draft against live and propose the smallest fix for the failing Scenario receipt."
+            <TokenStreamPreview text="Compare draft against live and propose the smallest fix for the failing Scenario receipt." />
           </div>
-          <Link href="/build/pilot-lab" className="mt-4 inline-flex rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] font-medium text-[var(--color-text-primary)]">Open Pilot Lab placeholder</Link>
+          <Link href="/build/pilot-lab" className="intera-q2-button mt-4 inline-flex border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] font-medium text-[var(--color-text-primary)]">Open Pilot Lab</Link>
         </LightDrawer>
       ) : null}
     </main>
   )
 }
 
-function VersionCard({ title, version, tone, meta }: { title: string; version: AgentVersion | null; tone: 'success' | 'warning' | 'neutral'; meta: [string, string][] }) {
+function ReleaseSummaryStrip({
+  live,
+  draft,
+  validationState,
+  validation,
+  latestReceipt,
+  onOpenPilot,
+}: {
+  live: AgentVersion | null
+  draft: AgentVersion | null
+  validationState: string
+  validation: ScenarioValidationSummary | undefined
+  latestReceipt: ScenarioReceipt | null
+  onOpenPilot: () => void
+}) {
   return (
-    <section className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-raised)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{title}</p>
-          <h2 className="mt-2 text-[22px] font-semibold text-[var(--color-text-primary)]">{version ? `${version.name} v${version.version}` : 'No version'}</h2>
+    <section className="intera-q2-panel overflow-hidden">
+      <div className="grid divide-y divide-[var(--color-border-subtle)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(320px,1.15fr)] lg:divide-x lg:divide-y-0">
+        <SummaryMetric
+          label="Live Version"
+          title={live ? `v${live.version}` : 'No live'}
+          detail={formatDate(live?.publishedAt, 'Not published')}
+          meta={live?.publishedBy ? `by ${live.publishedBy}` : 'Publisher unknown'}
+          tone="success"
+        />
+        <SummaryMetric
+          label="Validation State"
+          title={validationState}
+          detail={validation?.lastValidatedAt ? `Validated ${formatDate(validation.lastValidatedAt)}` : 'No fresh validation'}
+          meta={latestReceipt ? `Receipt ${latestReceipt.status}` : 'Run Pilot Lab before publish'}
+          tone={validationTone(validationState)}
+          icon={validationState === 'Validated' ? <CheckCircle2 className="h-5 w-5 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-5 w-5 text-[var(--color-signal-warning)]" />}
+        />
+        <SummaryMetric
+          label="Draft"
+          title={draft ? `v${draft.version}${draft.isActive ? '' : ' draft'}` : 'No draft'}
+          detail={formatDate(draft?.updatedAt, 'Not updated')}
+          meta={draft?.parentId ? 'Has parent version' : 'No parent version'}
+          tone={draft?.isActive ? 'neutral' : 'warning'}
+        />
+        <div className="p-5">
+          <p className="text-[13px] font-semibold text-[var(--color-text-secondary)]">Command</p>
+          <button type="button" onClick={onOpenPilot} className="intera-q2-button mt-4 flex min-h-12 w-full items-center gap-3 border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-4 text-left text-[13px] text-[var(--color-text-tertiary)] transition hover:border-[var(--color-accent-primary)]/35">
+            <span className="min-w-0 flex-1">
+              <TokenStreamPreview text="Ask ConfigPilot or enter a command." />
+            </span>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--color-accent-primary)] text-[var(--color-text-inverse)]">
+              <SendHorizontal className="h-4 w-4" />
+            </span>
+          </button>
         </div>
-        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${toneClass(tone)}`}>{version?.isActive ? 'Live' : 'Draft'}</span>
       </div>
-      <dl className="mt-5 space-y-2 text-[12px]">
-        {meta.map(([label, value]) => <InfoRow key={label} label={label} value={value} />)}
-      </dl>
+    </section>
+  )
+}
+
+function SummaryMetric({
+  label,
+  title,
+  detail,
+  meta,
+  tone,
+  icon,
+}: {
+  label: string
+  title: string
+  detail: string
+  meta: string
+  tone: 'success' | 'warning' | 'danger' | 'neutral'
+  icon?: ReactNode
+}) {
+  return (
+    <div className="min-w-0 p-5">
+      <p className="text-[13px] font-semibold text-[var(--color-text-secondary)]">{label}</p>
+      <div className="mt-4 flex min-w-0 items-center gap-3">
+        {icon}
+        <h2 className="min-w-0 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">{title}</h2>
+      </div>
+      <div className="mt-4 space-y-2 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+        <p className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${tone === 'success' ? 'bg-[var(--color-signal-success)]' : tone === 'warning' ? 'bg-[var(--color-signal-warning)]' : tone === 'danger' ? 'bg-[var(--color-signal-danger)]' : 'bg-[var(--color-text-tertiary)]'}`} />
+          <span>{detail}</span>
+        </p>
+        <p>{meta}</p>
+      </div>
+    </div>
+  )
+}
+
+function LatestReceiptCard({ latestReceipt }: { latestReceipt: ScenarioReceipt | null }) {
+  return (
+    <section className="intera-q2-panel overflow-hidden">
+      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Latest Scenario Receipt</h2>
+      </div>
+      {latestReceipt ? (
+        <div className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <span className={`inline-flex rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold capitalize ${toneClass(receiptTone(latestReceipt.status))}`}>{latestReceipt.status}</span>
+              <h3 className="mt-4 text-[14px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</h3>
+              <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">Run {formatDate(latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
+            </div>
+          </div>
+          <dl className="mt-5 grid grid-cols-2 gap-0 overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] text-[12px]">
+            <ReceiptStat label="Total" value={String(latestReceipt.checks.length)} />
+            <ReceiptStat label="Passed" value={String(latestReceipt.checks.filter((check) => check.passed).length)} tone="success" />
+            <ReceiptStat label="Failed" value={String(latestReceipt.checks.filter((check) => !check.passed).length)} tone={latestReceipt.checks.some((check) => !check.passed) ? 'danger' : 'neutral'} />
+            <ReceiptStat label="Trace" value={latestReceipt.traceId ? 'Linked' : 'None'} />
+          </dl>
+          <div className="mt-5 space-y-3">
+            {latestReceipt.checks.slice(0, 5).map((check) => (
+              <div key={check.name} className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="flex min-w-0 items-center gap-2 font-medium text-[var(--color-text-primary)]">
+                  {check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--color-signal-danger)]" />}
+                  <span className="truncate">{check.name.replace(/_/g, ' ')}</span>
+                </span>
+                <span className="shrink-0 rounded bg-[var(--color-bg-surface-muted)] px-2 py-1 text-[11px] text-[var(--color-text-tertiary)]">{check.passed ? 'Passed' : 'Failed'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="p-5">
+          <p className="rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">No Scenario receipt has been recorded for this draft yet. Run Pilot Lab validation before publishing or provide an override reason.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ReceiptStat({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'success' | 'danger' | 'neutral' }) {
+  const toneClassName = tone === 'success' ? 'text-[var(--color-signal-success)]' : tone === 'danger' ? 'text-[var(--color-signal-danger)]' : 'text-[var(--color-text-primary)]'
+  return (
+    <div className="border-b border-r border-[var(--color-border-subtle)] px-4 py-3 even:border-r-0">
+      <dt className="text-[11px] text-[var(--color-text-tertiary)]">{label}</dt>
+      <dd className={`mt-1 text-[20px] font-semibold ${toneClassName}`}>{value}</dd>
+    </div>
+  )
+}
+
+function PackageActionsPanel({
+  busyAction,
+  canPublish,
+  importInputRef,
+  publishDisabledReason,
+  rollbackCandidate,
+  onDuplicate,
+  onExport,
+  onImport,
+  onImportClick,
+  onPublish,
+  onRollback,
+}: {
+  busyAction: string | null
+  canPublish: boolean
+  importInputRef: RefObject<HTMLInputElement | null>
+  publishDisabledReason: string | null
+  rollbackCandidate: AgentVersion | null
+  onDuplicate: () => void
+  onExport: () => void
+  onImport: (file: File | undefined) => void
+  onImportClick: () => void
+  onPublish: () => void
+  onRollback: () => void
+}) {
+  return (
+    <section className="intera-q2-panel p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Package Actions</h2>
+          <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">Import, export, duplicate, publish, and rollback from the existing package endpoints.</p>
+        </div>
+        <input ref={importInputRef} aria-label="Import .intera-agent.json file" type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => onImport(event.target.files?.[0])} />
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export package" busy={busyAction === 'export'} onClick={onExport} />
+        <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={onImportClick} />
+        <ActionButton icon={<Copy className="h-4 w-4" />} label="Duplicate Version" busy={busyAction === 'duplicate'} onClick={onDuplicate} />
+        <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish draft" busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
+        <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackCandidate} onClick={onRollback} />
+      </div>
+      {publishDisabledReason ? <p className="mt-3 text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
+    </section>
+  )
+}
+
+function ReleaseConfigPilotRail({
+  validationState,
+  latestReceipt,
+  onOpen,
+}: {
+  validationState: string
+  latestReceipt: ScenarioReceipt | null
+  onOpen: () => void
+}) {
+  const validated = validationState === 'Validated'
+  return (
+    <aside className="intera-q2-rail p-5 xl:sticky xl:top-6 xl:self-start">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-accent-primary)]">
+            <OrganicLoader variant={validated ? '20' : '12'} size={24} title="ConfigPilot release rail loader" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">ConfigPilot <span className="ml-1 rounded bg-[var(--color-bg-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-text-tertiary)]">BETA</span></p>
+          </div>
+        </div>
+        <button type="button" aria-label="Collapse ConfigPilot rail" className="text-[var(--color-text-tertiary)]">⌃</button>
+      </div>
+
+      <p className="mt-8 text-[13px] leading-6 text-[var(--color-text-secondary)]">
+        Based on your draft changes and latest receipt.
+      </p>
+
+      <RailInsight
+        tone="warning"
+        title={validated ? 'Recommendation' : 'High impact'}
+        body={validated ? 'Validation is fresh. Ask for a small draft improvement before the next publish.' : 'Validation needs attention. Run Pilot Lab or ask ConfigPilot for the smallest reviewable fix.'}
+        action={validated ? 'Review suggestion' : 'Open suggestion'}
+        onClick={onOpen}
+      />
+      <RailInsight
+        tone="info"
+        title="Recommendation"
+        body={latestReceipt ? `Latest receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
+        action="Ask ConfigPilot"
+        onClick={onOpen}
+      />
+      <RailInsight
+        tone="success"
+        title="Insight"
+        body="Package changes stay draft-only until Release publishes explicitly."
+        action="View context"
+        onClick={onOpen}
+      />
+    </aside>
+  )
+}
+
+function RailInsight({ tone, title, body, action, onClick }: { tone: 'warning' | 'info' | 'success'; title: string; body: string; action: string; onClick: () => void }) {
+  const toneStyles = tone === 'warning'
+    ? 'text-[var(--color-signal-warning)]'
+    : tone === 'success'
+      ? 'text-[var(--color-signal-success)]'
+      : 'text-[var(--color-accent-primary)]'
+  return (
+    <section className="mt-5 rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-4">
+      <p className={`flex items-center gap-2 text-[13px] font-semibold ${toneStyles}`}>
+        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-current text-[11px]">i</span>
+        {title}
+      </p>
+      <p className="mt-4 text-[13px] font-medium leading-6 text-[var(--color-text-primary)]">{body}</p>
+      <button type="button" onClick={onClick} className="intera-q2-button mt-5 inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-primary)]">
+        {action}
+        <span aria-hidden>›</span>
+      </button>
     </section>
   )
 }
@@ -667,7 +900,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function ActionButton({ icon, label, busy, disabled, onClick }: { icon: ReactNode; label: string; busy?: boolean; disabled?: boolean; onClick: () => void }) {
   return (
-    <button type="button" disabled={busy || disabled} onClick={onClick} className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/80 px-3 py-2 text-[12px] font-medium text-[var(--color-text-primary)] shadow-sm transition hover:border-[var(--color-accent-primary)]/40 disabled:cursor-not-allowed disabled:opacity-45">
+    <button type="button" disabled={busy || disabled} onClick={onClick} className="intera-q2-button inline-flex min-h-[42px] items-center justify-center gap-2 border border-[var(--color-border-subtle)] bg-white/80 px-3 py-2 text-[12px] font-medium text-[var(--color-text-primary)] shadow-sm transition hover:border-[var(--color-accent-primary)]/40 disabled:cursor-not-allowed disabled:opacity-45">
       {busy ? <Loader2 className="h-4 w-4 animate-spin text-[var(--color-accent-primary)]" /> : icon}
       {label}
     </button>
