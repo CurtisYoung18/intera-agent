@@ -30,7 +30,7 @@ import { buildModePrompt } from '../buildModePrompt'
 
 describe('buildModePrompt — deterministic injection (Phase 1)', () => {
   const baseInput = {
-    orgId: 'test-org',
+    agentConfigId: 'test-agent',
     coreSystemPrompt: null,
     systemPrompt: null,
     caseAddendum: null,
@@ -49,7 +49,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     const result = await buildModePrompt(baseInput)
     // All canonical blocks must be present
     expect(result.prompt).toContain('## Available Tools')
-    expect(result.prompt).toContain('## Available Case Types')
+    expect(result.prompt).toContain('## Available Procedures')
     expect(result.prompt).toContain('## Current User')
     // No raw {{...}} tokens remain
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
@@ -63,7 +63,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
       coreSystemPrompt: 'You are a helpful assistant. Be concise.',
     })
     expect(result.prompt).toContain('## Available Tools')
-    expect(result.prompt).toContain('## Available Case Types')
+    expect(result.prompt).toContain('## Available Procedures')
     expect(result.prompt).toContain('## Current User')
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
   })
@@ -76,7 +76,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     })
     // Count occurrences of the heading — each must appear exactly once
     const toolsCount = (result.prompt.match(/## Available Tools/g) || []).length
-    const caseTypesCount = (result.prompt.match(/## Available Case Types/g) || []).length
+    const caseTypesCount = (result.prompt.match(/## Available Procedures/g) || []).length
     expect(toolsCount).toBe(1)
     expect(caseTypesCount).toBe(1)
   })
@@ -100,14 +100,14 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
         missingFacts: [],
       },
     })
-    expect(result.prompt).toContain('## Case Schema')
-    expect(result.prompt).toContain('## Current Case State')
+    expect(result.prompt).toContain('## Procedure Type Schema')
+    expect(result.prompt).toContain('## Current Chat Context')
     expect(result.prompt).toContain('## Active Hooks')
     expect(result.prompt).toContain('## Available Tools')
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
   })
 
-  it('hides internal procedure runtime state from Current Case State', async () => {
+  it('hides internal procedure runtime state from Current Chat Context', async () => {
     const result = await buildModePrompt({
       ...baseInput,
       hasActiveCase: true,
@@ -131,7 +131,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
       },
     })
 
-    expect(result.prompt).toContain('## Current Case State')
+    expect(result.prompt).toContain('## Current Chat Context')
     expect(result.prompt).toContain('"userId":"123"')
     expect(result.prompt).not.toContain('__intera_procedure_runtime')
     expect(result.prompt).not.toContain('activeProcedureRun')
@@ -157,6 +157,6 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     // Empty blocks should not create headings
     expect(result.prompt).not.toContain('## Available Tools')
     expect(result.prompt).not.toContain('## Current User')
-    expect(result.prompt).not.toContain('## Available Case Types')
+    expect(result.prompt).not.toContain('## Available Procedures')
   })
 })

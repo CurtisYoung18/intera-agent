@@ -46,6 +46,18 @@ import { selectPromptAndTools } from './prompt-selector'
 import { buildToolResultMessageFromSynthesis, buildHookFeedbackMessage } from './tool-result-manager'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
+import {
+  appendRuntimeEvent,
+  filterRuntimeAuthorityKeys,
+  finalizeProcedureRun,
+  getActiveProcedureRun,
+  latestInputEpoch,
+  procedureRunPromptTail,
+  reconcileProcedureInput,
+  recordProcedureTextReply,
+  recordProcedureToolCall,
+  recordProcedureToolResult,
+} from './session-store'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -240,7 +252,7 @@ export class AgentLoop {
             this.messages.push({
               id: crypto.randomUUID(),
               role: 'user' as const,
-              content: hasImages ? pending.content : `[SYSTEM] The customer sent an additional message while you were working. Process it and respond to the customer with your findings: ${pending.content}`,
+              content: hasImages ? pending.content : `[SYSTEM] Runtime input event (${pending.source}, epoch ${pending.inputEpoch}) arrived while you were working. Do not classify the customer's intent. Reconcile the latest inputEpoch before advancing any active ProcedureRun. Content: ${pending.content}`,
               contentBlocks: pending.contentBlocks,
               createdAt: new Date(),
             })
@@ -311,6 +323,9 @@ export class AgentLoop {
         })
       }
 
+      const iterationBasedOnInputEpoch = latestInputEpoch(this.deps.caseId)
+      const toolBasedOnEpoch = new Map<string, number>()
+
       sendEvent({
         type: 'stream_request_start',
         data: null,
@@ -356,6 +371,7 @@ export class AgentLoop {
         caseLoop: this.caseLoop,
         chatMemory: this.chatMemory,
         allTools: this.toolRouter.getTools(),
+        procedureRunTail: procedureRunPromptTail(this.deps.caseId),
       })
 
       const blocks = new Map<number, StreamContentBlock>()
@@ -497,6 +513,35 @@ export class AgentLoop {
           recordFirstToken: () => this.profiler.recordFirstToken(),
           emitThinking: this.deps.emitThinking ?? false,
           onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
+            const activeRun = getActiveProcedureRun(this.deps.caseId)
+            if (
+              activeRun?.needsReconcile &&
+              !['reconcile_procedure_input', 'read_chat_memory', 'read_user_profile'].includes(toolUse.name)
+            ) {
+              await this.traceWriter.write('loop_decision', `ProcedureRun reconcile gate blocked Tool: ${toolUse.name}`, {
+                runId: activeRun.runId,
+                procedureId: activeRun.procedureId,
+                inputEpoch: activeRun.inputEpoch,
+                lastReconciledInputEpoch: activeRun.lastReconciledInputEpoch,
+                toolName: toolUse.name,
+              })
+              missingReasons.set(toolUse.id, 'hook_blocked')
+              pendingHookFeedback.push('[PROCEDURE RUNTIME] New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, call reconcile_procedure_input with the active runId and latest inputEpoch.')
+              if (!assistantPushed && am) {
+                this.messages.push(am)
+                assistantPushed = true
+              }
+              return
+            }
+
+            toolBasedOnEpoch.set(toolUse.id, iterationBasedOnInputEpoch)
+            recordProcedureToolCall(this.deps.caseId, {
+              toolName: toolUse.name,
+              toolUseId: toolUse.id,
+              basedOnInputEpoch: iterationBasedOnInputEpoch,
+              toolInput: toolUse.input,
+            })
+
             // PreToolUse Hook checkpoint
             const preHookEval = await this.hookEngine.evaluate('PreToolUse', {
               ...this.buildHookContext('PreToolUse', {
@@ -655,12 +700,31 @@ export class AgentLoop {
 
       // ── Wait for all tools to finish ─────────────────────────
       let toolResults = await toolExecutor.waitForAll()
+      await this.resolveRuntimeToolResults(toolResults, toolBasedOnEpoch, iterationBasedOnInputEpoch)
       for (const tr of toolResults) {
         this.profiler.addToolExecution(tr.latencyMs || 0)
       }
 
       let stopBlockedThisIteration = false
       if (fullText.trim().length > 0) {
+        const textReplyRuntime = recordProcedureTextReply(this.deps.caseId, {
+          text: fullText,
+          basedOnInputEpoch: iterationBasedOnInputEpoch,
+          alreadyStreamed: false,
+        })
+        if (textReplyRuntime.stale) {
+          discardVisibleText()
+          assistantMessage.content = ''
+          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-visible reply was withheld because newer input arrived before send. Call reconcile_procedure_input before any further tool use, finalization, or customer reply.'))
+          await this.traceWriter.write('loop_decision', 'Stale ProcedureRun text reply withheld', {
+            basedOnInputEpoch: iterationBasedOnInputEpoch,
+            latestInputEpoch: latestInputEpoch(this.deps.caseId),
+            runId: textReplyRuntime.run?.runId,
+          })
+          stopReason = null
+          continue
+        }
+
         const stopEval = await this.hookEngine.evaluate('Stop', {
           ...this.buildHookContext('Stop', {
             replyDraft: fullText,
@@ -851,7 +915,7 @@ export class AgentLoop {
           if (hasPendingToolResults && this.nudgeCount < 3) {
             this.nudgeCount++
             const procedureNudge = '[SYSTEM] You just received investigation results but produced no response. ' +
-                'You MUST now either: (1) call finalize_case with a conclusion, (2) call create_human_task if escalation is needed, ' +
+                'You MUST now either: (1) call finalize_procedure with a conclusion, (2) call create_human_task if escalation is needed, ' +
                 'or (3) respond to the customer with findings and next steps. ' +
                 'Do not produce empty turns — act on the data you just received.'
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
@@ -896,11 +960,23 @@ export class AgentLoop {
       // ── Apply tool results to Case Memory ────────────────────
       for (const result of toolResults) {
         const payload = unwrapToolExecutionPayload(result.output)
-        await this.chatMemory.applyToolResult(result.name, payload)
+        if (this.shouldPersistToolResultToChatMemory(result.name)) {
+          await this.chatMemory.applyToolResult(result.name, payload)
+        }
+        const basedOnInputEpoch = result.toolUse?.id ? toolBasedOnEpoch.get(result.toolUse.id) : undefined
+        if (this.shouldRecordProcedureEvidence(result.name)) {
+          recordProcedureToolResult(this.deps.caseId, {
+            toolName: result.name,
+            toolUseId: result.toolUse?.id,
+            basedOnInputEpoch: basedOnInputEpoch ?? iterationBasedOnInputEpoch,
+            toolOutput: payload,
+            toolError: (result.output as { error?: string })?.error,
+          })
+        }
         await this.traceWriter.write(
           'tool_result',
           `Tool: ${result.name}`,
-          { toolName: result.name, output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, input: result.toolUse?.input, renderHints: result.renderHints },
+          { toolName: result.name, output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, input: result.toolUse?.input, renderHints: result.renderHints, basedOnInputEpoch: basedOnInputEpoch ?? iterationBasedOnInputEpoch },
         )
       }
 
@@ -962,7 +1038,7 @@ export class AgentLoop {
       if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
 
 
-      // ── Tool interception: dispatch_case_agent, read_chat_memory, etc. ──
+      // ── Tool interception: start_procedure compatibility, read_chat_memory, etc. ──
       const interceptorResult = await interceptToolResults(
         this.buildToolInterceptorContext(),
         toolResults,
@@ -976,7 +1052,7 @@ export class AgentLoop {
       }
 
       // ── Phase 2: Delegate case terminal tools to CaseAgentLoop ─────────────
-      // Handles: create_human_task, finalize_case, finalize_consultation.
+      // Handles: create_human_task, finalize_procedure/finalize_case compatibility, finalize_consultation.
       if (this.caseLoop) {
         const nudgeBox = { value: this.nudgeCount }
         const caseToolResult = await this.caseLoop.handleCaseTerminalTools(
@@ -1063,6 +1139,262 @@ export class AgentLoop {
   // Helpers
   // -----------------------------------------------------------------------
 
+  private async resolveRuntimeToolResults(
+    toolResults: ToolExecutionResult[],
+    toolBasedOnEpoch: Map<string, number>,
+    iterationBasedOnInputEpoch: number,
+  ): Promise<void> {
+    for (const result of toolResults) {
+      const input = (result.toolUse?.input ?? {}) as Record<string, unknown>
+      const basedOnInputEpoch = result.toolUse?.id
+        ? toolBasedOnEpoch.get(result.toolUse.id) ?? iterationBasedOnInputEpoch
+        : iterationBasedOnInputEpoch
+
+      if (result.name === 'read_chat_memory') {
+        this.replaceToolOutput(result, this.readChatMemoryToolOutput())
+      }
+
+      if (result.name === 'read_user_profile') {
+        this.replaceToolOutput(result, await this.readUserProfileToolOutput())
+      }
+
+      if (result.name === 'remember') {
+        this.replaceToolOutput(result, await this.rememberToolOutput(input))
+      }
+
+      if (result.name === 'reconcile_procedure_input') {
+        const runId = String(input.runId || '')
+        const upToInputEpoch = Number(input.upToInputEpoch)
+        const decision = String(input.decision || '')
+        const summary = String(input.summary || '')
+        const reconcile = reconcileProcedureInput(this.deps.caseId, {
+          runId,
+          upToInputEpoch,
+          decision,
+          summary,
+        })
+        this.replaceToolOutput(result, reconcile.ok
+          ? {
+              ok: true,
+              cleared: reconcile.cleared,
+              runId,
+              upToInputEpoch,
+              latestInputEpoch: latestInputEpoch(this.deps.caseId),
+              note: 'Reconcile is a runtime action only; no chat or user memory was written.',
+            }
+          : { ok: false, error: reconcile.error },
+        )
+      }
+
+      if (result.name === 'finalize_procedure') {
+        const final = finalizeProcedureRun(this.deps.caseId, {
+          runId: typeof input.runId === 'string' ? input.runId : undefined,
+          status: input.status === 'cancelled' ? 'cancelled' : 'completed',
+          basedOnInputEpoch,
+          summary: typeof input.conclusion === 'string' ? input.conclusion : undefined,
+        })
+        this.replaceToolOutput(result, final.ok
+          ? {
+              ok: true,
+              status: final.run?.status ?? 'completed',
+              runId: final.run?.runId,
+              procedureId: final.run?.procedureId,
+              conclusion: input.conclusion,
+              basis: input.basis,
+            }
+          : {
+              ok: false,
+              error: final.error ?? 'Unable to finalize ProcedureRun.',
+              stale: final.stale,
+              latestInputEpoch: latestInputEpoch(this.deps.caseId),
+            },
+          !final.ok,
+        )
+      }
+    }
+  }
+
+  private replaceToolOutput(result: ToolExecutionResult, payload: unknown, isError = false): void {
+    const output = {
+      ok: !isError,
+      output: payload,
+      error: isError && this.isRecord(payload) && typeof payload.error === 'string' ? payload.error : undefined,
+      latencyMs: result.latencyMs,
+    }
+    result.output = output
+    if (result.toolUse) {
+      result.toolUse.result = output
+      result.toolUse.status = isError ? 'error' : 'completed'
+    }
+  }
+
+  private readChatMemoryToolOutput(): Record<string, unknown> {
+    const summary = this.chatMemory.getSummary()
+    return {
+      scope: 'chat',
+      authority: 'context_only_not_procedure_run_state',
+      confirmedFacts: summary.confirmedFacts,
+      toolsCalled: summary.toolsCalled,
+      keyEvents: summary.keyEvents.slice(-20),
+      compactSummary: summary.summary || '',
+      openItems: (summary.todos ?? []).filter((todo) => todo.status !== 'completed' && todo.status !== 'cancelled'),
+      stats: {
+        missingFacts: summary.missingFacts,
+        toolCount: summary.toolsCalled.length,
+        keyEventCount: summary.keyEvents.length,
+      },
+    }
+  }
+
+  private async readUserProfileToolOutput(): Promise<Record<string, unknown>> {
+    const key = profileKey(this.deps.userId, this.deps.chatId)
+    if (!key || this.dryRun) {
+      return {
+        scope: 'user',
+        authority: 'long_term_profile_not_procedure_run_state',
+        profile: '',
+        sections: {},
+        stats: {},
+      }
+    }
+    const row = await prisma.userProfile.findUnique({
+      where: { userId: key },
+      select: {
+        profile: true,
+        sections: true,
+        totalChats: true,
+        totalCases: true,
+        resolvedCases: true,
+        escalatedCases: true,
+        lastCaseType: true,
+        firstSeenAt: true,
+        lastSeenAt: true,
+      },
+    }).catch(() => null)
+    return {
+      scope: 'user',
+      authority: 'long_term_profile_not_procedure_run_state',
+      profile: row?.profile ?? '',
+      sections: this.safeJson(row?.sections, {}),
+      stats: row
+        ? {
+            totalChats: row.totalChats,
+            totalCases: row.totalCases,
+            resolvedCases: row.resolvedCases,
+            escalatedCases: row.escalatedCases,
+            lastCaseType: row.lastCaseType,
+            firstSeenAt: row.firstSeenAt,
+            lastSeenAt: row.lastSeenAt,
+          }
+        : {},
+    }
+  }
+
+  private async rememberToolOutput(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const scope = input.scope === 'user' ? 'user' : 'chat'
+    const rawFacts = this.isRecord(input.facts) ? input.facts : {}
+    const key = typeof input.key === 'string' ? input.key : undefined
+    const value = input.value
+    const candidateFacts = key ? { ...rawFacts, [key]: value } : rawFacts
+    const filteredFacts = filterRuntimeAuthorityKeys(candidateFacts)
+    const rejectedKeys = Object.keys(candidateFacts).filter((candidateKey) => !(candidateKey in filteredFacts))
+    const reason = String(input.reason || 'No reason supplied.')
+
+    if (scope === 'chat') {
+      if (Object.keys(filteredFacts).length > 0) {
+        this.chatMemory.setConfirmedFactsBulk(filteredFacts)
+      }
+      appendRuntimeEvent(this.deps.caseId, {
+        origin: 'system',
+        source: 'remember',
+        summary: `remember(scope="chat"): ${reason}`,
+        metadata: { writtenKeys: Object.keys(filteredFacts), rejectedKeys, memoryScope: 'chat' },
+      })
+      return {
+        ok: true,
+        scope: 'chat',
+        writtenKeys: Object.keys(filteredFacts),
+        rejectedKeys,
+        readsFrom: 'read_chat_memory',
+        authority: 'memory_context_only',
+      }
+    }
+
+    const profileKeyValue = profileKey(this.deps.userId, this.deps.chatId)
+    if (!profileKeyValue) {
+      return { ok: false, scope: 'user', error: 'No stable user/chat identity is available for UserProfile writes.', rejectedKeys }
+    }
+
+    const bullets = Object.entries(filteredFacts).map(([factKey, factValue]) => `- ${factKey}: ${JSON.stringify(factValue)}`)
+    if (bullets.length === 0 && typeof value === 'string' && !key) {
+      bullets.push(`- ${value}`)
+    }
+    const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
+    if (!this.dryRun) {
+      const existing = await prisma.userProfile.findUnique({
+        where: { userId: profileKeyValue },
+        select: { profile: true },
+      }).catch(() => null)
+      const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
+      const merged = mergeProfile(existing?.profile ?? '', incoming, maxTokens)
+      const stats = await recomputeProfileStats(prisma, profileKeyValue)
+      await prisma.userProfile.upsert({
+        where: { userId: profileKeyValue },
+        create: { userId: profileKeyValue, orgId: this.deps.orgId, profile: merged.profile, sections: merged.sections, ...stats },
+        update: { profile: merged.profile, sections: merged.sections, ...stats },
+      }).catch((err) => {
+        console.warn('[AgentLoop] remember(scope="user") failed:', err)
+      })
+    }
+    appendRuntimeEvent(this.deps.caseId, {
+      origin: 'system',
+      source: 'remember',
+      summary: `remember(scope="user"): ${reason}`,
+      metadata: { writtenKeys: Object.keys(filteredFacts), rejectedKeys, memoryScope: 'user' },
+    })
+    return {
+      ok: true,
+      scope: 'user',
+      writtenKeys: Object.keys(filteredFacts),
+      rejectedKeys,
+      readsFrom: 'read_user_profile',
+      authority: 'memory_context_only',
+    }
+  }
+
+  private shouldPersistToolResultToChatMemory(toolName: string): boolean {
+    return ![
+      'start_procedure',
+      'dispatch_case_agent',
+      'reconcile_procedure_input',
+      'finalize_procedure',
+      'finalize_case',
+      'remember',
+      'read_chat_memory',
+      'read_user_profile',
+    ].includes(toolName)
+  }
+
+  private shouldRecordProcedureEvidence(toolName: string): boolean {
+    return ![
+      'start_procedure',
+      'dispatch_case_agent',
+      'reconcile_procedure_input',
+      'remember',
+      'read_chat_memory',
+      'read_user_profile',
+    ].includes(toolName)
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+  }
+
+  private safeJson(value: unknown, fallback: unknown): unknown {
+    if (typeof value !== 'string') return value ?? fallback
+    try { return JSON.parse(value) } catch { return fallback }
+  }
+
   private buildHookContext(
     checkpoint: HookCheckpoint,
     options: {
@@ -1074,11 +1406,9 @@ export class AgentLoop {
       procedureStepIds?: string[]
     } = {},
   ): HookContext {
+    const activeProcedureRun = getActiveProcedureRun(this.deps.caseId)
     const procedureStepIds = options.procedureStepIds ??
-      (checkpoint === 'Stop'
-        ? this.caseLoop?.getStopProcedureStepIds()
-        : this.caseLoop?.getProcedureStepIdsForTool(options.toolName)) ??
-      []
+      (activeProcedureRun?.currentStepId ? [activeProcedureRun.currentStepId] : [])
 
     return {
       checkpoint,
@@ -1115,6 +1445,17 @@ export class AgentLoop {
       metadata: {
         currentStage: this.currentStage,
         iteration: this.iterationCount,
+        procedureRun: activeProcedureRun
+          ? {
+              runId: activeProcedureRun.runId,
+              procedureId: activeProcedureRun.procedureId,
+              status: activeProcedureRun.status,
+              currentStepId: activeProcedureRun.currentStepId,
+              inputEpoch: activeProcedureRun.inputEpoch,
+              lastReconciledInputEpoch: activeProcedureRun.lastReconciledInputEpoch,
+              needsReconcile: activeProcedureRun.needsReconcile,
+            }
+          : undefined,
       },
     }
   }
@@ -1244,9 +1585,6 @@ export class AgentLoop {
       true,
     )
     this.caseLoop.syncStage()
-    this.hookEngine = await HookEngine.create(this.deps.configId, {
-      caseType: { type: schema.type, displayName: schema.displayName },
-    })
   }
 
   private buildApiMessages() {

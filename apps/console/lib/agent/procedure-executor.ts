@@ -1,7 +1,7 @@
 // Procedure Executor — structured single-agent Procedure runtime.
 //
 // A Procedure is an ordered list of steps (closed action vocab) executed by the
-// single main agent (Case Owner). The prompt is rendered from typed steps and
+// single main customer-facing Agent. The prompt is rendered from typed steps and
 // completion is gated on the required steps + finalize.
 
 import type { Procedure, TodoItem } from '@intera/shared/types'
@@ -108,10 +108,12 @@ export class ProcedureExecutor {
             .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
             .join('\n')
 
-    const header = [
-      `[INTERA MODE: PROCEDURE EXECUTION | type: ${this.caseType} | stage: ${stage}]`,
+    const tail = [
+      `## Procedure Execution Context`,
+      `- procedureType: ${this.caseType}`,
+      `- stage: ${stage}`,
       '',
-      'You are the Case Owner. Follow the ordered Procedure below using tools — one agent,',
+      'Follow the ordered Procedure below using tools — one agent,',
       'no hand-offs. Text-only assertions are not sufficient.',
       '',
       '## Procedure (follow in order; adapt only as the rules allow)',
@@ -132,12 +134,28 @@ export class ProcedureExecutor {
       '         call create_human_task to escalate rather than guessing.',
     ].join('\n')
 
-    return header + '\n\n' + basePrompt
+    return basePrompt + '\n\n' + tail
   }
 
   /** Tool targets the procedure hard-requires before completion. */
   requiredTools(): string[] {
     return requiredToolTargets(this.procedure)
+  }
+
+  /** Stable-ish Procedure definition block; runtime state is appended separately by AgentLoop. */
+  buildDefinitionPrompt(): string {
+    return [
+      `Procedure type: ${this.caseType}`,
+      '',
+      '## Ordered Procedure Steps',
+      renderProcedureSteps(this.procedure),
+      '',
+      '## Procedure Rules',
+      'Rule 1 — Work the steps in order unless the runtime tail says reconciliation is required.',
+      'Rule 2 — A step marked "only when …" is conditional: skip it when false without announcing the skip.',
+      'Rule 3 — Do not finalize until required evidence is current for the latest inputEpoch.',
+      'Rule 4 — If blocked or the customer needs something only a human can do, call create_human_task.',
+    ].join('\n')
   }
 
   /** Step ids that are relevant for a Tool checkpoint in the current turn. */

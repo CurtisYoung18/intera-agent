@@ -25,6 +25,7 @@ export interface PromptSelectorContext {
   caseLoop: CaseAgentLoop | null
   chatMemory: ChatMemoryManager
   allTools: Tool[]
+  procedureRunTail?: string
 }
 
 /**
@@ -37,19 +38,24 @@ export interface PromptSelectorContext {
  */
 export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelection {
   const { isCaseActive, isConsultation, caseSchema, systemPrompt, currentStage,
-    conversationLoop, caseLoop, chatMemory, allTools } = ctx
+    conversationLoop, caseLoop, chatMemory, allTools, procedureRunTail } = ctx
+
+  const appendDynamicTail = (prompt: string): string =>
+    procedureRunTail?.trim() ? `${prompt.trim()}\n\n${procedureRunTail.trim()}` : prompt
 
   if (!isCaseActive) {
     return {
-      prompt: conversationLoop.buildPrompt(),
-      tools: conversationLoop.filterTools(allTools),
+      prompt: appendDynamicTail(conversationLoop.buildPrompt()),
+      tools: allTools,
     }
   }
 
   if (isConsultation) {
     return {
-      prompt: [
-        `[INTERA MODE: WAITING_HUMAN | type: ${caseSchema?.type || 'unknown'} | stage: ${currentStage}]`,
+      prompt: appendDynamicTail([
+        `## Waiting Human Runtime Context`,
+        `- procedureType: ${caseSchema?.type || 'unknown'}`,
+        `- stage: ${currentStage}`,
         'This case is currently under review by a human specialist. A human task has been created.',
         '',
         'Your ONLY job: acknowledge the customer\'s message warmly, confirm their case is being reviewed,',
@@ -57,21 +63,27 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
         'Do NOT make promises about outcomes. Keep the response brief (1-2 sentences).',
         '',
         systemPrompt,
-      ].join('\n'),
-      tools: [],
+      ].join('\n')),
+      tools: allTools,
     }
   }
 
   if (caseLoop) {
-    const prompt = caseLoop.buildProcedurePrompt(systemPrompt, chatMemory.getTodos(), chatMemory.getConfirmedFacts())
+    const prompt = [
+      systemPrompt,
+      '',
+      '## Procedure Definition Context',
+      'Use this Procedure definition as guidance. Runtime ProcedureRun state, current step, reconcile status, and evidence authority appear only in the dynamic tail below.',
+      caseLoop.buildProcedureDefinitionPrompt(chatMemory.getTodos(), chatMemory.getConfirmedFacts()),
+    ].join('\n')
     return {
-      prompt,
-      tools: caseLoop.filterProcedureTools(allTools),
+      prompt: appendDynamicTail(prompt),
+      tools: allTools,
     }
   }
 
   return {
-    prompt: conversationLoop.buildPrompt(),
-    tools: conversationLoop.filterTools(allTools),
+    prompt: appendDynamicTail(conversationLoop.buildPrompt()),
+    tools: allTools,
   }
 }

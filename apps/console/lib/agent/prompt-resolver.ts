@@ -33,7 +33,7 @@ function renderCaseTypes(types: PromptContext['case_types']): string {
   const lines = types.map(
     (t) => `- **${t.type}** (${t.displayName}): ${t.description || 'No description'}`
   )
-  return `## Available Case Types\n\nWhen a customer reports an issue, call \`dispatch_case_agent\` with the matching type:\n\n${lines.join('\n')}`
+  return `## Available Procedures\n\nWhen a customer reports an issue that needs a guided runtime, call \`start_procedure\` with the matching procedureId:\n\n${lines.join('\n')}`
 }
 
 function renderHooks(hooks: PromptContext['active_hooks']): string {
@@ -47,7 +47,7 @@ function renderHooks(hooks: PromptContext['active_hooks']): string {
 function renderCaseSchema(schema: PromptContext['case_schema']): string {
   if (!schema) return ''
   const parts = [
-    `## Case Schema: ${schema.displayName}`,
+    `## Procedure Type Schema: ${schema.displayName}`,
     schema.goal ? `- Goal: ${schema.goal}` : '',
     `- Required facts: ${JSON.stringify(schema.requiredFacts)}`,
     `- Escalate when: ${JSON.stringify(schema.escalateOn)}`,
@@ -60,7 +60,7 @@ function renderCaseState(state: PromptContext['case_state']): string {
   const confirmedFacts = stripInternalMemoryKeys(state.confirmedFacts)
   if (Object.keys(confirmedFacts).length === 0 && state.toolsCalled.length === 0) return ''
   return [
-    '## Current Case State',
+    '## Current Chat Context',
     `- Confirmed: ${JSON.stringify(confirmedFacts)}`,
     `- Tools used: ${JSON.stringify(state.toolsCalled)}`,
     `- Missing: ${JSON.stringify(state.missingFacts)}`,
@@ -143,7 +143,7 @@ export function resolvePrompt(prompt: string, ctx: PromptContext): string {
 
 /** Build a PromptContext from DB data for a given customer. */
 export async function buildPromptContext(params: {
-  orgId: string
+  agentConfigId: string
   caseSchema?: PromptContext['case_schema']
   caseState?: PromptContext['case_state']
   sessionBinding?: PromptContext['session_binding']
@@ -153,11 +153,11 @@ export async function buildPromptContext(params: {
 
   const [caseTypes, hooks] = await Promise.all([
     prisma.caseType.findMany({
-      where: { agentConfigId: params.orgId, enabled: true },
+      where: { agentConfigId: params.agentConfigId, enabled: true },
       select: { type: true, displayName: true, description: true },
     }),
     prisma.hook.findMany({
-      where: { agentConfigId: params.orgId, enabled: true },
+      where: { agentConfigId: params.agentConfigId, enabled: true },
       select: { name: true, checkpoint: true, description: true },
     }),
   ])

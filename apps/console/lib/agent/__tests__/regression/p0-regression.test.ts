@@ -146,22 +146,23 @@ describe('A3 — Consultation model and retry', () => {
   })
 })
 
-describe('A4 — dispatch_case_agent', () => {
-  it('dispatch_case_agent is in BUILT_IN_TOOLS via ToolRouter', () => {
+describe('A4 — start_procedure', () => {
+  it('start_procedure is in BUILT_IN_TOOLS via ToolRouter', () => {
     const router = new ToolRouter()
 
     // ToolRouter constructor loads BUILT_IN_TOOLS
-    const dispatchDef = router.getTool('dispatch_case_agent')
-    expect(dispatchDef).toBeDefined()
-    expect(dispatchDef!.name).toBe('dispatch_case_agent')
-    expect(dispatchDef!.inputSchema).toBeDefined()
-    expect(dispatchDef!.inputSchema.properties).toHaveProperty('caseType')
-    expect(dispatchDef!.inputSchema.properties).toHaveProperty('procedureId')
+    const startDef = router.getTool('start_procedure')
+    expect(startDef).toBeDefined()
+    expect(startDef!.name).toBe('start_procedure')
+    expect(startDef!.inputSchema).toBeDefined()
+    expect(startDef!.inputSchema.properties).toHaveProperty('procedureId')
   })
 
-  it('dispatch_case_agent accepts start_procedure semantics with caseType compatibility', () => {
+  it('keeps dispatch_case_agent as disabled compatibility alias', () => {
     const router = new ToolRouter()
     const def = router.getTool('dispatch_case_agent')
+    expect(def).toBeDefined()
+    expect(def!.enabled).toBe(false)
     expect(def!.inputSchema.required).toEqual(['procedureId'])
     expect(def!.inputSchema.properties).toHaveProperty('procedureId')
     expect(def!.inputSchema.properties).toHaveProperty('caseType')

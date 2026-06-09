@@ -333,6 +333,10 @@ export class StreamingToolExecutor {
         status: 'resolved',
         resolvedAt: new Date().toISOString(),
       },
+      finalize_procedure: {
+        status: 'completed',
+        resolvedAt: new Date().toISOString(),
+      },
     }
 
     return defaultResponses[definition.name] || { success: true }

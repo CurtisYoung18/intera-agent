@@ -27,7 +27,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
     }))
 
     const discoveryResult = await buildModePrompt({
-      orgId: repo.orgId,
+      agentConfigId: agentId,
       coreSystemPrompt: config.coreSystemPrompt,
       hasActiveCase: false,
       caseSchema: null,

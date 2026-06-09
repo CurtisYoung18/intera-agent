@@ -10,7 +10,7 @@ import { resolvePrompt, buildPromptContext, type PromptContext } from './prompt-
 import type { CaseSchemaConfig } from '@intera/shared/types'
 
 export interface BuildModePromptInput {
-  orgId: string
+  agentConfigId: string
 
   /** Operator-authored core/discovery prompt (no tokens needed). */
   coreSystemPrompt: string | null
@@ -64,7 +64,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
   const baseRaw = input.coreSystemPrompt?.trim() || CORE_SYSTEM_PROMPT
 
   const baseCtx = await buildPromptContext({
-    orgId: input.orgId,
+    agentConfigId: input.agentConfigId,
     caseSchema: null,
     caseState: null,
     sessionBinding: input.sessionBinding ?? null,
@@ -83,7 +83,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
   // When a case is active, additionally inject case-specific blocks
   if (input.hasActiveCase) {
     const caseCtx = await buildPromptContext({
-      orgId: input.orgId,
+      agentConfigId: input.agentConfigId,
           caseSchema: input.caseSchema
         ? {
             displayName: input.caseSchema.displayName,

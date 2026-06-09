@@ -17,7 +17,7 @@ export const finalizeCaseTool: Tool<Input, Output> = {
   displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
 
   async prompt(_ctx: ToolContext) {
-    return 'Mark the case as resolved with a conclusion'
+    return 'Internal compatibility alias for finalize_procedure. Prefer finalize_procedure for new model-facing calls.'
   },
 
   isEnabled() { return true },

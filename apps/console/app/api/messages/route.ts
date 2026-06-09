@@ -4,11 +4,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
-import { enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/agent/session-store'
+import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type RuntimeEventSource } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { normalizeSSEEvent } from '@/lib/agent/stream-handler'
 import { prisma } from '@intera/shared/prisma'
-import { resolvePrompt, buildPromptContext } from '@/lib/agent/prompt-resolver'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
 import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
@@ -36,16 +35,6 @@ import { loadAgentConfig } from '@/lib/agent/config-loader'
 
 function parseJson(raw: string): unknown {
   try { return JSON.parse(raw) } catch { return null }
-}
-
-/** Human verdicts that mean the case is definitively closed. */
-const TERMINAL_VERDICTS = new Set(['resolved', 'false_alarm', 'confirmed_delayed', 'refund_approved'])
-
-function isTerminalVerdict(verdict: string | null | undefined): boolean {
-  if (!verdict) return false
-  // Normalize: "false alarm" → "false_alarm" etc.
-  const normalized = verdict.replace(/ /g, '_')
-  return TERMINAL_VERDICTS.has(verdict) || TERMINAL_VERDICTS.has(normalized)
 }
 
 /** Build harness CaseSchemaConfig from a CaseType DB row (shared load / hydrate paths). */
@@ -243,6 +232,7 @@ export async function POST(request: NextRequest) {
         let resolvedUserId = userId || 'anonymous'
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
+        let runtimeInputSource: RuntimeEventSource = 'customer_message'
 
         // If the client sent an explicit caseId that doesn't exist yet in DB,
         // it's a fresh conversation — skip hub routing so it doesn't hijack
@@ -269,6 +259,7 @@ export async function POST(request: NextRequest) {
             return
           }
           formAnswers = answers
+          runtimeInputSource = 'customer_form_result'
           // Format as tool_result so the model sees it exactly like any other
           // tool execution result — matching CC's AskUserQuestion pattern.
           userMessage = `Tool ask_user_questions result: ${JSON.stringify(answers)}`
@@ -293,6 +284,7 @@ export async function POST(request: NextRequest) {
           const payload: Record<string, unknown> = { optionId }
           if (input) payload.input = input
           userMessage = `Tool ask_user_questions result: ${JSON.stringify(payload)}`
+          runtimeInputSource = 'customer_form_result'
           console.log(`[Intera] Interaction resolved for case ${resolvedCaseId}: option=${optionId}`)
         }
 
@@ -316,20 +308,9 @@ export async function POST(request: NextRequest) {
             if (task.notes) parts.push(`Internal notes (do NOT share verbatim with customer): ${task.notes}`)
             parts.push(resumeTmpl)
             userMessage = parts.join('\n')
+            runtimeInputSource = 'human_task_result'
 
             console.log(`[Intera] Resuming case ${resolvedCaseId} after human resolution`)
-
-            // Auto-resolve the case when the human operator closes it.
-            // This prevents the agent from staying in investigating stage and
-            // ensures subsequent user messages start a fresh conversation.
-            // (caseStatus is injected from Case.status at line 718 — no
-            // separate CaseMemory column needed.)
-            if (isTerminalVerdict(task.verdict)) {
-              await prisma.case.update({
-                where: { id: resolvedCaseId },
-                data: { status: 'resolved' },
-              }).catch((err) => { console.error('[Intera] Failed to auto-resolve case:', err) })
-            }
           } else {
             sendEvent({
               type: 'error',
@@ -532,22 +513,13 @@ export async function POST(request: NextRequest) {
                   if (resolvedTask.notes) parts.push(`Internal notes: ${resolvedTask.notes}`)
                   parts.push(resumeTmpl)
                   userMessage = parts.join('\n') + '\n\nCustomer also said: ' + message
+                  runtimeInputSource = 'human_task_result'
 
                   // Mark task as notified so it doesn't replay on every message
                   await prisma.humanTask.update({
                     where: { id: resolvedTask.id },
                     data: { notifiedAt: new Date() },
                   }).catch((err) => { console.error('[Intera] Failed to mark humanTask notifiedAt:', err) })
-
-                  // When the human resolves the case, auto-transition to resolved stage
-                  // so the agent can relay the verdict and call finalize_case without
-                  // getting stuck in the investigating stage.
-                  if (isTerminalVerdict(resolvedTask.verdict)) {
-                    await prisma.case.update({
-                      where: { id: resolvedCaseId },
-                      data: { status: 'resolved' },
-                    }).catch((err) => { console.error('[Intera] Failed to auto-resolve case:', err) })
-                  }
                 }
               } catch (err) { console.error('[Intera] Auto-resume humanTask lookup failed:', err) }
             }
@@ -659,25 +631,11 @@ export async function POST(request: NextRequest) {
           }
         } catch { /* DB unavailable, prompt just won't list tools */ }
 
-        // Build shared prompt context
-        const promptCtx = await buildPromptContext({
-          orgId: resolvedOrgId,
-          caseSchema: caseSchema ? {
-            displayName: caseSchema.displayName,
-            goal: caseSchema.defaultGoal,
-            requiredFacts: caseSchema.requiredFacts,
-            escalateOn: caseSchema.escalateOn,
-          } : undefined,
-          caseState: resolvedCaseState,
-          sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
-          available_tools: toolSummaries,
-        })
-
         // ── Unified prompt assembly (base+append model) ──
         // Unified assembly via buildModePrompt — single source of truth
         const isCaseActive = !!caseSchema && !!resolvedCaseState
         const assembled = await buildModePrompt({
-          orgId: resolvedOrgId,
+          agentConfigId: resolvedAgentConfigId ?? '',
           coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
           hasActiveCase: isCaseActive,
           caseSchema,
@@ -694,7 +652,13 @@ export async function POST(request: NextRequest) {
         // ── Concurrency guard: if an AgentLoop is already running for this caseId,
         //     enqueue the message and return 202 — don't create a second loop.
         if (hasSession(resolvedCaseId)) {
-          enqueueMessageOrCreate(resolvedCaseId, { content: userMessage, contentBlocks, formAnswers })
+          enqueueMessageOrCreate(resolvedCaseId, {
+            content: userMessage,
+            contentBlocks,
+            formAnswers,
+            source: runtimeInputSource,
+            origin: runtimeInputSource === 'human_task_result' ? 'human' : 'customer',
+          })
           sendEvent({
             type: 'withheld',
             data: 'Message queued — agent is currently processing',
@@ -714,6 +678,13 @@ export async function POST(request: NextRequest) {
         activeSession.resolved = false
         activeSession.aborted = false
         activeSession.lastActiveAt = Date.now()
+        recordInitialInputEvent(resolvedCaseId, {
+          content: userMessage,
+          contentBlocks,
+          formAnswers,
+          source: runtimeInputSource,
+          origin: runtimeInputSource === 'human_task_result' ? 'human' : 'customer',
+        })
 
         const agentLoop = await AgentLoop.create({
           config: agentConfig,
@@ -869,7 +840,7 @@ export async function POST(request: NextRequest) {
           (mem.caseStatus && mem.caseStatus !== 'created')
         if (hasRealWork) {
           try {
-            // Read type from AgentLoop (may have been set by dispatch_case_agent tool mid-loop)
+            // Read type from AgentLoop (may have been set by start_procedure mid-loop)
             const caseTypeForUpsert = agentLoop.getCaseType()
             await prisma.case.upsert({
               where: { id: resolvedCaseId },

@@ -30,7 +30,7 @@ describe('Smoke — Stream Handler (E1-1)', () => {
   })
 
   it('tool_use stream triggers onToolUseCompleted', async () => {
-    const stream = mockToolUseStream('dispatch_case_agent', { caseType: 'withdrawal_issue' })
+    const stream = mockToolUseStream('start_procedure', { procedureId: 'withdrawal_issue' })
     const blocks = new Map<number, StreamContentBlock>()
     let toolCalled = false
     let toolName = ''
@@ -49,24 +49,23 @@ describe('Smoke — Stream Handler (E1-1)', () => {
 
     await consumeStream(stream as any, blocks, cbs)
     expect(toolCalled).toBe(true)
-    expect(toolName).toBe('dispatch_case_agent')
+    expect(toolName).toBe('start_procedure')
   })
 })
 
 describe('Smoke — ToolRouter (E1-2)', () => {
-  it('returns built-in tools including dispatch_case_agent', () => {
+  it('returns built-in tools including start_procedure', () => {
     const router = new ToolRouter('smoke-test')
     const tools = router.getToolDefinitions()
     expect(tools.length).toBeGreaterThan(0)
 
-    const dispatchCaseAgent = router.getTool('dispatch_case_agent')
-    expect(dispatchCaseAgent).toBeDefined()
+    const startProcedure = router.getTool('start_procedure')
+    expect(startProcedure).toBeDefined()
 
-    const finalizeCase = router.getTool('finalize_case')
-    expect(finalizeCase).toBeDefined()
+    const finalizeProcedure = router.getTool('finalize_procedure')
+    expect(finalizeProcedure).toBeDefined()
 
-    const dispatchCaseAgent2 = router.getTool('dispatch_case_agent')
-    expect(dispatchCaseAgent2).toBeDefined()
+    expect(tools.find((t) => t.name === 'dispatch_case_agent')).toBeUndefined()
   })
 
   it('getTool returns undefined for unknown tool', () => {

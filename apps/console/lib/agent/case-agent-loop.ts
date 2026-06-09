@@ -84,13 +84,25 @@ export class CaseAgentLoop {
   buildProcedurePrompt(basePrompt: string, todos: TodoItem[], facts: Record<string, unknown>): string {
     if (!this.procedureExecutor) {
       return [
-        `[INTERA MODE: CASE EXECUTION | type: ${this.caseSchema.type} | status: ${this._currentStage}]`,
+        `## Procedure Execution Context`,
+        `- procedureType: ${this.caseSchema.type}`,
+        `- status: ${this._currentStage}`,
         'This case type has no Procedure configured. Ask concise clarifying questions or escalate with create_human_task if needed.',
         '',
         basePrompt,
       ].join('\n')
     }
     return this.procedureExecutor.buildPrompt(basePrompt, this._currentStage, todos, facts)
+  }
+
+  buildProcedureDefinitionPrompt(_todos: TodoItem[], _facts: Record<string, unknown>): string {
+    if (!this.procedureExecutor) {
+      return [
+        `Procedure type: ${this.caseSchema.type}`,
+        'No configured Procedure steps. Ask concise clarifying questions or escalate with create_human_task if needed.',
+      ].join('\n')
+    }
+    return this.procedureExecutor.buildDefinitionPrompt()
   }
 
   filterProcedureTools(allTools: Tool[]): Tool[] {
@@ -121,7 +133,7 @@ export class CaseAgentLoop {
       return this.handleCreateHumanTask(humanTaskResult, iterationCount, sendEvent)
     }
 
-    const finalizeResult = toolResults.find((result) => result.name === 'finalize_case')
+    const finalizeResult = toolResults.find((result) => result.name === 'finalize_procedure' || result.name === 'finalize_case')
     if (finalizeResult) {
       return this.handleFinalizeCase(finalizeResult, sendEvent)
     }
@@ -282,6 +294,15 @@ export class CaseAgentLoop {
     sendEvent: (event: SSEEvent) => void,
   ): Promise<CaseToolResult> {
     const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
+    if (
+      finalizedPayload &&
+      typeof finalizedPayload === 'object' &&
+      !Array.isArray(finalizedPayload) &&
+      (finalizedPayload as { ok?: boolean }).ok === false
+    ) {
+      this.services.addMessage(this.services.makeUserMessage('[PROCEDURE RUNTIME] Finalization was blocked. Reconcile latest customer messages before retrying finalize_procedure.'))
+      return { type: 'continue' }
+    }
     const stopEval = await this.services.getHookEngine().evaluate(
       'Stop',
       {
@@ -295,7 +316,7 @@ export class CaseAgentLoop {
         },
         procedureStepIds: this.getStopProcedureStepIds(),
         tool: {
-          name: 'finalize_case',
+          name: finalizeResult.name,
           input: finalizeResult.toolUse?.input,
           output: finalizedPayload,
         },
@@ -313,7 +334,7 @@ export class CaseAgentLoop {
         replyDraft: typeof finalizedPayload === 'string' ? finalizedPayload : JSON.stringify(finalizedPayload),
         metadata: {
           currentStage: this._currentStage,
-          terminalTool: 'finalize_case',
+          terminalTool: finalizeResult.name,
         },
       },
       this.buildHitCounts(),

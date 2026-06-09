@@ -17,9 +17,7 @@ export const dispatchCaseAgentTool: Tool<Input, Output> = {
   displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
 
   async prompt(_ctx: ToolContext) {
-    return 'Create a tracked Case for a single clear customer issue. ' +
-      'Use when the customer reports one distinct problem. ' +
-      'For multiple issues, call dispatch_case_agent once per issue.'
+    return 'Internal compatibility alias for start_procedure. Prefer start_procedure for new model-facing calls.'
   },
 
   isEnabled() { return true },

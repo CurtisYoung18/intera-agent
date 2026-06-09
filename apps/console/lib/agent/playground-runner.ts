@@ -64,7 +64,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Unified prompt assembly (matches production messages/route.ts) ──
   const assembled = await buildModePrompt({
-    orgId,
+    agentConfigId: input.configId ?? orgId,
     coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
     hasActiveCase: true, // playground always simulates a case
     caseSchema: null,

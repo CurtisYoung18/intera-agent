@@ -21,6 +21,7 @@ const conversationLoopStub = {
 function makeCaseLoop(): CaseAgentLoop {
   return {
     buildProcedurePrompt: () => 'PROCEDURE_PROMPT',
+    buildProcedureDefinitionPrompt: () => 'PROCEDURE_DEFINITION',
     filterProcedureTools: (tools: unknown[]) => tools,
   } as unknown as CaseAgentLoop
 }
@@ -37,15 +38,19 @@ function ctx(withCaseLoop: boolean): PromptSelectorContext {
     caseLoop: withCaseLoop ? makeCaseLoop() : null,
     chatMemory: chatMemoryStub,
     allTools: [],
+    procedureRunTail: 'DYNAMIC_PROCEDURE_RUN_TAIL',
   }
 }
 
 describe('selectPromptAndTools — Procedure branch (Phase 2)', () => {
-  it('renders the Procedure prompt for an active case with a case loop', () => {
-    expect(selectPromptAndTools(ctx(true)).prompt).toBe('PROCEDURE_PROMPT')
+  it('keeps the stable system prompt first and appends Procedure runtime tail', () => {
+    const prompt = selectPromptAndTools(ctx(true)).prompt
+    expect(prompt.startsWith('BASE')).toBe(true)
+    expect(prompt).toContain('PROCEDURE_DEFINITION')
+    expect(prompt.endsWith('DYNAMIC_PROCEDURE_RUN_TAIL')).toBe(true)
   })
 
   it('falls back to discovery prompt when no case loop is available', () => {
-    expect(selectPromptAndTools(ctx(false)).prompt).toBe('DISCOVERY_PROMPT')
+    expect(selectPromptAndTools(ctx(false)).prompt).toBe('DISCOVERY_PROMPT\n\nDYNAMIC_PROCEDURE_RUN_TAIL')
   })
 })

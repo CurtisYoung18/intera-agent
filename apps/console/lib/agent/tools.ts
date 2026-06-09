@@ -19,39 +19,148 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
   {
     name: 'read_chat_memory',
     description:
-      'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, ' +
-      'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
+      'Read chat-scoped working memory for the current conversation. Returns confirmed facts, tools run, key events, compact summary, and open items. Memory is context only, not ProcedureRun authority.',
     inputSchema: {
       type: 'object',
       properties: {},
       required: [],
     },
     isConcurrencySafe: true,
-    mode: 'static_fixture',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Loading user memory', icon: 'scan' },
-    mockFixture: { summary: '', confirmedFacts: {}, stats: {} },
     zodSchema: z.object({}),
   },
   {
     name: 'read_user_profile',
     description:
-      'Read the user profile for the current customer. This contains the user\'s attributes, preferences, tags, ' +
-      'and cross-chat statistics accumulated over time. Use this when you need to understand the customer\'s ' +
-      'identity, preferences, and long-term behavior patterns.',
+      'Read cross-chat long-term profile for the current customer. Returns identity, contact details, preferences, history, and behavior patterns. It never returns active ProcedureRun runtime state.',
     inputSchema: {
       type: 'object',
       properties: {},
-      required: ['procedureId'],
+      required: [],
     },
     isConcurrencySafe: true,
-    mode: 'static_fixture',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Loading user profile', icon: 'scan' },
-    mockFixture: { profile: '', stats: {} },
     zodSchema: z.object({}),
+  },
+  {
+    name: 'remember',
+    description:
+      'Write a scoped memory item. Use scope="chat" for this conversation only, or scope="user" for long-term cross-chat profile. Do not store ProcedureRun runtime state, currentStepId, needsReconcile, stale evidence, or completion authority.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scope: { type: 'string', enum: ['chat', 'user'], description: 'Memory scope to write.' },
+        key: { type: 'string', description: 'Stable memory key or short label.' },
+        value: { description: 'Memory value, fact, or profile item to store.' },
+        facts: { type: 'object', description: 'Optional map of facts/items to store.' },
+        reason: { type: 'string', description: 'Why this memory should be saved.' },
+      },
+      required: ['scope', 'reason'],
+    },
+    isConcurrencySafe: false,
+    mode: 'system_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Saving memory', icon: 'scan' },
+    zodSchema: z.object({
+      scope: z.enum(['chat', 'user']),
+      key: z.string().optional(),
+      value: z.unknown().optional(),
+      facts: z.record(z.string(), z.unknown()).optional(),
+      reason: z.string(),
+    }),
+  },
+  {
+    name: 'start_procedure',
+    description:
+      'Start or select a runtime ProcedureRun for a clear customer issue. The stable Core Agent prompt remains active; ProcedureRun state is appended by runtime as a dynamic tail. If another ProcedureRun is active, pause it by default.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        procedureId: { type: 'string', description: 'Procedure id / Procedure type slug, e.g. deposit_issue, account_access.' },
+        reason: { type: 'string', description: 'Why this Procedure matches the customer message.' },
+        confidence: { type: 'number', description: 'Optional confidence from 0 to 1.' },
+        collectedFacts: { type: 'object', description: 'Business facts already collected from the customer message.' },
+        currentProcedureAction: {
+          type: 'string',
+          enum: ['pause', 'complete', 'abandon'],
+          description: 'What to do with the currently active ProcedureRun when starting a different one. Defaults to pause.',
+        },
+        requestId: { type: 'string', description: 'Optional idempotency key for retries.' },
+      },
+      required: ['procedureId'],
+    },
+    isConcurrencySafe: false,
+    mode: 'system_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Starting procedure', icon: 'dots' },
+    zodSchema: z.object({
+      procedureId: z.string(),
+      reason: z.string().optional(),
+      confidence: z.number().optional(),
+      collectedFacts: z.record(z.string(), z.unknown()).optional(),
+      currentProcedureAction: z.enum(['pause', 'complete', 'abandon']).optional(),
+      requestId: z.string().optional(),
+    }),
+  },
+  {
+    name: 'reconcile_procedure_input',
+    description:
+      'Clear ProcedureRun reconciliation after reviewing all input events up to upToInputEpoch. This is a runtime action only; it does not write chat or user memory.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'string', description: 'Active ProcedureRun id.' },
+        upToInputEpoch: { type: 'number', description: 'Latest inputEpoch the model reconciled.' },
+        decision: { type: 'string', description: 'Short decision after reconciliation.' },
+        summary: { type: 'string', description: 'What changed or stayed the same after reconciliation.' },
+      },
+      required: ['runId', 'upToInputEpoch', 'decision', 'summary'],
+    },
+    isConcurrencySafe: false,
+    mode: 'system_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Reconciling input', icon: 'dots' },
+    zodSchema: z.object({
+      runId: z.string(),
+      upToInputEpoch: z.number(),
+      decision: z.string(),
+      summary: z.string(),
+    }),
+  },
+  {
+    name: 'finalize_procedure',
+    description:
+      'Finalize the active ProcedureRun with a customer-safe conclusion. Runtime blocks this if newer input needs reconciliation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'string', description: 'Optional active ProcedureRun id.' },
+        status: { type: 'string', enum: ['completed', 'cancelled'], description: 'Final ProcedureRun status.' },
+        conclusion: { type: 'string', description: 'Conclusion summary.' },
+        basis: { type: 'array', items: { type: 'string' }, description: 'Evidence basis for the conclusion.' },
+      },
+      required: ['conclusion'],
+    },
+    isConcurrencySafe: false,
+    mode: 'system_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Finalizing procedure', icon: 'spin' },
+    zodSchema: z.object({
+      runId: z.string().optional(),
+      status: z.enum(['completed', 'cancelled']).optional(),
+      conclusion: z.string(),
+      basis: z.array(z.string()).optional(),
+    }),
   },
 ]
 
@@ -90,12 +199,11 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     displayVerb: { text: 'Loading user profile', icon: 'scan' },
     zodSchema: z.object({}),
   },
+  ...SYSTEM_TOOLS.filter((tool) => !['read_chat_memory', 'read_user_profile'].includes(tool.name)),
   {
     name: 'dispatch_case_agent',
     description:
-      'Start or select an inline Procedure for a single clear customer issue. ' +
-      'This is a compatibility wrapper for start_procedure/select_procedure: the main Agent continues the Procedure inline. ' +
-      'If another Procedure is active and the customer clearly switches topic, pause the current Procedure by default and start the new one.',
+      'Internal compatibility alias for start_procedure. Do not advertise to the model.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,7 +222,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     },
     isConcurrencySafe: false,
     mode: 'system_managed',
-    enabled: true,
+    enabled: false,
     toolCategory: 'system_info',
     displayVerb: { text: 'Starting procedure', icon: 'dots' },
     zodSchema: z.object({
@@ -130,7 +238,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'finalize_case',
-    description: 'Mark the case as resolved with a conclusion.',
+    description: 'Internal compatibility alias for finalize_procedure. Do not advertise to the model.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -142,7 +250,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     },
     isConcurrencySafe: false,
     mode: 'system_managed',
-    enabled: true,
+    enabled: false,
     toolCategory: 'system_info',
     displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
     zodSchema: z.object({ status: z.enum(['resolved', 'escalated']), conclusion: z.string(), basis: z.array(z.string()).optional() }),
@@ -252,6 +360,8 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
 
 /** Set of built-in tool names for fast lookup. */
 export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((tool) => tool.name))
+export const LOCKED_SYSTEM_TOOL_NAMES: Set<string> = new Set(SYSTEM_TOOLS.map((tool) => tool.name))
+export const COMPATIBILITY_ALIAS_TOOL_NAMES: Set<string> = new Set(['dispatch_case_agent', 'finalize_case'])
 
 /**
  * Returns true if the given tool name is a built-in (system) tool.
@@ -274,7 +384,7 @@ export class ToolRouter {
     }
     // Load built-in tools as fallback (overridden by DB when available)
     for (const tool of BUILT_IN_TOOLS) {
-      this.tools.set(tool.name, tool)
+      if (!this.tools.has(tool.name)) this.tools.set(tool.name, tool)
     }
   }
 
@@ -315,6 +425,9 @@ export class ToolRouter {
         }
       }
       for (const t of dbTools) {
+        if (LOCKED_SYSTEM_TOOL_NAMES.has(t.name) || COMPATIBILITY_ALIAS_TOOL_NAMES.has(t.name)) {
+          continue
+        }
         const dbMode = t.mode || 'static_fixture'
         // Preserve the built-in mode when DB has an invalid mode value.
         // The built-in definition is authoritative for mode.
@@ -342,9 +455,9 @@ export class ToolRouter {
       }
 
       // ── Dynamic tool descriptions: inject agent config's case types into tool descriptions ──
-      const hasDbOverride = (name: string) => dbTools.some((t) => t.name === name)
+      const hasDbOverride = (name: string) => !LOCKED_SYSTEM_TOOL_NAMES.has(name) && dbTools.some((t) => t.name === name)
 
-      if (!hasDbOverride('dispatch_case_agent')) {
+      if (!hasDbOverride('start_procedure')) {
         try {
           const caseTypes = await prisma.caseType.findMany({
             where: { agentConfigId, enabled: true },
@@ -356,14 +469,14 @@ export class ToolRouter {
               .map((ct) => `- **${ct.type}** (${ct.icon} ${ct.displayName}): ${ct.description || 'No description'}`)
               .join('\n')
 
-            if (!hasDbOverride('dispatch_case_agent')) {
-              const existingDispatchTool = router.tools.get('dispatch_case_agent')
-              if (existingDispatchTool) {
-                existingDispatchTool.description =
-                  'Start or select an inline Procedure for one clear customer issue. The main Agent continues through ProcedureExecutor and HookEngine; no background agent is spawned.\n\n' +
+            if (!hasDbOverride('start_procedure')) {
+              const existingStartTool = router.tools.get('start_procedure')
+              if (existingStartTool) {
+                existingStartTool.description =
+                  'Start or select a runtime ProcedureRun for one clear customer issue. The stable Core Agent remains active; runtime appends ProcedureRun context at the prompt tail and no background agent is spawned.\n\n' +
                   '## Procedure Catalog\n' +
                   caseTypeList +
-                  '\n\nUse procedureId for new calls. caseType remains accepted for compatibility. If another Procedure is active and the customer clearly switches topic, pause the current Procedure by default.'
+                  '\n\nUse procedureId. If another ProcedureRun is active, pause it by default unless the user or runtime context says otherwise.'
               }
             }
           }

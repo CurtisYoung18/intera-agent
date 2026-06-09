@@ -19,8 +19,8 @@ describe('E7 — Integration: Stream + Retry + Invariant', () => {
   afterEach(() => { vi.useRealTimers() })
 
   it('full stream flow: text → tool_use → text (multi-iteration simulation)', async () => {
-    // Iteration 1: text + dispatch_case_agent tool_use
-    const stream1 = mockToolUseStream('dispatch_case_agent', { caseType: 'withdrawal_issue' }, 'tool_001')
+    // Iteration 1: text + start_procedure tool_use
+    const stream1 = mockToolUseStream('start_procedure', { procedureId: 'withdrawal_issue' }, 'tool_001')
     const blocks1 = new Map<number, StreamContentBlock>()
 
     const events: Array<{ type: string; data: unknown }> = []
@@ -192,8 +192,11 @@ describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
 
     // Verify critical tools are present
     const requiredTools = [
-      'dispatch_case_agent',
-      'finalize_case',
+      'start_procedure',
+      'finalize_procedure',
+      'remember',
+      'read_chat_memory',
+      'read_user_profile',
       'create_human_task',
     ]
 
@@ -216,13 +219,14 @@ describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
     }
   })
 
-  it('dispatch_case_agent is in tool definitions', () => {
+  it('start_procedure is in model-visible tool definitions and old alias is hidden', () => {
     const router = new ToolRouter('integration-test')
     const tools = router.getToolDefinitions()
-    const dispatchTool = tools.find((t) => t.name === 'dispatch_case_agent')
+    const startTool = tools.find((t) => t.name === 'start_procedure')
 
-    expect(dispatchTool).toBeDefined()
-    expect(dispatchTool!.inputSchema.properties).toHaveProperty('caseType')
+    expect(startTool).toBeDefined()
+    expect(startTool!.inputSchema.properties).toHaveProperty('procedureId')
+    expect(tools.find((t) => t.name === 'dispatch_case_agent')).toBeUndefined()
   })
 })
 

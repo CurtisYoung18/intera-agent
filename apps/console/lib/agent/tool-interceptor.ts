@@ -12,7 +12,6 @@ import type { Message, SSEEvent, AgentConfigData, CaseSchemaConfig, CaseStatus }
 import type { HookEvaluationResult } from './hook-engine'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
-import { INTERNAL_MEMORY_PREFIX } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
@@ -20,6 +19,7 @@ import type { CaseAgentLoop } from './case-agent-loop'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
+import { startProcedureRun } from './session-store'
 
 // ---------------------------------------------------------------------------
 // Context — dependencies the interceptor needs from AgentLoop
@@ -43,28 +43,6 @@ export interface ToolInterceptorContext {
   getCurrentStage: () => string
   setPendingEscalation: (value: boolean) => void
   activateProcedureContext?: (schema: CaseSchemaConfig) => Promise<void>
-}
-
-const PROCEDURE_RUNTIME_FACT_KEY = `${INTERNAL_MEMORY_PREFIX}procedure_runtime`
-
-type ProcedureRunStatus = 'active' | 'paused' | 'completed' | 'abandoned'
-
-interface ProcedureRunState {
-  runId: string
-  procedureId: string
-  caseType: string
-  displayName: string
-  status: ProcedureRunStatus
-  reason: string
-  confidence?: number
-  collectedFacts?: Record<string, unknown>
-  startedAt: string
-  updatedAt: string
-}
-
-interface ProcedureRuntimeState {
-  activeProcedureRun?: ProcedureRunState
-  pendingProcedureRuns: ProcedureRunState[]
 }
 
 // ---------------------------------------------------------------------------
@@ -97,10 +75,10 @@ export async function interceptToolResults(
   toolResults: ToolExecutionResult[],
   sendEvent: (event: SSEEvent) => void,
 ): Promise<{ action: InterceptAction; toolResults: ToolExecutionResult[] }> {
-  // 1. Terminal tool: dispatch_case_agent
-  const dispatchCaseResult = toolResults.find((r) => r.name === 'dispatch_case_agent')
-  if (dispatchCaseResult) {
-    const action = await handleDispatchCaseAgent(ctx, dispatchCaseResult, sendEvent)
+  // 1. Runtime tool: start_procedure (dispatch_case_agent remains compatibility-only)
+  const startProcedureResult = toolResults.find((r) => r.name === 'start_procedure' || r.name === 'dispatch_case_agent')
+  if (startProcedureResult) {
+    const action = await handleStartProcedure(ctx, startProcedureResult, sendEvent)
     if (action.kind !== 'pass') return { action, toolResults }
   }
 
@@ -127,10 +105,10 @@ export async function interceptToolResults(
 }
 
 // ---------------------------------------------------------------------------
-// dispatch_case_agent
+// start_procedure
 // ---------------------------------------------------------------------------
 
-async function handleDispatchCaseAgent(
+async function handleStartProcedure(
   ctx: ToolInterceptorContext,
   result: ToolExecutionResult,
   sendEvent: (event: SSEEvent) => void,
@@ -168,52 +146,19 @@ async function handleDispatchCaseAgent(
       maxAutoTurns: ctRow.maxAutoTurns ?? undefined,
     }
 
-    const now = new Date().toISOString()
-    const previousState = readProcedureRuntimeState(ctx.chatMemory.getInternalState(PROCEDURE_RUNTIME_FACT_KEY))
-    const existingActive = previousState.activeProcedureRun
-    const currentProcedureAction =
-      requestedCurrentAction ??
-      (existingActive && existingActive.procedureId !== ctRow.type ? 'pause' : undefined)
-
-    const pendingProcedureRuns = [...previousState.pendingProcedureRuns]
-    if (existingActive && existingActive.procedureId !== ctRow.type) {
-      const updatedPrevious: ProcedureRunState = {
-        ...existingActive,
-        status: currentProcedureAction === 'complete'
-          ? 'completed'
-          : currentProcedureAction === 'abandon'
-            ? 'abandoned'
-            : 'paused',
-        updatedAt: now,
-      }
-      if (updatedPrevious.status === 'paused') {
-        pendingProcedureRuns.push(updatedPrevious)
-      }
-    }
-
-    const resumed = pendingProcedureRuns.find((run) => run.procedureId === ctRow.type)
-    const activeProcedureRun: ProcedureRunState = {
-      runId: resumed?.runId ?? `proc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      procedureId: ctRow.type,
-      caseType: ctRow.type,
-      displayName: ctRow.displayName,
-      status: 'active',
-      reason,
-      confidence,
-      collectedFacts,
-      startedAt: resumed?.startedAt ?? now,
-      updatedAt: now,
-    }
-
-    const nextState: ProcedureRuntimeState = {
-      activeProcedureRun,
-      pendingProcedureRuns: pendingProcedureRuns.filter((run) => run.runId !== activeProcedureRun.runId),
-    }
-
-    ctx.chatMemory.setInternalState(PROCEDURE_RUNTIME_FACT_KEY, nextState)
     if (collectedFacts) {
       ctx.chatMemory.setConfirmedFactsBulk(collectedFacts)
     }
+    const start = startProcedureRun(ctx.caseId, {
+      procedureId: ctRow.type,
+      displayName: ctRow.displayName,
+      procedure: schema.procedure,
+      reason,
+      confidence,
+      collectedFacts,
+      requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
+      currentProcedureAction: requestedCurrentAction,
+    })
     await ctx.activateProcedureContext?.(schema)
 
     const procedureSummary = summarizeProcedure(schema)
@@ -226,11 +171,15 @@ async function handleDispatchCaseAgent(
       caseType: ctRow.type,
       displayName: ctRow.displayName,
       procedureSummary,
-      activeProcedureRun,
-      pendingProcedureRuns: nextState.pendingProcedureRuns,
-      currentProcedureAction: currentProcedureAction ?? null,
+      runId: start.run.runId,
+      currentStepId: start.run.currentStepId,
+      inputEpoch: start.run.inputEpoch,
+      needsReconcile: start.run.needsReconcile,
+      idempotent: start.idempotent,
+      pausedRunId: start.pausedRun?.runId ?? null,
+      currentProcedureAction: requestedCurrentAction ?? null,
       instruction:
-        'Continue as the main customer-facing Agent inline. Follow this Procedure through ProcedureExecutor and HookEngine; do not spawn background workers.',
+        'Continue as the main customer-facing Agent inline. Runtime will append ProcedureRun state at the prompt tail and resolve Hook scopes; do not spawn background workers.',
     }
 
     result.output = inlineRoutingResult
@@ -246,8 +195,11 @@ async function handleDispatchCaseAgent(
         displayName: ctRow.displayName,
         icon: ctRow.icon,
         durableCaseCreated: false,
-        activeProcedureRun,
-        pendingProcedureRuns: nextState.pendingProcedureRuns,
+        runId: start.run.runId,
+        currentStepId: start.run.currentStepId,
+        inputEpoch: start.run.inputEpoch,
+        needsReconcile: start.run.needsReconcile,
+        idempotent: start.idempotent,
       },
       timestamp: new Date().toISOString(),
     })
@@ -256,8 +208,11 @@ async function handleDispatchCaseAgent(
       procedureId: ctRow.type,
       caseId: ctx.caseId,
       durableCaseCreated: false,
-      currentProcedureAction: currentProcedureAction ?? null,
-      pendingProcedureRunCount: nextState.pendingProcedureRuns.length,
+      runId: start.run.runId,
+      currentStepId: start.run.currentStepId,
+      currentProcedureAction: requestedCurrentAction ?? null,
+      pausedRunId: start.pausedRun?.runId ?? null,
+      idempotent: start.idempotent,
     })
 
     return { kind: 'continue' }
@@ -430,24 +385,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeCurrentProcedureAction(raw: unknown): 'pause' | 'complete' | 'abandon' | undefined {
   return raw === 'pause' || raw === 'complete' || raw === 'abandon' ? raw : undefined
-}
-
-function readProcedureRuntimeState(raw: unknown): ProcedureRuntimeState {
-  if (!isRecord(raw)) return { pendingProcedureRuns: [] }
-  const active = isProcedureRunState(raw.activeProcedureRun) ? raw.activeProcedureRun : undefined
-  const pending = Array.isArray(raw.pendingProcedureRuns)
-    ? raw.pendingProcedureRuns.filter(isProcedureRunState)
-    : []
-  return { activeProcedureRun: active, pendingProcedureRuns: pending }
-}
-
-function isProcedureRunState(raw: unknown): raw is ProcedureRunState {
-  return isRecord(raw) &&
-    typeof raw.runId === 'string' &&
-    typeof raw.procedureId === 'string' &&
-    typeof raw.caseType === 'string' &&
-    typeof raw.displayName === 'string' &&
-    (raw.status === 'active' || raw.status === 'paused' || raw.status === 'completed' || raw.status === 'abandoned')
 }
 
 function summarizeProcedure(schema: CaseSchemaConfig): { stepCount: number; steps: Array<{ id: string; action: string; target?: string; required?: boolean }> } {
