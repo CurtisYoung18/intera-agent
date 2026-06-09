@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ChevronDown, Plus, ArrowLeft, Settings2, Bot, Puzzle,
-  Wand2, Save, Loader2, Trash2, Code, Layout, CheckCircle, XCircle,
+  ArrowLeft, Settings2,
+  Wand2, Loader2, Trash2, Code, Layout, CheckCircle, XCircle, Plus,
 } from 'lucide-react'
 
 import StageConfigEditor from '@/components/admin/stage-config-editor'
@@ -14,6 +14,8 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import { PageLoader } from '@/components/ui/page-loader'
+import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import { PROCEDURE_ACTIONS, parseProcedure } from '@intera/shared/contracts/case-types'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -35,6 +37,8 @@ interface CaseTypeDetail {
   executionMode?: string
   sop?: string | null
   sopMaxAutoTurns?: number
+  procedure?: string | null
+  guardrails?: string | null
 }
 
 interface StageCfg {
@@ -52,6 +56,35 @@ interface StageCfg {
   transition?: unknown
 }
 
+interface ProcedureStepInput {
+  id: string
+  action: (typeof PROCEDURE_ACTIONS)[number]
+  target: string
+  guidance: string
+  when: string
+  required: boolean
+}
+
+interface HookBinding {
+  id: string
+  hookName?: string | null
+  scopeType: 'agent' | 'caseType' | 'procedureStep' | 'tool'
+  scopeKey: string
+  caseTypeId?: string | null
+  procedureStepId?: string | null
+  enabled: boolean
+}
+
+interface ProcedureHook {
+  id: string
+  name: string
+  displayName?: string | null
+  enabled: boolean
+  bindings: HookBinding[]
+}
+
+type HookBindingKind = 'agent' | 'caseType' | 'procedureStep'
+
 type FormMode = 'simple' | 'advanced'
 
 // ── Page ───────────────────────────────────────────────────────────────
@@ -68,10 +101,15 @@ export default function CaseTypeDetailPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const ctRef = useRef(ct)
   const loadedRef = useRef(false)
+  const agentConfigId = useSelectedAgentId()
   const [allTools, setAllTools] = useState<string[]>([])
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [confirmExecMode, setConfirmExecMode] = useState<string | null>(null)
+  const [hooks, setHooks] = useState<ProcedureHook[]>([])
+  const [hookStepDrafts, setHookStepDrafts] = useState<Record<string, string>>({})
+  const [newHookDrafts, setNewHookDrafts] = useState<Record<string, string>>({})
+  const [hookBusyStepId, setHookBusyStepId] = useState<string | null>(null)
   const { orgId } = useSession()
 
   // Form mode for JSON fields
@@ -86,15 +124,17 @@ export default function CaseTypeDetailPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await apiClient<{ caseType: CaseTypeDetail }>(`/api/admin/case-types/${encodeURIComponent(name)}`)
+      if (!agentConfigId) return
+      const result = await apiClient<{ caseType: CaseTypeDetail }>(`/api/admin/case-types/${encodeURIComponent(name)}?agentConfigId=${encodeURIComponent(agentConfigId)}`)
       setCt(result.data.caseType)
       loadedRef.current = true
+      setHookBusyStepId(null)
     } catch {
       router.replace('/admin/case-types')
     } finally {
       setLoading(false)
     }
-  }, [name, router])
+  }, [name, router, agentConfigId])
 
   useEffect(() => {
     load()
@@ -112,10 +152,11 @@ export default function CaseTypeDetailPage() {
       saveTimer.current = setTimeout(async () => {
         const current = ctRef.current
         if (!current) return
+        if (!agentConfigId) return
         try {
-          await apiClient(`/api/admin/case-types/${encodeURIComponent(current.type)}`, {
+          await apiClient(`/api/admin/case-types/${encodeURIComponent(current.type)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
             method: 'PUT',
-            body: current,
+            body: { ...current, agentConfigId },
           })
           notifyConfigChanged()
           setSyncStatus('synced')
@@ -126,7 +167,7 @@ export default function CaseTypeDetailPage() {
         }
       }, 800)
     }
-  }, [ct, notifyConfigChanged])
+  }, [ct, notifyConfigChanged, agentConfigId])
 
   // Fetch skills and models
   useEffect(() => {
@@ -137,6 +178,13 @@ export default function CaseTypeDetailPage() {
       .then((r) => setAvailableModels((r.data.models || []).map((m) => m.id)))
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!agentConfigId) return
+    apiClient<{ hooks: ProcedureHook[] }>(`/api/admin/hooks?agentConfigId=${encodeURIComponent(agentConfigId)}`)
+      .then((r) => setHooks(r.data.hooks || []))
+      .catch(() => setHooks([]))
+  }, [agentConfigId])
 
   // Parse helpers
   const parseStages = (): string[] => {
@@ -154,6 +202,177 @@ export default function CaseTypeDetailPage() {
 
   const parseStageConfigs = (): Record<string, StageCfg> => {
     try { return JSON.parse(ct?.stageConfigs || '{}') } catch { return {} }
+  }
+
+  const parseProcedureState = (): ProcedureStepInput[] => {
+    const procedure = ct?.procedure ? parseProcedure(ct.procedure) : null
+    if (!procedure?.steps?.length) return []
+    return procedure.steps.map((step: {
+      id: string
+      action: (typeof PROCEDURE_ACTIONS)[number]
+      target?: string
+      guidance?: string
+      when?: string
+      required?: boolean
+    }) => ({
+      id: step.id,
+      action: step.action,
+      target: step.target || '',
+      guidance: step.guidance || '',
+      when: step.when || '',
+      required: !!step.required,
+    }))
+  }
+
+  const setProcedureSteps = (steps: ProcedureStepInput[]) => {
+    if (!ct) return
+    setCt({ ...ct, procedure: JSON.stringify({ steps }) })
+  }
+
+  const parseLegacyGuardrails = (): string[] => {
+    if (!ct?.guardrails) return []
+    try {
+      const parsed = JSON.parse(ct.guardrails)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  const getBindingsForStep = (scopeType: HookBindingKind, stepId: string) => {
+    return hooks.flatMap((hook) =>
+      hook.bindings
+        .filter((binding) => {
+          if (!binding.enabled) return false
+          if (binding.scopeType !== scopeType) return false
+          if (scopeType === 'agent') return true
+          if (binding.caseTypeId !== ct?.id) return false
+          if (scopeType === 'caseType') return true
+          return binding.procedureStepId === stepId
+        })
+        .map((binding) => ({
+          ...binding,
+          hookName: binding.hookName || hook.name,
+        }))
+    )
+  }
+
+  const getCaseStepBindings = (stepId: string) => getBindingsForStep('procedureStep', stepId)
+
+  const isHookAlreadyBoundToStep = (stepId: string, hookName: string) =>
+    getBindingsForStep('procedureStep', stepId).some((binding) => binding.hookName === hookName)
+
+  const addProcedureStep = () => {
+    if (!ct) return
+    const steps = parseProcedureState()
+    const stepId = `step_${steps.length + 1}`
+    steps.push({
+      id: stepId,
+      action: PROCEDURE_ACTIONS[0],
+      target: '',
+      guidance: '',
+      when: '',
+      required: false,
+    })
+    setProcedureSteps(steps)
+  }
+
+  const updateProcedureStep = (index: number, patch: Partial<ProcedureStepInput>) => {
+    if (!ct) return
+    const steps = parseProcedureState()
+    if (!steps[index]) return
+    steps[index] = { ...steps[index], ...patch }
+    setProcedureSteps(steps)
+  }
+
+  const removeProcedureStep = (index: number) => {
+    if (!ct) return
+    const steps = parseProcedureState()
+    steps.splice(index, 1)
+    setProcedureSteps(steps)
+  }
+
+  const bindExistingHookToStep = async (stepId: string) => {
+    const selectedName = hookStepDrafts[stepId]?.trim()
+    if (!agentConfigId || !ct || !selectedName) return
+    setHookBusyStepId(stepId)
+    try {
+      await apiClient(`/api/admin/hooks/${encodeURIComponent(selectedName)}/bindings`, {
+        method: 'POST',
+        body: {
+          agentConfigId,
+          scopeType: 'procedureStep',
+          caseTypeId: ct.id,
+          procedureStepId: stepId,
+        },
+      })
+      setHookStepDrafts((prev) => ({ ...prev, [stepId]: '' }))
+      await bustConfigCache(orgId).catch(() => {})
+      const result = await apiClient<{ hooks: ProcedureHook[] }>(`/api/admin/hooks?agentConfigId=${encodeURIComponent(agentConfigId)}`)
+      setHooks(result.data.hooks || [])
+    } catch {
+      setSaveError('Failed to bind hook')
+    } finally {
+      setHookBusyStepId(null)
+    }
+  }
+
+  const createAndBindHookToStep = async (stepId: string) => {
+    const hookName = newHookDrafts[stepId]?.trim()
+    if (!agentConfigId || !ct || !hookName) return
+    setHookBusyStepId(stepId)
+    try {
+      const created = await apiClient<{ hook: { name: string } }>('/api/admin/hooks', {
+        method: 'POST',
+        body: {
+          agentConfigId,
+          name: hookName,
+          checkpoint: 'PreToolUse',
+          handlerKind: 'declarative',
+          handler: {
+            kind: 'declarative',
+            check: {},
+            effect: { action: 'allow' },
+          },
+          enabled: true,
+          severity: 'medium',
+        },
+      })
+      await apiClient(`/api/admin/hooks/${encodeURIComponent(created.data.hook.name)}/bindings`, {
+        method: 'POST',
+        body: {
+          agentConfigId,
+          scopeType: 'procedureStep',
+          caseTypeId: ct.id,
+          procedureStepId: stepId,
+        },
+      })
+      setNewHookDrafts((prev) => ({ ...prev, [stepId]: '' }))
+      await bustConfigCache(orgId).catch(() => {})
+      const result = await apiClient<{ hooks: ProcedureHook[] }>(`/api/admin/hooks?agentConfigId=${encodeURIComponent(agentConfigId)}`)
+      setHooks(result.data.hooks || [])
+    } catch {
+      setSaveError('Failed to create hook')
+    } finally {
+      setHookBusyStepId(null)
+    }
+  }
+
+  const removeStepBinding = async (stepId: string, hookName: string, bindingId: string) => {
+    if (!agentConfigId) return
+    setHookBusyStepId(stepId)
+    try {
+      await apiClient(`/api/admin/hooks/${encodeURIComponent(hookName)}/bindings/${encodeURIComponent(bindingId)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
+        method: 'DELETE',
+      })
+      await bustConfigCache(orgId).catch(() => {})
+      const result = await apiClient<{ hooks: ProcedureHook[] }>(`/api/admin/hooks?agentConfigId=${encodeURIComponent(agentConfigId)}`)
+      setHooks(result.data.hooks || [])
+    } catch {
+      setSaveError('Failed to remove hook binding')
+    } finally {
+      setHookBusyStepId(null)
+    }
   }
 
   const stageNames = parseStages()
@@ -218,8 +437,9 @@ export default function CaseTypeDetailPage() {
   const confirmDelete = async () => {
     if (!confirmDeleteName) return
     setConfirmDeleteName(null)
+    if (!agentConfigId) return
     try {
-      await apiClient(`/api/admin/case-types/${encodeURIComponent(confirmDeleteName)}`, { method: 'DELETE' })
+      await apiClient(`/api/admin/case-types/${encodeURIComponent(confirmDeleteName)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, { method: 'DELETE' })
     } catch {
       setSaveError('Save failed')
       return
@@ -237,12 +457,22 @@ export default function CaseTypeDetailPage() {
     )
   }
 
+  if (!agentConfigId) {
+    return (
+      <PageLoader loading={false} error="Select an agent configuration first." onRetry={() => window.location.reload()}>
+        <div />
+      </PageLoader>
+    )
+  }
+
   if (!ct) return null
 
   const stageList = parseStages()
   const requiredFactsList = parseField('requiredFacts')
   const escalateOnList = parseField('escalateOn')
   const autoCloseConditionsList = parseField('autoCloseConditions')
+  const procedureSteps = parseProcedureState()
+  const legacyHooks = parseLegacyGuardrails()
 
   const renderFieldEditor = (field: string, label: string, helpText: string) => {
     const mode = fieldsMode[field] || 'simple'
@@ -305,6 +535,7 @@ export default function CaseTypeDetailPage() {
 
   return (
     <div className="px-8 py-8 animate-fade-up max-w-3xl">
+      <VersionContextBar />
       {/* Back link */}
       <div className="flex items-center justify-between mb-6">
         <Link
@@ -427,9 +658,9 @@ export default function CaseTypeDetailPage() {
                   ? 'bg-lavender/[0.12] border-lavender/30 text-lavender'
                   : 'bg-transparent border-[var(--border-subtle)] text-[var(--fog)] hover:border-[var(--border-hover)]'
               }`}
-            >
-              <Settings2 className="w-3.5 h-3.5" />
-              Stage Mode
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+              Stage (Legacy)
             </button>
             <button
               type="button"
@@ -441,13 +672,13 @@ export default function CaseTypeDetailPage() {
               }`}
             >
               <Wand2 className="w-3.5 h-3.5" />
-              Adaptive
+              Procedure
             </button>
           </div>
           <p className="text-[10px] text-[var(--smoke)]">
             {isStageMode
-              ? 'Predefined stage pipeline with configurable guardrails. Best for structured workflows.'
-              : 'LLM-driven execution. The agent autonomously plans and adapts — define sub-agents in the global registry.'}
+              ? 'Legacy Stage mode (migration only). New configurations should use Procedure mode with step-level hook bindings.'
+              : 'Procedure mode executes defined steps and evaluates hook bindings at each step. Hook behavior is inherited from Agent/CaseType scopes.'}
           </p>
         </div>
 
@@ -457,6 +688,12 @@ export default function CaseTypeDetailPage() {
           {renderFieldEditor('escalateOn', 'Escalate On', 'Conditions that trigger human escalation (e.g. "payment_not_found", "fraud_suspected")')}
           {renderFieldEditor('autoCloseConditions', 'Auto-Close Conditions', 'Conditions that allow automatic case resolution')}
         </div>
+
+        {legacyHooks.length > 0 && (
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-3 text-[11px] text-[var(--smoke)]">
+            Legacy hook references (read-only migration data only): {legacyHooks.join(', ')}
+          </div>
+        )}
       </div>
 
       {/* Lifecycle — Stage mode only */}
@@ -538,17 +775,199 @@ export default function CaseTypeDetailPage() {
       {/* Adaptive mode: SOP document editor */}
       {!isStageMode && (
         <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
-          <h2 className="text-[14px] font-semibold text-[var(--mist)] mb-1">SOP Document</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-[14px] font-semibold text-[var(--mist)]">Procedure Steps</h2>
+              <p className="text-[11px] text-[var(--fog)] mt-0.5">Define step-by-step actions and bind Hooks per step.</p>
+            </div>
+            <button
+              type="button"
+              onClick={addProcedureStep}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-malachite/[0.08] border border-malachite/20 text-malachite hover:bg-malachite/[0.14] transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Step
+            </button>
+          </div>
+
           <p className="text-[11px] text-[var(--fog)] mb-3">
-            The SOP (Standard Operating Procedure) guides the agent in Adaptive mode. Write it as a step-by-step playbook — the agent follows this to investigate and resolve the case.
+            Procedure steps live in the CaseType procedure JSON and can be tied to step-level Hook bindings.
           </p>
-          <textarea
-            value={ct.sop || ''}
-            onChange={(e) => setCt({ ...ct, sop: e.target.value })}
-            placeholder={`Example SOP for deposit_issue:\n\n1. Greet the customer and acknowledge their deposit issue\n2. Ask for transaction ID, amount, and payment method\n3. Call query_order_status with the transaction ID\n4. If status is pending, call query_payment_channel_status\n5. If channel shows delayed batch, inform customer of ETA\n6. If payment not found at all, escalate to payment_ops`}
-            rows={10}
-            className="glass-input-console text-[12px] font-mono resize-y w-full"
-          />
+
+          {procedureSteps.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-[var(--border-subtle)] bg-black/[0.01] px-4 py-3 text-[12px] text-[var(--fog)]">
+              No steps yet. Add a step to configure Hook bindings per action.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {procedureSteps.map((step, index) => {
+                const caseScopeBindings = getBindingsForStep('caseType', step.id)
+                const agentScopeBindings = getBindingsForStep('agent', step.id)
+                const directBindings = getCaseStepBindings(step.id)
+
+                return (
+                  <div key={step.id} className="rounded-lg border border-[var(--border-subtle)] bg-white/70 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <input
+                        value={step.id}
+                        onChange={(event) => updateProcedureStep(index, { id: event.target.value })}
+                        className="glass-input-console text-[12px] font-semibold"
+                        placeholder="step id"
+                      />
+                      <select
+                        value={step.action}
+                        onChange={(event) => updateProcedureStep(index, { action: event.target.value as (typeof PROCEDURE_ACTIONS)[number] })}
+                        className="glass-input-console text-[12px]"
+                      >
+                        {PROCEDURE_ACTIONS.map((action) => <option key={action} value={action}>{action}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => removeProcedureStep(index)}
+                        className="px-2 py-1 rounded border border-vermillion/25 text-[11px] text-vermillion hover:bg-vermillion/[0.08]"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <label className="space-y-1 block">
+                      <span className="text-[10px] text-[var(--fog)]">Target</span>
+                      <input
+                        value={step.target}
+                        onChange={(event) => updateProcedureStep(index, { target: event.target.value })}
+                        className="glass-input-console text-[12px]"
+                      />
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-[10px] text-[var(--fog)]">When</span>
+                      <input
+                        value={step.when}
+                        onChange={(event) => updateProcedureStep(index, { when: event.target.value })}
+                        className="glass-input-console text-[12px]"
+                      />
+                    </label>
+                    <label className="space-y-1 block">
+                      <span className="text-[10px] text-[var(--fog)]">Guidance</span>
+                      <textarea
+                        value={step.guidance}
+                        onChange={(event) => updateProcedureStep(index, { guidance: event.target.value })}
+                        rows={2}
+                        className="glass-input-console text-[12px]"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-[11px] text-[var(--fog)]">
+                      <input
+                        type="checkbox"
+                        checked={step.required}
+                        onChange={(event) => updateProcedureStep(index, { required: event.target.checked })}
+                      />
+                      Required to proceed
+                    </label>
+
+                    <div className="rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] p-3 space-y-3">
+                      <div>
+                        <p className="text-[10px] font-medium text-[var(--fog)] mb-1">Inherited active hooks</p>
+                        <div className="flex flex-wrap gap-2 text-[11px]">
+                          {(agentScopeBindings.length > 0 || caseScopeBindings.length > 0) ? (
+                            <>
+                              {agentScopeBindings.map((binding) => (
+                                <span key={`agent-${binding.hookName}-${binding.id}`} className="px-2 py-1 rounded-full bg-[var(--abyss)]/10 text-[var(--fog)]">
+                                  {binding.hookName}
+                                </span>
+                              ))}
+                              {caseScopeBindings.map((binding) => (
+                                <span key={`case-${binding.hookName}-${binding.id}`} className="px-2 py-1 rounded-full bg-[var(--smoke)]/10 text-[var(--fog)]">
+                                  {binding.hookName}
+                                </span>
+                              ))}
+                            </>
+                          ) : (
+                            <span className="text-[var(--smoke)]">No inherited active hooks.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] font-medium text-[var(--fog)] mb-1">Hooks for this step</p>
+                        {directBindings.length === 0 ? (
+                          <p className="text-[11px] text-[var(--smoke)]">No direct step hooks bound.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {directBindings.map((binding) => (
+                              <div key={binding.id} className="rounded border border-[var(--border-subtle)] bg-white/60 px-2 py-1.5 flex items-center justify-between gap-2">
+                                <span className="text-[11px] text-[var(--mist)]">{binding.hookName}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeStepBinding(step.id, String(binding.hookName), binding.id)}
+                                  disabled={hookBusyStepId === step.id}
+                                  className="text-[11px] text-vermillion hover:underline disabled:opacity-50"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="space-y-1 block">
+                        <span className="text-[10px] text-[var(--fog)]">Bind existing Hook to this step</span>
+                        <div className="flex gap-2">
+                          <select
+                            value={hookStepDrafts[step.id] || ''}
+                            onChange={(event) => setHookStepDrafts((prev) => ({ ...prev, [step.id]: event.target.value }))}
+                            className="glass-input-console text-[12px] flex-1"
+                            data-testid={`procedure-step-${step.id}-existing-hook-select`}
+                          >
+                            <option value="">Select hook</option>
+                            {hooks.map((hook) => (
+                              <option
+                                key={hook.name}
+                                value={hook.name}
+                                disabled={!hook.enabled || isHookAlreadyBoundToStep(step.id, hook.name)}
+                              >
+                                {hook.displayName || hook.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => bindExistingHookToStep(step.id)}
+                            disabled={!hookStepDrafts[step.id] || hookBusyStepId === step.id}
+                            className="px-3 py-2 rounded border border-lavender/25 text-[11px] text-lavender hover:bg-lavender/[0.08] disabled:opacity-50"
+                            data-testid={`procedure-step-${step.id}-existing-hook-add`}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </label>
+
+                      <label className="space-y-1 block">
+                        <span className="text-[10px] text-[var(--fog)]">Create and bind new Hook to this step</span>
+                        <div className="flex gap-2">
+                          <input
+                            value={newHookDrafts[step.id] || ''}
+                            onChange={(event) => setNewHookDrafts((prev) => ({ ...prev, [step.id]: event.target.value }))}
+                            className="glass-input-console text-[12px] flex-1"
+                            placeholder="new_hook_name"
+                            data-testid={`procedure-step-${step.id}-new-hook-input`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => createAndBindHookToStep(step.id)}
+                            disabled={!newHookDrafts[step.id] || hookBusyStepId === step.id}
+                            className="px-3 py-2 rounded border border-malachite/25 text-[11px] text-malachite hover:bg-malachite/[0.08] disabled:opacity-50"
+                            data-testid={`procedure-step-${step.id}-new-hook-create`}
+                          >
+                            Create & Bind
+                          </button>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <label className="space-y-1 block mt-3">
             <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Max Auto Turns</span>
             <input
@@ -577,34 +996,6 @@ export default function CaseTypeDetailPage() {
         </div>
       )}
 
-      {/* ── Adaptive mode: Sub-agent suggestions ──────────────── */}
-      {!isStageMode && (
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 space-y-4">
-          <h2 className="text-[14px] font-semibold text-[var(--mist)] flex items-center gap-2">
-            <Bot className="w-4 h-4 text-gold" />
-            Sub-Agent Suggestions
-          </h2>
-          <p className="text-[12px] text-[var(--fog)]">
-            Suggested sub-agents appear in the main agent&apos;s prompt as preferred candidates.
-            The agent can pick any registered sub-agent to dispatch subtasks.
-          </p>
-
-          {/* For now, show a message linking to the registry */}
-          <div className="p-4 rounded-lg bg-[var(--abyss)]/30 border border-[var(--border-subtle)] text-center">
-            <p className="text-[12px] text-[var(--fog)] mb-3">
-              Each case type acts as a sub-agent. Configure stage SOPs and skill suggestions to define sub-agent behavior.
-            </p>
-            <Link
-              href="/admin/tools"
-              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:underline"
-            >
-              <Puzzle className="w-3.5 h-3.5" />
-              Manage Tools
-            </Link>
-          </div>
-        </div>
-      )}
-
       {/* ── Delete Confirmation Dialog ── */}
       <ConfirmDialog
         open={!!confirmDeleteName}
@@ -620,8 +1011,8 @@ export default function CaseTypeDetailPage() {
         title="Change Execution Mode"
         message={
           confirmExecMode === 'cc'
-            ? 'Switch to Adaptive mode? Stage-mode sub-agent configs will be archived to JSON metadata but no longer dispatched.'
-            : 'Switch to Stage mode? You\'ll need to assign sub-agents per stage. Existing sub-agent suggestions will be preserved.'
+            ? 'Switch to Procedure mode? Stage-mode migration data will be preserved as read-only scope/legacy metadata.'
+            : 'Switch to Legacy Stage mode? Existing step Hooks and execution config are preserved as read-only migration data.'
         }
         variant="warning"
         confirmLabel="Switch"

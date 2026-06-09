@@ -17,18 +17,18 @@ const h = vi.hoisted(() => {
     'agent_default_v1': { id: 'agent_default_v1', orgId: 'default' },
     'test-agent': { id: 'test-agent', orgId: 'test-org' },
   }
-  const policiesByAgent: Record<string, Record<string, unknown>[]> = {
+  const hooksByAgent: Record<string, Record<string, unknown>[]> = {
     'agent_default_v1': [
-      { id: 'p1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
-      { id: 'p2', agentConfigId: 'agent_default_v1', name: 'no_high_risk_account_change', enabled: true },
+      { id: 'h1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
+      { id: 'h2', agentConfigId: 'agent_default_v1', name: 'human_review_before_finalize', enabled: true },
     ],
     'test-agent': [
-      { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', enabled: true },
+      { id: 'h3', agentConfigId: 'test-agent', name: 'case_b_policy', enabled: true },
     ],
   }
   const mockGetSession = vi.fn()
 
-  return { typesByAgent, agentConfigs, policiesByAgent, mockGetSession }
+  return { typesByAgent, agentConfigs, hooksByAgent, mockGetSession }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
@@ -78,11 +78,11 @@ vi.mock('@/lib/db/repo-for-org', () => ({
             types.splice(idx, 1)
           }),
         },
-        policy: {
+        hook: {
           findMany: vi.fn(async (args?: any) => {
             const where = args?.where || {}
             const agentConfigId = where.agentConfigId as string | undefined
-            return agentConfigId ? (h.policiesByAgent[agentConfigId] ?? []) : []
+            return agentConfigId ? (h.hooksByAgent[agentConfigId] ?? []) : []
           }),
         },
         organization: {
@@ -133,12 +133,12 @@ beforeEach(() => {
   h.typesByAgent['test-agent'] = [
     { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
   ]
-  h.policiesByAgent['agent_default_v1'] = [
-    { id: 'p1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
-    { id: 'p2', agentConfigId: 'agent_default_v1', name: 'no_high_risk_account_change', enabled: true },
+  h.hooksByAgent['agent_default_v1'] = [
+    { id: 'h1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
+    { id: 'h2', agentConfigId: 'agent_default_v1', name: 'human_review_before_finalize', enabled: true },
   ]
-  h.policiesByAgent['test-agent'] = [
-    { id: 'p3', agentConfigId: 'test-agent', name: 'org_b_policy', enabled: true },
+  h.hooksByAgent['test-agent'] = [
+    { id: 'h3', agentConfigId: 'test-agent', name: 'case_b_policy', enabled: true },
   ]
 })
 
@@ -166,27 +166,51 @@ describe('G1 — Uniform envelope', () => {
     expect(res.status).toBe(201)
   })
 
-  it('POST rejects guardrails that are not in the agent policy set', async () => {
+  it('POST rejects unknown Hook references that are not in the agent Hook set', async () => {
     const res = await POST(makeRequest({
       agentConfigId: 'agent_default_v1',
-      type: 'bad_guardrail_ref',
+      type: 'bad_hook_ref',
       guardrails: ['ghost_rule'],
     }))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('validation')
     expect(body.error.message).toContain('ghost_rule')
+    expect(body.error.fields).toEqual({ guardrails: expect.stringContaining('ghost_rule') })
     expect(res.status).toBe(400)
   })
 
-  it('POST accepts platform built-in guardrails even without a Policy row', async () => {
+  it('POST accepts hook refs for case binding migration data', async () => {
     const res = await POST(makeRequest({
       agentConfigId: 'agent_default_v1',
-      type: 'reviewed_case',
+      type: 'legacy_hook_ref_case',
       guardrails: ['human_review_before_finalize'],
     }))
     const body = await res.json()
     expect(body.ok).toBe(true)
+    expect(body.data.caseType.guardrails).toBe('["human_review_before_finalize"]')
+  })
+})
+
+describe('G4 — Procedure payload', () => {
+  it('PUT accepts procedure payload and keeps legacy hook references migration data when provided', async () => {
+    const res = await PUT(
+      makeRequestForAgent('agent_default_v1', {
+        agentConfigId: 'agent_default_v1',
+        procedure: {
+        steps: [
+            { id: 'step_1', action: 'use', target: 'user', guidance: 'collect user details', when: 'always', required: true },
+            { id: 'step_2', action: 'ask', target: 'ops', guidance: 'send alert', when: 'error', required: false },
+          ],
+        },
+        guardrails: ['human_review_before_finalize'],
+      }),
+      routeCtx('refund_request'),
+    )
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.data.caseType.procedure).toContain('"step_1"')
+    expect(body.data.caseType.executionMode).toBe('cc')
     expect(body.data.caseType.guardrails).toBe('["human_review_before_finalize"]')
   })
 })
@@ -225,15 +249,16 @@ describe('G3 — Mutations', () => {
     expect(body.data.caseType.displayName).toBe('Updated Refund')
   })
 
-  it('PUT rejects dangling guardrail references', async () => {
+  it('PUT rejects dangling legacy guardrail references', async () => {
     const res = await PUT(makeRequestForAgent('agent_default_v1', {
       agentConfigId: 'agent_default_v1',
-      guardrails: ['investigate_before_resolve', 'missing_guardrail'],
+      guardrails: ['investigate_before_resolve', 'missing_hook'],
     }), routeCtx('refund_request'))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('validation')
-    expect(body.error.message).toContain('missing_guardrail')
+    expect(body.error.message).toContain('missing_hook')
+    expect(body.error.fields).toEqual({ guardrails: expect.stringContaining('missing_hook') })
   })
 })
 

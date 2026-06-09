@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Layers, Plus, Search, Wand2, ArrowRight, Settings2, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle } from 'lucide-react'
+import { Layers, Plus, Search, Wand2, ArrowRight, Settings2, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 
 import EmptyState from '@/components/ui/empty-state'
 import TiltCard from '@/components/ui/tilt-card'
@@ -31,6 +31,10 @@ interface CaseTypeItem {
   executionMode?: string
   sop?: string | null
   sopMaxAutoTurns?: number
+  guardrails?: string | null
+  procedure?: string | null
+  maxAutoTurns?: number
+  agentConfigId?: string
 }
 
 export default function CaseTypesPage() {
@@ -47,8 +51,14 @@ export default function CaseTypesPage() {
   const { orgId } = useSession()
 
   const load = useCallback(async () => {
+    if (!agentConfigId) {
+      setItems([])
+      setError('Select an agent configuration first')
+      setLoading(false)
+      return
+    }
     try {
-      const params = agentConfigId ? `?agentConfigId=${encodeURIComponent(agentConfigId)}` : ''
+      const params = `?agentConfigId=${encodeURIComponent(agentConfigId)}`
       const result = await apiClient<{ types: CaseTypeItem[] }>(`/api/admin/case-types${params}`)
       const raw = (result.data.types || []) as CaseTypeItem[]
       setItems(raw.map((ct) => ({ ...ct, enabled: ct.enabled !== false })))
@@ -58,7 +68,7 @@ export default function CaseTypesPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [agentConfigId])
   useEffect(() => {
     load()
   }, [load])
@@ -88,13 +98,27 @@ export default function CaseTypesPage() {
   }
 
   const openNew = async () => {
+    if (!agentConfigId) {
+      setSaveStatus('error')
+      setError('Select an agent configuration first')
+      return
+    }
     setSaveStatus('saving')
-    const draft = emptyItem()
+    const draft: CaseTypeItem = {
+      ...emptyItem(),
+      type: `new_case_type_${Date.now()}`,
+      displayName: 'New Case Type',
+      guardrails: undefined,
+      procedure: null,
+      maxAutoTurns: 10,
+      id: '',
+      agentConfigId,
+    }
     try {
-      await apiClient('/api/admin/case-types', { method: 'POST', body: draft })
+      const result = await apiClient<{ caseType: CaseTypeItem }>('/api/admin/case-types', { method: 'POST', body: { ...draft, agentConfigId } })
       await bustConfigCache(orgId)
       setSaveStatus('saved')
-      router.push(`/admin/case-types/${encodeURIComponent(draft.type)}`)
+      router.push(`/admin/case-types/${encodeURIComponent(result.data.caseType.type)}`)
     } catch {
       setSaveStatus('error')
     }
@@ -102,8 +126,9 @@ export default function CaseTypesPage() {
 
   const toggleEnabled = useCallback(
     async (ct: CaseTypeItem) => {
+      if (!agentConfigId) return
       const updated = { ...ct, enabled: !ct.enabled }
-      await apiClient(`/api/admin/case-types/${encodeURIComponent(ct.type)}`, { method: 'PUT', body: updated }).catch(() => {})
+      await apiClient(`/api/admin/case-types/${encodeURIComponent(ct.type)}?agentConfigId=${encodeURIComponent(agentConfigId || '')}`, { method: 'PUT', body: { ...updated, agentConfigId } }).catch(() => {})
       await bustConfigCache(orgId)
       load()
     },
@@ -119,7 +144,8 @@ export default function CaseTypesPage() {
     const name = confirmDeleteName
     if (!name) return
     setConfirmDeleteName(null)
-    await apiClient(`/api/admin/case-types/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {})
+    if (!agentConfigId) return
+    await apiClient(`/api/admin/case-types/${encodeURIComponent(name)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, { method: 'DELETE' }).catch(() => {})
     await bustConfigCache(orgId)
     load()
   }, [confirmDeleteName, load, orgId])

@@ -7,7 +7,6 @@ import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-ro
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
-  BUILT_IN_GUARDRAIL_NAMES,
   findOrphanGuardrails,
   parseGuardrails,
   procedureSchema,
@@ -20,7 +19,7 @@ const stringifyMaybe = (val: unknown): string => {
   return JSON.stringify(val ?? '')
 }
 
-const normalizeGuardrailInput = (val: string | string[] | undefined): string[] => {
+const normalizeHookRefInput = (val: string | string[] | undefined): string[] => {
   if (Array.isArray(val)) return val
   return parseGuardrails(val)
 }
@@ -30,19 +29,16 @@ async function validateGuardrailRefs(
   agentConfigId: string,
   input: string | string[] | undefined,
 ): Promise<string[]> {
-  const names = normalizeGuardrailInput(input)
-  const policies = await repo.raw.policy.findMany({
+  const names = normalizeHookRefInput(input)
+  const hooks = await repo.raw.hook.findMany({
     where: { agentConfigId },
     select: { name: true },
   })
-  const knownNames = [
-    ...policies.map((p: { name: string }) => p.name),
-    ...BUILT_IN_GUARDRAIL_NAMES,
-  ]
+  const knownNames = hooks.map((h: { name: string }) => h.name)
   const orphanNames = findOrphanGuardrails(names, knownNames)
   if (orphanNames.length > 0) {
-    throw new ValidationError(`Unknown guardrail(s): ${orphanNames.join(', ')}`, {
-      guardrails: `Unknown guardrail(s): ${orphanNames.join(', ')}`,
+    throw new ValidationError(`Unknown hook(s): ${orphanNames.join(', ')}`, {
+      guardrails: `Unknown hook(s): ${orphanNames.join(', ')}`,
     })
   }
   return names
