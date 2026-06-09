@@ -127,6 +127,7 @@ export function createAgentClient(model?: string): Anthropic {
   if (config.provider === 'openrouter') {
     return new Anthropic({
       apiKey: config.apiKey,
+      authToken: null,
       baseURL: config.baseURL,
       fetch: createOpenRouterFetch(config.apiKey),
     })
@@ -134,6 +135,7 @@ export function createAgentClient(model?: string): Anthropic {
 
   return new Anthropic({
     apiKey: config.apiKey,
+    authToken: null,
     baseURL: config.baseURL,
   })
 }

@@ -1,12 +1,20 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Bot, CheckCircle2, FileDiff, Loader2, LockKeyhole, Plus, Save, Sparkles, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Ban, Bot, ClipboardList, FileDiff, Loader2, LockKeyhole, Save, Sparkles, X } from 'lucide-react'
 import { OrganicLoader, OrganicLoaderStrip, TokenStreamPreview, type OrganicLoaderVariant } from '@/components/config-pilot/ai-motion'
+import ConfigDiffViewer from '@/components/config-diff/config-diff-viewer'
 import { apiClient, ApiClientError } from '@/lib/api/client'
-import type { SavedScenario, TemplateScenario } from '@intera/shared/contracts/scenarios'
+import type { SavedScenario } from '@intera/shared/contracts/scenarios'
+import type {
+  ConfigPilotApplyResponse,
+  ConfigPilotContextResponse,
+  ConfigPilotPatch,
+  ConfigPilotProposal,
+  ConfigPilotProposeResponse,
+} from '@/lib/config-pilot/contracts'
 
-type ProposalPhase = 'empty' | 'proposal' | 'diff' | 'saved'
+type ProposalPhase = 'empty' | 'generating' | 'proposal' | 'diff' | 'saved'
 
 interface ConfigPilotWorkbenchProps {
   agentConfigId: string | null
@@ -15,34 +23,67 @@ interface ConfigPilotWorkbenchProps {
   onClose?: () => void
 }
 
-interface ScenarioProposal {
-  id: string
-  title: string
-  summary: string
-  scenario: TemplateScenario
-}
-
 const DEFAULT_PROMPT = 'Create a repeatable deposit handoff Scenario with tool evidence, Hook escalation, human transfer, and forbidden compensation wording.'
 
 export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = false, onClose }: ConfigPilotWorkbenchProps) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [phase, setPhase] = useState<ProposalPhase>('empty')
-  const [proposal, setProposal] = useState<ScenarioProposal | null>(null)
+  const [context, setContext] = useState<ConfigPilotContextResponse | null>(null)
+  const [proposal, setProposal] = useState<ConfigPilotProposal | null>(null)
   const [confirmed, setConfirmed] = useState(false)
+  const [loadingContext, setLoadingContext] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [modelUsed, setModelUsed] = useState<string | null>(null)
+  const [promptVersion, setPromptVersion] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const diffRows = useMemo(() => proposal ? buildScenarioDiff(proposal.scenario) : [], [proposal])
-  const canApply = Boolean(agentConfigId && proposal && phase === 'diff' && confirmed && !saving)
+  const diffGroups = useMemo(() => proposal?.diffGroups ?? [], [proposal])
+  const canApply = Boolean(agentConfigId && context?.permissions.canApply && proposal && phase === 'diff' && confirmed && !saving)
 
-  const generateProposal = () => {
-    const next = buildScenarioProposal(prompt)
-    setProposal(next)
-    setPhase('proposal')
+  const loadContext = useCallback(async () => {
+    if (!agentConfigId) {
+      setContext(null)
+      return
+    }
+    setLoadingContext(true)
+    setError(null)
+    try {
+      const result = await apiClient<ConfigPilotContextResponse>(`/api/admin/config-pilot/context?agentConfigId=${encodeURIComponent(agentConfigId)}`)
+      setContext(result.data)
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to load ConfigPilot context')
+    } finally {
+      setLoadingContext(false)
+    }
+  }, [agentConfigId])
+
+  useEffect(() => { loadContext() }, [loadContext])
+
+  const generateProposal = async () => {
+    if (!agentConfigId || !prompt.trim()) return
+    setGenerating(true)
+    setPhase('generating')
+    setProposal(null)
     setConfirmed(false)
     setNotice(null)
     setError(null)
+    try {
+      const result = await apiClient<ConfigPilotProposeResponse>('/api/admin/config-pilot/propose', {
+        method: 'POST',
+        body: { agentConfigId, request: prompt },
+      })
+      setProposal(result.data.proposal)
+      setModelUsed(result.data.modelUsed)
+      setPromptVersion(result.data.promptVersion)
+      setPhase('proposal')
+    } catch (err) {
+      setPhase('empty')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to generate ConfigPilot proposal')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const reviewDiff = () => {
@@ -53,19 +94,31 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
     setError(null)
   }
 
+  const rejectProposal = () => {
+    setProposal(null)
+    setPhase('empty')
+    setConfirmed(false)
+    setModelUsed(null)
+    setPromptVersion(null)
+    setNotice('Proposal rejected. No draft changes were written.')
+    setError(null)
+  }
+
   const applyDraft = async () => {
     if (!agentConfigId || !proposal || phase !== 'diff' || !confirmed) return
     setSaving(true)
     setNotice(null)
     setError(null)
     try {
-      const result = await apiClient<{ scenario: SavedScenario }>('/api/admin/scenarios', {
+      const result = await apiClient<ConfigPilotApplyResponse>('/api/admin/config-pilot/apply', {
         method: 'POST',
-        body: { agentConfigId, ...proposal.scenario },
+        body: { agentConfigId, accepted: confirmed, proposal },
       })
       setPhase('saved')
-      setNotice(`Saved draft Test Scenario: ${result.data.scenario.displayName ?? result.data.scenario.name}`)
-      await onScenarioSaved?.(result.data.scenario)
+      setNotice(`Applied ${result.data.appliedPatches.length} draft ${result.data.appliedPatches.length === 1 ? 'change' : 'changes'}${result.data.createdDraft ? ` to new draft ${result.data.draftAgentConfigId}` : ''}. Validation is now ${result.data.validation.state}.`)
+      const scenario = result.data.artifacts.scenarios[0] as SavedScenario | undefined
+      if (scenario) await onScenarioSaved?.(scenario)
+      await loadContext()
     } catch (err) {
       setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to save proposal')
     } finally {
@@ -84,10 +137,10 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
               </span>
               <div>
                 <p className="text-xs font-medium text-[var(--color-text-tertiary)]">ConfigPilot</p>
-                <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Draft workspace</h2>
+                <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Typed draft workspace</h2>
               </div>
             </div>
-            <p className="mt-3 max-w-2xl text-sm text-[var(--color-text-secondary)]">Generate configuration drafts, inspect the diff, then save through typed APIs. Publishing is unavailable here.</p>
+            <p className="mt-3 max-w-2xl text-sm text-[var(--color-text-secondary)]">Generate server-side typed proposals, inspect the diff, then save accepted changes as draft configuration. Publishing is unavailable here.</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-700">
@@ -108,14 +161,16 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
             <label htmlFor={drawer ? 'config-pilot-drawer-prompt' : 'config-pilot-prompt'} className="text-sm font-semibold text-[var(--color-text-primary)]">Prompt</label>
             <textarea id={drawer ? 'config-pilot-drawer-prompt' : 'config-pilot-prompt'} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={drawer ? 5 : 4} className="w-full rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-sm leading-5 text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-accent-primary)]" />
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-[var(--color-text-tertiary)]">P0 saves Test Scenario drafts only. Tool, Hook, and Procedure proposals can be previewed in later typed API slices.</p>
-              <button type="button" onClick={generateProposal} disabled={!prompt.trim()} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
-                <Sparkles size={15} /> Generate proposal
+              <p className="text-xs text-[var(--color-text-tertiary)]">{context?.permissions.canApply ? 'ConfigPilot can propose and apply accepted draft changes for this Agent.' : 'Current role can inspect context, but applying draft changes requires admin or owner.'}</p>
+              <button type="button" onClick={generateProposal} disabled={!agentConfigId || !prompt.trim() || generating || loadingContext || !context?.permissions.canPropose} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+                {generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} {generating ? 'Generating' : 'Generate proposal'}
               </button>
             </div>
           </div>
           <ConfigPilotActivity phase={phase} drawer={drawer} />
         </div>
+
+        <ConfigPilotContextPanel context={context} loading={loadingContext} modelUsed={modelUsed} promptVersion={promptVersion} />
 
         {notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div>}
         {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
@@ -130,21 +185,29 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
                 <div>
                   <p className="text-sm font-semibold text-[var(--color-text-primary)]">{proposal.title}</p>
                   <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{proposal.summary}</p>
+                  {proposal.rationale ? <p className="mt-2 text-xs leading-5 text-[var(--color-text-tertiary)]">{proposal.rationale}</p> : null}
                 </div>
                 <div className="grid gap-2 rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-3 text-xs text-[var(--color-text-secondary)]">
-                  <span>Name: {proposal.scenario.name}</span>
-                  <span>Tags: {proposal.scenario.tags.join(', ') || 'none'}</span>
-                  <span>Expected final status: {proposal.scenario.expected.finalStatus ?? 'not set'}</span>
+                  <span>Target surface: {proposal.targetSurface}</span>
+                  <span>Patches: {proposal.patches.length}</span>
+                  <span>Model used: {modelUsed ?? 'not recorded'}</span>
+                  <span>Prompt version: {promptVersion ?? 'not recorded'}</span>
                 </div>
+                <ConfigPilotPatchList patches={proposal.patches} />
                 <div className="rounded-md border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.06)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
                   <TokenStreamPreview text="Generated draft tokens are ready for diff review." />
                 </div>
-                <button type="button" onClick={reviewDiff} className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-sm font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-surface-muted)]">
-                  <FileDiff size={15} /> Review diff
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={reviewDiff} className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-sm font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-surface-muted)]">
+                    <FileDiff size={15} /> Review diff
+                  </button>
+                  <button type="button" onClick={rejectProposal} className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50">
+                    <Ban size={15} /> Reject
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="p-4 text-sm text-[var(--color-text-tertiary)]">Generate a proposal to review draft configuration.</div>
+              <div className="p-4 text-sm text-[var(--color-text-tertiary)]">{phase === 'generating' ? 'ConfigPilot is asking the server-side model for a typed proposal.' : 'Generate a proposal to review draft configuration.'}</div>
             )}
           </div>
 
@@ -155,20 +218,26 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
             </div>
             <div className="grid gap-4 p-4">
               {phase === 'diff' || phase === 'saved' ? (
-                <ConfigDiffPreview rows={diffRows} />
+                <ConfigDiffViewer title="ConfigPilot proposal diff" subtitle="Review exact typed patch changes before accepting. This action cannot publish." groups={diffGroups} emptyLabel="No proposal diff rows were returned." />
               ) : (
                 <div className="rounded-md border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-8 text-center text-sm text-[var(--color-text-tertiary)]">Diff appears after proposal review.</div>
               )}
 
               <label className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${phase === 'diff' || phase === 'saved' ? 'border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] text-[var(--color-text-secondary)]' : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-tertiary)]'}`}>
                 <input type="checkbox" checked={confirmed} disabled={phase !== 'diff'} onChange={(event) => setConfirmed(event.target.checked)} className="mt-1" />
-                <span>I reviewed the diff and want to save this as a draft Test Scenario.</span>
+                <span>I reviewed the diff and explicitly accept these draft configuration changes.</span>
               </label>
 
               <button type="button" onClick={applyDraft} disabled={!canApply} className="intera-q2-button inline-flex h-10 items-center justify-center gap-2 bg-[var(--color-accent-primary)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50" data-testid="config-pilot-apply-draft">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save draft through API
               </button>
-              <p className="text-xs text-[var(--color-text-tertiary)]">The apply action only calls Scenario draft save. It does not activate, publish, or bypass validation receipts.</p>
+              <p className="text-xs text-[var(--color-text-tertiary)]">Apply writes draft config through typed backend APIs, marks validation stale, and never activates or publishes.</p>
+              {proposal?.receiptSuggestions.length ? (
+                <SuggestionList title="Receipt suggestions" suggestions={proposal.receiptSuggestions} />
+              ) : null}
+              {proposal?.runSuggestions.length ? (
+                <SuggestionList title="Run suggestions" suggestions={proposal.runSuggestions} />
+              ) : null}
             </div>
           </div>
         </div>
@@ -180,6 +249,8 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
 function ConfigPilotActivity({ phase, drawer }: { phase: ProposalPhase; drawer: boolean }) {
   const copy = phase === 'empty'
     ? { title: 'Ready to draft', detail: 'Use the approved organic loaders only when ConfigPilot is generating or thinking.', variant: '01' as OrganicLoaderVariant, text: 'Waiting for a prompt.' }
+    : phase === 'generating'
+      ? { title: 'Generating proposal', detail: 'The server-side model is returning one typed proposal tool call.', variant: '05' as OrganicLoaderVariant, text: 'ConfigPilot model is drafting typed patches.' }
     : phase === 'proposal'
       ? { title: 'Proposal generated', detail: 'Review the generated object before opening the diff.', variant: '06' as OrganicLoaderVariant, text: 'Draft tokens resolved into a Test Scenario.' }
       : phase === 'diff'
@@ -205,6 +276,79 @@ function ConfigPilotActivity({ phase, drawer }: { phase: ProposalPhase; drawer: 
   )
 }
 
+function ConfigPilotContextPanel({ context, loading, modelUsed, promptVersion }: { context: ConfigPilotContextResponse | null; loading: boolean; modelUsed: string | null; promptVersion: string | null }) {
+  if (loading) {
+    return <div className="rounded-md border border-[var(--color-border-subtle)] bg-white px-4 py-3 text-sm text-[var(--color-text-tertiary)]">Loading current Agent context</div>
+  }
+  if (!context) {
+    return <div className="rounded-md border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-sm text-[var(--color-text-tertiary)]">Select an Agent version to load ConfigPilot context.</div>
+  }
+  return (
+    <section className="grid gap-3 rounded-md border border-[var(--color-border-subtle)] bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)]">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <ClipboardList size={15} className="text-[var(--color-accent-primary)]" />
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">Current context</p>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+          Selected {context.selected.name} v{context.selected.version} · {context.selected.isActive ? 'active version' : 'draft version'} · validation {context.validation.state}
+        </p>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">
+          Model for proposals: {modelUsed ?? context.selected.model}. Active: {context.active ? `v${context.active.version}` : 'none'} · Draft: {context.draft ? `v${context.draft.version}` : 'none'}
+        </p>
+        {promptVersion ? (
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">Prompt version: {promptVersion}</p>
+        ) : null}
+      </div>
+      <div className="grid gap-2 text-xs text-[var(--color-text-secondary)]">
+        <span>Role: {context.permissions.role ?? 'unknown'}</span>
+        <span>Can apply draft changes: {context.permissions.canApply ? 'yes' : 'no'}</span>
+        <span>Locked capabilities: {context.lockedCapabilities.length}</span>
+      </div>
+    </section>
+  )
+}
+
+function ConfigPilotPatchList({ patches }: { patches: ConfigPilotPatch[] }) {
+  return (
+    <div className="grid gap-2">
+      {patches.map((patch, index) => (
+        <div key={`${patch.surface}-${patch.operation}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+          <span className="font-semibold text-[var(--color-text-primary)]">{patch.surface}</span>
+          <span> / {patch.operation}</span>
+          <span className="ml-2 text-[var(--color-text-tertiary)]">{patchLabel(patch)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function patchLabel(patch: ConfigPilotPatch): string {
+  if (patch.surface === 'brain') return 'Agent Brain'
+  if (patch.surface === 'hookBindings') return `${patch.value.hookName} -> ${patch.value.scopeType}`
+  if ('target' in patch && patch.target) {
+    if ('name' in patch.target) return String(patch.target.name)
+    if ('type' in patch.target) return String(patch.target.type)
+    if ('channel' in patch.target) return String(patch.target.channel)
+  }
+  if ('value' in patch && patch.value && typeof patch.value === 'object') {
+    const value = patch.value as Record<string, unknown>
+    return String(value.name ?? value.type ?? 'new draft object')
+  }
+  return 'draft object'
+}
+
+function SuggestionList({ title, suggestions }: { title: string; suggestions: string[] }) {
+  return (
+    <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2">
+      <p className="text-xs font-semibold text-[var(--color-text-primary)]">{title}</p>
+      <ul className="mt-2 grid gap-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+        {suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)}
+      </ul>
+    </div>
+  )
+}
+
 export function ConfigPilotDrawer({
   open,
   agentConfigId,
@@ -225,82 +369,4 @@ export function ConfigPilotDrawer({
       </aside>
     </>
   )
-}
-
-function ConfigDiffPreview({ rows }: { rows: Array<{ group: string; field: string; before: string; after: string; risk?: string }> }) {
-  if (rows.length === 0) return <div className="rounded-md border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-8 text-center text-sm text-[var(--color-text-tertiary)]">No diff rows.</div>
-  return (
-    <div className="overflow-hidden rounded-md border border-[var(--color-border-subtle)]">
-      <div className="grid grid-cols-[96px_minmax(0,1fr)_minmax(0,1fr)] bg-[var(--color-bg-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)]">
-        <span>Field</span>
-        <span>Before</span>
-        <span>After</span>
-      </div>
-      {rows.map((row) => (
-        <div key={`${row.group}-${row.field}`} className="grid grid-cols-[96px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[var(--color-border-subtle)] px-3 py-2 text-xs">
-          <span className="font-medium text-[var(--color-text-primary)]">{row.field}</span>
-          <span className="truncate text-[var(--color-text-tertiary)]">{row.before}</span>
-          <span className="min-w-0 text-[var(--color-text-secondary)]">
-            <span className="block truncate">{row.after}</span>
-            {row.risk && <span className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{row.risk}</span>}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function buildScenarioProposal(prompt: string): ScenarioProposal {
-  const nameSeed = slugify(prompt).slice(0, 42) || 'configpilot_test_case'
-  const scenarioName = nameSeed.endsWith('_scenario') ? nameSeed : `${nameSeed}_scenario`
-  const displayName = titleize(scenarioName)
-  return {
-    id: `proposal-${Date.now()}`,
-    title: displayName,
-    summary: 'A repeatable Scenario draft with tool, Hook, knowledge, handoff, final status, and phrase expectations.',
-    scenario: {
-      name: scenarioName,
-      displayName,
-      description: prompt.trim(),
-      locale: 'en-US',
-      tags: ['configpilot', 'pilot-lab'],
-      enabled: true,
-      turns: [
-        { role: 'user', content: 'My deposit has not arrived yet and the provider proof is unclear.' },
-        { role: 'assistant', content: 'I checked the available evidence and will transfer this case to a human specialist.' },
-      ],
-      expected: {
-        caseType: 'deposit_issue',
-        toolsCalled: ['get_latest_deposit'],
-        hooks: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
-        humanTransfer: true,
-        finalStatus: 'waiting_human',
-        forbiddenPhrases: ['guaranteed compensation'],
-        requiredPhrases: ['human specialist'],
-      },
-    },
-  }
-}
-
-function buildScenarioDiff(scenario: TemplateScenario): Array<{ group: string; field: string; before: string; after: string; risk?: string }> {
-  return [
-    { group: 'Test Scenarios', field: 'Name', before: 'No draft', after: scenario.name },
-    { group: 'Test Scenarios', field: 'Turns', before: 'No draft', after: `${scenario.turns.length} scripted turns` },
-    { group: 'Test Scenarios', field: 'Tools', before: 'No expected tools', after: scenario.expected.toolsCalled?.join(', ') ?? 'none' },
-    { group: 'Test Scenarios', field: 'Hooks', before: 'No expected Hooks', after: scenario.expected.hooks?.map((hook) => hook.hookName).join(', ') ?? 'none', risk: 'Escalation path' },
-    { group: 'Test Scenarios', field: 'Handoff', before: 'Not required', after: scenario.expected.humanTransfer ? 'Required' : 'Not required', risk: scenario.expected.humanTransfer ? 'Human transfer' : undefined },
-    { group: 'Test Scenarios', field: 'Phrase checks', before: 'No checks', after: [...(scenario.expected.forbiddenPhrases ?? []), ...(scenario.expected.requiredPhrases ?? [])].join(', ') || 'none' },
-  ]
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_{2,}/g, '_')
-}
-
-function titleize(value: string): string {
-  return value.split('_').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 }

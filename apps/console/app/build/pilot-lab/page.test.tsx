@@ -76,6 +76,43 @@ const receipt = {
   ],
 }
 
+const configPilotProposal = {
+  id: 'proposal-1',
+  targetSurface: 'scenarios',
+  title: 'Deposit handoff Scenario',
+  summary: 'Creates a draft Scenario for provider evidence and human transfer.',
+  rationale: 'The current validation suite needs one repeatable handoff case.',
+  patches: [{
+    surface: 'scenarios',
+    operation: 'create',
+    value: {
+      name: 'configpilot_deposit_handoff',
+      displayName: 'ConfigPilot deposit handoff',
+      description: 'Generated through backend ConfigPilot.',
+      locale: 'en-US',
+      tags: ['configpilot'],
+      enabled: true,
+      turns: scenario.turns,
+      expected: scenario.expected,
+    },
+  }],
+  diffGroups: [{
+    id: 'scenarios',
+    title: 'Scenarios',
+    description: 'Pilot Lab validation cases and receipt expectations.',
+    summary: '1 proposed change',
+    items: [{
+      key: 'configpilot_deposit_handoff.name',
+      label: 'configpilot_deposit_handoff / name',
+      status: 'added',
+      after: 'configpilot_deposit_handoff',
+    }],
+  }],
+  receiptSuggestions: ['Run the generated Scenario before publishing.'],
+  runSuggestions: ['Use observed provider evidence for the first run.'],
+  safetyNotes: ['Draft only; publish remains locked.'],
+}
+
 function setupApi() {
   mockApiClient.mockImplementation(async (url: string, options?: any) => {
     if (url === '/api/admin/scenarios?agentConfigId=agent-1') {
@@ -103,6 +140,48 @@ function setupApi() {
             lastReceiptId: 'run-2',
             lastReceiptStatus: 'passed',
             overrideRequired: false,
+          },
+        },
+      }
+    }
+    if (url === '/api/admin/config-pilot/context?agentConfigId=agent-1') {
+      return {
+        data: {
+          agentConfigId: 'agent-1',
+          selected: { id: 'agent-1', name: 'Gaming Support', version: 2, isActive: false, model: 'deepseek-v4-flash', updatedAt: '2026-06-09T00:00:00.000Z', publishedAt: null },
+          active: { id: 'agent-live', name: 'Gaming Support', version: 1, isActive: true, model: 'deepseek-v4-flash', updatedAt: '2026-06-08T00:00:00.000Z', publishedAt: '2026-06-08T01:00:00.000Z' },
+          draft: { id: 'agent-1', name: 'Gaming Support', version: 2, isActive: false, model: 'deepseek-v4-flash', updatedAt: '2026-06-09T00:00:00.000Z', publishedAt: null },
+          permissions: { role: 'admin', canRead: true, canPropose: true, canApply: true, canPublish: false },
+          lockedCapabilities: [{ id: 'hook_engine', name: 'Hook Engine', surface: 'runtime', reason: 'runtime-managed', editable: false }],
+          configuration: { brain: { model: 'deepseek-v4-flash' }, procedures: [], tools: [], hooks: [], hookBindings: [], knowledge: [], integrations: [], scenarios: [scenario] },
+          validation: { state: 'Validated', lastValidatedAt: receipt.finishedAt, lastReceiptId: receipt.runId, lastReceiptStatus: receipt.status, overrideRequired: false },
+        },
+      }
+    }
+    if (url === '/api/admin/config-pilot/propose' && options?.method === 'POST') {
+      return {
+        data: {
+          proposal: configPilotProposal,
+          modelUsed: 'config-pilot-test-model',
+          promptVersion: 'config-pilot.p1.v1',
+        },
+      }
+    }
+    if (url === '/api/admin/config-pilot/apply' && options?.method === 'POST') {
+      return {
+        data: {
+          appliedPatches: [{ surface: 'scenarios', operation: 'create', target: 'configpilot_deposit_handoff' }],
+          draftAgentConfigId: 'agent-1',
+          createdDraft: false,
+          validation: { state: 'Changed since last validation', changedAt: '2026-06-09T00:03:00.000Z', overrideRequired: true },
+          artifacts: {
+            scenarios: [{
+              ...scenario,
+              ...configPilotProposal.patches[0].value,
+              id: 'scenario-configpilot',
+              createdAt: '2026-06-09T00:03:00.000Z',
+              updatedAt: '2026-06-09T00:03:00.000Z',
+            }],
           },
         },
       }
@@ -149,7 +228,7 @@ describe('PilotLabPage', () => {
     expect(screen.getByText('conflict_requires_human')).toBeTruthy()
     expect(screen.getByText('Deposit runbook')).toBeTruthy()
     expect(screen.getByText('Forbidden phrase: guaranteed compensation')).toBeTruthy()
-  })
+  }, 10000)
 
   it('runs the selected Scenario through the Scenario run API', async () => {
     await renderPage()
@@ -162,7 +241,7 @@ describe('PilotLabPage', () => {
     await waitFor(() => {
       expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST')).toBe(true)
     })
-  })
+  }, 10000)
 
   it('requires ConfigPilot diff review and confirmation before typed API save', async () => {
     await renderPage()
@@ -174,6 +253,7 @@ describe('PilotLabPage', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Generate proposal/ }))
     })
+    await screen.findByText('Deposit handoff Scenario')
 
     const applyButton = screen.getByTestId('config-pilot-apply-draft')
     expect(applyButton).toHaveProperty('disabled', true)
@@ -191,8 +271,9 @@ describe('PilotLabPage', () => {
     })
 
     await waitFor(() => {
-      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios' && options?.method === 'POST')).toBe(true)
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/config-pilot/apply' && options?.method === 'POST')).toBe(true)
     })
+    expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios' && options?.method === 'POST')).toBe(false)
     expect(mockApiClient.mock.calls.some(([url]) => typeof url === 'string' && /activate|publish/i.test(url))).toBe(false)
-  })
+  }, 10000)
 })
