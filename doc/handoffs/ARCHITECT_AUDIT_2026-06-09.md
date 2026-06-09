@@ -16,11 +16,12 @@ The remaining risk is not raw development capacity. It is product/runtime truthf
 
 1. ConfigPilot must become a real backend-controlled assistant, not a hardcoded UI proposal generator.
 2. Model-facing system Tools must match the new product model: `start_procedure`, `finalize_procedure`, `remember`.
-3. ProcedureRun state must be runtime/session state, not durable business memory.
-4. Scenario validation must distinguish fixture receipts from real Agent runtime receipts.
-5. Package/version behavior must support delivery sharing without hidden gaps.
+3. Procedure execution must become a runtime overlay, not a prompt-mode transformation.
+4. ProcedureRun state must be runtime/session state, not durable business memory.
+5. Scenario validation must distinguish fixture receipts from real Agent runtime receipts.
+6. Package/version behavior must support delivery sharing without hidden gaps.
 
-Until those five are handled, the Console can demo well, but a delivery person may trust surfaces that are not yet true enough for customer deployment.
+Until those six are handled, the Console can demo well, but a delivery person may trust surfaces that are not yet true enough for customer deployment.
 
 ---
 
@@ -65,9 +66,32 @@ Target model-facing Tools:
 
 Compatibility aliases may exist internally, but new prompt/default copy should not teach the model old names.
 
-Dispatch: use `R3 - System Tools rename, remember, and ProcedureRun state boundary`.
+Dispatch: use `R3 - ProcedureRun runtime overlay, system Tools rename, and remember`.
 
-### 3. ProcedureRun State Boundary Is Not Fully Safe
+### 3. Procedure Must Become A Runtime Overlay
+
+The current inline Procedure cutover is good enough for MVP routing, but the next architecture step should not be "Core Agent transforms into Procedure Agent." The better model is:
+
+```text
+stable Core Agent prompt
++ stable Tool contract
++ stable/cacheable Procedure definition when active
++ dynamic ProcedureRun state appended at prompt tail
+```
+
+`start_procedure(procedureId)` should create/select a ProcedureRun. Later turns stay in the same Core Agent conversation. Runtime appends current ProcedureRun state and resolves Hook scopes around Tool calls.
+
+Required direction:
+
+- Do not prepend a dynamic Procedure header before the stable Core Agent prompt.
+- Do not replace the system prompt or activate a separate Procedure persona after `start_procedure`.
+- Define a first-class ProcedureRun timeline with currentStepId, per-step status, evidenceToolCallIds, facts, and blockers.
+- Resolve ProcedureStep Hooks deterministically from active ProcedureRun + current step + requested Tool.
+- Update the timeline after Tool results, Hook decisions, human tasks, `remember`, and `finalize_procedure`.
+
+Dispatch: use `R3 - ProcedureRun runtime overlay, system Tools rename, and remember`.
+
+### 4. ProcedureRun State Boundary Is Not Fully Safe
 
 R1 correctly moved ProcedureRun state out of public `confirmedFacts`, but current implementation stores internal ProcedureRun state through `ChatMemoryManager.setInternalState()`, which writes into `toolResults`.
 
@@ -79,9 +103,9 @@ Required direction:
 - Exclude `__intera_*` runtime keys from public memory, compact summaries, dashboards, and persisted confirmed facts.
 - Add tests proving the boundary.
 
-Dispatch: R3 owns this with the Tool rename.
+Dispatch: R3 owns this with the runtime overlay.
 
-### 4. Scenario Validation Can Create False Confidence
+### 5. Scenario Validation Can Create False Confidence
 
 The first Scenario runner is useful, but it is currently a deterministic harness unless observed evidence is injected. That means Release can show a validation state that may not reflect a real Agent execution path.
 
@@ -94,7 +118,7 @@ Required direction:
 
 Dispatch: use `S2 - Scenario runtime runner and validation truthfulness`.
 
-### 5. Package And Version Readiness Still Has Gaps
+### 6. Package And Version Readiness Still Has Gaps
 
 `.intera-agent.json` is directionally correct, but package export/import is not yet complete for delivery sharing:
 
@@ -150,7 +174,7 @@ Do not push or deploy until the active P1 worktree is either committed green or 
 ## Recommended Next Dispatch Order
 
 1. **P1 repair/complete**: finish ConfigPilot backend/UI/apply route and make gates green.
-2. **R3**: rename system Tools, add `remember`, clean ProcedureRun runtime-state boundary.
+2. **R3**: implement ProcedureRun runtime overlay, rename system Tools, add `remember`, clean ProcedureRun runtime-state boundary.
 3. **S2**: runtime-backed Scenario receipts.
 4. **PKG1**: package completeness and version cap.
 5. **Q3**: legacy route/component/doc truth cleanup.

@@ -107,7 +107,7 @@ End with:
 | 3 | R2 | Shipped locally. Do not redispatch unless explicitly repairing. |
 | 4 | Q1, Q2 | Shipped. Do not redispatch unless explicitly repairing. |
 | 5 | P1 | ConfigPilot typed tools. Must own backend prompt/model/context/propose/apply/UI wiring end to end. |
-| 6 | R3, S2, PKG1, Q3 | Can run after P1 ownership is clear. See the architect audit doc for exact split. |
+| 6 | R3, S2, PKG1, Q3 | Can run after P1 ownership is clear. R3 is ProcedureRun runtime overlay, not just a rename sweep. |
 
 Coordinator rule: prefer fewer concurrent runtime sessions. One runtime owner is worth more than five clever merge conflicts.
 
@@ -514,37 +514,54 @@ Acceptance:
 
 ---
 
-## R3 - System Tools rename, remember, and ProcedureRun state boundary
+## R3 - ProcedureRun runtime overlay, system Tools rename, and remember
 
 ```text
-Lane: R3 - System Tools rename, remember, and ProcedureRun state boundary
+Lane: R3 - ProcedureRun runtime overlay, system Tools rename, and remember
 
 Goal:
-Make the model-facing system Tools match the product model: `start_procedure`, `finalize_procedure`, and `remember(scope="chat" | "user")`. Keep any old names only as hidden compatibility adapters if tests/traces still require them. ProcedureRun active/paused state must be runtime/session state, not durable confirmedFacts or public memory.
+Upgrade Procedure execution from prompt-mode switching to a runtime overlay. The stable Core Agent prompt stays first. `start_procedure(procedureId)` creates/selects a ProcedureRun, then runtime appends structured ProcedureRun context at the prompt tail and deterministically resolves current step + Hook scopes around later Tool calls. Also make model-facing system Tools match the product model: `start_procedure`, `finalize_procedure`, and `remember(scope="chat" | "user")`.
 
 Owned files:
 - apps/console/lib/agent/tools.ts
 - apps/console/lib/agent/tool-interceptor.ts
 - apps/console/lib/agent/loop.ts
-- apps/console/lib/agent/case-agent-loop.ts only for terminal-tool compatibility
+- apps/console/lib/agent/case-agent-loop.ts only for compatibility extraction/removal
+- apps/console/lib/agent/procedure-executor.ts
+- apps/console/lib/agent/hook-engine.ts only if HookContext needs ProcedureRun timeline data
 - apps/console/lib/agent/memory.ts
 - apps/console/lib/agent/prompt-resolver.ts
 - apps/console/lib/agent/tools/builtin/**
 - packages/shared/defaults/index.ts
 - focused runtime/prompt tests under apps/console/lib/agent/__tests__/**
 
+Mental model:
+- Stable core prompt: long-lived and cache-friendly.
+- Stable procedure definition: loaded by procedureId and cacheable or appended only when active.
+- Dynamic ProcedureRun state: currentStep, completed/skipped/blocked steps, facts, blockers, and recent evidence. This belongs at the prompt tail and changes every turn.
+- Runtime owns the ProcedureRun timeline. The model proposes actions; runtime resolves step/hook constraints and updates the timeline.
+
 Tasks:
 1. Expose `start_procedure` as the primary model-facing Tool. Accept `procedureId`, reason, confidence, collected facts, and current Procedure action. Keep `dispatch_case_agent` only as a compatibility alias if necessary, and do not advertise it in new prompt/default copy.
-2. Expose `finalize_procedure` as the primary terminal Tool. Keep `finalize_case` only as a compatibility alias if necessary.
-3. Add `remember` with explicit `scope: "chat" | "user"`, key/value or facts payload, and a reason. Chat scope must feed `read_chat_memory`; user scope must feed `read_user_profile`.
-4. Update default prompts and prompt resolver copy from Case/CaseType language to Procedure catalog + ProcedureRun/current task language where model-facing.
-5. Ensure `ProcedureRun` active/paused/completed state is not persisted as public `confirmedFacts` or durable user profile memory. If a temporary internal state key exists, it must be excluded from prompt rendering, compaction, dashboards, persisted confirmedFacts, and public memory APIs.
-6. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
+2. `start_procedure` must not replace the system prompt, activate a separate Procedure agent persona, or prepend a dynamic Procedure header before the stable Core Agent prompt.
+3. Define a first-class runtime `ProcedureRunState` with runId, procedureId, status, currentStepId, per-step status, evidenceToolCallIds, facts, and blockers. Keep it session/runtime-scoped.
+4. Append structured ProcedureRun context at the prompt tail after stable core prompt + stable tool contract. Include current step, expected next tools/actions, blockers, and recent evidence.
+5. Resolve HookContext deterministically before each Tool call: active ProcedureRun + requested Tool + currentStepId -> global/agent + procedure/caseType + procedureStep + tool Hook scopes.
+6. Update ProcedureRun timeline after each Tool result, Hook decision, human task, `remember`, and `finalize_procedure`.
+7. Expose `finalize_procedure` as the primary terminal Tool. Keep `finalize_case` only as a compatibility alias if necessary.
+8. Add `remember` with explicit `scope: "chat" | "user"`, key/value or facts payload, and a reason. Chat scope must feed `read_chat_memory`; user scope must feed `read_user_profile`.
+9. Update default prompts and prompt resolver copy from Case/CaseType language to Procedure catalog + ProcedureRun/current task language where model-facing.
+10. Ensure `ProcedureRun` active/paused/completed state is not persisted as public `confirmedFacts` or durable user profile memory. If a temporary internal state key exists, it must be excluded from prompt rendering, compaction, dashboards, persisted confirmedFacts, and public memory APIs.
+11. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
 
 Acceptance:
 - Tool definitions shown to the model include `start_procedure`, `finalize_procedure`, `remember`, `read_chat_memory`, `read_user_profile`, `ask_user_questions`, and `create_human_task`.
 - New prompt/default copy contains no customer-facing `dispatch_case_agent`, `finalize_case`, or `record_facts` instructions except explicit compatibility tests/comments.
 - A test proves ProcedureRun internal state does not appear in Current Case/Procedure State, compact summaries, confirmedFacts DB fields, or public memory route payloads.
+- A prompt test proves the stable Core Agent prompt prefix remains byte-stable before and after `start_procedure`; ProcedureRun state appears only in the dynamic tail context.
+- A runtime test proves a Tool call inside an active ProcedureRun sends the expected `procedureStepIds` into HookEngine and applies the matching ProcedureStep Hook binding.
+- A timeline test proves currentStep/evidenceToolCallIds update after Tool result and `finalize_procedure`.
+- A topic-switch test proves a new Procedure can pause the active run and append both active/paused context without prompt-mode switching.
 - Typecheck, keyless full test, and build pass.
 ```
 

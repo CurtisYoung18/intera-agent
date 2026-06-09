@@ -128,11 +128,70 @@ start_procedure(procedureId)
   -> create or select the ProcedureRun
   -> attach Procedure type + Procedure
   -> continue inline through the main customer-facing Agent
+  -> append structured ProcedureRun context at the prompt tail
 ```
 
 `dispatch_case_agent` may exist only as a temporary compatibility alias. New prompt/default copy should teach `start_procedure`.
 
 It must not spawn a detached background worker for the default customer turn.
+
+It also must not transform the Core Agent into a separate Procedure Agent or replace the stable system prompt. Procedure is a runtime overlay.
+
+### 3.3 ProcedureRun Runtime Overlay
+
+Use three context layers:
+
+```text
+1. Stable core prompt
+   Long-lived and cache-friendly.
+
+2. Stable procedure definition
+   Loaded by procedureId. Can be cached or appended only while that Procedure is active.
+
+3. Dynamic ProcedureRun state
+   currentStepId, step statuses, facts, blockers, recent evidence.
+   Appended at the prompt tail and allowed to change every turn.
+```
+
+Target state shape:
+
+```ts
+type ProcedureRunState = {
+  runId: string
+  procedureId: string
+  status: 'active' | 'paused' | 'completed' | 'cancelled'
+  currentStepId: string
+  steps: Array<{
+    id: string
+    status: 'pending' | 'active' | 'completed' | 'skipped' | 'blocked'
+    startedAt?: string
+    completedAt?: string
+    evidenceToolCallIds: string[]
+  }>
+  facts: Record<string, unknown>
+  blockers: string[]
+}
+```
+
+Runtime owns the timeline. The model may propose actions, but runtime is the judge for:
+
+- current step
+- expected next tools/actions
+- ProcedureStep Hook scopes
+- whether a new user message continues, supplements, pauses, resumes, or starts a Procedure
+- when Tool evidence advances or blocks a step
+
+Before each Tool call:
+
+```text
+requestedTool + active ProcedureRun + currentStepId
+  -> HookContext.procedureStepIds
+  -> HookEngine resolves global/agent + procedure + procedureStep + tool Hooks
+  -> Tool executes or is blocked/rewritten
+  -> ProcedureRun timeline updates
+```
+
+This keeps the Core Agent stable, improves prompt-cache behavior, makes Procedure progress auditable, and prepares the UI for a visual ProcedureRun timeline.
 
 ---
 

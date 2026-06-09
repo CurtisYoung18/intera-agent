@@ -97,7 +97,7 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | Q1 | Final terminology, i18n, docs, browser QA sweep | Shipped | Cleans user-facing copy, guide docs, redirects, and responsive states after R2. |
 | Q2 | Light-first UI polish pass | Shipped | Applies the designer sketch direction without IA/schema/runtime/API changes. |
 | P1 | ConfigPilot typed configuration tools | Next / in progress | Adds backend prompt/model/context/propose/apply typed draft writes; never publish. Must be green before push/deploy. |
-| R3 | System Tools rename + `remember` + ProcedureRun state boundary | After P1 ownership is clear | Makes model-facing Tools match `start_procedure`, `finalize_procedure`, `remember`. |
+| R3 | ProcedureRun runtime overlay + system Tool rename + `remember` | After P1 ownership is clear | Keeps stable Core Agent prompt, appends dynamic ProcedureRun context at tail, resolves step Hooks by runtime timeline, and exposes `start_procedure`, `finalize_procedure`, `remember`. |
 | S2 | Runtime-backed Scenario receipts | After R3 or parallel if no runtime file overlap | Distinguishes fixture receipts from actual Agent runtime validation. |
 | PKG1 | Package completeness + version cap | Can run after P1 | Completes package surfaces and enforces max five historical versions. |
 | Q3 | Legacy route/component/doc truth cleanup | Last | Removes stale active surfaces and updates drifted landmine docs. |
@@ -106,7 +106,7 @@ Recommended coding-team shape:
 
 - R1, C1, U1, U2, U3, B1, R2, Q1, Q2, and `/ops/guide` cleanup are already shipped on main.
 - P1 should run alone or with strict ownership because it touches ConfigPilot APIs, backend prompt/model, apply service, and UI.
-- R3 touches high-collision runtime files and should not overlap with another runtime lane.
+- R3 touches high-collision runtime files and should not overlap with another runtime lane. It is an architecture lane, not a copy-only rename lane.
 - S2 and PKG1 can run after P1/R3 boundaries are clear.
 - Q3 should run after the product/runtime names are stable.
 - Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) for current lane prompts. Do not redispatch from the shipped F1-F7 prompts.
@@ -130,7 +130,10 @@ Recommended coding-team shape:
 - Brain owns memory and compact configuration. Expose strategy-level controls first: Memory Mode, Compact model, Preserve rules, Fact extraction rules, Profile, and Compact Test. Keep raw token thresholds and circuit-breaker knobs under Advanced.
 - `confirmedFacts` are business facts. `ProcedureRun`/runtime state is not a business fact and must not be stored in confirmedFacts.
 - `ProcedureRun` state is session-lifecycle runtime state. It may be summarized into chat memory when useful, but the canonical active/paused/completed ProcedureRun state belongs to the runtime-managed Procedure Run Tracker.
+- Procedure is a runtime overlay, not a prompt-mode transformation. `start_procedure` creates/selects a ProcedureRun; it must not replace the stable Core Agent prompt or prepend a dynamic Procedure header before that prompt.
+- Keep context in three layers: stable Core Agent prompt; stable/cacheable Procedure definition; dynamic ProcedureRun state appended at the prompt tail.
 - The runtime should inject ProcedureRun context as dynamic procedure todos/current state, so the main Agent can decide whether a new message continues, supplements, pauses, resumes, or starts a Procedure.
+- Hook scopes for ProcedureStep must be resolved by runtime from active ProcedureRun timeline + currentStepId + requested Tool, not by trusting the model to remember the Procedure prompt.
 - Do not introduce a standalone LLM ProcedureRouter. The main Agent should selectively load the compact Procedure catalog plus active/paused ProcedureRun state and choose the next action inside the normal ReAct loop.
 - `record_facts` is not the product name. The controlled memory-write tool should be `remember`, with explicit `scope: "chat" | "user"`. `remember(scope="chat")` writes what `read_chat_memory` later reads; `remember(scope="user")` writes what `read_user_profile` later reads.
 - Runtime-managed capabilities should be visible to delivery staff as locked/auditable platform capabilities, but not editable business Tools. P0 capability examples: Procedure Run Tracker, Hook Engine, Memory Extractor, Scenario Runner.
