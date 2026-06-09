@@ -64,7 +64,7 @@ export function mapLegacyRoute(pathname: string): string | null {
     return `/operate/handoff/${encodeURIComponent(tail)}`
   }
   if (normalizedPathname === '/ops/dashboards') return '/operate/handoff'
-  if (normalizedPathname === '/ops/guide') return '/operate/conversations'
+  if (normalizedPathname === '/ops/guide') return '/build/release'
 
   return null
 }

@@ -38,8 +38,8 @@ describe('mapLegacyRoute', () => {
     ['/ops/users/u1', '/operate/handoff/u1'],
     ['/ops/users/u1/', '/operate/handoff/u1'],
     ['/ops/dashboards', '/operate/handoff'],
-    ['/ops/guide', '/operate/conversations'],
-    ['/ops/guide/', '/operate/conversations'],
+    ['/ops/guide', '/build/release'],
+    ['/ops/guide/', '/build/release'],
     ['/build/release', null],
     ['/some/other/path', null],
   ]
