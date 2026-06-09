@@ -22,6 +22,7 @@ Start by running:
 
 Read these docs before editing:
 - doc/handoffs/GENERIC_HANDOFF.md
+- doc/handoffs/BROWSER_SMOKE_RUNBOOK.md
 - doc/handoffs/MASTER_BUILD_HANDOFF.md
 - doc/handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md
 - doc/handoffs/ARCHITECT_AUDIT_2026-06-09.md
@@ -88,6 +89,7 @@ Verification expectations:
 - env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test
 - npm run build:console
 - For UI lanes: run browser verification/screenshots for changed routes.
+- Do not spend more than 10 minutes debugging local browser auth. If authenticated local smoke is blocked by secure-cookie localhost behavior, stop, cite BROWSER_SMOKE_RUNBOOK.md, and cover the lane with focused tests/build plus production HTTPS verification only if deploy is explicitly in scope.
 
 End with:
 - changed files

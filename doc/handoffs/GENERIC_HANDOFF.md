@@ -180,6 +180,8 @@ curl -s https://demo.anytrans.ai/api/health   # expect {"status":"ok","db":"conn
 
 **Test note:** local Postgres is now the expected dev DB. Bring it up with `docker compose up -d postgres` before DB integration tests.
 
+**Local browser-smoke note:** before spending time on authenticated local browser flows, read [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md). Console auth uses a `secure: true` session cookie, so HTTP localhost smoke can redirect to login or return `401` even when login succeeds. Timebox local auth debugging to 10 minutes; do not hand-roll JWT/cookie/HTTPS harnesses inside feature lanes.
+
 ### Phase 2 — Production verification procedure
 
 After every deploy, verify the changes work on the live site. Use Playwright MCP (`mcp__playwright__*` tools) to automate browser verification.
