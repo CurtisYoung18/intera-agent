@@ -65,6 +65,8 @@ Product/runtime decisions:
 - Case is no longer a product-level concept. Code may keep durable Case shells temporarily where Message/ActionTrace persistence requires them, but UI/copy/future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory.
 - ProcedureRun state is session-lifecycle runtime state, not business memory. Do not store active/paused/completed ProcedureRun state inside confirmedFacts.
 - confirmedFacts are business facts only.
+- R3 should borrow Claude Code-style runtime semantics, not Claude Code source code: enqueue structured events, stamp epoch/uuid/origin metadata, separate explicit control interrupts from ordinary user messages, evaluate stable Hook lifecycle checkpoints with dynamic context, keep prompt-cache boundaries clear, and make memory Tools real.
+- Do not vendor or copy code from `claude-code-source-code-ref-only`; it is reference-only for architecture semantics.
 - The runtime should expose ProcedureRun context to the main Agent as dynamic procedure todos/current state. The Agent decides whether a new message continues, supplements, pauses, resumes, or starts a Procedure inside the normal ReAct loop.
 - Do not add a standalone LLM ProcedureRouter unless the owner explicitly reopens that decision.
 - `record_facts` is not the target product/tool name. Use a controlled `remember` tool with explicit `scope: "chat" | "user"` if this lane adds memory writes.
@@ -548,23 +550,32 @@ Mental model:
 - Stable procedure definition: loaded by procedureId and cacheable or appended only when active.
 - Dynamic ProcedureRun state: currentStep, completed/skipped/blocked steps, facts, blockers, and recent evidence. This belongs at the prompt tail and changes every turn.
 - Runtime owns the ProcedureRun timeline. The model proposes actions; runtime resolves step/hook constraints and updates the timeline.
+- Treat ProcedureRun as a runtime protocol, similar in spirit to Claude Code's command queue + hook lifecycle + dynamic prompt boundary. Do not implement it as a temporary Procedure Agent, and do not copy CC source.
+- Inputs are timeline events, not naked strings. Each queued event should carry stable metadata such as eventId/uuid, inputEpoch, origin, isMeta/control flag where applicable, runId/session id, and enqueue priority/policy.
+- Ordinary customer messages are queue/reconcile events. They are not interrupts and must not abort active Tool execution by default.
+- Only explicit control events such as operator stop, session close, or human takeover may abort the current turn/tool. Tool definitions may later expose `interruptBehavior: "block" | "cancel"`; default behavior should be block/non-cancel.
 - Interleaved customer messages use generic epoch-based reconciliation, not semantic intent classification. Runtime does not decide whether a new message is a correction, cancellation, supplement, or new problem; it only tracks whether a Tool/action/step was based on the latest input epoch.
 - R3 first version should not add a Prisma `ProcedureRun` table unless the coordinator explicitly approves a schema lane. Use `session-store` as the runtime authority for active ProcedureRun state. Durable `ActionTrace` may record evidence/audit events, but canonical active/paused ProcedureRun state is session lifecycle state.
 - One chat/session can have one active ProcedureRun plus paused/pending ProcedureRuns. Do not create one durable Case per ProcedureRun and do not revive detached Procedure agents.
 
 Tasks:
+0. Before editing, inspect the reference-only CC files mentioned in the owner/architect notes only to understand semantics: command queue metadata/priority, explicit interrupt controls, hook lifecycle schemas, prompt static/dynamic boundary, and real memory. Do not copy implementation code.
 1. Expose `start_procedure` as the primary model-facing Tool. Accept `procedureId`, reason, confidence, collected facts, and current Procedure action. Keep `dispatch_case_agent` only as a compatibility alias if necessary, and do not advertise it in new prompt/default copy.
 2. `start_procedure` must not replace the system prompt, activate a separate Procedure agent persona, or prepend a dynamic Procedure header before the stable Core Agent prompt.
 3. Define a first-class runtime `ProcedureRunState` with runId, procedureId, status, inputEpoch, lastReconciledInputEpoch, needsReconcile, currentStepId, per-step status, evidenceToolCallIds, facts, blockers, and unreconciled timeline events. Keep it session/runtime-scoped.
+3a. Define a structured runtime event shape for input/control/timeline entries. Required fields should include a stable eventId/uuid, inputEpoch, origin, source, createdAt/enqueuedAt, runId/session id, and optional metadata such as isMeta/control and priority/enqueue policy. Use priority + FIFO only for scheduling; do not infer customer intent from priority.
 4. Append structured ProcedureRun context at the prompt tail after stable core prompt + stable tool contract. Include current step, expected next tools/actions, blockers, and recent evidence.
+4a. Add or preserve a clear static/dynamic prompt boundary in prompt assembly. Tests must prove the stable Core Agent prefix and stable Tool contract do not change after `start_procedure`; only the dynamic tail changes with ProcedureRun state.
 5. Resolve HookContext deterministically before each Tool call: active ProcedureRun + requested Tool + currentStepId -> global/agent + procedure/caseType + procedureStep + tool Hook scopes.
 6. Increment `inputEpoch` at enqueue time, not drain time. `/api/messages` must update session-store `latestInputEpoch` and append `queuedEvents` before returning 202 for concurrent messages. The initial user message must also get an epoch before the AgentLoop starts.
 7. Stamp every Tool call/action/finalize attempt with `basedOnInputEpoch` at enqueue/start time. Streaming Tool execution starts before drain, so stale detection cannot wait until `waitForAll()`.
 8. If a Tool result returns after `inputEpoch` advanced, save it as evidence but do not automatically advance/complete the step; mark `needsReconcile = true`.
 9. If `needsReconcile` is true, block further Tool calls/finalization through runtime/Hook feedback until the model reconciles the latest timeline events. The prompt tail should say: "New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, reconcile these messages with the active ProcedureRun."
 10. Do not build an interleaved-message intent classifier or ProcedureRouter. Reconciliation is generic epoch/version control, not semantic routing.
+10a. Keep ordinary queued customer messages separate from explicit control requests. Do not abort active Tool execution for ordinary customer messages. If R3 adds control events, only operator stop/session close/human takeover style controls may abort, and cancellation should respect a Tool-level interrupt behavior with default block/non-cancel.
 11. Update ProcedureRun timeline after each Tool result, Hook decision, human task, `remember`, reconciliation action, and `finalize_procedure`.
 12. Make HookEngine stable. Do not represent active Procedure state by recreating HookEngine with a hidden `caseType` option. Pass dynamic ProcedureRun/caseType/currentStep context through `HookContext` for each evaluation.
+12a. Preserve the P0 Hook lifecycle of PreToolUse, PostToolUse, and Stop. Do not expand P0 lifecycle unless explicitly required, but keep the runtime event shape compatible with future UserPromptSubmit, PreCompact, and PostCompact style hooks.
 13. Replace ProcedureStep Hook resolution from todo/tool guessing with runtime timeline resolution. `procedureStepIds` must come from activeProcedureRun.currentStepId plus requestedTool compatibility, not from "all Procedure steps whose target equals this tool." `seedProcedureTodos()` is not a production source of truth.
 14. Consolidate system Tool definitions. Remove or de-emphasize the duplicate `SYSTEM_TOOLS`/`BUILT_IN_TOOLS` mismatch, fix the bogus `read_user_profile.required = ["procedureId"]`, and protect locked system Tool names from DB Tool rows shadowing them.
 15. Expose `finalize_procedure` as the primary terminal Tool. Keep `finalize_case` only as a compatibility alias if necessary.
@@ -579,8 +590,11 @@ Tasks:
 Acceptance:
 - Tool definitions shown to the model include `start_procedure`, `finalize_procedure`, `remember`, `read_chat_memory`, `read_user_profile`, `ask_user_questions`, and `create_human_task`.
 - New prompt/default copy contains no customer-facing `dispatch_case_agent`, `finalize_case`, or `record_facts` instructions except explicit compatibility tests/comments.
+- A runtime event test proves queued inputs carry eventId/uuid, inputEpoch, origin/source, enqueue timestamp, and run/session metadata; priority/enqueue policy is handled generically and FIFO is preserved within the same priority.
+- An explicit-control test proves an ordinary queued customer message does not abort an active Tool, while an explicit operator/session/human-takeover control can block or cancel according to the Tool interrupt behavior.
 - A test proves ProcedureRun internal state does not appear in Current Case/Procedure State, compact summaries, confirmedFacts DB fields, or public memory route payloads.
 - A prompt test proves the stable Core Agent prompt prefix remains byte-stable before and after `start_procedure`; ProcedureRun state appears only in the dynamic tail context.
+- A prompt-boundary test proves stable/cacheable prompt content is separated from dynamic ProcedureRun overlay; do not prepend dynamic Procedure text before the stable Core Agent prompt.
 - A runtime test proves a Tool call inside an active ProcedureRun sends the expected `procedureStepIds` into HookEngine and applies the matching ProcedureStep Hook binding.
 - A timeline test proves currentStep/evidenceToolCallIds update after Tool result and `finalize_procedure`.
 - A topic-switch test proves a new Procedure can pause the active run and append both active/paused context without prompt-mode switching.

@@ -174,11 +174,14 @@ type ProcedureRunState = {
   facts: Record<string, unknown>
   blockers: string[]
   timeline: Array<{
+    eventId: string
     epoch: number
+    origin: 'customer' | 'operator' | 'system' | 'human'
     source: 'customer_message' | 'customer_form' | 'human_task' | 'tool_call' | 'tool_result' | 'hook_decision' | 'reconcile'
     at: string
     summary: string
     basedOnInputEpoch?: number
+    isMeta?: boolean
   }>
 }
 ```
@@ -262,6 +265,31 @@ PostToolUse:
 ```
 
 This keeps the Core Agent stable, improves prompt-cache behavior, makes Procedure progress auditable, and prepares the UI for a visual ProcedureRun timeline.
+
+### 3.4 Runtime Protocol Principles
+
+Intera should borrow the runtime semantics behind Claude Code-style systems, not copy their source code.
+
+The useful pattern is:
+
+```text
+enqueue structured event
+  -> stamp eventId / inputEpoch / origin / priority metadata
+  -> process with priority + FIFO
+  -> separate explicit control interrupts from ordinary inputs
+  -> evaluate stable Hook lifecycle checkpoints with dynamic context
+  -> preserve stable/dynamic prompt boundary
+  -> store memory through real read/write tools
+```
+
+Implications for Intera:
+
+- A new customer message is a queued timeline event, not an interrupt and not an intent-routing request.
+- Only explicit control events such as operator stop, session close, or human takeover may abort the current turn/tool.
+- Tool execution should default to block/non-cancel on ordinary interleaving. If a future Tool declares interrupt behavior, cancellation must be explicit.
+- Hooks remain stable lifecycle events. P0 implements `PreToolUse`, `PostToolUse`, and `Stop`; future `UserPromptSubmit`, `PreCompact`, or `PostCompact`-style events can be added without changing the ProcedureRun mental model.
+- The stable Core Agent prompt and stable Tool contract should be separated from the dynamic ProcedureRun tail. Dynamic Procedure text must not be prepended before the stable prompt.
+- Memory Tools are not fake Tool results. `remember`, `read_chat_memory`, and `read_user_profile` must connect to real storage and real retrieval before being presented as a closed product loop.
 
 ---
 

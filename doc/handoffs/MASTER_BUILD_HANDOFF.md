@@ -132,10 +132,12 @@ Recommended coding-team shape:
 - `confirmedFacts` are business facts. `ProcedureRun`/runtime state is not a business fact and must not be stored in confirmedFacts.
 - `ProcedureRun` state is session-lifecycle runtime state. It may be summarized into chat memory when useful, but the canonical active/paused/completed ProcedureRun state belongs to the runtime-managed Procedure Run Tracker.
 - Procedure is a runtime overlay, not a prompt-mode transformation. `start_procedure` creates/selects a ProcedureRun; it must not replace the stable Core Agent prompt or prepend a dynamic Procedure header before that prompt.
+- R3 should follow a runtime-protocol model inspired by Claude Code semantics, not copied source code: structured queue events, epoch/uuid/origin metadata, explicit control interrupts only, stable Hook lifecycle with dynamic context, stable/dynamic prompt boundary, and real memory tools.
 - Keep context in three layers: stable Core Agent prompt; stable/cacheable Procedure definition; dynamic ProcedureRun state appended at the prompt tail.
 - The runtime should inject ProcedureRun context as dynamic procedure todos/current state, so the main Agent can decide whether a new message continues, supplements, pauses, resumes, or starts a Procedure.
 - Hook scopes for ProcedureStep must be resolved by runtime from active ProcedureRun timeline + currentStepId + requested Tool, not by trusting the model to remember the Procedure prompt.
 - Interleaved messages use generic epoch-based reconciliation, not semantic routing. Every customer message/form/human result increments `inputEpoch`; each Tool/action records `basedOnInputEpoch`; stale results can become evidence but cannot advance a step until the model reconciles latest timeline events.
+- Ordinary customer messages are not interrupts. They should be queued and reconciled. Only explicit control events such as operator stop, session close, or human takeover may abort or cancel active Tool execution.
 - R3 first version should keep active ProcedureRun state in runtime/session-store rather than adding a Prisma table. It must increment `inputEpoch` at enqueue time, not AgentLoop drain time.
 - HookEngine should be stable for the AgentConfig; active ProcedureRun/caseType/currentStep/reconcile context is passed through `HookContext` per evaluation.
 - `read_chat_memory`, `read_user_profile`, and `remember` must be real system Tools before being advertised as a product loop. Placeholder `{ ok: true, handled: "system_managed" }` results are not enough.

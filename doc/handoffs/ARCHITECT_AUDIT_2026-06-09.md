@@ -83,13 +83,17 @@ stable Core Agent prompt
 
 Required direction:
 
+- Treat ProcedureRun as a runtime protocol inspired by Claude Code-style semantics, not as code copied from the reference folder: structured queue events, input epoch/uuid/origin metadata, explicit control interrupts, stable Hook lifecycle with dynamic context, prompt static/dynamic boundary, and real memory tools.
 - Do not prepend a dynamic Procedure header before the stable Core Agent prompt.
 - Do not replace the system prompt or activate a separate Procedure persona after `start_procedure`.
 - Define a first-class ProcedureRun timeline with currentStepId, per-step status, evidenceToolCallIds, facts, and blockers.
+- Each timeline/input event should carry stable metadata such as eventId/uuid, inputEpoch, origin/source, run/session id, enqueue time, and optional priority/isMeta/control markers. Priority is scheduling metadata, not intent classification.
 - Resolve ProcedureStep Hooks deterministically from active ProcedureRun + current step + requested Tool.
 - Update the timeline after Tool results, Hook decisions, human tasks, `remember`, and `finalize_procedure`.
 - Handle interleaved messages with generic epoch-based reconciliation: each input event increments `inputEpoch`; Tool/action/finalize attempts record `basedOnInputEpoch`; stale results become evidence but cannot advance steps until the latest input events are reconciled.
 - Do not add an interleaved-message intent classifier. The runtime tracks version freshness, not whether a new message is a supplement, correction, cancellation, or new issue.
+- Do not treat ordinary customer messages as interrupts. Queue/reconcile them. Only explicit control events such as operator stop, session close, or human takeover may abort active execution, and cancellation should be opt-in per Tool behavior.
+- Preserve P0 Hook lifecycle as `PreToolUse`, `PostToolUse`, and `Stop`; keep the event model compatible with future `UserPromptSubmit`, `PreCompact`, and `PostCompact` without expanding scope now.
 - Increment `inputEpoch` when messages/form results/human results are enqueued, not when AgentLoop drains them. Streaming Tool execution can finish before drain sees the new input.
 - Use session-store as R3 V1 runtime authority unless a schema lane is explicitly approved; filter any temporary internal state from case export, case detail payloads, dashboards, compaction, and public memory APIs.
 - Keep HookEngine stable and pass active ProcedureRun/caseType/currentStep/reconcile data through HookContext per evaluation instead of recreating HookEngine to switch Procedure context.
