@@ -8,16 +8,16 @@ describe('aggregateTraces', () => {
     const recs = [
       { caseId: 'c', actionType: 'tool_result', title: 'Tool: kb_search', detail: 'ok', createdAt: new Date(t0 + 10).toISOString() },
     ]
-    const out = aggregateTraces(recs as any, t0, false, ['Guardrails', 'Model generation'])
+    const out = aggregateTraces(recs as any, t0, false, ['Hooks', 'Model generation'])
     const tools = out.find(s => s.stage === 'Tools')
     expect(tools?.fired).toBe(true)
   })
 
   it('includes unfired applicable stages as skipped', () => {
-    const out = aggregateTraces([], t0, false, ['Guardrails', 'Model generation'])
-    const guards = out.find(s => s.stage === 'Guardrails')
-    expect(guards?.fired).toBe(false)
-    expect(guards?.status).toBe('skipped')
+    const out = aggregateTraces([], t0, false, ['Hooks', 'Model generation'])
+    const hooks = out.find(s => s.stage === 'Hooks')
+    expect(hooks?.fired).toBe(false)
+    expect(hooks?.status).toBe('skipped')
   })
 
   it('computes ms as span between first and last record, not start-offset', () => {
@@ -62,13 +62,13 @@ describe('aggregateTraces', () => {
     expect(tools?.summary).not.toContain('run start')
   })
 
-  it('normalizes historical skill_result rows for display only', () => {
+  it('renders current tool_result rows for display', () => {
     const traces = [
       {
         caseId: 'c',
-        actionType: 'skill_result',
+        actionType: 'tool_result',
         title: 'Tool: kb_search',
-        payload: JSON.stringify({ skillName: 'kb_search', output: { hits: 1 } }),
+        payload: JSON.stringify({ toolName: 'kb_search', output: { hits: 1 } }),
         createdAt: new Date(t0 + 50).toISOString(),
       },
     ]

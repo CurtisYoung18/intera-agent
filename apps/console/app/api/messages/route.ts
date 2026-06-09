@@ -14,7 +14,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
-import { parseProcedure, parseGuardrails } from '@intera/shared/contracts/case-types'
+import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 
 // Verify env vars at module load (logged once per cold start)
@@ -55,25 +55,14 @@ function schemaFromCaseTypeRow(caseType: {
   description: string | null
   icon: string
   requiredFacts: string
-  stages: string
-  stageConfigs: string | null
-  orchestratorConfig: string | null
   defaultGoal: string
   escalateOn: string
   autoCloseConditions: string | null
-  executionMode?: string | null
-  sop?: string | null
-  requireHumanReview?: boolean
   procedure?: string | null
-  guardrails?: string | null
   maxAutoTurns?: number | null
 }): CaseSchemaConfig {
-  const stages = parseMemoryJson(caseType.stages) as string[]
   const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
-  const stageConfigs = parseMemoryJson(caseType.stageConfigs) as Record<string, unknown> | null
-  const orchestrator = parseMemoryJson(caseType.orchestratorConfig) as Record<string, unknown> | null
   const procedure = parseProcedure(caseType.procedure)
-  const guardrails = parseGuardrails(caseType.guardrails)
 
   return {
     type: caseType.type,
@@ -81,17 +70,10 @@ function schemaFromCaseTypeRow(caseType: {
     description: caseType.description || undefined,
     icon: caseType.icon,
     requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
-    stages: Array.isArray(stages) ? stages : [],
-    stageConfigs: stageConfigs as unknown as CaseSchemaConfig['stageConfigs'],
     defaultGoal: caseType.defaultGoal,
     escalateOn: (parseMemoryJson(caseType.escalateOn) as string[]) || [],
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
-    orchestrator: orchestrator as unknown as CaseSchemaConfig['orchestrator'],
-    requireHumanReview: caseType.requireHumanReview === true,
-    executionMode: (caseType.executionMode as 'stage' | 'cc' | undefined) || 'stage',
-    sop: caseType.sop || undefined,
     procedure: procedure ?? undefined,
-    guardrails,
     maxAutoTurns: typeof caseType.maxAutoTurns === 'number' ? caseType.maxAutoTurns : undefined,
   }
 }
@@ -628,7 +610,7 @@ export async function POST(request: NextRequest) {
         const existingMemoryData = existingMemory as Record<string, unknown> | null
         const resolvedCaseState = existingMemoryData ? {
           confirmedFacts: (parseMemoryJson(existingMemoryData.confirmedFacts as string) as Record<string, unknown>) || {},
-          skillsCalled: (parseMemoryJson(existingMemoryData.skillsCalled as string) as string[]) || [],
+          toolsCalled: (parseMemoryJson(existingMemoryData.toolsCalled as string) as string[]) || [],
           missingFacts: (parseMemoryJson(existingMemoryData.missingFacts as string) as string[]) || [],
         } : undefined
 
@@ -648,11 +630,11 @@ export async function POST(request: NextRequest) {
         // Load tool summaries for {{available_tools}} template var
         const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
         try {
-          const dbSkills = await prisma.tool.findMany({
+          const dbTools = await prisma.tool.findMany({
             where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
             select: { name: true, description: true, inputSchema: true, mode: true },
           })
-          for (const s of dbSkills) {
+          for (const s of dbTools) {
             const schema = s.inputSchema ? JSON.parse(s.inputSchema) : {}
             const needsMemberId = !!schema.properties?.member_id
             toolSummaries.push({ name: s.name, description: s.description, needsMemberId })
@@ -668,7 +650,7 @@ export async function POST(request: NextRequest) {
               needsMemberId: false,
             })
           }
-          // Include built-in skills not in DB
+          // Include built-in tools not in DB
           const { BUILT_IN_TOOLS } = await import('@/lib/agent/tools')
           for (const s of BUILT_IN_TOOLS) {
             if (!toolSummaries.find(t => t.name === s.name)) {
@@ -683,7 +665,6 @@ export async function POST(request: NextRequest) {
           caseSchema: caseSchema ? {
             displayName: caseSchema.displayName,
             goal: caseSchema.defaultGoal,
-            stages: caseSchema.stages,
             requiredFacts: caseSchema.requiredFacts,
             escalateOn: caseSchema.escalateOn,
           } : undefined,
@@ -701,7 +682,7 @@ export async function POST(request: NextRequest) {
           hasActiveCase: isCaseActive,
           caseSchema,
           caseState: isCaseActive
-            ? { confirmedFacts: resolvedCaseState.confirmedFacts as Record<string, unknown>, skillsCalled: resolvedCaseState.skillsCalled, missingFacts: resolvedCaseState.missingFacts }
+            ? { confirmedFacts: resolvedCaseState.confirmedFacts as Record<string, unknown>, toolsCalled: resolvedCaseState.toolsCalled, missingFacts: resolvedCaseState.missingFacts }
             : null,
           sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
           availableTools: toolSummaries,
@@ -750,7 +731,7 @@ export async function POST(request: NextRequest) {
         // Restore memory from DB into the in-memory manager
         if (existingMemory) {
           const memData = { ...(existingMemory as Record<string, unknown>) }
-          // Inject caseStatus from the Case table so StageExecutor.getCurrentStage() works
+          // Inject caseStatus from the Case table so the case loop resumes the current status.
           try {
             const c = await prisma.case.findUnique({ where: { id: resolvedCaseId } })
             if (c?.status) memData.caseStatus = c.status
@@ -834,25 +815,21 @@ export async function POST(request: NextRequest) {
                 update: {
                   confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
-                  skillsCalled: JSON.stringify(followupMem.skillsCalled),
-                  skillResults: JSON.stringify(followupMem.skillResults),
+                  toolsCalled: JSON.stringify(followupMem.toolsCalled),
+                  toolResults: JSON.stringify(followupMem.toolResults),
                   keyEvents: JSON.stringify(followupMem.keyEvents),
                   summary: followupMem.summary || undefined,
                   todos: followupMem.todos ? JSON.stringify(followupMem.todos) : null,
-                  agentTodos: followupMem.agentTodos ? JSON.stringify(followupMem.agentTodos) : null,
-                  dashboardVersion: followupMem.dashboardVersion ?? 0,
                 },
                 create: {
                   caseId: resolvedCaseId,
                   confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
-                  skillsCalled: JSON.stringify(followupMem.skillsCalled),
-                  skillResults: JSON.stringify(followupMem.skillResults),
+                  toolsCalled: JSON.stringify(followupMem.toolsCalled),
+                  toolResults: JSON.stringify(followupMem.toolResults),
                   keyEvents: JSON.stringify(followupMem.keyEvents),
                   summary: followupMem.summary || undefined,
                   todos: followupMem.todos ? JSON.stringify(followupMem.todos) : null,
-                  agentTodos: followupMem.agentTodos ? JSON.stringify(followupMem.agentTodos) : null,
-                  dashboardVersion: followupMem.dashboardVersion ?? 0,
                 },
               })
               const msgsToPersist = result.messages
@@ -885,7 +862,7 @@ export async function POST(request: NextRequest) {
 
         // ── Persist case memory — only if real work was done (not casual chat) ──
         const mem = agentLoop.getMemorySummary()
-        const hasRealWork = mem.skillsCalled.length > 0 ||
+        const hasRealWork = mem.toolsCalled.length > 0 ||
           Object.keys(mem.confirmedFacts).length > 0 ||
           result.transition !== 'next_turn' ||
           (mem.summary && mem.summary.length > 0) ||
@@ -911,26 +888,22 @@ export async function POST(request: NextRequest) {
               update: {
                 confirmedFacts: JSON.stringify(mem.confirmedFacts),
                 missingFacts: JSON.stringify(mem.missingFacts),
-                skillsCalled: JSON.stringify(mem.skillsCalled),
-                skillResults: JSON.stringify(mem.skillResults),
+                toolsCalled: JSON.stringify(mem.toolsCalled),
+                toolResults: JSON.stringify(mem.toolResults),
                 keyEvents: JSON.stringify(mem.keyEvents),
                 summary: mem.summary || undefined,
                 todos: mem.todos ? JSON.stringify(mem.todos) : null,
-                agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
-                dashboardVersion: mem.dashboardVersion ?? 0,
               },
               create: {
                 caseId: resolvedCaseId,
                 confirmedFacts: JSON.stringify(mem.confirmedFacts),
                 missingFacts: JSON.stringify(mem.missingFacts),
-                skillsCalled: JSON.stringify(mem.skillsCalled),
-                skillResults: JSON.stringify(mem.skillResults),
+                toolsCalled: JSON.stringify(mem.toolsCalled),
+                toolResults: JSON.stringify(mem.toolResults),
                 keyEvents: JSON.stringify(mem.keyEvents),
                 humanTaskStatus: 'none',
                 summary: mem.summary || undefined,
                 todos: mem.todos ? JSON.stringify(mem.todos) : null,
-                agentTodos: mem.agentTodos ? JSON.stringify(mem.agentTodos) : null,
-                dashboardVersion: mem.dashboardVersion ?? 0,
               },
             })
           } catch (err) {

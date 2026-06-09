@@ -8,7 +8,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
-import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, AgentContext, ToolResult, ToolDefinition } from '@intera/shared/types'
+import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import { ChatMemoryManager, ChatSessionManager } from './memory'
@@ -24,7 +24,6 @@ import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
 import { compactConversation, reactiveCompact } from './compact'
 import { Profiler } from './profiler'
-import type { ExecutionStrategy } from './strategies/types'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { buildModelList } from './build-model-list'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
@@ -44,9 +43,8 @@ import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
 import { makeUserMessage, buildApiMessages } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
-import { buildToolResultMessageFromSynthesis, buildPolicyFeedbackMessage as buildHookFeedbackMessage } from './tool-result-manager'
-import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, processDispatchSubagent as dispatchSubagent, type ToolInterceptorContext } from './tool-interceptor'
-import { runReActLoop } from './react-loop'
+import { buildToolResultMessageFromSynthesis, buildHookFeedbackMessage } from './tool-result-manager'
+import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 
 // ---------------------------------------------------------------------------
@@ -80,10 +78,9 @@ export interface AgentLoopDeps {
 export interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'connection_lost' | 'machine_error'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'connection_lost' | 'machine_error'
   currentStage?: string
   reason?: string
-  pendingSubAgents?: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +244,6 @@ export class AgentLoop {
               contentBlocks: pending.contentBlocks,
               createdAt: new Date(),
             })
-            this.chatMemory.bumpDashboardVersion()
             sendEvent({
               type: 'withheld',
               data: 'Processing additional user input...',
@@ -262,7 +258,7 @@ export class AgentLoop {
       const buildHitCounts = (): Map<string, number> => {
         const m = new Map<string, number>()
         for (const name of this.hookEngine.getHookNames()) {
-          const c = this.chatMemory.getPolicyHitCount(name)
+          const c = this.chatMemory.getHookHitCount(name)
           if (c > 0) m.set(name, c)
         }
         return m
@@ -300,16 +296,9 @@ export class AgentLoop {
       // Restrict the agent to pure conversation + finalize_consultation only.
       const isConsultation = this.chatMemory.getSummary().caseStatus === 'waiting_human'
 
-      // Emit core_agent_progress and merge background sub-agent results (case mode only).
+      // Emit case progress for active Procedure cases.
       if (isCaseActive) {
         this.caseLoop!.emitProgressEvent(this.iterationCount, sendEvent)
-        if (this.caseLoop!.mergeNewSubAgentResults()) {
-          sendEvent({
-            type: 'memory_update',
-            data: this.chatMemory.getSummary(),
-            timestamp: new Date().toISOString(),
-          })
-        }
       }
 
       // Context compaction (simplified)
@@ -340,7 +329,7 @@ export class AgentLoop {
           if (toolUse.name === 'dispatch_case_agent') return
           const skillDef = this.toolRouter.getTool(toolUse.name)
           sendEvent({
-            type: status === 'executing' ? 'tool_executing' : 'skill_result',
+            type: status === 'executing' ? 'tool_executing' : 'tool_result',
             data: {
               name: toolUse.name,
               status,
@@ -521,7 +510,7 @@ export class AgentLoop {
               const blockingHooks: string[] = []
               for (const r of preHookEval.results) {
                 if (r.action !== 'allow') {
-                  this.chatMemory.recordPolicyHit(r.hookName)
+                  this.chatMemory.recordHookHit(r.hookName)
                   if (r.action === 'block') blockingHooks.push(r.hookName)
                 }
               }
@@ -531,13 +520,13 @@ export class AgentLoop {
                 preHookEval as unknown as Record<string, unknown>,
               )
               sendEvent({
-                type: 'policy_blocked',
+                type: 'hook_blocked',
                 data: { toolName: toolUse.name, hookNames: blockingHooks },
                 timestamp: new Date().toISOString(),
               })
               // S1: record missing reason — post-stream synthesis will build the tool_result.
               // The feedback message comes AFTER the tool_result, not instead of it.
-              missingReasons.set(toolUse.id, 'policy_blocked')
+              missingReasons.set(toolUse.id, 'hook_blocked')
               if (preHookEval.feedbackMessage) {
                 pendingHookFeedback.push(preHookEval.feedbackMessage)
               }
@@ -551,7 +540,7 @@ export class AgentLoop {
             // PreToolUse escalated with pendingToolCalls (for example: create_human_task).
             if (preHookEval.pendingToolCalls && preHookEval.pendingToolCalls.length > 0) {
               for (const r of preHookEval.results) {
-                if (r.action !== 'allow') this.chatMemory.recordPolicyHit(r.hookName)
+                if (r.action !== 'allow') this.chatMemory.recordHookHit(r.hookName)
               }
               await this.traceWriter.write(
                 'loop_decision',
@@ -559,11 +548,11 @@ export class AgentLoop {
                 preHookEval as unknown as Record<string, unknown>,
               )
               sendEvent({
-                type: 'policy_blocked',
+                type: 'hook_blocked',
                 data: { toolName: toolUse.name, hookNames: preHookEval.results.filter(r => r.action === 'escalate').map(r => r.hookName) },
                 timestamp: new Date().toISOString(),
               })
-              missingReasons.set(toolUse.id, 'policy_escalated')
+              missingReasons.set(toolUse.id, 'hook_escalated')
               if (preHookEval.feedbackMessage) {
                 pendingHookFeedback.push(preHookEval.feedbackMessage)
               }
@@ -686,7 +675,7 @@ export class AgentLoop {
 
         if (stopEval.summary === 'warn' || stopEval.summary === 'allow') {
           for (const r of stopEval.results) {
-            if (r.action === 'warn') this.chatMemory.recordPolicyHit(r.hookName)
+            if (r.action === 'warn') this.chatMemory.recordHookHit(r.hookName)
           }
           flushVisibleText()
           if (stopEval.feedbackMessage && stopEval.summary === 'warn') {
@@ -696,7 +685,7 @@ export class AgentLoop {
           stopBlockedThisIteration = true
           discardVisibleText()
           for (const r of stopEval.results) {
-            if (r.action !== 'allow') this.chatMemory.recordPolicyHit(r.hookName)
+            if (r.action !== 'allow') this.chatMemory.recordHookHit(r.hookName)
           }
           assistantMessage.content = ''
 
@@ -824,11 +813,6 @@ export class AgentLoop {
         })
       }
 
-      // ── Intercept dispatch_subagent (CC mode sub-agent dispatch) ──
-      if (this.deps.caseSchema?.executionMode === 'cc') {
-        toolResults = await dispatchSubagent(this.buildToolInterceptorContext(), toolResults, sendEvent)
-      }
-
       if (
         usage &&
         ((usage.input_tokens as number | undefined) != null ||
@@ -855,123 +839,29 @@ export class AgentLoop {
       }
 
       if (toolResults.length === 0) {
-        // No tools called — delegate stage evaluation to CaseAgentLoop.
-        // Must NOT gate on isCaseActive: the 'created' → stage-1 bootstrap
-        // transition fires here while isCaseActive is still false.
-        if (!isConsultation && this.caseLoop?.hasStageConfigs()) {
-          const transitionEval = await this.caseLoop.evaluateStageTransitionAfterNoTools(this.iterationCount)
-
-          const nudgeBox = { value: this.nudgeCount }
-          const advanced = await this.caseLoop.applyStageTransitionFromEval(transitionEval, nudgeBox, sendEvent)
-          this.nudgeCount = nudgeBox.value
-          if (advanced) {
-            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            sendEvent({
-              type: 'message_stop',
-              data: { reason: 'stage_transition', stage: this.currentStage },
-              timestamp: new Date().toISOString(),
-            })
-            continue
-          }
-
-          const stageResult = this.caseLoop.evaluateStageAfterNoTools(this.iterationCount, this.nudgeCount)
-          if (stageResult.needsNudge) {
-            this.nudgeCount++
-            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(makeUserMessage(stageResult.nudgeMessage))
-
-            await this.traceWriter.write('loop_decision', 'Nudge: stage incomplete', {
-              stage: this.currentStage,
-              nudgeCount: this.nudgeCount,
-              missingSkills: stageResult.missingSkills,
-              missingEvidence: stageResult.missingEvidence,
-              iteration: this.iterationCount,
-            })
-
-            if (this.nudgeCount >= 3) {
-              await this.traceWriter.write('loop_decision', 'Exit: max nudges', {
-                stage: this.currentStage, nudgeCount: this.nudgeCount,
-              })
-
-              try {
-                const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-                await this.persistence.ensureCase({
-                  id: this.deps.caseId,
-                  orgId: this.deps.orgId,
-                  userId: this.deps.userId,
-                  type: resolvedCaseType,
-                  status: 'escalated',
-                  blocker: `Agent stuck in stage "${this.currentStage}"`,
-                  chatId: this.deps.chatId ?? this.deps.caseId,
-                })
-                await this.persistence.createHumanTask({
-                  caseId: this.deps.caseId,
-                  queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-                  question: `Agent stuck in stage "${this.currentStage}" after 3 nudges. Case type: ${resolvedCaseType}. Skills called: ${this.chatMemory.getSkillsCalled().join(', ')}.`,
-                  status: 'pending',
-                })
-              } catch (err) {
-                console.error('[AgentLoop] Failed to auto-create human task:', err)
-              }
-
-              // Notify the customer before exiting — a silent escalation is confusing.
-              sendEvent({
-                type: 'text_delta',
-                data: escalationMessageFor(latestUserText(this.messages)),
-                timestamp: new Date().toISOString(),
-              })
-              sendEvent({
-                type: 'message_stop',
-                data: { reason: 'escalating', stage: this.currentStage },
-                timestamp: new Date().toISOString(),
-              })
-              sendEvent({
-                type: 'escalated',
-                data: { stage: this.currentStage, reason: 'max_nudges' },
-                timestamp: new Date().toISOString(),
-              })
-                  return {
-                messages: this.messages,
-                caseStatus: 'escalated',
-                transition: 'error',
-                currentStage: this.currentStage,
-                reason: 'max_nudges',
-              }
-            }
-
-            sendEvent({
-              type: 'message_stop',
-              data: { reason: 'nudge', stage: this.currentStage },
-              timestamp: new Date().toISOString(),
-            })
-            continue
-          }
-        }
-
-        // ── Step mode: guard against silent end_turn after tool results ──────
+        // ── Procedure mode: guard against silent end_turn after tool results ──────
         // When the agent just received tool results (there ARE previous tool
         // messages) but produced empty text and no new tool calls, it silently
         // swallowed the findings. Nudge it to either tell the user or finalize.
-        if (this.deps.caseSchema?.executionMode === 'cc' && !fullText) {
+        if (this.caseLoop?.isProcedureMode() && !fullText) {
           const lastFewMessages = this.messages.slice(-6)
           const hasPendingToolResults = lastFewMessages.some(
-            (m) => m.role === 'assistant' && typeof m.content === 'string' &&
-                   m.content.startsWith('Tool '),
+            (m) => m.role === 'user' && Array.isArray(m.content),
           )
           if (hasPendingToolResults && this.nudgeCount < 3) {
             this.nudgeCount++
-            const sopNudge = '[SYSTEM] You just received investigation results but produced no response. ' +
+            const procedureNudge = '[SYSTEM] You just received investigation results but produced no response. ' +
                 'You MUST now either: (1) call finalize_case with a conclusion, (2) call create_human_task if escalation is needed, ' +
                 'or (3) respond to the customer with findings and next steps. ' +
                 'Do not produce empty turns — act on the data you just received.'
             if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(makeUserMessage(sopNudge))
-            await this.traceWriter.write('loop_decision', 'SOP nudge: empty turn after tool results', {
+            this.messages.push(makeUserMessage(procedureNudge))
+            await this.traceWriter.write('loop_decision', 'Procedure nudge: empty turn after tool results', {
               stage: this.currentStage, nudgeCount: this.nudgeCount, iteration: this.iterationCount,
             })
             sendEvent({
               type: 'message_stop',
-              data: { reason: 'sop_empty_turn_nudge', stage: this.currentStage },
+              data: { reason: 'procedure_empty_turn_nudge', stage: this.currentStage },
               timestamp: new Date().toISOString(),
             })
             // Don't count the nudge against maxIterations — the model needs
@@ -981,7 +871,7 @@ export class AgentLoop {
           }
         }
 
-        // Stage goals met (or no stage config) — legitimate exit, model wants user input
+        // No tools called — legitimate exit, model wants user input.
         await this.traceWriter.write('loop_decision', 'Exit: no tools called', {
           stopReason, iteration: this.iterationCount, textLength: fullText.length,
           stage: this.currentStage,
@@ -996,7 +886,7 @@ export class AgentLoop {
           messages: this.messages,
           // In consultation mode keep the case as waiting_human so the next request
           // re-enters consultation mode rather than reverting to an investigation stage.
-          // Otherwise persist the actual workflow stage.
+          // Otherwise persist the current case status.
           caseStatus: (isConsultation ? 'waiting_human' : this.currentStage) as CaseStatus,
           transition: 'next_turn',
           currentStage: this.currentStage,
@@ -1006,11 +896,11 @@ export class AgentLoop {
       // ── Apply tool results to Case Memory ────────────────────
       for (const result of toolResults) {
         const payload = unwrapToolExecutionPayload(result.output)
-        await this.chatMemory.applySkillResult(result.name, payload)
+        await this.chatMemory.applyToolResult(result.name, payload)
         await this.traceWriter.write(
-          'skill_result',
+          'tool_result',
           `Tool: ${result.name}`,
-          { skillName: result.name, output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, input: result.toolUse?.input, renderHints: result.renderHints },
+          { toolName: result.name, output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, input: result.toolUse?.input, renderHints: result.renderHints },
         )
       }
 
@@ -1032,7 +922,7 @@ export class AgentLoop {
 
             for (const r of postHookEval.results) {
               if (r.action !== 'allow') {
-                this.chatMemory.recordPolicyHit(r.hookName)
+                this.chatMemory.recordHookHit(r.hookName)
                 await this.traceWriter.write(
                   'loop_decision',
                   `Hook ${r.action}: ${r.hookName}`,
@@ -1086,8 +976,7 @@ export class AgentLoop {
       }
 
       // ── Phase 2: Delegate case terminal tools to CaseAgentLoop ─────────────
-      // Handles: create_human_task, finalize_case, finalize_consultation, stage transition.
-      // The nudgeCount is boxed so CaseAgentLoop can reset it on stage transition.
+      // Handles: create_human_task, finalize_case, finalize_consultation.
       if (this.caseLoop) {
         const nudgeBox = { value: this.nudgeCount }
         const caseToolResult = await this.caseLoop.handleCaseTerminalTools(
@@ -1099,7 +988,7 @@ export class AgentLoop {
         this.nudgeCount = nudgeBox.value
         if (caseToolResult.type === 'terminal') {
           this.compactUserProfile().catch(() => {})
-      this.persistChatSession().catch(() => {})
+          this.persistChatSession().catch(() => {})
           return caseToolResult.result
         }
         if (caseToolResult.type === 'continue') continue
@@ -1115,7 +1004,7 @@ export class AgentLoop {
       // The LLM has had a chance to respond naturally — now exit to waiting_human.
       if (this.pendingEscalation) {
         this.compactUserProfile().catch(() => {})
-      this.persistChatSession().catch(() => {})
+        this.persistChatSession().catch(() => {})
         return {
           messages: this.messages,
           caseStatus: 'escalated',
@@ -1150,8 +1039,8 @@ export class AgentLoop {
     })
 
     // Only escalate when the agent was repeatedly nudged and still failed.
-    // If it just ran out of iterations (e.g. in SOP mode where each turn
-    // requires multiple tool calls), preserve the current stage so the
+    // If it just ran out of iterations (e.g. when a Procedure needs multiple
+    // tool calls), preserve the current status so the
     // next HTTP request can continue from where it left off.
     const shouldEscalate = this.nudgeCount >= 3
     sendEvent({
@@ -1213,9 +1102,9 @@ export class AgentLoop {
         : undefined,
       caseFacts: this.chatMemory.getConfirmedFacts(),
       missingFacts: this.chatMemory.getMissingFacts(),
-      previousToolCalls: this.chatMemory.getSkillsCalled().map((name) => ({
+      previousToolCalls: this.chatMemory.getToolsCalled().map((name) => ({
         name,
-        output: this.chatMemory.getSkillResult(name),
+        output: this.chatMemory.getToolResult(name),
       })),
       traceSummary: this.chatMemory.getKeyEvents().slice(-10).map((event) => ({
         at: event.at,
@@ -1563,22 +1452,6 @@ export class AgentLoop {
   }
 
   // -----------------------------------------------------------------------
-  // Unified ReAct Loop (shared by main agent and sub-agents)
-  // -----------------------------------------------------------------------
-
-  /**
-   * Run a strategy-driven ReAct loop.
-   *
-   * Delegates all behavior decisions (prompt assembly, tool filtering,
-   * continuation, terminal tools) to the `ExecutionStrategy`, making the core
-   * ReAct iteration reusable across main-agent, sub-agent, stage, and step
-   * execution modes.
-   *
-   * Used by `SubAgent.run()` via `ChecklistPolicy`.
-   */
-  // Delegated to react-loop.ts — backward-compatible static method.
-  static runReActLoop = runReActLoop
-
   getCaseType(): string {
     return this.deps.caseSchema?.type || 'general'
   }

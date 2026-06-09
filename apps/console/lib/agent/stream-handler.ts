@@ -3,20 +3,14 @@
 // Single source of truth for processing a streaming Anthropic API response:
 // reads content blocks, handles text/tool_use/thinking, returns accumulated data.
 //
-// Business logic (policy checks, tool enqueuing, trace writing) stays in the
+// Business logic (Hook checks, tool enqueuing, trace writing) stays in the
 // caller via callbacks — this module only parses events and accumulates state.
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { AssistantMessage, SSEEvent, ToolUse } from '@intera/shared/types'
 
-const LEGACY_SSE_EVENT_TYPE_MAP: Partial<Record<string, SSEEvent['type']>> = {
-  skill_call: 'tool_call',
-  skill_result: 'tool_result',
-}
-
 export function normalizeSSEEvent(event: SSEEvent): SSEEvent {
-  const type = LEGACY_SSE_EVENT_TYPE_MAP[event.type] ?? event.type
-  return type === event.type ? event : { ...event, type }
+  return event
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +44,7 @@ export interface StreamConsumeCallbacks {
 
   /**
    * Called when a tool_use block completes (content_block_stop).
-   * The callback is responsible for policy checks, tool enqueuing,
+   * The callback is responsible for Hook checks, tool enqueuing,
    * and any related side effects (trace, missing reasons, events).
    *
    * @param toolUse The parsed tool_use block.

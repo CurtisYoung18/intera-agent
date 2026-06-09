@@ -5,10 +5,8 @@ import type { ConversationLoop } from '../../conversation-loop'
 import type { ChatMemoryManager } from '../../memory'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 
-// Procedure refactor — Phase 2. The dry-run playground cannot activate a case
-// across turns (dispatch_case_agent is mocked), so this drives the real prompt
-// selector to prove the integration link: an active cc case with a Procedure
-// renders the Procedure prompt; without one it falls back to the legacy SOP.
+// Procedure selector guard. Active cases with a case loop render the Procedure
+// prompt; if the case loop is absent, selection falls back to discovery prompt.
 
 const chatMemoryStub = {
   getTodos: () => [],
@@ -20,36 +18,34 @@ const conversationLoopStub = {
   filterTools: (t: unknown[]) => t,
 } as unknown as ConversationLoop
 
-function makeCaseLoop(isProcedure: boolean): CaseAgentLoop {
+function makeCaseLoop(): CaseAgentLoop {
   return {
-    isProcedureMode: () => isProcedure,
     buildProcedurePrompt: () => 'PROCEDURE_PROMPT',
-    buildSopPrompt: () => 'SOP_PROMPT',
-    filterSopTools: (tools: unknown[]) => tools,
+    filterProcedureTools: (tools: unknown[]) => tools,
   } as unknown as CaseAgentLoop
 }
 
-function ctx(isProcedure: boolean): PromptSelectorContext {
+function ctx(withCaseLoop: boolean): PromptSelectorContext {
   return {
     isCaseActive: true,
     isConsultation: false,
-    caseSchema: { type: 'deposit_issue', executionMode: 'cc' } as unknown as CaseSchemaConfig,
+    caseSchema: { type: 'deposit_issue' } as unknown as CaseSchemaConfig,
     systemPrompt: 'BASE',
     currentStage: 'investigating',
     nudgeCount: 0,
     conversationLoop: conversationLoopStub,
-    caseLoop: makeCaseLoop(isProcedure),
+    caseLoop: withCaseLoop ? makeCaseLoop() : null,
     chatMemory: chatMemoryStub,
     allTools: [],
   }
 }
 
 describe('selectPromptAndTools — Procedure branch (Phase 2)', () => {
-  it('renders the Procedure prompt for an active cc case in procedure mode', () => {
+  it('renders the Procedure prompt for an active case with a case loop', () => {
     expect(selectPromptAndTools(ctx(true)).prompt).toBe('PROCEDURE_PROMPT')
   })
 
-  it('falls back to the legacy SOP prompt when the cc case has no procedure', () => {
-    expect(selectPromptAndTools(ctx(false)).prompt).toBe('SOP_PROMPT')
+  it('falls back to discovery prompt when no case loop is available', () => {
+    expect(selectPromptAndTools(ctx(false)).prompt).toBe('DISCOVERY_PROMPT')
   })
 })

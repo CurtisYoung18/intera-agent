@@ -6,7 +6,6 @@
 export const SYSTEM_TOOL_NAMES = new Set([
   'dispatch_case_agent',
   'finalize_case',
-  'finalize_case_agent',
   'read_chat_memory',
   'read_user_profile',
 ])
@@ -17,7 +16,7 @@ export const CHANNEL_TOOL_NAMES = new Set([
   'ask_user_questions',
 ])
 
-/** Special Skill — configured in dedicated pages (not Tools page). */
+/** Special tools — configured in dedicated pages (not Tools page). */
 export const SPECIAL_TOOL_NAMES = new Set<string>([
   // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
 ])

@@ -11,15 +11,9 @@ export type ActionType =
   | 'user_message'
   | 'case_created'
   | 'fact_extracted'
-  | 'policy_hit'
+  | 'hook_hit'
   | 'tool_call'
   | 'tool_result'
-  /** @deprecated Historical trace action; writes are normalized to tool_call. */
-  | 'skill_call'
-  /** @deprecated Historical trace action; writes are normalized to tool_call. */
-  | 'skill_called'
-  /** @deprecated Historical trace action; writes are normalized to tool_result. */
-  | 'skill_result'
   | 'human_task_created'
   | 'human_task_resolved'
   | 'final_resolution'
@@ -29,29 +23,16 @@ export type ActionType =
   | 'llm_request_start'
   | 'llm_response'
   | 'microcompact'
-  | 'stage_eval'
   // ── LiveChat / multi-agent trace ──
   | 'incoming_chat'
   | 'chat_deactivated'
   | 'queue_message_enqueued'
   | 'queue_message_consumed'
-  | 'message_bus_send'
-  | 'message_bus_receive'
   | 'agent_tree_node'
-  | 'fork_dispatch'
   | 'case_merged'
-  | 'sub_agent_dispatched'
-  | 'sub_agent_merged'
-
-const LEGACY_ACTION_TYPE_MAP: Partial<Record<string, ActionType>> = {
-  skill_call: 'tool_call',
-  skill_called: 'tool_call',
-  skill_result: 'tool_result',
-  tool_called: 'tool_call',
-}
 
 export function normalizeTraceActionType(actionType: string): ActionType | string {
-  return LEGACY_ACTION_TYPE_MAP[actionType] ?? actionType
+  return actionType
 }
 
 export interface TraceEntry {
@@ -127,29 +108,13 @@ export class TraceWriter {
     })
   }
 
-  /** @deprecated Use writeToolCall. Kept as a read-only adapter for old callers. */
-  async writeSkillCall(
-    skillName: string,
-    input: Record<string, unknown>,
-  ): Promise<void> {
-    await this.writeToolCall(skillName, input)
-  }
-
-  /** @deprecated Use writeToolResult. Kept as a read-only adapter for old callers. */
-  async writeSkillResult(
-    skillName: string,
-    output: unknown,
-  ): Promise<void> {
-    await this.writeToolResult(skillName, output)
-  }
-
-  async writePolicyHit(
-    policyName: string,
+  async writeHookHit(
+    hookName: string,
     result: string,
     reason?: string,
   ): Promise<void> {
-    await this.write('policy_hit', `Policy hit: ${policyName}`, {
-      policyName,
+    await this.write('hook_hit', `Hook hit: ${hookName}`, {
+      hookName,
       result,
       reason,
     })
@@ -217,7 +182,7 @@ export class TraceWriter {
     })
   }
 
-  // ── LiveChat / multi-agent trace helpers ──
+  // ── LiveChat trace helpers ──
 
   async writeQueueEnqueued(queueDepth: number, messagePreview: string): Promise<void> {
     await this.write('queue_message_enqueued', `Message queued (depth: ${queueDepth})`, {
@@ -243,13 +208,6 @@ export class TraceWriter {
       agentName,
       depth,
       chainId,
-    })
-  }
-
-  async writeForkDispatch(childCount: number, stage: string): Promise<void> {
-    await this.write('fork_dispatch', `Fork dispatched ${childCount} agents`, {
-      childCount,
-      stage,
     })
   }
 

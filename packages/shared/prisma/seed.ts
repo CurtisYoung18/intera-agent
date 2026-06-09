@@ -47,7 +47,7 @@ const SEED_TOOLS = [
     description: 'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, key events, and any compaction summary from earlier turns.',
     inputSchema: JSON.stringify({ type: 'object', properties: {}, required: [] }),
     outputSchema: JSON.stringify({ type: 'object', properties: { summary: { type: 'string' }, confirmedFacts: { type: 'object' }, stats: { type: 'object' } } }),
-    mode: 'engine_managed',
+    mode: 'system_managed',
     guardPhase: 'post',
     toolCategory: 'system_info',
     isConcurrencySafe: true,
@@ -58,7 +58,7 @@ const SEED_TOOLS = [
     description: 'Read the user profile for the current customer. Contains user attributes, preferences, tags, and cross-chat statistics.',
     inputSchema: JSON.stringify({ type: 'object', properties: {}, required: [] }),
     outputSchema: JSON.stringify({ type: 'object', properties: { profile: { type: 'string' }, stats: { type: 'object' } } }),
-    mode: 'engine_managed',
+    mode: 'system_managed',
     guardPhase: 'post',
     toolCategory: 'system_info',
     isConcurrencySafe: true,
@@ -82,7 +82,7 @@ const SEED_TOOLS = [
         status: { type: 'string', enum: ['pending', 'resolved'] },
       },
     }),
-    mode: 'engine_managed',
+    mode: 'system_managed',
     guardPhase: 'pre',
     toolCategory: 'operational',
     isConcurrencySafe: true,
@@ -143,18 +143,6 @@ const SEED_HOOKS = [
     }),
     severity: 'critical',
     enabled: true,
-    legacyPolicy: {
-      hook: 'preTool',
-      rule: JSON.stringify({ denyTools: ['refund_money', 'change_ban_status', 'delete_account'] }),
-      guardrailConfig: JSON.stringify({
-        when: 'preTool',
-        match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
-        check: { kind: 'rule', denyTools: ['refund_money', 'change_ban_status', 'delete_account'] },
-        onViolation: { action: 'block', guidance: 'High-risk account changes are not allowed. Escalate to human if needed.' },
-        onUnavailable: { action: 'closed' },
-        guidance: 'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.',
-      }),
-    },
   },
   {
     name: 'investigate_before_resolve',
@@ -175,21 +163,6 @@ const SEED_HOOKS = [
     }),
     severity: 'high',
     enabled: true,
-    legacyPolicy: {
-      hook: 'preFinalize',
-      rule: JSON.stringify({ requireToolsAny: ['get_latest_deposit', 'get_account_status', 'get_kyc_status', 'search_knowledge_base'] }),
-      guardrailConfig: JSON.stringify({
-        when: 'preFinalize',
-        match: { tools: [] },
-        check: {
-          kind: 'ai',
-          evaluationPrompt:
-            'Check whether the finalize conclusion cites evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.',
-        },
-        onViolation: { action: 'block', guidance: 'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or knowledge base articles.' },
-        onUnavailable: { action: 'open' },
-      }),
-    },
   },
   {
     name: 'human_review_before_finalize',
@@ -209,18 +182,6 @@ const SEED_HOOKS = [
     }),
     severity: 'high',
     enabled: true,
-    legacyPolicy: {
-      hook: 'preFinalize',
-      rule: JSON.stringify({ requireTools: ['create_human_task'] }),
-      guardrailConfig: JSON.stringify({
-        when: 'preFinalize',
-        match: { tools: [] },
-        check: { kind: 'rule', requireTools: ['create_human_task'] },
-        onViolation: { action: 'block', guidance: 'Human review is required before finalizing this case.' },
-        onUnavailable: { action: 'closed' },
-        guidance: 'Call create_human_task before finalizing this case.',
-      }),
-    },
   },
 ]
 
@@ -231,12 +192,12 @@ const SEED_CASE_TYPES = [
     description: 'General customer questions, information requests, how-to guidance, and platform policy inquiries.',
     icon: '💬',
     requiredFacts: '[]',
-    stages: '["created","resolved"]',
     defaultGoal: 'Answer the customer question accurately using knowledge base and available tools.',
     escalateOn: '[]',
+    procedure: null,
+    maxAutoTurns: 10,
     hookBindings: [],
     enabled: true,
-    requireHumanReview: false,
   },
   {
     type: 'deposit_issue',
@@ -245,12 +206,40 @@ const SEED_CASE_TYPES = [
       'The customer says they topped up or transferred funds but their balance did not increase. Includes "charged but balance unchanged" and "still not credited after a long time".',
     icon: '💰',
     requiredFacts: '["txnId","amount","paymentMethod","date"]',
-    stages: '["created","collecting","investigating","resolved"]',
     defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
+    procedure: JSON.stringify({
+      version: 1,
+      startStepId: 'collect_facts',
+      steps: [
+        {
+          id: 'collect_facts',
+          title: 'Collect deposit facts',
+          instructions: 'Collect transaction ID, amount, payment method, and date before investigation.',
+          requiredFacts: ['txnId', 'amount', 'paymentMethod', 'date'],
+          allowedTools: ['ask_user_questions', 'read_chat_memory'],
+          next: [{ when: 'complete', stepId: 'investigate_order' }],
+        },
+        {
+          id: 'investigate_order',
+          title: 'Investigate order and channel',
+          instructions: 'Check order status and payment-channel status; reconcile the result with the customer report.',
+          requiredToolsAny: ['query_order_status', 'query_payment_channel_status'],
+          allowedTools: ['query_order_status', 'query_payment_channel_status', 'create_human_task', 'read_chat_memory'],
+          next: [{ when: 'complete', stepId: 'finalize' }],
+        },
+        {
+          id: 'finalize',
+          title: 'Finalize customer answer',
+          instructions: 'Give a clear customer-facing answer grounded in collected evidence.',
+          allowedTools: ['finalize_case', 'create_human_task', 'read_chat_memory'],
+          next: [],
+        },
+      ],
+    }),
+    maxAutoTurns: 10,
     hookBindings: ['investigate_before_resolve', 'human_review_before_finalize'],
     enabled: true,
-    requireHumanReview: true,
   },
 ]
 
@@ -319,31 +308,6 @@ async function seedAgentConfig(orgId: string, agentId: string) {
   }
   console.log(`  ✓ ${SEED_TOOLS.length} Tools (${agentId})`)
 
-  // Temporary dual-seed for current runtime compatibility. F2 removes the
-  // PolicyEngine path; until then fresh seeds still need Policy rows.
-  for (const h of SEED_HOOKS) {
-    await prisma.policy.upsert({
-      where: { agentConfigId_name: { agentConfigId: agentId, name: h.name } },
-      update: {
-        description: h.description,
-        hook: h.legacyPolicy.hook,
-        rule: h.legacyPolicy.rule,
-        guardrailConfig: h.legacyPolicy.guardrailConfig,
-        enabled: h.enabled,
-      },
-      create: {
-        agentConfigId: agentId,
-        name: h.name,
-        description: h.description,
-        hook: h.legacyPolicy.hook,
-        rule: h.legacyPolicy.rule,
-        guardrailConfig: h.legacyPolicy.guardrailConfig,
-        enabled: h.enabled,
-      },
-    })
-  }
-  console.log(`  ✓ ${SEED_HOOKS.length} Legacy Policies (${agentId})`)
-
   // Hooks — agent-scoped
   for (const h of SEED_HOOKS) {
     await prisma.hook.upsert({
@@ -402,12 +366,11 @@ async function seedAgentConfig(orgId: string, agentId: string) {
         description: ct.description,
         icon: ct.icon,
         requiredFacts: ct.requiredFacts,
-        stages: ct.stages,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
-        guardrails: JSON.stringify(ct.hookBindings ?? []),
+        procedure: ct.procedure,
+        maxAutoTurns: ct.maxAutoTurns,
         enabled: ct.enabled,
-        requireHumanReview: ct.requireHumanReview ?? false,
       },
       create: {
         agentConfigId: agentId,
@@ -416,12 +379,11 @@ async function seedAgentConfig(orgId: string, agentId: string) {
         description: ct.description,
         icon: ct.icon,
         requiredFacts: ct.requiredFacts,
-        stages: ct.stages,
         defaultGoal: ct.defaultGoal,
         escalateOn: ct.escalateOn,
-        guardrails: JSON.stringify(ct.hookBindings ?? []),
+        procedure: ct.procedure,
+        maxAutoTurns: ct.maxAutoTurns,
         enabled: ct.enabled,
-        requireHumanReview: ct.requireHumanReview ?? false,
       },
     })
 
@@ -535,8 +497,8 @@ async function seed() {
       caseId: c.id,
       confirmedFacts: JSON.stringify({ txnId: 'TXU1_12345', amount: 500, userReportedNotReceived: true, orderStatus: 'pending', channelDelayedBatch: true }),
       missingFacts: JSON.stringify(['receipt_screenshot']),
-      skillsCalled: JSON.stringify(['query_order_status', 'query_payment_channel_status']),
-      skillResults: JSON.stringify({
+      toolsCalled: JSON.stringify(['query_order_status', 'query_payment_channel_status']),
+      toolResults: JSON.stringify({
         query_order_status: { status: 'pending', amount: 500, time: '2026-04-28T10:00:00Z' },
         query_payment_channel_status: { delayed_batch: true, channel: 'wechat_pay', reason: 'Batch processing delay' },
       }),
@@ -559,9 +521,9 @@ async function seed() {
   await prisma.actionTrace.createMany({
     data: [
       { caseId: c.id, actionType: 'user_message', title: 'User reported deposit issue' },
-      { caseId: c.id, actionType: 'tool_called', title: 'Tool called: query_order_status' },
+      { caseId: c.id, actionType: 'tool_call', title: 'Tool called: query_order_status' },
       { caseId: c.id, actionType: 'tool_result', title: 'Tool result: query_order_status' },
-      { caseId: c.id, actionType: 'tool_called', title: 'Tool called: query_payment_channel_status' },
+      { caseId: c.id, actionType: 'tool_call', title: 'Tool called: query_payment_channel_status' },
       { caseId: c.id, actionType: 'tool_result', title: 'Tool result: query_payment_channel_status' },
       { caseId: c.id, actionType: 'human_task_created', title: 'Human task created for payment_ops' },
     ],

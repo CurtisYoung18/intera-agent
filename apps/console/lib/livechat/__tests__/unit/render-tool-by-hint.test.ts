@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { renderSkillByHint } from '../../../../channels/livechat/render-skill-by-hint'
+import { renderToolByHint } from '../../../../channels/livechat/render-tool-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
-describe('renderSkillByHint', () => {
+describe('renderToolByHint', () => {
   describe('card kind', () => {
     it('maps fields correctly', () => {
       const output = { order: { id: 'TX123', status: 'completed', thumbnailUrl: 'https://img.example/1.png' } }
@@ -13,7 +13,7 @@ describe('renderSkillByHint', () => {
         imageUrlField: '$.order.thumbnailUrl',
         buttons: [{ id: 'view', postback: 'view_order', labelStatic: 'View Order' }],
       }
-      const actions = renderSkillByHint(output, hint)
+      const actions = renderToolByHint(output, hint)
       expect(actions).toHaveLength(1)
       expect(actions[0]!.type).toBe('send_card')
       const card = (actions[0] as { card: { title: string; subtitle: string; imageUrl: string } }).card
@@ -24,7 +24,7 @@ describe('renderSkillByHint', () => {
 
     it('falls back to (untitled) when titleField missing', () => {
       const hint: LivechatRenderHint = { kind: 'card', titleField: '$.missing' }
-      const actions = renderSkillByHint({}, hint)
+      const actions = renderToolByHint({}, hint)
       expect((actions[0] as { card: { title: string } }).card.title).toBe('(untitled)')
     })
   })
@@ -42,7 +42,7 @@ describe('renderSkillByHint', () => {
           buttons: [{ id: 'select', postback: 'select_item', labelField: '$.title' }],
         },
       }
-      const actions = renderSkillByHint(output, hint)
+      const actions = renderToolByHint(output, hint)
       expect(actions).toHaveLength(1)
       expect(actions[0]!.type).toBe('send_carousel')
       const cards = (actions[0] as { cards: Array<{ title: string }> }).cards
@@ -53,7 +53,7 @@ describe('renderSkillByHint', () => {
 
     it('renders nothing (noop) when array is empty — the agent reply covers it', () => {
       const hint: LivechatRenderHint = { kind: 'carousel', itemsField: '$.empty', itemTemplate: { titleField: '$.title' } }
-      const actions = renderSkillByHint({ empty: [] }, hint)
+      const actions = renderToolByHint({ empty: [] }, hint)
       expect(actions[0]!.type).toBe('noop')
     })
   })
@@ -68,7 +68,7 @@ describe('renderSkillByHint', () => {
         optionLabelField: '$.label',
         titleStatic: 'Pick one:',
       }
-      const actions = renderSkillByHint(output, hint)
+      const actions = renderToolByHint(output, hint)
       expect(actions[0]!.type).toBe('send_quick_replies')
       const qr = actions[0] as { text: string; options: Array<{ id: string; label: string }> }
       expect(qr.text).toBe('Pick one:')
@@ -80,16 +80,16 @@ describe('renderSkillByHint', () => {
   describe('plain kind', () => {
     it('returns text from string output', () => {
       const hint: LivechatRenderHint = { kind: 'plain' }
-      const actions = renderSkillByHint('simple result', hint)
+      const actions = renderToolByHint('simple result', hint)
       expect(actions[0]!.type).toBe('send_text')
       expect((actions[0] as { text: string }).text).toBe('simple result')
     })
   })
 
   describe('iframe kind', () => {
-    it('returns noop since iframe is handled by renderer before renderSkillByHint', () => {
+    it('returns noop since iframe is handled by renderer before renderToolByHint', () => {
       const hint: LivechatRenderHint = { kind: 'iframe', template: 'order_timeline' }
-      const actions = renderSkillByHint({ steps: [] }, hint)
+      const actions = renderToolByHint({ steps: [] }, hint)
       expect(actions[0]!.type).toBe('noop')
     })
   })
@@ -106,7 +106,7 @@ describe('renderSkillByHint', () => {
           buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open' }],
         },
       }
-      const actions = renderSkillByHint(output, hint)
+      const actions = renderToolByHint(output, hint)
       const cards = (actions[0] as { cards: Array<{ buttons: Array<{ id: string }> }> }).cards
       expect(cards[0]!.buttons[0]!.id).toBe('open_doc:doc-1')
       expect(cards[1]!.buttons[0]!.id).toBe('open_doc:doc-2')
@@ -121,7 +121,7 @@ describe('renderSkillByHint', () => {
         titleField: '$.item.name',
         buttons: [{ id: 'btn', postback: 'action', labelField: '$.item.name' }],
       }
-      const actions = renderSkillByHint(output, hint)
+      const actions = renderToolByHint(output, hint)
       const card = (actions[0] as { card: { buttons: Array<{ label: string }> } }).card
       expect(card.buttons[0]!.label).toBe('Dynamic Label')
     })

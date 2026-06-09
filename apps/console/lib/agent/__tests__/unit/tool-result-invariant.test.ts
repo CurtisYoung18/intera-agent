@@ -59,14 +59,14 @@ describe('synthesizeMissingToolResults', () => {
   it('synthesizes error block when tool_use has missingReasons entry', () => {
     const toolUses = [makeToolUse('a', 'blocked_tool'), makeToolUse('b', 'ok_tool')]
     const completedResults = [makeResult('b', { ok: true })]
-    const missingReasons = new Map<string, SynthesisReason>([['a', 'policy_blocked']])
+    const missingReasons = new Map<string, SynthesisReason>([['a', 'hook_blocked']])
 
     const blocks = synthesizeMissingToolResults({ toolUses, completedResults, missingReasons })
 
     expect(blocks).toHaveLength(2)
     const blocked = blocks.find(b => b.tool_use_id === 'a')!
     expect(blocked.is_error).toBe(true)
-    expect(blocked.content).toContain('policy')
+    expect(blocked.content).toContain('Hook')
 
     const ok = blocks.find(b => b.tool_use_id === 'b')!
     expect(ok.is_error).toBe(false)
@@ -74,7 +74,7 @@ describe('synthesizeMissingToolResults', () => {
 
   it('uses correct error messages for each SynthesisReason', () => {
     const reasons: SynthesisReason[] = [
-      'policy_blocked', 'incomplete_tool_use', 'stream_aborted',
+      'hook_blocked', 'incomplete_tool_use', 'stream_aborted',
       'loop_terminated', 'sibling_error',
     ]
 

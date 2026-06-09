@@ -10,7 +10,7 @@ describe('statusColor', () => {
   })
 
   it('returns red for failure types', () => {
-    expect(statusColor('policy_hit')).toBe('#e64539')
+    expect(statusColor('hook_hit')).toBe('#e64539')
     expect(statusColor('block')).toBe('#e64539')
     expect(statusColor('error')).toBe('#e64539')
     expect(statusColor('fail')).toBe('#e64539')
@@ -37,7 +37,7 @@ describe('statusColor', () => {
 
 describe('ACCENTS', () => {
   it('has expected entries', () => {
-    expect(ACCENTS.policy_hit.stroke).toBe('#e64539')
+    expect(ACCENTS.hook_hit.stroke).toBe('#e64539')
     expect(ACCENTS.tool_result.stroke).toBe('#2ea04a')
     expect(ACCENTS.tool_call.stroke).toBe('#d4912e')
     expect(ACCENTS.llm_request_start.stroke).toBe('#5b8af7')
@@ -60,7 +60,7 @@ describe('ACCENTS', () => {
       user_message: '#5b8af7',
       case_created: '#a09888',
       fact_extracted: '#d4912e',
-      policy_hit: '#e64539',
+      hook_hit: '#e64539',
       tool_call: '#d4912e',
       tool_result: '#2ea04a',
       human_task_created: '#d4912e',
@@ -81,7 +81,7 @@ describe('ACCENTS', () => {
       user_message: 'rgba(91, 138, 247, 0.08)',
       case_created: 'rgba(160, 152, 136, 0.08)',
       fact_extracted: 'rgba(212, 145, 46, 0.10)',
-      policy_hit: 'rgba(230, 69, 57, 0.08)',
+      hook_hit: 'rgba(230, 69, 57, 0.08)',
       tool_call: 'rgba(212, 145, 46, 0.10)',
       tool_result: 'rgba(46, 160, 74, 0.08)',
       human_task_created: 'rgba(212, 145, 46, 0.12)',

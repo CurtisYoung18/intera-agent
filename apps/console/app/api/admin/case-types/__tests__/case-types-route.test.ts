@@ -4,13 +4,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => {
+  const caseTypeRow = (overrides: Record<string, unknown>) => ({
+    id: 'ct',
+    agentConfigId: 'agent_default_v1',
+    type: 'general',
+    displayName: 'General',
+    description: 'General case',
+    icon: ':icon:',
+    requiredFacts: '[]',
+    defaultGoal: '',
+    escalateOn: '[]',
+    autoCloseConditions: null,
+    enabled: true,
+    procedure: null,
+    maxAutoTurns: 10,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  })
   const typesByAgent: Record<string, Record<string, unknown>[]> = {
     'agent_default_v1': [
-      { id: 'ct1', agentConfigId: 'agent_default_v1', type: 'refund_request', displayName: 'Refund', description: 'Refund case', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
-      { id: 'ct2', agentConfigId: 'agent_default_v1', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit', icon: ':icon:', requiredFacts: '[]', stages: '["created","investigating","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+      caseTypeRow({ id: 'ct1', type: 'refund_request', displayName: 'Refund', description: 'Refund case' }),
+      caseTypeRow({ id: 'ct2', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit' }),
     ],
     'test-agent': [
-      { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+      caseTypeRow({ id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only' }),
     ],
   }
   const agentConfigs: Record<string, { id: string; orgId: string }> = {
@@ -28,7 +46,7 @@ const h = vi.hoisted(() => {
   }
   const mockGetSession = vi.fn()
 
-  return { typesByAgent, agentConfigs, hooksByAgent, mockGetSession }
+  return { typesByAgent, agentConfigs, hooksByAgent, mockGetSession, caseTypeRow }
 })
 
 vi.mock('@/lib/db/repo-for-org', () => ({
@@ -103,8 +121,6 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@intera/shared/defaults', () => ({
   DEFAULT_CASE_TYPES: [],
-  DEFAULT_STAGE_CONFIGS: {},
-  DEFAULT_ORCHESTRATOR_CONFIG: { enabled: false, maxParallelAgents: 3 },
   DEFAULT_MODEL: 'deepseek-v4-flash',
 }))
 
@@ -127,11 +143,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
   h.typesByAgent['agent_default_v1'] = [
-    { id: 'ct1', agentConfigId: 'agent_default_v1', type: 'refund_request', displayName: 'Refund', description: 'Refund case', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
-    { id: 'ct2', agentConfigId: 'agent_default_v1', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit', icon: ':icon:', requiredFacts: '[]', stages: '["created","investigating","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+    h.caseTypeRow({ id: 'ct1', type: 'refund_request', displayName: 'Refund', description: 'Refund case' }),
+    h.caseTypeRow({ id: 'ct2', type: 'deposit_issue', displayName: 'Deposit Issue', description: 'Deposit' }),
   ]
   h.typesByAgent['test-agent'] = [
-    { id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only', icon: ':icon:', requiredFacts: '[]', stages: '["created","resolved"]', stageConfigs: null, orchestratorConfig: null, defaultGoal: '', escalateOn: '[]', autoCloseConditions: null, enabled: true, requireHumanReview: false, executionMode: 'stage', sop: null, sopMaxAutoTurns: 10, createdAt: new Date(), updatedAt: new Date() },
+    h.caseTypeRow({ id: 'ct3', agentConfigId: 'test-agent', type: 'org_b_type', displayName: 'Test Agent Type', description: 'Test only' }),
   ]
   h.hooksByAgent['agent_default_v1'] = [
     { id: 'h1', agentConfigId: 'agent_default_v1', name: 'investigate_before_resolve', enabled: true },
@@ -166,34 +182,32 @@ describe('G1 — Uniform envelope', () => {
     expect(res.status).toBe(201)
   })
 
-  it('POST rejects unknown Hook references that are not in the agent Hook set', async () => {
+  it('POST rejects invalid procedure payloads', async () => {
     const res = await POST(makeRequest({
       agentConfigId: 'agent_default_v1',
-      type: 'bad_hook_ref',
-      guardrails: ['ghost_rule'],
+      type: 'bad_procedure',
+      procedure: { steps: [{ id: 'bad', action: 'unknown' }] },
     }))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('validation')
-    expect(body.error.message).toContain('ghost_rule')
-    expect(body.error.fields).toEqual({ guardrails: expect.stringContaining('ghost_rule') })
     expect(res.status).toBe(400)
   })
 
-  it('POST accepts hook refs for case binding migration data', async () => {
+  it('POST accepts procedure payloads', async () => {
     const res = await POST(makeRequest({
       agentConfigId: 'agent_default_v1',
-      type: 'legacy_hook_ref_case',
-      guardrails: ['human_review_before_finalize'],
+      type: 'procedure_case',
+      procedure: { steps: [{ id: 'finish', action: 'finalize' }] },
     }))
     const body = await res.json()
     expect(body.ok).toBe(true)
-    expect(body.data.caseType.guardrails).toBe('["human_review_before_finalize"]')
+    expect(body.data.caseType.procedure).toContain('"finish"')
   })
 })
 
 describe('G4 — Procedure payload', () => {
-  it('PUT accepts procedure payload and keeps legacy hook references migration data when provided', async () => {
+  it('PUT accepts procedure payload', async () => {
     const res = await PUT(
       makeRequestForAgent('agent_default_v1', {
         agentConfigId: 'agent_default_v1',
@@ -203,15 +217,12 @@ describe('G4 — Procedure payload', () => {
             { id: 'step_2', action: 'ask', target: 'ops', guidance: 'send alert', when: 'error', required: false },
           ],
         },
-        guardrails: ['human_review_before_finalize'],
       }),
       routeCtx('refund_request'),
     )
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.caseType.procedure).toContain('"step_1"')
-    expect(body.data.caseType.executionMode).toBe('cc')
-    expect(body.data.caseType.guardrails).toBe('["human_review_before_finalize"]')
   })
 })
 
@@ -249,16 +260,14 @@ describe('G3 — Mutations', () => {
     expect(body.data.caseType.displayName).toBe('Updated Refund')
   })
 
-  it('PUT rejects dangling legacy guardrail references', async () => {
+  it('PUT rejects invalid procedure updates', async () => {
     const res = await PUT(makeRequestForAgent('agent_default_v1', {
       agentConfigId: 'agent_default_v1',
-      guardrails: ['investigate_before_resolve', 'missing_hook'],
+      procedure: { steps: [{ id: 'bad', action: 'unknown' }] },
     }), routeCtx('refund_request'))
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('validation')
-    expect(body.error.message).toContain('missing_hook')
-    expect(body.error.fields).toEqual({ guardrails: expect.stringContaining('missing_hook') })
   })
 })
 

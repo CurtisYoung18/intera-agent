@@ -4,15 +4,13 @@
 //   - Session memory: running summary maintained across turns
 //   - Structured compaction with <analysis>/<summary> format
 
-import type { KeyEvent, ChatMemoryData, MemoryStrategy, TodoItem, TodoWriteInput, DashboardChange } from '@intera/shared/types'
+import type { KeyEvent, ChatMemoryData, MemoryStrategy, TodoItem, TodoWriteInput } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import { withRetry } from './api/with-retry'
 
-/** Persisted in skillResults — avoids duplicate background sub-agent dispatch across HTTP turns. */
-export const SUB_AGENT_DISPATCH_MARKER_KEY = '__intera_sub_agent_dispatch'
 export const INTERNAL_MEMORY_PREFIX = '__intera_'
 
 export function isInternalMemoryKey(key: string): boolean {
@@ -24,28 +22,6 @@ export function stripInternalMemoryKeys<T extends Record<string, unknown> | unde
   return Object.fromEntries(
     Object.entries(value).filter(([key]) => !isInternalMemoryKey(key)),
   )
-}
-
-/** Maps workflow stage → sorted agent roster signature for which dispatch already ran. */
-export interface SubAgentDispatchMarker {
-  stages: Record<string, string>
-}
-
-function signatureForAgentNames(names: string[]): string {
-  return [...names].filter(Boolean).sort().join('|')
-}
-
-function normalizeDispatchMarker(raw: unknown): SubAgentDispatchMarker {
-  if (!raw || typeof raw !== 'object') return { stages: {} }
-  const o = raw as Record<string, unknown>
-  if (o.stages && typeof o.stages === 'object' && !Array.isArray(o.stages)) {
-    return { stages: { ...(o.stages as Record<string, string>) } }
-  }
-  // Legacy single-stage shape from earlier drafts
-  if (typeof o.stage === 'string' && typeof o.agentsSignature === 'string') {
-    return { stages: { [o.stage]: o.agentsSignature } }
-  }
-  return { stages: {} }
 }
 
 /** Extract a JSON object from LLM output that may be wrapped in markdown code fences. */
@@ -68,17 +44,12 @@ export interface CompactionResult {
 export class ChatMemoryManager {
   private confirmedFacts: Record<string, unknown> = {}
   private missingFacts: string[] = []
-  private skillsCalled: string[] = []
-  private skillResults: Record<string, unknown> = {}
+  private toolsCalled: string[] = []
+  private toolResults: Record<string, unknown> = {}
   private keyEvents: KeyEvent[] = []
   private caseStatus: string | undefined = undefined
   private summary: string = ''
   private todos: TodoItem[] = []
-  private agentTodos: Record<string, TodoItem[]> = {}
-  private dashboardVersion: number = 0
-  /** Changelog of fact keys that changed at each dashboard version — used by getDashboardDiff. */
-  private factChangelog: Array<{ atVersion: number; keys: string[] }> = []
-  private static readonly MAX_CHANGELOG_SIZE = 200
   private lastCompactedAt: Date | null = null
   private consecutiveCompactFailures = 0
   private strategy: MemoryStrategy
@@ -93,9 +64,9 @@ export class ChatMemoryManager {
   // ─── DB load/restore ──────────────────────────────────────
 
   loadFromDb(data: {
-    confirmedFacts?: unknown; missingFacts?: unknown; skillsCalled?: unknown
-    skillResults?: unknown; keyEvents?: unknown; summary?: string | null
-    caseStatus?: string | null; todos?: unknown; agentTodos?: unknown; dashboardVersion?: unknown
+    confirmedFacts?: unknown; missingFacts?: unknown; toolsCalled?: unknown
+    toolResults?: unknown; keyEvents?: unknown; summary?: string | null
+    caseStatus?: string | null; todos?: unknown
   }): void {
     const safeParse = (raw: unknown, fallback: unknown): unknown => {
       if (typeof raw === 'string') {
@@ -106,26 +77,20 @@ export class ChatMemoryManager {
 
     const facts = safeParse(data.confirmedFacts, {})
     const missing = safeParse(data.missingFacts, [])
-    const skills = safeParse(data.skillsCalled, [])
-    const results = safeParse(data.skillResults, {})
+    const skills = safeParse(data.toolsCalled, [])
+    const results = safeParse(data.toolResults, {})
     const events = safeParse(data.keyEvents, [])
 
     if (facts && typeof facts === 'object') this.confirmedFacts = facts as Record<string, unknown>
     if (Array.isArray(missing)) this.missingFacts = missing
-    if (Array.isArray(skills)) this.skillsCalled = skills
-    if (results && typeof results === 'object') this.skillResults = results as Record<string, unknown>
+    if (Array.isArray(skills)) this.toolsCalled = skills
+    if (results && typeof results === 'object') this.toolResults = results as Record<string, unknown>
     if (Array.isArray(events)) this.keyEvents = events
     if (data.summary) this.summary = data.summary
     if (data.caseStatus) this.caseStatus = data.caseStatus
 
-    // SOP mode: todos and dashboard version
     const todosRaw = safeParse(data.todos, [])
     if (Array.isArray(todosRaw)) this.todos = todosRaw as TodoItem[]
-    const agentTodosRaw = safeParse(data.agentTodos, {})
-    if (agentTodosRaw && typeof agentTodosRaw === 'object' && !Array.isArray(agentTodosRaw)) {
-      this.agentTodos = agentTodosRaw as Record<string, TodoItem[]>
-    }
-    if (typeof data.dashboardVersion === 'number') this.dashboardVersion = data.dashboardVersion
   }
 
   /** Align in-memory status with AgentLoop mid-request stage transitions (persisted on HTTP return). */
@@ -255,30 +220,30 @@ export class ChatMemoryManager {
     })
   }
 
-  // ─── Skill result tracking ────────────────────────────────
+  // ─── Tool result tracking ────────────────────────────────
 
-  async applySkillResult(skillName: string, output: unknown): Promise<void> {
-    if (!this.skillsCalled.includes(skillName)) {
-      this.skillsCalled.push(skillName)
+  async applyToolResult(toolName: string, output: unknown): Promise<void> {
+    if (!this.toolsCalled.includes(toolName)) {
+      this.toolsCalled.push(toolName)
     }
-    this.skillResults[skillName] = output
+    this.toolResults[toolName] = output
 
     const result = (output && typeof output === 'object' && !Array.isArray(output))
       ? output as Record<string, unknown>
       : {}
-    if (skillName === 'query_order_status' && result.status) {
+    if (toolName === 'query_order_status' && result.status) {
       this.setConfirmedFact('orderStatus', result.status)
       if (result.amount) this.setConfirmedFact('orderAmount', result.amount)
       if (result.time) this.setConfirmedFact('orderTime', result.time)
     }
-    if (skillName === 'query_payment_channel_status') {
+    if (toolName === 'query_payment_channel_status') {
       if (result.delayed_batch !== undefined) this.setConfirmedFact('channelDelayedBatch', result.delayed_batch)
       if (result.reason) this.setConfirmedFact('delayReason', result.reason)
     }
 
     this.keyEvents.push({
       at: new Date().toISOString(),
-      text: `Skill ${skillName} executed`,
+      text: `Tool ${toolName} executed`,
       source: 'heuristic',
     })
     this.updateMissingFacts()
@@ -347,11 +312,11 @@ export class ChatMemoryManager {
       facts.forEach(([k, v]) => parts.push(`- ${k}: ${JSON.stringify(v)}`))
     }
 
-    // Skills executed
-    if (this.skillsCalled.length > 0) {
-      parts.push('\n## Skills Executed')
-      this.skillsCalled.forEach((s) => {
-        parts.push(`- ${s}: ${JSON.stringify(this.skillResults[s] || 'N/A')}`)
+    // Tools executed
+    if (this.toolsCalled.length > 0) {
+      parts.push('\n## Tools Executed')
+      this.toolsCalled.forEach((s) => {
+        parts.push(`- ${s}: ${JSON.stringify(this.toolResults[s] || 'N/A')}`)
       })
     }
 
@@ -368,25 +333,12 @@ export class ChatMemoryManager {
       this.keyEvents.slice(-maxEvents).forEach((e) => parts.push(`- ${e.at}: ${e.text}`))
     }
 
-    // SOP todos
     if (this.todos.length > 0) {
       parts.push('\n## Investigation Todos')
       for (const todo of this.todos) {
         const icon = todo.status === 'completed' ? '✓' : todo.status === 'cancelled' ? '✗' : todo.status === 'in_progress' ? '→' : '○'
         const notes = todo.notes ? ` (${todo.notes})` : ''
         parts.push(`- [${icon}] ${todo.text}${notes}`)
-      }
-    }
-
-    // Per-agent todos
-    for (const [agentName, agentTodoList] of Object.entries(this.agentTodos)) {
-      if (agentTodoList.length > 0) {
-        parts.push(`\n## Agent "${agentName}" Todos`)
-        for (const todo of agentTodoList) {
-          const icon = todo.status === 'completed' ? '✓' : todo.status === 'cancelled' ? '✗' : todo.status === 'in_progress' ? '→' : '○'
-          const notes = todo.notes ? ` (${todo.notes})` : ''
-          parts.push(`- [${icon}] ${todo.text}${notes}`)
-        }
       }
     }
 
@@ -410,7 +362,7 @@ export class ChatMemoryManager {
     let tokens = 0
     tokens += this.keyEvents.length * s.tokensPerKeyEvent
     tokens += Object.keys(stripInternalMemoryKeys(this.confirmedFacts)).length * s.tokensPerFact
-    tokens += this.skillsCalled.length * s.tokensPerTool
+    tokens += this.toolsCalled.length * s.tokensPerTool
     tokens += this.summary.length / s.latinCharPerToken
     for (const content of messageContents) {
       const cjkChars = (content.match(/[一-鿿]/g) || []).length
@@ -468,42 +420,38 @@ export class ChatMemoryManager {
     return { ...this.strategy }
   }
 
-  // ─── Policy hit tracking (per-session, not persisted) ─────
+  // ─── Hook hit tracking (per-session, not persisted) ─────
 
-  private policyHitCount: Map<string, number> = new Map()
+  private hookHitCount: Map<string, number> = new Map()
 
-  recordPolicyHit(policyName: string): number {
-    const next = (this.policyHitCount.get(policyName) || 0) + 1
-    this.policyHitCount.set(policyName, next)
+  recordHookHit(hookName: string): number {
+    const next = (this.hookHitCount.get(hookName) || 0) + 1
+    this.hookHitCount.set(hookName, next)
     return next
   }
 
-  getPolicyHitCount(policyName: string): number {
-    return this.policyHitCount.get(policyName) || 0
+  getHookHitCount(hookName: string): number {
+    return this.hookHitCount.get(hookName) || 0
   }
 
-  resetPolicyHits(): void {
-    this.policyHitCount.clear()
+  resetHookHits(): void {
+    this.hookHitCount.clear()
   }
 
   // ─── Accessors ────────────────────────────────────────────
 
   getConfirmedFacts(): Record<string, unknown> { return stripInternalMemoryKeys(this.confirmedFacts) }
   getMissingFacts(): string[] { return [...this.missingFacts] }
-  getSkillsCalled(): string[] { return [...this.skillsCalled] }
-  getSkillResult(skillName: string): unknown { return this.skillResults[skillName] }
+  getToolsCalled(): string[] { return [...this.toolsCalled] }
+  getToolResult(toolName: string): unknown { return this.toolResults[toolName] }
   getKeyEvents(): KeyEvent[] { return [...this.keyEvents] }
-  getInternalState<T = unknown>(key: string): T | undefined { return this.skillResults[key] as T | undefined }
+  getInternalState<T = unknown>(key: string): T | undefined { return this.toolResults[key] as T | undefined }
   setInternalState(key: string, value: unknown): void {
-    this.skillResults = { ...this.skillResults, [key]: value }
+    this.toolResults = { ...this.toolResults, [key]: value }
   }
 
-  // ─── Centralized fact writes (bumps dashboardVersion) ─────
+  // ─── Centralized fact writes ──────────────────────────────
 
-  /**
-   * Set a confirmed fact and bump dashboard version.
-   * All fact writes MUST go through this method so sub-agents detect changes.
-   */
   setConfirmedFact(key: string, value: unknown): void {
     if (isInternalMemoryKey(key)) {
       this.setInternalState(key, value)
@@ -513,11 +461,6 @@ export class ChatMemoryManager {
     this.confirmedFacts[key] = value
     this.missingFacts = this.missingFacts.filter((f) => f !== key)
     if (JSON.stringify(oldValue) !== JSON.stringify(value)) {
-      this.bumpDashboardVersion()
-      this.factChangelog.push({ atVersion: this.dashboardVersion, keys: [key] })
-      if (this.factChangelog.length > ChatMemoryManager.MAX_CHANGELOG_SIZE) {
-        this.factChangelog.splice(0, 50)
-      }
       this.keyEvents.push({
         at: new Date().toISOString(),
         text: `Fact updated: ${key}=${JSON.stringify(value).slice(0, 80)}`,
@@ -527,7 +470,7 @@ export class ChatMemoryManager {
   }
 
   /**
-   * Bulk-set confirmed facts, bumping version once.
+   * Bulk-set confirmed facts.
    */
   setConfirmedFactsBulk(facts: Record<string, unknown>): boolean {
     const changedKeys: string[] = []
@@ -545,11 +488,6 @@ export class ChatMemoryManager {
       }
     }
     if (changedKeys.length > 0) {
-      this.bumpDashboardVersion()
-      this.factChangelog.push({ atVersion: this.dashboardVersion, keys: changedKeys })
-      if (this.factChangelog.length > ChatMemoryManager.MAX_CHANGELOG_SIZE) {
-        this.factChangelog.splice(0, 50)
-      }
       this.keyEvents.push({
         at: new Date().toISOString(),
         // Log only actually-changed keys, not all input keys
@@ -563,130 +501,6 @@ export class ChatMemoryManager {
   // ─── SOP Mode: todo management ────────────────────────────
 
   getTodos(): TodoItem[] { return [...this.todos] }
-
-  // ─── Per-agent todo isolation ──────────────────────────────
-
-  getAgentTodos(agentName: string): TodoItem[] {
-    return [...(this.agentTodos[agentName] || [])]
-  }
-
-  /**
-   * Apply a todo action scoped to a specific agent.
-   * Bumps dashboardVersion so the agent detects the change on next poll.
-   */
-  applyAgentTodoAction(agentName: string, input: TodoWriteInput): { todos: TodoItem[]; changed: boolean } {
-    let list = [...(this.agentTodos[agentName] || [])]
-    let changed = false
-    const { action, id, text, notes, status } = input
-
-    switch (action) {
-      case 'add': {
-        // Sequential short IDs scoped to this agent's list
-        const newId = `t${list.length + 1}`
-        const newTodo: TodoItem = {
-          id: newId,
-          text: text || '',
-          status: 'pending',
-          addedBy: 'agent',
-          addedAt: new Date().toISOString(),
-          notes: notes || undefined,
-        }
-        list.push(newTodo)
-        changed = true
-        break
-      }
-      case 'update': {
-        const todo = this.resolveTodoInList(list, id, text)
-        if (todo) {
-          if (text !== undefined && text !== todo.text) todo.text = text
-          if (notes !== undefined) todo.notes = notes
-          if (status !== undefined) todo.status = status
-          changed = true
-        }
-        break
-      }
-      case 'complete': {
-        const todo = this.resolveTodoInList(list, id, text)
-        if (todo && todo.status !== 'completed') {
-          todo.status = 'completed'
-          todo.completedAt = new Date().toISOString()
-          if (notes !== undefined) todo.notes = notes
-          changed = true
-        }
-        break
-      }
-      case 'cancel': {
-        const todo = this.resolveTodoInList(list, id, text)
-        if (todo && todo.status !== 'cancelled') {
-          todo.status = 'cancelled'
-          if (notes !== undefined) todo.notes = notes
-          changed = true
-        }
-        break
-      }
-    }
-
-    if (changed) {
-      this.agentTodos[agentName] = list
-      this.bumpDashboardVersion()
-      this.keyEvents.push({
-        at: new Date().toISOString(),
-        text: `Agent "${agentName}" todo ${action}: ${text?.slice(0, 80) || id || ''}`,
-        source: 'dashboard',
-      })
-    }
-
-    return { todos: [...list], changed }
-  }
-
-  getDashboardVersion(): number { return this.dashboardVersion }
-
-  bumpDashboardVersion(): void { this.dashboardVersion++ }
-
-  /**
-   * Compute what changed on the dashboard since a given version.
-   * Used by sub-agents to generate "[DASHBOARD UPDATE]" context injection.
-   */
-  getDashboardDiff(sinceVersion: number): DashboardChange {
-    // Compute only the facts that changed since sinceVersion using the changelog.
-    const changedKeys = new Set<string>()
-    for (const entry of this.factChangelog) {
-      if (entry.atVersion > sinceVersion) {
-        entry.keys.forEach(k => changedKeys.add(k))
-      }
-    }
-
-    const changedFacts: Record<string, unknown> = {}
-    if (changedKeys.size > 0) {
-      for (const key of changedKeys) {
-        if (key in this.confirmedFacts && !isInternalMemoryKey(key)) changedFacts[key] = this.confirmedFacts[key]
-      }
-    } else if (this.dashboardVersion > sinceVersion) {
-      // Version bumped but no fact changelog entries (e.g. only todo changes) —
-      // include all current facts so the sub-agent has full context.
-      Object.assign(changedFacts, stripInternalMemoryKeys(this.confirmedFacts))
-    }
-
-    const agentTodoChanges: Record<string, TodoItem[]> = {}
-    for (const [name, todos] of Object.entries(this.agentTodos)) {
-      agentTodoChanges[name] = [...todos]
-    }
-
-    // Return only the dashboard-source events that postdate sinceVersion.
-    // applyTodoAction can bump dashboardVersion without adding a 'dashboard' event,
-    // so we use (dashboardVersion - sinceVersion) as a ceiling, not an exact count.
-    const dashboardEvents = this.keyEvents.filter(e => e.source === 'dashboard')
-    const newEventCap = Math.max(0, this.dashboardVersion - sinceVersion)
-    const newKeyEvents = newEventCap > 0 ? dashboardEvents.slice(-newEventCap) : []
-
-    return {
-      dashboardVersion: this.dashboardVersion,
-      changedFacts,
-      removedFactKeys: [],
-      agentTodoChanges,
-      newKeyEvents,
-    }
-  }
 
   /**
    * Resolve a todo item from a list by id (exact → prefix → text fallback).
@@ -720,7 +534,6 @@ export class ChatMemoryManager {
   /**
    * Apply a single todo action (add / update / complete / cancel).
    * Pure in-memory — no DB writes; callers persist via getSummary() on HTTP exit.
-   * Bumps dashboardVersion so sub-agents can detect changes at each ReAct iteration.
    */
   applyTodoAction(input: TodoWriteInput): { todos: TodoItem[]; changed: boolean } {
     const { action, id, text, notes, status } = input
@@ -775,8 +588,6 @@ export class ChatMemoryManager {
       }
     }
 
-    if (changed) this.bumpDashboardVersion()
-
     return { todos: [...this.todos], changed }
   }
 
@@ -785,35 +596,16 @@ export class ChatMemoryManager {
       caseId: this.caseId,
       confirmedFacts: stripInternalMemoryKeys(this.confirmedFacts),
       missingFacts: this.missingFacts,
-      skillsCalled: this.skillsCalled,
-      skillResults: this.skillResults,
+      toolsCalled: this.toolsCalled,
+      toolResults: this.toolResults,
       keyEvents: this.keyEvents,
       summary: this.summary,
       caseStatus: this.caseStatus,
       todos: this.todos.length > 0 ? [...this.todos] : undefined,
-      agentTodos: Object.keys(this.agentTodos).length > 0 ? { ...this.agentTodos } : undefined,
-      dashboardVersion: this.dashboardVersion,
     }
   }
 
   setMissingFacts(facts: string[]): void { this.missingFacts = [...facts] }
-
-  /** Whether sub-agents for this stage + agent roster were already dispatched for this case. */
-  hasDispatchedSubAgentsFor(stage: string, agentNames: string[]): boolean {
-    const raw = this.skillResults[SUB_AGENT_DISPATCH_MARKER_KEY]
-    const marker = normalizeDispatchMarker(raw)
-    const sig = signatureForAgentNames(agentNames)
-    return marker.stages[stage] === sig
-  }
-
-  /** Record after a successful background dispatch (persisted via skillResults JSON). */
-  recordSubAgentsDispatched(stage: string, agentNames: string[]): void {
-    const prev = normalizeDispatchMarker(this.skillResults[SUB_AGENT_DISPATCH_MARKER_KEY])
-    const marker: SubAgentDispatchMarker = {
-      stages: { ...prev.stages, [stage]: signatureForAgentNames(agentNames) },
-    }
-    this.skillResults = { ...this.skillResults, [SUB_AGENT_DISPATCH_MARKER_KEY]: marker }
-  }
 
   /**
    * Return all fields needed for prisma.chatMemory.upsert().
@@ -822,22 +614,18 @@ export class ChatMemoryManager {
   getDbFields(): {
     confirmedFacts: string
     missingFacts: string
-    skillsCalled: string
-    skillResults: string
+    toolsCalled: string
+    toolResults: string
     keyEvents: string
     todos: string | null
-    agentTodos: string | null
-    dashboardVersion: number
   } {
     return {
       confirmedFacts: JSON.stringify(stripInternalMemoryKeys(this.confirmedFacts)),
       missingFacts: JSON.stringify(this.missingFacts),
-      skillsCalled: JSON.stringify(this.skillsCalled),
-      skillResults: JSON.stringify(this.skillResults),
+      toolsCalled: JSON.stringify(this.toolsCalled),
+      toolResults: JSON.stringify(this.toolResults),
       keyEvents: JSON.stringify(this.keyEvents),
       todos: this.todos.length > 0 ? JSON.stringify(this.todos) : null,
-      agentTodos: Object.keys(this.agentTodos).length > 0 ? JSON.stringify(this.agentTodos) : null,
-      dashboardVersion: this.dashboardVersion,
     }
   }
 }

@@ -12,17 +12,16 @@ export interface ToolSummary {
 
 export interface PromptContext {
   case_types?: Array<{ type: string; displayName: string; description?: string }>
-  active_policies?: Array<{ name: string; hook: string; description?: string }>
+  active_hooks?: Array<{ name: string; checkpoint: string; description?: string }>
   case_schema?: {
     displayName: string
     goal?: string
-    stages: string[]
     requiredFacts: string[]
     escalateOn: string[]
   } | null
   case_state?: {
     confirmedFacts: Record<string, unknown>
-    skillsCalled: string[]
+    toolsCalled: string[]
     missingFacts: string[]
   } | null
   session_binding?: { userId: string; userLabel?: string } | null
@@ -37,12 +36,12 @@ function renderCaseTypes(types: PromptContext['case_types']): string {
   return `## Available Case Types\n\nWhen a customer reports an issue, call \`dispatch_case_agent\` with the matching type:\n\n${lines.join('\n')}`
 }
 
-function renderPolicies(policies: PromptContext['active_policies']): string {
-  if (!policies?.length) return ''
-  const lines = policies.map(
-    (p) => `- **${p.name}** (${p.hook}): ${p.description || 'No description'}`
+function renderHooks(hooks: PromptContext['active_hooks']): string {
+  if (!hooks?.length) return ''
+  const lines = hooks.map(
+    (hook) => `- **${hook.name}** (${hook.checkpoint}): ${hook.description || 'No description'}`
   )
-  return `## Active Policies\n\n${lines.join('\n')}\n\nPolicy violations are reported as [POLICY] messages in the conversation. When you receive a [POLICY] message, read it and adjust your behavior — do not repeat the blocked action.`
+  return `## Active Hooks\n\n${lines.join('\n')}\n\nWhen a Hook gives feedback, read it and adjust your behavior before retrying the action.`
 }
 
 function renderCaseSchema(schema: PromptContext['case_schema']): string {
@@ -50,7 +49,6 @@ function renderCaseSchema(schema: PromptContext['case_schema']): string {
   const parts = [
     `## Case Schema: ${schema.displayName}`,
     schema.goal ? `- Goal: ${schema.goal}` : '',
-    `- Stages: ${JSON.stringify(schema.stages)}`,
     `- Required facts: ${JSON.stringify(schema.requiredFacts)}`,
     `- Escalate when: ${JSON.stringify(schema.escalateOn)}`,
   ]
@@ -60,11 +58,11 @@ function renderCaseSchema(schema: PromptContext['case_schema']): string {
 function renderCaseState(state: PromptContext['case_state']): string {
   if (!state) return ''
   const confirmedFacts = stripInternalMemoryKeys(state.confirmedFacts)
-  if (Object.keys(confirmedFacts).length === 0 && state.skillsCalled.length === 0) return ''
+  if (Object.keys(confirmedFacts).length === 0 && state.toolsCalled.length === 0) return ''
   return [
     '## Current Case State',
     `- Confirmed: ${JSON.stringify(confirmedFacts)}`,
-    `- Skills used: ${JSON.stringify(state.skillsCalled)}`,
+    `- Tools used: ${JSON.stringify(state.toolsCalled)}`,
     `- Missing: ${JSON.stringify(state.missingFacts)}`,
   ].join('\n')
 }
@@ -121,7 +119,7 @@ export function resolvePrompt(prompt: string, ctx: PromptContext): string {
   // to empty string are removed (the placeholder is simply dropped).
   const blocks: Record<string, string> = {
     '{{case_types}}': renderCaseTypes(ctx.case_types),
-    '{{active_policies}}': renderPolicies(ctx.active_policies),
+    '{{active_hooks}}': renderHooks(ctx.active_hooks),
     '{{case_schema}}': renderCaseSchema(ctx.case_schema ?? null),
     '{{case_state}}': renderCaseState(ctx.case_state ?? null),
     '{{session_binding}}': renderSessionBinding(ctx.session_binding ?? null),
@@ -153,20 +151,20 @@ export async function buildPromptContext(params: {
 }): Promise<PromptContext> {
   const { prisma } = await import('@intera/shared/prisma')
 
-  const [caseTypes, policies] = await Promise.all([
+  const [caseTypes, hooks] = await Promise.all([
     prisma.caseType.findMany({
       where: { agentConfigId: params.orgId, enabled: true },
       select: { type: true, displayName: true, description: true },
     }),
-    prisma.policy.findMany({
+    prisma.hook.findMany({
       where: { agentConfigId: params.orgId, enabled: true },
-      select: { name: true, hook: true, description: true },
+      select: { name: true, checkpoint: true, description: true },
     }),
   ])
 
   return {
     case_types: caseTypes.map((t) => ({ ...t, description: t.description ?? undefined })),
-    active_policies: policies.map((p) => ({ ...p, description: p.description ?? undefined })),
+    active_hooks: hooks.map((hook) => ({ ...hook, description: hook.description ?? undefined })),
     case_schema: params.caseSchema ?? null,
     case_state: params.caseState ?? null,
     session_binding: params.sessionBinding ?? null,

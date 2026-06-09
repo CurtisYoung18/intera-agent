@@ -1,5 +1,5 @@
-// apps/chat/channels/livechat/render-skill-by-hint.ts
-// Translates a skill result into LiveChat BridgeActions based on renderHints.livechat config.
+// apps/chat/channels/livechat/render-tool-by-hint.ts
+// Translates a tool result into LiveChat BridgeActions based on renderHints.livechat config.
 
 import type { BridgeAction, CardSpec } from '@/lib/livechat/types'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
@@ -11,7 +11,7 @@ function parseIfString(v: unknown): unknown {
   return v
 }
 
-export function renderSkillByHint(
+export function renderToolByHint(
   output: unknown,
   hint: LivechatRenderHint,
 ): BridgeAction[] {

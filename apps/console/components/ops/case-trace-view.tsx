@@ -38,8 +38,6 @@ function formatActionLabel(actionType: string): string {
 }
 
 function normalizeTraceActionType(actionType: string): string {
-  if (actionType === 'skill_call' || actionType === 'skill_called' || actionType === 'tool_called') return 'tool_call'
-  if (actionType === 'skill_result') return 'tool_result'
   return actionType
 }
 

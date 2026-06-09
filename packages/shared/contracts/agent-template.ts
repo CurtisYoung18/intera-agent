@@ -52,7 +52,7 @@ export type AgentTemplateAgent = z.infer<typeof agentTemplateAgentSchema>
 export const agentTemplateLegacySchema = z.object({
   caseTypes: z.array(z.record(z.unknown())).optional(),
   policies: z.array(z.record(z.unknown())).optional(),
-  guardrails: z.array(z.record(z.unknown())).optional(),
+  hooks: z.array(z.record(z.unknown())).optional(),
   skills: z.array(z.record(z.unknown())).optional(),
   stageConfigs: z.array(z.record(z.unknown())).optional(),
   subAgents: z.array(z.record(z.unknown())).optional(),

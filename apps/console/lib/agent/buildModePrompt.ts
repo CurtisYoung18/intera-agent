@@ -1,7 +1,7 @@
 // Unified prompt assembly — single source of truth for both
 // messages/route.ts and playground-runner.ts.
 //
-// Phase 5 (2026-06-08): Legacy swap path removed. Single base+stage path.
+// Phase 5 (2026-06-08): Legacy swap path removed. Single base+Procedure path.
 // System-managed injection blocks are appended deterministically regardless
 // of {{...}} token presence. Operators edit prose only.
 
@@ -56,7 +56,7 @@ function ensureBlocks(prompt: string, blocks: Record<string, string>): string {
 /**
  * Assemble the final system prompt for core (discovery) or case (execution) mode.
  *
- * Single path (Phase 5): coreSystemPrompt + stage SOP (appended by case loop).
+ * Single path (Phase 5): coreSystemPrompt + Procedure prompt (appended by case loop).
  * Legacy swap (systemPrompt), caseAddendum, and useLegacyCasePrompt are removed.
  * All {{...}} injection blocks are system-managed.
  */
@@ -84,11 +84,10 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
   if (input.hasActiveCase) {
     const caseCtx = await buildPromptContext({
       orgId: input.orgId,
-      caseSchema: input.caseSchema
+          caseSchema: input.caseSchema
         ? {
             displayName: input.caseSchema.displayName,
             goal: input.caseSchema.defaultGoal,
-            stages: input.caseSchema.stages,
             requiredFacts: input.caseSchema.requiredFacts,
             escalateOn: input.caseSchema.escalateOn,
           }
@@ -100,7 +99,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
     prompt = ensureBlocks(prompt, {
       caseSchema: resolvePrompt('{{case_schema}}', caseCtx),
       caseState: resolvePrompt('{{case_state}}', caseCtx),
-      policies: resolvePrompt('{{active_policies}}', caseCtx),
+      hooks: resolvePrompt('{{active_hooks}}', caseCtx),
     })
   }
 

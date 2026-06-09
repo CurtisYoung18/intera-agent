@@ -191,20 +191,20 @@ describe('E7 — Integration: ToolRouter + Tool Discovery', () => {
     const router = new ToolRouter('integration-test')
 
     // Verify critical tools are present
-    const requiredSkills = [
+    const requiredTools = [
       'dispatch_case_agent',
       'finalize_case',
       'create_human_task',
     ]
 
-    for (const name of requiredSkills) {
-      const skill = router.getTool(name)
-      expect(skill, `${name} should be registered`).toBeDefined()
-      expect(skill!.name).toBe(name)
+    for (const name of requiredTools) {
+      const tool = router.getTool(name)
+      expect(tool, `${name} should be registered`).toBeDefined()
+      expect(tool!.name).toBe(name)
     }
   })
 
-  it('getToolDefinitions returns valid skill definitions', () => {
+  it('getToolDefinitions returns valid tool definitions', () => {
     const router = new ToolRouter('integration-test')
     const tools = router.getToolDefinitions()
 

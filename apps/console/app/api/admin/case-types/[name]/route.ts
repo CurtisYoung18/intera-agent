@@ -3,45 +3,16 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
-import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import {
-  findOrphanGuardrails,
-  parseGuardrails,
-  procedureSchema,
-} from '@intera/shared/contracts/case-types'
+import { procedureSchema } from '@intera/shared/contracts/case-types'
 
 interface CaseTypeParams { name: string }
 
 const stringifyMaybe = (val: unknown): string => {
   if (typeof val === 'string') return val
   return JSON.stringify(val ?? '')
-}
-
-const normalizeHookRefInput = (val: string | string[] | undefined): string[] => {
-  if (Array.isArray(val)) return val
-  return parseGuardrails(val)
-}
-
-async function validateGuardrailRefs(
-  repo: any,
-  agentConfigId: string,
-  input: string | string[] | undefined,
-): Promise<string[]> {
-  const names = normalizeHookRefInput(input)
-  const hooks = await repo.raw.hook.findMany({
-    where: { agentConfigId },
-    select: { name: true },
-  })
-  const knownNames = hooks.map((h: { name: string }) => h.name)
-  const orphanNames = findOrphanGuardrails(names, knownNames)
-  if (orphanNames.length > 0) {
-    throw new ValidationError(`Unknown hook(s): ${orphanNames.join(', ')}`, {
-      guardrails: `Unknown hook(s): ${orphanNames.join(', ')}`,
-    })
-  }
-  return names
 }
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
@@ -68,20 +39,11 @@ const updateSchema = z.object({
   description: z.string().nullable().optional(),
   icon: z.string().optional(),
   requiredFacts: z.union([z.string(), z.array(z.string())]).optional(),
-  stages: z.union([z.string(), z.array(z.string())]).optional(),
-  stageConfigs: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
-  orchestratorConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
   defaultGoal: z.string().optional(),
   escalateOn: z.union([z.string(), z.array(z.string())]).optional(),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional(),
-  requireHumanReview: z.boolean().optional(),
-  executionMode: z.string().optional(),
-  sop: z.string().nullable().optional(),
-  sopMaxAutoTurns: z.number().optional(),
-  // ── Procedure refactor (Phase 2, additive) ──
   procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
-  guardrails: z.union([z.string(), z.array(z.string())]).optional(),
   maxAutoTurns: z.number().optional(),
 })
 type UpdateInput = z.infer<typeof updateSchema>
@@ -100,21 +62,11 @@ export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
     const strFields = ['type', 'displayName', 'description', 'icon', 'defaultGoal']
     for (const f of strFields) { const v = (fields as Record<string, unknown>)[f]; if (v !== undefined) data[f] = v }
     if (fields.enabled !== undefined) data.enabled = fields.enabled !== false
-    if (fields.requireHumanReview !== undefined) data.requireHumanReview = fields.requireHumanReview === true
-    for (const f of ['requiredFacts', 'stages', 'escalateOn', 'autoCloseConditions', 'stageConfigs', 'orchestratorConfig']) {
+    for (const f of ['requiredFacts', 'escalateOn', 'autoCloseConditions']) {
       const v = (fields as Record<string, unknown>)[f]; if (v !== undefined) data[f] = stringifyMaybe(v)
     }
-    if (fields.executionMode !== undefined) data.executionMode = fields.executionMode === 'cc' ? 'cc' : 'stage'
-    if (fields.sop !== undefined) data.sop = fields.sop || null
-    if (fields.sopMaxAutoTurns !== undefined) data.sopMaxAutoTurns = Math.max(1, Math.min(50, Number(fields.sopMaxAutoTurns) || 10))
-    // ── Procedure refactor (Phase 2) ── setting a procedure flips the case to the cc/Procedure path.
     if (fields.procedure !== undefined) {
       data.procedure = fields.procedure ? stringifyMaybe(fields.procedure) : null
-      if (fields.procedure) data.executionMode = 'cc'
-    }
-    if (fields.guardrails !== undefined) {
-      const guardrails = await validateGuardrailRefs(repo, agentConfigId, fields.guardrails)
-      data.guardrails = JSON.stringify(guardrails)
     }
     if (fields.maxAutoTurns !== undefined) data.maxAutoTurns = Math.max(1, Math.min(50, Number(fields.maxAutoTurns) || 10))
     const ct = await repo.raw.caseType.update({

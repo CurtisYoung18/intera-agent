@@ -35,8 +35,6 @@ interface CaseSummary {
 }
 
 function normalizeTraceActionType(actionType: string): string {
-  if (actionType === 'skill_call' || actionType === 'skill_called' || actionType === 'tool_called') return 'tool_call'
-  if (actionType === 'skill_result') return 'tool_result'
   return actionType
 }
 
@@ -436,7 +434,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
               {/* Per-case working memory */}
               {memoryData.memories?.map((mem: any) => (
                 <div key={mem.caseId} className="rounded-xl border border-black/[0.04] bg-white/40 p-3">
-                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">Case {mem.caseId.slice(0, 8)} · v{mem.dashboardVersion}</p>
+                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">Case {mem.caseId.slice(0, 8)}</p>
                   {mem.summary ? (
                     <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[240px] overflow-auto">
                       <MessageContent content={mem.summary.slice(0, 3000)} />
@@ -445,7 +443,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
                     <p className="text-[11px] text-[var(--fog)]/50 italic">No summary yet — click "Compact Chat" to generate one.</p>
                   )}
                   <div className="mt-2 flex gap-3 text-[10px] text-[var(--fog)]/50">
-                    <span>{(mem.skillsCalled?.length ?? 0)} skills</span>
+                    <span>{(mem.toolsCalled?.length ?? 0)} tools</span>
                     <span>{Object.keys(mem.confirmedFacts ?? {}).length} facts</span>
                   </div>
                 </div>
@@ -516,7 +514,7 @@ const ACTION_COLORS: Record<string, string> = {
   agent_tree_node: '#7c3aed',
 }
 
-const FILTER_KEYS = ['All', 'LLM', 'Tools', 'Policy', 'Sub-Agents'] as const
+const FILTER_KEYS = ['All', 'LLM', 'Tools', 'Hooks'] as const
 type FilterKey = (typeof FILTER_KEYS)[number]
 
 const STORAGE_KEY = 'trace-viewer-filters'
@@ -526,8 +524,7 @@ function matchFilter(actionType: string, activeFilters: Set<string>): boolean {
   if (activeFilters.size === 0 || activeFilters.has('All')) return true
   if (activeFilters.has('LLM') && (normalizedActionType.startsWith('llm_') || normalizedActionType === 'stream_event')) return true
   if (activeFilters.has('Tools') && normalizedActionType.startsWith('tool_')) return true
-  if (activeFilters.has('Policy') && (normalizedActionType === 'policy_hit' || normalizedActionType === 'loop_decision')) return true
-  if (activeFilters.has('Sub-Agents') && (normalizedActionType.includes('sub_agent') || normalizedActionType.includes('dispatch_subagent'))) return true
+  if (activeFilters.has('Hooks') && (normalizedActionType === 'hook_hit' || normalizedActionType === 'loop_decision')) return true
   return false
 }
 

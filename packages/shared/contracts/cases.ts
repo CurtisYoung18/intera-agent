@@ -34,7 +34,7 @@ export const CaseSummarySchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   summary: z.string().nullable().optional(),
-  skillsCalled: z.array(z.unknown()).optional(),
+  toolsCalled: z.array(z.unknown()).optional(),
   messageCount: z.number().int().optional(),
 })
 export type CaseSummary = z.infer<typeof CaseSummarySchema>
@@ -55,12 +55,11 @@ export const CaseDetailSchema = z.object({
     .object({
       confirmedFacts: z.string(),
       missingFacts: z.string(),
-      skillsCalled: z.string(),
-      skillResults: z.string(),
+      toolsCalled: z.string(),
+      toolResults: z.string(),
       keyEvents: z.string(),
       summary: z.string().nullable(),
       todos: z.string().nullable(),
-      agentTodos: z.string().nullable(),
     })
     .nullable(),
   humanTasks: z.array(z.unknown()).optional(),

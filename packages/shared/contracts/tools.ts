@@ -14,8 +14,8 @@ export const TOOL_MODES = [
 export const toolModeSchema = z.enum(TOOL_MODES)
 export type ToolMode = z.infer<typeof toolModeSchema>
 
-// Legacy runtime values accepted by current admin routes until F3 finishes the
-// runtime rename. Export/import contracts should write TOOL_MODES only.
+// Historical runtime values accepted only as import/route compatibility input.
+// Export/import contracts write TOOL_MODES only.
 export const LEGACY_TOOL_MODES = ['mock', 'static', 'engine_managed'] as const
 export const legacyToolModeSchema = z.enum(LEGACY_TOOL_MODES)
 
@@ -79,10 +79,7 @@ export const toolCreateRequestSchema = z.object({
   description: z.string().optional().default(''),
   inputSchema: z.union([z.string(), z.record(z.unknown())]).optional().default('{}'),
   outputSchema: z.union([z.string(), z.record(z.unknown())]).optional().default('{}'),
-  // Current package/API vocabulary is static_fixture. The temporary string
-  // acceptance keeps existing route callers alive until the runtime lane maps
-  // every DB mode physically.
-  mode: z.string().optional().default('mock'),
+  mode: z.string().optional().default('static_fixture'),
   endpoint: z.string().nullable().optional(),
   httpMethod: z.string().optional().default('POST'),
   headers: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),

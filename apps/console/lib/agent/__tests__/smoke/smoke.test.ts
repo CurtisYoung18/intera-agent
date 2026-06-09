@@ -56,8 +56,8 @@ describe('Smoke — Stream Handler (E1-1)', () => {
 describe('Smoke — ToolRouter (E1-2)', () => {
   it('returns built-in tools including dispatch_case_agent', () => {
     const router = new ToolRouter('smoke-test')
-    const skills = router.getToolDefinitions()
-    expect(skills.length).toBeGreaterThan(0)
+    const tools = router.getToolDefinitions()
+    expect(tools.length).toBeGreaterThan(0)
 
     const dispatchCaseAgent = router.getTool('dispatch_case_agent')
     expect(dispatchCaseAgent).toBeDefined()
@@ -69,9 +69,9 @@ describe('Smoke — ToolRouter (E1-2)', () => {
     expect(dispatchCaseAgent2).toBeDefined()
   })
 
-  it('getTool returns undefined for unknown skill', () => {
+  it('getTool returns undefined for unknown tool', () => {
     const router = new ToolRouter('smoke-test')
-    expect(router.getTool('nonexistent_skill_xyz')).toBeUndefined()
+    expect(router.getTool('nonexistent_tool_xyz')).toBeUndefined()
   })
 })
 

@@ -5,13 +5,9 @@ import {
   procedureStepSchema,
   procedureSchema,
   parseProcedure,
-  parseGuardrails,
-  findOrphanGuardrails,
 } from '../case-types'
 
-// Procedure refactor — Phase 1 contract guards.
-// Procedure (ordered steps, closed action vocab) + per-case-type guardrail
-// activation list. These are the additive contract; old stage fields untouched.
+// Procedure contract guards: ordered steps with a closed action vocabulary.
 
 describe('Procedure contract (Phase 1)', () => {
   it('exposes the closed action vocabulary', () => {
@@ -76,37 +72,5 @@ describe('parseProcedure (safe runtime parse)', () => {
 
   it('returns null when the shape is invalid (unknown action)', () => {
     expect(parseProcedure('{"steps":[{"id":"a","action":"nope"}]}')).toBeNull()
-  })
-})
-
-describe('guardrails activation list (orphan check)', () => {
-  it('parseGuardrails reads a JSON string[] and falls back to [] on garbage', () => {
-    expect(parseGuardrails('["a","b"]')).toEqual(['a', 'b'])
-    expect(parseGuardrails(null)).toEqual([])
-    expect(parseGuardrails('')).toEqual([])
-    expect(parseGuardrails('{not json')).toEqual([])
-    expect(parseGuardrails('{"not":"array"}')).toEqual([])
-  })
-
-  it('findOrphanGuardrails returns names not in the agent policy set', () => {
-    expect(
-      findOrphanGuardrails(
-        ['investigate_before_resolve', 'ghost_rule'],
-        ['investigate_before_resolve', 'no_high_risk_account_change'],
-      ),
-    ).toEqual(['ghost_rule'])
-  })
-
-  it('returns [] when every referenced guardrail exists', () => {
-    expect(
-      findOrphanGuardrails(
-        ['no_high_risk_account_change'],
-        ['no_high_risk_account_change', 'investigate_before_resolve'],
-      ),
-    ).toEqual([])
-  })
-
-  it('handles an empty activation list', () => {
-    expect(findOrphanGuardrails([], ['x'])).toEqual([])
   })
 })

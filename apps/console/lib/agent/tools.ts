@@ -27,7 +27,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
       required: [],
     },
     isConcurrencySafe: true,
-    mode: 'static',
+    mode: 'static_fixture',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Loading user memory', icon: 'scan' },
@@ -46,7 +46,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
       required: ['procedureId'],
     },
     isConcurrencySafe: true,
-    mode: 'static',
+    mode: 'static_fixture',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Loading user profile', icon: 'scan' },
@@ -62,7 +62,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
  * These serve as fallback when the DB has no tools for the agentConfig.
  */
 export const BUILT_IN_TOOLS: ToolDefinition[] = [
-  // ── System tools (engine-managed, auto-gifted) ──
+  // ── System tools (system-managed, auto-gifted) ──
   {
     name: 'read_chat_memory',
     description:
@@ -70,7 +70,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     isConcurrencySafe: true,
-    mode: 'engine_managed',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Loading user memory', icon: 'scan' },
@@ -84,7 +84,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'preferences, and long-term behavior patterns.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     isConcurrencySafe: true,
-    mode: 'engine_managed',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Loading user profile', icon: 'scan' },
@@ -113,7 +113,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       required: ['procedureId'],
     },
     isConcurrencySafe: false,
-    mode: 'engine_managed',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Starting procedure', icon: 'dots' },
@@ -141,36 +141,11 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       required: ['status', 'conclusion'],
     },
     isConcurrencySafe: false,
-    mode: 'engine_managed',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'system_info',
     displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
     zodSchema: z.object({ status: z.enum(['resolved', 'escalated']), conclusion: z.string(), basis: z.array(z.string()).optional() }),
-  },
-  {
-    name: 'finalize_case_agent',
-    description:
-      'Called when a sub-agent completes its task. Returns investigation findings to the main agent. ' +
-      'After calling this, the sub-agent loop terminates.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        findings: { type: 'array', items: { type: 'object', properties: { key: { type: 'string' }, value: {} } }, description: 'List of discovered facts' },
-        evidence: { type: 'array', items: { type: 'string' }, description: 'Evidence references supporting the conclusion' },
-        recommendation: { type: 'string', description: 'Suggested next action' },
-      },
-      required: ['findings', 'recommendation'],
-    },
-    isConcurrencySafe: false,
-    mode: 'engine_managed',
-    enabled: true,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Finalizing sub-agent report', icon: 'spin' },
-    zodSchema: z.object({
-      findings: z.array(z.object({ key: z.string(), value: z.unknown() })),
-      evidence: z.array(z.string()).optional(),
-      recommendation: z.string(),
-    }),
   },
   // ── Channel tools ──
   {
@@ -206,7 +181,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       required: ['queue', 'question'],
     },
     isConcurrencySafe: false,
-    mode: 'engine_managed',
+    mode: 'system_managed',
     enabled: true,
     toolCategory: 'operational',
     displayVerb: { text: 'Escalating to a specialist', icon: 'pulse' },
@@ -309,7 +284,6 @@ export class ToolRouter {
   static async create(
     agentConfigId: string,
     dryRun = false,
-    options: { enableLegacySubagentAdapter?: boolean } = {},
   ): Promise<ToolRouter> {
     const router = new ToolRouter(agentConfigId)
 
@@ -323,15 +297,31 @@ export class ToolRouter {
         where: { agentConfigId },
       })
 
-      const VALID_MODES = new Set(['static', 'http', 'engine_managed', 'channel'])
+      const normalizeRuntimeMode = (mode: string | null | undefined): ToolDefinition['mode'] => {
+        switch (mode) {
+          case 'static':
+          case 'static_fixture':
+            return 'static_fixture'
+          case 'engine_managed':
+          case 'system_managed':
+            return 'system_managed'
+          case 'channel':
+          case 'workflow':
+          case 'code_transform':
+          case 'http':
+            return mode
+          default:
+            return 'static_fixture'
+        }
+      }
       for (const t of dbTools) {
-        const dbMode = t.mode || 'static'
-        // Preserve the built-in mode when DB has an invalid mode value (e.g. 'mock'
-        // from old console saves). The built-in definition is authoritative for mode.
+        const dbMode = t.mode || 'static_fixture'
+        // Preserve the built-in mode when DB has an invalid mode value.
+        // The built-in definition is authoritative for mode.
         const builtinMode = router.tools.get(t.name)?.mode
-        const mode = VALID_MODES.has(dbMode)
-          ? (dbMode as 'static' | 'http' | 'engine_managed' | 'channel')
-          : (builtinMode as 'static' | 'http' | 'engine_managed' | 'channel') || 'static'
+        const mode = t.mode
+          ? normalizeRuntimeMode(dbMode)
+          : normalizeRuntimeMode(builtinMode)
         router.tools.set(t.name, {
           name: t.name,
           description: t.description,
@@ -349,10 +339,6 @@ export class ToolRouter {
           isConcurrencySafe: t.isConcurrencySafe,
           enabled: t.enabled,
         })
-      }
-
-      if (!options.enableLegacySubagentAdapter) {
-        router.tools.delete('dispatch_subagent')
       }
 
       // ── Dynamic tool descriptions: inject agent config's case types into tool descriptions ──

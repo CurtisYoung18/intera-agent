@@ -86,7 +86,7 @@ describe('A1 — Stream creation retry', () => {
   })
 })
 
-describe('A3 — Sub-agent model and retry', () => {
+describe('A3 — Consultation model and retry', () => {
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
@@ -106,7 +106,7 @@ describe('A3 — Sub-agent model and retry', () => {
         max_tokens: 100,
         messages: [{ role: 'user', content: 'test' }],
       }),
-      { querySource: 'sub_agent_loop', model },
+      { querySource: 'consultation_loop', model },
       () => client as any,
     )
 
@@ -116,7 +116,7 @@ describe('A3 — Sub-agent model and retry', () => {
     expect(callModel).toBe(model)
   })
 
-  it('retries sub-agent LLM call on transient failure', async () => {
+  it('retries consultation LLM call on transient failure', async () => {
     const client = makeAnthropicClient()
     const connectionErr = new APIConnectionError({ message: 'socket hang up' } as any)
 
@@ -135,7 +135,7 @@ describe('A3 — Sub-agent model and retry', () => {
         max_tokens: 100,
         messages: [],
       }),
-      { querySource: 'sub_agent_loop', model: 'claude-sonnet-4-20250514' },
+      { querySource: 'consultation_loop', model: 'claude-sonnet-4-20250514' },
       () => client as any,
     )
     await vi.runAllTimersAsync()

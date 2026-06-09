@@ -1,18 +1,18 @@
-// 5-stage trace aggregator for Playground.
+// Trace aggregator for Playground.
 // Maps fine-grained ActionType events → PlaygroundTraceStep with timing + status.
 
 import type { TraceRecord } from './persistence-port'
 import { normalizeTraceActionType, type ActionType } from './trace'
 
 export type TraceStage =
-  | 'Guardrails'
+  | 'Hooks'
   | 'Knowledge retrieval'
   | 'Tools'
-  | 'Stage SOP'
+  | 'Procedure'
   | 'Model generation'
 
 export type TraceStatus = 'ok' | 'info' | 'warn' | 'block' | 'neutral'
-export type TraceSource = 'caseTypes' | 'guardrails' | 'knowledge' | 'tools' | 'agent' | 'humanTasks'
+export type TraceSource = 'caseTypes' | 'hooks' | 'knowledge' | 'tools' | 'agent' | 'humanTasks'
 
 export interface PlaygroundTraceStep {
   stage: string
@@ -32,28 +32,26 @@ export interface PlaygroundTraceStep {
 const BOOKKEEPING: ReadonlySet<string> = new Set([
   'user_message', 'stream_event', 'loop_decision', 'agent_tree_node',
   'stream_request_start', 'microcompact', 'queue_message_enqueued', 'queue_message_consumed',
-  // Lifecycle / multi-agent events — not user-facing pipeline stages
+  // Lifecycle events — not user-facing pipeline stages
   'case_created', 'fact_extracted', 'cron_tick',
   'human_task_created', 'human_task_resolved', 'final_resolution',
   'incoming_chat', 'chat_deactivated',
-  'fork_dispatch', 'case_merged', 'sub_agent_dispatched', 'sub_agent_merged',
-  'message_bus_send', 'message_bus_receive',
+  'case_merged',
 ])
 
 const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; source: TraceSource }>> = {
-  policy_hit: { stage: 'Guardrails', source: 'guardrails' },
+  hook_hit: { stage: 'Hooks', source: 'hooks' },
   // kb_search_* tools
   kb_search: { stage: 'Knowledge retrieval', source: 'knowledge' },
   tool_call: { stage: 'Tools', source: 'tools' },
   tool_result: { stage: 'Tools', source: 'tools' },
-  stage_eval: { stage: 'Stage SOP', source: 'agent' },
   llm_request_start: { stage: 'Model generation', source: 'agent' },
   llm_response: { stage: 'Model generation', source: 'agent' },
 }
 
-/** Parse the structured policy outcome — real policy_hit records carry the
- *  PolicyEvaluation object in `payload` (objects land in payload, not detail). */
-function policyOutcome(payload?: string | null): 'block' | 'warn' | null {
+/** Parse the structured Hook outcome — real hook_hit records carry the
+ *  HookEvaluation object in `payload` (objects land in payload, not detail). */
+function hookOutcome(payload?: string | null): 'block' | 'warn' | null {
   if (!payload) return null
   try {
     const p = JSON.parse(payload)
@@ -67,10 +65,10 @@ function policyOutcome(payload?: string | null): 'block' | 'warn' | null {
 
 function deriveStatus(record: TraceRecord): TraceStatus {
   const { actionType, detail, title } = record
-  if (actionType === 'policy_hit') {
+  if (actionType === 'hook_hit') {
     // Structured payload is authoritative (TraceWriter stores the eval object there);
     // legacy/string callers used `detail`. Check payload first.
-    const outcome = policyOutcome(record.payload)
+    const outcome = hookOutcome(record.payload)
     if (outcome) return outcome
     if (detail?.includes('block')) return 'block'
     if (detail?.includes('warn') || detail?.includes('escalat')) return 'warn'
@@ -119,12 +117,12 @@ function extractUsage(record: TraceRecord): PlaygroundTraceStep['usage'] {
   return undefined
 }
 
-/** All 5 stages in fixed order — used as fallback when applicableStages is not provided. */
+/** Pipeline stages in fixed order — used as fallback when applicableStages is not provided. */
 const allStages: { stage: TraceStage; source: TraceSource }[] = [
-  { stage: 'Guardrails', source: 'guardrails' },
+  { stage: 'Hooks', source: 'hooks' },
   { stage: 'Knowledge retrieval', source: 'knowledge' },
   { stage: 'Tools', source: 'tools' },
-  { stage: 'Stage SOP', source: 'agent' },
+  { stage: 'Procedure', source: 'agent' },
   { stage: 'Model generation', source: 'agent' },
 ]
 
@@ -153,7 +151,7 @@ export function aggregateTraces(
       if (t.payload) {
         try {
           const p = JSON.parse(t.payload)
-          const toolName = typeof p?.toolName === 'string' ? p.toolName : p?.skillName
+          const toolName = typeof p?.toolName === 'string' ? p.toolName : undefined
           if (typeof toolName === 'string' && toolName.startsWith('kb_search_')) {
             mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
           }
@@ -213,8 +211,7 @@ export function aggregateTraces(
     const summary = records.map((r) => r.title).filter(Boolean).join(' → ') || '(no summary)'
     const detail: [string, string][] = records.slice(0, 10).map((r) => {
       const actionType = normalizeTraceActionType(r.actionType)
-      // For tool records, show input/output from payload. Historical skill_* rows
-      // are normalized above so downstream renderers only see tool_* action names.
+      // For tool records, show input/output from payload.
       if ((actionType === 'tool_call' || actionType === 'tool_result') && r.payload) {
         try {
           const p = JSON.parse(r.payload)

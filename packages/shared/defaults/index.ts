@@ -1,11 +1,10 @@
 // Shared default data for admin pre-fill — used by both seed.ts and API lazy init.
-// Must match the built-in definitions in skills.ts and policy.ts exactly.
 
 export const DEFAULT_MODEL = 'deepseek-v4-flash'
 
 /** Lightweight prompt for Core (discovery) mode — no case active.
  *  Focused on conversation routing, direct tool calls, and case creation.
- *  Does NOT include stage requirements, sub-agents, policies, or human handoff. */
+ *  Does NOT include legacy stage requirements or detached background workers. */
 export const CORE_SYSTEM_PROMPT = `You are Intera, a customer service assistant. Respond in the customer's language. Be concise. Don't describe what you'll do — just do it. Call the tool, don't narrate.
 
 **For date/time questions: you MUST call get_current_time.** Do not guess. Do not say you can't. Just call the tool — it will give you the answer. Your training cutoff date is wrong.
@@ -125,45 +124,75 @@ IMPORTANT — Customer communication task:
 export const HARNESS_DEFAULT_FORM_RESPONSE_APPEND =
   'Please continue processing based on this information.'
 
-export interface DefaultPolicySeed {
+export interface DefaultHookSeed {
   name: string
   description: string | null
-  hook: string
-  rule: string
-  guardrailConfig?: string
+  checkpoint: 'PreToolUse' | 'PostToolUse' | 'Stop'
+  handlerKind: 'declarative' | 'code' | 'http'
+  handler: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  enabled: boolean
 }
 
-export const DEFAULT_POLICIES: DefaultPolicySeed[] = [
+export const DEFAULT_HOOKS: DefaultHookSeed[] = [
   {
-    name: 'no_high_risk_account_change', description: 'Block high-risk tools in preTool phase', hook: 'preTool', rule: '{"deny_tools":[]}',
-    guardrailConfig: JSON.stringify({when:'preTool',match:{tools:['refund_money','change_ban_status','delete_account']},check:{kind:'rule',denyTools:['refund_money','change_ban_status','delete_account']},onViolation:{action:'block',guidance:'High-risk account changes are not allowed. Escalate to human if needed.'},onUnavailable:{action:'closed'},guidance:'This tool is blocked by policy. If the customer needs this action, call create_human_task to escalate.'}),
+    name: 'no_high_risk_account_change',
+    description: 'Block high-risk account mutations before a Tool runs',
+    checkpoint: 'PreToolUse',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { tools: ['refund_money', 'change_ban_status', 'delete_account'] },
+        denyTools: ['refund_money', 'change_ban_status', 'delete_account'],
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'High-risk account changes are not allowed. Escalate to a human specialist if needed.',
+      },
+    }),
+    severity: 'critical',
+    enabled: true,
   },
   {
-    name: 'investigate_before_escalation', description: 'Require investigative tools before escalating to human (create_human_task)', hook: 'preTool', rule: '{"hook_tools":["create_human_task"],"require_tools_any":["get_latest_deposit","get_withdraw_conditions","get_account_status","get_kyc_status"]}',
-    guardrailConfig: JSON.stringify({when:'preTool',match:{tools:['create_human_task']},check:{kind:'rule',requireToolsAny:['get_latest_deposit','get_withdraw_conditions','get_account_status','get_kyc_status']},onViolation:{action:'block',guidance:'Complete the required investigation first before escalating.'},onUnavailable:{action:'closed'},guidance:'Investigation required before escalation. Call the required tools first.'}),
+    name: 'investigate_before_resolve',
+    description: 'Require evidence before the Agent gives a final resolution',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'ai',
+        evaluationPrompt:
+          'Check whether the customer-visible answer cites evidence gathered during the case.\n\nReply draft: {{reply_draft}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock if the answer makes factual claims without citing tool results, confirmed facts, or knowledge evidence. Pass if the reasoning is traceable.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Cite specific evidence from tools, confirmed facts, or knowledge before resolving.',
+      },
+    }),
+    severity: 'high',
+    enabled: true,
   },
   {
-    name: 'conflict_requires_human', description: 'Detect conflict between system result and user report', hook: 'postTool',
-    rule: JSON.stringify({hook_tools:['get_latest_deposit','get_withdraw_conditions','get_account_status','get_kyc_status'],evaluationPrompt:'Check whether the tool outputs contradict what the customer reported.\n\nTool output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\n\nEscalate to human (result=escalated) when:\n(1) the system shows a completed/successful transaction but the customer says funds are missing or not received,\n(2) the system shows account status is normal but the customer reports access issues,\n(3) the payment channel shows normal operation but the customer says the payment failed.\n\nIf outputs are consistent with the customer issue, pass.\nIf data is ambiguous or incomplete, hint.'}),
-    guardrailConfig: JSON.stringify({when:'postTool',match:{tools:['get_latest_deposit','get_withdraw_conditions','get_account_status','get_kyc_status']},check:{kind:'ai',evaluationPrompt:'Check whether the tool outputs contradict what the customer reported.\n\nTool output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\n\nEscalate to human (result=escalated) when:\n(1) the system shows a completed/successful transaction but the customer says funds are missing or not received,\n(2) the system shows account status is normal but the customer reports access issues,\n(3) the payment channel shows normal operation but the customer says the payment failed.\n\nIf outputs are consistent with the customer issue, pass.\nIf data is ambiguous or incomplete, hint.'},onViolation:{action:'invoke_tool',tool:'create_human_task'},onUnavailable:{action:'invoke_tool',tool:'create_human_task'}}),
-  },
-  {
-    name: 'evidence_required_before_resolution', description: 'Require order or account verification tool before resolution', hook: 'preFinalize', rule: '{"require_tools_any":["get_latest_deposit","get_account_status","get_kyc_status"]}',
-    guardrailConfig: JSON.stringify({when:'preFinalize',match:{tools:[]},check:{kind:'rule',requireToolsAny:['get_latest_deposit','get_account_status','get_kyc_status']},onViolation:{action:'block',guidance:'Evidence required before resolution. Call at least one investigation tool first.'},onUnavailable:{action:'closed'}}),
-  },
-  {
-    name: 'human_review_before_finalize', description: 'Require human review before case finalization when activated by a case type', hook: 'preFinalize', rule: '{"require_tools":["create_human_task"]}',
-    guardrailConfig: JSON.stringify({when:'preFinalize',match:{tools:[]},check:{kind:'rule',requireTools:['create_human_task']},onViolation:{action:'block',guidance:'Human review is required before finalizing this case.'},onUnavailable:{action:'closed'},guidance:'Call create_human_task before finalizing this case.'}),
-  },
-  {
-    name: 'no_compensation_promise', description: 'Forbid compensation/refund promises in finalize output', hook: 'preFinalize',
-    rule: JSON.stringify({evaluationPrompt:'Check whether the finalize conclusion promises or commits to any monetary compensation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\n\nBlock (result=blocked) if the agent promises refund, cash reimbursement, voucher with cash value, or direct financial remedy — only human operators may authorize compensation.\nPass if the conclusion explains findings, policy, or next steps without committing to pay the customer.\nAlso pass if the agent only relays what a human operator already approved.'}),
-    guardrailConfig: JSON.stringify({when:'preFinalize',match:{tools:[]},check:{kind:'ai',evaluationPrompt:'Check whether the finalize conclusion promises or commits to any monetary compensation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\n\nBlock (result=blocked) if the agent promises refund, cash reimbursement, voucher with cash value, or direct financial remedy — only human operators may authorize compensation.\nPass if the conclusion explains findings, policy, or next steps without committing to pay the customer.\nAlso pass if the agent only relays what a human operator already approved.'},onViolation:{action:'block',guidance:'Only human operators may authorize compensation. Do not promise refunds or financial remedies.'},onUnavailable:{action:'invoke_tool',tool:'create_human_task'}}),
-  },
-  {
-    name: 'must_cite_basis', description: 'Require evidence citations in conclusions', hook: 'preFinalize',
-    rule: JSON.stringify({evaluationPrompt:'Check whether the finalize conclusion references specific evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nThe conclusion must cite at least one of:\n(1) a specific tool result (e.g. get_latest_deposit showed status=completed),\n(2) confirmed facts collected from the user,\n(3) a knowledge base article or policy reference.\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.'}),
-    guardrailConfig: JSON.stringify({when:'preFinalize',match:{tools:[]},check:{kind:'ai',evaluationPrompt:'Check whether the finalize conclusion references specific evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nThe conclusion must cite at least one of:\n(1) a specific tool result (e.g. get_latest_deposit showed status=completed),\n(2) confirmed facts collected from the user,\n(3) a knowledge base article or policy reference.\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.'},onViolation:{action:'block',guidance:'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or policy.'},onUnavailable:{action:'open'}}),
+    name: 'human_review_before_finalize',
+    description: 'Require human review for high-risk CaseTypes before finalization',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        requireTools: ['create_human_task'],
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Call create_human_task before finalizing this case.',
+      },
+    }),
+    severity: 'high',
+    enabled: true,
   },
 ]
 
@@ -173,11 +202,12 @@ export interface DefaultCaseTypeSeed {
   description: string
   icon: string
   requiredFacts: string
-  stages: string
   defaultGoal: string
   escalateOn: string
   enabled?: boolean
-  requireHumanReview?: boolean
+  procedure: string
+  hookBindings?: string[]
+  maxAutoTurns?: number
 }
 
 export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
@@ -188,18 +218,19 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
       'The customer says they topped up or transferred funds to the platform (bank card, e-wallet, USDT, etc.) but their balance did not increase or they see no confirmation of arrival. Includes "charged but balance unchanged", "transaction shows but no credits in game/wallet", and "still not credited after a long time".',
     icon: '💰',
     requiredFacts: '["txnId","amount","paymentMethod","date"]',
-    stages: '["created","collecting","investigating","resolved"]',
     defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
-    requireHumanReview: true,
-  },
-  {
-    type: 'order_issue', displayName: 'Order issue', description: 'Customer reports an order status issue',
-    icon: '📦',
-    requiredFacts: '["orderId","issueType"]',
-    stages: '["created","verifying","investigating","resolved"]',
-    defaultGoal: 'Confirm the order status and resolve the customer issue',
-    escalateOn: '["conflict","refund_request"]',
+    procedure: JSON.stringify({
+      steps: [
+        { id: 'collect_deposit_details', action: 'ask', target: 'deposit_details', guidance: 'Collect txnId, amount, payment method, and date using ask_user_questions.', required: true },
+        { id: 'check_deposit', action: 'use', target: 'get_latest_deposit', guidance: 'Verify the customer-provided txnId against platform records.', required: true },
+        { id: 'check_channel', action: 'use', target: 'get_withdraw_conditions', guidance: 'Check channel or turnover conditions if they affect the answer.', required: true },
+        { id: 'escalate_conflict', action: 'escalate', target: 'payment_ops', guidance: 'Escalate when platform evidence conflicts with the customer report.' },
+        { id: 'finalize', action: 'finalize', guidance: 'Explain the evidence and next step without promising compensation.', required: true },
+      ],
+    }),
+    hookBindings: ['investigate_before_resolve', 'human_review_before_finalize'],
+    maxAutoTurns: 10,
   },
   {
     type: 'account_issue',
@@ -208,410 +239,22 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
       'The customer reports being unable to log in, account banned/frozen, risk-control or KYC anomalies, suspected account theft, OTP/2FA issues, or device-binding disputes — i.e. issues about the account identity and security policy. Does NOT include a single deposit not arriving (that is "Deposit not credited").',
     icon: '🔒',
     requiredFacts: '["userId","issueType"]',
-    stages: '["created","collecting","investigating","resolved"]',
     defaultGoal:
       'Pull account-side records and knowledge-base references to determine whether the account is restricted/banned/falsely flagged. Escalate to account-ops human review on conflict or high-risk cases, and give actionable next steps.',
     escalateOn: '["high_risk","conflict"]',
-  },
-  {
-    type: 'refund_request', displayName: 'Refund request', description: 'Customer requests a refund',
-    icon: '↩️',
-    requiredFacts: '["orderId","amount","reason"]',
-    stages: '["created","reviewing","approved","resolved"]',
-    defaultGoal: 'Review the refund request and give a conclusion',
-    escalateOn: '["large_amount","policy_violation"]',
-    requireHumanReview: true,
-  },
-  {
-    type: 'withdrawal_issue',
-    displayName: 'Withdrawal issue',
-    description: 'The customer reports withdrawal not arriving, unclear withdrawal progress, or being unable to withdraw due to insufficient turnover.',
-    icon: '💸',
-    requiredFacts: '["member_id","issueType"]',
-    stages: '["created","collecting","investigating","resolved"]',
-    defaultGoal: 'Check withdrawal status and turnover requirements; determine whether it is delayed, insufficient, or rejected. Escalate to a human when it conflicts with the customer report.',
-    escalateOn: '["conflict"]',
-    requireHumanReview: true,
-  },
-  {
-    type: 'promotion_inquiry',
-    displayName: 'Promotion inquiry',
-    description: 'The customer asks about promotions, eligibility, turnover requirements, or wagering progress.',
-    icon: '🎁',
-    requiredFacts: '["member_id"]',
-    stages: '["created","investigating","resolved"]',
-    defaultGoal: 'Check the promotion status and eligibility for this member; tell them which promotions they can join and the withdrawal turnover requirements.',
-    escalateOn: '["conflict"]',
+    procedure: JSON.stringify({
+      steps: [
+        { id: 'collect_account_details', action: 'ask', target: 'account_details', guidance: 'Collect userId, issue type, and symptom details.', required: true },
+        { id: 'check_account_status', action: 'use', target: 'get_account_status', guidance: 'Review account-side status.', required: true },
+        { id: 'check_kyc_status', action: 'use', target: 'get_kyc_status', guidance: 'Review KYC or verification state when relevant.' },
+        { id: 'escalate_high_risk', action: 'escalate', target: 'account_ops', guidance: 'Escalate account restrictions, suspected theft, or conflicting records.' },
+        { id: 'finalize', action: 'finalize', guidance: 'Explain the status and next safe step.', required: true },
+      ],
+    }),
+    hookBindings: ['investigate_before_resolve'],
+    maxAutoTurns: 10,
   },
 ]
-
-// Per-stage configs for each case type (used when stageConfigs is not set on CaseType)
-export const DEFAULT_STAGE_CONFIGS: Record<string, Record<string, Record<string, unknown>>> = {
-  deposit_issue: {
-    created: {
-      name: 'created',
-      description:
-        'Case just opened — briefly reassure the customer first. If they already provided complete info (txnId, amount, channel), the evaluator may go straight to investigating; otherwise go to collecting and use ask_user_questions to gather it.',
-      availableSkills: ['ask_user_questions'],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt: `You are the stage transition evaluator for stage "created" only.
-
-Use the Case context block: Confirmed facts, Missing facts, Skills called, Skill results, Key events.
-
-Deposit case rules:
-- If confirmedFacts already has non-empty **txnId**, **amount**, and **paymentMethod** → nextStage MUST be **investigating** (ledger verification may proceed).
-- Otherwise → nextStage MUST be **collecting** so structured intake runs before any investigative tools.
-
-Respond with JSON ONLY:
-{"shouldTransition": true, "nextStage": "collecting" | "investigating", "reason": "cite which keys are present or missing"}`,
-      },
-    },
-    collecting: {
-      name: 'collecting',
-      description: 'Collect txnId, amount, channel, time, etc. from the customer; gather them all at once with a ask_user_questions form. The form field keys MUST be: txnId, amount, paymentMethod, date (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling ask_user_questions. Call ask_user_questions directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.\n\nIMPORTANT: After the form is submitted and all facts are confirmed, do NOT call create_human_task or any investigation tool yet. The system will automatically advance to the investigating stage — wait for that transition before querying order or channel status.',
-      requiredSkills: ['ask_user_questions'],
-      availableSkills: ['ask_user_questions'],
-      evidenceRequirements: [
-        { factKey: 'txnId', description: 'Transaction / top-up reference number', source: 'user_input', required: true },
-        { factKey: 'amount', description: 'Top-up amount', source: 'user_input', required: true },
-        { factKey: 'paymentMethod', description: 'Payment method', source: 'user_input', required: true },
-        { factKey: 'date', description: 'Arrival or initiation time (if any)', source: 'user_input', required: false },
-      ],
-      transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
-    },
-    investigating: {
-      name: 'investigating',
-      description: `Use the txnId from confirmedFacts to call the order and channel tools and verify the platform records.
-
-**CRITICAL — which txnId to use:**
-The txnId argument for get_latest_deposit and get_withdraw_conditions MUST be **confirmedFacts.txnId** (the customer-provided reference). A txnId in sub-agent findings is reverse-lookup reference data, NOT the customer's transaction number — never pass a sub-agent txnId into the query tools. If the customer reported TX101, query TX101; do not get pulled toward the sub-agent's TX2026... format.
-
-**Investigation order:**
-1. Call get_latest_deposit (passing confirmedFacts.txnId) and get_withdraw_conditions — both in the SAME turn, do not split across turns.
-2. If needed, check past cases, get_active_promotions for notices, and kb_search_<name> for the relevant knowledge base.
-
-**Interpreting results:**
-- If the txnId returned by get_latest_deposit does not match confirmedFacts.txnId (order not found, or the record belongs to a different transaction) then treat it as "order not found", call create_human_task directly, and do NOT ask the customer to re-confirm the txnId.
-- If order status, amount, or channel conflicts with the customer report, call create_human_task directly.
-- If the channel has a delayed batch (delayed_batch: true), tell the customer the expected arrival time and go to resolved.
-- If data is consistent and the order is processed, go to resolved.
-
-If you need more info from the customer (screenshots, etc.), you MUST collect it with a ask_user_questions form — never ask in plain text.`,
-      requiredSkills: ['get_latest_deposit', 'get_withdraw_conditions'],
-      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions', 'ask_user_questions'],
-      evidenceRequirements: [
-        {
-          factKey: 'status',
-          description: 'Order/transaction status returned by get_latest_deposit (field `status`)',
-          source: 'skill_output',
-          skillName: 'get_latest_deposit',
-          required: true,
-        },
-        {
-          factKey: 'channel',
-          description: 'Channel identifier returned by get_withdraw_conditions (field `channel`)',
-          source: 'skill_output',
-          skillName: 'get_withdraw_conditions',
-          required: true,
-        },
-      ],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt: `Evaluate transition from **investigating** using ONLY Confirmed facts, Missing facts, Skills called, Skill results, Key events.
-
-- If get_latest_deposit returned a record whose txnId differs from confirmedFacts.txnId, OR returned "not found" → treat as unresolvable conflict, nextStage stays investigating (agent should call create_human_task).
-- If get_latest_deposit / get_withdraw_conditions outputs conflict with the customer's deposit narrative (amount, channel, status mismatch) → agent should call create_human_task; stay in investigating.
-- If **txnId**, **amount**, or **paymentMethod** are missing from confirmedFacts → **collecting**.
-- If evidence supports closure (order confirmed, no conflict) → **resolved**.
-
-Respond JSON ONLY:
-{"shouldTransition": true/false, "nextStage": "collecting"|"investigating"|"resolved", "reason": "..."}`,
-      },
-    },
-    resolved: {
-      name: 'resolved',
-      description: 'Case resolved, provide conclusion to customer',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
-    },
-  },
-  order_issue: {
-    created: {
-      name: 'created',
-      description: 'Case created, waiting for initial assessment',
-      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
-    },
-    verifying: {
-      name: 'verifying',
-      description: 'Verify order details and collect missing information',
-      requiredSkills: ['get_latest_deposit'],
-      availableSkills: ['get_latest_deposit', 'ask_user_questions'],
-      evidenceRequirements: [
-        { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
-        { factKey: 'issueType', description: 'Issue type', source: 'user_input', required: true },
-        {
-          factKey: 'status',
-          description: 'Status returned by the order system (field `status`)',
-          source: 'skill_output',
-          skillName: 'get_latest_deposit',
-          required: true,
-        },
-      ],
-      transition: { type: 'evaluation', evaluationPrompt: 'Check if order details are verified. If order found and matches → investigating. If missing info → back to collecting.' },
-    },
-    investigating: {
-      name: 'investigating',
-      description: 'Investigate order issue',
-      requiredSkills: ['get_withdraw_conditions'],
-      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'get_active_promotions'],
-      transition: { type: 'evaluation', evaluationPrompt: 'If conflict detected → call create_human_task. If resolved → resolved.' },
-    },
-    resolved: {
-      name: 'resolved',
-      description: 'Case resolved',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
-    },
-  },
-  account_issue: {
-    created: {
-      name: 'created',
-      description:
-        'Case just opened — briefly reassure the customer first. If they already provided userId and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use ask_user_questions to gather it.',
-      availableSkills: ['ask_user_questions'],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt: `Stage transition evaluator for **created** only.
-
-Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
-
-Rules:
-- If **userId** and **issueType** are present (non-empty in confirmedFacts) → nextStage **investigating**.
-- Else → nextStage **collecting**.
-
-JSON ONLY:
-{"shouldTransition": true, "nextStage": "collecting"|"investigating", "reason": "..."}`,
-      },
-    },
-    collecting: {
-      name: 'collecting',
-      description:
-        'Collect the user identifier, issue type, and symptom description; gather them at once with ask_user_questions. The form field keys MUST be: userId, issueType, symptoms (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling ask_user_questions. Call ask_user_questions directly in your first response — the form itself will explain what is needed. Text-only lists waste a turn and annoy the user.',
-      requiredSkills: ['ask_user_questions'],
-      availableSkills: ['ask_user_questions'],
-      evidenceRequirements: [
-        { factKey: 'userId', description: 'Platform user ID / UID', source: 'user_input', required: true },
-        {
-          factKey: 'issueType',
-          description: 'Issue type (login failure / ban / risk-control flag / suspected theft / verification anomaly, etc.)',
-          source: 'user_input',
-          required: true,
-        },
-        {
-          factKey: 'symptoms',
-          description: 'Brief symptom description (error code, on-screen message, approximate start time)',
-          source: 'user_input',
-          required: false,
-        },
-      ],
-      transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
-    },
-    investigating: {
-      name: 'investigating',
-      description:
-        'In parallel, verify the account-side snapshot against past cases / policy entries; if records conflict with the customer report, prepare human-review wording.',
-      requiredSkills: ['get_account_status', 'get_kyc_status'],
-      availableSkills: [
-        'get_account_status',
-        'get_kyc_status',
-        // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
-        'ask_user_questions',
-      ],
-      evidenceRequirements: [
-        {
-          factKey: 'accountStatus',
-          description: 'Account status returned by get_account_status (field `data.status`)',
-          source: 'skill_output',
-          skillName: 'get_account_status',
-          required: true,
-        },
-        {
-          factKey: 'kycStatus',
-          description: 'KYC status returned by get_kyc_status (field `data.kyc_status`)',
-          source: 'skill_output',
-          skillName: 'get_kyc_status',
-          required: true,
-        },
-      ],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt:
-          'If account/KYC status conflicts with customer narrative → call create_human_task (account_ops). If KB indicates mandatory human appeal → call create_human_task. If status is clearly explained with evidence → resolved. If facts still missing → collecting.',
-      },
-    },
-    resolved: {
-      name: 'resolved',
-      description: 'Close the case and explain the basis and next steps to the customer',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
-    },
-  },
-  refund_request: {
-    created: {
-      name: 'created',
-      description: 'Case created',
-      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
-    },
-    reviewing: {
-      name: 'reviewing',
-      description: 'Review refund eligibility',
-      requiredSkills: ['get_latest_deposit'],
-      availableSkills: ['get_latest_deposit', 'get_withdraw_conditions', 'ask_user_questions'],
-      evidenceRequirements: [
-        { factKey: 'orderId', description: 'Order ID', source: 'user_input', required: true },
-        { factKey: 'amount', description: 'Refund amount', source: 'user_input', required: true },
-        { factKey: 'reason', description: 'Refund reason', source: 'user_input', required: true },
-        {
-          factKey: 'status',
-          description: 'Status returned by the order lookup (field `status`)',
-          source: 'skill_output',
-          skillName: 'get_latest_deposit',
-          required: true,
-        },
-      ],
-      transition: { type: 'evaluation', evaluationPrompt: 'If large_amount or policy_violation → waiting_human. If eligible → approved. If not eligible → resolved with rejection.' },
-    },
-    approved: {
-      name: 'approved',
-      description: 'Refund approved — transition to resolved',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'auto', conditions: [{ type: 'all_skills_called' }] },
-    },
-    resolved: {
-      name: 'resolved',
-      description: 'Case resolved (approved or rejected)',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
-    },
-  },
-  withdrawal_issue: {
-    created: {
-      name: 'created',
-      description: 'Case just opened — briefly reassure the customer first. If they already provided member_id and issue type, the evaluator may go straight to investigating; otherwise go to collecting and use ask_user_questions to gather it.',
-      availableSkills: ['ask_user_questions'],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt: `Stage transition evaluator for **created** only.
-
-Use Confirmed facts, Missing facts, Skills called, Skill results, Key events.
-
-Rules:
-- If **member_id** and **issueType** are present (non-empty in confirmedFacts) → nextStage **investigating**.
-- Else → nextStage **collecting**.
-
-JSON ONLY:
-{"shouldTransition": true, "nextStage": "collecting"|"investigating", "reason": "..."}`,
-      },
-    },
-    collecting: {
-      name: 'collecting',
-      description: 'Collect the customer member_id and withdrawal issue details; gather them at once with ask_user_questions. The form field keys MUST be: member_id, issueType, amount (aligned with the evidence system).\n\nIMPORTANT: Do NOT list the required fields in text before calling ask_user_questions. Call ask_user_questions directly in your first response.',
-      requiredSkills: ['ask_user_questions'],
-      availableSkills: ['ask_user_questions'],
-      evidenceRequirements: [
-        { factKey: 'member_id', description: 'Customer member ID', source: 'user_input', required: true },
-        { factKey: 'issueType', description: 'Issue type (not arrived / insufficient turnover / rejected, etc.)', source: 'user_input', required: true },
-        { factKey: 'amount', description: 'Withdrawal amount (if any)', source: 'user_input', required: false },
-      ],
-      transition: { type: 'auto', conditions: [{ type: 'all_evidence_gathered' }] },
-    },
-    investigating: {
-      name: 'investigating',
-      description: 'Call the withdrawal-status and turnover-condition tools to verify platform records. If you find conflicts requiring more info from the customer, collect it with a ask_user_questions form.',
-      requiredSkills: ['get_latest_withdrawal', 'get_withdraw_conditions'],
-      availableSkills: ['get_latest_withdrawal', 'get_withdraw_conditions', 'get_transaction_history', 'ask_user_questions'],
-      evidenceRequirements: [
-        {
-          factKey: 'withdrawalStatus',
-          description: 'Withdrawal status returned by get_latest_withdrawal (field `status`)',
-          source: 'skill_output',
-          skillName: 'get_latest_withdrawal',
-          required: true,
-        },
-        {
-          factKey: 'withdrawConditions',
-          description: 'Turnover conditions returned by get_withdraw_conditions (field `data`)',
-          source: 'skill_output',
-          skillName: 'get_withdraw_conditions',
-          required: true,
-        },
-      ],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt: 'If withdrawal status conflicts with customer narrative → call create_human_task (withdrawal_ops). If conditions clearly explained with evidence → resolved. If facts still missing → collecting.',
-      },
-    },
-    resolved: {
-      name: 'resolved',
-      description: 'Close the case and explain the withdrawal status and basis to the customer',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
-    },
-  },
-  promotion_inquiry: {
-    created: {
-      name: 'created',
-      description: 'Promotion-inquiry case opened — go straight to the lookup stage.',
-      transition: { type: 'auto', conditions: [{ type: 'min_iterations', value: 1 }] },
-    },
-    investigating: {
-      name: 'investigating',
-      description: 'Check the promotion status, eligible promotions, and turnover conditions for this member. Give the customer the complete information in one go.',
-      availableSkills: ['get_active_promotions', 'get_eligible_promotions', 'get_withdraw_conditions', 'ask_user_questions'],
-      evidenceRequirements: [
-        {
-          factKey: 'activePromotions',
-          description: 'Current promotions returned by get_active_promotions (field `data`)',
-          source: 'skill_output',
-          skillName: 'get_active_promotions',
-          required: false,
-        },
-        {
-          factKey: 'eligiblePromotions',
-          description: 'Eligible promotions returned by get_eligible_promotions (field `data`)',
-          source: 'skill_output',
-          skillName: 'get_eligible_promotions',
-          required: false,
-        },
-      ],
-      transition: {
-        type: 'evaluation',
-
-        evaluationPrompt: 'If promotion info is returned and customer question is answered → resolved. If customer needs more details → stay in investigating. If conflict → waiting_human.',
-      },
-    },
-    resolved: {
-      name: 'resolved',
-      description: 'Close the case and explain the promotion information to the customer',
-      requiredSkills: ['finalize_case'],
-      transition: { type: 'manual' },
-    },
-  },
-}
-
-// Default orchestrator config
-export const DEFAULT_ORCHESTRATOR_CONFIG = {
-  enabled: true,
-  maxParallelAgents: 3,
-  dispatchPrompt: 'Analyze the case and determine which specialized sub-agents to dispatch for parallel investigation.',
-}
 
 export interface DefaultKnowledgeSourceSeed {
   name: string

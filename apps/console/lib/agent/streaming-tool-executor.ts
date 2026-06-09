@@ -239,11 +239,14 @@ export class StreamingToolExecutor {
     try {
       let output: unknown
 
-      if (tool.definition.mode === 'engine_managed' || tool.definition.mode === 'channel') {
-        // Engine-managed and channel-dependent tools are handled by the
+      if (
+        tool.definition.mode === 'system_managed' ||
+        tool.definition.mode === 'channel'
+      ) {
+        // System-managed and channel-dependent tools are handled by the
         // agent loop directly — the executor should never receive them.
         output = { ok: true, handled: tool.definition.mode }
-      } else if (tool.definition.mode === 'static') {
+      } else if (tool.definition.mode === 'static_fixture') {
         output = await this.executeMock(tool.definition)
       } else {
         output = await this.executeHttp(tool.definition, tool.input)

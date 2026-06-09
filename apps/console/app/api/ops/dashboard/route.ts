@@ -27,7 +27,7 @@ export const GET = defineRoute({
     const [
       activeCases,
       resolvedCases,
-      guardrailHits,
+      hookHits,
       recentCases,
     ] = await Promise.all([
       repo.case
@@ -49,7 +49,7 @@ export const GET = defineRoute({
             .findMany({
               where: {
                 caseId: { in: allCaseIds },
-                actionType: 'policy_hit',
+                actionType: 'hook_hit',
                 createdAt: { gte: yesterday },
               },
               select: { title: true },
@@ -94,9 +94,9 @@ export const GET = defineRoute({
       avgResolutionMin = Math.round(totalMin / resolvedList.length)
     }
 
-    // Guardrail hit counts.
+    // Hook hit counts.
     const hitMap = new Map<string, number>()
-    for (const hit of guardrailHits as { title: string }[]) {
+    for (const hit of hookHits as { title: string }[]) {
       hitMap.set(hit.title, (hitMap.get(hit.title) ?? 0) + 1)
     }
     const topHits = [...hitMap.entries()]

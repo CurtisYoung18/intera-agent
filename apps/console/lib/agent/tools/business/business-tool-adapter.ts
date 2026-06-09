@@ -28,7 +28,7 @@ export function adaptBusinessTool(def: ToolDefinition): Tool {
     isReadOnly() { return def.isConcurrencySafe },
 
     async call(input: unknown, ctx: ToolContext) {
-      if (def.mode === 'static') return executeMock(def, input)
+      if (def.mode === 'static_fixture') return executeMock(def, input)
       return executeHttp(def, input, ctx)
     },
   }
@@ -39,7 +39,6 @@ export function adaptBusinessTool(def: ToolDefinition): Tool {
 const DEFAULT_MOCK_RESPONSES: Record<string, unknown> = {
   dispatch_case_agent: { caseId: 'case_mock_001', status: 'created' },
   finalize_case: { status: 'resolved' },
-  finalize_case_agent: { findings: [], recommendation: 'completed' },
   query_order_status: { txnId: '', status: 'pending' },
   query_payment_channel_status: { channelStatus: 'normal' },
   get_account_status: { status: 'active' },

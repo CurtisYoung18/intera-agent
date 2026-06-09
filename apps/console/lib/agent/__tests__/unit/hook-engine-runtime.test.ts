@@ -46,7 +46,7 @@ function testTool(name = 'test_lookup'): ToolDefinition {
     name,
     description: 'Test lookup',
     inputSchema: { type: 'object', properties: {}, required: [] },
-    mode: 'static',
+    mode: 'static_fixture',
     mockFixture: { status: 'ok', needsReview: true },
     isConcurrencySafe: true,
     enabled: true,
@@ -251,7 +251,7 @@ describe('AgentLoop Hook checkpoints', () => {
 
     expect(result.transition).toBe('next_turn')
     expect(events.some((e) => e.type === 'tool_executing' && (e.data as { name?: string }).name === 'test_lookup')).toBe(false)
-    expect(events.some((e) => e.type === 'policy_blocked')).toBe(true)
+    expect(events.some((e) => e.type === 'hook_blocked')).toBe(true)
   })
 
   it('PostToolUse can escalate on a Tool result', async () => {

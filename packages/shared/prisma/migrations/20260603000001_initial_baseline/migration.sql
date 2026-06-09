@@ -4,8 +4,8 @@ CREATE TABLE "organizations" (
     "name" TEXT NOT NULL,
     "apiKey" TEXT,
     "password" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -15,9 +15,9 @@ CREATE TABLE "api_keys" (
     "name" TEXT NOT NULL,
     "prefix" TEXT NOT NULL,
     "hash" TEXT NOT NULL,
-    "last_used_at" DATETIME,
-    "revoked_at" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "last_used_at" TIMESTAMP(3),
+    "revoked_at" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -53,8 +53,8 @@ CREATE TABLE "agent_configs" (
     "knowledgeRetrieval" TEXT,
     "gptbotsApiKey" TEXT,
     "invariantCheck" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "agent_configs_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "agent_configs" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
@@ -78,8 +78,8 @@ CREATE TABLE "case_types" (
     "executionMode" TEXT NOT NULL DEFAULT 'stage',
     "sop" TEXT,
     "sopMaxAutoTurns" INTEGER NOT NULL DEFAULT 10,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -102,8 +102,8 @@ CREATE TABLE "skills" (
     "toolCategory" TEXT,
     "isConcurrencySafe" BOOLEAN NOT NULL DEFAULT true,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -115,8 +115,8 @@ CREATE TABLE "policies" (
     "hook" TEXT NOT NULL,
     "rule" TEXT NOT NULL,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -129,8 +129,8 @@ CREATE TABLE "routings" (
     "priority" INTEGER NOT NULL DEFAULT 0,
     "autoAssign" BOOLEAN NOT NULL DEFAULT true,
     "maxWaitingTime" INTEGER NOT NULL DEFAULT 300,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -143,9 +143,9 @@ CREATE TABLE "cases" (
     "status" TEXT NOT NULL DEFAULT 'created',
     "goal" TEXT,
     "blocker" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
-    "resolvedAt" DATETIME
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "resolvedAt" TIMESTAMP(3)
 );
 
 -- CreateTable
@@ -159,13 +159,13 @@ CREATE TABLE "chat_memories" (
     "keyEvents" TEXT NOT NULL DEFAULT '[]',
     "humanTaskStatus" TEXT NOT NULL DEFAULT 'none',
     "needsContinuation" BOOLEAN NOT NULL DEFAULT false,
-    "continuationLock" DATETIME,
+    "continuationLock" TIMESTAMP(3),
     "summary" TEXT,
     "todos" TEXT,
     "agentTodos" TEXT,
     "dashboardVersion" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "chat_memories_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "cases" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -180,10 +180,10 @@ CREATE TABLE "user_profiles" (
     "resolvedCases" INTEGER NOT NULL DEFAULT 0,
     "escalatedCases" INTEGER NOT NULL DEFAULT 0,
     "lastCaseType" TEXT,
-    "firstSeenAt" DATETIME,
-    "lastSeenAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "firstSeenAt" TIMESTAMP(3),
+    "lastSeenAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -195,7 +195,7 @@ CREATE TABLE "messages" (
     "contentBlocks" JSONB,
     "isStreaming" BOOLEAN NOT NULL DEFAULT false,
     "streamId" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "messages_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "cases" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -208,7 +208,7 @@ CREATE TABLE "action_traces" (
     "title" TEXT NOT NULL,
     "detail" TEXT,
     "payload" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "action_traces_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "cases" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -226,8 +226,8 @@ CREATE TABLE "knowledge_sources" (
     "docCorrelation" REAL,
     "caseTypeTag" TEXT,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -241,8 +241,8 @@ CREATE TABLE "external_conversations" (
     "bridgeState" TEXT NOT NULL DEFAULT 'idle',
     "textBuffer" TEXT NOT NULL DEFAULT '',
     "metadata" JSONB,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -259,9 +259,9 @@ CREATE TABLE "human_tasks" (
     "notes" TEXT,
     "chatLog" TEXT,
     "customerMessage" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "resolvedAt" DATETIME,
-    "notifiedAt" DATETIME,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolvedAt" TIMESTAMP(3),
+    "notifiedAt" TIMESTAMP(3),
     CONSTRAINT "human_tasks_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "cases" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -280,15 +280,15 @@ CREATE TABLE "livechat_configs" (
     "enabled" BOOLEAN NOT NULL DEFAULT false,
     "transferGroupId" INTEGER,
     "transferMessage" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
 CREATE TABLE "webhook_events" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "platform" TEXT NOT NULL,
-    "processedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "processedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -299,8 +299,8 @@ CREATE TABLE "livechat_pending_events" (
     "payload" JSONB NOT NULL,
     "attempt" INTEGER NOT NULL DEFAULT 0,
     "lastError" TEXT,
-    "nextRetryAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "nextRetryAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -309,7 +309,7 @@ CREATE TABLE "channel_health" (
     "org_id" TEXT NOT NULL DEFAULT 'default',
     "channel" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'healthy',
-    "lastChecked" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastChecked" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastError" TEXT,
     "metadata" JSONB
 );
@@ -322,8 +322,8 @@ CREATE TABLE "chat_sessions" (
     "confirmedFacts" TEXT NOT NULL DEFAULT '{}',
     "summary" TEXT,
     "keyEvents" TEXT NOT NULL DEFAULT '[]',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -340,8 +340,8 @@ CREATE TABLE "channel_bindings" (
     "transferTarget" TEXT,
     "consultationPrompt" TEXT,
     "humanSkills" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateIndex

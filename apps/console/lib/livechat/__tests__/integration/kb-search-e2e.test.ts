@@ -110,9 +110,9 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
 
     // Verify that getTool resolves each
     for (const d of kbDefs) {
-      const skill = router.getTool(d.name)
-      expect(skill).toBeDefined()
-      expect(skill!.name).toBe(d.name)
+      const tool = router.getTool(d.name)
+      expect(tool).toBeDefined()
+      expect(tool!.name).toBe(d.name)
     }
   })
 })

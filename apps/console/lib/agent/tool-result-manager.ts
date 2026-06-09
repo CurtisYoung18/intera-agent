@@ -2,7 +2,7 @@
 //
 // Guarantees every tool result is delivered to the LLM as a user message
 // with structured `tool_result` content blocks (Anthropic API format),
-// regardless of whether the tool succeeded, failed, or was policy-blocked.
+// regardless of whether the tool succeeded, failed, or was held by a Hook.
 //
 // This replaces the legacy `addToolResultMessages` (assistant text format)
 // which caused the model to terminate prematurely on tool errors.
@@ -46,9 +46,9 @@ export function buildToolResultMessageFromSynthesis(synthesisBlocks: ToolResultB
 }
 
 /**
- * Wrap a policy feedback string as a user message.
+ * Wrap a Hook feedback string as a user message.
  */
-export function buildPolicyFeedbackMessage(feedback: string): Message {
+export function buildHookFeedbackMessage(feedback: string): Message {
   return {
     id: crypto.randomUUID(),
     role: 'user',

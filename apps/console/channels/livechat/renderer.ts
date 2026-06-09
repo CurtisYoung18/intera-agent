@@ -8,7 +8,7 @@ import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
 import type { BridgeAction, FormField } from '@/lib/livechat/types'
-import { renderSkillByHint, readPath } from './render-skill-by-hint'
+import { renderToolByHint, readPath } from './render-tool-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
 function toolLabel(name: string, displayVerb?: { text: string; icon: string }): string {
@@ -39,8 +39,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         return { type: 'noop' }
 
       // ── tool_result: { name, status: 'completed', result, renderHints? } ──
-      case 'tool_result':
-      case 'skill_result': {
+      case 'tool_result': {
         const d = event.data as {
           name: string; status: string; result?: unknown
           renderHints?: Record<string, unknown>
@@ -53,7 +52,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
 
         // If renderHints.livechat is configured, use it for rich message rendering
         if (livechatHint && d.result !== undefined) {
-          return renderSkillByHint(d.result, livechatHint)
+          return renderToolByHint(d.result, livechatHint)
         }
 
         // Fallback: compact done text

@@ -18,16 +18,12 @@ export interface MemoryRecord {
   caseId: string
   confirmedFacts?: string
   missingFacts?: string
-  skillsCalled?: string
-  skillResults?: string
+  toolsCalled?: string
+  toolResults?: string
   keyEvents?: string
   summary?: string | null
   todos?: string | null
-  agentTodos?: string | null
-  dashboardVersion?: number
   humanTaskStatus?: string
-  needsContinuation?: boolean
-  continuationLock?: Date | null
 }
 
 export interface MessageRecord {
@@ -92,26 +88,22 @@ export function createPrismaPersistence(): PersistencePort {
         update: {
           confirmedFacts: record.confirmedFacts,
           missingFacts: record.missingFacts,
-          skillsCalled: record.skillsCalled,
-          skillResults: record.skillResults,
+          toolsCalled: record.toolsCalled,
+          toolResults: record.toolResults,
           keyEvents: record.keyEvents,
           summary: record.summary ?? undefined,
           todos: record.todos ?? null,
-          agentTodos: record.agentTodos ?? null,
-          dashboardVersion: record.dashboardVersion ?? 0,
         },
         create: {
           caseId,
           confirmedFacts: record.confirmedFacts,
           missingFacts: record.missingFacts,
-          skillsCalled: record.skillsCalled,
-          skillResults: record.skillResults,
+          toolsCalled: record.toolsCalled,
+          toolResults: record.toolResults,
           keyEvents: record.keyEvents,
           humanTaskStatus: 'none',
           summary: record.summary ?? undefined,
           todos: record.todos ?? null,
-          agentTodos: record.agentTodos ?? null,
-          dashboardVersion: record.dashboardVersion ?? 0,
         },
       })
     },

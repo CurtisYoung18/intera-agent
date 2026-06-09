@@ -15,9 +15,8 @@ import {
 
 export type QuerySource =
   | 'main_loop'
-  | 'sub_agent_loop'
   | 'consultation_loop'
-  | 'policy_eval'
+  | 'hook_eval'
   | 'compact'
 
 export interface RetryOptions {
@@ -73,9 +72,8 @@ interface Policy {
 
 const RETRY_POLICY: Record<QuerySource, Policy> = {
   main_loop:         { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
-  sub_agent_loop:    { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
   consultation_loop: { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
-  policy_eval:       { maxRetries: 3, retryOn: new Set(['transient_network', 'timeout', 'server_error']), bailOn529: true },
+  hook_eval:         { maxRetries: 3, retryOn: new Set(['transient_network', 'timeout', 'server_error']), bailOn529: true },
   compact:           { maxRetries: 5, retryOn: RETRYABLE, bailOn529: false },
 }
 

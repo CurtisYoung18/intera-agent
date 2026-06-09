@@ -104,10 +104,10 @@ export const GET = defineRoute<void, { id: string }>({
       sections.push(formatValue(safeJson(memory.missingFacts)))
       sections.push('')
       sections.push('### Skills Called')
-      sections.push(formatValue(safeJson(memory.skillsCalled)))
+      sections.push(formatValue(safeJson(memory.toolsCalled)))
       sections.push('')
       sections.push('### Skill Results')
-      sections.push(formatValue(safeJson(memory.skillResults)))
+      sections.push(formatValue(safeJson(memory.toolResults)))
       sections.push('')
       if (memory.summary) {
         sections.push('### Summary')

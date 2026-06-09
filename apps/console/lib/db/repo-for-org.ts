@@ -119,7 +119,6 @@ export function repoForOrg(orgId: string) {
     tool: scopedModel(prisma.tool, orgId),
     agentConfig: scopedModel(prisma.agentConfig, orgId),
     caseType: scopedModel(prisma.caseType, orgId),
-    policy: scopedModel(prisma.policy, orgId),
     knowledgeSource: scopedModel(prisma.knowledgeSource, orgId),
     apiKey: scopedModel(prisma.apiKey, orgId),
     case: scopedModel(prisma.case, orgId),

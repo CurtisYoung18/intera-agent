@@ -182,7 +182,7 @@ export async function* runPlaygroundTurn(input: {
     // Collect text for reply
     if (normalizedEvent.type === 'text_delta') reply += normalizedEvent.data as string
 
-    if (normalizedEvent.type === 'policy_blocked') blocked = true
+    if (normalizedEvent.type === 'hook_blocked') blocked = true
 
     // Stream out in real-time (was buffered until end-of-run previously)
     pending.push(normalizedEvent)
@@ -239,22 +239,16 @@ export async function* runPlaygroundTurn(input: {
     { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
   ])
 
-  // ── Derive applicable pipeline stages from agent config ──
-
-  // Guardrails are loaded from DB by PolicyEngine (scoped to agentConfigId)
-  const guardsConfigured = true
+  // ── Derive applicable pipeline sections from agent config ──
 
   // Tools and knowledge sources are always available (scoped to agentConfigId)
   const toolsConfigured = true
   const knowledgeConfigured = true
-  const stageConfigured = false // playground always has caseSchema: null → no stage configs
 
-  const applicableStages: string[] = ['Guardrails', 'Model generation']
+  const applicableStages: string[] = ['Hooks', 'Model generation']
   if (knowledgeConfigured) applicableStages.push('Knowledge retrieval')
   if (toolsConfigured) applicableStages.push('Tools')
-  if (stageConfigured) applicableStages.push('Stage SOP')
-  // Guardrails always included in base — but only fire if guardsConfigured
-  // (fired=false when no guardrail events occur, which is correct)
+  // Hooks always included in base, and fired=false is correct when no Hook event occurs.
 
   // ── Aggregate traces ──
   const totalMs = Math.max(1, Date.now() - startTime)

@@ -27,7 +27,8 @@ describe('Agent Template Package service', () => {
       scopeKey: 'tool:get_latest_deposit',
       toolName: 'get_latest_deposit',
     }))
-    expect(template.legacy?.policies).toHaveLength(1)
+    expect(template.legacy?.caseTypes).toHaveLength(1)
+    expect(template.legacy?.skills).toHaveLength(1)
     expect((template as Record<string, unknown>).policies).toBeUndefined()
     expect((template as Record<string, unknown>).guardrails).toBeUndefined()
     expect((template as Record<string, unknown>).skills).toBeUndefined()
@@ -35,7 +36,6 @@ describe('Agent Template Package service', () => {
     const serialized = JSON.stringify(template)
     expect(serialized).not.toContain('redact-me-tool')
     expect(serialized).not.toContain('redact-me-gptbots')
-    expect(serialized).not.toContain('redact-me-legacy')
     expect(template.secrets?.map((secret) => secret.name)).toEqual(expect.arrayContaining([
       'gptbots_api_key',
       'hook_risk_http_hook_x-risk-token',
@@ -181,19 +181,11 @@ function makeExportRepo() {
     description: 'Deposit issue',
     icon: 'money',
     requiredFacts: '["member_id"]',
-    stages: '["created","investigating","resolved"]',
-    stageConfigs: '{"created":{"availableSkills":["legacy"]}}',
-    orchestratorConfig: null,
     defaultGoal: 'Investigate deposit.',
     escalateOn: '["conflict"]',
     autoCloseConditions: null,
     enabled: true,
-    requireHumanReview: true,
-    executionMode: 'cc',
-    sop: null,
-    sopMaxAutoTurns: 10,
     procedure: '{"steps":[{"id":"lookup_latest_deposit","action":"use","target":"get_latest_deposit"}]}',
-    guardrails: '["legacy_guardrail"]',
     maxAutoTurns: 8,
     createdAt: now,
     updatedAt: now,
@@ -262,19 +254,6 @@ function makeExportRepo() {
       updatedAt: now,
     },
   ]
-  const policies = [{
-    id: 'policy_db_1',
-    agentConfigId: 'agent_1',
-    name: 'legacy_guardrail',
-    description: 'Legacy guardrail',
-    hook: 'preTool',
-    rule: '{"token":"redact-me-legacy"}',
-    guardrailConfig: '{"headers":{"Authorization":"redact-me-legacy"}}',
-    enabled: true,
-    createdAt: now,
-    updatedAt: now,
-  }]
-
   return {
     orgId: 'default',
     agentConfig: {
@@ -285,7 +264,6 @@ function makeExportRepo() {
       tool: { findMany: async () => tools },
       hook: { findMany: async () => hooks },
       hookBinding: { findMany: async () => hookBindings },
-      policy: { findMany: async () => policies },
     },
   } as any
 }

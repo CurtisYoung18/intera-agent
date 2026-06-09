@@ -7,12 +7,12 @@ import { isSafeInDryRun, dryRunMockResult, dispatchCaseAgentMockResult } from '.
 import { StreamingToolExecutor } from '../../streaming-tool-executor'
 import type { ToolDefinition } from '@intera/shared/types'
 
-function makeSkill(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
+function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   return {
-    name: 'test_skill',
-    description: 'Test skill',
+    name: 'test_tool',
+    description: 'Test tool',
     inputSchema: { type: 'object', properties: {} } as any,
-    mode: 'static',
+    mode: 'static_fixture',
     isConcurrencySafe: true,
     enabled: true,
     ...overrides,
@@ -34,7 +34,7 @@ describe('Playground safety invariants', () => {
     const { port, cases, memories, messages, traces } = createMemoryPersistence()
 
     await port.ensureCase({ id: 'c1', orgId: 'org1', userId: 'u1', type: 'general', status: 'created', chatId: 'chat1' })
-    await port.saveMemory('c1', { caseId: 'c1', confirmedFacts: '{}', missingFacts: '[]', skillsCalled: '[]', skillResults: '{}', keyEvents: '[]' })
+    await port.saveMemory('c1', { caseId: 'c1', confirmedFacts: '{}', missingFacts: '[]', toolsCalled: '[]', toolResults: '{}', keyEvents: '[]' })
     await port.saveMessages([{ id: 'm1', caseId: 'c1', role: 'user', content: 'hi' }])
     await port.saveTrace({ caseId: 'c1', actionType: 'test', title: 'test trace' })
 
@@ -47,27 +47,27 @@ describe('Playground safety invariants', () => {
 
   // ── Dry-run chokepoint ──
   it('system_info tools are safe in dry-run', () => {
-    const skill = makeSkill({ name: 'kb_search_help', toolCategory: 'system_info' })
-    expect(isSafeInDryRun(skill)).toBe(true)
+    const tool = makeTool({ name: 'kb_search_help', toolCategory: 'system_info' })
+    expect(isSafeInDryRun(tool)).toBe(true)
   })
 
   it('operational tools are intercepted in dry-run', () => {
-    const skill = makeSkill({ name: 'query_order_status', toolCategory: 'operational' })
-    expect(isSafeInDryRun(skill)).toBe(false)
+    const tool = makeTool({ name: 'query_order_status', toolCategory: 'operational' })
+    expect(isSafeInDryRun(tool)).toBe(false)
   })
 
   it('tools with null/undefined category default to operational (fail-safe)', () => {
-    const skillNull = makeSkill({ name: 'legacy_tool', toolCategory: undefined })
-    const skillMissing = makeSkill({ name: 'old_tool' })
-    delete (skillMissing as any).toolCategory
+    const toolNull = makeTool({ name: 'legacy_tool', toolCategory: undefined })
+    const toolMissing = makeTool({ name: 'old_tool' })
+    delete (toolMissing as any).toolCategory
 
-    expect(isSafeInDryRun(skillNull)).toBe(false)
-    expect(isSafeInDryRun(skillMissing)).toBe(false)
+    expect(isSafeInDryRun(toolNull)).toBe(false)
+    expect(isSafeInDryRun(toolMissing)).toBe(false)
   })
 
   it('dry-run mock results contain _dryRun marker', () => {
-    const skill = makeSkill({ name: 'create_human_task', toolCategory: 'operational' })
-    const result = dryRunMockResult(skill)
+    const tool = makeTool({ name: 'create_human_task', toolCategory: 'operational' })
+    const result = dryRunMockResult(tool)
     expect(result.output).toContain('_dryRun')
     expect(result.output).toContain('intercepted')
     expect(result.latencyMs).toBe(1)
@@ -89,13 +89,12 @@ describe('Playground safety invariants', () => {
       'get_kyc_status', 'get_transaction_history', 'get_active_promotions',
       'get_eligible_promotions', 'get_latest_withdrawal', 'get_withdraw_conditions',
       'ocr_receipt', 'dispatch_case_agent', 'create_human_task', 'finalize_case',
-      'ask_user_questions', 'dispatch_subagent',
-      'finalize_case_agent',
+      'ask_user_questions',
     ]
 
     for (const name of operationalPatterns) {
-      const skill = makeSkill({ name, toolCategory: 'operational' })
-      expect(isSafeInDryRun(skill)).toBe(false)
+      const tool = makeTool({ name, toolCategory: 'operational' })
+      expect(isSafeInDryRun(tool)).toBe(false)
     }
   })
 
@@ -105,8 +104,8 @@ describe('Playground safety invariants', () => {
     ]
 
     for (const name of systemInfoPatterns) {
-      const skill = makeSkill({ name, toolCategory: 'system_info' })
-      expect(isSafeInDryRun(skill)).toBe(true)
+      const tool = makeTool({ name, toolCategory: 'system_info' })
+      expect(isSafeInDryRun(tool)).toBe(true)
     }
   })
 
@@ -143,14 +142,14 @@ describe('Playground safety invariants', () => {
   })
 
   it('StreamingToolExecutor accepts dryRun in constructor', () => {
-    const skill = makeSkill({ name: 'query_order', mode: 'static', toolCategory: 'operational' })
-    const executor = new StreamingToolExecutor([skill], undefined, true, 'test-org')
+    const tool = makeTool({ name: 'query_order', mode: 'static_fixture', toolCategory: 'operational' })
+    const executor = new StreamingToolExecutor([tool], undefined, true, 'test-org')
     expect(executor).toBeDefined()
   })
 
   it('StreamingToolExecutor with dryRun + system_info tool', () => {
-    const skill = makeSkill({ name: 'read_chat_memory', mode: 'static', toolCategory: 'system_info' })
-    const executor = new StreamingToolExecutor([skill], undefined, true, 'test-org')
+    const tool = makeTool({ name: 'read_chat_memory', mode: 'static_fixture', toolCategory: 'system_info' })
+    const executor = new StreamingToolExecutor([tool], undefined, true, 'test-org')
     expect(executor).toBeDefined()
   })
 

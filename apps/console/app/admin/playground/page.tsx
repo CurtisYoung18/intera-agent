@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
-  Shield, Brain, Search, Puzzle, ExternalLink, Activity,
+  Shield, Brain, Search, Puzzle, ExternalLink,
   ChevronDown, ChevronLeft, ChevronRight, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
@@ -249,10 +249,10 @@ export default function PlaygroundPage() {
           const rebuiltTools: LiveTool[] = []
           const seenNames = new Set<string>()
           for (const trace of lastTurn) {
-            if (trace.actionType !== 'tool_result' && trace.actionType !== 'skill_result') continue
+            if (trace.actionType !== 'tool_result') continue
             let payload: Record<string, unknown> = {}
             try { payload = JSON.parse(trace.payload || '{}') } catch {}
-            const toolName = (payload.toolName as string) || (payload.skillName as string) || trace.title?.replace(/^(?:Skill|Tool) result: /, '') || ''
+            const toolName = (payload.toolName as string) || trace.title?.replace(/^Tool result: /, '') || ''
             if (!toolName || seenNames.has(toolName)) continue
             seenNames.add(toolName)
             // Prefer renderHints from the actual execution trace payload;
@@ -570,7 +570,7 @@ export default function PlaygroundPage() {
                 { name, status: 'running', startedAt: Date.now() },
               ])
             }
-            else if (event.type === 'tool_result' || event.type === 'skill_result') {
+            else if (event.type === 'tool_result') {
               const d = event.data as any
               const name = d?.name || 'tool'
               setLiveTools(prev => prev.map(t =>
@@ -605,7 +605,6 @@ export default function PlaygroundPage() {
             }
             else if (event.type === 'escalated') pushNotice({ kind: 'escalated', label: 'Agent escalated to a human', detail: (event.data as any)?.reason })
             else if (event.type === 'case_created') pushNotice({ kind: 'case_created', label: `Case created: ${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` })
-            else if (event.type === 'sub_agent_start') pushNotice({ kind: 'sub_agent', label: `Sub-agent dispatched: ${(event.data as any)?.agentName ?? ''}` })
             else if (event.type === 'human_task_created') pushNotice({ kind: 'human_task', label: 'Human task created' })
             else if (event.type === 'retry_pending') pushNotice({ kind: 'retry', label: `Retrying (${(event.data as any)?.errorClass ?? 'transient'})…` })
           } catch { /* */ }
@@ -936,7 +935,6 @@ export default function PlaygroundPage() {
                     }}>
                       {m.notice.kind === 'escalated' && <AlertCircle size={12} color="var(--amber)" />}
                       {m.notice.kind === 'case_created' && <CheckCircle2 size={12} color="var(--malachite)" />}
-                      {m.notice.kind === 'sub_agent' && <Activity size={12} color="#b87347" />}
                       {m.notice.kind === 'human_task' && <Clock size={12} color="var(--amber)" />}
                       {m.notice.kind === 'retry' && <XCircle size={12} color="var(--vermillion)" />}
                       <span>{m.notice.label}</span>

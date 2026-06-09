@@ -1,14 +1,8 @@
-// Procedure Executor — structured single-agent SOP runtime (Procedure refactor, Phase 2).
+// Procedure Executor — structured single-agent Procedure runtime.
 //
 // A Procedure is an ordered list of steps (closed action vocab) executed by the
-// single main agent (Case Owner). This is the structured successor to the free-text
-// `sop` (executionMode='cc') path: same "no stage machine, agent self-drives + hooks
-// gate" model, but the prompt is rendered from typed steps and completion is gated on
-// the required steps + finalize.
-//
-// Phase 2 is additive: a case type with a `procedure` runs through the existing cc
-// execution path (it is stored with executionMode='cc'); the only runtime change is
-// that the cc prompt branch renders the Procedure instead of the free-text SOP.
+// single main agent (Case Owner). The prompt is rendered from typed steps and
+// completion is gated on the required steps + finalize.
 
 import type { Procedure, TodoItem } from '@intera/shared/types'
 
@@ -48,7 +42,7 @@ export function seedProcedureTodos(procedure: Procedure): TodoItem[] {
     id: s.id,
     text: `[${s.action}]${s.target ? ` ${s.target}` : ''}${s.guidance ? ` — ${s.guidance}` : ''}`,
     status: 'pending' as const,
-    addedBy: 'sop_init' as const,
+    addedBy: 'procedure_init' as const,
     addedAt: now,
   }))
 }
@@ -65,9 +59,8 @@ export function requiredToolTargets(procedure: Procedure): string[] {
 }
 
 /**
- * Completion check (replaces the stage evidence/skill checks + nudge ladder):
- * the case is complete only when every hard-required tool target has been called
- * AND a finalize step has been reached.
+ * Completion check: every hard-required tool target has been called and a finalize
+ * step has been reached.
  */
 export function isProcedureComplete(
   procedure: Procedure,

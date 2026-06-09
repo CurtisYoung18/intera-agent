@@ -249,13 +249,13 @@ describe('withRetry', () => {
     expect(result.ok).toBe(true)
   })
 
-  it('policy_eval bails on 529 immediately', async () => {
+  it('hook_eval bails on 529 immediately', async () => {
     const client = makeAnthropicClient()
     const operation = vi.fn().mockRejectedValue(makeApiError(529))
 
     const result = await runWithRetry(
       operation,
-      { querySource: 'policy_eval', model: 'claude-sonnet-4-20250514' },
+      { querySource: 'hook_eval', model: 'claude-sonnet-4-20250514' },
       () => client as any,
     )
 

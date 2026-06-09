@@ -96,9 +96,6 @@ export interface ToolDefinition {
     | 'channel'
     | 'workflow'
     | 'code_transform'
-    // Legacy runtime values kept until F3 completes the Tool runtime rename.
-    | 'static'
-    | 'engine_managed'
   endpoint?: string
   httpMethod?: 'GET' | 'POST'
   headers?: Record<string, string>
@@ -133,36 +130,12 @@ export interface ChatMemoryData {
   caseId: string
   confirmedFacts: Record<string, unknown>
   missingFacts: string[]
-  toolsCalled?: string[]
-  toolResults?: Record<string, unknown>
-  /** @deprecated Legacy runtime field; F3 renames persistence and events to toolsCalled. */
-  skillsCalled: string[]
-  /** @deprecated Legacy runtime field; F3 renames persistence and events to toolResults. */
-  skillResults: Record<string, unknown>
+  toolsCalled: string[]
+  toolResults: Record<string, unknown>
   keyEvents: KeyEvent[]
   summary?: string
   caseStatus?: string
   todos?: TodoItem[]
-  /** Per-agent todo lists. Key is agent name (e.g. "order_verifier"). */
-  agentTodos?: Record<string, TodoItem[]>
-  dashboardVersion?: number
-}
-
-// ============================================
-// Shared Dashboard — versioned state for sub-agent polling
-// ============================================
-
-export interface DashboardChange {
-  /** Version that triggered this change notification. */
-  dashboardVersion: number
-  /** Facts added or modified since the last known version. */
-  changedFacts: Record<string, unknown>
-  /** Keys of facts that were removed. */
-  removedFactKeys: string[]
-  /** Per-agent todo changes keyed by agent name. */
-  agentTodoChanges: Record<string, TodoItem[]>
-  /** Key events added since the last known version. */
-  newKeyEvents: KeyEvent[]
 }
 
 // ============================================
@@ -173,8 +146,8 @@ export interface TodoItem {
   id: string
   text: string
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-  /** Who created this todo: 'agent' = Core/SOP agent, 'sop_init' = initial SOP decomposition */
-  addedBy: 'agent' | 'sop_init'
+  /** Who created this todo: 'agent' = runtime agent, 'procedure_init' = initial Procedure decomposition */
+  addedBy: 'agent' | 'procedure_init'
   addedAt: string    // ISO timestamp
   completedAt?: string
   notes?: string
@@ -222,106 +195,6 @@ export interface HumanTaskData {
   notes?: string
   createdAt: Date
   resolvedAt?: Date
-}
-
-// ============================================
-// Policy Types
-// ============================================
-
-export type PolicyHook = 'preTool' | 'postTool' | 'preFinalize'
-export type PolicyResult = 'pass' | 'blocked' | 'hint' | 'escalated'
-
-/** @deprecated — superseded by GuardrailHook. Kept for backward-compat with legacy DB rows. */
-export interface PolicyRule {
-  /** Block specific tools by exact name match (preTool only) */
-  deny_tools?: string[]
-  /** All listed tools must have been called before finalize_case */
-  require_tools?: string[]
-  /** At least one listed tool must have been called before finalize_case */
-  require_tools_any?: string[]
-  /** postTool only: only evaluate this policy when these tools were called in the iteration. Empty = all tools. */
-  hook_tools?: string[]
-  /** Enable LLM-based evaluation. When false, only exact-match rules (deny/require) apply. Default true. */
-  enableLlm?: boolean
-  /** Natural-language evaluation prompt for LLM-based policy checks.
-   * Supports placeholders: {{tool_name}} {{tool_output}} {{confirmed_facts}} {{tools_called}} */
-  evaluationPrompt?: string
-}
-
-// ============================================
-// G11 — GuardrailHook (configurable guardrail primitive)
-// ============================================
-
-/** Platform-owned lifecycle checkpoints. Phase 1: preTool, postTool, preFinalize.
- *  preReply arrives in Phase 2 (G10 loop.ts decomposition). */
-export type GuardrailCheckpoint = 'preTool' | 'postTool' | 'preFinalize'
-
-export interface GuardrailMatch {
-  /** Tools that trigger this hook. Supports exact names; empty = all tools. */
-  tools: string[]
-  /** Optional cheap pre-filter on the payload (regex or substring match). */
-  ifPattern?: string
-}
-
-export interface GuardrailCheck {
-  kind: 'rule' | 'ai'
-  // ── rule (deterministic) ──
-  denyTools?: string[]
-  requireTools?: string[]
-  requireToolsAny?: string[]
-  // ── ai (LLM evaluation) ──
-  evaluationPrompt?: string
-  model?: string
-}
-
-export type GuardrailAction = 'warn' | 'block' | 'invoke_tool'
-export type GuardrailUnavailableAction = 'open' | 'closed' | 'invoke_tool'
-
-export interface GuardrailOutcome {
-  action: GuardrailAction
-  guidance?: string
-  tool?: string
-}
-
-export interface GuardrailUnavailable {
-  action: GuardrailUnavailableAction
-  tool?: string
-}
-
-/** The single configurable primitive — a guardrail IS a hook. */
-export interface GuardrailHook {
-  when: GuardrailCheckpoint
-  match: GuardrailMatch
-  check: GuardrailCheck
-  onViolation: GuardrailOutcome
-  onUnavailable: GuardrailUnavailable
-  guidance?: string
-}
-
-export interface PolicyCheckResult {
-  policyName: string
-  result: PolicyResult
-  reason?: string
-  modelUsed?: string
-}
-
-/** Aggregate result for all policies evaluated at a single checkpoint. */
-export interface PolicyEvaluationResult {
-  hook: PolicyHook
-  results: PolicyCheckResult[]
-  /** The most severe result across all policies in this batch. */
-  summary: PolicyResult
-  /** Human-readable feedback ready to inject into the agent's message stream. */
-  feedbackMessage?: string
-  /** System tool calls to enqueue (when a hook resolves to invoke_tool). */
-  pendingToolCalls?: PendingGuardrailToolCall[]
-}
-
-/** A tool call that the loop should enqueue as a result of guardrail evaluation. */
-export interface PendingGuardrailToolCall {
-  tool: string
-  reason: string
-  hookName: string
 }
 
 // ============================================
@@ -428,10 +301,6 @@ export type SSEEventType =
   | 'tool_progress'
   | 'tool_call'
   | 'tool_result'
-  /** @deprecated Historical event name; new runtime emissions should use tool_call. */
-  | 'skill_call'
-  /** @deprecated Historical event name; new runtime emissions should use tool_result. */
-  | 'skill_result'
   | 'memory_update'
   | 'case_status'
   | 'human_task_created'
@@ -441,12 +310,8 @@ export type SSEEventType =
   | 'withheld'
   | 'consultation_complete'
   | 'case_created'
-  | 'sub_agent_start'
-  | 'sub_agent_progress'
-  | 'sub_agent_complete'
-  | 'sub_agent_error'
   | 'core_agent_progress'
-  | 'policy_blocked'
+  | 'hook_blocked'
   | 'retry_pending'
   | 'session_init'
   | 'escalated'
@@ -468,7 +333,7 @@ export interface InteractionOption {
 export interface SSEErrorData { code: string; message: string }
 
 /** Lifecycle notices the playground renders as system bubbles. */
-export type LifecycleKind = 'escalated' | 'case_created' | 'sub_agent' | 'human_task' | 'retry'
+export type LifecycleKind = 'escalated' | 'case_created' | 'human_task' | 'retry'
 export interface LifecycleNotice { kind: LifecycleKind; label: string; detail?: string }
 
 export interface SSEEvent {
@@ -487,23 +352,12 @@ export interface CaseSchemaConfig {
   description?: string
   icon: string
   requiredFacts: string[]
-  stages: string[]
-  stageConfigs?: Record<string, StageConfig>
   defaultGoal: string
   escalateOn: string[]
   autoCloseConditions?: Record<string, unknown>
-  orchestrator?: OrchestratorConfig
-  requireHumanReview?: boolean
-  /** "stage" = predefined stage machine (default); "step" = engine-driven step executor */
-  executionMode?: 'stage' | 'cc'
-  /** Natural-language Standard Operating Procedure (only used when executionMode = "sop") */
-  sop?: string
-  // ── Procedure refactor (additive; replaces stages/stageConfigs/sop/executionMode over Phases 2–5) ──
   /** Ordered Procedure executed by the single main agent. When present, the case runs the Procedure path. */
   procedure?: Procedure
-  /** Activated guardrail names for this case type (case-type-scoped over the agent-global registry). */
-  guardrails?: string[]
-  /** Safety bound on auto-continuation turns (replaces sopMaxAutoTurns). */
+  /** Safety bound on auto-continuation turns. */
   maxAutoTurns?: number
 }
 
@@ -513,7 +367,7 @@ export interface CaseSchemaConfig {
 
 /**
  * One closed, operator-legible action vocabulary for a Procedure step.
- *   use      — call a tool/skill                 (target = tool name)
+ *   use      — call a tool                       (target = tool name)
  *   read     — gather data (read-only tool/KB/memory/prior case)
  *   ask      — collect from the customer         (target = form/field set)
  *   decide   — natural-language branch point     (when carries the condition)
@@ -540,161 +394,13 @@ export interface ProcedureStep {
   guidance?: string
   /** Optional NL precondition ("only if balance unchanged"). */
   when?: string
-  /** Feeds the completion check + guardrail derivation. */
+  /** Feeds the completion check and HookBinding derivation. */
   required?: boolean
 }
 
 export interface Procedure {
   /** Ordered; the agent follows but may adapt (skip when false, reorder if evidence present, loop back). */
   steps: ProcedureStep[]
-}
-
-// ============================================
-// Stage Configuration (per-stage)
-// ============================================
-
-export interface StageConfig {
-  name: string
-  description?: string
-  model?: string
-  systemPrompt?: string
-  temperature?: number
-  thinkingBudget?: number
-  requiredSkills?: string[]
-  availableSkills?: string[]
-  guardrails?: StageGuardrail[]
-  evidenceRequirements?: EvidenceRequirement[]
-  transition?: StageTransitionRule
-  subAgents?: SubAgentConfig[]
-  /** Step mode only: ordered list of execution steps. Non-empty triggers step-driven execution. */
-  steps?: ExecutionStep[]
-  /** SOP prompt appendix (referenced in both stage and step modes). */
-  sop?: string
-}
-
-export interface StageGuardrail {
-  name: string
-  description?: string
-  hook: PolicyHook
-  rule: PolicyRule
-}
-
-export interface EvidenceRequirement {
-  factKey: string
-  description: string
-  source: 'user_input' | 'skill_output' | 'evaluation'
-  skillName?: string
-  required: boolean
-}
-
-export interface StageTransitionRule {
-  type: 'auto' | 'evaluation' | 'manual'
-  conditions?: StageTransitionCondition[]
-  evaluationModel?: string
-  evaluationPrompt?: string
-}
-
-export interface StageTransitionCondition {
-  type: 'all_evidence_gathered' | 'all_skills_called' | 'min_iterations' | 'llm_decision'
-  value?: number | string | boolean
-}
-
-// ============================================
-// Step Mode — Engine-Driven Execution
-// ============================================
-
-export interface StepCriterion {
-  type: 'tool_called' | 'fact_extracted' | 'output_matches' | 'llm_evaluation'
-  value: string
-}
-
-export interface StepFailurePolicy {
-  action: 'retry' | 'skip_step' | 'escalate_to_human' | 'abort_case'
-  escalationQueue?: string
-  escalationNote?: string
-}
-
-export interface ExecutionStep {
-  id: string
-  name: string
-  goal: string
-  requiredTools: string[]
-  optionalTools?: string[]
-  completionCriteria: StepCriterion[]
-  onFailure: StepFailurePolicy
-  maxRetries?: number
-  timeoutMs?: number
-}
-
-// ============================================
-// Sub-Agent Configuration
-// ============================================
-
-export interface SubAgentConfig {
-  name: string
-  model: string
-  systemPrompt: string
-  skills: string[]
-  taskTemplate: string
-  maxIterations?: number
-  parallel: boolean
-  /** Sub-agent execution mode: "stage" (LLM-driven, default) or "sop" (SOP-driven). */
-  executionMode?: 'stage' | 'cc'
-  /** Fallback model when primary model is overloaded (consecutive 529s). */
-  fallbackModel?: string
-}
-
-export interface OrchestratorConfig {
-  enabled: boolean
-  dispatchPrompt?: string
-  maxParallelAgents?: number
-}
-
-export interface SubAgentTask {
-  id: string
-  agentConfig: SubAgentConfig
-  taskPrompt: string
-  context: {
-    caseId: string
-    chatMemory: ChatMemoryData
-    stageGoal: string
-  }
-  /** Fork cache context — shared across same-type parallel sub-agents for prompt prefix reuse. */
-  forkContext?: {
-    chainId: string
-    sharedSystemPrompt: string
-    sharedSkills: string[]
-    batchIndex: number
-    batchSize: number
-  }
-}
-
-export interface SubAgentResult {
-  taskId: string
-  agentName: string
-  /** Parent case — for split UI / SSE routing */
-  caseId: string
-  findings: Record<string, unknown>
-  evidence: Record<string, unknown>[]
-  recommendation?: string
-  tokensUsed: number
-  durationMs: number
-}
-
-/** Unified notification format for sub-agent lifecycle (CC `<task-notification>` pattern). */
-export interface SubAgentNotification {
-  taskId: string
-  agentId: string
-  agentName: string
-  caseId: string
-  status: 'started' | 'running' | 'completed' | 'failed'
-  stage?: string
-  findings?: Record<string, unknown>
-  recommendation?: string
-  tokensUsed?: number
-  durationMs?: number
-  error?: string
-  timestamp: string
 }
 
 // ============================================
@@ -719,7 +425,6 @@ export type TransitionReason =
   | 'collapse_drain_retry'
   | 'reactive_compact_retry'
   | 'max_output_tokens_escalate'
-  | 'stage_continue'
 
 export interface LoopResult {
   messages: Message[]
@@ -727,7 +432,6 @@ export interface LoopResult {
   transition: TransitionReason
   currentStage?: string
   reason?: string
-  pendingSubAgents?: string[]
 }
 
 // ============================================
@@ -748,43 +452,4 @@ export interface IntentClassification {
   reasoning: string
   extractedFacts: Record<string, string>
   modelUsed?: string
-}
-
-// ── Agent Context — unified execution context for main + sub agents ──
-
-export interface AgentContext {
-  agentId: string
-  chainId: string
-  depth: number
-  parentAgentId?: string
-  allowedTools: Set<string>
-  isSubAgent: boolean
-  maxIterations: number
-  messageBus: MessageBus
-
-  /** Sub-Agent: orchestrator-injected task checklist for ChecklistPolicy. */
-  taskChecklist?: {
-    goal: string
-    requiredChecks: string[]
-    outputFormat: string
-    rules: string[]
-  }
-}
-
-export interface MessageBus {
-  send(to: string, msg: AgentMessage): void
-  poll(agentId: string): AgentMessage[]
-}
-
-export interface AgentMessage {
-  from: string
-  type: 'update' | 'directive' | 'query' | 'result' | 'user_input'
-  content: string
-  timestamp: string
-}
-
-export interface ChainTracking {
-  chainId: string
-  depth: number
-  parentAgentId?: string
 }

@@ -15,8 +15,8 @@ interface CaseData {
   createdAt: string; updatedAt: string; chatId?: string | null
   _count?: { messages: number; traces: number }
   memory?: {
-    confirmedFacts: string; missingFacts: string; skillsCalled: string
-    skillResults: string; summary?: string; todos?: string; agentTodos?: string
+    confirmedFacts: string; missingFacts: string; toolsCalled: string
+    toolResults: string; summary?: string; todos?: string
   } | null
 }
 
@@ -31,15 +31,13 @@ interface ToolCall {
 }
 
 function normalizeTraceActionType(actionType: string): string {
-  if (actionType === 'skill_call' || actionType === 'skill_called' || actionType === 'tool_called') return 'tool_call'
-  if (actionType === 'skill_result') return 'tool_result'
   return actionType
 }
 
 interface IterationMetrics {
   iteration: number
   inputTokens: number; outputTokens: number; cacheReadTokens: number
-  llmWallMs: number; toolsWallMs: number; skillCount: number
+  llmWallMs: number; toolsWallMs: number; toolCount: number
   model?: string
 }
 
@@ -112,7 +110,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         llmCalls++
 
         const iter = p.iteration as number
-        const im = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, skillCount: 0, model: undefined as string | undefined }
+        const im = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, toolCount: 0, model: undefined as string | undefined }
         im.inputTokens += u.input_tokens ?? 0
         im.outputTokens += u.output_tokens ?? 0
         im.cacheReadTokens += u.cache_read_input_tokens ?? 0
@@ -124,7 +122,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       if (normalizeTraceActionType(t.actionType) === 'tool_result' && p) {
         const input = (() => { try { return t.detail ? JSON.parse(t.detail) : null } catch { return null } })()
         toolCalls.push({
-          name: (p.skillName as string) || (p.toolName as string) || t.title,
+          name: (p.toolName as string) || t.title,
           input: (p.input ?? input) as Record<string, unknown> | null,
           output: (p.output ?? p.result) as Record<string, unknown> | null,
           latencyMs: typeof p.latencyMs === 'number' ? p.latencyMs : null,
@@ -132,12 +130,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         })
 
         // Only attach to per-iteration metrics when iteration is known.
-        // Trace payloads from background sub-agent dispatch may lack the field.
+        // Tool traces without iteration metadata are displayed but not counted.
         if (typeof p.iteration !== 'number') continue
 
         const iter = p.iteration as number
-        const im2 = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, skillCount: 0, model: undefined as string | undefined }
-        im2.skillCount++
+        const im2 = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, toolCount: 0, model: undefined as string | undefined }
+        im2.toolCount++
         if (typeof p.latencyMs === 'number') im2.toolsWallMs += p.latencyMs
         iterMetrics.set(iter, im2)
       }
@@ -147,7 +145,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       // they have no iteration-level data and would create a ghost iter=0 row.
       if (t.actionType === 'loop_decision' && p && typeof p.iteration === 'number') {
         const iter = p.iteration as number
-        const im3 = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, skillCount: 0, model: undefined as string | undefined }
+        const im3 = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, toolCount: 0, model: undefined as string | undefined }
         im3.llmWallMs = (p.llmWallMs as number) || im3.llmWallMs
         iterMetrics.set(iter, im3)
       }
@@ -295,7 +293,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                     <td className="py-2 pr-3 text-right tabular-nums">{im.cacheReadTokens > 0 ? `${((im.cacheReadTokens / Math.max(im.inputTokens + im.cacheReadTokens, 1)) * 100).toFixed(0)}%` : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.llmWallMs > 0 ? fmtMs(im.llmWallMs) : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.toolsWallMs > 0 ? fmtMs(im.toolsWallMs) : '-'}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{im.skillCount}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{im.toolCount}</td>
                   </tr>
                 ))}
               </tbody>

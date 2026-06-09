@@ -22,10 +22,10 @@ export function makeDefaultConfig(overrides?: Partial<AgentConfigData>): AgentCo
 export function makeCaseSchema(overrides?: Partial<CaseSchemaConfig>): CaseSchemaConfig {
   return {
     id: 'test_case_type',
-    name: 'test_case',
-    executionMode: 'cc',
-    stages: ['created', 'collecting', 'investigating'],
-    stageConfigs: [],
+    type: 'test_case',
+    displayName: 'Test Case',
+    requiredFacts: [],
+    escalateOn: [],
     ...overrides,
   } as CaseSchemaConfig
 }

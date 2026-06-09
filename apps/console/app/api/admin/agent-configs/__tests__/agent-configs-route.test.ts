@@ -68,8 +68,9 @@ vi.mock('@/lib/db/repo-for-org', () => ({
         $transaction: vi.fn(async (cb: any) => {
           const tx = {
             tool: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
-            policy: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
             caseType: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            hook: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
+            hookBinding: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
             knowledgeSource: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
             channelBinding: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
             $executeRaw: vi.fn(),

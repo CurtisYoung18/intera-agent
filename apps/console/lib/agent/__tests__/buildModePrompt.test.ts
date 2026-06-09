@@ -10,8 +10,8 @@ vi.mock('@/lib/agent/prompt-resolver', async () => {
     case_types: [
       { type: 'deposit_issue', displayName: 'Deposit not credited', description: 'Test' },
     ],
-    active_policies: [
-      { name: 'no_high_risk_account_change', hook: 'preTool', description: 'Block high-risk' },
+    active_hooks: [
+      { name: 'no_high_risk_account_change', checkpoint: 'PreToolUse', description: 'Block high-risk' },
     ],
     case_schema: (params?.caseSchema as object) ?? null,
     case_state: (params?.caseState as object) ?? null,
@@ -82,7 +82,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
   })
 
   // ── Case mode: case-specific blocks injected ──
-  it('injects case_schema/case_state/policies in case mode', async () => {
+  it('injects case_schema/case_state/hooks in case mode', async () => {
     const result = await buildModePrompt({
       ...baseInput,
       hasActiveCase: true,
@@ -91,19 +91,18 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
         displayName: 'Test Case',
         icon: '💰',
         defaultGoal: 'Verify',
-        stages: ['created', 'investigating'],
         requiredFacts: ['userId'],
         escalateOn: ['conflict'],
       },
       caseState: {
         confirmedFacts: { userId: '123' },
-        skillsCalled: ['get_account_status'],
+        toolsCalled: ['get_account_status'],
         missingFacts: [],
       },
     })
     expect(result.prompt).toContain('## Case Schema')
     expect(result.prompt).toContain('## Current Case State')
-    expect(result.prompt).toContain('## Active Policies')
+    expect(result.prompt).toContain('## Active Hooks')
     expect(result.prompt).toContain('## Available Tools')
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
   })
@@ -117,7 +116,6 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
         displayName: 'Test Case',
         icon: 'case',
         defaultGoal: 'Verify',
-        stages: ['created', 'investigating'],
         requiredFacts: ['userId'],
         escalateOn: ['conflict'],
       },
@@ -128,7 +126,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
             activeProcedureRun: { procedureId: 'deposit_issue' },
           },
         },
-        skillsCalled: [],
+        toolsCalled: [],
         missingFacts: [],
       },
     })
@@ -144,7 +142,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     const { buildPromptContext } = await import('@/lib/agent/prompt-resolver')
     ;(buildPromptContext as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       case_types: [],
-      active_policies: [],
+      active_hooks: [],
       case_schema: null,
       case_state: null,
       session_binding: null,

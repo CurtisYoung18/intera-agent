@@ -31,17 +31,6 @@ export const procedureSchema = z.object({
 })
 export type ProcedureContract = z.infer<typeof procedureSchema>
 
-// Legacy platform-owned guardrail names. F1 migrates these activations into
-// HookBinding rows; old API/runtime routes keep reading them until F2/F4 land.
-export const SAFETY_FLOOR_GUARDRAIL_NAMES = [
-  'no_high_risk_account_change',
-] as const
-
-export const BUILT_IN_GUARDRAIL_NAMES = [
-  ...SAFETY_FLOOR_GUARDRAIL_NAMES,
-  'human_review_before_finalize',
-] as const
-
 /** Safe runtime parse of a `CaseType.procedure` JSON string → typed Procedure, or null. Never throws. */
 export function parseProcedure(json: string | null | undefined): ProcedureContract | null {
   if (!json) return null
@@ -55,31 +44,6 @@ export function parseProcedure(json: string | null | undefined): ProcedureContra
   return r.success ? r.data : null
 }
 
-/** @deprecated Legacy backfill helper for CaseType.guardrails JSON string[] → names. Never throws. */
-export function parseGuardrails(json: string | null | undefined): string[] {
-  if (!json) return []
-  let raw: unknown
-  try {
-    raw = JSON.parse(json)
-  } catch {
-    return []
-  }
-  const r = z.array(z.string()).safeParse(raw)
-  return r.success ? r.data : []
-}
-
-/**
- * @deprecated Legacy CaseType.guardrails orphan check. New activation uses
- * HookBinding rows and stable Hook names.
- */
-export function findOrphanGuardrails(
-  guardrailNames: string[],
-  existingPolicyNames: string[],
-): string[] {
-  const known = new Set(existingPolicyNames)
-  return guardrailNames.filter((n) => !known.has(n))
-}
-
 // ── Case type item ──
 export const caseTypeItemSchema = z.object({
   id: z.string(),
@@ -88,20 +52,11 @@ export const caseTypeItemSchema = z.object({
   description: z.string().nullable().optional(),
   icon: z.string(),
   requiredFacts: z.string(),
-  stages: z.string(),
-  stageConfigs: z.string().nullable().optional(),
-  orchestratorConfig: z.string().nullable().optional(),
   defaultGoal: z.string(),
   escalateOn: z.string(),
   autoCloseConditions: z.string().nullable().optional(),
   enabled: z.boolean(),
-  requireHumanReview: z.boolean().optional(),
-  executionMode: z.string().optional(),
-  sop: z.string().nullable().optional(),
-  sopMaxAutoTurns: z.number().optional(),
-  // ── Procedure refactor (additive) ──
   procedure: z.string().nullable().optional(), // JSON: Procedure
-  guardrails: z.string().optional(), // JSON: string[] — activated guardrail names
   maxAutoTurns: z.number().optional(),
   createdAt: z.date().or(z.string()).optional(),
   updatedAt: z.date().or(z.string()).optional(),
@@ -122,20 +77,12 @@ export const caseTypeCreateRequestSchema = z.object({
   description: z.string().nullable().optional(),
   icon: z.string().optional().default('\u{1F4CB}'),
   requiredFacts: z.union([z.string(), z.array(z.string())]).optional().default('[]'),
-  stages: z.union([z.string(), z.array(z.string())]).optional().default('["created","investigating","resolved"]'),
-  stageConfigs: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
-  orchestratorConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
   defaultGoal: z.string().optional().default(''),
   escalateOn: z.union([z.string(), z.array(z.string())]).optional().default('[]'),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional().default(true),
-  requireHumanReview: z.boolean().optional().default(false),
-  executionMode: z.string().optional().default('stage'),
-  sop: z.string().nullable().optional(),
-  sopMaxAutoTurns: z.number().optional().default(10),
-  // ── Procedure refactor (additive) ── accept a JSON string or a typed Procedure / name list.
+  // Accept a JSON string or a typed Procedure.
   procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
-  guardrails: z.union([z.string(), z.array(z.string())]).optional().default('[]'),
   maxAutoTurns: z.number().optional().default(10),
 })
 export type CaseTypeCreateRequest = z.infer<typeof caseTypeCreateRequestSchema>
@@ -159,20 +106,11 @@ export const caseTypeUpdateRequestSchema = z.object({
   description: z.string().nullable().optional(),
   icon: z.string().optional(),
   requiredFacts: z.union([z.string(), z.array(z.string())]).optional(),
-  stages: z.union([z.string(), z.array(z.string())]).optional(),
-  stageConfigs: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
-  orchestratorConfig: z.union([z.string(), z.record(z.unknown())]).nullable().optional(),
   defaultGoal: z.string().optional(),
   escalateOn: z.union([z.string(), z.array(z.string())]).optional(),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional(),
-  requireHumanReview: z.boolean().optional(),
-  executionMode: z.string().optional(),
-  sop: z.string().nullable().optional(),
-  sopMaxAutoTurns: z.number().optional(),
-  // ── Procedure refactor (additive) ──
   procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
-  guardrails: z.union([z.string(), z.array(z.string())]).optional(),
   maxAutoTurns: z.number().optional(),
 })
 export type CaseTypeUpdateRequest = z.infer<typeof caseTypeUpdateRequestSchema>

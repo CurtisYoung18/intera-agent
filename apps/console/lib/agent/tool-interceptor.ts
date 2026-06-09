@@ -79,7 +79,7 @@ export type InterceptAction =
 interface LoopResult {
   messages: Message[]
   caseStatus: CaseStatus
-  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'stage_continue' | 'connection_lost' | 'machine_error'
+  transition: 'next_turn' | 'resolved' | 'waiting_human' | 'waiting_form' | 'error' | 'consultation_complete' | 'connection_lost' | 'machine_error'
   currentStage: string
   reason?: string
 }
@@ -152,11 +152,8 @@ async function handleDispatchCaseAgent(
     })
     if (!ctRow) return { kind: 'pass' }
 
-    const stages = safeJson<string[]>(ctRow.stages, [])
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
-    const stageConfigs = safeJson<Record<string, unknown>>(ctRow.stageConfigs || '{}', {})
     const procedure = parseProcedure((ctRow as { procedure?: string | null }).procedure)
-    const executionMode = procedure ? 'cc' : normalizeExecutionMode((ctRow as any).executionMode)
 
     const schema: CaseSchemaConfig = {
       type: ctRow.type,
@@ -164,14 +161,11 @@ async function handleDispatchCaseAgent(
       icon: ctRow.icon,
       description: ctRow.description || undefined,
       requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
-      stages: Array.isArray(stages) ? stages : [],
-      stageConfigs: stageConfigs as any,
       defaultGoal: ctRow.defaultGoal,
       escalateOn: safeJson<string[]>(ctRow.escalateOn, []),
-      requireHumanReview: (ctRow as any).requireHumanReview === true,
-      executionMode,
-      sop: (ctRow as any).sop || undefined,
+      autoCloseConditions: safeJson<Record<string, unknown> | undefined>(ctRow.autoCloseConditions, undefined),
       procedure: procedure ?? undefined,
+      maxAutoTurns: ctRow.maxAutoTurns ?? undefined,
     }
 
     const now = new Date().toISOString()
@@ -236,7 +230,7 @@ async function handleDispatchCaseAgent(
       pendingProcedureRuns: nextState.pendingProcedureRuns,
       currentProcedureAction: currentProcedureAction ?? null,
       instruction:
-        'Continue as the main customer-facing Agent inline. Follow this Procedure through ProcedureExecutor and HookEngine; do not spawn background or detached sub-agents.',
+        'Continue as the main customer-facing Agent inline. Follow this Procedure through ProcedureExecutor and HookEngine; do not spawn background workers.',
     }
 
     result.output = inlineRoutingResult
@@ -318,7 +312,7 @@ async function handleRequestUserInput(
     type: 'form_request',
     data: {
       caseId: ctx.caseId,
-      skillCallId: result.toolUse?.id || crypto.randomUUID(),
+      toolCallId: result.toolUse?.id || crypto.randomUUID(),
       title,
       description,
       fields,
@@ -374,7 +368,7 @@ export async function processPendingHookToolCalls(
         await ctx.persistence.createHumanTask({
           caseId: ctx.caseId,
           queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
-          question: `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getSkillsCalled().join(', ')}.`,
+          question: `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
           status: 'pending',
         })
       } catch (err) {
@@ -399,7 +393,7 @@ export async function processPendingHookToolCalls(
       await ctx.persistence.createHumanTask({
         caseId: ctx.caseId,
         queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
-        question: `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getSkillsCalled().join(', ')}.`,
+        question: `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
         status: 'pending',
       })
     } catch (err) {
@@ -423,59 +417,11 @@ export async function processPendingHookToolCalls(
 }
 
 // ---------------------------------------------------------------------------
-// processDispatchSubagent (CC mode)
-// ---------------------------------------------------------------------------
-
-export async function processDispatchSubagent(
-  ctx: ToolInterceptorContext,
-  toolResults: ToolExecutionResult[],
-  sendEvent: (event: SSEEvent) => void,
-): Promise<ToolExecutionResult[]> {
-  const caseLoop = ctx.getCaseLoop()
-  if (!caseLoop) return toolResults
-
-  const dispatchResults: ToolExecutionResult[] = []
-  for (const tr of toolResults) {
-    if (tr.name !== 'dispatch_subagent') {
-      dispatchResults.push(tr)
-      continue
-    }
-    const input = tr.output as { agentName?: string; taskDescription?: string; taskPrompt?: string } | undefined
-    if (!input?.agentName || !input?.taskPrompt) {
-      dispatchResults.push({
-        ...tr,
-        output: { ok: false, error: 'dispatch_subagent requires agentName, taskDescription, and taskPrompt' },
-      })
-      continue
-    }
-    try {
-      await caseLoop.dispatchSingle(
-        input.agentName,
-        input.taskDescription ?? input.agentName,
-        input.taskPrompt,
-        sendEvent,
-      )
-      dispatchResults.push({ ...tr, output: { ok: true, status: 'dispatched', agentName: input.agentName } })
-    } catch (err) {
-      dispatchResults.push({
-        ...tr,
-        output: { ok: false, error: String(err) },
-      })
-    }
-  }
-  return dispatchResults
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function safeJson<T>(value: unknown, fallback: T): T {
   try { return JSON.parse(value as string) as T } catch { return fallback }
-}
-
-function normalizeExecutionMode(raw: unknown): 'stage' | 'cc' {
-  return (raw === 'sop' ? 'cc' : raw) === 'cc' ? 'cc' : 'stage'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

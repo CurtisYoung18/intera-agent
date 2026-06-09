@@ -18,43 +18,6 @@
  */
 
 import type { AgentLoop } from './loop'
-import type { AgentMessage } from '@intera/shared/types'
-
-// ─── MessageBus — Agent 间实时通信 ────────────────────────────────────────────
-
-export class MessageBus {
-  private channels = new Map<string, AgentMessage[]>()
-
-  send(to: string, msg: AgentMessage): void {
-    if (to === '*') {
-      for (const [agentId, msgs] of this.channels) {
-        msgs.push(msg)
-      }
-      return
-    }
-    const msgs = this.channels.get(to)
-    if (msgs) msgs.push(msg)
-    else this.channels.set(to, [msg])
-  }
-
-  poll(agentId: string): AgentMessage[] {
-    const msgs = this.channels.get(agentId)
-    if (!msgs || msgs.length === 0) return []
-    const result = [...msgs]
-    msgs.length = 0
-    return result
-  }
-
-  /** Register an agent on this bus (creates its inbox). */
-  register(agentId: string): void {
-    if (!this.channels.has(agentId)) this.channels.set(agentId, [])
-  }
-
-  /** Remove an agent from the bus after completion. */
-  unregister(agentId: string): void {
-    this.channels.delete(agentId)
-  }
-}
 
 // ─── Queued message shape ─────────────────────────────────────────────────────
 
@@ -127,7 +90,6 @@ export interface CaseSession {
   /** True once the agent loop has completed (case resolved/escalated). */
   resolved: boolean
   queue: MessageQueue
-  bus: MessageBus
   aborted: boolean
   lastActiveAt: number
 }
@@ -153,7 +115,6 @@ export function getOrCreateSession(caseId: string): CaseSession {
     initialized: false,
     resolved: false,
     queue: new MessageQueue(),
-    bus: new MessageBus(),
     aborted: false,
     lastActiveAt: Date.now(),
   }
@@ -187,7 +148,6 @@ export function enqueueMessageOrCreate(caseId: string, msg: QueuedMessage): Case
       initialized: false,
       resolved: false,
       queue: new MessageQueue(),
-      bus: new MessageBus(),
       aborted: false,
       lastActiveAt: Date.now(),
     }

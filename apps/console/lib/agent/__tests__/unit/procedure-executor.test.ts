@@ -42,7 +42,7 @@ describe('seedProcedureTodos', () => {
   it('maps every step to a pending todo, preserving ids and order', () => {
     const todos = seedProcedureTodos(proc)
     expect(todos.map((t) => t.id)).toEqual(['ask_member', 'check_deposit', 'maybe_kyc', 'close'])
-    expect(todos.every((t) => t.status === 'pending' && t.addedBy === 'sop_init')).toBe(true)
+    expect(todos.every((t) => t.status === 'pending' && t.addedBy === 'procedure_init')).toBe(true)
     expect(todos.every((t) => typeof t.addedAt === 'string' && t.addedAt.length > 0)).toBe(true)
   })
 })

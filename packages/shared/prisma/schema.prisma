@@ -109,7 +109,7 @@ model AgentConfig {
 }
 
 // ============================================
-// Case 类型定义（动态状态机）
+// Case 类型定义（Procedure target）
 // ============================================
 model CaseType {
   id            String @id @default(cuid())
@@ -120,31 +120,16 @@ model CaseType {
   description String?
   icon        String
 
-  requiredFacts       String // JSON: string[]
-  stages              String // JSON: string[] — 动态状态机
-  stageConfigs        String? // JSON: Record<string, StageConfig> — per-stage config
-  orchestratorConfig  String? // JSON: OrchestratorConfig — sub-agent dispatch rules
+  requiredFacts       String  // JSON: string[]
   defaultGoal         String
-  escalateOn          String // JSON: string[]
+  escalateOn          String  // JSON: string[]
   autoCloseConditions String? // JSON
 
   enabled Boolean @default(true) // false = excluded from routing / intent classification UI
 
-  requireHumanReview Boolean @default(false) // true = finalize requires a resolved human task
-
-  /// "stage" = predefined stage machine (default); "step" = engine-driven step executor
-  executionMode   String  @default("stage")
-  /// Natural-language Standard Operating Procedure — only used when executionMode = "cc"
-  sop             String?
-  /// Max auto-continuation turns in SOP mode (prevents infinite loops)
-  sopMaxAutoTurns Int     @default(10)
-
-  // ── Procedure refactor (additive, Phase 1) ── old stage fields above stay until Phase 5.
   /// JSON: Procedure (ordered ProcedureStep[]). When present, the case runs the single-agent Procedure path.
   procedure    String?
-  /// JSON: string[] — activated guardrail names (case-type-scoped over the agent-global registry).
-  guardrails   String  @default("[]")
-  /// Safety bound on auto-continuation turns (replaces sopMaxAutoTurns).
+  /// Safety bound on auto-continuation turns.
   maxAutoTurns Int     @default(10)
 
   createdAt DateTime @default(now())
@@ -169,7 +154,7 @@ model Tool {
   inputSchema  String // JSON Schema
   outputSchema String // JSON Schema
 
-  mode       String  @default("mock") // "mock" | "http"
+  mode       String  @default("static_fixture")
   endpoint   String?
   httpMethod String  @default("POST")
   headers    String? // JSON
@@ -194,7 +179,7 @@ model Tool {
 }
 
 // ============================================
-// Hook 控制层 — Policy/Guardrail reset target
+// Hook control layer
 // ============================================
 model Hook {
   id            String @id @default(cuid())
@@ -246,28 +231,6 @@ model HookBinding {
 }
 
 // ============================================
-// Legacy Policy rows — migration input for Hook backfill.
-// F2/F4 own runtime/API removal after HookEngine and /api/admin/hooks land.
-// ============================================
-model Policy {
-  id            String @id @default(cuid())
-  agentConfigId String @map("agent_config_id")
-
-  name            String
-  description     String?
-  hook            String // "preTool" | "postTool" | "preFinalize" — @deprecated, prefer guardrailConfig.when
-  rule            String // JSON: @deprecated PolicyRule — superseded by guardrailConfig (G11)
-  guardrailConfig String? // JSON: GuardrailHook (G11 configurable guardrail primitive)
-  enabled         Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([agentConfigId, name])
-  @@map("policies")
-}
-
-// ============================================
 // Case（工单）
 // ============================================
 model Case {
@@ -298,7 +261,7 @@ model Case {
 }
 
 // ============================================
-// Chat Memory — per-case working memory (facts, skill results, todos, compact summary).
+// Chat Memory — per-case working memory (facts, tool results, todos, compact summary).
 // Cross-session accumulation lives in UserProfile (user_profiles table).
 // ============================================
 model ChatMemory {
@@ -308,19 +271,13 @@ model ChatMemory {
 
   confirmedFacts    String    @default("{}") // JSON
   missingFacts      String    @default("[]") // JSON
-  skillsCalled      String    @default("[]") // JSON
-  skillResults      String    @default("{}") // JSON
+  toolsCalled       String    @default("[]") // JSON
+  toolResults       String    @default("{}") // JSON
   keyEvents         String    @default("[]") // JSON
   humanTaskStatus   String    @default("none")
-  needsContinuation Boolean   @default(false)
-  continuationLock  DateTime?
   summary           String?
-  /// JSON: TodoItem[] — SOP mode todo list, shared between Core Agent and sub-agents
+  /// JSON: TodoItem[] — Procedure todo list for the Case Owner Agent
   todos             String?
-  /// JSON: Record<string, TodoItem[]> — per-agent todo lists for shared dashboard isolation
-  agentTodos        String?
-  /// Increments on every dashboard write; sub-agents use this to detect changes
-  dashboardVersion  Int       @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -538,7 +495,7 @@ model ChannelBinding {
   licenseId           String?  @map("license_id") // denormalized from credentials for common queries
   toolOverrides       String? // JSON: Record<string, RenderHint>
   defaults            String? // JSON: { plain?, card?, form? }
-  channelSkillBinding String? // JSON: string[] — allowlist of tool names
+  channelSkillBinding String? // JSON: string[] — historical allowlist of tool names
   /// Human Ops: escalation strategy per channel
   transferStrategy    String? // 'transfer_chat' | 'consult' | 'silent_task'
   transferTarget      String? // JSON: { type: 'group'|'agent'|'queue', ids: [...] }
@@ -598,8 +555,8 @@ model AuditLog {
   id          String   @id @default(cuid())
   actorUserId String   @map("actor_user_id")
   orgId       String   @map("org_id")
-  action      String // e.g. "skill.create", "skill.update", "skill.delete"
-  target      String // e.g. "skill:my_skill_name"
+  action      String // e.g. "tool.create", "tool.update", "tool.delete"
+  target      String // e.g. "tool:my_tool_name"
   before      Json? // snapshot before mutation
   after       Json? // snapshot after mutation
   createdAt   DateTime @default(now())

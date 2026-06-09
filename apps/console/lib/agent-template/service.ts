@@ -85,7 +85,6 @@ export interface ImportAgentTemplateResult {
   warnings: string[]
 }
 
-const DEFAULT_STAGES = ['created', 'investigating', 'resolved']
 const SECRET_PLACEHOLDER_RE = /^\{\{secret\.([a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*)\}\}$/
 const SAFE_HEADER_NAMES = new Set(['accept', 'accept-language', 'content-type'])
 
@@ -115,12 +114,11 @@ export async function exportAgentTemplate(
   const agent = await repo.agentConfig.findUnique({ where: { id: agentConfigId } }) as AgentConfigRow | null
   if (!agent) throw new AgentTemplateNotFoundError('Agent config not found')
 
-  const [caseTypes, tools, hooks, hookBindings, policies] = await Promise.all([
+  const [caseTypes, tools, hooks, hookBindings] = await Promise.all([
     repo.raw.caseType.findMany({ where: { agentConfigId }, orderBy: { type: 'asc' } }),
     repo.raw.tool.findMany({ where: { agentConfigId }, orderBy: { name: 'asc' } }),
     repo.raw.hook.findMany({ where: { agentConfigId }, orderBy: { name: 'asc' } }),
     repo.raw.hookBinding.findMany({ where: { agentConfigId }, orderBy: [{ scopeType: 'asc' }, { scopeKey: 'asc' }] }),
-    repo.raw.policy.findMany({ where: { agentConfigId }, orderBy: { name: 'asc' } }),
   ])
 
   const secrets = new SecretRegistry()
@@ -167,20 +165,7 @@ export async function exportAgentTemplate(
     secrets: secrets.values(),
     legacy: compactRecord({
       caseTypes: caseTypes.map((ct: any) => sanitizeLegacyRow(ct)),
-      policies: policies.map((policy: any) => sanitizeLegacyRow(policy)),
-      guardrails: caseTypes
-        .map((ct: any) => ({
-          caseType: ct.type,
-          hookNames: parseStringArray(ct.guardrails),
-        }))
-        .filter((entry: { hookNames: string[] }) => entry.hookNames.length > 0),
       skills: tools.map((tool: any) => sanitizeLegacyRow(tool)),
-      stageConfigs: caseTypes
-        .map((ct: any) => ({ caseType: ct.type, stageConfigs: parseJsonLoose(ct.stageConfigs) }))
-        .filter((entry: { stageConfigs: unknown }) => entry.stageConfigs !== undefined),
-      subAgents: caseTypes
-        .map((ct: any) => ({ caseType: ct.type, orchestratorConfig: parseJsonLoose(ct.orchestratorConfig) }))
-        .filter((entry: { orchestratorConfig: unknown }) => entry.orchestratorConfig !== undefined),
     }),
   })
 
@@ -253,9 +238,6 @@ export async function importAgentTemplate(
     }
 
     for (const ct of template.caseTypes) {
-      const legacy = isRecord(ct.legacy) ? ct.legacy : {}
-      const stageConfigs = legacy.stageConfigs === undefined ? null : JSON.stringify(legacy.stageConfigs)
-      const orchestratorConfig = legacy.orchestratorConfig === undefined ? null : JSON.stringify(legacy.orchestratorConfig)
       const created = await tx.caseType.create({
         data: {
           agentConfigId: config.id,
@@ -264,19 +246,11 @@ export async function importAgentTemplate(
           description: ct.description ?? null,
           icon: ct.icon ?? '📋',
           requiredFacts: JSON.stringify(ct.requiredFacts ?? []),
-          stages: JSON.stringify(asStringArray(legacy.stages, DEFAULT_STAGES)),
-          stageConfigs,
-          orchestratorConfig,
           defaultGoal: ct.defaultGoal ?? '',
           escalateOn: JSON.stringify(ct.escalateOn ?? []),
           autoCloseConditions: ct.autoCloseConditions ? JSON.stringify(ct.autoCloseConditions) : null,
           enabled: ct.enabled !== false,
-          requireHumanReview: legacy.requireHumanReview === true,
-          executionMode: ct.procedure ? 'cc' : typeof legacy.executionMode === 'string' ? legacy.executionMode : 'stage',
-          sop: typeof legacy.sop === 'string' ? legacy.sop : null,
-          sopMaxAutoTurns: clampPositiveInt(legacy.sopMaxAutoTurns, 10, 50),
           procedure: ct.procedure ? JSON.stringify(ct.procedure) : null,
-          guardrails: '[]',
           maxAutoTurns: ct.maxAutoTurns ?? 10,
         },
       })
@@ -384,17 +358,7 @@ function validateTemplateReferences(template: InteraAgentTemplateV1): void {
 
 function exportCaseType(ct: any) {
   const procedure = procedureSchema.safeParse(parseJsonLoose(ct.procedure))
-  const legacy = compactRecord({
-    id: ct.id,
-    stages: parseJsonLoose(ct.stages),
-    stageConfigs: parseJsonLoose(ct.stageConfigs),
-    orchestratorConfig: parseJsonLoose(ct.orchestratorConfig),
-    guardrails: parseStringArray(ct.guardrails),
-    requireHumanReview: ct.requireHumanReview,
-    executionMode: ct.executionMode,
-    sop: ct.sop,
-    sopMaxAutoTurns: ct.sopMaxAutoTurns,
-  })
+  const legacy = compactRecord({ id: ct.id })
 
   return compactRecord({
     type: ct.type,

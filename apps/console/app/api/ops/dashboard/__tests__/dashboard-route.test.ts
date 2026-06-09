@@ -34,9 +34,9 @@ describe('dashboard handler logic (isolation tests)', () => {
     expect(avgResolutionMin).toBeNull()
   })
 
-  it('aggregates guardrail hits by title', () => {
+  it('aggregates Hook hits by title', () => {
     const hits = [
-      { title: 'policy_a' }, { title: 'policy_a' }, { title: 'policy_b' },
+      { title: 'hook_a' }, { title: 'hook_a' }, { title: 'hook_b' },
     ]
 
     const hitMap = new Map<string, number>()
@@ -49,11 +49,11 @@ describe('dashboard handler logic (isolation tests)', () => {
       .map(([name, hits]) => ({ name, hits }))
 
     expect(topHits).toHaveLength(2)
-    expect(topHits[0]).toEqual({ name: 'policy_a', hits: 2 })
-    expect(topHits[1]).toEqual({ name: 'policy_b', hits: 1 })
+    expect(topHits[0]).toEqual({ name: 'hook_a', hits: 2 })
+    expect(topHits[1]).toEqual({ name: 'hook_b', hits: 1 })
   })
 
-  it('returns empty topHits when no guardrail activity', () => {
+  it('returns empty topHits when no Hook activity', () => {
     const hitMap = new Map<string, number>()
     const topHits = [...hitMap.entries()].map(([name, hits]) => ({ name, hits }))
     expect(topHits).toEqual([])
@@ -65,7 +65,7 @@ describe('dashboard handler logic (isolation tests)', () => {
     const handlerQueries = [
       { where: { status: { notIn: ['resolved', 'escalated'] } } },
       { where: { resolvedAt: { not: null }, createdAt: { gte: new Date() } } },
-      { where: { caseId: { in: ['c1', 'c2'] }, actionType: 'policy_hit' } },
+      { where: { caseId: { in: ['c1', 'c2'] }, actionType: 'hook_hit' } },
       { orderBy: { createdAt: 'desc' }, take: 10 },
     ]
 

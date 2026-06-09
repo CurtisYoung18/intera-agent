@@ -22,14 +22,8 @@ export interface ChatMemoryReader {
   getSummary(): unknown
   getConfirmedFacts(): Record<string, unknown>
   setConfirmedFactsBulk(facts: Record<string, unknown>): void
-  getDashboardVersion(): number
-  bumpDashboardVersion(): void
   getTodos?(): unknown[]
   applyTodoAction?(action: string, id?: string, text?: string, notes?: string): unknown
-}
-
-export interface OrchestratorRef {
-  dispatch(name: string, task: { description: string; taskPrompt: string; caseId: string }): Promise<unknown>
 }
 
 export interface SecretResolver {
@@ -41,7 +35,6 @@ export interface ToolContext {
   orgId: string
   signal: AbortSignal
   chatMemory?: ChatMemoryReader
-  orchestrator?: OrchestratorRef
   secrets?: SecretResolver
 }
 

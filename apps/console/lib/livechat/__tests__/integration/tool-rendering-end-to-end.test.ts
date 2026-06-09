@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { renderSkillByHint } from '../../../../channels/livechat/render-skill-by-hint'
+import { renderToolByHint } from '../../../../channels/livechat/render-tool-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
-describe('skill-rendering end-to-end', () => {
+describe('tool-rendering end-to-end', () => {
   describe('query_order_status → card', () => {
     const orderOutput = {
       order: {
@@ -25,7 +25,7 @@ describe('skill-rendering end-to-end', () => {
     }
 
     it('renders correct card from order output', () => {
-      const actions = renderSkillByHint(orderOutput, hint)
+      const actions = renderToolByHint(orderOutput, hint)
       expect(actions).toHaveLength(1)
       expect(actions[0]!.type).toBe('send_card')
 
@@ -59,7 +59,7 @@ describe('skill-rendering end-to-end', () => {
     }
 
     it('renders carousel from KB results', () => {
-      const actions = renderSkillByHint(kbOutput, hint)
+      const actions = renderToolByHint(kbOutput, hint)
       expect(actions).toHaveLength(1)
       expect(actions[0]!.type).toBe('send_carousel')
 
@@ -82,7 +82,7 @@ describe('skill-rendering end-to-end', () => {
   describe('broken hint (missing titleField)', () => {
     it('returns (untitled) card instead of crashing', () => {
       const hint: LivechatRenderHint = { kind: 'card', titleField: '$.missing' }
-      const actions = renderSkillByHint({}, hint)
+      const actions = renderToolByHint({}, hint)
       expect(actions[0]!.type).toBe('send_card')
       expect((actions[0] as { card: { title: string } }).card.title).toBe('(untitled)')
     })

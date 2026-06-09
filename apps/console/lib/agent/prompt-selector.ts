@@ -1,7 +1,7 @@
-// Prompt Selector — dual-mode prompt + tool selection.
+// Prompt Selector — current prompt + tool selection.
 //
 // Determines which system prompt and tool set to use based on the current
-// execution mode: Core (discovery), Consultation, SOP/Step (cc), or Stage.
+// execution mode: Core discovery, human-waiting acknowledgement, or Procedure.
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CaseSchemaConfig } from '@intera/shared/types'
@@ -30,15 +30,14 @@ export interface PromptSelectorContext {
 /**
  * Select the system prompt and filtered tool set for the current iteration.
  *
- * Four modes:
+ * Three modes:
  * - Core (discovery): no active case → conversational discovery prompt + tools
  * - Consultation: human specialist reviewing → acknowledgement-only prompt, no tools
- * - SOP/Step (cc): SOP-driven execution → todo tools + full skill set
- * - Stage: stage-driven execution → stage prompt + filtered tools
+ * - Procedure: single case owner executes typed steps with Hook checkpoints
  */
 export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelection {
   const { isCaseActive, isConsultation, caseSchema, systemPrompt, currentStage,
-    nudgeCount, conversationLoop, caseLoop, chatMemory, allTools } = ctx
+    conversationLoop, caseLoop, chatMemory, allTools } = ctx
 
   if (!isCaseActive) {
     return {
@@ -63,22 +62,16 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
     }
   }
 
-  if (caseSchema?.executionMode === 'cc') {
-    // Procedure refactor (Phase 2): a typed Procedure renders the structured step
-    // checklist; otherwise fall back to the legacy free-text SOP. Same cc execution
-    // path (no stage machine, hooks gate finalize) — only the prompt differs.
-    const prompt = caseLoop!.isProcedureMode()
-      ? caseLoop!.buildProcedurePrompt(systemPrompt, chatMemory.getTodos(), chatMemory.getConfirmedFacts())
-      : caseLoop!.buildSopPrompt(systemPrompt, chatMemory.getTodos(), chatMemory.getConfirmedFacts())
+  if (caseLoop) {
+    const prompt = caseLoop.buildProcedurePrompt(systemPrompt, chatMemory.getTodos(), chatMemory.getConfirmedFacts())
     return {
       prompt,
-      tools: caseLoop!.filterSopTools(allTools),
+      tools: caseLoop.filterProcedureTools(allTools),
     }
   }
 
-  // Stage mode (default)
   return {
-    prompt: caseLoop!.buildPrompt(systemPrompt),
-    tools: caseLoop!.filterTools(allTools, nudgeCount),
+    prompt: conversationLoop.buildPrompt(),
+    tools: conversationLoop.filterTools(allTools),
   }
 }
