@@ -2,33 +2,25 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import type { TranslateFn } from '@/lib/i18n/types'
 import {
-  ClipboardList, FolderOpen, Puzzle, Shield, Layers,
+  ClipboardList, Puzzle, Shield, Layers,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Languages, Lock, Unlock,
-  BookOpen,
   MessageSquare,
   Search,
   Loader2,
-  BarChart3,
   Plug,
-  HandPlatter,
   Users2,
   FlaskConical,
-  GitBranch,
   Settings,
-  Brain,
-  Database,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
-import type { TranslateFn } from '@/lib/i18n/types'
 import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
-
-type NavSlug = 'playground' | 'chats' | 'users' | 'dashboards' | 'guide' | 'tools' | 'guardrails' | 'caseTypes' | 'knowledge' | 'channels' | 'apiKeys' | 'model' | 'memory' | 'members' | 'integrations' | 'organization'
 
 interface NavItem {
   href: string
@@ -47,43 +39,36 @@ interface CustomerInfo {
 }
 
 /**
- * Console route map (purpose, not just label):
- *
- * OPS — day-to-day:
- *   /ops/chats         Live conversation viewer + per-case trace.
- *   /ops/human-tasks   Queue of escalations awaiting human action.
- *   /ops/guide         Operator onboarding / runbook.
- *
- * ADMIN — configuration:
- *   /admin/agent           Agent blueprint (prompt, model, memory, guardrail-summary,
- *                          sub-agent-summary, human-ops, knowledge). Single-customer scope.
- *   /admin/skills          System (read-only 7) + Special (kb_hybrid_retrieve) + Business skills.
- *   /admin/policies        Guardrails canonical editor (sentence-builder + advanced JSON).
- *                          Agent-config "Guardrails" satellite is a read-only mirror.
- *   /admin/case-types      Stage / SOP definitions, sub-agent configuration.
- *                          Agent-config "Sub-Agents" satellite is a read-only mirror.
- *   /admin/knowledge       Knowledge sources + GPTBots API key + retrieval params.
- *                          Mirrored from agent-config "Knowledge" satellite.
- *   /admin/integrations    Channel integrations (LiveChat active; Slack/Discord placeholders).
+ * Console IA route map.
  */
 
+type NavSlug =
+  | 'release'
+  | 'pilotLab'
+  | 'components'
+  | 'brain'
+  | 'caseTypes'
+  | 'tools'
+  | 'hooks'
+  | 'knowledge'
+  | 'integrations'
+  | 'chats'
+  | 'users'
+  | 'organization'
+
 const BUILD_ITEMS: NavItem[] = [
-  { href: '/admin/playground', slug: 'playground', icon: FlaskConical, color: '#8b6ff5' },
-  { href: '/admin/model', slug: 'model' as NavSlug, icon: Brain, color: '#8b6ff5' },
-  { href: '/admin/memory', slug: 'memory' as NavSlug, icon: Database, color: '#d4912e' },
-  { href: '/admin/guardrails', slug: 'guardrails', icon: Shield, color: '#e64539' },
-  { href: '/admin/tools', slug: 'tools', icon: Puzzle, color: '#5b8af7' },
-  { href: '/admin/case-types', slug: 'caseTypes', icon: Layers, color: '#d4912e' },
-  { href: '/admin/knowledge', slug: 'knowledge', icon: Search, color: '#14b8a6' },
-  { href: '/admin/integrations', slug: 'integrations' as NavSlug, icon: Plug, color: '#7c3aed' },
+  { href: '/build/release', slug: 'release', icon: FlaskConical, color: '#8b6ff5', matchPattern: '/build/release' },
+  { href: '/build/pilot-lab', slug: 'pilotLab', icon: MessageSquare, color: '#6366f1', matchPattern: '/build/pilot-lab' },
+  { href: '/build/components', slug: 'components', icon: Layers, color: '#5b8af7', matchPattern: '/build/components' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
-  { href: '/ops/dashboards', slug: 'dashboards', icon: BarChart3, color: '#14b8a6', matchPattern: '/ops/dashboards' },
-  { href: '/ops/chats', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/ops/chats' },
-  { href: '/ops/users', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/ops/users' },
-  { href: '/ops/guide', slug: 'guide', icon: BookOpen, color: '#8b6ff5', matchPattern: '/ops/guide' },
-  { href: '/admin/organization', slug: 'organization' as NavSlug, icon: Building2, color: '#6366f1' },
+  { href: '/operate/conversations', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/operate/conversations' },
+  { href: '/operate/handoff', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/operate/handoff' },
+]
+
+const SETTINGS_ITEMS: NavItem[] = [
+  { href: '/settings/organization', slug: 'organization', icon: Building2, color: '#6366f1', matchPattern: '/settings/organization' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -91,13 +76,26 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.href
 }
 
-function navLabel(t: TranslateFn, slug: NavSlug): string {
-  return t(`sidebar.${slug}`)
+function navLabel(t: (key: string, vars?: Record<string, string | number>) => string, slug: NavSlug): string {
+  const fallback: Record<NavSlug, string> = {
+    release: t('sidebar.release'),
+    pilotLab: t('sidebar.pilotLab'),
+    components: t('sidebar.components'),
+    brain: t('sidebar.brain'),
+    caseTypes: t('sidebar.procedures'),
+    tools: t('sidebar.tools'),
+    hooks: t('sidebar.hooks'),
+    knowledge: t('sidebar.knowledge'),
+    integrations: t('sidebar.integrations'),
+    chats: t('sidebar.conversations'),
+    users: t('sidebar.handoff'),
+    organization: t('sidebar.organization'),
+  }
+  return fallback[slug]
 }
 
 export default function ConsoleSidebar() {
   const pathname = usePathname()
-  const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [switchOpen, setSwitchOpen] = useState(false)
@@ -254,6 +252,7 @@ export default function ConsoleSidebar() {
         <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
           <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
           <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+          <NavGroup label={t('sidebar.settings')} items={SETTINGS_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
         </nav>
 
         <div className="border-t border-black/5">
