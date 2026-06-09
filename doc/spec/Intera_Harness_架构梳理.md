@@ -160,6 +160,9 @@ type ProcedureRunState = {
   runId: string
   procedureId: string
   status: 'active' | 'paused' | 'completed' | 'cancelled'
+  inputEpoch: number
+  lastReconciledInputEpoch: number
+  needsReconcile: boolean
   currentStepId: string
   steps: Array<{
     id: string
@@ -170,6 +173,13 @@ type ProcedureRunState = {
   }>
   facts: Record<string, unknown>
   blockers: string[]
+  timeline: Array<{
+    epoch: number
+    source: 'customer_message' | 'customer_form' | 'human_task' | 'tool_call' | 'tool_result' | 'hook_decision' | 'reconcile'
+    at: string
+    summary: string
+    basedOnInputEpoch?: number
+  }>
 }
 ```
 
@@ -181,6 +191,30 @@ Runtime owns the timeline. The model may propose actions, but runtime is the jud
 - whether a new user message continues, supplements, pauses, resumes, or starts a Procedure
 - when Tool evidence advances or blocks a step
 
+Do not add semantic intent classification for interleaved messages. Runtime should not decide whether the new message is a correction, cancellation, supplement, or a new issue. It should maintain a generic version invariant:
+
+```text
+Every ProcedureRun step advance must be based on the latest inputEpoch.
+```
+
+Epoch rules:
+
+- Every customer message, customer form result, and human task result increments `inputEpoch`.
+- Every Tool call/action/finalize attempt records `basedOnInputEpoch`.
+- If a Tool result returns after `inputEpoch` has advanced, save the result as evidence but do not automatically complete or advance the step.
+- Mark `needsReconcile = true`.
+- The next prompt tail lists unreconciled timeline events and asks the same Core Agent to reconcile before more Tools or finalization.
+
+Prompt tail example:
+
+```text
+New customer messages arrived after the last tool/action began.
+Before calling another tool or finalizing, reconcile these messages with the active ProcedureRun.
+
+Unreconciled customer messages:
+[epoch 7] 是 bKash，金额 500
+```
+
 Before each Tool call:
 
 ```text
@@ -189,6 +223,21 @@ requestedTool + active ProcedureRun + currentStepId
   -> HookEngine resolves global/agent + procedure + procedureStep + tool Hooks
   -> Tool executes or is blocked/rewritten
   -> ProcedureRun timeline updates
+```
+
+Reconcile gate:
+
+```text
+PreToolUse:
+  if procedureRun.needsReconcile:
+    block tool call
+    feedback: "Reconcile latest customer messages first."
+
+PostToolUse:
+  if toolCall.basedOnInputEpoch < procedureRun.inputEpoch:
+    save result as evidence
+    do not complete step
+    mark needsReconcile = true
 ```
 
 This keeps the Core Agent stable, improves prompt-cache behavior, makes Procedure progress auditable, and prepares the UI for a visual ProcedureRun timeline.

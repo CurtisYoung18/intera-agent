@@ -542,19 +542,24 @@ Mental model:
 - Stable procedure definition: loaded by procedureId and cacheable or appended only when active.
 - Dynamic ProcedureRun state: currentStep, completed/skipped/blocked steps, facts, blockers, and recent evidence. This belongs at the prompt tail and changes every turn.
 - Runtime owns the ProcedureRun timeline. The model proposes actions; runtime resolves step/hook constraints and updates the timeline.
+- Interleaved customer messages use generic epoch-based reconciliation, not semantic intent classification. Runtime does not decide whether a new message is a correction, cancellation, supplement, or new problem; it only tracks whether a Tool/action/step was based on the latest input epoch.
 
 Tasks:
 1. Expose `start_procedure` as the primary model-facing Tool. Accept `procedureId`, reason, confidence, collected facts, and current Procedure action. Keep `dispatch_case_agent` only as a compatibility alias if necessary, and do not advertise it in new prompt/default copy.
 2. `start_procedure` must not replace the system prompt, activate a separate Procedure agent persona, or prepend a dynamic Procedure header before the stable Core Agent prompt.
-3. Define a first-class runtime `ProcedureRunState` with runId, procedureId, status, currentStepId, per-step status, evidenceToolCallIds, facts, and blockers. Keep it session/runtime-scoped.
+3. Define a first-class runtime `ProcedureRunState` with runId, procedureId, status, inputEpoch, lastReconciledInputEpoch, needsReconcile, currentStepId, per-step status, evidenceToolCallIds, facts, blockers, and unreconciled timeline events. Keep it session/runtime-scoped.
 4. Append structured ProcedureRun context at the prompt tail after stable core prompt + stable tool contract. Include current step, expected next tools/actions, blockers, and recent evidence.
 5. Resolve HookContext deterministically before each Tool call: active ProcedureRun + requested Tool + currentStepId -> global/agent + procedure/caseType + procedureStep + tool Hook scopes.
-6. Update ProcedureRun timeline after each Tool result, Hook decision, human task, `remember`, and `finalize_procedure`.
-7. Expose `finalize_procedure` as the primary terminal Tool. Keep `finalize_case` only as a compatibility alias if necessary.
-8. Add `remember` with explicit `scope: "chat" | "user"`, key/value or facts payload, and a reason. Chat scope must feed `read_chat_memory`; user scope must feed `read_user_profile`.
-9. Update default prompts and prompt resolver copy from Case/CaseType language to Procedure catalog + ProcedureRun/current task language where model-facing.
-10. Ensure `ProcedureRun` active/paused/completed state is not persisted as public `confirmedFacts` or durable user profile memory. If a temporary internal state key exists, it must be excluded from prompt rendering, compaction, dashboards, persisted confirmedFacts, and public memory APIs.
-11. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
+6. Increment `inputEpoch` for every customer message, customer form result, and human task result. Record timeline events with epoch, source, text/payload summary, and timestamp.
+7. Record `basedOnInputEpoch` on every Tool call/action/finalize attempt. If a Tool result returns after `inputEpoch` advanced, save it as evidence but do not automatically advance/complete the step; mark `needsReconcile = true`.
+8. If `needsReconcile` is true, block further Tool calls/finalization through runtime/Hook feedback until the model reconciles the latest timeline events. The prompt tail should say: "New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, reconcile these messages with the active ProcedureRun."
+9. Do not build an interleaved-message intent classifier or ProcedureRouter. Reconciliation is generic epoch/version control, not semantic routing.
+10. Update ProcedureRun timeline after each Tool result, Hook decision, human task, `remember`, reconciliation action, and `finalize_procedure`.
+11. Expose `finalize_procedure` as the primary terminal Tool. Keep `finalize_case` only as a compatibility alias if necessary.
+12. Add `remember` with explicit `scope: "chat" | "user"`, key/value or facts payload, and a reason. Chat scope must feed `read_chat_memory`; user scope must feed `read_user_profile`.
+13. Update default prompts and prompt resolver copy from Case/CaseType language to Procedure catalog + ProcedureRun/current task language where model-facing.
+14. Ensure `ProcedureRun` active/paused/completed state is not persisted as public `confirmedFacts` or durable user profile memory. If a temporary internal state key exists, it must be excluded from prompt rendering, compaction, dashboards, persisted confirmedFacts, and public memory APIs.
+15. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
 
 Acceptance:
 - Tool definitions shown to the model include `start_procedure`, `finalize_procedure`, `remember`, `read_chat_memory`, `read_user_profile`, `ask_user_questions`, and `create_human_task`.
@@ -564,6 +569,9 @@ Acceptance:
 - A runtime test proves a Tool call inside an active ProcedureRun sends the expected `procedureStepIds` into HookEngine and applies the matching ProcedureStep Hook binding.
 - A timeline test proves currentStep/evidenceToolCallIds update after Tool result and `finalize_procedure`.
 - A topic-switch test proves a new Procedure can pause the active run and append both active/paused context without prompt-mode switching.
+- An epoch test proves a Tool result based on inputEpoch N does not advance the current step if a new user message has advanced the ProcedureRun to inputEpoch N+1; the result is stored as evidence and `needsReconcile` is set.
+- A reconcile-gate test proves PreToolUse/finalize attempts are blocked while `needsReconcile` is true, with generic feedback to reconcile latest customer messages first.
+- A prompt-tail test proves unreconciled timeline events are appended without classifying them as supplement/correction/cancel/new issue.
 - Typecheck, keyless full test, and build pass.
 ```
 

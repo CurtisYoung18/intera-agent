@@ -88,6 +88,8 @@ Required direction:
 - Define a first-class ProcedureRun timeline with currentStepId, per-step status, evidenceToolCallIds, facts, and blockers.
 - Resolve ProcedureStep Hooks deterministically from active ProcedureRun + current step + requested Tool.
 - Update the timeline after Tool results, Hook decisions, human tasks, `remember`, and `finalize_procedure`.
+- Handle interleaved messages with generic epoch-based reconciliation: each input event increments `inputEpoch`; Tool/action/finalize attempts record `basedOnInputEpoch`; stale results become evidence but cannot advance steps until the latest input events are reconciled.
+- Do not add an interleaved-message intent classifier. The runtime tracks version freshness, not whether a new message is a supplement, correction, cancellation, or new issue.
 
 Dispatch: use `R3 - ProcedureRun runtime overlay, system Tools rename, and remember`.
 

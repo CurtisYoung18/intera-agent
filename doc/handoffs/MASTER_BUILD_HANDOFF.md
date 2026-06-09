@@ -98,7 +98,7 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | Q1 | Final terminology, i18n, docs, browser QA sweep | Shipped | Cleans user-facing copy, guide docs, redirects, and responsive states after R2. |
 | Q2 | Light-first UI polish pass | Shipped | Applies the designer sketch direction without IA/schema/runtime/API changes. |
 | P1 | ConfigPilot typed configuration tools | Next / in progress | Adds backend prompt/model/context/propose/apply typed draft writes; never publish. Must be green before push/deploy. |
-| R3 | ProcedureRun runtime overlay + system Tool rename + `remember` | After P1 ownership is clear | Keeps stable Core Agent prompt, appends dynamic ProcedureRun context at tail, resolves step Hooks by runtime timeline, and exposes `start_procedure`, `finalize_procedure`, `remember`. |
+| R3 | ProcedureRun runtime overlay + system Tool rename + `remember` | After P1 ownership is clear | Keeps stable Core Agent prompt, appends dynamic ProcedureRun context at tail, resolves step Hooks by runtime timeline, handles interleaved messages with inputEpoch/reconcile gate, and exposes `start_procedure`, `finalize_procedure`, `remember`. |
 | S2 | Runtime-backed Scenario receipts | After R3 or parallel if no runtime file overlap | Distinguishes fixture receipts from actual Agent runtime validation. |
 | PKG1 | Package completeness + version cap | Can run after P1 | Completes package surfaces and enforces max five historical versions. |
 | Q3 | Legacy route/component/doc truth cleanup | Last | Removes stale active surfaces and updates drifted landmine docs. |
@@ -135,6 +135,7 @@ Recommended coding-team shape:
 - Keep context in three layers: stable Core Agent prompt; stable/cacheable Procedure definition; dynamic ProcedureRun state appended at the prompt tail.
 - The runtime should inject ProcedureRun context as dynamic procedure todos/current state, so the main Agent can decide whether a new message continues, supplements, pauses, resumes, or starts a Procedure.
 - Hook scopes for ProcedureStep must be resolved by runtime from active ProcedureRun timeline + currentStepId + requested Tool, not by trusting the model to remember the Procedure prompt.
+- Interleaved messages use generic epoch-based reconciliation, not semantic routing. Every customer message/form/human result increments `inputEpoch`; each Tool/action records `basedOnInputEpoch`; stale results can become evidence but cannot advance a step until the model reconciles latest timeline events.
 - Do not introduce a standalone LLM ProcedureRouter. The main Agent should selectively load the compact Procedure catalog plus active/paused ProcedureRun state and choose the next action inside the normal ReAct loop.
 - `record_facts` is not the product name. The controlled memory-write tool should be `remember`, with explicit `scope: "chat" | "user"`. `remember(scope="chat")` writes what `read_chat_memory` later reads; `remember(scope="user")` writes what `read_user_profile` later reads.
 - Runtime-managed capabilities should be visible to delivery staff as locked/auditable platform capabilities, but not editable business Tools. P0 capability examples: Procedure Run Tracker, Hook Engine, Memory Extractor, Scenario Runner.
