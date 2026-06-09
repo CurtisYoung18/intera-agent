@@ -119,18 +119,20 @@ Discovery decides whether the user needs:
 
 When operational work is needed, the Agent selects a Procedure type and therefore a Procedure.
 
-### 3.2 `dispatch_case_agent`
+### 3.2 `start_procedure`
 
-Keep the semantic intent, change the runtime behavior:
+Target model-facing Tool:
 
 ```text
-procedure routing Tool(Procedure type)
+start_procedure(procedureId)
   -> create or select the ProcedureRun
   -> attach Procedure type + Procedure
-  -> continue inline through the ProcedureRun Agent
+  -> continue inline through the main customer-facing Agent
 ```
 
-It should not spawn a detached background worker for the default customer turn.
+`dispatch_case_agent` may exist only as a temporary compatibility alias. New prompt/default copy should teach `start_procedure`.
+
+It must not spawn a detached background worker for the default customer turn.
 
 ---
 
@@ -313,6 +315,7 @@ It can:
 - inspect current Agent configuration
 - explain Procedure, Tool, Hook, Human Transfer, and trace behavior
 - generate Procedure drafts from natural language or failed scenarios
+- propose Brain/model/prompt/memory changes through typed patches
 - generate HTTP Tool drafts from Swagger / OpenAPI fragments
 - create Static Fixtures from example responses
 - create and bind declarative/code/HTTP Hooks
@@ -326,6 +329,9 @@ It cannot:
 - read or write server files
 - write DB rows directly
 - bypass typed admin/scenario/trace APIs
+- publish, activate, deploy, roll back, or bypass Scenario validation
+
+The ConfigPilot model prompt, model selector, context builder, structured proposal parser, and apply service live on the backend. The React workbench is only the review/accept UI.
 
 Mutation contract:
 

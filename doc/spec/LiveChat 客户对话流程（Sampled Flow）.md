@@ -58,13 +58,14 @@ bridge.ts
   -> getOrCreateSession(caseId)
   -> AgentLoop.create()
   -> Discovery
-  -> dispatch_case_agent('deposit_issue')
+  -> start_procedure('deposit_issue')
   -> attach Procedure type: deposit_issue
   -> attach Procedure: Deposit Not Credited
-  -> continue inline with the ProcedureRun Agent
+  -> continue inline with the main customer-facing Agent
 ```
 
 Procedure routing 的目标语义是“打开/选择 ProcedureRun 并进入对应 Procedure”，不是启动 detached background worker。
+`dispatch_case_agent` 只允许作为旧 trace / 测试兼容名存在，新 prompt 和新配置应使用 `start_procedure`。
 
 示例 Procedure：
 

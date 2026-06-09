@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-06-09
 **Purpose:** copy one prompt into a zero-context Codex session after the shipped F1-F7/UX0 foundation reset.
-**Baseline:** local `main` at or after `810ac9cd R2 remove legacy policy runtime`.
+**Baseline:** local `main` at or after `02dc3182 cleanup: remove obsolete ops guide route`.
 
 The old [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) file is historical. Do not redispatch F1-F7 from it.
 
@@ -24,6 +24,7 @@ Read these docs before editing:
 - doc/handoffs/GENERIC_HANDOFF.md
 - doc/handoffs/MASTER_BUILD_HANDOFF.md
 - doc/handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md
+- doc/handoffs/ARCHITECT_AUDIT_2026-06-09.md
 - doc/README.md
 - doc/to-do/2026-06-08-foundation-reset-domain-model.md
 - doc/spec/Intera_Harness_架构梳理.md
@@ -44,6 +45,9 @@ Current shipped baseline includes:
 - U3 Pilot Lab, Scenario receipts, and ConfigPilot shell.
 - B1 Brain Memory strategy workspace.
 - R2 physical legacy cleanup: Policy/stage/sub-agent/skills physical runtime removed, with migration backfills/archive tables.
+- Q1 terminology/docs/i18n sweep.
+- Q2 light-first Build surface polish, logo/favicon copy-in, and loader/token-stream reference integration.
+- Obsolete `/ops/guide` route removed.
 
 Design direction correction:
 - Use a unified light-first visual system across the entire Intera Console.
@@ -101,8 +105,9 @@ End with:
 | 1 | R1, C1, U1 | Shipped locally. Do not redispatch unless explicitly repairing. |
 | 2 | U2, U3, B1 | Shipped locally. Do not redispatch unless explicitly repairing. |
 | 3 | R2 | Shipped locally. Do not redispatch unless explicitly repairing. |
-| 4 | Q1 | Next. Broad copy/docs/i18n/browser sweep after R2. |
-| 5 | Q2, P1 | After Q1, or parallel only with strict ownership. Q2 is UI polish; P1 is ConfigPilot typed tools. |
+| 4 | Q1, Q2 | Shipped. Do not redispatch unless explicitly repairing. |
+| 5 | P1 | ConfigPilot typed tools. Must own backend prompt/model/context/propose/apply/UI wiring end to end. |
+| 6 | R3, S2, PKG1, Q3 | Can run after P1 ownership is clear. See the architect audit doc for exact split. |
 
 Coordinator rule: prefer fewer concurrent runtime sessions. One runtime owner is worth more than five clever merge conflicts.
 
@@ -116,6 +121,9 @@ Current local post-foundation commits:
 - `575950f7 B1: add Brain memory strategy workspace`
 - `b97c1e83 docs: update post-foundation dispatch handoffs`
 - `810ac9cd R2 remove legacy policy runtime`
+- `20c3455b Q1 terminology and docs sweep`
+- `c276cedd Q2 polish light-first build surfaces`
+- `02dc3182 cleanup: remove obsolete ops guide route`
 
 ---
 
@@ -455,6 +463,7 @@ Owned files:
 - apps/console/components/config-pilot/**
 - apps/console/app/build/pilot-lab/**
 - apps/console/app/api/admin/config-pilot/**
+- apps/console/lib/config-pilot/**
 - apps/console/app/api/admin/agent-configs/**
 - apps/console/app/api/admin/case-types/**
 - apps/console/app/api/admin/tools/**
@@ -476,6 +485,10 @@ Product constraints:
 - ConfigPilot must never raw-write the DB from model output. Use typed endpoints and zod contracts.
 - Secrets must be shown as references/placeholders only.
 - Runtime-managed capabilities are visible but locked. ConfigPilot cannot edit Procedure Run Tracker, Hook Engine, Memory Extractor, or Scenario Runner behavior.
+- The ConfigPilot system prompt, tool schema, model selector, and proposal parser belong on the backend under `apps/console/lib/config-pilot/**`. Do not keep deterministic proposal generation or model-facing prompt text inside the React component.
+- Model selection must be explicit and type-safe: prefer `CONFIG_PILOT_MODEL` when set, otherwise the selected Agent model, otherwise the shared default model. Missing `CONFIG_PILOT_MODEL` must not break `tsc`.
+- Proposal responses must include `modelUsed` and a stable prompt/version identifier for auditability.
+- The proposal model must produce a structured tool call or equivalent structured output only; free-form text proposals are not accepted.
 
 Tasks:
 1. Add a ConfigPilot read endpoint that returns the active/draft Agent configuration summary with permissions and locked capability metadata.
@@ -485,13 +498,154 @@ Tasks:
 5. Mark validation stale after accepted writes.
 6. Add focused tests for permission checks, accept-required behavior, typed patch validation, stale-validation marking, and no-publish guarantee.
 7. Update the ConfigPilot drawer/workbench UI to show current context, proposed changes, accept/reject, and receipt/run suggestions.
+8. If a partial `apps/console/lib/config-pilot/**` or `apps/console/app/api/admin/config-pilot/**` skeleton already exists in the worktree, either take ownership of it and make it green or stop and report. Do not leave untracked code that breaks typecheck/build.
+9. Ensure the final P1 receipt proves `/context`, `/propose`, and `/apply` are all wired, and that UI no longer falls back to the old hardcoded scenario proposal builder.
 
 Acceptance:
 - A delivery user can ask ConfigPilot to make a small Procedure/Hook/Tool/Memory draft change and must accept before it is applied.
 - A rejected proposal writes nothing.
 - Direct publish/activation attempts are refused.
 - Locked runtime-managed capabilities render visibly but are not editable.
+- `npx tsc --noEmit -p apps/console/tsconfig.json` must pass with `CONFIG_PILOT_MODEL` unset.
+- `npm run build:console` must pass after deleting `.next`.
+- Focused tests cover redacted context, structured proposal parsing, accept-required apply, protected Tool refusal, and validation-stale marking.
 - Typecheck, keyless full test, build, and browser smoke for Pilot Lab/ConfigPilot pass.
+```
+
+---
+
+## R3 - System Tools rename, remember, and ProcedureRun state boundary
+
+```text
+Lane: R3 - System Tools rename, remember, and ProcedureRun state boundary
+
+Goal:
+Make the model-facing system Tools match the product model: `start_procedure`, `finalize_procedure`, and `remember(scope="chat" | "user")`. Keep any old names only as hidden compatibility adapters if tests/traces still require them. ProcedureRun active/paused state must be runtime/session state, not durable confirmedFacts or public memory.
+
+Owned files:
+- apps/console/lib/agent/tools.ts
+- apps/console/lib/agent/tool-interceptor.ts
+- apps/console/lib/agent/loop.ts
+- apps/console/lib/agent/case-agent-loop.ts only for terminal-tool compatibility
+- apps/console/lib/agent/memory.ts
+- apps/console/lib/agent/prompt-resolver.ts
+- apps/console/lib/agent/tools/builtin/**
+- packages/shared/defaults/index.ts
+- focused runtime/prompt tests under apps/console/lib/agent/__tests__/**
+
+Tasks:
+1. Expose `start_procedure` as the primary model-facing Tool. Accept `procedureId`, reason, confidence, collected facts, and current Procedure action. Keep `dispatch_case_agent` only as a compatibility alias if necessary, and do not advertise it in new prompt/default copy.
+2. Expose `finalize_procedure` as the primary terminal Tool. Keep `finalize_case` only as a compatibility alias if necessary.
+3. Add `remember` with explicit `scope: "chat" | "user"`, key/value or facts payload, and a reason. Chat scope must feed `read_chat_memory`; user scope must feed `read_user_profile`.
+4. Update default prompts and prompt resolver copy from Case/CaseType language to Procedure catalog + ProcedureRun/current task language where model-facing.
+5. Ensure `ProcedureRun` active/paused/completed state is not persisted as public `confirmedFacts` or durable user profile memory. If a temporary internal state key exists, it must be excluded from prompt rendering, compaction, dashboards, persisted confirmedFacts, and public memory APIs.
+6. Add tests proving the old names are not advertised to the model while compatibility still works where intentionally retained.
+
+Acceptance:
+- Tool definitions shown to the model include `start_procedure`, `finalize_procedure`, `remember`, `read_chat_memory`, `read_user_profile`, `ask_user_questions`, and `create_human_task`.
+- New prompt/default copy contains no customer-facing `dispatch_case_agent`, `finalize_case`, or `record_facts` instructions except explicit compatibility tests/comments.
+- A test proves ProcedureRun internal state does not appear in Current Case/Procedure State, compact summaries, confirmedFacts DB fields, or public memory route payloads.
+- Typecheck, keyless full test, and build pass.
+```
+
+---
+
+## S2 - Scenario runtime runner and validation truthfulness
+
+```text
+Lane: S2 - Scenario runtime runner and validation truthfulness
+
+Goal:
+Turn Scenario validation from a deterministic receipt harness into a truthful runtime check for at least the first commercial path. Release must not imply "validated" from expected fixtures alone.
+
+Owned files:
+- apps/console/lib/scenarios/**
+- apps/console/app/api/admin/scenarios/**
+- apps/console/app/build/pilot-lab/**
+- apps/console/components/scenario-receipts/**
+- apps/console/lib/agent/playground-runner.ts only if reusing dry-run AgentLoop execution
+- focused Scenario tests
+
+Tasks:
+1. Keep the deterministic harness, but label it clearly as fixture validation when no Agent runtime execution happened.
+2. Add a runtime execution adapter that can run a Scenario through the existing dry-run/AgentLoop path and collect actual tool_call/tool_result, Hook decisions, human transfer, final status, and forbidden/required phrase evidence.
+3. Save receipts with an executionMode such as `fixture` or `agentRuntime`.
+4. Make Release/Pilot Lab distinguish fixture receipts from runtime receipts.
+5. Preserve the soft gate semantics: activation can be overridden with reason, but the UI must show whether validation was fixture-only or runtime-backed.
+
+Acceptance:
+- A Scenario can produce a receipt from actual Agent runtime execution.
+- A failed expected Tool/Hook/human-transfer check fails the receipt based on observed evidence, not expected fixtures.
+- Release validation summary distinguishes fixture-only from runtime-backed validation.
+- Typecheck, keyless full test, build, and browser smoke pass.
+```
+
+---
+
+## PKG1 - Package completeness and version cap
+
+```text
+Lane: PKG1 - Package completeness and version cap
+
+Goal:
+Make `.intera-agent.json` useful for delivery sharing and future marketplace readiness, and enforce the owner decision that one Agent keeps at most five historical versions.
+
+Owned files:
+- apps/console/lib/agent-template/**
+- apps/console/app/api/admin/agent-templates/**
+- apps/console/app/api/admin/agent-configs/[id]/fork/route.ts
+- apps/console/components/release/**
+- packages/shared/contracts/agent-template.ts
+- templates/**
+- focused package/version tests
+
+Tasks:
+1. Extend package export/import to include delivery-relevant Knowledge references, Integration/channel binding placeholders, Scenario definitions/receipts metadata where safe, and current legacy fenced snapshots.
+2. Keep secrets as refs/placeholders only. Do not export raw credentials.
+3. Enforce max five historical versions per Agent family. Define whether the active version counts separately, then implement the rule transactionally.
+4. Ensure Duplicate Version, Import, and ConfigPilot Apply either respect the cap or return a clear typed error.
+5. Update Release UI copy only if needed to explain package contents or version cap.
+
+Acceptance:
+- Package round-trip preserves Brain, Procedures, Tools, Hooks, HookBindings, Scenarios, Knowledge refs, Integration placeholders, and legacy fenced data.
+- Version cap tests prove the sixth historical draft is rejected or pruned according to the implemented rule.
+- Typecheck, keyless full test, build pass.
+```
+
+---
+
+## Q3 - Legacy route/component cleanup and docs truth pass
+
+```text
+Lane: Q3 - Legacy route/component cleanup and docs truth pass
+
+Goal:
+Remove or redirect stale UI/code/doc surfaces that keep old concepts alive after Q1/Q2/R2/R3.
+
+Owned files:
+- apps/console/middleware.ts and tests only for redirects
+- apps/console/app/admin/playground/**
+- apps/console/app/admin/guardrails/**
+- apps/console/components/admin/stage-config-editor.tsx
+- apps/console/components/admin/sub-agent-summary-list.tsx
+- apps/console/components/admin/agent-human-interaction-panel.tsx
+- apps/console/components/docked-preview.tsx
+- apps/console/lib/livechat/** showSkillStatus compatibility rename if scoped
+- doc/handoffs/**
+- doc/spec/**
+- focused route/terminology tests
+
+Tasks:
+1. Keep `/admin/playground` and `/admin/guardrails` as redirects only, matching the target Build routes.
+2. Delete unreferenced stage/sub-agent/docked-preview components only after grep proves no live imports.
+3. Rename LiveChat internal `showSkillStatus` toward Tool status in code where safe; keep DB/API compatibility if needed.
+4. Update `HARD_BUGS.md` so retired dispatch/background sub-agent issues are not listed as live.
+5. Update historical docs only by adding "historical/superseded" framing; do not rewrite archive evidence.
+
+Acceptance:
+- Browser redirects for old routes pass.
+- Active docs and active UI have no live Policy/Guardrail/Skill/stage/sub-agent product language except explicit legacy/archive sections.
+- Typecheck, keyless full test, build pass.
 ```
 
 ---

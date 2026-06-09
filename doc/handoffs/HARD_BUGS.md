@@ -1,6 +1,6 @@
 # Hard Bugs & Landmines Registry
 
-> **Last updated:** 2026-06-08 (doc reset pass: L7 remains live until Foundation Reset F5 retires the detached customer-facing sub-agent path).
+> **Last updated:** 2026-06-09 (architect audit pass: L7 verified retired by R1/R2; active risk shifted to ConfigPilot/R3/S2 readiness).
 > **Scope:** this file now tracks **open** landmines live in the tree. Fixed-and-verified bugs are reduced to a one-line archive pointer (full write-ups removed once confirmed).
 > **Line numbers drift** — cite by `file:symbol`/string, verify the symbol before relying on a line.
 
@@ -14,6 +14,7 @@
 - **L2 — ChunkLoadError deploy-window recovery** — fixed `5bd7326b`. `global-error.tsx` + `error.tsx` error boundaries with `sessionStorage`-debounced auto-reload; shared logic in `app/_lib/chunk-error.ts`.
 - **L5 — Tenant-isolation cross-org read/write exploit** — fixed `5bd7326b`. `assertAgentInOrg()` guard (joining `agentConfigId → AgentConfig.orgId` via org-scoped proxy, 404 on mismatch) wired into all 11 sub-module admin routes: `tools`, `policies`, `case-types`, `knowledge/sources`, `knowledge/gptbots`, `livechat/config`, `livechat/groups`, `agent`. Red reproduction test (`cross-org-isolation.test.ts`) confirms the hole pre-fix; existing route tests updated with `agentConfig` mock.
 - **L6 — Unguarded re-parse of tool-input JSON in the loop → whole turn crashes** — fixed `fb872f53`. Unified both tool-input parses behind shared guarded helpers in `stream-handler.ts`: `parseToolInput()` (try/catch → `{}`) + `buildToolUsesFromBlocks()`; the stream handler's first parse and the loop's S1 synthesis (was `loop.ts:679`) now both use them, so a `max_tokens`-truncated or alt-provider-malformed `tool_use` synthesizes an error `tool_result` instead of throwing out of `runReActLoop`. Guard test (red→green, `unit/stream-handler.test.ts`): a truncated tool_use through real `consumeStream` yields `{input:{}}` without throwing. **Phase-1:** tsc 0 · keyless 637 passed · build ✓. **Phase-2 (prod demo.anytrans.ai):** playground 4-tool turn on deepseek-v4-flash (alt-provider) completes end-to-end, no crash/regression.
+- **L7 — `dispatch_case_agent` detached background sub-agent path** — fixed by `c4c7365c` and physically cleaned by `810ac9cd`. `dispatch_case_agent` is now only a compatibility wrapper for inline Procedure start/select, and R2 removed the old Policy/stage/sub-agent/skills physical runtime. Follow-up naming work belongs to R3, not this old landmine.
 
 ---
 
@@ -37,15 +38,7 @@ The AC2 fix is present — `trace-aggregator.ts` `deriveStatus` reads structured
 
 ### L6 — ✅ RESOLVED `fb872f53` (see archive above)
 
-### L7 — `dispatch_case_agent` spawns a detached background sub-agent in production whose work is silently discarded — 🟠 MEDIUM-HIGH (wasted spend + severed continuation)
-
-`dispatch_case_agent` is in the **default discovery allowlist** (`conversation-loop.ts:33`), so it fires on the normal "open a case" path — not exotic config. In non-dry-run, `handleDispatchCaseAgent` ([tool-interceptor.ts:186](../../apps/console/lib/agent/tool-interceptor.ts)) builds a **local** `OrchestratorAgent` and calls `dispatchInBackground(tasks)`, which fires `runAll()` **un-awaited** ([orchestrator.ts:400](../../apps/console/lib/agent/orchestrator.ts)). Three independently-verified failure modes:
-
-1. **Results merge from the wrong instance → never surface to the customer.** The background results accumulate on the *local* orchestrator's `this.newResults`; that instance is discarded when `handleDispatchCaseAgent` returns. The only in-memory merge path, `caseLoop.mergeNewSubAgentResults()` ([loop.ts:300](../../apps/console/lib/agent/loop.ts)), reads a **different** orchestrator — the `CaseAgentLoop`'s own ([case-agent-loop.ts:82](../../apps/console/lib/agent/case-agent-loop.ts)) — which is always empty. Findings land only in `ChatMemory.skillResults['subagent:*']`.
-2. **The continuation flag is dead.** `dispatchInBackground` sets `needsContinuation = true` "the worker will pick it up" ([orchestrator.ts:421](../../apps/console/lib/agent/orchestrator.ts)) — but **`needsContinuation` has zero readers** (grep-confirmed: only writes + Prisma typedefs; no cron/worker/route consumes it). The chain is severed.
-3. **Detached promise outlives the HTTP response.** On a server recycle/redeploy the background LLM calls + `prisma.chatMemory.upsert` ([orchestrator.ts:375](../../apps/console/lib/agent/orchestrator.ts)) are killed mid-flight (partial write); even when alive they do whole-JSON-column upserts on the sub-case row, racing any concurrent same-row writer.
-
-Net: every prod `dispatch_case_agent` burns model tokens on an investigation the customer never sees. *(Partial reader nuance: `policy.ts:244` does read `subagent:*` evidence to satisfy a legacy evidence rule — so the data is not 100% write-only, but it is never surfaced as a customer-facing answer and no seeded CaseType relies on it.)* **This is the F1 "live-but-broken" finding made concrete; it is now owned by Foundation Reset F5.** F5 should turn `dispatch_case_agent` into an inline "open/select Case + attach CaseType/Procedure" action and remove the detached background spawn. Until F5 lands, treat wasted spend + ChatMemory race as live.
+### L7 — ✅ RESOLVED `c4c7365c` + `810ac9cd` (see archive above)
 
 ### L8 — Model page: cleared prompt reappears after refresh — 🟠 MEDIUM (data loss illusion)
 
@@ -83,4 +76,4 @@ When the user clears the Core Prompt and saves, the server stores `coreSystemPro
 - **L7** *(new)* → `dispatch_case_agent`'s production background sub-agent is detached, merged from the wrong orchestrator instance, gated by a zero-reader `needsContinuation` flag, and killed on recycle — wasted spend, results never surface. On the Phase-4 retire path; live until then.
 - **Lesson 5** *(new)* + a lower-severity floating-persistence note appended under "Broader open items".
 
-**Next action:** ~~L6~~ ✅ closed `fb872f53` (coding-team-leader session, two-phase verified). **L7** (dispatch_case_agent detached sub-agent — on Procedure Phase-4 retire path) is the remaining open landmine. *(L8 code-fixed + deployed `2d9249d9` by a parallel lane; its detailed entry below + close is that lane's to finalize. L3/L4 lower priority.)*
+**Next action:** ~~L6~~ ✅ closed `fb872f53` (coding-team-leader session, two-phase verified). ~~L7~~ ✅ closed by the Foundation Reset R1/R2 path. Current commercial-readiness risks now live in [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md), especially ConfigPilot P1, system Tool rename R3, Scenario runtime S2, and package/version PKG1. *(L8 code-fixed + deployed `2d9249d9` by a parallel lane; its detailed entry below + close is that lane's to finalize. L3/L4 lower priority.)*

@@ -9,10 +9,11 @@ Read first:
 1. [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) - collaboration protocol, verification gates, repo context.
 2. [`../README.md`](../README.md) - doc map and current vocabulary.
 3. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - current copy-ready prompts for the next zero-context coding sessions.
-4. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
-5. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
-6. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
-7. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
+4. [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md) - current risk map and next-lane split before first commercial deployment.
+5. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
+6. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
+7. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
+8. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
 
 ---
 
@@ -80,6 +81,9 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 - `575950f7`: B1 Brain Memory strategy workspace.
 - `b97c1e83`: dispatch handoff/docs update.
 - `810ac9cd`: R2 physical legacy cleanup; Policy/stage/sub-agent/skills physical runtime removed.
+- `20c3455b`: Q1 terminology/docs/i18n sweep.
+- `c276cedd`: Q2 light-first Build surface polish.
+- `02dc3182`: obsolete `/ops/guide` route removed.
 
 | Lane | Scope | Parallel? | Notes |
 |---|---|---|---|
@@ -90,16 +94,21 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | U3 | Pilot Lab + Scenario receipts | Shipped locally | Uses existing Scenario APIs; ConfigPilot starts as a drawer/workbench shell. |
 | B1 | Brain Memory + compact strategy UX | Shipped locally | Turns memoryStrategy into Brain > Memory strategy, preserve rules, and Compact Test. |
 | R2 | Physical legacy cleanup | Shipped locally | Removes Policy/stage/sub-agent/skills physical runtime and backfills/archive legacy data. |
-| Q1 | Final terminology, i18n, docs, browser QA sweep | Next | Cleans user-facing copy, guide docs, redirects, and responsive states after R2. |
-| Q2 | Light-first UI polish pass | After or alongside Q1 if ownership is clean | Applies the designer sketch direction without IA/schema/runtime/API changes. |
-| P1 | ConfigPilot typed configuration tools | After Q1/Q2 or alongside Q2 with clear API ownership | Adds read/propose/diff/accept/apply typed draft writes; never publish. |
+| Q1 | Final terminology, i18n, docs, browser QA sweep | Shipped | Cleans user-facing copy, guide docs, redirects, and responsive states after R2. |
+| Q2 | Light-first UI polish pass | Shipped | Applies the designer sketch direction without IA/schema/runtime/API changes. |
+| P1 | ConfigPilot typed configuration tools | Next / in progress | Adds backend prompt/model/context/propose/apply typed draft writes; never publish. Must be green before push/deploy. |
+| R3 | System Tools rename + `remember` + ProcedureRun state boundary | After P1 ownership is clear | Makes model-facing Tools match `start_procedure`, `finalize_procedure`, `remember`. |
+| S2 | Runtime-backed Scenario receipts | After R3 or parallel if no runtime file overlap | Distinguishes fixture receipts from actual Agent runtime validation. |
+| PKG1 | Package completeness + version cap | Can run after P1 | Completes package surfaces and enforces max five historical versions. |
+| Q3 | Legacy route/component/doc truth cleanup | Last | Removes stale active surfaces and updates drifted landmine docs. |
 
 Recommended coding-team shape:
 
-- R1, C1, U1, U2, U3, B1, and R2 are already shipped locally/on main.
-- Q1 should run next because R2 deleted the old physical model and broad terminology/i18n/docs need one coordinated sweep.
-- Q2 can run after or alongside Q1 only if it avoids dictionaries/docs and focuses on light-first UI polish.
-- P1 can follow Q1/Q2, or run in parallel only if it owns ConfigPilot APIs/components cleanly.
+- R1, C1, U1, U2, U3, B1, R2, Q1, Q2, and `/ops/guide` cleanup are already shipped on main.
+- P1 should run alone or with strict ownership because it touches ConfigPilot APIs, backend prompt/model, apply service, and UI.
+- R3 touches high-collision runtime files and should not overlap with another runtime lane.
+- S2 and PKG1 can run after P1/R3 boundaries are clear.
+- Q3 should run after the product/runtime names are stable.
 - Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) for current lane prompts. Do not redispatch from the shipped F1-F7 prompts.
 
 ---
@@ -141,7 +150,7 @@ Shipped foundations already useful for the reset:
 - Safe local Postgres foundation shipped 2026-06-08. See [`../what's done/2026-06-08-foundation-safe-local-db.md`](../what's%20done/2026-06-08-foundation-safe-local-db.md).
 - Procedure additive Phases 1-3 shipped through `373d2eed`: Procedure contracts/columns exist, ProcedureExecutor prompt path is wired, and case-scoped legacy guardrail activation exists. Foundation Reset lanes must treat those as migration inputs, not as the target architecture.
 - Foundation reset first wave shipped through `d42c543e`: Hooks schema/API/UI, HookEngine checkpoints, Tool trace vocabulary, package import/export, Scenario soft gate, and Quiet Agent Studio primitives.
-- Post-foundation commits through `810ac9cd`: target IA shell, ProcedureStep Hook binding UI, inline Procedure runtime cutover, Release command center, Pilot Lab, Brain Memory strategy workspace, and R2 physical legacy cleanup.
+- Post-foundation commits through `02dc3182`: target IA shell, ProcedureStep Hook binding UI, inline Procedure runtime cutover, Release command center, Pilot Lab, Brain Memory strategy workspace, R2 physical legacy cleanup, Q1 terminology sweep, Q2 light-first polish, and obsolete guide removal.
 - Trace single-contract and playground hardening work shipped. See the relevant receipts under [`../what's done/`](../what's%20done/).
 - Agent-scoped architecture exists in code, but verify orgId -> agentConfig ownership whenever touching admin sub-module routes.
 
@@ -150,6 +159,8 @@ Live landmines to keep in mind:
 - Durable Case shells still exist on some route-level persistence paths because current Message/ActionTrace schema depends on `caseId`; solve this in a later schema/runtime lane, not by reintroducing background sub-agents.
 - Playground remains a large component and should not be casually expanded.
 - Legacy guardrail live-confirm gaps should be converted into Hook Scenario coverage during the reset.
+- ConfigPilot is currently the highest-risk incomplete surface: it must own backend prompt/model/context/propose/apply/UI wiring before it is trusted by delivery staff.
+- Scenario receipts are useful but must be labeled truthfully until runtime-backed Scenario execution lands.
 
 ---
 
