@@ -83,11 +83,7 @@ function LoginForm() {
 
         <div className={styles.brandMid}>
           <div className={styles.lockup}>
-            <InteraLogo size={88} mode="idle" theme="light" />
-            <div className={styles.wordwrap}>
-              <div className={styles.word}>intera</div>
-              <div className={styles.tagRow}>AI Agent Studio</div>
-            </div>
+            <InteraLogo size={88} mode="idle" theme="light" showTag />
           </div>
           <h1 className={styles.brandHeadline}>
             Where messy context<br />finds its <em>clarity.</em>

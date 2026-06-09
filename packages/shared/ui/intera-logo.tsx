@@ -6,6 +6,7 @@ interface InteraLogoProps {
   collapsed?: boolean
   mode?: 'idle' | 'none'
   theme?: 'light' | 'dark'
+  showTag?: boolean
 }
 
 type Coord = [number, number]
@@ -42,8 +43,6 @@ interface LogoRefs {
   dotGroup: SVGGElement
   dots: Array<{ el: SVGCircleElement, vx: number, vy: number }>
 }
-
-const clamp = (v: number, max: number) => Math.max(0, Math.min(v, max))
 
 function createLogoElements(size: number, theme: 'light' | 'dark', uid: string): LogoRefs {
   const colorText = theme === 'dark' ? '#f8fbfd' : '#1b2c33'
@@ -198,18 +197,16 @@ export default function InteraLogo({
   collapsed = false,
   mode = 'none',
   theme = 'light',
+  showTag = false,
 }: InteraLogoProps) {
   const lockupRef = useRef<HTMLDivElement>(null)
-  const rafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null)
+  const cycleRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const animsRef = useRef<Animation[]>([])
-  const isPlayingRef = useRef(false)
-  const lastTimeRef = useRef(0)
-  const clockRef = useRef(0)
 
   const stopPlayback = useCallback(() => {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
+    if (cycleRef.current !== null) {
+      clearInterval(cycleRef.current)
+      cycleRef.current = null
     }
     animsRef.current.forEach((a) => {
       try {
@@ -217,7 +214,6 @@ export default function InteraLogo({
       } catch {}
     })
     animsRef.current = []
-    isPlayingRef.current = false
   }, [])
 
   const animateElement = useCallback((
@@ -230,7 +226,6 @@ export default function InteraLogo({
       easing: EASE,
       ...options,
     })
-    anim.pause()
     animsRef.current.push(anim)
     return anim
   }, [])
@@ -246,7 +241,9 @@ export default function InteraLogo({
     const iconPx = Math.round(size * 2.15)
     const gapPx = Math.max(8, Math.round(size * 0.3))
     const wordPx = Math.max(10, Math.round(size * 0.90))
+    const tagPx = Math.max(8, Math.round(size * 0.12))
     const wordColor = theme === 'dark' ? '#f8fbfd' : '#1d2e36'
+    const tagColor = theme === 'dark' ? '#78d6de' : '#5aa6b0'
     const uid = `ctx-${Math.random().toString(36).slice(2, 11)}`
     const logo = createLogoElements(iconPx, theme, uid)
 
@@ -257,7 +254,12 @@ export default function InteraLogo({
     lockup.style.overflow = 'hidden'
 
     const wordWrap = document.createElement('div')
-    wordWrap.style.cssText = `display:inline-flex;flex-direction:column;line-height:0.9;`
+    wordWrap.style.cssText = [
+      'display:inline-flex;',
+      'flex-direction:column;',
+      `gap:${showTag ? Math.max(6, Math.round(size * 0.09)) : 0}px;`,
+      'line-height:0.9;',
+    ].join('')
 
     const word = document.createElement('div')
     word.style.cssText = 'display:inline-flex;white-space:pre;'
@@ -279,7 +281,25 @@ export default function InteraLogo({
       return span
     })
 
+    const tag = document.createElement('div')
+    if (showTag) {
+      tag.textContent = 'AI Agent Studio'
+      tag.style.cssText = [
+        'font-family:var(--font-sans);',
+        `font-size:${tagPx}px;`,
+        'font-weight:600;',
+        'letter-spacing:0.42em;',
+        `color:${tagColor};`,
+        'text-transform:uppercase;',
+        'padding-left:3px;',
+        'opacity:0;',
+        'transform:translateY(7px);',
+        'white-space:nowrap;',
+      ].join('')
+    }
+
     wordWrap.appendChild(word)
+    if (showTag) wordWrap.appendChild(tag)
     lockup.appendChild(logo.svg)
     lockup.appendChild(wordWrap)
     const { dots, ring, ringWrap, markGlow, iStem, iDot, dotGlow, apertureGroup } = logo
@@ -301,6 +321,10 @@ export default function InteraLogo({
         el.style.opacity = '1'
         el.style.transform = 'translateY(0px) translateX(0px)'
       })
+      if (showTag) {
+        tag.style.opacity = '1'
+        tag.style.transform = 'translateY(0px)'
+      }
       return
     }
 
@@ -407,50 +431,28 @@ export default function InteraLogo({
       })
     })
 
-    const applyTimeline = (t: number) => {
-      animsRef.current.forEach((animation) => {
-        const duration = animation.effect?.getTiming().duration
-        const total = typeof duration === 'number' ? duration : CYCLE_HOLD_END
-        animation.currentTime = clamp(t, total)
+    if (showTag) {
+      animateElement(tag, [
+        { opacity: 0, transform: 'translateY(7px)', offset: 0 },
+        { opacity: 1, transform: 'translateY(0px)', offset: 1 },
+      ], {
+        duration: 560,
+        delay: 3760,
+        easing: SOFT,
       })
     }
 
-    const tick = (now: number) => {
-      if (!isPlayingRef.current) return
-      if (lastTimeRef.current === 0) {
-        lastTimeRef.current = now
-      }
+    cycleRef.current = setInterval(() => {
+      animsRef.current.forEach((animation) => {
+        try {
+          animation.cancel()
+          animation.play()
+        } catch {}
+      })
+    }, CYCLE_HOLD_END)
 
-      const delta = now - lastTimeRef.current
-      lastTimeRef.current = now
-      let next = clockRef.current + delta
-      if (next >= CYCLE_HOLD_END) {
-        next = next % CYCLE_HOLD_END
-      }
-      clockRef.current = next
-      const safe = clamp(next, CYCLE_HOLD_END)
-      applyTimeline(safe)
-      rafRef.current = requestAnimationFrame(tick)
-    }
-
-    const pause = () => {
-      isPlayingRef.current = false
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-    }
-    const start = () => {
-      if (isPlayingRef.current) return
-      isPlayingRef.current = true
-      lastTimeRef.current = 0
-      clockRef.current = 0
-      rafRef.current = requestAnimationFrame(tick)
-    }
-    start()
-    return () => {
-      pause()
-      stopPlayback()
-    }
-  }, [mode, size, theme, animateElement, stopPlayback])
+    return stopPlayback
+  }, [mode, size, theme, showTag, animateElement, stopPlayback])
 
   if (mode === 'none') {
     const color = theme === 'dark' ? '#f8fbfd' : '#1a1814'
