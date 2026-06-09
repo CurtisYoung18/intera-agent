@@ -115,7 +115,7 @@ The product should feel like:
 
 ```text
 quiet enterprise editor
-  + immersive agent workbench
+  + focused light agent workbench
   + trustworthy diff and receipt system
   + fast command-driven navigation
 ```
@@ -525,13 +525,33 @@ Quiet Agent Studio
 
 No theme switching in first launch. Add `theme.mode = light | dark | system` only after the commercial workflow is stable.
 
+Intera Console is light-first across the entire app in P0. Use the same warm light shell and graphite typography everywhere:
+
+- Release
+- Pilot Lab
+- Components
+- Operate
+- Settings
+- ConfigPilot drawer
+- Scenario receipts
+- Trace panels
+- Diff Viewer
+
+Do not create dark immersive workspaces in P0. Use contrast through spacing, row grouping, subtle tint, dividers, density, and status color instead of dark product surfaces.
+
+Small dark elements are allowed only when functionally useful:
+
+- code editor area
+- JSON preview
+- terminal-like raw trace payload
+
 ### 5.2 Reference mix
 
 Use this moodboard weighting:
 
 | Reference | Weight | What to borrow |
 |---|---:|---|
-| RonDesignLab | 45% | immersive SaaS surfaces, premium dashboard composition, strong product-card hierarchy |
+| RonDesignLab | 45% | premium light SaaS surfaces, refined dashboard composition, strong product-card hierarchy |
 | Anthropic | 25% | warm restraint, editorial spacing, humane density |
 | OpenAI | 15% | conversational entry points, calm controls, input-forward interaction |
 | Xpander / Atlas-style builder references | 15% | enterprise builder practicality and reusable component patterns |
@@ -551,10 +571,10 @@ Reference links:
 Use:
 
 - Light, warm product shell for normal editing.
-- Deep immersive surfaces for Pilot Lab, Diff Viewer, Trace detail, and Release publish/rollback moments.
+- Focused light workspaces for Pilot Lab, Diff Viewer, Trace detail, and Release publish/rollback moments. Use slightly cooler or denser light surfaces, not dark mode.
 - Precise status language and quiet micro-interactions.
 
-Do not make the entire Console dark. Long configuration work should remain calm and readable.
+Do not make product pages, drawers, receipts, Diff Viewer, or trace panels dark. Long configuration work should remain calm, readable, and visually unified.
 
 ### 5.4 Anti-patterns
 

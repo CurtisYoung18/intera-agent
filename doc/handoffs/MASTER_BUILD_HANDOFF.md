@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-08
+**Last updated:** 2026-06-09
 **Audience:** founder, architect, coding-team leads, parallel AI coding sessions
 **Current macro priority:** Foundation Reset before commercial customer deployment
 
@@ -8,10 +8,11 @@ Read first:
 
 1. [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) - collaboration protocol, verification gates, repo context.
 2. [`../README.md`](../README.md) - doc map and current vocabulary.
-3. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - copy-ready prompts for parallel zero-context coding sessions.
-4. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
-5. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
-6. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
+3. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - current copy-ready prompts for the next zero-context coding sessions.
+4. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
+5. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
+6. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
+7. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
 
 ---
 
@@ -59,25 +60,40 @@ Rules:
 
 The active implementation plan is [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md).
 
+Foundation lanes already shipped to `origin/main` through `d42c543e foundation: add hooks admin ui`:
+
+- UX0: Quiet Agent Studio primitives.
+- F1: Hook/HookBinding schema and shared contracts.
+- F2: HookEngine runtime checkpoints.
+- F3: Tool trace/event normalization.
+- F4: Hooks API/admin UI; old policies API returns 410; `/admin/guardrails` redirects.
+- F6: `.intera-agent.json` import/export.
+- F7: Scenario soft gate and receipts.
+
+Post-foundation lanes committed locally on `main` after `origin/main`:
+
+- `d99ef834`: U1 Build / Operate / Settings shell and redirects.
+- `f24b2fd9`: C1 Procedure Builder with ProcedureStep Hook bindings and Hook validation copy.
+- `c4c7365c`: R1 `dispatch_case_agent` cut to inline Procedure start/select; no customer-facing background sub-agent dispatch.
+
 | Lane | Scope | Parallel? | Notes |
 |---|---|---|---|
-| F0 | Reset preflight, docs, old-plan lockout | First | This cleanup establishes the doc ground. Re-check before implementation. |
-| F1 | Schema and shared contracts | Exclusive schema lane | Creates Hook/HookBinding and package/contracts foundation. |
-| F2 | HookEngine and runtime checkpoints | After F1 contracts | Wires `PreToolUse`, `PostToolUse`, `Stop`. |
-| F3 | Tool naming and trace/event reset | Parallel after F1 | Renames Skill language and `skill_*` events to Tool vocabulary. |
-| F4 | Hooks API and admin UI | Parallel after F1/F2 contract shape | `/admin/hooks`, typed API, binding manager, ProcedureStep Hook picker. |
-| F5 | Procedure runtime cleanup | After F1/F2/F3 | Retires stage/sub-agent customer path and makes ProcedureExecutor the case runtime. |
-| F6 | `.intera` export/import | After F1/F3 | Template package with tools/hooks/hookBindings/scenarios and legacy namespace. |
-| F7 | Scenario soft gate | After F6 or in parallel with stable contracts | Validation states, receipts, changed-since-validation marker. |
-| F8 | I18N, docs, navigation sweep | Last | Rename UI copy/routes, redirects, docs cleanup, old API deletion/410. |
+| R1 | Procedure runtime + `dispatch_case_agent` cutover | Shipped locally | Removes detached/background sub-agent customer path; runtime continues inline through ProcedureExecutor + HookEngine. |
+| C1 | Procedure Builder + step Hook bindings | Shipped locally | Updates case-type/procedure admin path to use HookBinding, especially ProcedureStep scope. |
+| U1 | Build / Operate / Settings shell and redirects | Shipped locally | Establishes target IA without turning every page into one giant refactor. |
+| U2 | Release command center + package actions | After or alongside U1 | Uses existing package export/import and Scenario validation metadata. |
+| U3 | Pilot Lab + Scenario receipts | After or alongside U1 | Uses existing Scenario APIs; ConfigPilot can start as a drawer/workbench shell. |
+| B1 | Brain Memory + compact strategy UX | After U1, parallel with U2/U3 | Turns memoryStrategy into Brain > Memory strategy, preserve rules, and Compact Test. |
+| R2 | Physical legacy cleanup | After R1 and C1 | Drops old stage/sub-agent/Policy/guardrail/skill fields only after runtime and UI no longer depend on them. |
+| Q1 | Final terminology, i18n, docs, browser QA sweep | Last | Cleans user-facing copy, guide docs, redirects, and responsive states. |
 
 Recommended coding-team shape:
 
-- Start F1 first and keep it narrow.
-- Run F2/F3/F4 in parallel only after F1 contract names are stable.
-- Hold F5 until the runtime naming from F2/F3 is settled.
-- Run F8 last to avoid dictionary and navigation conflicts.
-- UI/UX lanes should follow [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md). Start only the primitive/token lane early; route/navigation/page lanes should wait until Foundation Reset vocabulary and APIs are stable.
+- Start R1 first if only one runtime owner is available.
+- C1 and U1 can run in parallel only if they do not edit the same route files.
+- Hold R2 until R1 and C1 have green receipts; physical deletion before runtime cutover is avoidable risk.
+- Q1 remains last because dictionaries, guide copy, and redirects are broad-collision files.
+- Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) for current lane prompts. Do not redispatch from the shipped F1-F7 prompts.
 
 ---
 
@@ -95,7 +111,10 @@ Recommended coding-team shape:
 - Marketplace is reserved, not launched. `.intera-agent.json` should support internal sharing now and future selling later.
 - Historical/legacy fields may be exported under `legacy`; new top-level package fields must use current names.
 - UI/UX: first screen is Build -> Release; top-level nav is Build / Operate / Settings; Components has Brain, Procedures, Tools, Hooks, Knowledge, Integrations; Operate has Conversations and Human Handoff only.
-- Visual direction: Quiet Agent Studio, with a light product shell and deep immersive workspaces for Pilot Lab, Diff Viewer, Trace detail, and publish/rollback moments.
+- Brain owns memory and compact configuration. Expose strategy-level controls first: Memory Mode, Compact model, Preserve rules, Fact extraction rules, Profile, and Compact Test. Keep raw token thresholds and circuit-breaker knobs under Advanced.
+- `confirmedFacts` are business facts. `procedureRun`/runtime state belongs in internal structured working memory, not confirmedFacts.
+- P0 should not expose an unrestricted `record_facts` system tool. Facts should come from user-message extraction, form answers, tool-result mapping, and human-task answers unless the owner explicitly approves a controlled memory-write tool.
+- Visual direction: Quiet Agent Studio, unified light-first across the Console. Pilot Lab, Diff Viewer, Trace detail, ConfigPilot, Scenario receipts, and publish/rollback moments use focused light workspaces with slightly cooler or denser light surfaces, not dark mode.
 - Config Diff Viewer and Command Bar are first-class UI primitives.
 - Product UI supports `en-US` and `zh-CN`; business configuration content is not auto-translated.
 
@@ -107,12 +126,14 @@ Shipped foundations already useful for the reset:
 
 - Safe local Postgres foundation shipped 2026-06-08. See [`../what's done/2026-06-08-foundation-safe-local-db.md`](../what's%20done/2026-06-08-foundation-safe-local-db.md).
 - Procedure additive Phases 1-3 shipped through `373d2eed`: Procedure contracts/columns exist, ProcedureExecutor prompt path is wired, and case-scoped legacy guardrail activation exists. Foundation Reset lanes must treat those as migration inputs, not as the target architecture.
+- Foundation reset first wave shipped through `d42c543e`: Hooks schema/API/UI, HookEngine checkpoints, Tool trace vocabulary, package import/export, Scenario soft gate, and Quiet Agent Studio primitives.
+- Post-foundation local commits through `c4c7365c`: target IA shell, ProcedureStep Hook binding UI, and inline Procedure runtime cutover.
 - Trace single-contract and playground hardening work shipped. See the relevant receipts under [`../what's done/`](../what's%20done/).
 - Agent-scoped architecture exists in code, but verify orgId -> agentConfig ownership whenever touching admin sub-module routes.
 
 Live landmines to keep in mind:
 
-- `dispatch_case_agent` detached sub-agent behavior is still a live issue until F5 retires it. See [`HARD_BUGS.md`](./HARD_BUGS.md).
+- Durable Case shells still exist on some route-level persistence paths because current Message/ActionTrace schema depends on `caseId`; solve this in a later schema/runtime lane, not by reintroducing background sub-agents.
 - Playground remains a large component and should not be casually expanded.
 - Legacy guardrail live-confirm gaps should be converted into Hook Scenario coverage during the reset.
 

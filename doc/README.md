@@ -30,7 +30,7 @@ Use these names in new docs, APIs, UI, traces, and package manifests:
 | `.intera-agent.json` | Portable Agent Template Package for delivery reuse and future marketplace support. |
 | `Scenario` | Delivery validation case and receipt source. |
 | `ConfigPilot` | Conversational configuration assistant that writes only through typed APIs. |
-| `Quiet Agent Studio` | First-launch UI theme: light product shell plus deep immersive workspaces. |
+| `Quiet Agent Studio` | First-launch UI theme: unified light-first product shell with focused light workspaces. |
 
 Legacy names may appear in historical receipts, raw input, archived plans, and the original philosophy reference: `Skill`, `Policy`, `Guardrail`, `stage`, `sub-agent`, `preFinalize`.
 

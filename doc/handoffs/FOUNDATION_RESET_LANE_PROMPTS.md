@@ -1,8 +1,11 @@
 # Foundation Reset Lane Prompts
 
-**Last updated:** 2026-06-08
-**Purpose:** copy one lane prompt into a zero-context Codex session and run parallel work without file conflicts.
+**Last updated:** 2026-06-09
+**Status:** HISTORICAL - F1-F7/UX0 shipped through `d42c543e foundation: add hooks admin ui`.
+**Purpose:** preserve the original first-wave lane prompts for audit/history.
 **Baseline:** `origin/main` at or after `373d2eed docs: Procedure Phase 3 shipped`.
+
+For new zero-context coding sessions, dispatch from [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md), not this file.
 
 Use these prompts with the current docs:
 

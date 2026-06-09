@@ -20,7 +20,7 @@
 - Development priority before launch: **functionality and clean foundation first**. Security/compliance must be architecturally reserved, but not allowed to block the first commercial slice.
 - First industry template: **Gaming / iGaming support**.
 - Delivery path: import `Gaming Support Starter.intera-agent.json` -> adapt with UI + ConfigPilot -> run Scenario receipt -> activate -> export customer-customized package.
-- UI/UX source of truth: **Quiet Agent Studio**, with top-level nav `Build / Operate / Settings`, logged-in default `Build -> Release`, global ConfigPilot drawer, Pilot Lab workbench, Command Bar, and Config Diff Viewer.
+- UI/UX source of truth: **Quiet Agent Studio**, a unified light-first Console with top-level nav `Build / Operate / Settings`, logged-in default `Build -> Release`, global ConfigPilot drawer, Pilot Lab workbench, Command Bar, and Config Diff Viewer. Do not introduce dark immersive workspaces in P0 except small functional code/JSON/raw-payload viewers.
 - Code baseline as of `373d2eed`: additive Procedure Phases 1-3 are shipped. `CaseType.procedure`, `CaseType.guardrails`, `maxAutoTurns`, ProcedureExecutor prompt path, and case-scoped legacy guardrail activation exist. Treat them as **migration inputs** for Hook/HookBinding and runtime cleanup, not as the final model.
 
 ### 0.2 Vocabulary
