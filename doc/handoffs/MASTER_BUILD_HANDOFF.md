@@ -134,11 +134,18 @@ Recommended coding-team shape:
 - Procedure is a runtime overlay, not a prompt-mode transformation. `start_procedure` creates/selects a ProcedureRun; it must not replace the stable Core Agent prompt or prepend a dynamic Procedure header before that prompt.
 - R3 should follow a runtime-protocol model inspired by Claude Code semantics, not copied source code: structured queue events, epoch/uuid/origin metadata, explicit control interrupts only, stable Hook lifecycle with dynamic context, stable/dynamic prompt boundary, and real memory tools.
 - Keep context in three layers: stable Core Agent prompt; stable/cacheable Procedure definition; dynamic ProcedureRun state appended at the prompt tail.
+- Keep the model-visible Tool list/schema stable across Procedure activation. Procedure allowedTools are enforced by runtime/Hook gates, not by dynamically hiding Tool schemas.
 - The runtime should inject ProcedureRun context as dynamic procedure todos/current state, so the main Agent can decide whether a new message continues, supplements, pauses, resumes, or starts a Procedure.
 - Hook scopes for ProcedureStep must be resolved by runtime from active ProcedureRun timeline + currentStepId + requested Tool, not by trusting the model to remember the Procedure prompt.
 - Interleaved messages use generic epoch-based reconciliation, not semantic routing. Every customer message/form/human result increments `inputEpoch`; each Tool/action records `basedOnInputEpoch`; stale results can become evidence but cannot advance a step until the model reconciles latest timeline events.
+- `needsReconcile` must clear through a structured runtime action, e.g. `reconcile_procedure_input({ upToInputEpoch, decision, summary })`; it is not a memory write and not a natural-language assertion.
+- Customer-facing text replies also record `basedOnInputEpoch`. Stale replies must not advance ProcedureRun; withhold them before send where possible, otherwise trace them as stale.
 - Ordinary customer messages are not interrupts. They should be queued and reconciled. Only explicit control events such as operator stop, session close, or human takeover may abort or cancel active Tool execution.
 - R3 first version should keep active ProcedureRun state in runtime/session-store rather than adding a Prisma table. It must increment `inputEpoch` at enqueue time, not AgentLoop drain time.
+- `session-store` must be upgraded from a bare message queue into structured runtime events, including customer messages, form results, human task results, text replies, Tool events, Hook decisions, reconcile actions, and explicit controls.
+- Human task results and form answers are input events, not finalization shortcuts. They increment `inputEpoch` before any terminal action.
+- `start_procedure` must be idempotent by request/event id and active run state.
+- In-memory ProcedureRun state is an R3 V1 deployment tradeoff for single-process/restart-loses-active-runtime only; multi-instance or restart resilience needs Redis/lease or a later schema lane.
 - HookEngine should be stable for the AgentConfig; active ProcedureRun/caseType/currentStep/reconcile context is passed through `HookContext` per evaluation.
 - `read_chat_memory`, `read_user_profile`, and `remember` must be real system Tools before being advertised as a product loop. Placeholder `{ ok: true, handled: "system_managed" }` results are not enough.
 - Do not introduce a standalone LLM ProcedureRouter. The main Agent should selectively load the compact Procedure catalog plus active/paused ProcedureRun state and choose the next action inside the normal ReAct loop.

@@ -177,11 +177,12 @@ type ProcedureRunState = {
     eventId: string
     epoch: number
     origin: 'customer' | 'operator' | 'system' | 'human'
-    source: 'customer_message' | 'customer_form' | 'human_task' | 'tool_call' | 'tool_result' | 'hook_decision' | 'reconcile'
+    source: 'customer_message' | 'customer_form_result' | 'human_task_result' | 'tool_call' | 'tool_result' | 'text_reply' | 'hook_decision' | 'reconcile' | 'control'
     at: string
     summary: string
     basedOnInputEpoch?: number
     isMeta?: boolean
+    requestId?: string
   }>
 }
 ```
@@ -213,11 +214,13 @@ Epoch rules:
 - Every customer message, customer form result, and human task result increments `inputEpoch`.
 - `inputEpoch` increments when the input is enqueued/received, not when the AgentLoop later drains the queue.
 - `session-store` must expose the latest input epoch and queued timeline events so a streaming Tool result can detect stale input while the loop is still running.
-- Every Tool call/action/finalize attempt records `basedOnInputEpoch`.
+- Every Tool call/action/finalize attempt and customer-facing text reply records `basedOnInputEpoch`.
 - Tool calls record `basedOnInputEpoch` at enqueue/start time because streaming Tool execution begins before all results are drained.
+- Text replies record `basedOnInputEpoch` at generation start. If a newer input arrives before commit/send, runtime should withhold the stale reply where transport allows; if tokens have already streamed, it must not advance ProcedureRun and must trace the stale reply.
 - If a Tool result returns after `inputEpoch` has advanced, save the result as evidence but do not automatically complete or advance the step.
 - Mark `needsReconcile = true`.
 - The next prompt tail lists unreconciled timeline events and asks the same Core Agent to reconcile before more Tools or finalization.
+- `needsReconcile` clears only through a structured runtime action such as `reconcile_procedure_input({ runId, upToInputEpoch, decision, summary })`. Natural-language claims like "I considered the latest message" are not enough. The action updates ProcedureRun timeline/state only; business facts still go through `remember`.
 
 Prompt tail example:
 
@@ -284,12 +287,16 @@ enqueue structured event
 
 Implications for Intera:
 
+- The model-visible Tool list/schema is part of the cache boundary. Procedure `allowedTools` should be enforced by runtime/Hook gates, not by dynamically hiding or showing Tool schemas after `start_procedure`.
 - A new customer message is a queued timeline event, not an interrupt and not an intent-routing request.
 - Only explicit control events such as operator stop, session close, or human takeover may abort the current turn/tool.
 - Tool execution should default to block/non-cancel on ordinary interleaving. If a future Tool declares interrupt behavior, cancellation must be explicit.
 - Hooks remain stable lifecycle events. P0 implements `PreToolUse`, `PostToolUse`, and `Stop`; future `UserPromptSubmit`, `PreCompact`, or `PostCompact`-style events can be added without changing the ProcedureRun mental model.
 - The stable Core Agent prompt and stable Tool contract should be separated from the dynamic ProcedureRun tail. Dynamic Procedure text must not be prepended before the stable prompt.
 - Memory Tools are not fake Tool results. `remember`, `read_chat_memory`, and `read_user_profile` must connect to real storage and real retrieval before being presented as a closed product loop.
+- Customer form results and human task results are input events. They increment `inputEpoch` and require the Agent to reconcile current state before any terminal action.
+- `start_procedure(procedureId)` must be idempotent by request/event id and active run state. Retries or duplicate network requests should return the existing run or no-op safely, not create duplicate pending runs.
+- R3 V1 may keep ProcedureRun state in memory/session-store only under a single-process, restart-loses-active-runtime assumption. Multi-instance or restart-resilient deployment requires Redis/lease or a later schema lane.
 
 ---
 

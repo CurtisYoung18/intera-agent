@@ -86,16 +86,23 @@ Required direction:
 - Treat ProcedureRun as a runtime protocol inspired by Claude Code-style semantics, not as code copied from the reference folder: structured queue events, input epoch/uuid/origin metadata, explicit control interrupts, stable Hook lifecycle with dynamic context, prompt static/dynamic boundary, and real memory tools.
 - Do not prepend a dynamic Procedure header before the stable Core Agent prompt.
 - Do not replace the system prompt or activate a separate Procedure persona after `start_procedure`.
+- Keep the model-visible Tool list/schema stable across Procedure activation. Procedure `allowedTools` should be enforced by runtime/Hook gates, not by dynamically changing Tool schemas after `start_procedure`.
 - Define a first-class ProcedureRun timeline with currentStepId, per-step status, evidenceToolCallIds, facts, and blockers.
 - Each timeline/input event should carry stable metadata such as eventId/uuid, inputEpoch, origin/source, run/session id, enqueue time, and optional priority/isMeta/control markers. Priority is scheduling metadata, not intent classification.
 - Resolve ProcedureStep Hooks deterministically from active ProcedureRun + current step + requested Tool.
 - Update the timeline after Tool results, Hook decisions, human tasks, `remember`, and `finalize_procedure`.
 - Handle interleaved messages with generic epoch-based reconciliation: each input event increments `inputEpoch`; Tool/action/finalize attempts record `basedOnInputEpoch`; stale results become evidence but cannot advance steps until the latest input events are reconciled.
+- Customer-facing text replies also need `basedOnInputEpoch`. If a newer input arrives before commit/send, withhold the stale reply where possible; if already streamed, trace it and do not advance ProcedureRun.
 - Do not add an interleaved-message intent classifier. The runtime tracks version freshness, not whether a new message is a supplement, correction, cancellation, or new issue.
+- Add a structured reconcile action such as `reconcile_procedure_input({ runId, upToInputEpoch, decision, summary })`. `needsReconcile` should not clear from natural-language model claims and this action must not write chat/user memory.
 - Do not treat ordinary customer messages as interrupts. Queue/reconcile them. Only explicit control events such as operator stop, session close, or human takeover may abort active execution, and cancellation should be opt-in per Tool behavior.
 - Preserve P0 Hook lifecycle as `PreToolUse`, `PostToolUse`, and `Stop`; keep the event model compatible with future `UserPromptSubmit`, `PreCompact`, and `PostCompact` without expanding scope now.
 - Increment `inputEpoch` when messages/form results/human results are enqueued, not when AgentLoop drains them. Streaming Tool execution can finish before drain sees the new input.
+- Upgrade session-store from a bare queued-message list to structured runtime events.
+- Treat human task results and form answers as input events that increment epoch; do not force terminal action from old human/default resume prompt copy if newer customer input exists.
+- Make `start_procedure` idempotent by request/event id and active run state.
 - Use session-store as R3 V1 runtime authority unless a schema lane is explicitly approved; filter any temporary internal state from case export, case detail payloads, dashboards, compaction, and public memory APIs.
+- Document that in-memory ProcedureRun state is only acceptable for a single-process/restart-loses-active-runtime first slice; multi-instance or restart-resilient deployment requires Redis/lease or schema work.
 - Keep HookEngine stable and pass active ProcedureRun/caseType/currentStep/reconcile data through HookContext per evaluation instead of recreating HookEngine to switch Procedure context.
 - Make `read_chat_memory`, `read_user_profile`, and `remember` real read/write tools in R3, or do not advertise the loop as closed.
 - Fix prompt context naming so Procedure catalog queries use explicit `agentConfigId`, and ensure seeded Procedures parse under the current Procedure schema.
