@@ -380,8 +380,8 @@ export class CaseAgentLoop {
   }
 
   /**
-   * Dispatch sub-agents for the current stage (non-blocking / fire-and-forget).
-   * Idempotent — does nothing if agents have already been dispatched for this stage.
+   * Legacy stage/sub-agent adapter. R1 keeps the code for old internal fixtures,
+   * but customer-facing ToolRouter no longer exposes sub-agent dispatch.
    */
   async startDedicatedAgents(sendEvent: (event: SSEEvent) => void): Promise<void> {
     if (!this.orchestrator?.isEnabled()) return
@@ -443,8 +443,7 @@ export class CaseAgentLoop {
   }
 
   /**
-   * Dispatch a single sub-agent by name (used by dispatch_subagent tool in CC mode).
-   * Searches all stages for the sub-agent config matching agentName.
+   * Legacy dispatch_subagent adapter. Disabled from customer-facing tools in P0.
    */
   async dispatchSingle(
     agentName: string,

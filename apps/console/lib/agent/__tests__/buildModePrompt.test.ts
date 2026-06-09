@@ -108,6 +108,37 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
   })
 
+  it('hides internal procedure runtime state from Current Case State', async () => {
+    const result = await buildModePrompt({
+      ...baseInput,
+      hasActiveCase: true,
+      caseSchema: {
+        type: 'deposit_issue',
+        displayName: 'Test Case',
+        icon: 'case',
+        defaultGoal: 'Verify',
+        stages: ['created', 'investigating'],
+        requiredFacts: ['userId'],
+        escalateOn: ['conflict'],
+      },
+      caseState: {
+        confirmedFacts: {
+          userId: '123',
+          __intera_procedure_runtime: {
+            activeProcedureRun: { procedureId: 'deposit_issue' },
+          },
+        },
+        skillsCalled: [],
+        missingFacts: [],
+      },
+    })
+
+    expect(result.prompt).toContain('## Current Case State')
+    expect(result.prompt).toContain('"userId":"123"')
+    expect(result.prompt).not.toContain('__intera_procedure_runtime')
+    expect(result.prompt).not.toContain('activeProcedureRun')
+  })
+
   // ── Empty context blocks are not injected ──
   it('omits empty blocks (no tools → no Available Tools section)', async () => {
     const { buildPromptContext } = await import('@/lib/agent/prompt-resolver')

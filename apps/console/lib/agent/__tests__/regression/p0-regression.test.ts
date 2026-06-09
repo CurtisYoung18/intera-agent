@@ -156,11 +156,15 @@ describe('A4 — dispatch_case_agent', () => {
     expect(dispatchDef!.name).toBe('dispatch_case_agent')
     expect(dispatchDef!.inputSchema).toBeDefined()
     expect(dispatchDef!.inputSchema.properties).toHaveProperty('caseType')
+    expect(dispatchDef!.inputSchema.properties).toHaveProperty('procedureId')
   })
 
-  it('dispatch_case_agent has correct input schema', () => {
+  it('dispatch_case_agent accepts start_procedure semantics with caseType compatibility', () => {
     const router = new ToolRouter()
     const def = router.getTool('dispatch_case_agent')
-    expect(def!.inputSchema.required).toContain('caseType')
+    expect(def!.inputSchema.required).toEqual(['procedureId'])
+    expect(def!.inputSchema.properties).toHaveProperty('procedureId')
+    expect(def!.inputSchema.properties).toHaveProperty('caseType')
+    expect(def!.inputSchema.properties).toHaveProperty('currentProcedureAction')
   })
 })

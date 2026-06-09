@@ -74,10 +74,11 @@ describe('Playground safety invariants', () => {
     expect(result.name).toBe('create_human_task')
   })
 
-  it('dispatch_case_agent mock result contains caseId', () => {
+  it('dispatch_case_agent mock result describes inline Procedure start', () => {
     const result = dispatchCaseAgentMockResult('deposit_issue')
     expect(result.output).toContain('_dryRun')
-    expect(result.output).toContain('mock_case_')
+    expect(result.output).toContain('durableCaseCreated')
+    expect(result.output).toContain('Procedure')
     expect(result.output).toContain('deposit_issue')
   })
 

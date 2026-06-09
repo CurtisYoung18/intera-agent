@@ -1343,7 +1343,21 @@ export class AgentLoop {
       messages: this.messages,
       getCurrentStage: () => this.currentStage,
       setPendingEscalation: (v) => { this.pendingEscalation = v },
+      activateProcedureContext: (schema) => this.activateProcedureContext(schema),
     }
+  }
+
+  private async activateProcedureContext(schema: CaseSchemaConfig): Promise<void> {
+    this.deps.caseSchema = schema
+    this.caseLoop = new CaseAgentLoop(
+      schema,
+      this.makeCaseLoopServices(),
+      true,
+    )
+    this.caseLoop.syncStage()
+    this.hookEngine = await HookEngine.create(this.deps.configId, {
+      caseType: { type: schema.type, displayName: schema.displayName },
+    })
   }
 
   private buildApiMessages() {

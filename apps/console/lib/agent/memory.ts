@@ -13,6 +13,18 @@ import { withRetry } from './api/with-retry'
 
 /** Persisted in skillResults — avoids duplicate background sub-agent dispatch across HTTP turns. */
 export const SUB_AGENT_DISPATCH_MARKER_KEY = '__intera_sub_agent_dispatch'
+export const INTERNAL_MEMORY_PREFIX = '__intera_'
+
+export function isInternalMemoryKey(key: string): boolean {
+  return key.startsWith(INTERNAL_MEMORY_PREFIX)
+}
+
+export function stripInternalMemoryKeys<T extends Record<string, unknown> | undefined | null>(value: T): Record<string, unknown> {
+  if (!value) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter(([key]) => !isInternalMemoryKey(key)),
+  )
+}
 
 /** Maps workflow stage → sorted agent roster signature for which dispatch already ran. */
 export interface SubAgentDispatchMarker {
@@ -329,7 +341,7 @@ export class ChatMemoryManager {
     parts.push(`Case ID: ${this.caseId}`)
 
     // Primary facts
-    const facts = Object.entries(this.confirmedFacts)
+    const facts = Object.entries(stripInternalMemoryKeys(this.confirmedFacts))
     if (facts.length > 0) {
       parts.push('\n## Confirmed Facts')
       facts.forEach(([k, v]) => parts.push(`- ${k}: ${JSON.stringify(v)}`))
@@ -397,7 +409,7 @@ export class ChatMemoryManager {
     const s = this.strategy
     let tokens = 0
     tokens += this.keyEvents.length * s.tokensPerKeyEvent
-    tokens += Object.keys(this.confirmedFacts).length * s.tokensPerFact
+    tokens += Object.keys(stripInternalMemoryKeys(this.confirmedFacts)).length * s.tokensPerFact
     tokens += this.skillsCalled.length * s.tokensPerTool
     tokens += this.summary.length / s.latinCharPerToken
     for (const content of messageContents) {
@@ -476,11 +488,15 @@ export class ChatMemoryManager {
 
   // ─── Accessors ────────────────────────────────────────────
 
-  getConfirmedFacts(): Record<string, unknown> { return { ...this.confirmedFacts } }
+  getConfirmedFacts(): Record<string, unknown> { return stripInternalMemoryKeys(this.confirmedFacts) }
   getMissingFacts(): string[] { return [...this.missingFacts] }
   getSkillsCalled(): string[] { return [...this.skillsCalled] }
   getSkillResult(skillName: string): unknown { return this.skillResults[skillName] }
   getKeyEvents(): KeyEvent[] { return [...this.keyEvents] }
+  getInternalState<T = unknown>(key: string): T | undefined { return this.skillResults[key] as T | undefined }
+  setInternalState(key: string, value: unknown): void {
+    this.skillResults = { ...this.skillResults, [key]: value }
+  }
 
   // ─── Centralized fact writes (bumps dashboardVersion) ─────
 
@@ -489,6 +505,10 @@ export class ChatMemoryManager {
    * All fact writes MUST go through this method so sub-agents detect changes.
    */
   setConfirmedFact(key: string, value: unknown): void {
+    if (isInternalMemoryKey(key)) {
+      this.setInternalState(key, value)
+      return
+    }
     const oldValue = this.confirmedFacts[key]
     this.confirmedFacts[key] = value
     this.missingFacts = this.missingFacts.filter((f) => f !== key)
@@ -512,6 +532,10 @@ export class ChatMemoryManager {
   setConfirmedFactsBulk(facts: Record<string, unknown>): boolean {
     const changedKeys: string[] = []
     for (const [key, value] of Object.entries(facts)) {
+      if (isInternalMemoryKey(key)) {
+        this.setInternalState(key, value)
+        continue
+      }
       if (value !== null && value !== undefined && value !== '') {
         if (JSON.stringify(this.confirmedFacts[key]) !== JSON.stringify(value)) {
           this.confirmedFacts[key] = value
@@ -635,12 +659,12 @@ export class ChatMemoryManager {
     const changedFacts: Record<string, unknown> = {}
     if (changedKeys.size > 0) {
       for (const key of changedKeys) {
-        if (key in this.confirmedFacts) changedFacts[key] = this.confirmedFacts[key]
+        if (key in this.confirmedFacts && !isInternalMemoryKey(key)) changedFacts[key] = this.confirmedFacts[key]
       }
     } else if (this.dashboardVersion > sinceVersion) {
       // Version bumped but no fact changelog entries (e.g. only todo changes) —
       // include all current facts so the sub-agent has full context.
-      Object.assign(changedFacts, this.confirmedFacts)
+      Object.assign(changedFacts, stripInternalMemoryKeys(this.confirmedFacts))
     }
 
     const agentTodoChanges: Record<string, TodoItem[]> = {}
@@ -759,7 +783,7 @@ export class ChatMemoryManager {
   getSummary(): ChatMemoryData {
     return {
       caseId: this.caseId,
-      confirmedFacts: this.confirmedFacts,
+      confirmedFacts: stripInternalMemoryKeys(this.confirmedFacts),
       missingFacts: this.missingFacts,
       skillsCalled: this.skillsCalled,
       skillResults: this.skillResults,
@@ -806,7 +830,7 @@ export class ChatMemoryManager {
     dashboardVersion: number
   } {
     return {
-      confirmedFacts: JSON.stringify(this.confirmedFacts),
+      confirmedFacts: JSON.stringify(stripInternalMemoryKeys(this.confirmedFacts)),
       missingFacts: JSON.stringify(this.missingFacts),
       skillsCalled: JSON.stringify(this.skillsCalled),
       skillResults: JSON.stringify(this.skillResults),

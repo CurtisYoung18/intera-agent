@@ -43,7 +43,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {},
-      required: [],
+      required: ['procedureId'],
     },
     isConcurrencySafe: true,
     mode: 'static',
@@ -93,22 +93,40 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
   {
     name: 'dispatch_case_agent',
     description:
-      'Dispatch a background case investigation agent for a single clear customer issue. ' +
-      'The case agent runs autonomously through all investigation stages while you continue the conversation. ' +
-      'For multiple issues, call dispatch_case_agent once per issue.',
+      'Start or select an inline Procedure for a single clear customer issue. ' +
+      'This is a compatibility wrapper for start_procedure/select_procedure: the main Agent continues the Procedure inline. ' +
+      'If another Procedure is active and the customer clearly switches topic, pause the current Procedure by default and start the new one.',
     inputSchema: {
       type: 'object',
       properties: {
-        caseType: { type: 'string', description: 'Case type slug, e.g. deposit_issue, account_issue' },
+        procedureId: { type: 'string', description: 'Procedure id / CaseType slug, e.g. deposit_issue, account_issue' },
+        caseType: { type: 'string', description: 'Compatibility alias for procedureId.' },
+        reason: { type: 'string', description: 'Why this Procedure matches the customer message.' },
+        confidence: { type: 'number', description: 'Optional confidence from 0 to 1.' },
+        collectedFacts: { type: 'object', description: 'Facts already collected from the customer message.' },
+        currentProcedureAction: {
+          type: 'string',
+          enum: ['pause', 'complete', 'abandon'],
+          description: 'What to do with the currently active Procedure when starting a different one. Defaults to pause.',
+        },
       },
-      required: ['caseType'],
+      required: ['procedureId'],
     },
     isConcurrencySafe: false,
     mode: 'engine_managed',
     enabled: true,
     toolCategory: 'system_info',
-    displayVerb: { text: 'Dispatching case agent', icon: 'dots' },
-    zodSchema: z.object({ caseType: z.string() }),
+    displayVerb: { text: 'Starting procedure', icon: 'dots' },
+    zodSchema: z.object({
+      procedureId: z.string().optional(),
+      caseType: z.string().optional(),
+      reason: z.string().optional(),
+      confidence: z.number().optional(),
+      collectedFacts: z.record(z.string(), z.unknown()).optional(),
+      currentProcedureAction: z.enum(['pause', 'complete', 'abandon']).optional(),
+    }).refine((input) => Boolean(input.procedureId || input.caseType), {
+      message: 'procedureId is required (caseType is accepted as a compatibility alias).',
+    }),
   },
   {
     name: 'finalize_case',
@@ -288,7 +306,11 @@ export class ToolRouter {
   /** Create and initialize a ToolRouter — loads system tools (via constructor) + DB tools + dynamic knowledge sources.
    *  @param agentConfigId — agent config ID for DB queries.
    *  @param dryRun  — when true, skips knowledge-source auto-heal writes. */
-  static async create(agentConfigId: string, dryRun = false): Promise<ToolRouter> {
+  static async create(
+    agentConfigId: string,
+    dryRun = false,
+    options: { enableLegacySubagentAdapter?: boolean } = {},
+  ): Promise<ToolRouter> {
     const router = new ToolRouter(agentConfigId)
 
     // Load DB tools (overlay on top of system/built-ins already loaded in constructor)
@@ -329,6 +351,10 @@ export class ToolRouter {
         })
       }
 
+      if (!options.enableLegacySubagentAdapter) {
+        router.tools.delete('dispatch_subagent')
+      }
+
       // ── Dynamic tool descriptions: inject agent config's case types into tool descriptions ──
       const hasDbOverride = (name: string) => dbTools.some((t) => t.name === name)
 
@@ -348,10 +374,10 @@ export class ToolRouter {
               const existingDispatchTool = router.tools.get('dispatch_case_agent')
               if (existingDispatchTool) {
                 existingDispatchTool.description =
-                  'Dispatch a background case investigation agent. The agent runs autonomously through all investigation stages while you continue the conversation.\n\n' +
-                  '## Available Case Types\n' +
+                  'Start or select an inline Procedure for one clear customer issue. The main Agent continues through ProcedureExecutor and HookEngine; no background agent is spawned.\n\n' +
+                  '## Procedure Catalog\n' +
                   caseTypeList +
-                  '\n\nUse when the customer reports a single distinct issue. For multiple issues, call dispatch_case_agent once per issue.'
+                  '\n\nUse procedureId for new calls. caseType remains accepted for compatibility. If another Procedure is active and the customer clearly switches topic, pause the current Procedure by default.'
               }
             }
           }

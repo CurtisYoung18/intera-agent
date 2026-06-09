@@ -1,7 +1,7 @@
 // Tool Interceptor — post-execution tool result handlers.
 //
 // After StreamingToolExecutor completes all tools, certain tool results
-// need special handling: creating cases, dispatching sub-agents,
+// need special handling: selecting inline Procedures,
 // replacing mock results with real data, or triggering escalations.
 //
 // This module extracts those handlers from the main AgentLoop to keep
@@ -12,12 +12,12 @@ import type { Message, SSEEvent, AgentConfigData, CaseSchemaConfig, CaseStatus }
 import type { HookEvaluationResult } from './hook-engine'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
+import { INTERNAL_MEMORY_PREFIX } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
 import type { CaseAgentLoop } from './case-agent-loop'
-import { OrchestratorAgent } from './orchestrator'
-import { generateCaseId } from '@/lib/utils'
+import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 
@@ -42,6 +42,29 @@ export interface ToolInterceptorContext {
   messages: Message[]
   getCurrentStage: () => string
   setPendingEscalation: (value: boolean) => void
+  activateProcedureContext?: (schema: CaseSchemaConfig) => Promise<void>
+}
+
+const PROCEDURE_RUNTIME_FACT_KEY = `${INTERNAL_MEMORY_PREFIX}procedure_runtime`
+
+type ProcedureRunStatus = 'active' | 'paused' | 'completed' | 'abandoned'
+
+interface ProcedureRunState {
+  runId: string
+  procedureId: string
+  caseType: string
+  displayName: string
+  status: ProcedureRunStatus
+  reason: string
+  confidence?: number
+  collectedFacts?: Record<string, unknown>
+  startedAt: string
+  updatedAt: string
+}
+
+interface ProcedureRuntimeState {
+  activeProcedureRun?: ProcedureRunState
+  pendingProcedureRuns: ProcedureRunState[]
 }
 
 // ---------------------------------------------------------------------------
@@ -113,23 +136,27 @@ async function handleDispatchCaseAgent(
   sendEvent: (event: SSEEvent) => void,
 ): Promise<InterceptAction> {
   const toolInput = result.toolUse?.input || {}
-  const caseType = String(toolInput.caseType || '')
+  const procedureId = String(toolInput.procedureId || toolInput.caseType || '')
+  const reason = String(toolInput.reason || 'The customer raised an issue that matches this procedure.')
+  const confidence = typeof toolInput.confidence === 'number' ? toolInput.confidence : undefined
+  const collectedFacts = isRecord(toolInput.collectedFacts) ? toolInput.collectedFacts : undefined
+  const requestedCurrentAction = normalizeCurrentProcedureAction(toolInput.currentProcedureAction)
 
-  if (!caseType || !isInvestigableCaseType(caseType)) {
+  if (!procedureId || !isInvestigableCaseType(procedureId)) {
     return { kind: 'pass' }
   }
 
   try {
     const ctRow = await prisma.caseType.findUnique({
-      where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: caseType } },
+      where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: procedureId } },
     })
     if (!ctRow) return { kind: 'pass' }
 
     const stages = safeJson<string[]>(ctRow.stages, [])
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
     const stageConfigs = safeJson<Record<string, unknown>>(ctRow.stageConfigs || '{}', {})
-    const executionMode = normalizeExecutionMode((ctRow as any).executionMode)
-    const allSkills = ctx.toolRouter.getToolDefinitions()
+    const procedure = parseProcedure((ctRow as { procedure?: string | null }).procedure)
+    const executionMode = procedure ? 'cc' : normalizeExecutionMode((ctRow as any).executionMode)
 
     const schema: CaseSchemaConfig = {
       type: ctRow.type,
@@ -144,109 +171,104 @@ async function handleDispatchCaseAgent(
       requireHumanReview: (ctRow as any).requireHumanReview === true,
       executionMode,
       sop: (ctRow as any).sop || undefined,
+      procedure: procedure ?? undefined,
     }
 
-    // Create sub-case
-    const subCaseId = generateCaseId()
-    await ctx.persistence.ensureCase({
-      id: subCaseId,
-      orgId: ctx.orgId,
-      userId: ctx.userId,
-      type: caseType,
-      status: 'created',
-      chatId: ctx.chatId ?? ctx.caseId,
-    })
+    const now = new Date().toISOString()
+    const previousState = readProcedureRuntimeState(ctx.chatMemory.getInternalState(PROCEDURE_RUNTIME_FACT_KEY))
+    const existingActive = previousState.activeProcedureRun
+    const currentProcedureAction =
+      requestedCurrentAction ??
+      (existingActive && existingActive.procedureId !== ctRow.type ? 'pause' : undefined)
 
-    await ctx.persistence.saveMemory(subCaseId, {
-      caseId: subCaseId,
-      confirmedFacts: JSON.stringify(ctx.chatMemory.getConfirmedFacts()),
-      skillsCalled: JSON.stringify([]),
-      skillResults: JSON.stringify({}),
-      keyEvents: JSON.stringify([]),
-      humanTaskStatus: 'none',
-      needsContinuation: false,
-    })
-
-    // Build SubAgentConfig
-    const stageSkillNames = collectStageSkillNames(stageConfigs, executionMode)
-    const casePrompt = ctRow.defaultGoal || `Investigate and resolve the customer's ${ctRow.displayName} issue.`
-    const taskPrompt = buildTaskPrompt(executionMode, ctRow, stages, casePrompt)
-    const subAgentMaxIterations = resolveMaxIterations(stageConfigs)
-
-    const subAgentConfig: import('@intera/shared/types').SubAgentConfig = {
-      name: `case_agent_${caseType}`,
-      model: ctx.config.model,
-      systemPrompt: ctx.config.coreSystemPrompt || '',
-      skills: Array.from(stageSkillNames),
-      taskTemplate: taskPrompt,
-      parallel: true,
-      maxIterations: subAgentMaxIterations,
-      fallbackModel: ctx.config.fallbackModel,
-    }
-
-    if (!ctx.dryRun) {
-      const orchestrator = new OrchestratorAgent(
-        schema,
-        allSkills,
-        ctx.userId,
-        ctx.chatMemory,
-      )
-
-      const caseMem = ctx.chatMemory.getSummary()
-      const tasks = await orchestrator.planInvestigation(
-        schema.stages[0] || 'created',
-        [subAgentConfig],
-        { ...caseMem, caseId: subCaseId } as any,
-        casePrompt,
-      )
-
-      if (tasks.length > 0) {
-        orchestrator.dispatchInBackground(tasks, sendEvent)
-
-        sendEvent({
-          type: 'sub_agent_start',
-          data: {
-            agentId: tasks[0].id,
-            agentName: subAgentConfig.name,
-            taskDescription: casePrompt.slice(0, 200),
-            stage: 'created',
-            caseId: subCaseId,
-          },
-          timestamp: new Date().toISOString(),
-        })
+    const pendingProcedureRuns = [...previousState.pendingProcedureRuns]
+    if (existingActive && existingActive.procedureId !== ctRow.type) {
+      const updatedPrevious: ProcedureRunState = {
+        ...existingActive,
+        status: currentProcedureAction === 'complete'
+          ? 'completed'
+          : currentProcedureAction === 'abandon'
+            ? 'abandoned'
+            : 'paused',
+        updatedAt: now,
       }
-    } else {
-      // Dry-run: emit mock event, skip OrchestratorAgent
-      sendEvent({
-        type: 'sub_agent_start',
-        data: {
-          agentId: `dryrun_${subCaseId}`,
-          agentName: subAgentConfig.name,
-          taskDescription: casePrompt.slice(0, 200),
-          stage: 'created',
-          caseId: subCaseId,
-          dryRun: true,
-        },
-        timestamp: new Date().toISOString(),
-      })
+      if (updatedPrevious.status === 'paused') {
+        pendingProcedureRuns.push(updatedPrevious)
+      }
     }
+
+    const resumed = pendingProcedureRuns.find((run) => run.procedureId === ctRow.type)
+    const activeProcedureRun: ProcedureRunState = {
+      runId: resumed?.runId ?? `proc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      procedureId: ctRow.type,
+      caseType: ctRow.type,
+      displayName: ctRow.displayName,
+      status: 'active',
+      reason,
+      confidence,
+      collectedFacts,
+      startedAt: resumed?.startedAt ?? now,
+      updatedAt: now,
+    }
+
+    const nextState: ProcedureRuntimeState = {
+      activeProcedureRun,
+      pendingProcedureRuns: pendingProcedureRuns.filter((run) => run.runId !== activeProcedureRun.runId),
+    }
+
+    ctx.chatMemory.setInternalState(PROCEDURE_RUNTIME_FACT_KEY, nextState)
+    if (collectedFacts) {
+      ctx.chatMemory.setConfirmedFactsBulk(collectedFacts)
+    }
+    await ctx.activateProcedureContext?.(schema)
+
+    const procedureSummary = summarizeProcedure(schema)
+    const inlineRoutingResult = {
+      ok: true,
+      mode: 'inline_procedure',
+      caseId: ctx.caseId,
+      durableCaseCreated: false,
+      procedureId: ctRow.type,
+      caseType: ctRow.type,
+      displayName: ctRow.displayName,
+      procedureSummary,
+      activeProcedureRun,
+      pendingProcedureRuns: nextState.pendingProcedureRuns,
+      currentProcedureAction: currentProcedureAction ?? null,
+      instruction:
+        'Continue as the main customer-facing Agent inline. Follow this Procedure through ProcedureExecutor and HookEngine; do not spawn background or detached sub-agents.',
+    }
+
+    result.output = inlineRoutingResult
+    replaceToolResultMessage(ctx.messages, result.toolUse?.id, inlineRoutingResult)
 
     sendEvent({
-      type: 'case_created',
+      type: 'case_status',
       data: {
-        caseId: subCaseId,
-        caseType: caseType,
+        caseId: ctx.caseId,
+        caseType: ctRow.type,
+        procedureId: ctRow.type,
+        status: 'procedure_started',
         displayName: ctRow.displayName,
         icon: ctRow.icon,
+        durableCaseCreated: false,
+        activeProcedureRun,
+        pendingProcedureRuns: nextState.pendingProcedureRuns,
       },
       timestamp: new Date().toISOString(),
     })
 
-    await ctx.traceWriter.write('loop_decision', `Case agent dispatched: ${caseType}`, { caseType, caseId: subCaseId })
+    await ctx.traceWriter.write('loop_decision', `Procedure selected inline: ${ctRow.type}`, {
+      procedureId: ctRow.type,
+      caseId: ctx.caseId,
+      durableCaseCreated: false,
+      currentProcedureAction: currentProcedureAction ?? null,
+      pendingProcedureRunCount: nextState.pendingProcedureRuns.length,
+    })
 
     return { kind: 'continue' }
   } catch (err) {
-    console.error('[ToolInterceptor] Failed to dispatch case agent:', err)
+    console.error('[ToolInterceptor] Failed to start inline procedure:', err)
     return { kind: 'pass' }
   }
 }
@@ -456,44 +478,60 @@ function normalizeExecutionMode(raw: unknown): 'stage' | 'cc' {
   return (raw === 'sop' ? 'cc' : raw) === 'cc' ? 'cc' : 'stage'
 }
 
-function collectStageSkillNames(
-  stageConfigs: Record<string, unknown>,
-  executionMode: 'stage' | 'cc',
-): Set<string> {
-  const names = new Set<string>()
-  for (const sc of Object.values(stageConfigs)) {
-    const cfg = sc as Record<string, unknown>
-    const skills = Array.isArray(cfg.availableSkills) ? cfg.availableSkills : []
-    for (const s of skills) names.add(s)
-  }
-  // Always allow terminal tools
-  for (const t of ['create_human_task', 'finalize_case', 'ask_user_questions']) {
-    names.add(t)
-  }
-  if (executionMode === 'cc') {
-    names.add('dispatch_subagent')
-  }
-  return names
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function buildTaskPrompt(
-  executionMode: 'stage' | 'cc',
-  ctRow: { defaultGoal?: string | null; displayName: string; sop?: string | null },
-  stages: string[],
-  casePrompt: string,
-): string {
-  const sopDoc = (ctRow as any).sop?.trim()
-  if (executionMode === 'cc' && sopDoc) {
-    return `[Case Agent: ${ctRow.displayName}]\n\n## SOP\n${sopDoc}\n\n## Goal\n${casePrompt}\n\nFollow the SOP. Execute each step. Call finalize_case when done.`
-  }
-  return `[Case Agent: ${ctRow.displayName}]\n\n## Goal\n${casePrompt}\n\nInvestigate through these stages: ${stages.join(' → ')}. Call finalize_case when resolved.`
+function normalizeCurrentProcedureAction(raw: unknown): 'pause' | 'complete' | 'abandon' | undefined {
+  return raw === 'pause' || raw === 'complete' || raw === 'abandon' ? raw : undefined
 }
 
-function resolveMaxIterations(stageConfigs: Record<string, unknown>): number {
-  let max = 5
-  const values = Object.values(stageConfigs)
-    .map((sc) => (sc as Record<string, unknown>).maxIterations)
-    .filter((v): v is number => typeof v === 'number' && v > 0)
-  if (values.length > 0) max = Math.max(...values)
-  return max
+function readProcedureRuntimeState(raw: unknown): ProcedureRuntimeState {
+  if (!isRecord(raw)) return { pendingProcedureRuns: [] }
+  const active = isProcedureRunState(raw.activeProcedureRun) ? raw.activeProcedureRun : undefined
+  const pending = Array.isArray(raw.pendingProcedureRuns)
+    ? raw.pendingProcedureRuns.filter(isProcedureRunState)
+    : []
+  return { activeProcedureRun: active, pendingProcedureRuns: pending }
+}
+
+function isProcedureRunState(raw: unknown): raw is ProcedureRunState {
+  return isRecord(raw) &&
+    typeof raw.runId === 'string' &&
+    typeof raw.procedureId === 'string' &&
+    typeof raw.caseType === 'string' &&
+    typeof raw.displayName === 'string' &&
+    (raw.status === 'active' || raw.status === 'paused' || raw.status === 'completed' || raw.status === 'abandoned')
+}
+
+function summarizeProcedure(schema: CaseSchemaConfig): { stepCount: number; steps: Array<{ id: string; action: string; target?: string; required?: boolean }> } {
+  const steps = schema.procedure?.steps ?? []
+  return {
+    stepCount: steps.length,
+    steps: steps.map((step) => ({
+      id: step.id,
+      action: step.action,
+      target: step.target,
+      required: step.required === true ? true : undefined,
+    })),
+  }
+}
+
+function replaceToolResultMessage(
+  messages: Message[],
+  toolUseId: string | undefined,
+  payload: unknown,
+): void {
+  if (!toolUseId) return
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    const content = msg.content as unknown
+    if (!Array.isArray(content)) continue
+    const block = content.find((b) => isRecord(b) && b.tool_use_id === toolUseId)
+    if (block && isRecord(block)) {
+      block.content = JSON.stringify(payload)
+      block.is_error = false
+      return
+    }
+  }
 }

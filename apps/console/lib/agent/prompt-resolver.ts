@@ -2,6 +2,8 @@
 // Replaces {{placeholder}} tokens in the system prompt with live data
 // from DB/config, so the prompt always reflects Console configuration.
 
+import { stripInternalMemoryKeys } from './memory'
+
 export interface ToolSummary {
   name: string
   description: string
@@ -57,10 +59,11 @@ function renderCaseSchema(schema: PromptContext['case_schema']): string {
 
 function renderCaseState(state: PromptContext['case_state']): string {
   if (!state) return ''
-  if (Object.keys(state.confirmedFacts).length === 0 && state.skillsCalled.length === 0) return ''
+  const confirmedFacts = stripInternalMemoryKeys(state.confirmedFacts)
+  if (Object.keys(confirmedFacts).length === 0 && state.skillsCalled.length === 0) return ''
   return [
     '## Current Case State',
-    `- Confirmed: ${JSON.stringify(state.confirmedFacts)}`,
+    `- Confirmed: ${JSON.stringify(confirmedFacts)}`,
     `- Skills used: ${JSON.stringify(state.skillsCalled)}`,
     `- Missing: ${JSON.stringify(state.missingFacts)}`,
   ].join('\n')
