@@ -1,6 +1,6 @@
 # Intera UI/UX Design System
 
-**Last updated:** 2026-06-08
+**Last updated:** 2026-06-09
 **Status:** CURRENT companion source of truth for the Console UI/UX reset
 **Audience:** founder, architect, UI/UX lead, frontend lanes, AI coding teams
 **Related architecture:** [`Intera_Harness_架构梳理.md`](./Intera_Harness_架构梳理.md)
@@ -23,7 +23,7 @@ This document freezes the owner-approved UI/UX direction for Intera before the c
 - `Integrations` belongs under `Build`, not `Settings`.
 - `Agent versions` belongs under `Build -> Release`.
 - `Blueprint` is removed as a product concept for the first launch.
-- `Cases` is not a standalone first-launch page. Conversation and handoff detail may show Case context.
+- `Case` is not a standalone product concept for first launch. Conversation and handoff detail should show Chat, User, ProcedureRun, HumanTask, Trace, and Memory context.
 
 ### 0.2 Build structure
 
@@ -63,7 +63,7 @@ ConfigPilot is a first-class product surface:
 
 - Global right-side assistant drawer.
 - Full workspace inside `Pilot Lab`.
-- Can generate draft Tools, Hooks, Procedures, Test Cases, and package changes.
+- Can generate draft Tools, Hooks, Procedures, Test Scenarios, and package changes.
 - Can apply draft configuration only through `proposal -> diff -> confirm -> typed API save`.
 - Cannot publish live versions.
 
@@ -84,7 +84,7 @@ ConfigPilot is a first-class product surface:
 - Component-level tests live on Component pages.
 - Agent-level validation lives in `Pilot Lab`.
 - `Free Test` is playground-like ad hoc testing.
-- `Test Cases` are saved repeatable Scenarios.
+- `Test Scenarios` are saved repeatable Scenarios.
 - `Receipts` are validation records.
 
 ### 0.7 i18n
@@ -102,6 +102,22 @@ ConfigPilot is a first-class product surface:
 - 1440px and 1280px are the primary design targets.
 - 1024px tablet should remain usable.
 - Mobile is read-only / light-action only: login, Release status, Conversations, and Handoff. Complex editing may show an "open on desktop" state.
+
+### 0.9 Approved motion and brand assets
+
+Use the owner-provided local design references for brand and AI-generation motion:
+
+- Logo / identity motion source: `/Users/curtis/Desktop/design/Globe loader`
+  - Prefer `Context Lens Logo Animation.html` as the motion reference.
+  - Frame screenshots under `screenshots/` can be used as static/logo-frame references.
+- AI generation loading motion for Playground and Pilot Lab: `/Users/curtis/Desktop/design/Organic Loaders (standalone).html`
+  - Approved loader variants: `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`.
+  - Use these only for AI generation / thinking / running states, not ordinary page skeleton loading.
+- AI generation text streaming for Playground and Pilot Lab: `/Users/curtis/Desktop/design/Text streaming (standalone).html`
+  - Approved text animation: `07 token stream`.
+  - Use for model/token output streaming states.
+
+Implementation note: these Desktop paths are design sources, not runtime dependencies. When implementing, copy or recreate the minimal needed SVG/CSS/animation primitives into the app codebase or asset pipeline, preserve reduced-motion behavior, and keep product surfaces light-first.
 
 ---
 
@@ -139,14 +155,14 @@ Use this as the UI refactor target after the Foundation Reset contracts and Hook
 | Block | Target route | Purpose |
 |---|---|---|
 | Build | `/build/release` | Default landing page. Version, draft changes, receipts, package actions. |
-| Build | `/build/pilot-lab` | ConfigPilot full workspace, Free Test, Test Cases, Receipts. |
+| Build | `/build/pilot-lab` | ConfigPilot full workspace, Free Test, Test Scenarios, Receipts. |
 | Build | `/build/components/brain` | Model, prompt, memory. |
-| Build | `/build/components/procedures` | CaseType Procedures and ProcedureStep Hook bindings. |
+| Build | `/build/components/procedures` | Procedure types and ProcedureStep Hook bindings. |
 | Build | `/build/components/tools` | HTTP, Static Fixture, System Managed Tools, test panel, Tool Hook bindings. |
 | Build | `/build/components/hooks` | Hook library, builder, binding manager, Hook simulation. |
 | Build | `/build/components/knowledge` | GPTBots connection, KB binding, read-only documents/status, retrieval test. |
 | Build | `/build/components/integrations` | LiveChat, Web Chat, API Access, channel sample payloads. |
-| Operate | `/operate/conversations` | Inbox, conversation detail, Case context, trace. |
+| Operate | `/operate/conversations` | Inbox, conversation detail, ProcedureRun context, Trace. |
 | Operate | `/operate/handoff` | Human task queue, handoff metrics, handoff detail. |
 | Settings | `/settings/organization` | Organization profile, members, default locale, workspace-level preferences. |
 
@@ -196,7 +212,7 @@ Required sections:
 | Package Actions | Publish, Rollback Preview, Export, Import, Duplicate Version |
 | ConfigPilot Entry | right drawer entry and contextual prompt suggestions |
 
-Do not show broad operational KPIs here. Case count, handoff rate, and queue metrics belong in Operate.
+Do not show broad operational KPIs here. ProcedureRun count, handoff rate, and queue metrics belong in Operate.
 
 ### 3.2 Build -> Pilot Lab
 
@@ -206,7 +222,7 @@ Subareas:
 
 - `ConfigPilot Workspace`: conversational draft generation, proposal review, generated object previews.
 - `Free Test`: ad hoc playground-like conversation test.
-- `Test Cases`: saved Scenario definitions.
+- `Test Scenarios`: saved Scenario definitions.
 - `Receipts`: validation run history and evidence.
 
 Rules:
@@ -240,7 +256,7 @@ Scope:
 Out of scope:
 
 - Blueprint summary
-- sub-agent summary
+- legacy assistant summary
 - scattered Agent Config meta panels
 
 Local test:
@@ -252,14 +268,14 @@ Local test:
 
 Scope:
 
-- CaseTypes.
+- Procedure types.
 - Ordered Procedure steps.
 - Step detail panel.
 - ProcedureStep Hook picker/binding panel.
 
 Layout:
 
-- Left: CaseType list.
+- Left: Procedure type list.
 - Center: ordered step list.
 - Right: selected step detail and Hook bindings.
 
@@ -294,7 +310,7 @@ Scope:
 - Hook builder.
 - Binding manager.
 - Hook simulation.
-- Visual binding relationship across agent, CaseType, ProcedureStep, and Tool scopes.
+- Visual binding relationship across agent, Procedure type, ProcedureStep, and Tool scopes.
 
 Handler kinds:
 
@@ -347,7 +363,7 @@ Required structure:
 
 - Left: conversation inbox, statuses `active`, `waiting_human`, `resolved`.
 - Center: transcript.
-- Right: Case context, current CaseType, Procedure step, handoff task if any.
+- Right: ProcedureRun context, current Procedure type, Procedure step, handoff task if any.
 - Expandable trace: Tool calls, Hook results, Knowledge hits, Procedure notes.
 
 The page should answer:
@@ -364,7 +380,7 @@ Required structure:
 
 - Queue of `waiting_human` tasks.
 - Metrics: handoff rate, average wait, top triggering Hooks, top ProcedureSteps.
-- Detail: linked conversation, Case context, handoff reason, target group/operator.
+- Detail: linked conversation, ProcedureRun context, handoff reason, target group/operator.
 - Configuration shortcuts to Build pages.
 
 Do not build a full task-management, SLA, approval, or scheduling system in the first launch.
@@ -406,8 +422,8 @@ Activation:
 Capabilities:
 
 - Search Agent config objects: Procedure, Tool, Hook, Knowledge source, Integration.
-- Quick create: New Tool, New Hook, New Procedure Step, New Test Case.
-- Quick action: Run Test Case, Open Diff, Export Package.
+- Quick create: New Tool, New Hook, New Procedure Step, New Test Scenario.
+- Quick action: Run Test Scenario, Open Diff, Export Package.
 - Ask ConfigPilot with current page context.
 
 Visual:

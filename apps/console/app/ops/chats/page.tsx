@@ -105,7 +105,7 @@ function ChatCard({
           </div>
         </div>
 
-        {/* Cases chips */}
+        {/* ProcedureRun chips */}
         <div className="mt-3 flex flex-wrap gap-1.5">
           {session.cases.map((c) => (
             <span key={c.id} className="inline-flex items-center gap-1.5">
@@ -136,7 +136,7 @@ function ChatCard({
         <div className="mt-3 flex items-center justify-between text-[10px] text-[var(--fog)]">
           <span className="flex items-center gap-1">
             <MessageSquare className="h-3 w-3" />
-            {session.messageCount} msgs · {session.cases.length} case{session.cases.length !== 1 ? 's' : ''}
+            {session.messageCount} msgs · {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''}
           </span>
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
@@ -196,7 +196,7 @@ export default function ChatsPage() {
 
   const handleDelete = useCallback(async (chatId: string) => {
     const label = chatId.slice(0, 16) + '…'
-    if (!confirm(`Delete chat session ${label} and all its cases?\nThis cannot be undone.`)) return
+    if (!confirm(`Delete chat session ${label} and all linked ProcedureRuns?\nThis cannot be undone.`)) return
     setDeletingId(chatId)
     try {
       await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
@@ -242,7 +242,7 @@ export default function ChatsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by user, case type…"
+              placeholder="Search by user, Procedure type…"
               className="glass-input-console w-full rounded-xl border-black/[0.06] bg-white/65 pl-11 text-[13px] shadow-[var(--shadow-input)] placeholder:text-[var(--fog)]/50"
             />
           </div>

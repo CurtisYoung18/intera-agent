@@ -604,7 +604,7 @@ export default function PlaygroundPage() {
               })
             }
             else if (event.type === 'escalated') pushNotice({ kind: 'escalated', label: 'Agent escalated to a human', detail: (event.data as any)?.reason })
-            else if (event.type === 'case_created') pushNotice({ kind: 'case_created', label: `Case created: ${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` })
+            else if (event.type === 'case_created') pushNotice({ kind: 'case_created', label: `ProcedureRun started: ${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` })
             else if (event.type === 'human_task_created') pushNotice({ kind: 'human_task', label: 'Human task created' })
             else if (event.type === 'retry_pending') pushNotice({ kind: 'retry', label: `Retrying (${(event.data as any)?.errorClass ?? 'transient'})…` })
           } catch { /* */ }

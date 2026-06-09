@@ -63,7 +63,7 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
         body: { agentConfigId, ...proposal.scenario },
       })
       setPhase('saved')
-      setNotice(`Saved draft Test Case: ${result.data.scenario.displayName ?? result.data.scenario.name}`)
+      setNotice(`Saved draft Test Scenario: ${result.data.scenario.displayName ?? result.data.scenario.name}`)
       await onScenarioSaved?.(result.data.scenario)
     } catch (err) {
       setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to save proposal')
@@ -106,7 +106,7 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
           <label htmlFor={drawer ? 'config-pilot-drawer-prompt' : 'config-pilot-prompt'} className="text-sm font-semibold text-[var(--color-text-primary)]">Prompt</label>
           <textarea id={drawer ? 'config-pilot-drawer-prompt' : 'config-pilot-prompt'} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={drawer ? 5 : 4} className="w-full rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-sm leading-5 text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-[var(--color-text-tertiary)]">P0 saves Test Case drafts only. Tool, Hook, and Procedure proposals can be previewed in later typed API slices.</p>
+            <p className="text-xs text-[var(--color-text-tertiary)]">P0 saves Test Scenario drafts only. Tool, Hook, and Procedure proposals can be previewed in later typed API slices.</p>
             <button type="button" onClick={generateProposal} disabled={!prompt.trim()} className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
               <Sparkles size={15} /> Generate proposal
             </button>
@@ -155,7 +155,7 @@ export function ConfigPilotWorkbench({ agentConfigId, onScenarioSaved, drawer = 
 
               <label className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${phase === 'diff' || phase === 'saved' ? 'border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] text-[var(--color-text-secondary)]' : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-tertiary)]'}`}>
                 <input type="checkbox" checked={confirmed} disabled={phase !== 'diff'} onChange={(event) => setConfirmed(event.target.checked)} className="mt-1" />
-                <span>I reviewed the diff and want to save this as a draft Test Case.</span>
+                <span>I reviewed the diff and want to save this as a draft Test Scenario.</span>
               </label>
 
               <button type="button" onClick={applyDraft} disabled={!canApply} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-accent-primary)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50" data-testid="config-pilot-apply-draft">
@@ -249,12 +249,12 @@ function buildScenarioProposal(prompt: string): ScenarioProposal {
 
 function buildScenarioDiff(scenario: TemplateScenario): Array<{ group: string; field: string; before: string; after: string; risk?: string }> {
   return [
-    { group: 'Test Cases', field: 'Name', before: 'No draft', after: scenario.name },
-    { group: 'Test Cases', field: 'Turns', before: 'No draft', after: `${scenario.turns.length} scripted turns` },
-    { group: 'Test Cases', field: 'Tools', before: 'No expected tools', after: scenario.expected.toolsCalled?.join(', ') ?? 'none' },
-    { group: 'Test Cases', field: 'Hooks', before: 'No expected Hooks', after: scenario.expected.hooks?.map((hook) => hook.hookName).join(', ') ?? 'none', risk: 'Escalation path' },
-    { group: 'Test Cases', field: 'Handoff', before: 'Not required', after: scenario.expected.humanTransfer ? 'Required' : 'Not required', risk: scenario.expected.humanTransfer ? 'Human transfer' : undefined },
-    { group: 'Test Cases', field: 'Phrase checks', before: 'No checks', after: [...(scenario.expected.forbiddenPhrases ?? []), ...(scenario.expected.requiredPhrases ?? [])].join(', ') || 'none' },
+    { group: 'Test Scenarios', field: 'Name', before: 'No draft', after: scenario.name },
+    { group: 'Test Scenarios', field: 'Turns', before: 'No draft', after: `${scenario.turns.length} scripted turns` },
+    { group: 'Test Scenarios', field: 'Tools', before: 'No expected tools', after: scenario.expected.toolsCalled?.join(', ') ?? 'none' },
+    { group: 'Test Scenarios', field: 'Hooks', before: 'No expected Hooks', after: scenario.expected.hooks?.map((hook) => hook.hookName).join(', ') ?? 'none', risk: 'Escalation path' },
+    { group: 'Test Scenarios', field: 'Handoff', before: 'Not required', after: scenario.expected.humanTransfer ? 'Required' : 'Not required', risk: scenario.expected.humanTransfer ? 'Human transfer' : undefined },
+    { group: 'Test Scenarios', field: 'Phrase checks', before: 'No checks', after: [...(scenario.expected.forbiddenPhrases ?? []), ...(scenario.expected.requiredPhrases ?? [])].join(', ') || 'none' },
   ]
 }
 

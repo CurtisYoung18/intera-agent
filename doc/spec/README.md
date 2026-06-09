@@ -10,7 +10,7 @@
 
 ## Reference only
 
-- [`(原始版本)Agentic AI 客服 Harness 项目内部说明文档 .md`](./%28原始版本%29Agentic%20AI%20客服%20Harness%20项目内部说明文档%20.md) - early product philosophy. The Case Owner Agent principle remains useful; implementation terms may be outdated.
+- [`(原始版本)Agentic AI 客服 Harness 项目内部说明文档 .md`](./%28原始版本%29Agentic%20AI%20客服%20Harness%20项目内部说明文档%20.md) - early product philosophy. Its single-agent ownership principle remains useful; implementation terms may be outdated.
 
 ## Superseded
 

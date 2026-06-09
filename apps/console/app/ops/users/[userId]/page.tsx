@@ -111,11 +111,11 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
         <>
           {/* Stats */}
           <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Stat label="Total Cases" value={String(profile.totalCases)} />
+            <Stat label="Total ProcedureRuns" value={String(profile.totalCases)} />
             <Stat label="Resolved" value={String(profile.resolvedCases)} />
             <Stat label="Escalated" value={String(profile.escalatedCases)} />
             <Stat label="Total Chats" value={String(profile.totalChats)} />
-            {profile.lastCaseType && <Stat label="Last Case Type" value={profile.lastCaseType} />}
+            {profile.lastCaseType && <Stat label="Last Procedure Type" value={profile.lastCaseType} />}
             {profile.firstSeenAt && <Stat label="First Seen" value={new Date(profile.firstSeenAt).toLocaleDateString()} />}
             {profile.lastSeenAt && <Stat label="Last Seen" value={new Date(profile.lastSeenAt).toLocaleDateString()} />}
           </div>
@@ -165,7 +165,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
                     className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/[0.04] hover:bg-black/[0.02] transition-colors">
                     <MessageSquare className="h-3.5 w-3.5 text-[var(--fog)]/60" />
                     <span className="text-[12px] font-mono text-[var(--mist)]">{c.chatId.slice(0, 16)}...</span>
-                    <span className="text-[11px] text-[var(--fog)]/50">{c.caseCount} cases</span>
+                    <span className="text-[11px] text-[var(--fog)]/50">{c.caseCount} ProcedureRuns</span>
                     <span className="text-[10px] text-[var(--fog)]/40 ml-auto">{new Date(c.lastActivity).toLocaleDateString()}</span>
                   </Link>
                 ))}

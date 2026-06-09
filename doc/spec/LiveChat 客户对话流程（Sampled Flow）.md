@@ -1,6 +1,6 @@
 ## LiveChat 客户对话流程（Sampled Flow）
 
-> **2026-06-08 校准**：本文是渠道链路样例。当前目标架构是 LiveChat 作为 channel adapter，统一进入 `/api/messages`，由 Single Case Owner Agent 执行 CaseType + Procedure。事件名使用 Foundation Reset 后的 `tool_call` / `tool_result` 语言；旧代码在 F3 前可能仍存在 `skill_*` 事件。
+> **2026-06-09 校准**：本文是渠道链路样例。当前目标架构是 LiveChat 作为 channel adapter，统一进入 `/api/messages`，由 single ProcedureRun Agent 执行 Procedure type + Procedure。事件名使用 Foundation Reset 后的 `tool_call` / `tool_result` 语言；历史 trace 里可能仍存在 compatibility 事件名。
 
 ### 场景：客户报告存款未到账
 
@@ -51,7 +51,7 @@ bridge.ts
 
 ---
 
-## 3. Agent 选择 CaseType 和 Procedure
+## 3. Agent 选择 Procedure type 和 Procedure
 
 ```text
 /api/messages
@@ -59,12 +59,12 @@ bridge.ts
   -> AgentLoop.create()
   -> Discovery
   -> dispatch_case_agent('deposit_issue')
-  -> attach CaseType: deposit_issue
+  -> attach Procedure type: deposit_issue
   -> attach Procedure: Deposit Not Credited
-  -> continue inline with the Case Owner Agent
+  -> continue inline with the ProcedureRun Agent
 ```
 
-`dispatch_case_agent` 的目标语义是“打开/选择 Case 并进入对应 Procedure”，不是启动 detached sub-agent。
+Procedure routing 的目标语义是“打开/选择 ProcedureRun 并进入对应 Procedure”，不是启动 detached background worker。
 
 示例 Procedure：
 
@@ -185,7 +185,7 @@ Hook or Agent decides escalation is required
   -> call create_human_task / transfer Tool
   -> payload includes:
        customer request
-       CaseType
+       Procedure type
        Procedure progress
        facts and missing facts
        Tool evidence
@@ -209,10 +209,10 @@ Message 2: "是 bKash 存的"
   -> same chatId/caseId
   -> active session exists
   -> message is queued or drained into the running turn
-  -> no second parallel AgentLoop starts for the same Case
+  -> no second parallel AgentLoop starts for the same ProcedureRun
 ```
 
-Invariant: one active customer-facing Agent turn per Case.
+Invariant: one active customer-facing Agent turn per ProcedureRun.
 
 ---
 

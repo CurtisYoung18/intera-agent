@@ -543,7 +543,7 @@ export default function CaseTypeDetailPage() {
           className="inline-flex items-center gap-1.5 text-[12px] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Case Types
+          Back to Procedure Types
         </Link>
         <div className="flex items-center gap-2">
           <button
@@ -643,12 +643,12 @@ export default function CaseTypeDetailPage() {
             onChange={(e) => setCt({ ...ct, requireHumanReview: e.target.checked })}
             className="accent-vermillion rounded"
           />
-          <span className="text-[12px] text-[var(--fog)]">Require human review before finalize</span>
+          <span className="text-[12px] text-[var(--fog)]">Require human review before the procedure final response</span>
         </label>
 
         {/* Execution Mode selector */}
         <div className="space-y-1.5">
-          <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Execution Mode</span>
+          <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Procedure Runtime</span>
           <div className="flex gap-2">
             <button
               type="button"
@@ -660,7 +660,7 @@ export default function CaseTypeDetailPage() {
               }`}
               >
                 <Settings2 className="w-3.5 h-3.5" />
-              Stage (Legacy)
+              Legacy runtime
             </button>
             <button
               type="button"
@@ -677,7 +677,7 @@ export default function CaseTypeDetailPage() {
           </div>
           <p className="text-[10px] text-[var(--smoke)]">
             {isStageMode
-              ? 'Legacy Stage mode (migration only). New configurations should use Procedure mode with step-level hook bindings.'
+              ? 'Legacy runtime mode (migration only). New configurations should use Procedure mode with step-level Hook bindings.'
               : 'Procedure mode executes defined steps and evaluates hook bindings at each step. Hook behavior is inherited from Agent/CaseType scopes.'}
           </p>
         </div>
@@ -696,26 +696,26 @@ export default function CaseTypeDetailPage() {
         )}
       </div>
 
-      {/* Lifecycle — Stage mode only */}
+      {/* Lifecycle — legacy runtime mode only */}
       {isStageMode && (
         <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-[14px] font-semibold text-[var(--mist)]">Lifecycle</h2>
-              <p className="text-[11px] text-[var(--fog)] mt-0.5">Define the stage pipeline. Drag to reorder.</p>
+              <h2 className="text-[14px] font-semibold text-[var(--mist)]">Legacy runtime steps</h2>
+              <p className="text-[11px] text-[var(--fog)] mt-0.5">Migration-only ordering data. New work should use Procedure Steps.</p>
             </div>
             <button
               type="button"
               onClick={addStage}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-lavender/[0.08] border border-lavender/20 text-lavender hover:bg-lavender/[0.14] transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" /> Add Stage
+              <Plus className="w-3.5 h-3.5" /> Add Legacy Step
             </button>
           </div>
           {stageList.length === 0 ? (
             <div className="rounded-lg border border-dashed border-[var(--border-subtle)] bg-black/[0.01] p-6 text-center">
               <p className="text-[12px] text-[var(--fog)]">
-                No stages defined. Click "Add Stage" to build the pipeline.
+                No legacy runtime steps defined. Click "Add Legacy Step" only when preserving migration data.
               </p>
             </div>
           ) : (
@@ -735,7 +735,7 @@ export default function CaseTypeDetailPage() {
                     value={stage}
                     onChange={(e) => renameStage(stage, e.target.value)}
                     className="flex-1 px-2.5 py-1.5 rounded-md bg-transparent text-[12px] font-medium text-[var(--mist)] outline-none border border-transparent focus:border-lavender/25 hover:border-[var(--border-subtle)] transition-colors"
-                    placeholder="Stage name"
+                    placeholder="Legacy step name"
                   />
 
                   {/* Arrow to next */}
@@ -748,7 +748,7 @@ export default function CaseTypeDetailPage() {
                     type="button"
                     onClick={() => removeStage(stage)}
                     className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--smoke)]/30 hover:text-vermillion hover:bg-vermillion/[0.06] transition-colors opacity-0 group-hover:opacity-100"
-                    title="Remove stage"
+                    title="Remove legacy step"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
@@ -759,9 +759,9 @@ export default function CaseTypeDetailPage() {
             </div>
           )}
 
-          {/* Stages JSON escape hatch */}
+          {/* Legacy runtime steps JSON escape hatch */}
           <details className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-3 py-2">
-            <summary className="text-[10px] text-[var(--fog)] cursor-pointer">Edit stages as JSON</summary>
+            <summary className="text-[10px] text-[var(--fog)] cursor-pointer">Edit legacy runtime steps as JSON</summary>
             <textarea
               value={ct.stages || '[]'}
               onChange={(e) => setCt({ ...ct, stages: e.target.value })}
@@ -981,7 +981,7 @@ export default function CaseTypeDetailPage() {
         </div>
       )}
 
-      {/* ── Stage-mode: Full stage configuration ────────────── */}
+      {/* ── Legacy runtime: full migration configuration ─────── */}
       {isStageMode && (
         <div className="space-y-4">
           <StageConfigEditor
@@ -999,7 +999,7 @@ export default function CaseTypeDetailPage() {
       {/* ── Delete Confirmation Dialog ── */}
       <ConfirmDialog
         open={!!confirmDeleteName}
-        title="Delete Case Type"
+        title="Delete Procedure Type"
         message={confirmDeleteName ? `Permanently delete "${confirmDeleteName}"? This action cannot be undone.` : ''}
         onConfirm={confirmDelete}
         onCancel={() => setConfirmDeleteName(null)}
@@ -1011,8 +1011,8 @@ export default function CaseTypeDetailPage() {
         title="Change Execution Mode"
         message={
           confirmExecMode === 'cc'
-            ? 'Switch to Procedure mode? Stage-mode migration data will be preserved as read-only scope/legacy metadata.'
-            : 'Switch to Legacy Stage mode? Existing step Hooks and execution config are preserved as read-only migration data.'
+            ? 'Switch to Procedure mode? Legacy runtime migration data will be preserved as read-only scope metadata.'
+            : 'Switch to legacy runtime mode? Existing step Hooks and execution config are preserved as read-only migration data.'
         }
         variant="warning"
         confirmLabel="Switch"

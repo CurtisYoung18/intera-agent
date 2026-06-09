@@ -107,7 +107,7 @@ export default function CaseTypesPage() {
     const draft: CaseTypeItem = {
       ...emptyItem(),
       type: `new_case_type_${Date.now()}`,
-      displayName: 'New Case Type',
+      displayName: 'New Procedure Type',
       guardrails: undefined,
       procedure: null,
       maxAutoTurns: 10,
@@ -163,6 +163,13 @@ export default function CaseTypesPage() {
       return s
     }
   }
+  const procedureTypeDescription = (raw?: string | null) =>
+    (raw || '')
+      .replace(/\bplatform policy\b/gi, 'platform rule')
+      .replace(/\bpolicies\b/gi, 'rules')
+      .replace(/\bpolicy\b/gi, 'rule')
+      .replace(/\bcases\b/gi, 'ProcedureRuns')
+      .replace(/\bcase\b/gi, 'ProcedureRun')
 
   return (
     <div>
@@ -260,7 +267,7 @@ export default function CaseTypesPage() {
                     </button>
                   </div>
                   <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">
-                    {ct.description || t('common.noDescription')}
+                    {procedureTypeDescription(ct.description) || t('common.noDescription')}
                   </p>
                   <div className="text-[11px] text-[var(--smoke)] flex items-center gap-1 flex-wrap mb-2">
                     {stageNames(ct.stages)

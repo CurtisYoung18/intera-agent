@@ -51,6 +51,10 @@ Design direction correction:
 - Use warm light canvas, graphite text, muted cyan accent, restrained amber/green/red signals, 8px controls, subtle row dividers, compact grouping, and slightly cooler or denser light surfaces where focus is needed.
 - Dark surfaces are allowed only for small functional code editors, JSON previews, and terminal-like raw trace payload viewers.
 - Product pages, drawers, receipts, Diff Viewer, and trace panels should remain light.
+- Approved logo source: `/Users/curtis/Desktop/design/Globe loader`.
+- Approved AI-generation loading sources for Playground and Pilot Lab: `/Users/curtis/Desktop/design/Organic Loaders (standalone).html` variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`.
+- Approved AI-generation text streaming source for Playground and Pilot Lab: `/Users/curtis/Desktop/design/Text streaming (standalone).html` variant `07 token stream`.
+- Treat those Desktop paths as design references only. If implementing, copy or recreate the minimal required SVG/CSS/animation primitives into the app codebase or asset pipeline; do not load runtime assets from Desktop paths.
 
 Product/runtime decisions:
 - Case is no longer a product-level concept. Code may keep durable Case shells temporarily where Message/ActionTrace persistence requires them, but UI/copy/future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory.
@@ -525,13 +529,18 @@ Design target:
 - Use unified light-first surfaces. No dark product panels.
 - Prefer tables, grouped rows, subtle dividers, status color, and generous but efficient spacing over decorative cards.
 - Keep controls at 8px radius or less unless existing primitives require otherwise.
+- Use the approved logo source from `/Users/curtis/Desktop/design/Globe loader`.
+- For AI generation / thinking / running states in Playground and Pilot Lab, use Organic Loader variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`.
+- For model output streaming in Playground and Pilot Lab, use Text Streaming variant `07 token stream`.
+- Preserve reduced-motion behavior and do not use these animations for ordinary page skeleton loading.
 
 Tasks:
 1. Normalize page headers, agent/version selectors, status chips, and command areas across Release and Pilot Lab.
 2. Polish Config Diff Viewer and Scenario receipts into compact grouped light surfaces.
 3. Add or refine a right ConfigPilot rail/drawer pattern without making it mandatory on every viewport.
 4. Improve responsive layout at 1440px, 1280px, 1024px, and mobile width where practical.
-5. Remove any leftover dark immersive workspace styling from P0 product pages, except small code/JSON/raw payload viewers.
+5. Apply the approved logo and AI-generation motion references where relevant.
+6. Remove any leftover dark immersive workspace styling from P0 product pages, except small code/JSON/raw payload viewers.
 
 Acceptance:
 - Release, Pilot Lab, ConfigPilot, Diff Viewer, and Scenario receipt surfaces look like one product.

@@ -128,6 +128,7 @@ Recommended coding-team shape:
 - Agent-callable immutable system Tools should be visible as locked Tools. P0 examples: `start_procedure`, `finalize_procedure`, `ask_user_questions`, `create_human_task`, `read_chat_memory`, `read_user_profile`, and `remember`.
 - `Case` is no longer a product-level concept. Code may keep durable Case shells temporarily for Message/ActionTrace persistence, but UI/copy/future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory.
 - Visual direction: Quiet Agent Studio, unified light-first across the Console. Pilot Lab, Diff Viewer, Trace detail, ConfigPilot, Scenario receipts, and publish/rollback moments use focused light workspaces with slightly cooler or denser light surfaces, not dark mode.
+- Approved brand/motion assets: logo source is `/Users/curtis/Desktop/design/Globe loader`; Playground and Pilot Lab AI-generation loaders use `/Users/curtis/Desktop/design/Organic Loaders (standalone).html` variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`; AI-generation text streaming uses `/Users/curtis/Desktop/design/Text streaming (standalone).html` variant `07 token stream`.
 - Config Diff Viewer and Command Bar are first-class UI primitives.
 - Product UI supports `en-US` and `zh-CN`; business configuration content is not auto-translated.
 

@@ -1,14 +1,14 @@
 # Intera Documentation Map
 
-**Last updated:** 2026-06-08
-**Purpose:** keep the docs usable for parallel AI coding teams before the Foundation Reset.
+**Last updated:** 2026-06-09
+**Purpose:** keep the docs usable for parallel AI coding teams after the shipped Foundation Reset baseline.
 
 ## Read order
 
 1. [`handoffs/GENERIC_HANDOFF.md`](./handoffs/GENERIC_HANDOFF.md) - stable repo context and collaboration rules.
 2. [`handoffs/MASTER_BUILD_HANDOFF.md`](./handoffs/MASTER_BUILD_HANDOFF.md) - current macro priority, active lanes, and dispatch order.
-3. [`handoffs/FOUNDATION_RESET_LANE_PROMPTS.md`](./handoffs/FOUNDATION_RESET_LANE_PROMPTS.md) - copy-ready prompts for parallel zero-context coding sessions.
-4. [`to-do/2026-06-08-foundation-reset-domain-model.md`](./to-do/2026-06-08-foundation-reset-domain-model.md) - the owner-approved reset plan.
+3. [`handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md`](./handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md) - current copy-ready prompts after the F1-F7/UX0/R1-C1-U1-U3-B1-R2 baseline.
+4. [`to-do/2026-06-08-foundation-reset-domain-model.md`](./to-do/2026-06-08-foundation-reset-domain-model.md) - the owner-approved reset plan and historical migration record.
 5. [`spec/Intera_Harness_架构梳理.md`](./spec/Intera_Harness_架构梳理.md) - current product and architecture source of truth.
 6. [`spec/Intera_UI_UX_Design_System.md`](./spec/Intera_UI_UX_Design_System.md) - current Console IA, visual system, and UI refactor lanes.
 7. [`strategy/2026-06-08-long-term-architecture-review.md`](./strategy/2026-06-08-long-term-architecture-review.md) - strategic diagnosis that led to the reset.
@@ -20,13 +20,13 @@ Use these names in new docs, APIs, UI, traces, and package manifests:
 
 | Current term | Meaning |
 |---|---|
-| `Case` | Runtime customer issue instance. |
-| `CaseType` | Configurable issue category and routing target. |
-| `Procedure` | Soft customer-service process attached to a CaseType. |
+| `Runtime shell` | Transitional durable persistence record. New product copy should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory. |
+| `Procedure type` | Configurable issue category and routing target. |
+| `Procedure` | Soft customer-service process attached to a Procedure type. |
 | `ProcedureStep` | A selectable/configurable step inside a Procedure. |
 | `Tool` | Any Agent-callable capability. |
-| `Hook` | Hard control layer formerly called Policy/Guardrail. |
-| `HookBinding` | Activation link from Hook to agent, CaseType, ProcedureStep, or Tool. |
+| `Hook` | Hard control layer for PreToolUse, PostToolUse, and Stop checkpoints. |
+| `HookBinding` | Activation link from Hook to agent, Procedure type, ProcedureStep, or Tool. |
 | `.intera-agent.json` | Portable Agent Template Package for delivery reuse and future marketplace support. |
 | `Scenario` | Delivery validation case and receipt source. |
 | `ConfigPilot` | Conversational configuration assistant that writes only through typed APIs. |

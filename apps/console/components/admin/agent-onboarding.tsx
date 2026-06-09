@@ -113,7 +113,7 @@ export default function AgentOnboardingGate({ children }: Props) {
           marginBottom: 32, maxWidth: 380, margin: '0 auto 32px',
         }}>
           An agent is your AI support representative. Configure its brain,
-          tools, guardrails, and memory — all from one place.
+          tools, hooks, and memory — all from one place.
         </p>
 
         {/* Feature capsules */}
@@ -123,9 +123,9 @@ export default function AgentOnboardingGate({ children }: Props) {
         }}>
           {[
             { icon: Brain, label: 'Model & Prompt', desc: 'Pick an LLM and write system instructions' },
-            { icon: Puzzle, label: 'Tools & Skills', desc: 'Equip your agent with business capabilities' },
-            { icon: Shield, label: 'Guardrails', desc: 'Set safety rules and escalation policies' },
-            { icon: Layers, label: 'Case Types', desc: 'Define investigation workflows' },
+            { icon: Puzzle, label: 'Tools', desc: 'Equip your agent with business capabilities' },
+            { icon: Shield, label: 'Hooks', desc: 'Set safety rules and escalation actions' },
+            { icon: Layers, label: 'Procedures', desc: 'Define guided support workflows' },
           ].map((f) => (
             <div key={f.label} style={{
               padding: '10px 12px', borderRadius: 10,

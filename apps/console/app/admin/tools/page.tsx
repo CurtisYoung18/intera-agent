@@ -75,6 +75,35 @@ interface KnowledgeSourceRow {
   rerankVersion: string | null
 }
 
+const TOOL_DISPLAY_ALIASES: Record<string, { name?: string; description?: string }> = {
+  dispatch_case_agent: {
+    name: 'start_procedure',
+    description: 'Start or select an inline ProcedureRun for a single clear customer issue.',
+  },
+  finalize_case: {
+    name: 'finalize_procedure',
+    description: 'Mark the Procedure as resolved with a conclusion.',
+  },
+  read_chat_memory: {
+    description:
+      'Read the ProcedureRun working Memory for the current investigation. Returns confirmed facts, tools called so far, key events, and any compaction summary from earlier turns.',
+  },
+}
+
+function displayToolName(tool: Pick<ToolItem, 'name'>): string {
+  return TOOL_DISPLAY_ALIASES[tool.name]?.name ?? tool.name
+}
+
+function displayToolDescription(tool: Pick<ToolItem, 'name' | 'description'>): string {
+  const raw = TOOL_DISPLAY_ALIASES[tool.name]?.description ?? tool.description ?? ''
+  return raw
+    .replace(/\bper-case\b/gi, 'ProcedureRun')
+    .replace(/\bcase as resolved\b/gi, 'Procedure as resolved')
+    .replace(/\bcases\b/gi, 'ProcedureRuns')
+    .replace(/\bcase\b/gi, 'ProcedureRun')
+    .replace(/\bplatform policy\b/gi, 'platform rule')
+}
+
 export default function ToolsPage() {
   const { t } = useConsoleLocale()
   const agentConfigId = useSelectedAgentId()
@@ -268,7 +297,7 @@ export default function ToolsPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</span>
+                            <span className="text-[13px] font-semibold text-[var(--mist)] truncate">{displayToolName(s)}</span>
                             <Lock className="w-3 h-3 text-amber/70 flex-shrink-0" />
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
@@ -278,7 +307,7 @@ export default function ToolsPage() {
                       </div>
 
                       {/* Description */}
-                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
+                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{displayToolDescription(s) || t('common.noDescription')}</p>
 
                       {/* Bottom: read-only hint slides up on hover */}
                       <div className="flex items-center justify-end translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200 ease-out">
@@ -309,7 +338,7 @@ export default function ToolsPage() {
                         <Plug className="w-5 h-5 text-purple" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-semibold text-[var(--mist)] truncate block">{s.name}</span>
+                        <span className="text-[13px] font-semibold text-[var(--mist)] truncate block">{displayToolName(s)}</span>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple/[0.08] text-purple">Channel</span>
                         </div>
@@ -325,7 +354,7 @@ export default function ToolsPage() {
                           : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
                       </button>
                     </div>
-                    {s.description ? <p className="text-[12px] text-[var(--fog)] line-clamp-3">{s.description}</p> : null}
+                    {displayToolDescription(s) ? <p className="text-[12px] text-[var(--fog)] line-clamp-3">{displayToolDescription(s)}</p> : null}
                   </div>
                 ))}
               </div>
@@ -401,13 +430,13 @@ export default function ToolsPage() {
                           <Search className="w-5 h-5 text-teal-500" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
+                          <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{displayToolName(s)}</div>
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleEnabled(s) }} className="flex-shrink-0">
                           {s.enabled ? <ToggleRight className="w-7 h-7 text-malachite" /> : <ToggleLeft className="w-7 h-7 text-[var(--smoke)]/30" />}
                         </button>
                       </div>
-                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{s.description || t('common.noDescription')}</p>
+                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-2">{displayToolDescription(s) || t('common.noDescription')}</p>
                     </div>
                   </TiltCard>
                 ))}
@@ -429,7 +458,7 @@ export default function ToolsPage() {
                           {s.mode === 'http' ? <Globe className="w-5 h-5 text-sky" /> : s.mode === 'engine_managed' ? <Zap className="w-5 h-5 text-amber" /> : s.mode === 'channel' ? <Plug className="w-5 h-5 text-purple" /> : <Box className="w-5 h-5 text-lavender" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{s.name}</div>
+                          <div className="text-[13px] font-semibold text-[var(--mist)] truncate">{displayToolName(s)}</div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${s.mode === 'http' ? 'bg-sky/[0.08] text-sky' : s.mode === 'engine_managed' ? 'bg-amber/[0.08] text-amber' : s.mode === 'channel' ? 'bg-purple/[0.08] text-purple' : 'bg-lavender/[0.08] text-lavender'}`}>{s.mode === 'engine_managed' ? 'System' : s.mode === 'channel' ? 'Channel' : t(s.mode === 'http' ? 'common.http' : 'common.mock')}</span>
                             {(() => { try { return s.renderHints && JSON.parse(s.renderHints)?.livechat } catch { return false } })() && (
@@ -446,7 +475,7 @@ export default function ToolsPage() {
                       </div>
 
                       {/* Description */}
-                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{s.description || t('common.noDescription')}</p>
+                      <p className="text-[12px] text-[var(--fog)] line-clamp-2 mb-3">{displayToolDescription(s) || t('common.noDescription')}</p>
 
                       {s.mode === 'static' && (
                         <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-black/[0.02] px-2.5 py-2">
@@ -514,15 +543,15 @@ export default function ToolsPage() {
             {/* Description */}
             <div>
               <p className="text-[11px] font-medium text-[var(--fog)] mb-1">{t('common.description')}</p>
-              <p className="text-[13px] text-[var(--mist)] leading-relaxed">{viewTool.description || t('common.noDescription')}</p>
+              <p className="text-[13px] text-[var(--mist)] leading-relaxed">{displayToolDescription(viewTool) || t('common.noDescription')}</p>
             </div>
             {/* LLM model view */}
             <div>
               <p className="text-[11px] font-medium text-[var(--fog)] mb-1 flex items-center gap-1"><Eye className="w-3 h-3" /> Model sees</p>
               <pre className="text-[10px] font-mono text-[var(--mist)] p-3 rounded-xl bg-black/[0.04] border border-[var(--border-subtle)] overflow-auto max-h-[260px] whitespace-pre-wrap">
 {JSON.stringify({
-  name: viewTool.name,
-  description: viewTool.description || '',
+  name: displayToolName(viewTool),
+  description: displayToolDescription(viewTool) || '',
   input_schema: (() => { try { return JSON.parse(viewTool.inputSchema || '{}') } catch { return {} } })(),
 }, null, 2)}
               </pre>

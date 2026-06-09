@@ -43,7 +43,7 @@ export default function SubAgentSummaryList() {
     return <p className="text-[11px] text-vermillion">Could not load: {error}</p>
   }
 
-  // Extract sub-agents from stage configs
+  // Extract legacy assistant templates from migration configs.
   const typeEntries = caseTypes
     .filter((ct) => ct.enabled)
     .map((ct) => {
@@ -71,7 +71,7 @@ export default function SubAgentSummaryList() {
     return (
       <div className="flex flex-col items-center gap-4 py-8 text-center">
         <p className="text-[13px] text-[var(--fog)]/70">
-          No sub-agents configured.
+          No legacy assistant templates configured.
         </p>
         <Link
           href="/admin/case-types"
@@ -95,7 +95,7 @@ export default function SubAgentSummaryList() {
             <div className="px-3 py-2 border-b border-black/[0.05] bg-black/[0.02]">
               <span className="text-[13px] font-semibold text-[var(--mist)]">{entry.displayName}</span>
               <span className="ml-2 text-[10px] text-[var(--fog)]/60">
-                {entry.subAgents.length} sub-agent{entry.subAgents.length !== 1 ? 's' : ''}
+                {entry.subAgents.length} legacy assistant{entry.subAgents.length !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="p-3 space-y-2">
@@ -110,7 +110,7 @@ export default function SubAgentSummaryList() {
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-[var(--fog)]/70">
                       {sa.model && <span>model: {sa.model}</span>}
                       {sa.skills && sa.skills.length > 0 && (
-                        <span>skills: {sa.skills.length}</span>
+                        <span>tools: {sa.skills.length}</span>
                       )}
                       {sa.maxIterations != null && <span>max: {sa.maxIterations} turns</span>}
                       {sa.parallel && <span className="text-malachite">parallel</span>}

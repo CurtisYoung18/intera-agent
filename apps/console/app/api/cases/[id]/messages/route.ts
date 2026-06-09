@@ -32,7 +32,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
       repo.raw.message.count({ where: { caseId: params.id } }),
     ])
 
-    if (!caseData) throw new NotFoundError('Case not found')
+    if (!caseData) throw new NotFoundError('ProcedureRun not found')
 
     return apiOk({ caseType: caseData.type, status: caseData.status, createdAt: caseData.createdAt, messages, total })
   },

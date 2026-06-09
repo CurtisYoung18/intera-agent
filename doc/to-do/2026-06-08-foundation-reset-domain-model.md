@@ -1,12 +1,14 @@
 # Foundation Reset Domain Model - Hooks, Tools, Procedures, Templates
 
 **Date:** 2026-06-08
-**Status:** PLAN - owner-approved direction, ready for coding-team dispatch
+**Status:** SHIPPED BASELINE THROUGH R2 - owner-approved direction; remaining old terms in this file are historical migration instructions
 **Target window:** 3-5 days foundation reset, then 7-9 days commercial delivery chain
 **Primary goal:** reset the domain model before real customer launch so ConfigPilot, `.intera` packages, Procedure Builder, Scenario Lab, and the runtime all speak one vocabulary.
 **Companion UI/UX spec:** [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md)
 
 > Read first: `doc/handoffs/GENERIC_HANDOFF.md` parallel protocol and `doc/handoffs/MASTER_BUILD_HANDOFF.md` Active Lanes. This reset intentionally allows physical schema, route, runtime, UI, event, and test renames. Do not preserve long-term compatibility with the old model unless this plan explicitly says so.
+
+> Post-R2 note (2026-06-09): the first Foundation Reset wave, post-foundation UI/runtime lanes, and R2 physical cleanup are shipped locally. New code and new copy should use Hook, Tool, Procedure, ProcedureRun, HumanTask, Trace, Memory, `remember(scope="chat" | "user")`, and `finalize_procedure`. Treat references to older names below as migration/history context, not product language to reintroduce.
 
 ---
 

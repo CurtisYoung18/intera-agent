@@ -85,7 +85,7 @@ function LoginForm() {
             The console where <em>every</em> conversation finds its answer.
           </h1>
           <p className={styles.brandSub}>
-            Configure agents, tune guardrails, and watch cases resolve themselves — all from one calm, considered workspace.
+            Configure agents, tune Hooks, and watch ProcedureRuns resolve — all from one calm, considered workspace.
           </p>
         </div>
 

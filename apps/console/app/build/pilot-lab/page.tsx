@@ -164,7 +164,7 @@ export default function PilotLabPage() {
       const result = await apiClient<{ scenario: SavedScenario }>(url, { method: selectedScenario ? 'PUT' : 'POST', body })
       setSelectedName(result.data.scenario.name)
       setEditor(editorFromScenario(result.data.scenario))
-      setNotice('Test Case draft saved')
+      setNotice('Test Scenario draft saved')
       await load()
     } catch (err) {
       if (err instanceof SyntaxError) setError(`Invalid JSON: ${err.message}`)
@@ -182,7 +182,7 @@ export default function PilotLabPage() {
       await apiClient(`/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, { method: 'DELETE' })
       setSelectedName(null)
       setEditor(emptyEditor())
-      setNotice('Test Case deleted')
+      setNotice('Test Scenario deleted')
       await load()
     } catch (err) {
       setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to delete Scenario')
@@ -249,12 +249,12 @@ export default function PilotLabPage() {
                 <Bot size={15} /> ConfigPilot
               </button>
               <button type="button" onClick={newScenario} className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90">
-                <Plus size={15} /> New Test Case
+                <Plus size={15} /> New Test Scenario
               </button>
             </div>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <MetricTile label="Test Cases" value={scenarios.length.toString()} />
+            <MetricTile label="Test Scenarios" value={scenarios.length.toString()} />
             <MetricTile label="Receipts" value={receipts.length.toString()} />
             <MetricTile label="Passing" value={passingReceipts.toString()} tone="success" />
             <MetricTile label="Needs review" value={failingReceipts.toString()} tone={failingReceipts > 0 ? 'danger' : 'neutral'} />
@@ -273,7 +273,7 @@ export default function PilotLabPage() {
             <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-2 shadow-[var(--shadow-raised)]">
               <PilotAreaButton active={activeArea === 'config-pilot'} icon={Bot} label="ConfigPilot Workspace" onClick={() => setActiveArea('config-pilot')} />
               <PilotAreaButton active={activeArea === 'free-test'} icon={FlaskConical} label="Free Test" onClick={() => setActiveArea('free-test')} />
-              <PilotAreaButton active={activeArea === 'test-cases'} icon={ClipboardList} label="Test Cases" onClick={() => setActiveArea('test-cases')} />
+              <PilotAreaButton active={activeArea === 'test-cases'} icon={ClipboardList} label="Test Scenarios" onClick={() => setActiveArea('test-cases')} />
               <PilotAreaButton active={activeArea === 'receipts'} icon={FileJson} label="Receipts" onClick={() => setActiveArea('receipts')} />
             </section>
 
@@ -286,7 +286,7 @@ export default function PilotLabPage() {
                 {loading ? (
                   <div className="p-3 text-sm text-[var(--color-text-tertiary)]">Loading Scenarios</div>
                 ) : scenarios.length === 0 ? (
-                  <EmptyState icon={ClipboardList} title="No test cases" description="Create a Scenario or ask ConfigPilot for a draft." />
+                  <EmptyState icon={ClipboardList} title="No Test Scenarios" description="Create a Scenario or ask ConfigPilot for a draft." />
                 ) : (
                   scenarios.map((scenario) => (
                     <button key={scenario.id} type="button" onClick={() => selectScenario(scenario)} className={`mb-2 w-full rounded-md border px-3 py-3 text-left transition ${selectedName === scenario.name ? 'border-[var(--color-accent-primary)] bg-[rgba(53,127,124,0.08)]' : 'border-transparent hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-bg-surface-muted)]'}`}>
@@ -351,7 +351,7 @@ function TestCaseEditorPanel({
     <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-raised)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div>
-          <p className="text-xs font-medium text-[var(--color-text-tertiary)]">{selectedScenario ? 'Saved Test Case' : 'New Test Case'}</p>
+          <p className="text-xs font-medium text-[var(--color-text-tertiary)]">{selectedScenario ? 'Saved Test Scenario' : 'New Test Scenario'}</p>
           <h2 className="mt-1 text-lg font-semibold">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Draft Scenario'}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -419,7 +419,7 @@ function FreeTestPanel({
       </div>
       <div className="grid gap-4 p-5">
         <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3">
-          <p className="text-sm font-medium text-[var(--color-text-primary)]">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Select a Test Case first'}</p>
+          <p className="text-sm font-medium text-[var(--color-text-primary)]">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Select a Test Scenario first'}</p>
           <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Observed evidence is sent to the Scenario run API and compared against saved expectations.</p>
         </div>
         <TextArea label="Observed evidence JSON" value={observedJson} onChange={setObservedJson} rows={16} />

@@ -75,7 +75,7 @@ export default function AgentHumanInteractionPanel({
         </div>
       </div>
 
-      {/* ── Human Operator Skills ── */}
+      {/* ── Human Operator Tools ── */}
       <div className="rounded-xl border border-amber/25 bg-gradient-to-br from-amber/8 via-white/40 to-transparent overflow-hidden shadow-sm">
         <div className="px-4 py-3 border-b border-black/[0.05] flex items-center gap-2 bg-amber/10">
           <Zap className="w-4 h-4 text-amber" />

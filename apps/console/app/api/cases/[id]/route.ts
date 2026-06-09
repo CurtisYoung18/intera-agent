@@ -14,7 +14,7 @@ export const GET = defineRoute<void, { id: string }>({
       where: { id: params.id },
     })
 
-    if (!c) throw new NotFoundError('Case not found')
+    if (!c) throw new NotFoundError('ProcedureRun not found')
 
     // Fetch related data via raw prisma (these models aren't org-scoped)
     const [memory, humanTasks, msgCount, traceCount] = await Promise.all([
@@ -34,7 +34,7 @@ export const DELETE = defineRoute<void, { id: string }>({
     const existing = await repo.case.findFirst({
       where: { id: params.id },
     })
-    if (!existing) throw new NotFoundError('Case not found')
+    if (!existing) throw new NotFoundError('ProcedureRun not found')
 
     // Clean up dependents via raw prisma (belt-and-suspenders with onDelete: Cascade)
     await repo.raw.humanTask.deleteMany({ where: { caseId: params.id } })

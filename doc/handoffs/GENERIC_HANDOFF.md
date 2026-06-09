@@ -78,7 +78,7 @@ git pull --rebase origin main          # integrate other lanes' commits
 
 **Intera Agent** is a multi-tenant SaaS customer-service AI platform. Next.js monorepo (`apps/console` + `packages/shared`), self-hosted on an Ubuntu box, served at `https://demo.anytrans.ai`.
 
-The current tree still contains legacy stage / Policy / Guardrail / Skill code paths while the reset is pending. The target architecture is a **single Case Owner Agent** with CaseType + Procedure + Tool + Hook (`PreToolUse`, `PostToolUse`, `Stop`). Follow [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) and [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) for new work.
+The current tree is past the first Foundation Reset wave through R2. The target architecture is a **single Case Owner Agent** with CaseType + Procedure + Tool + Hook (`PreToolUse`, `PostToolUse`, `Stop`), inline Procedure continuation, and no customer-facing background worker dispatch. Follow [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md), [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md), and [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) for new work.
 
 > ⚠️ **2026-06-06 data-model pivot — config is now AGENT-scoped, not org-scoped.** Migration `20260606000000_agent_scoped_architecture` moved current sub-module config rows from `org_id` to `agent_config_id` (old `org_id` columns dropped, old rows deleted), and dropped `policyHooks` + `capabilityBindings` from `AgentConfig`. **Consequence:** the `repoForOrg`/`scopedModel` proxy scopes by `orgId`, which these models no longer carry — so sub-module routes use `repo.raw.*` and scope by `agentConfigId` manually, with an orgId→agentConfig ownership check as the real isolation boundary. L5 is resolved by `assertAgentInOrg()`, but keep this boundary in mind when editing admin sub-module routes. `capabilityBindings` and `policyHooks` are **gone**.
 
@@ -87,7 +87,7 @@ apps/console/             ← the only app (apps/chat was deleted post-migration
   app/api/messages/       ← main SSE entry point (LiveChat + API consumers)
   app/api/admin/          ← console admin CRUD + agent-configs + playground
   app/api/auth/           ← login / session / switch-org / logout
-  lib/agent/              ← core AI engine (AgentLoop, legacy skills/policy code until Tool/Hook reset, trace, memory)
+  lib/agent/              ← core AI engine (AgentLoop, Tool executor, HookEngine, ProcedureExecutor, trace, memory)
   lib/livechat/           ← LiveChat bridge (webhook → /api/messages → SSE)
   lib/session.ts          ← signed HMAC-SHA256 session token (no external dep)
   lib/auth.ts             ← getSession / getActiveOrgId / getActiveVendor (verified session only)
@@ -96,9 +96,9 @@ apps/console/             ← the only app (apps/chat was deleted post-migration
   components/             ← React (sidebar, docked-preview, admin editors)
 
 packages/shared/
-  prisma/schema.prisma    ← 22 models (Organization, AgentConfig, Case, ApiKey, …). Agent-scoped config includes Tool/CaseType/KnowledgeSource/ChannelBinding plus legacy Policy until Hook reset.
-  types/index.ts          ← SSEEvent, AgentConfigData, legacy SkillDefinition until Tool reset, …
-  defaults/index.ts       ← default system prompts, memory strategies, legacy policy/hook defaults until reset
+  prisma/schema.prisma    ← Agent-scoped config models including Tool, Hook, HookBinding, CaseType, KnowledgeSource, ChannelBinding, Scenario, and durable Case shells.
+  types/index.ts          ← SSEEvent, AgentConfigData, Tool/Hook/Scenario contracts.
+  defaults/index.ts       ← default system prompts, memory strategies, Tool defaults, Hook defaults.
   ui/intera-logo.tsx      ← animated wordmark (INTERA ↔ AI, one fluid transition)
 ```
 
@@ -127,8 +127,8 @@ AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
   → all prisma writes → memory port (zero DB)
   → StreamingToolExecutor(…, dryRun) → operational tools mocked at dispatch entry
   → TraceWriter(…, dryRun) → no-ops actionTrace.create
-  → legacy SkillRouter.create(orgId, dryRun) → skips knowledgeSource.update heal
-  → OrchestratorAgent.dispatchInBackground → guarded by if(!this.dryRun)
+  → HookEngine checkpoints run in-memory
+  → Procedure continuation stays inline in the Case Owner Agent loop
 ```
 
 ## 3. Key files

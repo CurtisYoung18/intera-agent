@@ -27,7 +27,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>, CaseTypeParams>({
     const ct = await repo.raw.caseType.findUnique({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })
-    if (!ct) throw new NotFoundError(`Case type "${params.name}" not found`)
+    if (!ct) throw new NotFoundError(`Procedure type "${params.name}" not found`)
     return apiOk({ caseType: ct })
   },
 })
@@ -57,7 +57,7 @@ export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
     const existing = await repo.raw.caseType.findUnique({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })
-    if (!existing) throw new NotFoundError(`Case type "${params.name}" not found`)
+    if (!existing) throw new NotFoundError(`Procedure type "${params.name}" not found`)
     const data: Record<string, unknown> = {}
     const strFields = ['type', 'displayName', 'description', 'icon', 'defaultGoal']
     for (const f of strFields) { const v = (fields as Record<string, unknown>)[f]; if (v !== undefined) data[f] = v }
@@ -88,7 +88,7 @@ export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, CaseTypeParams
     const existing = await repo.raw.caseType.findUnique({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })
-    if (!existing) throw new NotFoundError(`Case type "${params.name}" not found`)
+    if (!existing) throw new NotFoundError(`Procedure type "${params.name}" not found`)
     await repo.raw.caseType.delete({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })

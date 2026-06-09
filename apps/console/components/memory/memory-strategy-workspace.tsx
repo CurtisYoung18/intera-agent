@@ -534,7 +534,7 @@ function MemoryPanel({
             </div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
               Business facts come from user extraction, form answers, tool-result mapping, and human-task answers.
-              P0 does not expose a free-form record_facts tool.
+              P0 exposes controlled memory writes through remember(scope=&quot;chat&quot; | &quot;user&quot;), not a free-form fact recorder.
             </p>
             <label className="mt-4 block space-y-1.5">
               <span className="text-[12px] font-medium text-[var(--mist)]">Fact extraction model</span>
@@ -651,7 +651,7 @@ function ProfilePanel({
           Long-term profile memory
         </div>
         <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
-          Profile memory is for stable user signals. It is separate from per-case confirmedFacts and procedure runtime state.
+          Profile memory is for stable user signals. It is separate from ProcedureRun confirmedFacts and procedure runtime state.
         </p>
         <div className="mt-4 space-y-3">
           <SwitchField
@@ -661,10 +661,10 @@ function ProfilePanel({
             onChange={(checked) => setMemoryField('enableChatMemory', checked)}
           />
           <NumberField
-            label="Historical case load"
+            label="Historical ProcedureRun load"
             value={memory.l4MaxHistoricalCases}
             onChange={(value) => setNumberField('l4MaxHistoricalCases', value)}
-            unit="cases"
+            unit="runs"
           />
           <NumberField
             label="Profile memory budget"
@@ -687,7 +687,7 @@ function ProfilePanel({
           Profile promotion rules
         </div>
         <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
-          First slice: keep this as operator-readable policy stored on memoryStrategy.
+          First slice: keep this as operator-readable promotion rules stored on memoryStrategy.
         </p>
         <textarea
           value={memory.profilePromotionRules || ''}

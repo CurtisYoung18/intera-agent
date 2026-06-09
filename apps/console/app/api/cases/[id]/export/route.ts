@@ -35,16 +35,16 @@ export const GET = defineRoute<void, { id: string }>({
       repo.raw.chatMemory.findUnique({ where: { caseId: params.id } }),
     ])
 
-    if (!caseData) throw new NotFoundError('Case not found')
+    if (!caseData) throw new NotFoundError('ProcedureRun not found')
 
     const agentConfig = await repo.agentConfig.findFirst({ where: { isActive: true } })
 
     const sections: string[] = []
-    sections.push(`# Intera Case Export — ${params.id}`)
+    sections.push(`# Intera ProcedureRun Export — ${params.id}`)
     sections.push(`Exported at: ${new Date().toISOString()}`)
     sections.push('')
 
-    sections.push('## Case Metadata')
+    sections.push('## ProcedureRun Metadata')
     sections.push(`- **ID**: ${caseData.id}`)
     sections.push(`- **Type**: ${caseData.type}`)
     sections.push(`- **Status**: ${caseData.status}`)
@@ -96,17 +96,17 @@ export const GET = defineRoute<void, { id: string }>({
     }
 
     if (memory) {
-      sections.push('## Case Memory')
+      sections.push('## Memory')
       sections.push('### Confirmed Facts')
       sections.push(formatValue(safeJson(memory.confirmedFacts)))
       sections.push('')
       sections.push('### Missing Facts')
       sections.push(formatValue(safeJson(memory.missingFacts)))
       sections.push('')
-      sections.push('### Skills Called')
+      sections.push('### Tools Called')
       sections.push(formatValue(safeJson(memory.toolsCalled)))
       sections.push('')
-      sections.push('### Skill Results')
+      sections.push('### Tool Results')
       sections.push(formatValue(safeJson(memory.toolResults)))
       sections.push('')
       if (memory.summary) {

@@ -79,7 +79,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         setCaseData(caseResult.data.case as unknown as CaseData)
         setTraces(tracesResult.data.traces ?? [])
         setMessages(msgsResult.data.messages ?? [])
-      } catch (e) { console.error('Case load failed:', e) }
+      } catch (e) { console.error('ProcedureRun load failed:', e) }
       finally { setLoading(false) }
     }
     load()
@@ -194,7 +194,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           </button>
           <div className="min-w-0">
             <h1 className="truncate text-[14px] font-semibold tracking-tight text-[var(--mist)]">
-              Case · {caseData.type.replace(/_/g, ' ')}
+              ProcedureRun · {caseData.type.replace(/_/g, ' ')}
               <span className="ml-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
                 style={{ borderColor: `${statusColor[caseData.status] || '#a09888'}44`, color: statusColor[caseData.status] || '#a09888' }}>
                 {caseData.status}

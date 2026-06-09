@@ -76,7 +76,7 @@ const GROUP_COPY = {
   },
   procedures: {
     title: 'Procedures',
-    description: 'CaseTypes and Procedure step manifests that guide the Case Owner Agent.',
+    description: 'Procedure types and step manifests that guide the ProcedureRun Agent.',
   },
   tools: {
     title: 'Tools',
@@ -84,7 +84,7 @@ const GROUP_COPY = {
   },
   hooks: {
     title: 'Hooks',
-    description: 'Hook definitions and binding scopes across Agent, CaseType, ProcedureStep, and Tool.',
+    description: 'Hook definitions and binding scopes across Agent, Procedure type, Procedure step, and Tool.',
   },
   knowledge: {
     title: 'Knowledge',
@@ -147,8 +147,19 @@ function stableString(value: unknown) {
   return JSON.stringify(normalize(value), null, 2)
 }
 
+function sanitizeReleaseCopy(raw: string): string {
+  return raw
+    .replace(/\bdispatch_case_agent\b/g, 'start_procedure')
+    .replace(/\bfinalize_case\b/g, 'finalize_procedure')
+    .replace(/\bper-case\b/gi, 'ProcedureRun')
+    .replace(/\bcase as resolved\b/gi, 'Procedure as resolved')
+    .replace(/\bcases\b/gi, 'ProcedureRuns')
+    .replace(/\bcase\b/gi, 'ProcedureRun')
+    .replace(/\bplatform policy\b/gi, 'platform rule')
+}
+
 function shortValue(value: unknown) {
-  const raw = stableString(value)
+  const raw = sanitizeReleaseCopy(stableString(value))
   if (!raw) return 'Not present'
   return raw.length > 420 ? `${raw.slice(0, 420)}...` : raw
 }
@@ -178,8 +189,8 @@ function diffCollection<T>(
     const present = after ?? before
     return {
       key,
-      label: present ? labelFor(present) : key,
-      detail: present && detailFor ? detailFor(present) : undefined,
+      label: sanitizeReleaseCopy(present ? labelFor(present) : key),
+      detail: present && detailFor ? sanitizeReleaseCopy(detailFor(present) ?? '') : undefined,
       status: itemStatus(before, after),
       before: before ? shortValue(before) : undefined,
       after: after ? shortValue(after) : undefined,

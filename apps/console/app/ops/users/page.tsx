@@ -62,7 +62,7 @@ export default function UsersListPage() {
           <EmptyState
             icon={Users2}
             title="No user profiles yet"
-            description="Profiles are built as conversations get compacted (auto, on case finalize, or via Compact in a chat's Memory panel)."
+            description="Profiles are built as conversations get compacted (auto, on Procedure finalization, or via Compact in a chat's Memory panel)."
           />
         </div>
       ) : (
@@ -89,7 +89,7 @@ export default function UsersListPage() {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
-                <span className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[var(--fog)]">{u.totalCases} cases</span>
+                <span className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[var(--fog)]">{u.totalCases} ProcedureRuns</span>
                 <span className="rounded-md bg-emerald-500/[0.08] px-1.5 py-0.5 text-emerald-600">{u.resolvedCases} resolved</span>
                 {u.escalatedCases > 0 && (
                   <span className="rounded-md bg-vermillion/[0.08] px-1.5 py-0.5 text-vermillion">{u.escalatedCases} escalated</span>

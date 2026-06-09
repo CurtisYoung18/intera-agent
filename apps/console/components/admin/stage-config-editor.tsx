@@ -197,14 +197,14 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
   if (!stages.length) {
     return (
       <div className="text-center py-8 text-[13px] text-[var(--fog)]">
-        Define stages in the Basic tab first, then configure each stage here.
+        Define legacy runtime steps in the Basic tab first, then configure migration data here.
       </div>
     )
   }
 
   return (
     <div className="space-y-4 animate-fade-up">
-      {/* ── Stage Pipeline ──────────────────────────────────── */}
+      {/* ── Legacy runtime step pipeline ────────────────────── */}
       <div className="flex items-center gap-1.5 flex-wrap p-3 rounded-xl bg-[var(--abyss)]/50 border border-[var(--border-subtle)]">
         {stages.map((stage, i) => {
           const isActive = activeStage === stage
@@ -236,13 +236,13 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
         })}
       </div>
 
-      {/* ── Active Stage Config ─────────────────────────────── */}
+      {/* ── Active legacy runtime step config ───────────────── */}
       {activeStage && (() => {
         const cfg = ensureConfig(activeStage, stageConfigs)
 
         return (
           <div className="space-y-3">
-            {/* Stage header */}
+            {/* Legacy runtime step header */}
             <div className="flex items-center gap-3">
               <div className="w-6 h-6 rounded-lg bg-indigo/[0.08] flex items-center justify-center">
                 <Zap className="w-3 h-3 text-indigo" />
@@ -252,7 +252,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                 <MiniInput
                   value={cfg.description || ''}
                   onChange={(v) => updateStage(activeStage, { description: v }, stageConfigs, onChange)}
-                  placeholder="Stage description (shown to agent)"
+                  placeholder="Legacy step description (shown to agent)"
                 />
               </div>
             </div>
@@ -325,11 +325,11 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                     </label>
                   </div>
                   <label className="space-y-1 block">
-                    <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Stage Prompt</span>
+                    <span className="text-[10px] text-[var(--fog)] uppercase tracking-wide">Legacy Step Prompt</span>
                     <MiniTextarea
                       value={cfg.systemPrompt || ''}
                       onChange={(v) => updateStage(activeStage, { systemPrompt: v || undefined }, stageConfigs, onChange)}
-                      placeholder="Stage-specific instructions appended to system prompt..."
+                      placeholder="Legacy step instructions appended to system prompt..."
                       rows={3}
                     />
                   </label>
@@ -337,7 +337,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
               )}
             </div>
 
-            {/* ── Skills ─────────────────────────────────────── */}
+            {/* ── Tools ──────────────────────────────────────── */}
             <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 overflow-hidden">
               <div className="px-4">
                 <SectionHeader
@@ -354,7 +354,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-medium text-[var(--mist)]">Required Tools</span>
-                      <span className="text-[10px] text-[var(--smoke)]">Must be called in this stage</span>
+                      <span className="text-[10px] text-[var(--smoke)]">Must be called in this legacy step</span>
                     </div>
                     <ChipInput
                       values={cfg.requiredSkills || []}
@@ -377,8 +377,8 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                   </div>
                   {(cfg.requiredSkills?.length ?? 0) === 0 && (cfg.availableSkills?.length ?? 0) === 0 ? (
                     <p className="text-[10px] leading-relaxed text-[var(--fog)] border-t border-[var(--border-subtle)]/40 pt-3">
-                      Tools can stay empty when this stage only auto-advances (e.g. <code className="text-[var(--mist)]">min_iterations</code> / transition
-                      rules). Tool requirements belong in downstream stages (
+                      Tools can stay empty when this legacy step only auto-advances (e.g. <code className="text-[var(--mist)]">min_iterations</code> / transition
+                      rules). Tool requirements belong in downstream legacy steps (
                       <code className="text-[var(--mist)]">collecting</code>,{' '}
                       <code className="text-[var(--mist)]">investigating</code>, … ) — check those tabs if you expected chips here.
                     </p>
@@ -499,12 +499,12 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
               )}
             </div>
 
-            {/* ── Guardrails ─────────────────────────────────── */}
+            {/* ── Legacy Hooks ───────────────────────────────── */}
             <div className="rounded-xl border border-[var(--border-subtle)] bg-white/30 overflow-hidden">
               <div className="px-4">
                 <SectionHeader
                   icon={Shield}
-                  title="Guardrails"
+                  title="Legacy Hooks"
                   badge={cfg.guardrails?.length ? `${cfg.guardrails.length} rules` : undefined}
                   expanded={expandedSections.guardrails}
                   onToggle={() => toggleSection('guardrails')}
@@ -563,7 +563,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                                 updateStage(activeStage, { guardrails: next }, stageConfigs, onChange)
                               } catch { /* invalid JSON, don't update */ }
                             }}
-                            placeholder='{"evaluationPrompt": "Describe the policy check in natural language..."}'
+                            placeholder='{"evaluationPrompt": "Describe the Hook check in natural language..."}'
                           />
                         </div>
                       </div>
@@ -589,7 +589,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                     }}
                     className="w-full py-2 rounded-lg text-[11px] text-[var(--fog)] border border-dashed border-[var(--border-subtle)] hover:border-indigo/30 hover:text-indigo transition-all flex items-center justify-center gap-1.5"
                   >
-                    <Plus className="w-3 h-3" /> Add Guardrail
+                    <Plus className="w-3 h-3" /> Add Legacy Hook
                   </button>
                 </div>
               )}
@@ -600,7 +600,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
               <div className="px-4">
                 <SectionHeader
                   icon={GitBranch}
-                  title="Stage Transition"
+                  title="Legacy Step Transition"
                   badge={cfg.transition?.type}
                   expanded={expandedSections.transition}
                   onToggle={() => toggleSection('transition')}
@@ -694,7 +694,7 @@ export default function StageConfigEditor({ stages, stageConfigs, allSkills, ava
                 }}
                 className="px-3 py-1.5 rounded-lg text-[11px] text-[var(--smoke)] border border-[var(--border-subtle)] hover:text-vermillion hover:border-vermillion/20 transition-all"
               >
-                Clear Stage Config
+                Clear Legacy Config
               </button>
               <button
                 type="button"

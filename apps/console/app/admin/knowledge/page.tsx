@@ -781,9 +781,9 @@ export default function KnowledgePage() {
                   </div>
                 </div>
 
-                {/* Case type association */}
+                {/* Procedure type association */}
                 <div>
-                  <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Case Type (optional)</label>
+                  <label className="block text-[11px] font-semibold text-[var(--mist)] mb-1">Procedure Type (optional)</label>
                   <select
                     value={editingSource.caseTypeTag || ''}
                     onChange={(e) => setEditingSource({ ...editingSource, caseTypeTag: e.target.value || null })}

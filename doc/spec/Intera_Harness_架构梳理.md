@@ -1,6 +1,6 @@
 # Intera Harness Architecture
 
-**Last updated:** 2026-06-08
+**Last updated:** 2026-06-09
 **Status:** CURRENT source of truth for product architecture and domain language
 **Audience:** founder, architect, delivery lead, and AI coding teams
 **Related plan:** [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md)
@@ -19,7 +19,7 @@ The Console should let a delivery person build, adapt, validate, deploy, and mai
 ```text
 Import starter template
   -> adapt Agent with UI + ConfigPilot
-  -> configure CaseTypes, Procedures, Tools, Hooks, Human Transfer
+  -> configure Procedure types, Procedures, Tools, Hooks, Human Transfer
   -> validate in Scenario Lab
   -> activate for LiveChat / API channel
   -> export a customer-customized .intera-agent.json package
@@ -40,13 +40,13 @@ High-risk business actions can exist as Tool/Hook concepts, but should be gated 
 
 | Term | Meaning |
 |---|---|
-| `Case` | Runtime customer issue instance with messages, memory, traces, status, and human tasks. |
-| `CaseType` | Configurable issue category and routing target, such as `deposit_issue` or `account_access`. |
-| `Procedure` | Soft business process attached to a CaseType. It guides the Agent; it is not a rigid flowchart. |
+| `Runtime shell` | Transitional durable persistence record where current storage still requires it. Product copy and future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory. |
+| `Procedure type` | Configurable issue category and routing target, such as `deposit_issue` or `account_access`. |
+| `Procedure` | Soft business process attached to a Procedure type. It guides the Agent; it is not a rigid flowchart. |
 | `ProcedureStep` | One ordered step inside a Procedure. Delivery staff can attach Hooks to steps. |
 | `Tool` | Any Agent-callable capability: API lookup, static fixture, platform operation, human transfer, or future workflow. |
-| `Hook` | Hard control layer. Replaces Policy and Guardrail. |
-| `HookBinding` | Activation relationship from a Hook to an agent, CaseType, ProcedureStep, or Tool. |
+| `Hook` | Hard control layer for PreToolUse, PostToolUse, and Stop checkpoints. |
+| `HookBinding` | Activation relationship from a Hook to an agent, Procedure type, ProcedureStep, or Tool. |
 | `Scenario` | Test case and acceptance receipt used by Scenario Lab. |
 | `ConfigPilot` | Conversational configuration assistant. It writes only through typed admin/scenario/trace APIs. |
 | `.intera-agent.json` | Portable Agent Template Package for internal delivery reuse and future marketplace support. |
@@ -65,7 +65,7 @@ They need to:
 
 - start from an industry template
 - connect or mock customer backend APIs
-- configure a small number of high-confidence CaseTypes
+- configure a small number of high-confidence Procedure types
 - tune Procedures and Hooks from real scenarios
 - hand over a validated Agent to a real customer quickly
 - share/export the result internally
@@ -74,7 +74,7 @@ They need to:
 
 The first template should focus on Gaming / iGaming support.
 
-Suggested starting CaseTypes:
+Suggested starting Procedure types:
 
 - deposit not credited
 - withdrawal status
@@ -83,21 +83,21 @@ Suggested starting CaseTypes:
 - game issue / round issue
 - account access
 
-Do not create too many CaseTypes initially. More Procedure options increase routing ambiguity and make Scenario validation harder.
+Do not create too many Procedure types initially. More Procedure options increase routing ambiguity and make Scenario validation harder.
 
 ---
 
 ## 3. Runtime Architecture
 
-Intera should optimize around a single strong Case Owner Agent.
+Intera should optimize around a single strong ProcedureRun Agent.
 
 ```text
 Customer message
   -> channel adapter
   -> /api/messages
   -> Discovery
-  -> Case selection/opening
-  -> CaseType + Procedure
+  -> ProcedureRun selection/opening
+  -> Procedure type + Procedure
   -> shared ReAct loop
   -> Tool calls guarded by Hooks
   -> Stop Hooks
@@ -106,28 +106,28 @@ Customer message
 
 The Agent keeps judgment. A Procedure gives recommended order, required evidence, and domain handling patterns; it does not force node-by-node traversal.
 
-The target runtime removes detached customer-facing sub-agent fan-out. Sub-agents may return later only as durable, observable back-office jobs with clear result consumption, cancellation, and operator visibility.
+The target runtime removes detached customer-facing background fan-out. Parallel workers may return later only as durable, observable back-office jobs with clear result consumption, cancellation, and operator visibility.
 
 ### 3.1 Discovery
 
 Discovery decides whether the user needs:
 
 - regular FAQ / knowledge answer
-- a new Case
-- continuation of an existing Case
+- a new ProcedureRun
+- continuation of an existing ProcedureRun
 - human transfer / waiting-human acknowledgement
 
-When a Case is needed, the Agent selects a CaseType and therefore a Procedure.
+When operational work is needed, the Agent selects a Procedure type and therefore a Procedure.
 
 ### 3.2 `dispatch_case_agent`
 
 Keep the semantic intent, change the runtime behavior:
 
 ```text
-dispatch_case_agent(CaseType)
-  -> create or select the Case
-  -> attach CaseType + Procedure
-  -> continue inline through the Case Owner Agent
+procedure routing Tool(Procedure type)
+  -> create or select the ProcedureRun
+  -> attach Procedure type + Procedure
+  -> continue inline through the ProcedureRun Agent
 ```
 
 It should not spawn a detached background worker for the default customer turn.
@@ -177,9 +177,9 @@ Procedure: Deposit Not Credited
 The Agent may:
 
 - skip a step whose `when` condition is false
-- reuse evidence already present in Case memory
+- reuse evidence already present in Memory
 - ask the customer before a missing required input
-- switch CaseType if the problem is reclassified
+- switch Procedure type if the problem is reclassified
 - escalate when a Hook or Tool failure requires a human
 
 Procedure Builder should show Hook controls at the ProcedureStep level. The data model remains top-level Hook + HookBinding; the step UI is a convenient binding surface.
@@ -188,7 +188,7 @@ Procedure Builder should show Hook controls at the ProcedureStep level. The data
 
 ## 5. Hook Model
 
-Hook replaces Policy and Guardrail.
+Hook is the customer-service control layer.
 
 Intera adopts Claude Code-style Hook names, but only implements customer-service-critical checkpoints first:
 
@@ -228,7 +228,7 @@ Runtime activation:
 ```text
 active hooks =
   agent bindings
-  + active CaseType bindings
+  + active Procedure type bindings
   + active ProcedureStep bindings
   + matching Tool bindings
 ```
@@ -256,7 +256,7 @@ External calls go through HTTP Hook, not Code Hook.
 
 ## 6. Tool Model
 
-Tool is the Agent-callable capability model. `Skill` is legacy language.
+Tool is the Agent-callable capability model.
 
 Target Tool modes:
 
@@ -270,16 +270,16 @@ Target Tool modes:
 
 Important distinction:
 
-- Procedure is Case-level orchestration: what the Case Owner Agent should do.
+- Procedure is ProcedureRun orchestration: what the Agent should do.
 - Tool workflow is implementation-level orchestration inside one Tool: how backend data is fetched and normalized.
 
 Swagger / OpenAPI import should produce ordinary HTTP Tools first. Workflow Tools can be a future consolidation path.
 
 ---
 
-## 7. Case Notebook And Trace
+## 7. Memory Notebook And Trace
 
-The Agent should reason from a structured Case notebook, not only raw chat history.
+The Agent should reason from structured Memory and Trace, not only raw chat history.
 
 ```ts
 interface CaseNotebook {
@@ -413,7 +413,7 @@ Human transfer is a first-class Tool and an expected first-launch path.
 The transfer should include:
 
 - customer request
-- active CaseType
+- active Procedure type
 - completed Procedure steps
 - missing facts
 - Tool evidence

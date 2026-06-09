@@ -23,15 +23,15 @@ const L = {
   title: { en: 'Dashboard', zh: '运营仪表盘' },
   subtitle: { en: 'System overview and health monitoring', zh: '系统概览与健康监控' },
   messages24h: { en: 'Messages 24h', zh: '24H 消息' },
-  activeCases: { en: 'Active Cases', zh: '活跃案例' },
+  activeCases: { en: 'Active ProcedureRuns', zh: '活跃 ProcedureRun' },
   avgResolution: { en: 'Avg Resolution', zh: '平均响应' },
-  guardrailHits: { en: 'Guardrail Hits', zh: '护栏命中' },
-  guardrailHits24h: { en: 'Guardrail Hits (24h)', zh: '护栏命中 (24h)' },
-  recentCases: { en: 'Recent Cases', zh: '最近案例' },
+  guardrailHits: { en: 'Hook Hits', zh: 'Hook 命中' },
+  guardrailHits24h: { en: 'Hook Hits (24h)', zh: 'Hook 命中 (24h)' },
+  recentCases: { en: 'Recent ProcedureRuns', zh: '最近 ProcedureRun' },
   noData: { en: 'No data yet', zh: '暂无数据' },
   min: { en: 'min', zh: '分钟' },
   loading: { en: 'Loading…', zh: '加载中…' },
-  noGuardrails: { en: 'No guardrail activity yet.', zh: '暂无护栏活动' },
+  noGuardrails: { en: 'No hook activity yet.', zh: '暂无 Hook 活动' },
   viewAll: { en: 'View all', zh: '查看全部' },
 } as const
 
@@ -96,7 +96,7 @@ export default function DashboardPage() {
           </AnimatedCounter>
         </div>
 
-        {/* Active Cases */}
+        {/* Active ProcedureRuns */}
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#f59e0b]/10 icon-pulse">
@@ -132,7 +132,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Guardrail Hits */}
+        {/* Hook Hits */}
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5 hover:shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#8b6ff5]/10 icon-pulse">
@@ -162,7 +162,7 @@ export default function DashboardPage() {
 
       {/* ── Two-column row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Recent Cases */}
+        {/* Recent ProcedureRuns */}
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[13px] font-bold text-[var(--mist)]">{l('recentCases')}</h2>
@@ -185,7 +185,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Guardrail Hits */}
+        {/* Hook Hits */}
         <div className="space-y-4">
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
             <h2 className="text-[13px] font-bold text-[var(--mist)] mb-4">{l('guardrailHits24h')}</h2>

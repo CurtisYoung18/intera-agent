@@ -19,7 +19,7 @@ const sectionMeta: Record<Section, { icon: React.ReactNode; title: string; subti
   prompt:    { icon: <Brain className="w-5 h-5" />, title: 'System Prompt', subtitle: 'Core agent persona and behavioral rules', color: 'lavender', span: 3 },
   model:     { icon: <Cpu className="w-5 h-5" />, title: 'Model & Parameters', subtitle: 'LLM selection and tuning', color: 'indigo', span: 1 },
   memory:    { icon: <Database className="w-5 h-5" />, title: 'Memory Strategy', subtitle: 'Context management & compaction', color: 'amber', span: 1 },
-  policy:    { icon: <Shield className="w-5 h-5" />, title: 'Policy Hooks', subtitle: 'Guardrails & enforcement rules', color: 'malachite', span: 1 },
+  policy:    { icon: <Shield className="w-5 h-5" />, title: 'Hooks', subtitle: 'Checkpoints and enforcement rules', color: 'malachite', span: 1 },
   templates: { icon: <FileText className="w-5 h-5" />, title: 'Resume & Form Templates', subtitle: 'Synthetic message templates', color: 'sky', span: 2 },
   advanced:  { icon: <Settings className="w-5 h-5" />, title: 'Advanced Settings', subtitle: 'Fact extraction, token estimation, compaction fine-tuning', color: 'gold', span: 1 },
 }
@@ -100,7 +100,7 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
             <div className="grid grid-cols-2 gap-3">
               <NumField label="L1 Max Messages" tooltip="" value={ms.l1MaxMessages} onChange={v => updateMem('l1MaxMessages', v)} unit="msgs" />
               <NumField label="L2 Summary Max Tokens" tooltip="" value={ms.l2SummaryMaxTokens} onChange={v => updateMem('l2SummaryMaxTokens', v)} unit="tokens" />
-              <NumField label="L4 Max Historical Cases" tooltip="" value={ms.l4MaxHistoricalCases} onChange={v => updateMem('l4MaxHistoricalCases', v)} unit="cases" />
+              <NumField label="L4 Max Historical ProcedureRuns" tooltip="" value={ms.l4MaxHistoricalCases} onChange={v => updateMem('l4MaxHistoricalCases', v)} unit="runs" />
               <NumField label="Max Recent Traces" tooltip="" value={ms.maxRecentTraces} onChange={v => updateMem('maxRecentTraces', v)} unit="traces" />
             </div>
             <div className="border-b border-[var(--border-subtle)] pb-2"><span className="text-[11px] font-medium text-[var(--fog)]">Compaction</span></div>
@@ -130,7 +130,7 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
 
         {activeSection === 'policy' && (
           <div className="space-y-3">
-            <p className="text-[12px] text-[var(--fog)]">Policies are now managed via the standalone Policy editor. Use the sidebar to configure guardrail rules, capability bindings, and enforcement hooks.</p>
+            <p className="text-[12px] text-[var(--fog)]">Hooks are managed in the Hooks library. Use the sidebar to configure checkpoint rules, bindings, and enforcement behavior.</p>
           </div>
         )}
 
@@ -174,7 +174,7 @@ export default function AgentFlow({ config, mainModels, update, updateMem }: Age
                 <NumField label="Max Key Events" tooltip="" value={ms.maxKeyEventsAfterCompact} onChange={v => updateMem('maxKeyEventsAfterCompact', v)} unit="events" />
                 <NumField label="Circuit Breaker Max" tooltip="" value={ms.compactCircuitBreakerMaxFailures} onChange={v => updateMem('compactCircuitBreakerMaxFailures', v)} unit="failures" />
                 <NumField label="Session Max Age" tooltip="" value={ms.sessionMemoryMaxAgeMs} onChange={v => updateMem('sessionMemoryMaxAgeMs', v)} unit="ms" />
-                <NumField label="Case Retention Days" tooltip="" value={ms.caseRetentionDays} onChange={v => updateMem('caseRetentionDays', v)} unit="days" />
+                <NumField label="ProcedureRun Retention Days" tooltip="" value={ms.caseRetentionDays} onChange={v => updateMem('caseRetentionDays', v)} unit="days" />
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <label className="space-y-1"><span className="text-[11px] text-[var(--fog)]">Compact Prompt</span>

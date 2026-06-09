@@ -237,7 +237,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
 
   async function handleDelete() {
     if (!session) return
-    if (!confirm(`Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} case(s)?`)) return
+    if (!confirm(`Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} linked ProcedureRun(s)?`)) return
     setDeleting(true)
     try {
       await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
@@ -260,7 +260,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
             </h1>
             {session && (
               <p className="mt-0.5 text-[11px] text-[var(--fog)]/70">
-                {session.cases.length} case{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} traces
+                {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} traces
               </p>
             )}
           </div>
@@ -270,7 +270,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
             <div key={c.id} className="flex items-center gap-1">
               <CasePill caseItem={c} />
               <Link href={`/ops/cases/${encodeURIComponent(c.id)}`}
-                className="console-btn-icon-square h-6 w-6" title="View case details">
+                className="console-btn-icon-square h-6 w-6" title="View ProcedureRun details">
                 <BarChart3 className="h-3 w-3" />
               </Link>
             </div>
@@ -354,7 +354,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           </div>
           {session && (
             <div className="pt-2 border-t border-black/[0.04]">
-              <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">Per-Case Summary</h4>
+              <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">Per-ProcedureRun Summary</h4>
               <div className="space-y-1.5">
                 {session.cases.map((c) => {
                   const caseTraces = traces.filter((t) => t.caseId === c.id)
@@ -431,10 +431,10 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
             </div>
           ) : memoryData ? (
             <>
-              {/* Per-case working memory */}
+              {/* Per-ProcedureRun working memory */}
               {memoryData.memories?.map((mem: any) => (
                 <div key={mem.caseId} className="rounded-xl border border-black/[0.04] bg-white/40 p-3">
-                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">Case {mem.caseId.slice(0, 8)}</p>
+                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">ProcedureRun {mem.caseId.slice(0, 8)}</p>
                   {mem.summary ? (
                     <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[240px] overflow-auto">
                       <MessageContent content={mem.summary.slice(0, 3000)} />

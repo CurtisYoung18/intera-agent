@@ -435,7 +435,7 @@ export default function LiveChatDetailPage() {
       {/* ── Rendering Tab ── */}
       {activeTab === 'rendering' && (
         <div className="space-y-6">
-          {/* Skill Render Hints */}
+          {/* Tool Render Hints */}
           <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5">
             <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[var(--fog)]/50">{t('livechat.skillOverrides')}</p>
             <p className="text-[12px] text-[var(--fog)] mt-1">{t('livechat.skillOverridesDesc')}</p>

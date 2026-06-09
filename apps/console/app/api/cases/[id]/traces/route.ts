@@ -1,4 +1,4 @@
-// GET /api/cases/[id]/traces — Case trace timeline
+// GET /api/cases/[id]/traces — ProcedureRun trace timeline
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
 import { z } from 'zod'
