@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import {
   FlaskConical, Send,
@@ -366,7 +366,13 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set())
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem('pg_trace_collapsed') === 'true' } catch { return true }
+    try {
+      const scoped = localStorage.getItem(`pg_trace_collapsed_${scopeId}`)
+      if (scoped != null) return scoped === 'true'
+      const legacy = localStorage.getItem('pg_trace_collapsed')
+      if (legacy != null) return legacy === 'true'
+    } catch {}
+    return surface === 'legacy'
   })
   useEffect(() => {
     try { localStorage.setItem(lsk.traceCollapsed, String(sidebarCollapsed)) } catch {}
@@ -947,6 +953,26 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     }
   }, [selectedAgentId, debugMode, canAttachImages, visionSupport.status, snapshot?.resolvedModelLabel])
 
+  const submitManualTurn = useCallback(() => {
+    const trimmed = message.trim()
+    if (!trimmed) return
+    const queuedImages = attachedImagesRef.current
+    setMessage('')
+    setAttachedImages([])
+    if (responding) {
+      setQueuedMessages((prev) => [...prev, { text: trimmed, images: queuedImages }])
+      return
+    }
+    runTurn(trimmed, queuedImages)
+  }, [message, responding, runTurn])
+
+  const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey && !composingRef.current && message.trim()) {
+      event.preventDefault()
+      submitManualTurn()
+    }
+  }, [message, submitManualTurn])
+
   // ── Session metrics ──
   const sessionMetrics = useMemo(() => {
     let totalInput = 0, totalOutput = 0, totalTools = 0, llmCalls = 0
@@ -1080,6 +1106,16 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             >
               <Brain size={13} />
               {isZh ? '显示思考' : 'Show thinking'}
+            </ActionButton>
+            <ActionButton
+              active={!sidebarCollapsed}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              title={sidebarCollapsed
+                ? (isZh ? '展开 Trace 时间线，查看 tool call、result、Hook 决策和 Procedure runtime 证据。' : 'Open the trace timeline to inspect tool calls, results, Hook decisions, and Procedure runtime evidence.')
+                : (isZh ? '收起 Trace 时间线。' : 'Collapse the trace timeline.')}
+            >
+              {sidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+              {sidebarCollapsed ? (isZh ? '打开 Trace' : 'Open trace') : (isZh ? '收起 Trace' : 'Hide trace')}
             </ActionButton>
             <ActionButton
               tone="danger"
@@ -1305,6 +1341,162 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           overflow: 'hidden',
         }}>
+          <div style={{
+            width: '100%',
+            padding: '14px 16px 0 24px',
+            flexShrink: 0,
+          }}>
+            <section style={{
+              maxWidth: 1120,
+              margin: '0 auto',
+              padding: '12px 14px',
+              borderRadius: 18,
+              border: '1px solid rgba(212,118,78,0.08)',
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,252,249,0.74))',
+              boxShadow: '0 14px 30px rgba(58,39,24,0.05)',
+              display: 'grid',
+              gap: 10,
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    color: 'var(--fog)',
+                    opacity: 0.72,
+                    marginBottom: 4,
+                  }}>
+                    {isZh ? '手动调试入口' : 'Manual debug entry'}
+                  </div>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--mist)',
+                  }}>
+                    {isZh ? '在首屏直接发起下一轮手动测试，并随手打开 Trace 时间线。' : 'Start the next manual test turn from the first viewport and open the trace timeline right away.'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(false)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minHeight: 34,
+                    padding: '8px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(91,138,247,0.16)',
+                    background: 'rgba(91,138,247,0.06)',
+                    color: 'var(--indigo)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <ChevronRight size={13} />
+                  {isZh ? '查看 Trace 时间线' : 'View trace timeline'}
+                </button>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                gap: 8,
+                background: 'rgba(255,255,255,0.62)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                borderRadius: 16,
+                border: '1px solid var(--border-subtle)',
+                boxShadow: 'var(--shadow-card)',
+                padding: 6,
+              }}>
+                <label
+                  title={canAttachImages
+                    ? (isZh ? '附加图片，在当前运行路径上测试视觉输入。' : 'Attach images to test vision input on the selected runtime path.')
+                    : visionSupport.note}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 36, height: 36, borderRadius: 12,
+                    background: canAttachImages ? 'rgba(212,118,78,0.06)' : 'rgba(0,0,0,0.03)',
+                    border: canAttachImages ? '1px solid rgba(212,118,78,0.12)' : '1px solid rgba(0,0,0,0.06)',
+                    cursor: canAttachImages ? 'pointer' : 'not-allowed',
+                    opacity: canAttachImages ? 1 : 0.35,
+                    transition: 'all 0.15s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <ImageIcon size={14} color={canAttachImages ? '#b87347' : 'var(--fog)'} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={!canAttachImages}
+                    onChange={e => { if (e.target.files) { handleImageAttach(e.target.files); e.target.value = '' } }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                <input
+                  type="text"
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  onCompositionStart={() => { composingRef.current = true }}
+                  onCompositionEnd={() => { composingRef.current = false }}
+                  placeholder={responding ? (isZh ? '排队下一轮手动测试…' : 'Queue the next manual turn…') : (isZh ? '输入一轮手动运行时测试…' : 'Type a manual runtime test turn…')}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    fontSize: 13,
+                    color: 'var(--mist)',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    padding: '10px 8px 10px 14px',
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={submitManualTurn}
+                  disabled={!message.trim()}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minHeight: 36,
+                    padding: '0 12px',
+                    borderRadius: 12,
+                    background: message.trim()
+                      ? responding
+                        ? 'linear-gradient(135deg, #8b6ff5, #d491e6)'
+                        : 'linear-gradient(135deg, #5b8af7, #8b6ff5)'
+                      : 'rgba(0,0,0,0.06)',
+                    border: 'none',
+                    color: 'white',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: message.trim() ? 'pointer' : 'default',
+                    opacity: message.trim() ? 1 : 0.4,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Send size={14} color="white" />
+                  {responding ? (isZh ? '排队' : 'Queue') : (isZh ? '运行' : 'Run')}
+                </button>
+              </div>
+            </section>
+          </div>
+
           <div className="pg-chat-scroll" style={{
             flex: 1, width: '100%',
             padding: '32px 16px 0 24px',
@@ -1807,7 +1999,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 type="text"
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !composingRef.current && message.trim()) { e.preventDefault(); const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
+                onKeyDown={handleComposerKeyDown}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={() => { composingRef.current = false }}
                 onPaste={e => {
@@ -1841,7 +2033,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 }}
               />
               <button
-                onClick={() => { if (message.trim()) { const msg = message.trim(); const imgs = attachedImagesRef.current; setMessage(''); setAttachedImages([]); if (responding) { setQueuedMessages(prev => [...prev, { text: msg, images: imgs }]) } else { runTurn(msg) } } }}
+                onClick={submitManualTurn}
                 disabled={!message.trim()}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',

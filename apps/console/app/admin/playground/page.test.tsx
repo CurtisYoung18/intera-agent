@@ -189,6 +189,8 @@ describe('PlaygroundPage snapshot truth', () => {
     await renderPage()
 
     expect(screen.getByText(/Compatibility route only/i)).toBeDefined()
+    expect(screen.getByText('Manual debug entry')).toBeDefined()
+    expect(screen.getByRole('button', { name: /View trace timeline/i })).toBeDefined()
     await screen.findByText('DeepSeek V4 Flash')
     expect(screen.getByText('0.5')).toBeDefined()
     expect(screen.getByText('Balanced')).toBeDefined()
