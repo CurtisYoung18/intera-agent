@@ -11,6 +11,7 @@ import {
   normalizeHandler,
   serializeHandler,
   serializeHook,
+  validateHandlerToolReferences,
   type AgentConfigQueryInput,
   type HookBindingRow,
   type HookHandlerKind,
@@ -58,9 +59,13 @@ export const PUT = defineRoute<HookUpdateInput, HookRouteParams>({
     const nextKind = (handlerKind ?? existing.handlerKind) as HookHandlerKind
     let nextHandler: string | undefined
     if (handler !== undefined) {
-      nextHandler = serializeHandler(normalizeHandler(nextKind, handler))
+      const normalizedHandler = normalizeHandler(nextKind, handler)
+      await validateHandlerToolReferences(repo, agentConfigId, normalizedHandler)
+      nextHandler = serializeHandler(normalizedHandler)
     } else if (handlerKind && handlerKind !== existing.handlerKind) {
-      nextHandler = serializeHandler(defaultHandlerForKind(nextKind))
+      const normalizedHandler = defaultHandlerForKind(nextKind)
+      await validateHandlerToolReferences(repo, agentConfigId, normalizedHandler)
+      nextHandler = serializeHandler(normalizedHandler)
     }
 
     const data: Record<string, unknown> = { ...fields }

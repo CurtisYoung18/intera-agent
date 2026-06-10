@@ -104,7 +104,7 @@ describe('HookBuilder', () => {
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'tool' } })
     })
-    expect(screen.getByText('get_latest_deposit')).toBeDefined()
+    expect(screen.getAllByText('get_latest_deposit').length).toBeGreaterThan(0)
   })
 
   it('creates a Hook through the Hook API contract', async () => {
@@ -136,7 +136,38 @@ describe('HookBuilder', () => {
     })
     expect(createCall[1].body.handler.kind).toBe('declarative')
     expect(createCall[1].body.handler.check.kind).toBe('rule')
+    expect(createCall[1].body.handler.check.always).toBe(true)
     expect(createCall[1].body.handler.effect.decision).toBe('block')
+  })
+
+  it('builds Rule checks from structured fields instead of raw JSON input', async () => {
+    await renderHookBuilder()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /New Hook/ }))
+    })
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('investigate_before_transfer'), { target: { value: 'warn_provider_mismatch' } })
+      fireEvent.click(screen.getByRole('button', { name: 'get_latest_deposit' }))
+      fireEvent.click(screen.getByRole('button', { name: /Output contains/ }))
+    })
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('One phrase per line'), { target: { value: 'provider_mismatch' } })
+      fireEvent.change(screen.getByPlaceholderText('Explain why this rule matched.'), { target: { value: 'Provider proof needs review' } })
+      fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    })
+
+    const createCall = await waitFor(() => {
+      const call = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/hooks' && options?.method === 'POST')
+      expect(call).toBeDefined()
+      return call
+    })
+    expect(createCall![1].body.handler.check).toMatchObject({
+      kind: 'rule',
+      match: { tools: ['get_latest_deposit'] },
+      outputContains: ['provider_mismatch'],
+      reason: 'Provider proof needs review',
+    })
   })
 
   it('inserts runtime placeholders into the LLM eval prompt with slash menu', async () => {

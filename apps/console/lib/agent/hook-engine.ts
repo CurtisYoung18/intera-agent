@@ -475,13 +475,14 @@ export class HookEngine {
     check: Record<string, unknown>,
     context: HookContext,
   ): { violated: boolean; reason?: string } {
+    const configuredReason = getString(check, 'reason')
     if (getBoolean(check, 'always')) {
-      return { violated: true, reason: getString(check, 'reason') ?? 'Hook rule matched.' }
+      return { violated: true, reason: configuredReason ?? 'Hook rule matched.' }
     }
 
     const denyTools = getStringArray(check, 'denyTools')
     if (context.tool?.name && denyTools.includes(context.tool.name)) {
-      return { violated: true, reason: `Tool "${context.tool.name}" is denied by Hook rule.` }
+      return { violated: true, reason: configuredReason ?? `Tool "${context.tool.name}" is denied by Hook rule.` }
     }
 
     const requireTools = getStringArray(check, 'requireTools')
@@ -489,7 +490,7 @@ export class HookEngine {
       const called = new Set(context.previousToolCalls.map((call) => call.name))
       const missing = requireTools.filter((name) => !called.has(name))
       if (missing.length > 0) {
-        return { violated: true, reason: `Required tools not called: ${missing.join(', ')}` }
+        return { violated: true, reason: configuredReason ?? `Required tools not called: ${missing.join(', ')}` }
       }
     }
 
@@ -498,7 +499,7 @@ export class HookEngine {
       const called = new Set(context.previousToolCalls.map((call) => call.name))
       const ok = requireToolsAny.some((name) => called.has(name))
       if (!ok) {
-        return { violated: true, reason: `Must call at least one of: ${requireToolsAny.join(', ')}` }
+        return { violated: true, reason: configuredReason ?? `Must call at least one of: ${requireToolsAny.join(', ')}` }
       }
     }
 
@@ -506,7 +507,7 @@ export class HookEngine {
     if (requireFacts.length > 0) {
       const missing = requireFacts.filter((fact) => context.caseFacts[fact] == null || context.caseFacts[fact] === '')
       if (missing.length > 0) {
-        return { violated: true, reason: `Missing required facts: ${missing.join(', ')}` }
+        return { violated: true, reason: configuredReason ?? `Missing required facts: ${missing.join(', ')}` }
       }
     }
 
@@ -518,7 +519,7 @@ export class HookEngine {
       const lowered = context.replyDraft.toLowerCase()
       const hit = forbiddenPhrases.find((phrase) => lowered.includes(phrase.toLowerCase()))
       if (hit) {
-        return { violated: true, reason: `Reply draft contains forbidden phrase: ${hit}` }
+        return { violated: true, reason: configuredReason ?? `Reply draft contains forbidden phrase: ${hit}` }
       }
     }
 
@@ -526,14 +527,14 @@ export class HookEngine {
     if (outputContains.length > 0) {
       const payload = JSON.stringify(context.tool?.output ?? {})
       const hit = outputContains.find((phrase) => payload.includes(phrase))
-      if (hit) return { violated: true, reason: `Tool output matched Hook condition: ${hit}` }
+      if (hit) return { violated: true, reason: configuredReason ?? `Tool output matched Hook condition: ${hit}` }
     }
 
     const inputContains = getStringArray(check, 'inputContains')
     if (inputContains.length > 0) {
       const payload = JSON.stringify(context.tool?.input ?? {})
       const hit = inputContains.find((phrase) => payload.includes(phrase))
-      if (hit) return { violated: true, reason: `Tool input matched Hook condition: ${hit}` }
+      if (hit) return { violated: true, reason: configuredReason ?? `Tool input matched Hook condition: ${hit}` }
     }
 
     return { violated: false }

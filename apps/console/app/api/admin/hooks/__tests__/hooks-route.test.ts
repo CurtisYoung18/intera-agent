@@ -353,6 +353,29 @@ describe('F4 Hook API', () => {
     expect(res.status).toBe(400)
   })
 
+  it('POST rejects declarative Rule Tool names that do not exist on the Agent', async () => {
+    const res = await POST(makeRequest('/api/admin/hooks', {
+      agentConfigId: 'agent_default_v1',
+      name: 'bad_tool_rule',
+      checkpoint: 'PostToolUse',
+      handlerKind: 'declarative',
+      handler: {
+        kind: 'declarative',
+        check: {
+          kind: 'rule',
+          match: { tools: ['missing_tool'] },
+          always: true,
+        },
+        effect: { decision: 'warn' },
+      },
+    }))
+    const body = await res.json()
+
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(res.status).toBe(400)
+  })
+
   it('PUT updates an existing Hook and keeps bindings attached', async () => {
     const res = await PutHook(makeRequest('/api/admin/hooks/investigate_before_transfer', {
       agentConfigId: 'agent_default_v1',

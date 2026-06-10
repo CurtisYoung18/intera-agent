@@ -12,6 +12,7 @@ import {
   serializeHandler,
   serializeHook,
   serializeBinding,
+  validateHandlerToolReferences,
   type AgentConfigQueryInput,
   type HookBindingRow,
   type HookCreateInput,
@@ -76,6 +77,7 @@ export const POST = defineRoute<HookCreateInput>({
     await assertAgentInOrg(repo, agentConfigId)
 
     const normalizedHandler = normalizeHandler(handlerKind, handler)
+    await validateHandlerToolReferences(repo, agentConfigId, normalizedHandler)
     const hook = await repo.raw.hook.create({
       data: {
         agentConfigId,
