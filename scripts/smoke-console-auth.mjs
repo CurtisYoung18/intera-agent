@@ -15,6 +15,7 @@ const BASE_URL = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:3001'
 const OUTPUT_DIR = resolve(ROOT, process.env.SMOKE_OUTPUT_DIR || '.artifacts/final-smoke')
 const LOGIN_EMAIL = process.env.SMOKE_EMAIL || process.env.SEED_OWNER_EMAIL || 'admin@intera.local'
 const LOGIN_PASSWORD = process.env.SMOKE_PASSWORD || process.env.STAFF_PASSWORD
+const BASE_HOSTNAME = new URL(BASE_URL).hostname
 
 if (!LOGIN_PASSWORD) {
   console.error('Missing STAFF_PASSWORD or SMOKE_PASSWORD in environment')
@@ -71,6 +72,22 @@ async function loginAndGetCookie() {
 
 function buildCookieHeader(cookie) {
   return `${cookie.name}=${cookie.value}`
+}
+
+function buildContextCookies(cookie) {
+  const hostnames = new Set([BASE_HOSTNAME])
+  if (BASE_HOSTNAME === '127.0.0.1') hostnames.add('localhost')
+  if (BASE_HOSTNAME === 'localhost') hostnames.add('127.0.0.1')
+
+  return [...hostnames].map((domain) => ({
+    name: cookie.name,
+    value: cookie.value,
+    domain,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: false,
+  }))
 }
 
 async function discoverDetailRoutes(cookie) {
@@ -135,6 +152,35 @@ async function smokeRoute(page, route, width, height) {
   }
 }
 
+async function smokeLegacyRedirect(page, route, expectedPathname) {
+  const consoleErrors = []
+  const pageErrors = []
+  page.removeAllListeners('console')
+  page.removeAllListeners('pageerror')
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => {
+    pageErrors.push(String(err))
+  })
+
+  const response = await page.goto(`${BASE_URL}${route}`, { waitUntil: 'networkidle' })
+  const status = response?.status() ?? null
+  const finalUrl = page.url()
+  const finalPathname = new URL(finalUrl).pathname
+
+  return {
+    route,
+    status,
+    finalUrl,
+    expectedPathname,
+    finalPathname,
+    redirectedCorrectly: finalPathname === expectedPathname,
+    consoleErrors,
+    pageErrors,
+  }
+}
+
 async function main() {
   const sessionCookie = await loginAndGetCookie()
   const detailRoutes = await discoverDetailRoutes(sessionCookie)
@@ -163,22 +209,29 @@ async function main() {
     '/operate/conversations',
     '/settings/organization',
   ]
+  const legacyRedirectRoutes = [
+    ['/admin/case-types', '/build/components/procedures'],
+    ['/admin/case-types/deposit_issue', '/build/components/procedures/deposit_issue'],
+    ['/admin/tools', '/build/components/tools'],
+    ['/admin/knowledge', '/build/components/knowledge'],
+    ['/admin/integrations', '/build/components/integrations'],
+    ['/admin/channels/livechat', '/build/components/integrations'],
+    ['/admin/channels/web-chat', '/build/components/integrations'],
+    ['/admin/model', '/build/components/brain'],
+    ['/admin/organization', '/settings/organization'],
+    ['/admin/hooks', '/build/components/hooks'],
+    ['/ops/chats', '/operate/conversations'],
+    ['/ops/chats/seed-chat-1', '/operate/conversations/seed-chat-1'],
+    ['/ops/cases/seed-case-1', '/operate/conversations/cases/seed-case-1'],
+    ['/ops/users', '/operate/handoff'],
+  ]
 
   const browser = await chromium.launch({ headless: true })
+  const contextCookies = buildContextCookies(sessionCookie)
 
   try {
     const desktopContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
-    await desktopContext.addCookies([
-      {
-        name: sessionCookie.name,
-        value: sessionCookie.value,
-        domain: '127.0.0.1',
-        path: '/',
-        httpOnly: true,
-        sameSite: 'Lax',
-        secure: false,
-      },
-    ])
+    await desktopContext.addCookies(contextCookies)
     const desktopPage = await desktopContext.newPage()
     const desktop = []
     for (const route of desktopRoutes) {
@@ -192,17 +245,7 @@ async function main() {
       userAgent:
         'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
     })
-    await mobileContext.addCookies([
-      {
-        name: sessionCookie.name,
-        value: sessionCookie.value,
-        domain: '127.0.0.1',
-        path: '/',
-        httpOnly: true,
-        sameSite: 'Lax',
-        secure: false,
-      },
-    ])
+    await mobileContext.addCookies(contextCookies)
     const mobilePage = await mobileContext.newPage()
     const mobile = []
     for (const route of mobileRoutes) {
@@ -210,7 +253,16 @@ async function main() {
     }
     await mobileContext.close()
 
-    const summary = { desktop, mobile }
+    const redirectContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    await redirectContext.addCookies(contextCookies)
+    const redirectPage = await redirectContext.newPage()
+    const legacyRedirects = []
+    for (const [route, expectedPathname] of legacyRedirectRoutes) {
+      legacyRedirects.push(await smokeLegacyRedirect(redirectPage, route, expectedPathname))
+    }
+    await redirectContext.close()
+
+    const summary = { desktop, mobile, legacyRedirects }
     const summaryPath = resolve(OUTPUT_DIR, 'summary.json')
     writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`)
 
@@ -218,9 +270,10 @@ async function main() {
       const hasOverflow = item.overflow.scrollWidth > item.overflow.width || item.overflow.bodyScrollWidth > item.overflow.width
       return item.redirectedToLogin || (item.status != null && item.status >= 400) || hasOverflow || item.consoleErrors.length > 0 || item.pageErrors.length > 0 || item.hasMain < 1
     })
+    const redirectFailures = legacyRedirects.filter((item) => !item.redirectedCorrectly || (item.status != null && item.status >= 400) || item.consoleErrors.length > 0 || item.pageErrors.length > 0)
 
-    console.log(JSON.stringify({ ok: failures.length === 0, summaryPath, failures }, null, 2))
-    if (failures.length > 0) process.exit(1)
+    console.log(JSON.stringify({ ok: failures.length === 0 && redirectFailures.length === 0, summaryPath, failures, redirectFailures }, null, 2))
+    if (failures.length > 0 || redirectFailures.length > 0) process.exit(1)
   } finally {
     await browser.close()
   }

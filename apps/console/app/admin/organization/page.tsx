@@ -1,5 +1,5 @@
-import OrganizationWorkspace from '@/components/settings/organization-workspace'
+import { redirect } from 'next/navigation'
 
-export default function OrganizationPage() {
-  return <OrganizationWorkspace />
+export default function AdminOrganizationRedirectPage() {
+  redirect('/settings/organization')
 }

@@ -1,5 +1,5 @@
-import IntegrationsWorkspace from '@/components/integrations/integrations-workspace'
+import { redirect } from 'next/navigation'
 
-export default function IntegrationsPage() {
-  return <IntegrationsWorkspace />
+export default function AdminIntegrationsRedirectPage() {
+  redirect('/build/components/integrations')
 }

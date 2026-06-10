@@ -186,6 +186,7 @@ A final regression receipt must state:
 4. clean `build:console` result
 5. browser smoke result or explicit blocker
 6. whether any remaining non-Playground wrapper import still exists
+7. whether legacy `/admin/*` and `/ops/*` entry points redirect into the native surfaces without exposing old UI
 
 The correct final statement is:
 

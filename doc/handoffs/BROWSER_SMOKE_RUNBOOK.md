@@ -66,6 +66,7 @@ What it does:
 - captures the real `intera_session` from `Set-Cookie`
 - injects that session into Playwright for `127.0.0.1`
 - verifies the current Build / Operate / Settings route matrix
+- verifies legacy `/admin/*` and `/ops/*` entry points land on the new native surfaces
 - writes screenshots + `summary.json` to `.artifacts/final-smoke/`
 
 3. If `npm run smoke:console` fails:
