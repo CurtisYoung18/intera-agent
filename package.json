@@ -8,6 +8,7 @@
   "scripts": {
     "dev:console": "npm run dev -w apps/console",
     "build:console": "npm run build -w apps/console",
+    "smoke:console": "node scripts/smoke-console-auth.mjs",
     "db:generate": "npm run db:generate -w packages/shared",
     "db:push": "npm run db:push -w packages/shared",
     "db:studio": "npm run db:studio -w packages/shared",

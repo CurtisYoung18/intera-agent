@@ -192,6 +192,21 @@ Use this as the UI refactor target after the Foundation Reset contracts and Hook
 
 Route redirects may exist for old links, but new navigation, docs, tests, and screenshots should use the target IA.
 
+### 2.3 Native page rule
+
+Target-state rule for the Console rebuild:
+
+- `Build`, `Operate`, and `Settings` routes must render native workspace pages aligned to the target IA.
+- A target route must not satisfy this requirement by importing an old route component from `@/app/admin/**` or `@/app/ops/**`.
+- Compatibility redirects for old URLs may remain, but they are not the implementation source of the target route.
+- The only approved first-launch exception is `Playground`: Pilot Lab may continue to embed the existing dry-run/trace implementation while parity is preserved.
+
+This means:
+
+- `/build/components/procedures` cannot remain a wrapper around `/admin/case-types`.
+- `/build/components/tools`, `/hooks`, `/knowledge`, `/integrations`, `/operate/conversations`, and `/settings/organization` must each become native page/workspace implementations even if they continue to call current backend endpoints.
+- Using current backend endpoints such as `/api/admin/case-types` is acceptable until a backend rename lane is approved. Reusing old page components is not.
+
 ---
 
 ## 3. Page behavior
@@ -428,6 +443,37 @@ Scope:
 - LiveChat.
 - Web Chat.
 - API Access.
+
+### P0 Component Workspace Truth Audit
+
+Current audit date: 2026-06-10.
+
+This audit began because several Build > Components routes used to preserve old admin implementations under the new IA. The current target truth is stricter: Build / Operate / Settings primary routes are now native and the only approved P0 compatibility reuse is Playground. Any route that still creates old objects by default, links back into old admin routes, or exposes CaseType/Policy/Skill/Guardrail semantics is not delivery-ready even if the runtime/API beneath it works.
+
+| Component | Current implementation truth | P0 status | Required correction |
+|---|---|---|---|
+| Brain / Model | `/build/components/brain` is now a native Brain workspace with local sections for Model, Memory, Profile, and Compact Test. Model save, prompt save, assembled prompt preview, and memory/profile/compact sections all live inside the same Build route without importing the old `/admin/model` page. | Mostly usable | Add focused browser verification and consider whether `resumePrompt` needs a visible P0 control or can remain backend-only until a dedicated prompt lane. |
+| Brain / Memory | Memory, Profile, and Compact Test are mostly aligned and already separate ProcedureRun state from memory. Some copy still uses generic "policy" wording for profile promotion. | Mostly usable | Keep the existing strategy-first Memory UI. Clean remaining "policy" copy to "rule" or "promotion rule" where it is user-facing. |
+| Procedures | `/build/components/procedures` and `/build/components/procedures/[name]` are now native Build pages. New creation defaults to `new_procedure_*`, `procedure: { steps: [] }`, and routes directly into `/build/components/procedures/[name]`. The main editor now centers on Procedure steps and step-level Hook binding instead of exposing Legacy runtime authoring by default. | Mostly usable | Add focused browser verification and follow with a native Hook simulation panel so Procedure authors can test step bindings without leaving Build. |
+| Hooks | `/build/components/hooks` is now a native Build route that mounts the Hook Builder directly instead of importing the old `/admin/hooks` page. It can create declarative/code/HTTP Hooks and bind them to agent, Procedure type, ProcedureStep, and Tool scopes with current Hook APIs. | Mostly usable | Add focused browser verification, add an explicit Hook simulation/test panel, and ensure ProcedureStep binding remains reachable from both Hooks and Procedure Step editing. |
+| Tools | `/build/components/tools` is now a native Build page. It supports business Tool CRUD, HTTP endpoint test, static fixture authoring, LiveChat render hints, locked runtime-managed Tool visibility, channel-tool enable toggles, and Knowledge auto-generated tool awareness without importing the old `/admin/tools` page. | Mostly usable | Add focused browser verification and decide whether P0 needs a first-class dedicated Tool simulation tab beyond HTTP endpoint test and fixture preview. |
+| Knowledge | `/build/components/knowledge` is now a native Build page using current GPTBots/source/test endpoints. Source editing is Procedure-scoped with live Procedure type options, and the main route no longer exposes old hardcoded CaseType option labels. | Mostly usable | Add focused browser verification and decide whether Procedure-scoped knowledge needs richer per-step visibility in P0, but keep GPTBots retrieval testing as a first-class delivery check. |
+| Integrations | `/build/components/integrations` is now a native Build workspace. Channels and API keys live in the same route, channel cards no longer push into old `/admin/channels/*`, LiveChat now uses the current `agentConfigId`-scoped config/groups APIs, and the API key tutorial no longer points to `/api/cases`. | Mostly usable | Add focused browser verification for LiveChat and Web Chat detail states, and decide whether P0 needs a richer Web Chat customer-side preview beyond the embed snippet. |
+| Operate / Conversations | `/operate/conversations`, `/operate/conversations/[chatId]`, and `/operate/conversations/cases/[caseId]` are now native Operate routes. They mount shared conversation, chat-detail, and ProcedureRun-detail workspaces directly instead of exporting old `ops/chats` or `ops/cases` pages. | Mostly usable | Add focused browser verification for inbox, transcript, Memory, Trace, export, delete, and jump-link states with real data. |
+| Operate / Handoff detail | `/operate/handoff/[userId]` now mounts a native User Profile workspace directly instead of exporting the old `ops/users/[userId]` page. | Mostly usable | Add focused browser verification for profile edit/delete and linked chat history states with real data. |
+| Pilot Lab / Playground | Pilot Lab now owns Pilot and Playground tabs and preserves dry-run plus Trace Sidebar. The embedded Playground still has some legacy field names and labels such as `guardrailCount`, `skillCallId`, and older sample phrasing. | P0 cleanup, not deletion | Do not delete Playground dry-run or Trace Sidebar. Clean remaining visible legacy copy while leaving internal compatibility field names alone unless a focused runtime lane owns them. |
+
+Remaining wrapper truth outside Components:
+
+- No remaining primary Build / Operate / Settings target route should export old `admin` or `ops` page components.
+- `Playground` remains the only approved P0 compatibility reuse and may continue to import the old `/app/admin/playground/page`.
+- `/settings/organization`, `/operate/conversations*`, and `/operate/handoff/[userId]` are now native but still need focused browser verification against real data/auth states.
+- Current source-level stale-term hits on primary surfaces are limited to internal/backend contract names such as `CaseTypeItem`, `CaseTypeOption`, `lastCaseType`, and `showSkillStatus`. These are tolerated only while they remain non-user-facing.
+
+Blocking rule:
+
+- A component is not P0 delivery-ready if a delivery person can create a new object that defaults into retired Legacy runtime, CaseType, Policy, Guardrail, Skill, or old admin-route behavior.
+- Internal DB/API names may remain temporarily when changing them would require schema migration, but the Build workspace must present the current product model: Brain, Procedure, Tool, Hook, Knowledge, Integration, Scenario, Package, Chat, User, HumanTask, Trace, and Memory.
 
 API keys belong here as channel/access integration settings, not in Settings.
 

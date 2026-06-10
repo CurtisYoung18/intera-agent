@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import ConfigDiffViewer, { type ConfigDiffGroup, type ConfigDiffItem } from '@/components/config-diff/config-diff-viewer'
 import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
+import { useConsoleLocale } from '@/components/locale-provider'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { MAX_AGENT_CONFIG_VERSIONS } from '@/lib/agent-config/versioning'
 import type { AgentTemplateImportReport, InteraAgentTemplateV1 } from '@intera/shared/contracts/agent-template'
@@ -87,36 +88,262 @@ const EMPTY_RELEASE_DATA: ReleaseData = {
   templateErrors: {},
 }
 
-const GROUP_COPY = {
-  brain: {
-    title: 'Brain',
-    description: 'Model, prompt, generation limits, memory strategy, and resume behavior.',
+const RELEASE_COPY = {
+  en: {
+    groups: {
+      brain: { title: 'Brain', description: 'Model, prompt, generation limits, memory strategy, and resume behavior.' },
+      procedures: { title: 'Procedures', description: 'Procedure types and step manifests that guide the ProcedureRun Agent.' },
+      tools: { title: 'Tools', description: 'HTTP, fixture, and managed tools available to procedures.' },
+      hooks: { title: 'Hooks', description: 'Hook definitions and binding scopes across Agent, Procedure type, Procedure step, and Tool.' },
+      scenarios: { title: 'Scenarios', description: 'Portable Scenario definitions for fixture and runtime-backed validation.' },
+      knowledge: { title: 'Knowledge', description: 'Knowledge source bindings and retrieval configuration.' },
+      integrations: { title: 'Integrations', description: 'Channel bindings, API access, and customer environment connections.' },
+    },
+    notSet: 'Not set',
+    notPresent: 'Not present',
+    changedRows: (count: number) => `${count} changed rows`,
+    noMaterialChanges: 'No material changes',
+    agentBrainSettings: 'Agent Brain settings',
+    modelShort: (model: string) => `Model ${model}`,
+    disabledSuffix: ' · disabled',
+    turns: (count: number) => `${count} turns`,
+    runtimeBacked: 'Runtime-backed',
+    fixtureOnly: 'Fixture-only',
+    live: 'Live',
+    draft: 'Draft',
+    historical: 'Historical',
+    liveSubtitle: 'Customer channels are currently using this version.',
+    draftSubtitle: 'Edits stay isolated until Publish is confirmed explicitly.',
+    historicalSubtitle: 'Frozen reference version for rollback review or draft forking.',
+    validationUnavailable: 'Validation unavailable',
+    validationUnavailableMeta: 'Release can still show version history, but evidence failed to load.',
+    notValidated: 'Not validated',
+    noScenarioReceipt: 'No Scenario receipt is recorded for this version.',
+    publishOverrideMeta: 'Publish requires an override reason until fresh validation exists.',
+    runtimeValidated: 'Runtime validated',
+    runtimeValidatedDetail: (value: string) => `Runtime receipt recorded ${value}`,
+    runtimeValidatedMeta: 'Runtime-backed validation is available.',
+    fixtureOnlyValidated: 'Fixture-only validated',
+    validated: 'Validated',
+    validatedDetail: (value: string) => `Validated ${value}`,
+    validatedMeta: 'Validation exists but no receipt summary loaded.',
+    changedSinceLastValidation: 'Changed since last validation',
+    changedDetail: (value: string) => `Draft changed after ${value}`,
+    overrideRequired: 'Override required before publish.',
+    failedDetail: 'The latest validation did not pass.',
+    failedMeta: 'Publish is still possible, but an override reason is required.',
+    noFreshValidation: 'No fresh validation summary is available.',
+    runPilotLab: 'Run Pilot Lab before publish.',
+    currentLiveBaseline: 'Current live baseline',
+    templateDiffUnavailable: 'Template diff preview unavailable',
+    diffVsLive: (rows: number, groups: number) => `${rows} changed rows across ${groups} groups vs live`,
+    selectedVersion: 'Selected version',
+    selectedRoleVersion: (role: string) => `Selected ${role.toLowerCase()} version`,
+    actionHints: {
+      live: ['Export selected package', 'Create editable draft'],
+      draft: ['Publish selected version', 'Export selected package', 'Create editable draft'],
+      historical: ['Preview rollback', 'Create editable draft', 'Export selected package'],
+    },
+    loading: 'Loading Release command center...',
+    tryAgain: 'Try again',
+    breadcrumbRelease: 'Release',
+    viewingRoleVersion: (role: string) => `Viewing ${role} version`,
+    heroDescription: 'Keep version selection, validation evidence, and package actions in one clear Release surface before any explicit publish.',
+    timelineTruth: 'Timeline stays the source of truth',
+    publishExplicit: 'Publish remains explicit',
+    releaseSelection: 'Release selection',
+    version: 'Version',
+    retained: 'Retained',
+    changedRowsLabel: 'Changed rows',
+    validation: 'Validation',
+    releaseAgentVersionAria: 'Release agent version',
+    importPackageAria: 'Import .intera-agent.json file',
+    failedToLoad: 'Failed to load release data',
+    exported: (filename: string) => `Exported ${filename}`,
+    exportFailed: 'Export failed',
+    importDryRunDone: (filename: string) => `Package dry-run completed for ${filename}`,
+    importDryRunFailed: 'Import dry-run failed',
+    importedDraftPackage: (name: string) => `Imported ${name} as a draft package`,
+    importFailed: 'Import failed',
+    createdDraft: (version: number, name: string, fromVersion: number) => `Created editable draft v${version} from ${name} v${fromVersion}`,
+    duplicateFailed: 'Duplicate failed',
+    overrideReasonRequired: 'Override reason is required when validation is stale, failing, or unvalidated.',
+    published: (name: string, version: number) => `Published ${name} v${version}`,
+    publishFailed: 'Publish failed',
+    templatePreviewErrorPrefix: 'Template previews are isolated because export failed for:',
+    publishDialogAria: 'Publish version',
+    explicitPublish: 'Explicit publish',
+    publishVersionTitle: (name: string, version: number) => `Publish ${name} v${version}`,
+    publishHistoricalHint: 'This reactivates the selected historical version. Rollback preview stays read-only until you confirm publish.',
+    publishDraftHint: 'This activates the selected non-live version for customer channels. Draft save and import actions remain isolated until publish.',
+    closePublishDialogAria: 'Close publish dialog',
+    releaseNote: 'Release note',
+    releaseNotePlaceholder: 'What changed in this publish?',
+    overrideReason: 'Override reason',
+    overrideReasonPlaceholder: 'Required because validation is stale, failing, or missing.',
+    cancel: 'Cancel',
+    publishVersionButton: 'Publish version',
+    rollbackPreview: 'Rollback preview',
+    releaseSafety: 'Release safety',
+    rollbackPreviewDescription: (liveVersion: number | string, selectedVersion: string) => `Preview how live v${liveVersion} differs from ${selectedVersion} before any mutation. This drawer never activates rollback by itself.`,
+    rollbackCandidate: 'Candidate',
+    rollbackPublishHint: 'If you want to reactivate it, close this preview and use Publish explicitly.',
+    rollbackSelectPrompt: 'Select a draft or historical version from the timeline first.',
+    rollbackDiffPreview: 'Rollback diff preview',
+    rollbackDiffSubtitle: 'Live version compared with the selected non-live version.',
+    actionRules: [
+      'Publish only activates a selected non-live version after confirmation and validation review.',
+      'Rollback preview stays read-only and never mutates live state by itself.',
+      'Create editable draft forks the selected version when retention capacity still exists.',
+      'Import always starts with a compatibility dry-run.',
+      'Export always downloads the currently selected package.',
+    ],
+    importDryRunReport: 'Import dry-run report',
+    importReady: 'Ready to create a draft version.',
+    importBlocked: 'Import is blocked until conflicts are resolved.',
+    clear: 'Clear',
+    createDraft: 'Create draft',
+    missingSecrets: 'Missing secrets',
+    noRequiredSecrets: 'No required secret placeholders.',
+    conflicts: 'Conflicts',
+    noBlockingConflicts: 'No blocking conflicts.',
+    unsupportedIntegrations: 'Unsupported integrations',
+    noUnsupportedIntegrations: 'No unsupported integrations.',
+    knowledgeRequirements: 'Knowledge requirements',
+    noMissingKnowledgeRefs: 'No missing Knowledge refs.',
+    warnings: 'Warnings',
   },
-  procedures: {
-    title: 'Procedures',
-    description: 'Procedure types and step manifests that guide the ProcedureRun Agent.',
-  },
-  tools: {
-    title: 'Tools',
-    description: 'HTTP, fixture, and managed tools available to procedures.',
-  },
-  hooks: {
-    title: 'Hooks',
-    description: 'Hook definitions and binding scopes across Agent, Procedure type, Procedure step, and Tool.',
-  },
-  scenarios: {
-    title: 'Scenarios',
-    description: 'Portable Scenario definitions for fixture and runtime-backed validation.',
-  },
-  knowledge: {
-    title: 'Knowledge',
-    description: 'Knowledge source bindings and retrieval configuration.',
-  },
-  integrations: {
-    title: 'Integrations',
-    description: 'Channel bindings, API access, and customer environment connections.',
+  zh: {
+    groups: {
+      brain: { title: 'Brain', description: '模型、提示词、生成限制、记忆策略和恢复行为。' },
+      procedures: { title: 'Procedures', description: '引导 ProcedureRun Agent 的 Procedure 类型和步骤清单。' },
+      tools: { title: 'Tools', description: 'Procedure 可用的 HTTP、fixture 和托管工具。' },
+      hooks: { title: 'Hooks', description: '跨 Agent、Procedure 类型、Procedure 步骤和 Tool 的 Hook 定义与绑定范围。' },
+      scenarios: { title: 'Scenarios', description: '可移植的 Scenario 定义，可用于 fixture 与 runtime-backed 验证。' },
+      knowledge: { title: 'Knowledge', description: '知识源绑定与检索配置。' },
+      integrations: { title: 'Integrations', description: '渠道绑定、API 访问和客户环境连接。' },
+    },
+    notSet: '未设置',
+    notPresent: '不存在',
+    changedRows: (count: number) => `${count} 行变更`,
+    noMaterialChanges: '没有实质变化',
+    agentBrainSettings: 'Agent Brain 设置',
+    modelShort: (model: string) => `模型 ${model}`,
+    disabledSuffix: ' · 已禁用',
+    turns: (count: number) => `${count} 轮`,
+    runtimeBacked: '运行时验证',
+    fixtureOnly: '静态样例验证',
+    live: '当前版本',
+    draft: '草稿',
+    historical: '历史版本',
+    liveSubtitle: '当前客户渠道正在使用这个版本。',
+    draftSubtitle: '这里的修改会保持隔离，直到你明确确认发布。',
+    historicalSubtitle: '冻结的参考版本，用于回滚预览或继续派生草稿。',
+    validationUnavailable: '验证不可用',
+    validationUnavailableMeta: '版本历史仍可查看，但验证证据加载失败。',
+    notValidated: '尚未验证',
+    noScenarioReceipt: '这个版本还没有记录任何 Scenario 回执。',
+    publishOverrideMeta: '在没有新鲜验证结果前，发布需要填写 override 原因。',
+    runtimeValidated: '运行时已验证',
+    runtimeValidatedDetail: (value: string) => `运行时回执记录于 ${value}`,
+    runtimeValidatedMeta: '已经具备运行时验证结果。',
+    fixtureOnlyValidated: '仅静态样例验证',
+    validated: '已验证',
+    validatedDetail: (value: string) => `验证时间 ${value}`,
+    validatedMeta: '已有验证结果，但没有加载到回执摘要。',
+    changedSinceLastValidation: '自上次验证后已变更',
+    changedDetail: (value: string) => `草稿在 ${value} 之后发生了变化`,
+    overrideRequired: '发布前需要填写 override 原因。',
+    failedDetail: '最近一次验证没有通过。',
+    failedMeta: '仍然可以发布，但必须填写 override 原因。',
+    noFreshValidation: '目前没有新鲜的验证摘要。',
+    runPilotLab: '发布前请先运行 Pilot Lab。',
+    currentLiveBaseline: '当前 live 基线',
+    templateDiffUnavailable: '模板 diff 预览不可用',
+    diffVsLive: (rows: number, groups: number) => `相对 live 有 ${rows} 行变更，分布在 ${groups} 个分组`,
+    selectedVersion: '已选版本',
+    selectedRoleVersion: (role: string) => `已选${role}`,
+    actionHints: {
+      live: ['导出当前包', '派生可编辑草稿'],
+      draft: ['发布当前版本', '导出当前包', '派生可编辑草稿'],
+      historical: ['预览回滚', '派生可编辑草稿', '导出当前包'],
+    },
+    loading: '正在加载发布控制台…',
+    tryAgain: '重试',
+    breadcrumbRelease: '发布',
+    viewingRoleVersion: (role: string) => `正在查看${role}`,
+    heroDescription: '把版本选择、验证证据和包级操作都放进一个清晰的发布页面里，再去做任何明确的发布动作。',
+    timelineTruth: '时间线仍是唯一事实来源',
+    publishExplicit: '发布仍需明确确认',
+    releaseSelection: '发布版本选择',
+    version: '版本',
+    retained: '保留版本',
+    changedRowsLabel: '变更行数',
+    validation: '验证状态',
+    releaseAgentVersionAria: '发布版本选择',
+    importPackageAria: '导入 .intera-agent.json 文件',
+    failedToLoad: '发布页加载失败',
+    exported: (filename: string) => `已导出 ${filename}`,
+    exportFailed: '导出失败',
+    importDryRunDone: (filename: string) => `已完成 ${filename} 的 package dry-run`,
+    importDryRunFailed: '导入 dry-run 失败',
+    importedDraftPackage: (name: string) => `已将 ${name} 导入为草稿 package`,
+    importFailed: '导入失败',
+    createdDraft: (version: number, name: string, fromVersion: number) => `已从 ${name} v${fromVersion} 派生可编辑草稿 v${version}`,
+    duplicateFailed: '派生草稿失败',
+    overrideReasonRequired: '验证过期、失败或缺失时，必须填写 override 原因。',
+    published: (name: string, version: number) => `已发布 ${name} v${version}`,
+    publishFailed: '发布失败',
+    templatePreviewErrorPrefix: '以下版本导出失败，因此模板预览被隔离显示：',
+    publishDialogAria: '发布版本确认',
+    explicitPublish: '明确发布',
+    publishVersionTitle: (name: string, version: number) => `发布 ${name} v${version}`,
+    publishHistoricalHint: '这会重新激活选中的历史版本。在你最终确认发布前，回滚预览始终保持只读。',
+    publishDraftHint: '这会把当前选中的非 live 版本推到客户渠道。草稿保存和导入动作在发布前都保持隔离。',
+    closePublishDialogAria: '关闭发布弹窗',
+    releaseNote: '发布说明',
+    releaseNotePlaceholder: '这次发布改了什么？',
+    overrideReason: 'Override 原因',
+    overrideReasonPlaceholder: '因为验证过期、失败或缺失，所以这里必须填写原因。',
+    cancel: '取消',
+    publishVersionButton: '确认发布版本',
+    rollbackPreview: '回滚预览',
+    releaseSafety: '发布安全',
+    rollbackPreviewDescription: (liveVersion: number | string, selectedVersion: string) => `先预览 live v${liveVersion} 与${selectedVersion}之间的差异，再决定是否操作。这个抽屉本身不会触发回滚。`,
+    rollbackCandidate: '候选版本',
+    rollbackPublishHint: '如果你想重新激活它，请先关闭这个预览，再用“发布”明确确认。',
+    rollbackSelectPrompt: '请先在时间线里选择一个草稿或历史版本。',
+    rollbackDiffPreview: '回滚差异预览',
+    rollbackDiffSubtitle: '对比 live 版本与当前所选非 live 版本的差异。',
+    actionRules: [
+      '发布只会在你确认并完成验证审查后，激活当前选中的非 live 版本。',
+      '回滚预览始终保持只读，不会自行改动 live 状态。',
+      '只要还有保留容量，就可以从当前所选版本派生新的可编辑草稿。',
+      '导入一定先执行兼容性 dry-run。',
+      '导出一定下载当前选中的 package。',
+    ],
+    importDryRunReport: '导入 dry-run 报告',
+    importReady: '可以继续创建草稿版本。',
+    importBlocked: '冲突未解决前，导入会被阻止。',
+    clear: '清除',
+    createDraft: '创建草稿',
+    missingSecrets: '缺失 Secrets',
+    noRequiredSecrets: '没有缺失的必需 Secret 占位。',
+    conflicts: '冲突',
+    noBlockingConflicts: '没有阻塞性冲突。',
+    unsupportedIntegrations: '不支持的集成',
+    noUnsupportedIntegrations: '没有发现不支持的集成。',
+    knowledgeRequirements: 'Knowledge 要求',
+    noMissingKnowledgeRefs: '没有缺失的 Knowledge 引用。',
+    warnings: '警告',
   },
 } as const
+
+type ReleaseLocale = keyof typeof RELEASE_COPY
+
+function releaseCopy(locale: ReleaseLocale) {
+  return RELEASE_COPY[locale]
+}
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
@@ -128,11 +355,11 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (body?.data ?? body) as T
 }
 
-function formatDate(value?: string | null, empty = 'Not set') {
-  if (!value) return empty
+function formatDate(locale: ReleaseLocale, value?: string | null, empty?: string) {
+  if (!value) return empty ?? releaseCopy(locale).notSet
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return empty
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+  if (Number.isNaN(date.getTime())) return empty ?? releaseCopy(locale).notSet
+  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
 function validationTone(state?: string) {
@@ -181,9 +408,9 @@ function sanitizeReleaseCopy(raw: string): string {
     .replace(/\bplatform policy\b/gi, 'platform rule')
 }
 
-function shortValue(value: unknown) {
+function shortValue(value: unknown, locale: ReleaseLocale) {
   const raw = sanitizeReleaseCopy(stableString(value))
-  if (!raw) return 'Not present'
+  if (!raw) return releaseCopy(locale).notPresent
   return raw.length > 420 ? `${raw.slice(0, 420)}...` : raw
 }
 
@@ -201,6 +428,7 @@ function diffCollection<T>(
   afterItems: T[],
   keyFor: (item: T) => string,
   labelFor: (item: T) => string,
+  locale: ReleaseLocale,
   detailFor?: (item: T) => string | undefined,
 ): ConfigDiffItem[] {
   const beforeMap = new Map(beforeItems.map((item) => [keyFor(item), item]))
@@ -215,8 +443,8 @@ function diffCollection<T>(
       label: sanitizeReleaseCopy(present ? labelFor(present) : key),
       detail: present && detailFor ? sanitizeReleaseCopy(detailFor(present) ?? '') : undefined,
       status: itemStatus(before, after),
-      before: before ? shortValue(before) : undefined,
-      after: after ? shortValue(after) : undefined,
+      before: before ? shortValue(before, locale) : undefined,
+      after: after ? shortValue(after, locale) : undefined,
     }
   })
 }
@@ -225,18 +453,24 @@ function changedCount(items: ConfigDiffItem[]) {
   return items.filter((item) => item.status !== 'unchanged').length
 }
 
-function makeGroup(id: keyof typeof GROUP_COPY, items: ConfigDiffItem[]): ConfigDiffGroup {
+function makeGroup(id: keyof typeof RELEASE_COPY.en.groups, items: ConfigDiffItem[], locale: ReleaseLocale): ConfigDiffGroup {
+  const copy = releaseCopy(locale)
   const changed = changedCount(items)
   return {
     id,
-    title: GROUP_COPY[id].title,
-    description: GROUP_COPY[id].description,
-    summary: changed > 0 ? `${changed} changed rows` : 'No material changes',
+    title: copy.groups[id].title,
+    description: copy.groups[id].description,
+    summary: changed > 0 ? copy.changedRows(changed) : copy.noMaterialChanges,
     items,
   }
 }
 
-function buildDiffGroups(liveTemplate: InteraAgentTemplateV1 | null, selectedTemplate: InteraAgentTemplateV1 | null): ConfigDiffGroup[] {
+function buildDiffGroups(
+  liveTemplate: InteraAgentTemplateV1 | null,
+  selectedTemplate: InteraAgentTemplateV1 | null,
+  locale: ReleaseLocale,
+): ConfigDiffGroup[] {
+  const copy = releaseCopy(locale)
   const brainBefore = liveTemplate?.agent ? [{ key: 'brain', ...liveTemplate.agent }] : []
   const brainAfter = selectedTemplate?.agent ? [{ key: 'brain', ...selectedTemplate.agent }] : []
   const hookRowsBefore = [
@@ -251,13 +485,13 @@ function buildDiffGroups(liveTemplate: InteraAgentTemplateV1 | null, selectedTem
   const scenarioRowsAfter = scenarioRows(selectedTemplate)
 
   return [
-    makeGroup('brain', diffCollection(brainBefore, brainAfter, (item) => item.key, () => 'Agent Brain settings', (item) => typeof item.model === 'string' ? `Model ${item.model}` : undefined)),
-    makeGroup('procedures', diffCollection(liveTemplate?.caseTypes ?? [], selectedTemplate?.caseTypes ?? [], (item) => item.type, (item) => item.displayName || item.type, (item) => `${item.type} · ${item.procedure?.steps?.length ?? 0} steps`)),
-    makeGroup('tools', diffCollection(liveTemplate?.tools ?? [], selectedTemplate?.tools ?? [], (item) => item.name, (item) => item.name, (item) => `${item.mode}${item.enabled === false ? ' · disabled' : ''}`)),
-    makeGroup('hooks', diffCollection(hookRowsBefore, hookRowsAfter, (item) => item.key, (item) => `${item.kind}: ${'name' in item ? item.name : item.hookName}`, (item) => 'checkpoint' in item ? String(item.checkpoint) : String(item.scopeType))),
-    makeGroup('scenarios', diffCollection(scenarioRowsBefore, scenarioRowsAfter, (item) => item.name, (item) => item.displayName || item.name, (item) => `${item.turns?.length ?? 0} turns`)),
-    makeGroup('knowledge', diffCollection(liveTemplate?.knowledgeRefs ?? [], selectedTemplate?.knowledgeRefs ?? [], (item) => item.name, (item) => item.name, (item) => `${item.provider}${item.status ? ` · ${item.status}` : ''}`)),
-    makeGroup('integrations', diffCollection(liveTemplate?.integrationRefs ?? [], selectedTemplate?.integrationRefs ?? [], (item) => item.channel, (item) => item.name || item.channel, (item) => `${item.provider ?? item.channel}${item.status ? ` · ${item.status}` : ''}`)),
+    makeGroup('brain', diffCollection(brainBefore, brainAfter, (item) => item.key, () => copy.agentBrainSettings, locale, (item) => typeof item.model === 'string' ? copy.modelShort(item.model) : undefined), locale),
+    makeGroup('procedures', diffCollection(liveTemplate?.caseTypes ?? [], selectedTemplate?.caseTypes ?? [], (item) => item.type, (item) => item.displayName || item.type, locale, (item) => `${item.type} · ${item.procedure?.steps?.length ?? 0} ${locale === 'zh' ? '步' : 'steps'}`), locale),
+    makeGroup('tools', diffCollection(liveTemplate?.tools ?? [], selectedTemplate?.tools ?? [], (item) => item.name, (item) => item.name, locale, (item) => `${item.mode}${item.enabled === false ? copy.disabledSuffix : ''}`), locale),
+    makeGroup('hooks', diffCollection(hookRowsBefore, hookRowsAfter, (item) => item.key, (item) => `${item.kind}: ${'name' in item ? item.name : item.hookName}`, locale, (item) => 'checkpoint' in item ? String(item.checkpoint) : String(item.scopeType)), locale),
+    makeGroup('scenarios', diffCollection(scenarioRowsBefore, scenarioRowsAfter, (item) => item.name, (item) => item.displayName || item.name, locale, (item) => copy.turns(item.turns?.length ?? 0)), locale),
+    makeGroup('knowledge', diffCollection(liveTemplate?.knowledgeRefs ?? [], selectedTemplate?.knowledgeRefs ?? [], (item) => item.name, (item) => item.name, locale, (item) => `${item.provider}${item.status ? ` · ${item.status}` : ''}`), locale),
+    makeGroup('integrations', diffCollection(liveTemplate?.integrationRefs ?? [], selectedTemplate?.integrationRefs ?? [], (item) => item.channel, (item) => item.name || item.channel, locale, (item) => `${item.provider ?? item.channel}${item.status ? ` · ${item.status}` : ''}`), locale),
   ]
 }
 
@@ -265,18 +499,21 @@ function scenarioRows(template: InteraAgentTemplateV1 | null) {
   return template?.scenarioDefinitions?.length ? template.scenarioDefinitions : template?.scenarios ?? []
 }
 
-function packageCoverageRows(template: InteraAgentTemplateV1 | null) {
+function packageCoverageRows(template: InteraAgentTemplateV1 | null, locale: ReleaseLocale) {
+  const labels = locale === 'zh'
+    ? ['Brain', 'Procedures', 'Tools', 'Hooks', 'HookBindings', 'Scenarios', 'Knowledge', 'Integrations', '必需 Secrets']
+    : ['Brain', 'Procedures', 'Tools', 'Hooks', 'HookBindings', 'Scenarios', 'Knowledge', 'Integrations', 'Required secrets']
   const scenarios = scenarioRows(template)
   return [
-    { label: 'Brain', value: template?.agent ? 1 : 0 },
-    { label: 'Procedures', value: template?.caseTypes.filter((item) => item.procedure).length ?? 0 },
-    { label: 'Tools', value: template?.tools.length ?? 0 },
-    { label: 'Hooks', value: template?.hooks.length ?? 0 },
-    { label: 'HookBindings', value: template?.hookBindings.length ?? 0 },
-    { label: 'Scenarios', value: scenarios.length },
-    { label: 'Knowledge', value: template?.knowledgeRefs.length ?? 0 },
-    { label: 'Integrations', value: template?.integrationRefs.length ?? 0 },
-    { label: 'Required secrets', value: template?.requiredSecrets.length ?? template?.secrets?.length ?? 0 },
+    { label: labels[0], value: template?.agent ? 1 : 0 },
+    { label: labels[1], value: template?.caseTypes.filter((item) => item.procedure).length ?? 0 },
+    { label: labels[2], value: template?.tools.length ?? 0 },
+    { label: labels[3], value: template?.hooks.length ?? 0 },
+    { label: labels[4], value: template?.hookBindings.length ?? 0 },
+    { label: labels[5], value: scenarios.length },
+    { label: labels[6], value: template?.knowledgeRefs.length ?? 0 },
+    { label: labels[7], value: template?.integrationRefs.length ?? 0 },
+    { label: labels[8], value: template?.requiredSecrets.length ?? template?.secrets?.length ?? 0 },
   ]
 }
 
@@ -300,10 +537,11 @@ function versionRoleFor(config: AgentVersion | null, liveId: string | null, draf
   return 'historical'
 }
 
-function roleLabel(role: VersionRole) {
-  if (role === 'live') return 'Live'
-  if (role === 'draft') return 'Draft'
-  return 'Historical'
+function roleLabel(role: VersionRole, locale: ReleaseLocale) {
+  const copy = releaseCopy(locale)
+  if (role === 'live') return copy.live
+  if (role === 'draft') return copy.draft
+  return copy.historical
 }
 
 function roleTone(role: VersionRole): 'success' | 'warning' | 'neutral' {
@@ -312,73 +550,77 @@ function roleTone(role: VersionRole): 'success' | 'warning' | 'neutral' {
   return 'neutral'
 }
 
-function roleSubtitle(role: VersionRole) {
-  if (role === 'live') return 'Customer channels are currently using this version.'
-  if (role === 'draft') return 'Edits stay isolated until Publish is confirmed explicitly.'
-  return 'Frozen reference version for rollback review or draft forking.'
+function roleSubtitle(role: VersionRole, locale: ReleaseLocale) {
+  const copy = releaseCopy(locale)
+  if (role === 'live') return copy.liveSubtitle
+  if (role === 'draft') return copy.draftSubtitle
+  return copy.historicalSubtitle
 }
 
-function executionModeLabel(mode: ScenarioReceipt['executionMode'] | undefined): string {
-  return mode === 'agentRuntime' ? 'Runtime-backed' : 'Fixture-only'
+function executionModeLabel(mode: ScenarioReceipt['executionMode'] | undefined, locale: ReleaseLocale): string {
+  const copy = releaseCopy(locale)
+  return mode === 'agentRuntime' ? copy.runtimeBacked : copy.fixtureOnly
 }
 
 function buildValidationSnapshot(
   validation: ScenarioValidationSummary | undefined,
   latestReceipt: ScenarioReceipt | null,
+  locale: ReleaseLocale,
   error?: string | null,
 ): VersionValidationSnapshot {
+  const copy = releaseCopy(locale)
   if (error) {
     return {
-      label: 'Validation unavailable',
+      label: copy.validationUnavailable,
       detail: error,
-      meta: 'Release can still show version history, but evidence failed to load.',
+      meta: copy.validationUnavailableMeta,
       tone: 'danger',
     }
   }
   if (!validation) {
     return {
-      label: 'Not validated',
-      detail: 'No Scenario receipt is recorded for this version.',
-      meta: 'Publish requires an override reason until fresh validation exists.',
+      label: copy.notValidated,
+      detail: copy.noScenarioReceipt,
+      meta: copy.publishOverrideMeta,
       tone: 'warning',
     }
   }
   if (validation.runtimeValidated) {
     return {
-      label: 'Runtime validated',
-      detail: `Runtime receipt recorded ${formatDate(validation.runtimeValidatedAt ?? validation.lastValidatedAt)}`,
-      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status} · ${latestReceipt.scenarioName}` : 'Runtime-backed validation is available.',
+      label: copy.runtimeValidated,
+      detail: copy.runtimeValidatedDetail(formatDate(locale, validation.runtimeValidatedAt ?? validation.lastValidatedAt)),
+      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode, locale)} · ${latestReceipt.status} · ${latestReceipt.scenarioName}` : copy.runtimeValidatedMeta,
       tone: 'success',
     }
   }
   if (validation.state === 'Validated') {
     return {
-      label: latestReceipt?.executionMode === 'fixture' ? 'Fixture-only validated' : 'Validated',
-      detail: latestReceipt?.executionMode === 'fixture' ? 'Latest receipt is fixture-only' : `Validated ${formatDate(validation.lastValidatedAt)}`,
-      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}` : 'Validation exists but no receipt summary loaded.',
+      label: latestReceipt?.executionMode === 'fixture' ? copy.fixtureOnlyValidated : copy.validated,
+      detail: latestReceipt?.executionMode === 'fixture' ? copy.fixtureOnly : copy.validatedDetail(formatDate(locale, validation.lastValidatedAt)),
+      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode, locale)} · ${latestReceipt.status}` : copy.validatedMeta,
       tone: latestReceipt?.executionMode === 'fixture' ? 'warning' : 'success',
     }
   }
   if (validation.state === 'Changed since last validation') {
     return {
-      label: validation.state,
-      detail: `Draft changed after ${formatDate(validation.lastValidatedAt, 'the last validation run')}`,
-      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status} · override required before publish` : 'Override required before publish.',
+      label: copy.changedSinceLastValidation,
+      detail: copy.changedDetail(formatDate(locale, validation.lastValidatedAt, locale === 'zh' ? '上一次验证' : 'the last validation run')),
+      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode, locale)} · ${latestReceipt.status} · ${copy.overrideRequired}` : copy.overrideRequired,
       tone: 'warning',
     }
   }
   if (validation.state === 'Validation failed') {
     return {
-      label: validation.state,
-      detail: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt failed` : 'The latest validation did not pass.',
-      meta: 'Publish is still possible, but an override reason is required.',
+      label: locale === 'zh' ? '验证失败' : validation.state,
+      detail: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode, locale)} · ${locale === 'zh' ? '失败' : 'failed'}` : copy.failedDetail,
+      meta: copy.failedMeta,
       tone: 'danger',
     }
   }
   return {
-    label: validation.state ?? 'Not validated',
-    detail: 'No fresh validation summary is available.',
-    meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}` : 'Run Pilot Lab before publish.',
+    label: validation.state ?? copy.notValidated,
+    detail: copy.noFreshValidation,
+    meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode, locale)} · ${latestReceipt.status}` : copy.runPilotLab,
     tone: validationTone(validation.state),
   }
 }
@@ -397,30 +639,39 @@ function summarizeDiffGroups(groups: ConfigDiffGroup[]) {
   )
 }
 
-function describeDiffSummary(liveTemplate: InteraAgentTemplateV1 | null, versionTemplate: InteraAgentTemplateV1 | null, role: VersionRole) {
-  if (role === 'live') return 'Current live baseline'
-  if (!liveTemplate || !versionTemplate) return 'Template diff preview unavailable'
-  const summary = summarizeDiffGroups(buildDiffGroups(liveTemplate, versionTemplate))
-  if (summary.changedRows === 0) return 'No material changes vs live'
-  return `${summary.changedRows} changed rows across ${summary.changedGroups} groups vs live`
+function describeDiffSummary(
+  liveTemplate: InteraAgentTemplateV1 | null,
+  versionTemplate: InteraAgentTemplateV1 | null,
+  role: VersionRole,
+  locale: ReleaseLocale,
+) {
+  const copy = releaseCopy(locale)
+  if (role === 'live') return copy.currentLiveBaseline
+  if (!liveTemplate || !versionTemplate) return copy.templateDiffUnavailable
+  const summary = summarizeDiffGroups(buildDiffGroups(liveTemplate, versionTemplate, locale))
+  if (summary.changedRows === 0) return copy.noMaterialChanges
+  return copy.diffVsLive(summary.changedRows, summary.changedGroups)
 }
 
 function parentVersionFor(config: AgentVersion, family: AgentVersion[]) {
   return family.find((item) => item.id === config.parentId)?.version ?? null
 }
 
-function selectedTitle(config: AgentVersion | null, role: VersionRole | null) {
-  if (!config || !role) return 'Selected version'
-  return `Selected ${roleLabel(role).toLowerCase()} version`
+function selectedTitle(config: AgentVersion | null, role: VersionRole | null, locale: ReleaseLocale) {
+  if (!config || !role) return releaseCopy(locale).selectedVersion
+  return releaseCopy(locale).selectedRoleVersion(roleLabel(role, locale))
 }
 
-function actionHintsForRole(role: VersionRole) {
-  if (role === 'live') return ['Export selected package', 'Create editable draft']
-  if (role === 'draft') return ['Publish selected version', 'Export selected package', 'Create editable draft']
-  return ['Preview rollback', 'Create editable draft', 'Export selected package']
+function actionHintsForRole(role: VersionRole, locale: ReleaseLocale) {
+  const copy = releaseCopy(locale)
+  if (role === 'live') return copy.actionHints.live
+  if (role === 'draft') return copy.actionHints.draft
+  return copy.actionHints.historical
 }
 
 export default function ReleaseCommandCenter() {
+  const { locale, t } = useConsoleLocale()
+  const copy = releaseCopy(locale)
   const { selectedAgentId, loading: agentLoading, loadError, selectAgent, refreshConfigs } = useAgentContext()
   const [data, setData] = useState<ReleaseData>(EMPTY_RELEASE_DATA)
   const [loading, setLoading] = useState(true)
@@ -500,7 +751,7 @@ export default function ReleaseCommandCenter() {
       } catch (err) {
         if (!cancelled) {
           setData(EMPTY_RELEASE_DATA)
-          setError(err instanceof Error ? err.message : 'Failed to load release data')
+        setError(err instanceof Error ? err.message : copy.failedToLoad)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -519,18 +770,18 @@ export default function ReleaseCommandCenter() {
   const selectedScenarioError = selectedVersion ? data.scenarioErrors[selectedVersion.id] ?? null : null
   const selectedValidation = selectedScenarioData?.validation
   const selectedReceipt = useMemo(() => pickLatestReceipt(selectedScenarioData?.receipts ?? []), [selectedScenarioData?.receipts])
-  const selectedValidationSnapshot = buildValidationSnapshot(selectedValidation, selectedReceipt, selectedScenarioError)
+  const selectedValidationSnapshot = buildValidationSnapshot(selectedValidation, selectedReceipt, locale, selectedScenarioError)
   const liveTemplate = data.live ? data.templates[data.live.id] ?? null : null
   const selectedTemplate = selectedVersion ? data.templates[selectedVersion.id] ?? null : null
-  const diffGroups = useMemo(() => buildDiffGroups(liveTemplate, selectedTemplate), [liveTemplate, selectedTemplate])
+  const diffGroups = useMemo(() => buildDiffGroups(liveTemplate, selectedTemplate, locale), [liveTemplate, selectedTemplate, locale])
   const diffSummary = useMemo(() => summarizeDiffGroups(diffGroups), [diffGroups])
   const rollbackTarget = selectedVersion && data.live && selectedVersion.id !== data.live.id ? selectedVersion : null
   const rollbackTemplate = rollbackTarget ? data.templates[rollbackTarget.id] ?? null : null
-  const rollbackGroups = useMemo(() => (rollbackTarget ? buildDiffGroups(liveTemplate, rollbackTemplate) : []), [liveTemplate, rollbackTarget, rollbackTemplate])
+  const rollbackGroups = useMemo(() => (rollbackTarget ? buildDiffGroups(liveTemplate, rollbackTemplate, locale) : []), [liveTemplate, rollbackTarget, rollbackTemplate, locale])
   const canPublish = Boolean(selectedVersion && !selectedVersion.isActive)
   const overrideRequired = canPublish ? (selectedValidation?.overrideRequired ?? true) : false
   const publishDisabledReason = selectedVersion?.isActive
-    ? 'Select the draft or a historical version from the timeline before publishing.'
+    ? (locale === 'zh' ? '发布前请先在时间线上选择草稿版本或历史版本。' : 'Select the draft or a historical version from the timeline before publishing.')
     : null
 
   async function handleExport() {
@@ -555,9 +806,9 @@ export default function ReleaseCommandCenter() {
         anchor.click()
         URL.revokeObjectURL(url)
       }
-      setNotice(`Exported ${filename}`)
+      setNotice(copy.exported(filename))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
+      setError(err instanceof Error ? err.message : copy.exportFailed)
     } finally {
       setBusyAction(null)
     }
@@ -581,9 +832,9 @@ export default function ReleaseCommandCenter() {
         }),
       })
       setPendingImport({ fileName: file.name, template, report: result.report })
-      setNotice(`Package dry-run completed for ${file.name}`)
+      setNotice(copy.importDryRunDone(file.name))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import dry-run failed')
+      setError(err instanceof Error ? err.message : copy.importDryRunFailed)
     } finally {
       setBusyAction(null)
       if (importInputRef.current) importInputRef.current.value = ''
@@ -608,10 +859,10 @@ export default function ReleaseCommandCenter() {
       await refreshConfigs()
       if (result.config?.id) selectAgent(result.config.id)
       setPendingImport(null)
-      setNotice(`Imported ${result.config?.name ?? pendingImport.fileName} as a draft package`)
+      setNotice(copy.importedDraftPackage(result.config?.name ?? pendingImport.fileName))
       reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
+      setError(err instanceof Error ? err.message : copy.importFailed)
     } finally {
       setBusyAction(null)
     }
@@ -627,10 +878,10 @@ export default function ReleaseCommandCenter() {
       const result = await readJson<{ config: AgentVersion }>(`/api/admin/agent-configs/${encodeURIComponent(target.id)}/fork`, { method: 'POST' })
       await refreshConfigs()
       if (result.config?.id) selectAgent(result.config.id)
-      setNotice(`Created editable draft v${result.config.version} from ${target.name} v${target.version}`)
+      setNotice(copy.createdDraft(result.config.version, target.name, target.version))
       reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Duplicate failed')
+      setError(err instanceof Error ? err.message : copy.duplicateFailed)
     } finally {
       setBusyAction(null)
     }
@@ -640,7 +891,7 @@ export default function ReleaseCommandCenter() {
     const target = selectedVersion
     if (!target || target.isActive) return
     if (overrideRequired && !overrideReason.trim()) {
-      setError('Override reason is required when validation is stale, failing, or unvalidated.')
+      setError(copy.overrideReasonRequired)
       return
     }
     setBusyAction('publish')
@@ -658,10 +909,10 @@ export default function ReleaseCommandCenter() {
       await refreshConfigs()
       selectAgent(target.id)
       setPublishOpen(false)
-      setNotice(`Published ${target.name} v${target.version}`)
+      setNotice(copy.published(target.name, target.version))
       reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Publish failed')
+      setError(err instanceof Error ? err.message : copy.publishFailed)
     } finally {
       setBusyAction(null)
     }
@@ -672,7 +923,7 @@ export default function ReleaseCommandCenter() {
       <main className="mx-auto flex min-h-[70vh] max-w-6xl items-center justify-center px-6 py-8 sm:px-8">
         <div className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-white/75 px-6 py-5 text-[13px] text-[var(--color-text-secondary)] shadow-[var(--shadow-raised)]">
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin text-[var(--color-accent-primary)]" />
-          Loading Release command center...
+          {copy.loading}
         </div>
       </main>
     )
@@ -683,7 +934,7 @@ export default function ReleaseCommandCenter() {
       <main className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <section className="rounded-[var(--radius-panel)] border border-[color:color-mix(in_srgb,var(--color-signal-danger)_35%,transparent)] bg-white/80 p-6 shadow-[var(--shadow-raised)]">
           <p className="text-[13px] font-medium text-[var(--color-signal-danger)]">{loadError || error}</p>
-          <button type="button" onClick={reload} className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-primary)]">Try again</button>
+          <button type="button" onClick={reload} className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-primary)]">{copy.tryAgain}</button>
         </section>
       </main>
     )
@@ -695,37 +946,37 @@ export default function ReleaseCommandCenter() {
         <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
-              <span>Build</span>
+              <span>{t('sidebar.build')}</span>
               <span className="text-[var(--color-border-strong)]">/</span>
-              <span className="text-[var(--color-text-primary)]">Release</span>
+              <span className="text-[var(--color-text-primary)]">{copy.breadcrumbRelease}</span>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{selectedVersion?.name ?? data.live?.name ?? 'Agent'}</h1>
               {selectedRole ? (
                 <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(roleTone(selectedRole))}`}>
-                  Viewing {roleLabel(selectedRole)} version
+                  {copy.viewingRoleVersion(roleLabel(selectedRole, locale))}
                 </span>
               ) : null}
             </div>
             <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">
-              Keep version selection, validation evidence, and package actions in one clear Release surface before any explicit publish.
+              {copy.heroDescription}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-accent-primary)]">
-                Timeline stays the source of truth
+                {copy.timelineTruth}
               </span>
               <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/72 px-2.5 py-1 text-[12px] font-semibold text-[var(--color-text-secondary)]">
-                Publish remains explicit
+                {copy.publishExplicit}
               </span>
             </div>
           </div>
 
           <div className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-white/80 p-4 shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Release selection</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{copy.releaseSelection}</p>
             <label className="mt-3 flex min-h-11 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82 px-4 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-              <span className="text-[var(--color-text-tertiary)]">Version</span>
+              <span className="text-[var(--color-text-tertiary)]">{copy.version}</span>
               <select
-                aria-label="Release agent version"
+                aria-label={copy.releaseAgentVersionAria}
                 value={selectedVersion?.id ?? ''}
                 onChange={(event) => selectAgent(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
@@ -734,7 +985,7 @@ export default function ReleaseCommandCenter() {
                   const role = versionRoleFor(config, data.live?.id ?? null, data.draft?.id ?? null)
                   return (
                     <option key={config.id} value={config.id}>
-                      {config.name} v{config.version}{role ? ` · ${roleLabel(role)}` : ''}
+                      {config.name} v{config.version}{role ? ` · ${roleLabel(role, locale)}` : ''}
                     </option>
                   )
                 })}
@@ -742,9 +993,9 @@ export default function ReleaseCommandCenter() {
             </label>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <HeroFact label="Retained" value={`${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS}`} />
-              <HeroFact label="Changed rows" value={String(diffSummary.changedRows)} />
-              <HeroFact label="Validation" value={selectedValidationSnapshot.label} tone={selectedValidationSnapshot.tone} />
+              <HeroFact label={copy.retained} value={`${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS}`} />
+              <HeroFact label={copy.changedRowsLabel} value={String(diffSummary.changedRows)} />
+              <HeroFact label={copy.validation} value={selectedValidationSnapshot.label} tone={selectedValidationSnapshot.tone} />
             </div>
           </div>
         </div>
@@ -786,10 +1037,12 @@ export default function ReleaseCommandCenter() {
           </div>
 
           <ConfigDiffViewer
-            title="Changed since live"
+            title={locale === 'zh' ? '相对 live 的变化' : 'Changed since live'}
             subtitle={selectedVersion && data.live
-              ? `${data.live.name} v${data.live.version} compared with selected v${selectedVersion.version}.`
-              : 'Select a version in the timeline to compare it with live.'}
+              ? (locale === 'zh'
+                ? `${data.live.name} v${data.live.version} 与已选 v${selectedVersion.version} 的对比。`
+                : `${data.live.name} v${data.live.version} compared with selected v${selectedVersion.version}.`)
+              : (locale === 'zh' ? '请先在时间线上选择一个版本，再和 live 版本对比。' : 'Select a version in the timeline to compare it with live.')}
             groups={diffGroups}
           />
 
@@ -826,26 +1079,26 @@ export default function ReleaseCommandCenter() {
 
       {Object.keys(data.templateErrors).length > 0 ? (
         <section className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
-          Template previews are isolated because export failed for: {Object.entries(data.templateErrors).map(([id, message]) => `${id} (${message})`).join(', ')}
+          {copy.templatePreviewErrorPrefix} {Object.entries(data.templateErrors).map(([id, message]) => `${id} (${message})`).join(', ')}
         </section>
       ) : null}
 
       {publishOpen ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 px-4 backdrop-blur-sm">
-          <section role="dialog" aria-label="Publish version" className="w-full max-w-lg rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-2xl">
+          <section role="dialog" aria-label={copy.publishDialogAria} className="w-full max-w-lg rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Explicit publish</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{copy.explicitPublish}</p>
                 <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">
-                  Publish {selectedVersion?.name} v{selectedVersion?.version}
+                  {copy.publishVersionTitle(selectedVersion?.name ?? '', selectedVersion?.version ?? 0)}
                 </h2>
                 <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
                   {selectedRole === 'historical'
-                    ? 'This reactivates the selected historical version. Rollback preview stays read-only until you confirm publish.'
-                    : 'This activates the selected non-live version for customer channels. Draft save and import actions remain isolated until publish.'}
+                    ? copy.publishHistoricalHint
+                    : copy.publishDraftHint}
                 </p>
               </div>
-              <button type="button" aria-label="Close publish dialog" onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-2 text-[var(--color-text-tertiary)]">
+              <button type="button" aria-label={copy.closePublishDialogAria} onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-2 text-[var(--color-text-tertiary)]">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -856,21 +1109,21 @@ export default function ReleaseCommandCenter() {
               <p className="mt-1 text-[var(--color-text-tertiary)]">{selectedValidationSnapshot.meta}</p>
             </div>
 
-            <label className="mt-5 block text-[12px] font-medium text-[var(--color-text-primary)]" htmlFor="release-note">Release note</label>
-            <textarea id="release-note" aria-label="Release note" value={releaseNote} onChange={(event) => setReleaseNote(event.target.value)} rows={3} className="mt-2 w-full rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" placeholder="What changed in this publish?" />
+            <label className="mt-5 block text-[12px] font-medium text-[var(--color-text-primary)]" htmlFor="release-note">{copy.releaseNote}</label>
+            <textarea id="release-note" aria-label={copy.releaseNote} value={releaseNote} onChange={(event) => setReleaseNote(event.target.value)} rows={3} className="mt-2 w-full rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" placeholder={copy.releaseNotePlaceholder} />
 
             {overrideRequired ? (
               <>
-                <label className="mt-4 block text-[12px] font-medium text-[var(--color-text-primary)]" htmlFor="override-reason">Override reason</label>
-                <textarea id="override-reason" aria-label="Override reason" value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} rows={3} className="mt-2 w-full rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-signal-warning)_40%,var(--color-border-subtle))] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-signal-warning)]" placeholder="Required because validation is stale, failing, or missing." />
+                <label className="mt-4 block text-[12px] font-medium text-[var(--color-text-primary)]" htmlFor="override-reason">{copy.overrideReason}</label>
+                <textarea id="override-reason" aria-label={copy.overrideReason} value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} rows={3} className="mt-2 w-full rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-signal-warning)_40%,var(--color-border-subtle))] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-signal-warning)]" placeholder={copy.overrideReasonPlaceholder} />
               </>
             ) : null}
 
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">Cancel</button>
+              <button type="button" onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">{copy.cancel}</button>
               <button type="button" disabled={busyAction === 'publish' || (overrideRequired && !overrideReason.trim())} onClick={handlePublish} className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-accent-primary)_45%,transparent)] bg-[var(--color-accent-primary)] px-3 py-2 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
                 {busyAction === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageOpen className="h-4 w-4" />}
-                Publish version
+                {copy.publishVersionButton}
               </button>
             </div>
           </section>
@@ -878,22 +1131,31 @@ export default function ReleaseCommandCenter() {
       ) : null}
 
       {rollbackOpen ? (
-        <LightDrawer title="Rollback preview" eyebrow="Release safety" onClose={() => setRollbackOpen(false)}>
+        <LightDrawer title={copy.rollbackPreview} eyebrow={copy.releaseSafety} onClose={() => setRollbackOpen(false)}>
           <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-            Preview how live v{data.live?.version ?? '?'} differs from {rollbackTarget ? `selected v${rollbackTarget.version}` : 'a non-live version'} before any mutation. This drawer never activates rollback by itself.
+            {copy.rollbackPreviewDescription(
+              data.live?.version ?? '?',
+              rollbackTarget
+                ? locale === 'zh'
+                  ? `已选 v${rollbackTarget.version}`
+                  : `selected v${rollbackTarget.version}`
+                : locale === 'zh'
+                  ? '某个非 live 版本'
+                  : 'a non-live version',
+            )}
           </p>
           {rollbackTarget ? (
             <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
-              Candidate: <span className="font-semibold text-[var(--color-text-primary)]">{rollbackTarget.name} v{rollbackTarget.version}</span>
-              <span className="ml-3 text-[var(--color-text-tertiary)]">If you want to reactivate it, close this preview and use Publish explicitly.</span>
+              {copy.rollbackCandidate}: <span className="font-semibold text-[var(--color-text-primary)]">{rollbackTarget.name} v{rollbackTarget.version}</span>
+              <span className="ml-3 text-[var(--color-text-tertiary)]">{copy.rollbackPublishHint}</span>
             </div>
           ) : (
             <div className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
-              Select a draft or historical version from the timeline first.
+              {copy.rollbackSelectPrompt}
             </div>
           )}
           <div className="mt-4">
-            <ConfigDiffViewer title="Rollback diff preview" subtitle="Live version compared with the selected non-live version." groups={rollbackGroups} />
+            <ConfigDiffViewer title={copy.rollbackDiffPreview} subtitle={copy.rollbackDiffSubtitle} groups={rollbackGroups} />
           </div>
         </LightDrawer>
       ) : null}
@@ -924,6 +1186,7 @@ function VersionTimelineSection({
   liveTemplate: InteraAgentTemplateV1 | null
   onSelectVersion: (id: string) => void
 }) {
+  const { locale } = useConsoleLocale()
   const live = family.find((config) => config.id === liveId) ?? null
   const draft = family.find((config) => config.id === draftId) ?? null
   const retainedRatio = family.length / MAX_AGENT_CONFIG_VERSIONS
@@ -933,23 +1196,27 @@ function VersionTimelineSection({
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Version control UX</p>
-            <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">Agent version timeline</h2>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{locale === 'zh' ? '版本控制体验' : 'Version control UX'}</p>
+            <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">{locale === 'zh' ? 'Agent 版本时间线' : 'Agent version timeline'}</h2>
             <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[var(--color-text-secondary)]">
-              One Agent family timeline: one live version, one editable draft, and retained historical versions for rollback review.
+              {locale === 'zh'
+                ? '一个 Agent 家族只有一条时间线：一个当前版本、一个可编辑草稿，以及若干保留的历史版本，用于回滚审查。'
+                : 'One Agent family timeline: one live version, one editable draft, and retained historical versions for rollback review.'}
             </p>
           </div>
 
           <div className="min-w-[240px] rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-4 py-3">
             <div className="flex items-center justify-between gap-3 text-[12px] font-semibold text-[var(--color-text-primary)]">
-              <span>{family.length} of {MAX_AGENT_CONFIG_VERSIONS} retained</span>
-              <span className="text-[var(--color-text-tertiary)]">{Math.max(MAX_AGENT_CONFIG_VERSIONS - family.length, 0)} slots left</span>
+              <span>{locale === 'zh' ? `已保留 ${family.length}/${MAX_AGENT_CONFIG_VERSIONS}` : `${family.length} of ${MAX_AGENT_CONFIG_VERSIONS} retained`}</span>
+              <span className="text-[var(--color-text-tertiary)]">{locale === 'zh' ? `剩余 ${Math.max(MAX_AGENT_CONFIG_VERSIONS - family.length, 0)} 个槽位` : `${Math.max(MAX_AGENT_CONFIG_VERSIONS - family.length, 0)} slots left`}</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--color-bg-surface-muted)]">
               <div className="h-full rounded-full bg-[var(--color-accent-primary)]" style={{ width: `${Math.min(retainedRatio, 1) * 100}%` }} />
             </div>
             <p className="mt-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-              P0 keeps at most {MAX_AGENT_CONFIG_VERSIONS} retained versions in one family so publish, rollback preview, and package diff stay readable. When the family is full, duplicate and import-to-draft stop until older history is retired intentionally.
+              {locale === 'zh'
+                ? `P0 在一个家族里最多保留 ${MAX_AGENT_CONFIG_VERSIONS} 个版本，这样发布、回滚预览和 package diff 才能保持可读。家族满了之后，派生和导入到草稿都会暂停，直到你有意识地清退更老的历史版本。`
+                : `P0 keeps at most ${MAX_AGENT_CONFIG_VERSIONS} retained versions in one family so publish, rollback preview, and package diff stay readable. When the family is full, duplicate and import-to-draft stop until older history is retired intentionally.`}
             </p>
           </div>
         </div>
@@ -957,8 +1224,8 @@ function VersionTimelineSection({
 
       <div className="divide-y divide-[var(--color-border-subtle)]">
         <TimelineGroup
-          title="Live version"
-          empty="No live version is currently active."
+          title={locale === 'zh' ? '当前版本' : 'Live version'}
+          empty={locale === 'zh' ? '当前还没有激活中的版本。' : 'No live version is currently active.'}
           versions={live ? [live] : []}
           family={family}
           currentId={currentId}
@@ -971,8 +1238,8 @@ function VersionTimelineSection({
           onSelectVersion={onSelectVersion}
         />
         <TimelineGroup
-          title="Draft version"
-          empty="No editable draft exists yet. Create editable draft from live or a historical version."
+          title={locale === 'zh' ? '草稿版本' : 'Draft version'}
+          empty={locale === 'zh' ? '还没有可编辑草稿。请从当前版本或历史版本派生一个草稿。' : 'No editable draft exists yet. Create editable draft from live or a historical version.'}
           versions={draft ? [draft] : []}
           family={family}
           currentId={currentId}
@@ -985,8 +1252,8 @@ function VersionTimelineSection({
           onSelectVersion={onSelectVersion}
         />
         <TimelineGroup
-          title="Historical versions"
-          empty="No historical versions retained yet."
+          title={locale === 'zh' ? '历史版本' : 'Historical versions'}
+          empty={locale === 'zh' ? '还没有保留任何历史版本。' : 'No historical versions retained yet.'}
           versions={history}
           family={family}
           currentId={currentId}
@@ -1030,6 +1297,7 @@ function TimelineGroup({
   liveTemplate: InteraAgentTemplateV1 | null
   onSelectVersion: (id: string) => void
 }) {
+  const { locale } = useConsoleLocale()
   return (
     <div>
       <div className="bg-[var(--color-bg-surface-muted)] px-5 py-3">
@@ -1040,8 +1308,8 @@ function TimelineGroup({
           {versions.map((config) => {
             const role = versionRoleFor(config, liveId, draftId) as VersionRole
             const latestReceipt = pickLatestReceipt(scenariosById[config.id]?.receipts ?? [])
-            const validationSnapshot = buildValidationSnapshot(scenariosById[config.id]?.validation, latestReceipt, scenarioErrors[config.id] ?? null)
-            const diffLabel = describeDiffSummary(liveTemplate, templates[config.id] ?? null, role)
+            const validationSnapshot = buildValidationSnapshot(scenariosById[config.id]?.validation, latestReceipt, locale, scenarioErrors[config.id] ?? null)
+            const diffLabel = describeDiffSummary(liveTemplate, templates[config.id] ?? null, role, locale)
             return (
               <VersionTimelineRow
                 key={config.id}
@@ -1080,26 +1348,27 @@ function VersionTimelineRow({
   validationSnapshot: VersionValidationSnapshot
   onSelectVersion: (id: string) => void
 }) {
+  const { locale } = useConsoleLocale()
   const parentVersion = parentVersionFor(config, family)
 
   return (
     <article className={`grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.05fr)_160px] ${current ? 'bg-[color:color-mix(in_srgb,var(--color-accent-primary)_4%,white)]' : 'bg-white/80'}`}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[11px] font-semibold ${toneClass(roleTone(role))}`}>{roleLabel(role)}</span>
-          {current ? <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.24)] bg-[rgba(53,127,124,0.08)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-primary)]">Selected</span> : null}
+          <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[11px] font-semibold ${toneClass(roleTone(role))}`}>{roleLabel(role, locale)}</span>
+          {current ? <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.24)] bg-[rgba(53,127,124,0.08)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-primary)]">{locale === 'zh' ? '已选中' : 'Selected'}</span> : null}
         </div>
         <h3 className="mt-3 text-[16px] font-semibold text-[var(--color-text-primary)]">v{config.version}</h3>
-        <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role)}</p>
+        <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role, locale)}</p>
         <div className="mt-3 space-y-1 text-[12px] text-[var(--color-text-tertiary)]">
-          <p>{config.publishedAt ? `Published ${formatDate(config.publishedAt)}` : 'Not published yet'}</p>
-          <p>{config.publishedBy ? `Published by ${config.publishedBy}` : 'Publisher unavailable'}</p>
-          <p>Last edited {formatDate(config.updatedAt)}</p>
+          <p>{config.publishedAt ? `${locale === 'zh' ? '发布时间' : 'Published'} ${formatDate(locale, config.publishedAt)}` : locale === 'zh' ? '尚未发布' : 'Not published yet'}</p>
+          <p>{config.publishedBy ? `${locale === 'zh' ? '发布人' : 'Published by'} ${config.publishedBy}` : locale === 'zh' ? '发布人不可用' : 'Publisher unavailable'}</p>
+          <p>{locale === 'zh' ? '最后编辑' : 'Last edited'} {formatDate(locale, config.updatedAt)}</p>
         </div>
       </div>
 
       <div className="min-w-0">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Validation</p>
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{locale === 'zh' ? '验证' : 'Validation'}</p>
         <div className={`mt-3 rounded-[var(--radius-control)] border px-3 py-3 text-[12px] ${toneClass(validationSnapshot.tone)}`}>
           <p className="font-semibold text-[var(--color-text-primary)]">{validationSnapshot.label}</p>
           <p className="mt-1 text-[var(--color-text-secondary)]">{validationSnapshot.detail}</p>
@@ -1108,12 +1377,12 @@ function VersionTimelineRow({
       </div>
 
       <div className="min-w-0">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Lineage and actions</p>
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{locale === 'zh' ? '来源与动作' : 'Lineage and actions'}</p>
         <div className="mt-3 space-y-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-          <p>{parentVersion ? `Forked from v${parentVersion}` : 'Original family baseline'}</p>
+          <p>{parentVersion ? `${locale === 'zh' ? '派生自' : 'Forked from'} v${parentVersion}` : locale === 'zh' ? '原始家族基线' : 'Original family baseline'}</p>
           <p>{diffLabel}</p>
           <div className="flex flex-wrap gap-2">
-            {actionHintsForRole(role).map((label) => (
+            {actionHintsForRole(role, locale).map((label) => (
               <span key={label} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
                 {label}
               </span>
@@ -1129,7 +1398,7 @@ function VersionTimelineRow({
           disabled={current}
           className="intera-q2-button inline-flex min-h-[40px] items-center justify-center border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text-primary)] disabled:cursor-default disabled:opacity-55"
         >
-          {current ? 'Viewing' : 'View version'}
+          {current ? (locale === 'zh' ? '查看中' : 'Viewing') : (locale === 'zh' ? '查看版本' : 'View version')}
         </button>
       </div>
     </article>
@@ -1149,44 +1418,45 @@ function SelectedVersionCard({
   diffSummary: { changedGroups: number; changedRows: number }
   validationSnapshot: VersionValidationSnapshot
 }) {
+  const { locale } = useConsoleLocale()
   const parentVersion = config ? parentVersionFor(config, family) : null
   const diffLabel = !config || !role
-    ? 'No version selected.'
+    ? (locale === 'zh' ? '尚未选择版本。' : 'No version selected.')
     : role === 'live'
-      ? 'Live baseline'
+      ? (locale === 'zh' ? '当前 live 基线' : 'Live baseline')
       : diffSummary.changedRows > 0
-        ? `${diffSummary.changedRows} changed rows across ${diffSummary.changedGroups} groups vs live`
-        : 'No material changes vs live'
+        ? releaseCopy(locale).diffVsLive(diffSummary.changedRows, diffSummary.changedGroups)
+        : (locale === 'zh' ? '相对 live 没有实质变化' : 'No material changes vs live')
 
   return (
     <section className="intera-q2-panel overflow-hidden">
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
-        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{selectedTitle(config, role)}</h2>
+        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{selectedTitle(config, role, locale)}</h2>
       </div>
 
       {config && role ? (
         <div className="space-y-5 p-5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[11px] font-semibold ${toneClass(roleTone(role))}`}>{roleLabel(role)}</span>
+            <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[11px] font-semibold ${toneClass(roleTone(role))}`}>{roleLabel(role, locale)}</span>
             {config.model ? <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/80 px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">{config.model}</span> : null}
           </div>
 
           <ReleaseMetaList
             rows={[
-              { label: 'Lineage', value: parentVersion ? `Forked from v${parentVersion}` : 'Original family baseline' },
-              { label: 'Updated', value: formatDate(config.updatedAt) },
-              { label: 'Published', value: formatDate(config.publishedAt, 'Not published') },
-              { label: 'Publisher', value: config.publishedBy || 'Unavailable' },
+              { label: locale === 'zh' ? '来源' : 'Lineage', value: parentVersion ? `${locale === 'zh' ? '派生自' : 'Forked from'} v${parentVersion}` : locale === 'zh' ? '原始家族基线' : 'Original family baseline' },
+              { label: locale === 'zh' ? '更新时间' : 'Updated', value: formatDate(locale, config.updatedAt) },
+              { label: locale === 'zh' ? '发布时间' : 'Published', value: formatDate(locale, config.publishedAt, locale === 'zh' ? '尚未发布' : 'Not published') },
+              { label: locale === 'zh' ? '发布人' : 'Publisher', value: config.publishedBy || (locale === 'zh' ? '不可用' : 'Unavailable') },
             ]}
           />
 
           <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.72)] p-4">
             <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
               <GitCompare className="h-4 w-4 text-[var(--color-accent-primary)]" />
-              Changed since live
+              {locale === 'zh' ? '相对 live 的变化' : 'Changed since live'}
             </p>
             <p className="mt-3 text-[14px] font-semibold text-[var(--color-text-primary)]">{diffLabel}</p>
-            <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role)}</p>
+            <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role, locale)}</p>
           </div>
 
           <div className={`rounded-[var(--radius-control)] border px-4 py-3 text-[12px] ${toneClass(validationSnapshot.tone)}`}>
@@ -1197,13 +1467,13 @@ function SelectedVersionCard({
 
           {config.releaseNote ? (
             <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Release note</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{locale === 'zh' ? '发布说明' : 'Release note'}</p>
               <p className="mt-2 text-[13px] leading-6 text-[var(--color-text-secondary)]">{config.releaseNote}</p>
             </div>
           ) : null}
         </div>
       ) : (
-        <div className="p-5 text-[13px] text-[var(--color-text-secondary)]">Select a version in the timeline to inspect validation and diff context.</div>
+        <div className="p-5 text-[13px] text-[var(--color-text-secondary)]">{locale === 'zh' ? '请先在时间线上选择一个版本，再查看验证和 diff 上下文。' : 'Select a version in the timeline to inspect validation and diff context.'}</div>
       )}
     </section>
   )
@@ -1233,10 +1503,11 @@ function SelectedReceiptCard({
   validationSnapshot: VersionValidationSnapshot
   validation: ScenarioValidationSummary | undefined
 }) {
+  const { locale } = useConsoleLocale()
   return (
     <section className="intera-q2-panel overflow-hidden">
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
-        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Validation evidence</h2>
+        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{locale === 'zh' ? '验证证据' : 'Validation evidence'}</h2>
       </div>
 
       <div className="p-5">
@@ -1252,16 +1523,16 @@ function SelectedReceiptCard({
               <div>
                 <span className={`inline-flex rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold capitalize ${toneClass(receiptTone(latestReceipt.status))}`}>{latestReceipt.status}</span>
                 <h3 className="mt-4 text-[14px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</h3>
-                <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{executionModeLabel(latestReceipt.executionMode)} · Run {formatDate(latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
+                <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{executionModeLabel(latestReceipt.executionMode, locale)} · {locale === 'zh' ? '运行于' : 'Run'} {formatDate(locale, latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
               </div>
               {config ? <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">v{config.version}</span> : null}
             </div>
 
             <dl className="mt-5 grid grid-cols-2 gap-0 overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] text-[12px]">
-              <ReceiptStat label="Total" value={String(latestReceipt.checks.length)} />
-              <ReceiptStat label="Passed" value={String(latestReceipt.checks.filter((check) => check.passed).length)} tone="success" />
-              <ReceiptStat label="Failed" value={String(latestReceipt.checks.filter((check) => !check.passed).length)} tone={latestReceipt.checks.some((check) => !check.passed) ? 'danger' : 'neutral'} />
-              <ReceiptStat label="Tool mode" value={latestReceipt.toolExecutionMode} />
+              <ReceiptStat label={locale === 'zh' ? '总数' : 'Total'} value={String(latestReceipt.checks.length)} />
+              <ReceiptStat label={locale === 'zh' ? '通过' : 'Passed'} value={String(latestReceipt.checks.filter((check) => check.passed).length)} tone="success" />
+              <ReceiptStat label={locale === 'zh' ? '失败' : 'Failed'} value={String(latestReceipt.checks.filter((check) => !check.passed).length)} tone={latestReceipt.checks.some((check) => !check.passed) ? 'danger' : 'neutral'} />
+              <ReceiptStat label={locale === 'zh' ? 'Tool 模式' : 'Tool mode'} value={latestReceipt.toolExecutionMode} />
             </dl>
 
             <div className="mt-5 space-y-3">
@@ -1271,7 +1542,7 @@ function SelectedReceiptCard({
                     {check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--color-signal-danger)]" />}
                     <span className="truncate">{check.name.replace(/_/g, ' ')}</span>
                   </span>
-                  <span className="shrink-0 rounded bg-[var(--color-bg-surface-muted)] px-2 py-1 text-[11px] text-[var(--color-text-tertiary)]">{check.passed ? 'Passed' : 'Failed'}</span>
+                  <span className="shrink-0 rounded bg-[var(--color-bg-surface-muted)] px-2 py-1 text-[11px] text-[var(--color-text-tertiary)]">{check.passed ? (locale === 'zh' ? '通过' : 'Passed') : (locale === 'zh' ? '失败' : 'Failed')}</span>
                 </div>
               ))}
             </div>
@@ -1279,15 +1550,15 @@ function SelectedReceiptCard({
             <div className="mt-5">
               <ReleaseMetaList
                 rows={[
-                  { label: 'Receipt type', value: executionModeLabel(latestReceipt.executionMode) },
-                  { label: 'Runtime-backed', value: validation?.runtimeValidated ? 'Yes' : 'No' },
+                  { label: locale === 'zh' ? '回执类型' : 'Receipt type', value: executionModeLabel(latestReceipt.executionMode, locale) },
+                  { label: locale === 'zh' ? '运行时验证' : 'Runtime-backed', value: validation?.runtimeValidated ? (locale === 'zh' ? '是' : 'Yes') : (locale === 'zh' ? '否' : 'No') },
                 ]}
               />
             </div>
           </>
         ) : (
           <p className="mt-5 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-            No Scenario receipt has been recorded for this selected version yet. Run Pilot Lab validation before publishing or provide an override reason.
+            {locale === 'zh' ? '这个已选版本还没有任何 Scenario 回执。发布前请先运行 Pilot Lab 验证，或填写 override 原因。' : 'No Scenario receipt has been recorded for this selected version yet. Run Pilot Lab validation before publishing or provide an override reason.'}
           </p>
         )}
       </div>
@@ -1342,47 +1613,45 @@ function PackageActionsPanel({
   onPublish: () => void
   onRollback: () => void
 }) {
-  const coverage = packageCoverageRows(coverageTemplate)
-  const rules = [
-    'Publish only activates a selected non-live version after confirmation and validation review.',
-    'Rollback preview stays read-only and never mutates live state by itself.',
-    'Create editable draft forks the selected version when retention capacity still exists.',
-    'Import always starts with a compatibility dry-run.',
-    'Export always downloads the currently selected package.',
-  ]
-  const selectedLabel = current ? `${current.name} v${current.version}` : 'No version selected'
+  const { locale } = useConsoleLocale()
+  const coverage = packageCoverageRows(coverageTemplate, locale)
+  const copy = releaseCopy(locale)
+  const rules = copy.actionRules
+  const selectedLabel = current ? `${current.name} v${current.version}` : (locale === 'zh' ? '尚未选择版本' : 'No version selected')
 
   return (
     <section className="intera-q2-panel overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Version control actions</h2>
+          <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{locale === 'zh' ? '版本控制动作' : 'Version control actions'}</h2>
           <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-            Release owns publish, rollback preview, duplicate draft creation, and package import/export for the selected version.
+            {locale === 'zh'
+              ? '发布页统一负责当前已选版本的发布、回滚预览、草稿派生，以及 package 导入/导出。'
+              : 'Release owns publish, rollback preview, duplicate draft creation, and package import/export for the selected version.'}
           </p>
         </div>
-        <input ref={importInputRef} aria-label="Import .intera-agent.json file" type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => onImport(event.target.files?.[0])} />
+        <input ref={importInputRef} aria-label={copy.importPackageAria} type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => onImport(event.target.files?.[0])} />
       </div>
 
       <div className="grid gap-5 p-5">
         <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.6)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-          <p><span className="font-semibold text-[var(--color-text-primary)]">Selected:</span> {selectedLabel}{role ? ` · ${roleLabel(role)}` : ''}</p>
-          <p className="mt-1">Export downloads the currently selected package. Import always starts with a dry-run report and never activates silently.</p>
+          <p><span className="font-semibold text-[var(--color-text-primary)]">{locale === 'zh' ? '已选：' : 'Selected:'}</span> {selectedLabel}{role ? ` · ${roleLabel(role, locale)}` : ''}</p>
+          <p className="mt-1">{locale === 'zh' ? '导出会下载当前已选 package。导入一定先经过 dry-run 报告，不会静默激活。' : 'Export downloads the currently selected package. Import always starts with a dry-run report and never activates silently.'}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export selected package" busy={busyAction === 'export'} onClick={onExport} />
-          <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={onImportClick} />
-          <ActionButton icon={<Copy className="h-4 w-4" />} label="Create editable draft" busy={busyAction === 'duplicate'} onClick={onDuplicate} />
-          <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish selected version" busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
-          <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackTarget} onClick={onRollback} />
+          <ActionButton icon={<FileDown className="h-4 w-4" />} label={locale === 'zh' ? '导出当前包' : 'Export selected package'} busy={busyAction === 'export'} onClick={onExport} />
+          <ActionButton icon={<Upload className="h-4 w-4" />} label={locale === 'zh' ? '导入包' : 'Import package'} busy={busyAction === 'import'} onClick={onImportClick} />
+          <ActionButton icon={<Copy className="h-4 w-4" />} label={locale === 'zh' ? '派生可编辑草稿' : 'Create editable draft'} busy={busyAction === 'duplicate'} onClick={onDuplicate} />
+          <ActionButton icon={<PackageOpen className="h-4 w-4" />} label={locale === 'zh' ? '发布当前版本' : 'Publish selected version'} busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
+          <ActionButton icon={<RotateCcw className="h-4 w-4" />} label={copy.rollbackPreview} disabled={!rollbackTarget} onClick={onRollback} />
         </div>
 
         {publishDisabledReason ? <p className="text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.56)] p-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Action rules</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{locale === 'zh' ? '动作规则' : 'Action rules'}</p>
             <div className="mt-3 grid gap-2">
               {rules.map((rule) => (
                 <div key={rule} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/78 px-3 py-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">
@@ -1393,7 +1662,7 @@ function PackageActionsPanel({
           </div>
 
           <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.56)] p-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Package coverage</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{locale === 'zh' ? 'Package 覆盖范围' : 'Package coverage'}</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-3">
               {coverage.map((item) => (
                 <PackageCoverageCell key={item.label} label={item.label} value={item.value} />
@@ -1435,34 +1704,36 @@ function ImportDryRunReport({
   onClear: () => void
   onConfirm: () => void
 }) {
+  const { locale } = useConsoleLocale()
+  const copy = releaseCopy(locale)
   const report = pendingImport.report
   return (
     <section className="mt-5 rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-[12px] font-semibold text-[var(--color-text-tertiary)]">Import dry-run report</p>
+          <p className="text-[12px] font-semibold text-[var(--color-text-tertiary)]">{copy.importDryRunReport}</p>
           <h3 className="mt-1 text-[15px] font-semibold text-[var(--color-text-primary)]">{pendingImport.fileName}</h3>
-          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">{report.canImport ? 'Ready to create a draft version.' : 'Import is blocked until conflicts are resolved.'}</p>
+          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">{report.canImport ? copy.importReady : copy.importBlocked}</p>
         </div>
         <div className="flex gap-2">
-          <button type="button" onClick={onClear} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">Clear</button>
+          <button type="button" onClick={onClear} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">{copy.clear}</button>
           <button type="button" disabled={!report.canImport || busy} onClick={onConfirm} className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-accent-primary)_45%,transparent)] bg-[var(--color-accent-primary)] px-3 py-2 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageOpen className="h-4 w-4" />}
-            Create draft
+            {copy.createDraft}
           </button>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <ReportList title="Missing secrets" items={report.requiredSecrets.map((secret) => secret.name)} empty="No required secret placeholders." tone={report.requiredSecrets.length > 0 ? 'warning' : 'neutral'} />
-        <ReportList title="Conflicts" items={report.conflicts.map((conflict) => conflict.message)} empty="No blocking conflicts." tone={report.conflicts.some((conflict) => conflict.severity === 'error') ? 'danger' : 'warning'} />
-        <ReportList title="Unsupported integrations" items={report.unsupportedIntegrations.map((integration) => `${integration.channel}: ${integration.reason}`)} empty="No unsupported integrations." tone={report.unsupportedIntegrations.length > 0 ? 'warning' : 'neutral'} />
-        <ReportList title="Knowledge requirements" items={report.missingKnowledgeRefs.map((ref) => ref.name)} empty="No missing Knowledge refs." tone={report.missingKnowledgeRefs.length > 0 ? 'warning' : 'neutral'} />
+        <ReportList title={copy.missingSecrets} items={report.requiredSecrets.map((secret) => secret.name)} empty={copy.noRequiredSecrets} tone={report.requiredSecrets.length > 0 ? 'warning' : 'neutral'} />
+        <ReportList title={copy.conflicts} items={report.conflicts.map((conflict) => conflict.message)} empty={copy.noBlockingConflicts} tone={report.conflicts.some((conflict) => conflict.severity === 'error') ? 'danger' : 'warning'} />
+        <ReportList title={copy.unsupportedIntegrations} items={report.unsupportedIntegrations.map((integration) => `${integration.channel}: ${integration.reason}`)} empty={copy.noUnsupportedIntegrations} tone={report.unsupportedIntegrations.length > 0 ? 'warning' : 'neutral'} />
+        <ReportList title={copy.knowledgeRequirements} items={report.missingKnowledgeRefs.map((ref) => ref.name)} empty={copy.noMissingKnowledgeRefs} tone={report.missingKnowledgeRefs.length > 0 ? 'warning' : 'neutral'} />
       </div>
 
       {report.warnings.length > 0 ? (
         <div className="mt-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-3 text-[12px] text-[var(--color-text-secondary)]">
-          <p className="font-semibold text-[var(--color-text-primary)]">Warnings</p>
+          <p className="font-semibold text-[var(--color-text-primary)]">{copy.warnings}</p>
           <ul className="mt-2 space-y-1">
             {report.warnings.slice(0, 4).map((warning) => <li key={warning}>{warning}</li>)}
           </ul>
@@ -1502,6 +1773,7 @@ function ReleaseConfigPilotRail({
   latestReceipt: ScenarioReceipt | null
   onOpen: () => void
 }) {
+  const { locale } = useConsoleLocale()
   const validated = Boolean(validation?.runtimeValidated)
 
   return (
@@ -1512,34 +1784,36 @@ function ReleaseConfigPilotRail({
         </span>
         <div className="min-w-0">
           <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">ConfigPilot <span className="ml-1 rounded bg-[var(--color-bg-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-text-tertiary)]">BETA</span></p>
-          <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">Pilot Lab owns conversational building. Release links there when you need guided fixes.</p>
+          <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{locale === 'zh' ? '对话式构建归 Pilot Lab 负责；当你需要引导式修复时，发布页会把你带过去。' : 'Pilot Lab owns conversational building. Release links there when you need guided fixes.'}</p>
         </div>
       </div>
 
       <p className="mt-8 text-[13px] leading-6 text-[var(--color-text-secondary)]">
-        Selected {role ? roleLabel(role).toLowerCase() : 'version'}{current ? ` v${current.version}` : ''} is ready for Release review.
+        {locale === 'zh'
+          ? `已选${role ? roleLabel(role, locale) : '版本'}${current ? ` v${current.version}` : ''}，可以进入发布审查。`
+          : `Selected ${role ? roleLabel(role, locale).toLowerCase() : 'version'}${current ? ` v${current.version}` : ''} is ready for Release review.`}
       </p>
 
       <div className="mt-5 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.56)]">
         <RailInsightRow
           tone={validated ? 'success' : 'warning'}
-          title={validated ? 'Validation is fresh' : 'Validation needs review'}
-          body={validated ? 'Ask ConfigPilot for one small draft improvement before the next publish.' : validationSnapshot.detail}
-          action="Open Pilot Lab"
+          title={validated ? (locale === 'zh' ? '验证是新鲜的' : 'Validation is fresh') : (locale === 'zh' ? '验证需要复查' : 'Validation needs review')}
+          body={validated ? (locale === 'zh' ? '下一次发布前，可以让 ConfigPilot 再做一个很小的草稿优化。' : 'Ask ConfigPilot for one small draft improvement before the next publish.') : validationSnapshot.detail}
+          action={locale === 'zh' ? '打开 Pilot Lab' : 'Open Pilot Lab'}
           onClick={onOpen}
         />
         <RailInsightRow
           tone="info"
-          title="Latest evidence"
-          body={latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
-          action="Ask ConfigPilot"
+          title={locale === 'zh' ? '最新证据' : 'Latest evidence'}
+          body={latestReceipt ? `${executionModeLabel(latestReceipt.executionMode, locale)} · ${latestReceipt.status}: ${latestReceipt.scenarioName}` : (locale === 'zh' ? '还没有回执。发布前请先运行验证。' : 'No receipt yet. Run validation before publishing.')}
+          action={locale === 'zh' ? '询问 ConfigPilot' : 'Ask ConfigPilot'}
           onClick={onOpen}
         />
         <RailInsightRow
           tone="success"
-          title="Release boundary"
-          body="Import, duplicate, and draft edits stay isolated until Release publishes explicitly. ConfigPilot cannot publish for you."
-          action="Review workflow"
+          title={locale === 'zh' ? '发布边界' : 'Release boundary'}
+          body={locale === 'zh' ? '导入、派生和草稿编辑都会保持隔离，直到发布页明确执行发布。ConfigPilot 不能替你发布。' : 'Import, duplicate, and draft edits stay isolated until Release publishes explicitly. ConfigPilot cannot publish for you.'}
+          action={locale === 'zh' ? '查看流程' : 'Review workflow'}
           onClick={onOpen}
         />
       </div>
@@ -1595,6 +1869,7 @@ function ActionButton({ icon, label, busy, disabled, onClick }: { icon: ReactNod
 }
 
 function LightDrawer({ eyebrow, title, children, onClose }: { eyebrow: string; title: string; children: ReactNode; onClose: () => void }) {
+  const { locale } = useConsoleLocale()
   return (
     <div className="fixed inset-0 z-[55] bg-black/15 backdrop-blur-[2px]">
       <aside className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col border-l border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-2xl">
@@ -1603,7 +1878,7 @@ function LightDrawer({ eyebrow, title, children, onClose }: { eyebrow: string; t
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{eyebrow}</p>
             <h2 className="mt-1 text-[20px] font-semibold text-[var(--color-text-primary)]">{title}</h2>
           </div>
-          <button type="button" aria-label={`Close ${title}`} onClick={onClose} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-2 text-[var(--color-text-tertiary)]">
+          <button type="button" aria-label={locale === 'zh' ? `关闭${title}` : `Close ${title}`} onClick={onClose} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-2 text-[var(--color-text-tertiary)]">
             <X className="h-4 w-4" />
           </button>
         </div>

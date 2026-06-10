@@ -222,7 +222,7 @@ function scopeTypeLabel(scopeType: ScopeType) {
   return 'Tool'
 }
 
-export default function HookBuilder() {
+export default function HookBuilder({ embedded = false }: { embedded?: boolean }) {
   const agentConfigId = useSelectedAgentId()
   const { orgId } = useSession()
   const [hooks, setHooks] = useState<HookItem[]>([])
@@ -416,8 +416,8 @@ export default function HookBuilder() {
 
   return (
     <div>
-      <VersionContextBar />
-      <div className="px-8 py-8">
+      {!embedded ? <VersionContextBar /> : null}
+      <div className={embedded ? 'px-0 py-2' : 'px-8 py-8'}>
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-[20px] font-semibold text-[var(--mist)]">Hooks</h1>

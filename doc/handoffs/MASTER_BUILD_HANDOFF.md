@@ -16,6 +16,8 @@ Read first:
 8. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
 9. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
 10. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
+11. [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) - native page rebuild rule, backend contract matrix, and regression gates for Build / Operate / Settings.
+12. [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md) - copy-paste final invariant, command gates, and route-by-route smoke checklist.
 
 ---
 
@@ -36,6 +38,12 @@ The owner-approved reset:
 - use Scenario Lab receipts as the delivery validation path
 
 The owner-approved UI/UX direction is frozen in [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md). Do not rediscover the navigation, theme, or ConfigPilot shape in coding lanes.
+
+Current delivery constraint after UI2/Q3:
+
+- treat Build / Operate / Settings target pages as needing native implementations, not wrapper routes around old `admin` or `ops` pages
+- the only approved P0 compatibility reuse is `Playground`
+- the route rebuild is now locally complete; before broader production smoke, hold the line with the regression plan in [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) and the checklist in [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md)
 
 The previous standalone Procedure refactor is superseded and archived at [`../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md`](../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md). Do not dispatch from it.
 
@@ -197,6 +205,7 @@ Recommended coding-team shape:
 - Approved brand/motion assets: logo source is `/Users/curtis/Desktop/design/Globe loader`; Playground and Pilot Lab AI-generation loaders use `/Users/curtis/Desktop/design/Organic Loaders (standalone).html` variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`; AI-generation text streaming uses `/Users/curtis/Desktop/design/Text streaming (standalone).html` variant `07 token stream`.
 - Config Diff Viewer and Command Bar are first-class UI primitives.
 - Product UI supports `en-US` and `zh-CN`; business configuration content is not auto-translated.
+- Local native-route truth on `main`: Brain, Procedures, Tools, Knowledge, Hooks, Integrations, Settings Organization, the Operate conversation/detail family, and the Handoff detail page are all native routes. The only approved P0 compatibility reuse is Playground.
 
 ---
 

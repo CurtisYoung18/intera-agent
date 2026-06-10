@@ -1,1 +1,5 @@
-export { default } from '@/app/ops/chats/page'
+import ConversationsWorkspace from '@/components/operate/conversations-workspace'
+
+export default function OperateConversationsPage() {
+  return <ConversationsWorkspace />
+}

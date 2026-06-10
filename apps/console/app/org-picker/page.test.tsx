@@ -13,6 +13,14 @@ vi.mock('@/lib/api/client', () => ({
   apiClient: (...args: unknown[]) => mockApiClient(...args),
 }))
 
+vi.mock('@/components/locale-provider', () => ({
+  useConsoleLocale: () => ({
+    locale: 'en',
+    toggleLocale: vi.fn(),
+    t: (key: string) => key,
+  }),
+}))
+
 vi.mock('@/components/auth/console-auth-shell', () => ({
   ConsoleAuthShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))

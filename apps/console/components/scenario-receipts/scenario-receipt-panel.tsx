@@ -2,6 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, ChevronRight, CircleDot, FileJson, Handshake, Search, ShieldCheck, Wrench, XCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useConsoleLocale } from '@/components/locale-provider'
 import type { ScenarioObservedEvidence, ScenarioReceipt, ScenarioReceiptCheck } from '@intera/shared/contracts/scenarios'
 
 interface ScenarioReceiptPanelProps {
@@ -12,6 +13,99 @@ interface ScenarioReceiptPanelProps {
   compact?: boolean
 }
 
+const RECEIPT_COPY = {
+  en: {
+    emptyTitle: 'No receipts yet',
+    emptyBody: 'Run a Scenario to create validation evidence.',
+    receiptEyebrow: 'Scenario receipt',
+    run: 'Run',
+    started: 'Started',
+    execution: 'Execution',
+    toolMode: 'Tool mode',
+    completed: 'Completed',
+    trace: 'Trace',
+    toolCalls: 'Tool calls',
+    noToolCalls: 'No tool calls recorded.',
+    toolResults: 'Tool results',
+    noToolResults: 'No tool results recorded.',
+    staleEvidence: 'stale evidence',
+    hookDecisions: 'Hook decisions',
+    noHookDecisions: 'No Hook decisions recorded.',
+    knowledgeEvidence: 'Knowledge evidence',
+    noKnowledgeEvidence: 'No knowledge evidence recorded.',
+    humanTransfer: 'Human transfer',
+    noHumanTransfer: 'No human transfer required.',
+    transferRequired: 'Human transfer required',
+    noTransfer: 'No transfer',
+    handoffEvidence: 'Handoff evidence',
+    queue: 'Queue',
+    target: 'Target',
+    none: 'none',
+    finalStatus: 'Final status',
+    noFinalStatus: 'No final status recorded.',
+    notRecorded: 'Not recorded',
+    staleRuntimeWarning: 'Runtime recorded stale evidence that still requires reconciliation.',
+    phraseChecks: 'Phrase checks',
+    noPhraseChecks: 'No required or forbidden phrase checks.',
+    expectationChecks: 'Expectation checks',
+    noExpectationChecks: 'No additional expectation checks.',
+    recentRuns: 'Recent runs',
+    noEntries: 'No entries.',
+    pass: 'Pass',
+    fail: 'Fail',
+    knowledgeHit: (index: number) => `Knowledge hit ${index + 1}`,
+    agentRuntime: 'Agent runtime',
+    fixtureValidation: 'Fixture validation',
+    forbiddenPhrase: 'Forbidden phrase: ',
+    requiredPhrase: 'Required phrase: ',
+  },
+  zh: {
+    emptyTitle: '还没有回执',
+    emptyBody: '运行一次 Scenario 来生成验证证据。',
+    receiptEyebrow: 'Scenario 回执',
+    run: '运行',
+    started: '开始时间',
+    execution: '执行方式',
+    toolMode: 'Tool 模式',
+    completed: '完成时间',
+    trace: 'Trace',
+    toolCalls: 'Tool 调用',
+    noToolCalls: '还没有记录到 Tool 调用。',
+    toolResults: 'Tool 结果',
+    noToolResults: '还没有记录到 Tool 结果。',
+    staleEvidence: '过期证据',
+    hookDecisions: 'Hook 决策',
+    noHookDecisions: '还没有记录到 Hook 决策。',
+    knowledgeEvidence: '知识证据',
+    noKnowledgeEvidence: '还没有记录到知识证据。',
+    humanTransfer: '人工接管',
+    noHumanTransfer: '当前不需要人工接管。',
+    transferRequired: '需要人工接管',
+    noTransfer: '无需接管',
+    handoffEvidence: '接管证据',
+    queue: '队列',
+    target: '目标',
+    none: '无',
+    finalStatus: '最终状态',
+    noFinalStatus: '还没有记录最终状态。',
+    notRecorded: '未记录',
+    staleRuntimeWarning: '运行时记录到了仍待对齐的过期证据。',
+    phraseChecks: '短语检查',
+    noPhraseChecks: '还没有必需/禁用短语检查。',
+    expectationChecks: '预期检查',
+    noExpectationChecks: '没有额外的预期检查。',
+    recentRuns: '最近运行',
+    noEntries: '暂无条目。',
+    pass: '通过',
+    fail: '失败',
+    knowledgeHit: (index: number) => `知识命中 ${index + 1}`,
+    agentRuntime: '运行时验证',
+    fixtureValidation: '静态样例验证',
+    forbiddenPhrase: '禁用短语：',
+    requiredPhrase: '必需短语：',
+  },
+} as const
+
 export function ScenarioReceiptPanel({
   receipt,
   receipts = [],
@@ -19,6 +113,8 @@ export function ScenarioReceiptPanel({
   onSelectReceipt,
   compact = false,
 }: ScenarioReceiptPanelProps) {
+  const { locale } = useConsoleLocale()
+  const copy = RECEIPT_COPY[locale]
   if (!receipt) {
     return (
       <div className="intera-q2-panel p-5">
@@ -27,8 +123,8 @@ export function ScenarioReceiptPanel({
             <FileJson size={16} />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">No receipts yet</h2>
-            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">Run a Scenario to create validation evidence.</p>
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.emptyTitle}</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{copy.emptyBody}</p>
           </div>
         </div>
       </div>
@@ -44,7 +140,7 @@ export function ScenarioReceiptPanel({
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium text-[var(--color-text-tertiary)]">Scenario receipt</p>
+            <p className="text-xs font-medium text-[var(--color-text-tertiary)]">{copy.receiptEyebrow}</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{receipt.scenarioName}</h2>
             {receipt.summary && <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{receipt.summary}</p>}
           </div>
@@ -54,17 +150,17 @@ export function ScenarioReceiptPanel({
           </div>
         </div>
         <div className="mt-4 grid overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/62 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2">
-          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Run: {receipt.runId}</span>
-          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">Started: {formatDate(receipt.startedAt)}</span>
-          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Execution: {executionModeLabel(receipt.executionMode)}</span>
-          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">Tool mode: {receipt.toolExecutionMode}</span>
-          {(receipt.completedAt ?? receipt.finishedAt) && <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r sm:border-b-0">Completed: {formatDate(receipt.completedAt ?? receipt.finishedAt!)}</span>}
-          {receipt.traceId && <span className="px-3 py-2">Trace: {receipt.traceId}</span>}
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">{copy.run}: {receipt.runId}</span>
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">{copy.started}: {formatDate(receipt.startedAt, locale)}</span>
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">{copy.execution}: {executionModeLabel(receipt.executionMode, locale)}</span>
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">{copy.toolMode}: {receipt.toolExecutionMode}</span>
+          {(receipt.completedAt ?? receipt.finishedAt) && <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r sm:border-b-0">{copy.completed}: {formatDate(receipt.completedAt ?? receipt.finishedAt!, locale)}</span>}
+          {receipt.traceId && <span className="px-3 py-2">{copy.trace}: {receipt.traceId}</span>}
         </div>
       </div>
 
       <div className={`grid ${compact ? '' : 'xl:grid-cols-2'}`}>
-        <EvidenceSection icon={Wrench} title="Tool calls" empty="No tool calls recorded.">
+        <EvidenceSection icon={Wrench} title={copy.toolCalls} empty={copy.noToolCalls}>
           {evidence.toolCalls.length > 0 ? (
             <div className="grid gap-2">
               {evidence.toolCalls.map((call, index) => (
@@ -82,14 +178,14 @@ export function ScenarioReceiptPanel({
           )}
         </EvidenceSection>
 
-        <EvidenceSection icon={Wrench} title="Tool results" empty="No tool results recorded." isEmpty={evidence.toolResults.length === 0}>
+        <EvidenceSection icon={Wrench} title={copy.toolResults} empty={copy.noToolResults} isEmpty={evidence.toolResults.length === 0}>
           <div className="grid gap-2">
             {evidence.toolResults.map((result, index) => (
               <div key={`${result.name}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="font-semibold text-[var(--color-text-primary)]">{result.name}</span>
                   <span className="rounded-full bg-white px-2 py-0.5 text-[var(--color-text-secondary)]">{result.executionMode ?? receipt.toolExecutionMode}</span>
-                  {result.evidenceState === 'stale' && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">stale evidence</span>}
+                  {result.evidenceState === 'stale' && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{copy.staleEvidence}</span>}
                 </div>
                 {result.error && <p className="mt-2 text-xs text-red-700">{result.error}</p>}
                 {result.output !== undefined && <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-[var(--primitive-deep-950)] p-2 font-mono text-[11px] leading-4 text-[var(--color-workspace-text)]">{stringify(result.output)}</pre>}
@@ -98,7 +194,7 @@ export function ScenarioReceiptPanel({
           </div>
         </EvidenceSection>
 
-        <EvidenceSection icon={ShieldCheck} title="Hook decisions" empty="No Hook decisions recorded." isEmpty={evidence.hookDecisions.length === 0}>
+        <EvidenceSection icon={ShieldCheck} title={copy.hookDecisions} empty={copy.noHookDecisions} isEmpty={evidence.hookDecisions.length === 0}>
           <div className="grid gap-2">
             {evidence.hookDecisions.map((hook, index) => (
               <div key={`${hook.hookName}-${hook.checkpoint}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
@@ -113,65 +209,65 @@ export function ScenarioReceiptPanel({
           </div>
         </EvidenceSection>
 
-        <EvidenceSection icon={Search} title="Knowledge evidence" empty="No knowledge evidence recorded." isEmpty={evidence.knowledgeHits.length === 0}>
+        <EvidenceSection icon={Search} title={copy.knowledgeEvidence} empty={copy.noKnowledgeEvidence} isEmpty={evidence.knowledgeHits.length === 0}>
           <div className="grid gap-2">
             {evidence.knowledgeHits.map((hit, index) => (
               <div key={index} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
-                <p className="text-xs font-medium text-[var(--color-text-primary)]">{knowledgeTitle(hit, index)}</p>
+                <p className="text-xs font-medium text-[var(--color-text-primary)]">{knowledgeTitle(hit, index, locale)}</p>
                 <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-[var(--primitive-deep-950)] p-2 font-mono text-[11px] leading-4 text-[var(--color-workspace-text)]">{stringify(hit)}</pre>
               </div>
             ))}
           </div>
         </EvidenceSection>
 
-        <EvidenceSection icon={Handshake} title="Human transfer" empty="No human transfer required." isEmpty={!evidence.humanTransfer && evidence.handoff.length === 0}>
+        <EvidenceSection icon={Handshake} title={copy.humanTransfer} empty={copy.noHumanTransfer} isEmpty={!evidence.humanTransfer && evidence.handoff.length === 0}>
           <div className="grid gap-2">
             <div className="flex items-center gap-2 text-sm">
               <span className={`h-2 w-2 rounded-full ${evidence.humanTransfer ? 'bg-[var(--color-signal-warning)]' : 'bg-[var(--color-text-tertiary)]'}`} />
-              <span className="font-medium text-[var(--color-text-primary)]">{evidence.humanTransfer ? 'Human transfer required' : 'No transfer'}</span>
+              <span className="font-medium text-[var(--color-text-primary)]">{evidence.humanTransfer ? copy.transferRequired : copy.noTransfer}</span>
             </div>
             {evidence.handoff.map((handoff, index) => (
               <div key={index} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-                <p>{handoff.reason ?? handoff.target ?? handoff.queue ?? 'Handoff evidence'}</p>
-                {(handoff.queue || handoff.target) && <p className="mt-1 text-[var(--color-text-tertiary)]">Queue: {handoff.queue ?? 'none'} · Target: {handoff.target ?? 'none'}</p>}
+                <p>{handoff.reason ?? handoff.target ?? handoff.queue ?? copy.handoffEvidence}</p>
+                {(handoff.queue || handoff.target) && <p className="mt-1 text-[var(--color-text-tertiary)]">{copy.queue}: {handoff.queue ?? copy.none} · {copy.target}: {handoff.target ?? copy.none}</p>}
               </div>
             ))}
           </div>
         </EvidenceSection>
 
-        <EvidenceSection icon={CircleDot} title="Final status" empty="No final status recorded.">
+        <EvidenceSection icon={CircleDot} title={copy.finalStatus} empty={copy.noFinalStatus}>
           <div className="grid gap-2">
             <div className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-sm text-[var(--color-text-primary)]">
-              {evidence.finalStatus ?? 'Not recorded'}
+              {evidence.finalStatus ?? copy.notRecorded}
             </div>
             {evidence.finalResponse && <p className="rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-sm leading-5 text-[var(--color-text-secondary)]">{evidence.finalResponse}</p>}
-            {evidence.runtime?.staleEvidence?.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Runtime recorded stale evidence that still requires reconciliation.</p> : null}
+            {evidence.runtime?.staleEvidence?.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{copy.staleRuntimeWarning}</p> : null}
           </div>
         </EvidenceSection>
 
-        <EvidenceSection icon={AlertTriangle} title="Phrase checks" empty="No required or forbidden phrase checks." isEmpty={phraseChecks.length === 0}>
-          <CheckList checks={phraseChecks} />
+        <EvidenceSection icon={AlertTriangle} title={copy.phraseChecks} empty={copy.noPhraseChecks} isEmpty={phraseChecks.length === 0}>
+          <CheckList checks={phraseChecks} locale={locale} />
         </EvidenceSection>
       </div>
 
       <div className="border-t border-[var(--color-border-subtle)] bg-white/35 px-5 py-4">
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Expectation checks</h3>
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.expectationChecks}</h3>
         {remainingChecks.length === 0 ? (
-          <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">No additional expectation checks.</p>
+          <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">{copy.noExpectationChecks}</p>
         ) : (
-          <CheckList checks={remainingChecks} className="mt-3" />
+          <CheckList checks={remainingChecks} className="mt-3" locale={locale} />
         )}
       </div>
 
       {receipts.length > 1 && onSelectReceipt && (
         <div className="border-t border-[var(--color-border-subtle)] bg-white/35 px-5 py-4">
-          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Recent runs</h3>
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.recentRuns}</h3>
           <div className="mt-3 grid gap-2">
             {receipts.slice(0, 6).map((item) => (
               <button key={item.runId} type="button" onClick={() => onSelectReceipt(item)} className={`intera-q2-button flex items-center justify-between border px-3 py-2 text-left text-xs transition ${selectedRunId === item.runId ? 'border-[var(--color-accent-primary)] bg-[rgba(53,127,124,0.08)]' : 'border-[var(--color-border-subtle)] bg-white hover:bg-[var(--color-bg-surface-muted)]'}`}>
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-[var(--color-text-primary)]">{item.scenarioName}</span>
-                  <span className="mt-0.5 block text-[var(--color-text-tertiary)]">{executionModeLabel(item.executionMode)} · {formatDate(item.startedAt)}</span>
+                  <span className="mt-0.5 block text-[var(--color-text-tertiary)]">{executionModeLabel(item.executionMode, locale)} · {formatDate(item.startedAt, locale)}</span>
                 </span>
                 <span className="flex items-center gap-2">
                   <ReceiptStatusIcon status={item.status} />
@@ -203,11 +299,12 @@ export function ReceiptStatusIcon({ status }: { status?: ScenarioReceipt['status
 }
 
 function ExecutionModeBadge({ receipt }: { receipt: ScenarioReceipt }) {
+  const { locale } = useConsoleLocale()
   const runtime = receipt.executionMode === 'agentRuntime'
   const className = runtime
     ? 'border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] text-[var(--color-accent-primary)]'
     : 'border-amber-200 bg-amber-50 text-amber-800'
-  return <span className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold ${className}`}>{executionModeLabel(receipt.executionMode)}</span>
+  return <span className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold ${className}`}>{executionModeLabel(receipt.executionMode, locale)}</span>
 }
 
 function EvidenceSection({
@@ -238,7 +335,9 @@ function EvidenceSection({
 }
 
 function TokenList({ values, tone }: { values: string[]; tone?: 'cyan' }) {
-  if (values.length === 0) return <p className="text-xs text-[var(--color-text-tertiary)]">No entries.</p>
+  const { locale } = useConsoleLocale()
+  const copy = RECEIPT_COPY[locale]
+  if (values.length === 0) return <p className="text-xs text-[var(--color-text-tertiary)]">{copy.noEntries}</p>
   const itemClass = tone === 'cyan' ? 'border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] text-[var(--color-accent-primary)]' : 'border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] text-[var(--color-text-secondary)]'
   return (
     <div className="flex flex-wrap gap-2">
@@ -247,14 +346,15 @@ function TokenList({ values, tone }: { values: string[]; tone?: 'cyan' }) {
   )
 }
 
-function CheckList({ checks, className = '' }: { checks: ScenarioReceiptCheck[]; className?: string }) {
+function CheckList({ checks, className = '', locale }: { checks: ScenarioReceiptCheck[]; className?: string; locale: 'en' | 'zh' }) {
+  const copy = RECEIPT_COPY[locale]
   return (
     <div className={`grid gap-2 ${className}`}>
       {checks.map((check) => (
         <div key={check.name} className="rounded-md border border-[var(--color-border-subtle)] bg-white/68 px-3 py-2">
           <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="font-medium text-[var(--color-text-primary)]">{formatCheckName(check.name)}</span>
-            <span className={`rounded-full px-2 py-0.5 font-semibold ${check.passed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{check.passed ? 'Pass' : 'Fail'}</span>
+            <span className="font-medium text-[var(--color-text-primary)]">{formatCheckName(check.name, locale)}</span>
+            <span className={`rounded-full px-2 py-0.5 font-semibold ${check.passed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{check.passed ? copy.pass : copy.fail}</span>
           </div>
           {check.detail && <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{check.detail}</p>}
         </div>
@@ -267,17 +367,20 @@ function isPhraseCheck(check: ScenarioReceiptCheck): boolean {
   return check.name.startsWith('forbidden_phrase:') || check.name.startsWith('required_phrase:')
 }
 
-function executionModeLabel(mode: ScenarioReceipt['executionMode']): string {
-  return mode === 'agentRuntime' ? 'Agent runtime' : 'Fixture validation'
+function executionModeLabel(mode: ScenarioReceipt['executionMode'], locale: 'en' | 'zh'): string {
+  return mode === 'agentRuntime' ? RECEIPT_COPY[locale].agentRuntime : RECEIPT_COPY[locale].fixtureValidation
 }
 
-function formatCheckName(name: string): string {
-  return name.replace(/^forbidden_phrase:/, 'Forbidden phrase: ').replace(/^required_phrase:/, 'Required phrase: ').replace(/_/g, ' ')
+function formatCheckName(name: string, locale: 'en' | 'zh'): string {
+  return name
+    .replace(/^forbidden_phrase:/, RECEIPT_COPY[locale].forbiddenPhrase)
+    .replace(/^required_phrase:/, RECEIPT_COPY[locale].requiredPhrase)
+    .replace(/_/g, ' ')
 }
 
-function knowledgeTitle(hit: Record<string, unknown>, index: number): string {
+function knowledgeTitle(hit: Record<string, unknown>, index: number, locale: 'en' | 'zh'): string {
   const title = hit.title ?? hit.name ?? hit.source
-  return typeof title === 'string' && title.trim() ? title : `Knowledge hit ${index + 1}`
+  return typeof title === 'string' && title.trim() ? title : RECEIPT_COPY[locale].knowledgeHit(index)
 }
 
 function stringify(value: unknown): string {
@@ -288,8 +391,8 @@ function stringify(value: unknown): string {
   }
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, locale: 'en' | 'zh'): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return date.toLocaleString(locale === 'zh' ? 'zh-CN' : undefined)
 }

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowRight, Building2, Loader2 } from 'lucide-react'
+import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
 import { ConsoleAuthShell } from '@/components/auth/console-auth-shell'
 
@@ -21,6 +22,8 @@ export default function OrgPickerPage() {
 }
 
 function OrgPicker() {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
   const params = useSearchParams()
   const errorParam = params.get('error')
 
@@ -38,11 +41,11 @@ function OrgPicker() {
           setOrgs(r.data.orgs)
           setError(null)
         } else {
-          setError('Unable to load organizations')
+          setError(isZh ? '无法加载组织列表' : 'Unable to load organizations')
         }
       })
       .catch(() => {
-        if (!cancelled) setError('Failed to load organizations')
+        if (!cancelled) setError(isZh ? '加载组织列表失败' : 'Failed to load organizations')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -59,46 +62,48 @@ function OrgPicker() {
       await apiClient('/api/auth/switch-org', { method: 'POST', body: { orgId } })
       window.location.href = '/build/pilot-lab'
     } catch {
-      setError('Network error. Try again.')
+      setError(isZh ? '网络错误，请重试。' : 'Network error. Try again.')
       setSwitching(null)
     }
   }
 
   const roleLabel = (role: string): string => {
     const labels: Record<string, string> = {
-      owner: 'Owner',
-      admin: 'Admin',
-      operator: 'Operator',
-      viewer: 'Viewer',
+      owner: isZh ? '所有者' : 'Owner',
+      admin: isZh ? '管理员' : 'Admin',
+      operator: isZh ? '操作员' : 'Operator',
+      viewer: isZh ? '查看者' : 'Viewer',
     }
     return labels[role] || role
   }
 
   const statusLabel = error
-    ? 'Membership lookup needs attention'
+    ? (isZh ? '组织成员关系需要处理' : 'Membership lookup needs attention')
     : loading
-      ? 'Loading organization memberships'
-      : `${orgs.length} organization${orgs.length === 1 ? '' : 's'} available`
+      ? (isZh ? '正在加载组织成员关系' : 'Loading organization memberships')
+      : isZh
+        ? `可用组织 ${orgs.length} 个`
+        : `${orgs.length} organization${orgs.length === 1 ? '' : 's'} available`
   const statusDetail = error
-    ? 'Retry membership lookup once your session is available.'
-    : 'You can switch later from the identity menu.'
+    ? (isZh ? '等当前 session 可用后，再重试一次成员关系查询。' : 'Retry membership lookup once your session is available.')
+    : (isZh ? '之后也可以在身份菜单里切换组织。' : 'You can switch later from the identity menu.')
 
   return (
     <ConsoleAuthShell
       headline={
         <>
-          Pick the organization
+          {isZh ? '选择要使用的组织' : 'Pick the organization'}
           <br />
-          that should <em className="text-[#357f7c] not-italic">frame this session.</em>
+          {isZh ? <>来<em className="text-[#357f7c] not-italic">承载这次会话。</em></> : <>that should <em className="text-[#357f7c] not-italic">frame this session.</em></>}
         </>
       }
-      description="If your account belongs to more than one workspace, choose the organization that should power the next Build, Operate, and Settings session."
+      description={isZh ? '如果你的账号属于多个工作区，请先选择这次 Build、Operate 和 Settings 会话要使用的组织。' : 'If your account belongs to more than one workspace, choose the organization that should power the next Build, Operate, and Settings session.'}
       statusLabel={statusLabel}
       statusTone={error ? 'danger' : loading ? 'neutral' : 'success'}
       statusDetail={statusDetail}
-      panelEyebrow="Workspace Access"
-      panelTitle="Select Organization"
-      panelDescription="Choose which organization you want to access before entering the Console."
+      panelEyebrow={isZh ? '工作区访问' : 'Workspace Access'}
+      panelTitle={isZh ? '选择组织' : 'Select Organization'}
+      panelDescription={isZh ? '进入 Console 前，先选择你要访问的组织。' : 'Choose which organization you want to access before entering the Console.'}
       panelWidthClassName="max-w-[520px]"
     >
       {error ? (
@@ -128,16 +133,16 @@ function OrgPicker() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[18px] border border-vermillion/16 bg-vermillion/[0.08] text-vermillion">
               <AlertCircle className="h-5 w-5" />
             </div>
-            <p className="mt-4 text-[15px] font-semibold text-[var(--mist)]">Membership lookup failed</p>
+            <p className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '成员关系查询失败' : 'Membership lookup failed'}</p>
             <p className="mt-2 text-[13px] leading-6 text-[var(--fog)]">
-              We could not confirm your organization memberships yet. Retry once the session and membership data are available.
+              {isZh ? '暂时无法确认你的组织成员关系。等 session 和成员数据可用后再重试。' : 'We could not confirm your organization memberships yet. Retry once the session and membership data are available.'}
             </p>
             <button
               type="button"
               onClick={() => window.location.reload()}
               className="mt-5 inline-flex items-center justify-center rounded-[16px] border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-4 py-2.5 text-[13px] font-semibold text-[#357f7c] transition-all hover:bg-[#357f7c]/[0.14]"
             >
-              Retry lookup
+              {isZh ? '重试查询' : 'Retry lookup'}
             </button>
           </div>
         ) : orgs.length === 0 ? (
@@ -145,9 +150,9 @@ function OrgPicker() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[18px] border border-black/[0.05] bg-white/85 text-[var(--fog)]">
               <Building2 className="h-5 w-5" />
             </div>
-            <p className="mt-4 text-[15px] font-semibold text-[var(--mist)]">No organization memberships</p>
+            <p className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '没有组织成员关系' : 'No organization memberships'}</p>
             <p className="mt-2 text-[13px] leading-6 text-[var(--fog)]">
-              You do not belong to any organization yet. Contact your administrator for an invitation.
+              {isZh ? '你目前还不属于任何组织。请联系管理员邀请你加入。' : 'You do not belong to any organization yet. Contact your administrator for an invitation.'}
             </p>
           </div>
         ) : (

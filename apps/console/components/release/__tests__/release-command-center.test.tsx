@@ -22,6 +22,14 @@ vi.mock('@/lib/agent/agent-context', () => ({
   useAgentContext: () => h.context,
 }))
 
+vi.mock('@/components/locale-provider', () => ({
+  useConsoleLocale: () => ({
+    locale: 'en',
+    toggleLocale: vi.fn(),
+    t: (key: string) => key,
+  }),
+}))
+
 const configs = [
   {
     id: 'history-1',

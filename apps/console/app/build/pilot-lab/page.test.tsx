@@ -294,7 +294,7 @@ describe('PilotLabPage U-Pilot cockpit', () => {
   it('shows the initial streaming Pilot greeting after context loads', async () => {
     await renderPage()
 
-    expect((await screen.findAllByText(textIncludes('我已读取当前 draft'))).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(textIncludes('I have read the current draft'))).length).toBeGreaterThan(0)
   }, 10000)
 
   it('shows a proposal diff after chat propose, while apply stays disabled before accept', async () => {

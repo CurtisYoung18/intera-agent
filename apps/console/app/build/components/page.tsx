@@ -15,13 +15,47 @@ const COMPONENT_ITEMS = [
   { href: '/build/components/integrations', icon: Plug, labelKey: 'sidebar.integrations', color: '#7c3aed' },
 ]
 
+const COMPONENTS_PAGE_COPY = {
+  en: {
+    heroDescription:
+      'Keep Brain, Procedures, Tools, Hooks, Knowledge, and Integrations inside one local Build hub with shared material, restrained chips, and stable save or test flows.',
+    localOnlyTitle: 'Local only',
+    localOnlyBody: 'Components stays a Build-local hub. It does not become top-level global nav again.',
+    flowSafeTitle: 'Flow-safe',
+    flowSafeBody: 'Existing save, test, and detail editors remain intact under the updated Build shell language.',
+    tableComponent: 'Component',
+    tableWhat: 'What you can do here',
+    tableRoute: 'Route',
+    insideWorkspace: 'Inside Components workspace',
+    openDescription: (label: string) =>
+      `Open ${label.toLowerCase()} controls while keeping the shared Build shell, local navigation, and editor-specific save or test flows intact.`,
+    openRoute: 'Open route',
+  },
+  zh: {
+    heroDescription:
+      '把 Brain、Procedures、Tools、Hooks、Knowledge 和 Integrations 收进同一个本地 Build hub，复用统一材质、克制 chip 和稳定的保存/测试流程。',
+    localOnlyTitle: '仅限 Build 内部',
+    localOnlyBody: 'Components 继续作为 Build 内部工作区存在，不再恢复成全局一级导航。',
+    flowSafeTitle: '流程不变',
+    flowSafeBody: '现有保存、测试和细节编辑器都会在新的 Build 壳层语言下原样保留。',
+    tableComponent: '组件',
+    tableWhat: '这里可以做什么',
+    tableRoute: '入口',
+    insideWorkspace: '位于 Components 工作区',
+    openDescription: (label: string) =>
+      `在保留共享 Build 壳层、本地导航和各编辑器原有保存/测试流程的前提下，打开 ${label} 控制面。`,
+    openRoute: '打开入口',
+  },
+} as const
+
 function isActive(pathname: string, href: string) {
   return pathname === href
 }
 
 export default function BuildComponentsPage() {
-  const { t } = useConsoleLocale()
+  const { locale, t } = useConsoleLocale()
   const pathname = usePathname()
+  const copy = COMPONENTS_PAGE_COPY[locale]
 
   return (
     <main className="intera-q2-page min-h-screen px-5 py-6 sm:px-8">
@@ -30,23 +64,23 @@ export default function BuildComponentsPage() {
           <div className="flex flex-col gap-4 border-b border-[var(--color-border-subtle)] px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
-                <span>Build</span>
+                <span>{t('sidebar.build')}</span>
                 <span className="text-[var(--color-border-strong)]">/</span>
                 <span className="text-[var(--color-text-primary)]">{t('sidebar.components')}</span>
               </div>
               <h1 className="mt-4 text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{t('sidebar.components')}</h1>
               <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">
-                Keep Brain, Procedures, Tools, Hooks, Knowledge, and Integrations inside one local Build hub with shared material, restrained chips, and stable save or test flows.
+                {copy.heroDescription}
               </p>
             </div>
             <div className="grid gap-2 text-[12px] text-[var(--color-text-secondary)] sm:grid-cols-2">
               <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/76 px-4 py-3 shadow-[0_10px_24px_rgba(21,23,25,0.04)]">
-                <p className="font-semibold text-[var(--color-text-primary)]">Local only</p>
-                <p className="mt-1 leading-5">Components stays a Build-local hub. It does not become top-level global nav again.</p>
+                <p className="font-semibold text-[var(--color-text-primary)]">{copy.localOnlyTitle}</p>
+                <p className="mt-1 leading-5">{copy.localOnlyBody}</p>
               </div>
               <div className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-4 py-3 text-[var(--color-accent-primary)] shadow-[0_10px_24px_rgba(21,23,25,0.04)]">
-                <p className="font-semibold">Flow-safe</p>
-                <p className="mt-1 leading-5">Existing save, test, and detail editors remain intact under the updated Build shell language.</p>
+                <p className="font-semibold">{copy.flowSafeTitle}</p>
+                <p className="mt-1 leading-5">{copy.flowSafeBody}</p>
               </div>
             </div>
           </div>
@@ -58,9 +92,9 @@ export default function BuildComponentsPage() {
 
         <section className="intera-q2-panel overflow-hidden">
           <div className="hidden grid-cols-[minmax(230px,0.85fr)_minmax(0,1fr)_150px] border-b border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.48)] px-5 py-3 text-[12px] font-semibold text-[var(--color-text-tertiary)] md:grid">
-            <span>Component</span>
-            <span>What you can do here</span>
-            <span>Route</span>
+            <span>{copy.tableComponent}</span>
+            <span>{copy.tableWhat}</span>
+            <span>{copy.tableRoute}</span>
           </div>
           <div className="divide-y divide-[var(--color-border-subtle)]">
             {COMPONENT_ITEMS.map((item) => {
@@ -82,14 +116,14 @@ export default function BuildComponentsPage() {
                     </span>
                     <div className="min-w-0">
                       <span className="block">{label}</span>
-                      <span className="mt-1 block text-[11px] font-medium text-[var(--color-text-tertiary)]">Inside Components workspace</span>
+                      <span className="mt-1 block text-[11px] font-medium text-[var(--color-text-tertiary)]">{copy.insideWorkspace}</span>
                     </div>
                   </div>
                   <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-                    Open {label.toLowerCase()} controls while keeping the shared Build shell, local navigation, and editor-specific save or test flows intact.
+                    {copy.openDescription(label)}
                   </p>
                   <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82 px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-secondary)]">
-                    Open route
+                    {copy.openRoute}
                     <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                   </span>
                 </Link>

@@ -36,7 +36,7 @@ import {
   type PreserveField,
 } from './memory-strategy-utils'
 
-type BrainMemorySection = 'memory' | 'profile' | 'compact-test'
+export type BrainMemorySection = 'memory' | 'profile' | 'compact-test'
 
 const MEMORY_SECTIONS: Array<{
   id: BrainMemorySection
@@ -53,7 +53,7 @@ const MEMORY_SECTIONS: Array<{
   {
     id: 'profile',
     label: 'Profile',
-    description: 'Long-term profile memory and promotion policy.',
+    description: 'Long-term profile memory and promotion rules.',
     icon: UserRound,
   },
   {
@@ -191,8 +191,12 @@ function formatNumber(value: number) {
 
 export default function MemoryStrategyWorkspace({
   initialSection = 'memory',
+  embedded = false,
+  lockedSection,
 }: {
   initialSection?: BrainMemorySection
+  embedded?: boolean
+  lockedSection?: BrainMemorySection
 }) {
   const agentId = useSelectedAgentId()
   const { orgId } = useSession()
@@ -321,22 +325,39 @@ export default function MemoryStrategyWorkspace({
 
   const activeMode = useMemo(() => detectMemoryMode(memory), [memory])
 
+  const activeSection = lockedSection ?? section
+
   return (
     <PageLoader loading={loading} error={error} onRetry={() => window.location.reload()}>
       <div className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]">
-              Build / Components / Brain
-            </p>
-            <h1 className="mt-2 text-[26px] font-semibold tracking-tight text-[var(--mist)]">
-              Brain workspace
-            </h1>
-            <p className="mt-2 text-[13px] leading-relaxed text-[var(--fog)]">
-              Configure how this agent preserves business memory, keeps procedure runtime state,
-              and proves compaction behavior before a delivery package goes live.
-            </p>
-          </div>
+          {!embedded ? (
+            <div className="max-w-3xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]">
+                Build / Components / Brain
+              </p>
+              <h1 className="mt-2 text-[26px] font-semibold tracking-tight text-[var(--mist)]">
+                Brain workspace
+              </h1>
+              <p className="mt-2 text-[13px] leading-relaxed text-[var(--fog)]">
+                Configure how this agent preserves business memory, keeps procedure runtime state,
+                and proves compaction behavior before a delivery package goes live.
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-3xl">
+              <h2 className="text-[18px] font-semibold tracking-tight text-[var(--mist)]">
+                {activeSection === 'memory' ? 'Memory strategy' : activeSection === 'profile' ? 'Profile memory' : 'Compact test'}
+              </h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-[var(--fog)]">
+                {activeSection === 'memory'
+                  ? 'Adjust memory strategy, preservation rules, and extraction behavior without leaving the Brain workspace.'
+                  : activeSection === 'profile'
+                    ? 'Control long-term profile promotion separately from ProcedureRun working memory.'
+                    : 'Dry-run compaction rules against a fixed fixture before publishing changes.'}
+              </p>
+            </div>
+          )}
           <div className="flex min-h-9 items-center gap-2">
             {saveStatus === 'saving' ? (
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">
@@ -370,29 +391,31 @@ export default function MemoryStrategyWorkspace({
           </div>
         </div>
 
-        <div className="grid gap-2 rounded-lg border border-black/[0.08] bg-white/65 p-1 sm:grid-cols-3">
-          {MEMORY_SECTIONS.map((item) => {
-            const active = section === item.id
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSection(item.id)}
-                className={`flex min-h-[68px] items-start gap-3 rounded-md px-3 py-2.5 text-left transition ${
-                  active ? 'bg-white shadow-sm ring-1 ring-black/[0.08]' : 'hover:bg-white/70'
-                }`}
-              >
-                <item.icon className={`mt-0.5 h-4 w-4 ${active ? 'text-cyan-700' : 'text-[var(--fog)]'}`} />
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-semibold text-[var(--mist)]">{item.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-[var(--fog)]">{item.description}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        {!embedded ? (
+          <div className="grid gap-2 rounded-lg border border-black/[0.08] bg-white/65 p-1 sm:grid-cols-3">
+            {MEMORY_SECTIONS.map((item) => {
+              const active = section === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSection(item.id)}
+                  className={`flex min-h-[68px] items-start gap-3 rounded-md px-3 py-2.5 text-left transition ${
+                    active ? 'bg-white shadow-sm ring-1 ring-black/[0.08]' : 'hover:bg-white/70'
+                  }`}
+                >
+                  <item.icon className={`mt-0.5 h-4 w-4 ${active ? 'text-cyan-700' : 'text-[var(--fog)]'}`} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold text-[var(--mist)]">{item.label}</span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-[var(--fog)]">{item.description}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
 
-        {section === 'memory' ? (
+        {activeSection === 'memory' ? (
           <MemoryPanel
             memory={memory}
             memoryMode={memoryMode}
@@ -408,7 +431,7 @@ export default function MemoryStrategyWorkspace({
           />
         ) : null}
 
-        {section === 'profile' ? (
+        {activeSection === 'profile' ? (
           <ProfilePanel
             memory={memory}
             setMemoryField={setMemoryField}
@@ -416,7 +439,7 @@ export default function MemoryStrategyWorkspace({
           />
         ) : null}
 
-        {section === 'compact-test' ? (
+        {activeSection === 'compact-test' ? (
           <CompactTestPanel
             memory={memory}
             selectedSampleId={selectedSampleId}
