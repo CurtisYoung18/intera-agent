@@ -38,7 +38,7 @@ export default function ConsoleBackToTop() {
         document.getElementById(CONSOLE_SCROLL_ROOT_ID)?.scrollTo({ top: 0, behavior: 'smooth' })
         window.scrollTo({ top: 0, behavior: 'smooth' })
       }}
-      className="pointer-events-auto fixed bottom-8 left-1/2 z-[100] flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-white/95 text-[var(--mist)] shadow-[var(--shadow-card)] backdrop-blur-md transition hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/35"
+      className="pointer-events-auto fixed bottom-8 left-1/2 z-[100] flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-black/[0.08] bg-[rgba(255,253,248,0.98)] text-[var(--mist)] shadow-[var(--shadow-card)] transition hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/35"
       aria-label={t('shell.backToTopAria')}
       title={t('shell.backToTop')}
     >
