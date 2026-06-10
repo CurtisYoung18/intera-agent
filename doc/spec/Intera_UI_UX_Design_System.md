@@ -85,10 +85,12 @@ ConfigPilot is a first-class product surface:
 ### 0.6 Testing model
 
 - Component-level tests live on Component pages.
-- Agent-level validation lives in `Pilot Lab`.
-- `Free Test` is playground-like ad hoc testing.
-- `Test Scenarios` are saved repeatable Scenarios.
-- `Receipts` are validation records.
+- Agent-level building and validation live in `Pilot Lab`.
+- `Pilot` is the chat-first Agent-building workflow: ask, propose, diff, accept, apply, and optionally run validation.
+- `Playground` is manual ad hoc testing/debug: the operator sends messages directly, runs dry-run, and inspects Trace/Evidence.
+- `Scenarios` are saved repeatable tests.
+- `Receipts` are validation records and commercial proof artifacts.
+- `Run timeline` / `Trace` / `Evidence checkpoints` are the product terms for breakpoint-like debugging. Do not call these "breakpoints" in operator UI.
 
 ### 0.7 i18n
 
@@ -204,6 +206,7 @@ Primary jobs:
 - Understand whether validation is fresh.
 - Publish or rollback deliberately.
 - Import/export `.intera-agent.json`.
+- Own package actions. Pilot may suggest import/export/duplicate flows, but Release is where the operator executes package actions.
 
 Required sections:
 
@@ -231,6 +234,14 @@ Supporting panels:
 - Recent Scenario receipts.
 - Runtime-backed vs fixture-only validation labels.
 - Trace / Evidence panel for dry-run and Scenario execution.
+
+Testing/debug model:
+
+- `Pilot` answers "help me build or change the Agent." It can propose config patches and trigger validation, but every write requires explicit accept/apply.
+- `Playground` answers "let me test this Agent manually." It is the place for multi-turn stuck-state debugging, dry-run Tool checks, Hook decision checks, ProcedureRun step inspection, and manual transcript testing.
+- `Scenario` answers "prove this behavior keeps working." It stores repeatable cases and generates receipts.
+- `Run timeline` answers "what happened in this run?" It should show Procedure, Tools, Hooks, Memory, Response, and Reconcile evidence in chronological or grouped form.
+- A user stuck after multiple turns should be debugged by replaying or continuing the chat in Playground and inspecting the Run timeline. The product should make Tool/Hook/ProcedureRun effects visible without exposing code-level breakpoint language.
 
 Rules:
 
@@ -495,6 +506,13 @@ Preferred visual:
 
 Trace should be explainable, not noisy.
 
+Primary label:
+
+- Use `Run timeline` in operator-facing UI.
+- Use `Trace` or `Raw trace` for deeper technical/debug panels.
+- Use `Evidence checkpoints` for grouped proof points in receipts.
+- Avoid `breakpoint` in product copy; it is an implementation analogy, not an operator concept.
+
 Required trace groups:
 
 - Procedure step.
@@ -503,6 +521,8 @@ Required trace groups:
 - Knowledge hit.
 - Human handoff event.
 - Stop retry if any.
+- Memory read/write evidence where relevant.
+- Reconcile/stale-input evidence where relevant.
 
 Trace is most useful in Pilot Lab receipts and Operate conversation detail. Do not make traces dominate ordinary configuration pages.
 
