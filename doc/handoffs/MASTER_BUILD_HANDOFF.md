@@ -132,17 +132,17 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | PKG1 | Package completeness + version cap | Shipped locally | Completes package surfaces and enforces the five-version history cap. |
 | BASE1 | Core console regression stabilization | Shipped locally | Locks in post-PKG1/U-Pilot regression fixes on the active Build surfaces. |
 | Q3 | Legacy route/component/doc truth cleanup | Shipped locally | Q3-B1 aligned route/nav truth; Q3-B final removes dead UI remnants and refreshes current docs to real status. |
-| UI2-A | Shared material system and shell chrome | Current active | Converges approved sidebar/org-picker/identity material language into shared primitives, Console shell, sidebar, toolbar, and page chrome. Must land before UI2-B/C. |
-| UI2-B | Build surface visual convergence | Next, after UI2-A | Applies UI2 material language to Release, Pilot Lab, Components, and Playground compatibility surfaces without IA/runtime changes. |
-| UI2-C | Operate, Settings, Auth visual convergence | Next, after UI2-A | Applies UI2 material language to Conversations, Handoff, Organization, Login, and Org Picker without API/runtime changes. |
-| UI2-D | Visual QA consistency sweep | Last UI2 lane | Checks spacing, icons, hover/active/selected/collapsed/empty/loading/mobile/reduced-motion states and screenshots. |
+| UI2-A | Shared material system and shell chrome | Shipped locally | Converged approved sidebar/org-picker/identity material language into shared primitives, Console shell, sidebar, toolbar, and page chrome. |
+| UI2-B | Build surface visual convergence | Shipped locally | Applies UI2 material language to Release, Pilot Lab, Components, and Playground compatibility surfaces without IA/runtime changes. |
+| UI2-C | Operate, Settings, Auth visual convergence | Shipped locally | Applies UI2 material language to Conversations, Handoff, Organization, Login, and Org Picker without API/runtime changes. |
+| UI2-D | Visual QA consistency sweep | Current active | Checks spacing, icons, hover/active/selected/collapsed/empty/loading/mobile/reduced-motion states and screenshots. |
 
 Recommended coding-team shape:
 
 - R1, C1, U1, U2, U3, B1, R2, Q1, Q2, `/ops/guide` cleanup, P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`.
 - Q3-B final completes the remaining dead-component cleanup and docs truth pass on the current branch; future work should be focused repair only unless the owner reopens product scope.
 - UI2 is now reopened product scope on `main`: visual-system convergence only. Do not run it on `hotfix/live-testing`.
-- Run UI2-A first. After it lands, UI2-B and UI2-C may run in parallel if file ownership is explicit. UI2-D runs last.
+- UI2-A, UI2-B, and UI2-C are shipped locally. UI2-D should start only from a checkout containing commits `56628942`, `8d51737a`, and `bb4c6389`.
 - Hotfix worktree remains for online minimal repair and small UI bug fixes only. Backport hotfix commits into main with adaptation; do not merge old deploy/main wholesale into main.
 - Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) only for repair-oriented zero-context sessions. Do not redispatch from the shipped F1-F7 prompts or from already-shipped post-foundation lane blocks.
 

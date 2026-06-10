@@ -1,7 +1,7 @@
 # Intera Current Roadmap
 
 **Last updated:** 2026-06-10
-**Status:** current checkpoint map after live-console hotfix backport. UI2 visual system convergence, final gate, push/deploy, and first customer delivery remain ahead.
+**Status:** current checkpoint map after UI2-A/B/C. UI2-D visual QA, final gate, push/deploy, and first customer delivery remain ahead.
 **Audience:** founder, architect, coding-team leads, zero-context coding agents.
 
 This roadmap is the compact visual map from the earliest shipped project foundations through the current Foundation Reset and the remaining commercial-delivery checkpoints.
@@ -81,10 +81,10 @@ flowchart TD
   subgraph P6["Current and remaining P0 delivery checkpoints"]
     Q3BF["Q3-B Final cleanup<br/>Delete confirmed-unused UI, active docs truth, terminology cleanup"]:::done
     VC1["Version control UX implementation<br/>Release timeline, Live/Draft/Historical, cap guidance, safer actions"]:::done
-    UI2A["UI2-A shared material system<br/>Primitives, shell chrome, sidebar, page chrome"]:::active
-    UI2B["UI2-B Build surfaces<br/>Release, Pilot Lab, Components, Playground visual convergence"]:::next
-    UI2C["UI2-C Operate, Settings, Auth<br/>Conversations, Handoff, Organization, Login, Org Picker"]:::next
-    UI2D["UI2-D visual QA sweep<br/>Spacing, icons, states, mobile, reduced motion, screenshots"]:::next
+    UI2A["UI2-A shared material system<br/>Primitives, shell chrome, sidebar, page chrome"]:::done
+    UI2B["UI2-B Build surfaces<br/>Release, Pilot Lab, Components, Playground visual convergence"]:::done
+    UI2C["UI2-C Operate, Settings, Auth<br/>Conversations, Handoff, Organization, Login, Org Picker"]:::done
+    UI2D["UI2-D visual QA sweep<br/>Spacing, icons, states, mobile, reduced motion, screenshots"]:::active
     GATE["Final integration gate<br/>typecheck, tests, clean build, browser smoke, no stale active docs"]:::gate
     PUSH["Push main<br/>Sync origin/main after green integration gate"]:::next
     DEPLOY["Deploy or cherry-pick to deploy/main<br/>Run server health and production smoke"]:::next
@@ -146,10 +146,10 @@ flowchart TD
 | Q3-B1 | Done | Route/nav truth: old admin/ops links point to target IA. |
 | Q3-B Final | Done | Removed proven-dead UI, fixed compatibility case detail route, and aligned active docs/copy without deleting Playground runtime. |
 | Version control UX | Done | Release now shows Agent-family timeline, live/draft/historical states, validation evidence, diff-vs-live context, action semantics, and 5-version retention guidance. |
-| UI2-A shared material system | Active | Converge shell, sidebar, page chrome, and shared material primitives around the approved milky translucent light system. |
-| UI2-B Build surfaces | Next | Apply the system to Release, Pilot Lab, Components, and Playground without changing IA or runtime behavior. |
-| UI2-C Operate, Settings, Auth | Next | Apply the system to Conversations, Handoff, Organization, Login, and Org Picker. |
-| UI2-D visual QA sweep | Next | Check collapsed/expanded/hover/active/selected/empty/loading/mobile states and final visual consistency. |
+| UI2-A shared material system | Done | Converged shell, sidebar, page chrome, and shared material primitives around the approved milky translucent light system. |
+| UI2-B Build surfaces | Done | Applied the system to Release, Pilot Lab, Components, and Playground without changing IA or runtime behavior. |
+| UI2-C Operate, Settings, Auth | Done | Applied the system to Conversations, Handoff, Organization, Login, and Org Picker. |
+| UI2-D visual QA sweep | Active | Check collapsed/expanded/hover/active/selected/empty/loading/mobile states and final visual consistency. |
 | Final integration gate | Next | Run full gates and browser smoke before push/deploy. |
 | Push main | Next | Sync local integration branch after clean gates. |
 | Deploy / production smoke | Next | Move validated main to deploy path and verify health plus real browser flows. |
@@ -163,8 +163,6 @@ flowchart TD
 
 ## Current Dispatch Guidance
 
-1. Run **UI2-A** first; it owns shared primitives and shell chrome, so do not run it in parallel with other UI2 lanes.
-2. After UI2-A lands, run **UI2-B** and **UI2-C** in parallel if their owned files do not overlap.
-3. Run **UI2-D visual QA sweep** after UI2-B/C.
-4. Run the **Final integration gate** before pushing or deploying.
-5. Use the hotfix worktree only for live minimal repair; cherry-pick or adapt hotfixes back into main before final deployment.
+1. Run **UI2-D visual QA sweep** from a checkout that contains `56628942`, `8d51737a`, and `bb4c6389`.
+2. Run the **Final integration gate** before pushing or deploying.
+3. Use the hotfix worktree only for live minimal repair; cherry-pick or adapt hotfixes back into main before final deployment.
