@@ -307,4 +307,39 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(assistantMessages.join('\n')).not.toContain('I will refund you now.')
     expect(result.messages.some((m) => m.role === 'user' && String(m.content).includes('[HOOK: Stop]'))).toBe(true)
   })
+
+  it('Stop escalate falls back to human escalation with a safe customer reply', async () => {
+    const engine = new HookEngine('agent_1')
+    engine.setHook({
+      name: 'stop_requires_human',
+      checkpoint: 'Stop',
+      handler: {
+        kind: 'declarative',
+        check: { kind: 'rule', always: true, reason: 'Needs human review before sending.' },
+        effect: { decision: 'escalate', tool: 'create_human_task', guidance: 'Escalate this reply to a human specialist.' },
+      },
+    })
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockTextStream('I can solve this immediately without human review.'),
+    ], config({ maxStopRetries: 0 }))
+
+    const result = await loop.run('hello', sendEvent)
+
+    expect(result.transition).toBe('waiting_human')
+    expect(result.caseStatus).toBe('escalated')
+    expect(memory.cases).toHaveLength(1)
+    expect(memory.cases[0].status).toBe('escalated')
+    expect(memory.cases[0].blocker).toContain('Stop Hook fallback')
+    expect(memory.humanTasks).toHaveLength(1)
+    expect(memory.humanTasks[0].question).toContain('stop_requires_human:escalate')
+    expect(memory.humanTasks[0].status).toBe('pending')
+    expect(memory.traces.some((trace) => trace.actionType === 'loop_decision' && trace.title === 'Stop Hook fallback')).toBe(true)
+    expect(events.some((event) => event.type === 'message_stop' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)
+    expect(events.some((event) => event.type === 'escalated' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)
+    const streamedText = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).toContain('human specialist')
+  })
 })

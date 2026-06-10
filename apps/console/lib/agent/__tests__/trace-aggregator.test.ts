@@ -74,4 +74,29 @@ describe('aggregateTraces', () => {
     expect(hooks?.status).toBe('block')
     expect(hooks?.summary).toContain('Hook blocked Tool: create_human_task')
   })
+
+  it('maps Stop Hook fallback loop decisions into the Hooks stage as warn evidence', () => {
+    const traces: TraceRecord[] = [
+      {
+        caseId: 'test',
+        actionType: 'loop_decision',
+        title: 'Stop Hook fallback',
+        detail: 'Hook checkpoint Stop: escalate -> Stop Hook fallback',
+        payload: JSON.stringify({
+          checkpoint: 'Stop',
+          summary: 'escalate',
+          results: [{ hookName: 'stop_requires_human', action: 'escalate', reason: 'Needs human review before sending.' }],
+        }),
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    ]
+
+    const result = aggregateTraces(traces, Date.now(), false, ['Hooks'] as any[])
+
+    expect(result).toHaveLength(1)
+    expect(result[0].stage).toBe('Hooks')
+    expect(result[0].status).toBe('warn')
+    expect(result[0].summary).toContain('Stop Hook fallback')
+    expect(result[0].events?.[0]?.label).toContain('Stop Hook fallback')
+  })
 })
