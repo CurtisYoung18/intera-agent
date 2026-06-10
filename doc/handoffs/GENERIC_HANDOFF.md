@@ -1,6 +1,6 @@
 # Generic Handoff — Intera Agent
 
-**Last updated:** 2026-06-08 (architect: reconciled with the Foundation Reset docs) | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
+**Last updated:** 2026-06-10 (architect: dual-worktree coordination added) | **Branch:** `main` | **Audience:** any coding agent picking up this project cold.
 
 > **Coordination docs in this folder:**
 > 1. **`GENERIC_HANDOFF.md`** (this file) — stable project context. Changes rarely.
@@ -40,6 +40,28 @@
 ### Parallel work protocol
 
 You are one of several coding sessions running at the same time. This is the default state — no one will warn you. Follow this protocol every time you start a task. **The rule is simple: declare files before touching them, and escalate uncertainty to the user.**
+
+### Dual worktree protocol
+
+The project now uses two local worktrees with different responsibilities:
+
+| Purpose | Path | Branch | Base/tracking | Rule |
+|---|---|---|---|---|
+| Integration / local refactor | `/Users/curtis/Desktop/intera-agent` | `main` | `origin/main` | Use for S2, PKG1, Q3, UI/product/runtime feature work. Do not deploy directly as a hotfix lane. |
+| Live-testing hotfix | `/Users/curtis/Desktop/intera-agent-hotfix` | `hotfix/live-testing` | `deploy/main` | Use only for minimal production/test hotfixes that may be pushed/deployed. No big refactors. |
+
+Hotfix rules:
+
+- Before starting a hotfix, run `git -C /Users/curtis/Desktop/intera-agent-hotfix pull --ff-only`.
+- Hotfix commits must be small and must report their commit hash back to the coordinator.
+- Integration/main owns cherry-picking hotfix commits back into `/Users/curtis/Desktop/intera-agent`, so local refactors do not lose production fixes.
+- If a hotfix touches high-conflict runtime paths such as `apps/console/lib/agent/**` or `apps/console/app/api/messages/route.ts`, pause overlapping R/S runtime work in the integration worktree until the hotfix is cherry-picked back.
+- Feature refactor branches do not deploy.
+- Schema/migration work is never parallel. Do not edit `packages/shared/prisma/schema.prisma` or migrations in the hotfix worktree unless the owner explicitly approves a schema lane.
+- After cherry-picking a hotfix into main, run:
+  - `npx tsc --noEmit -p apps/console/tsconfig.json`
+  - `env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test`
+  - `rm -rf apps/console/.next && npm run build:console`
 
 **Before starting work:**
 

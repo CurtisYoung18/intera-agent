@@ -1,6 +1,6 @@
 # Post-Foundation Dispatch Prompts
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-10
 **Purpose:** copy one prompt into a zero-context Codex session after the shipped F1-F7/UX0 foundation reset.
 **Baseline:** local `main` at or after `02dc3182 cleanup: remove obsolete ops guide route`.
 
@@ -19,6 +19,14 @@ Start by running:
 - git fetch origin
 - git status --short
 - git log --oneline -n 10
+
+Worktree boundary:
+- Integration/refactor worktree: `/Users/curtis/Desktop/intera-agent`, branch `main`, tracking `origin/main`. Use this for S2, PKG1, Q3, UI/product/runtime feature work.
+- Live-testing hotfix worktree: `/Users/curtis/Desktop/intera-agent-hotfix`, branch `hotfix/live-testing`, tracking `deploy/main`. Use this only for minimal online hotfixes that may be pushed/deployed.
+- If you are doing feature/refactor work, stay in `/Users/curtis/Desktop/intera-agent`; do not deploy directly from that lane.
+- If you are doing a hotfix, start with `git -C /Users/curtis/Desktop/intera-agent-hotfix pull --ff-only`, keep the diff minimal, do not do large refactors, do not touch schema/migrations unless explicitly approved, and report the hotfix commit hash.
+- If a hotfix touches `apps/console/lib/agent/**` or `apps/console/app/api/messages/route.ts`, runtime work in main must pause for those files until the hotfix commit is cherry-picked back.
+- After cherry-picking a hotfix into main, run typecheck, keyless full tests, and clean build.
 
 Read these docs before editing:
 - doc/handoffs/GENERIC_HANDOFF.md

@@ -1,6 +1,6 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-10
 **Audience:** founder, architect, coding-team leads, parallel AI coding sessions
 **Current macro priority:** Foundation Reset before commercial customer deployment
 
@@ -55,6 +55,24 @@ Rules:
 - `apps/console/lib/agent/*` is high-collision; declare exact files.
 - `apps/console/lib/i18n/dictionaries.ts` should be handled by the final sweep unless a lane absolutely needs visible copy.
 - If a lane needs an extra file after starting, re-check this table and the active lane prompts first.
+
+### Dual Worktree Coordination
+
+Current worktrees:
+
+- Integration/refactor worktree: `/Users/curtis/Desktop/intera-agent`, branch `main`, tracking `origin/main`.
+- Live-testing hotfix worktree: `/Users/curtis/Desktop/intera-agent-hotfix`, branch `hotfix/live-testing`, tracking `deploy/main`.
+
+Rules:
+
+- Use `main` worktree for S2, PKG1, Q3, UI/product/runtime feature work.
+- Use hotfix worktree only for minimal online testing hotfixes that may be pushed/deployed.
+- Start hotfix work with `git -C /Users/curtis/Desktop/intera-agent-hotfix pull --ff-only`.
+- Hotfix commit hashes must be reported back. Integration/main then cherry-picks them to avoid losing production fixes.
+- If a hotfix touches `apps/console/lib/agent/**` or `apps/console/app/api/messages/route.ts`, pause overlapping R/S runtime work until the hotfix is cherry-picked back.
+- Feature/refactor work does not deploy directly.
+- Schema/migration work is not parallel and is forbidden in hotfix unless separately approved.
+- After cherry-picking hotfixes into `main`, run typecheck, keyless tests, and clean `build:console`.
 
 ---
 
