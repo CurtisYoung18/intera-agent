@@ -910,7 +910,7 @@ These UI lanes are designed to be parallelizable without file conflicts. They sh
 | UI2-A | Shared material system and shell chrome | Shipped locally | `components/console-shell.tsx`, `components/console-sidebar.tsx`, `components/ui/console-chrome.tsx`, shared UI primitives only |
 | UI2-B | Build surface convergence | Shipped locally | `/build/release`, `/build/pilot-lab`, `/build/components/**`, `/build/playground` compatibility surface |
 | UI2-C | Operate, Settings, Auth convergence | Shipped locally | `/operate/**`, `/settings/organization`, `/login`, `/org-picker` |
-| UI2-D | Final visual QA consistency sweep | Current active | browser screenshots, responsive checks, reduced motion, copy/state consistency |
+| UI2-D | Final visual QA consistency sweep | Shipped locally | browser screenshots, responsive checks, reduced motion, copy/state consistency |
 
 Coordination rules:
 
@@ -919,7 +919,7 @@ Coordination rules:
 - Diff Viewer should be built once and reused by ConfigPilot, Release, Import, and Rollback.
 - ConfigPilot should not be globally mounted as a drawer in P0. Use a single main Pilot Lab workspace and link into it with context.
 - Visual primitives should not depend on business logic.
-- UI2-A/B/C are shipped locally. UI2-D is the only remaining UI2 lane before the final integration gate.
+- UI2-A/B/C/D are shipped locally. The next checkpoint is final integration gate.
 
 ---
 

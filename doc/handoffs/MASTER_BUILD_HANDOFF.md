@@ -135,14 +135,14 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | UI2-A | Shared material system and shell chrome | Shipped locally | Converged approved sidebar/org-picker/identity material language into shared primitives, Console shell, sidebar, toolbar, and page chrome. |
 | UI2-B | Build surface visual convergence | Shipped locally | Applies UI2 material language to Release, Pilot Lab, Components, and Playground compatibility surfaces without IA/runtime changes. |
 | UI2-C | Operate, Settings, Auth visual convergence | Shipped locally | Applies UI2 material language to Conversations, Handoff, Organization, Login, and Org Picker without API/runtime changes. |
-| UI2-D | Visual QA consistency sweep | Current active | Checks spacing, icons, hover/active/selected/collapsed/empty/loading/mobile/reduced-motion states and screenshots. |
+| UI2-D | Visual QA consistency sweep | Shipped locally | Checks spacing, icons, hover/active/selected/collapsed/empty/loading/mobile/reduced-motion states and screenshots. |
 
 Recommended coding-team shape:
 
 - R1, C1, U1, U2, U3, B1, R2, Q1, Q2, `/ops/guide` cleanup, P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`.
 - Q3-B final completes the remaining dead-component cleanup and docs truth pass on the current branch; future work should be focused repair only unless the owner reopens product scope.
 - UI2 is now reopened product scope on `main`: visual-system convergence only. Do not run it on `hotfix/live-testing`.
-- UI2-A, UI2-B, and UI2-C are shipped locally. UI2-D should start only from a checkout containing commits `56628942`, `8d51737a`, and `bb4c6389`.
+- UI2-A, UI2-B, UI2-C, and UI2-D are shipped locally. Final integration gate is the next checkpoint before push/deploy.
 - Hotfix worktree remains for online minimal repair and small UI bug fixes only. Backport hotfix commits into main with adaptation; do not merge old deploy/main wholesale into main.
 - Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) only for repair-oriented zero-context sessions. Do not redispatch from the shipped F1-F7 prompts or from already-shipped post-foundation lane blocks.
 
@@ -213,7 +213,7 @@ Shipped foundations already useful for the reset:
 - Logged-in default is `/build/pilot-lab`; Pilot Lab has `Pilot` and `Playground` tabs in the same workspace.
 - Release owns package actions and version control. ConfigPilot no longer mounts as a global drawer.
 - Q3 cleanup keeps `/admin/*` and `/ops/*` legacy paths as compatibility redirects/wrappers while preserving Playground dry-run, Trace Sidebar, and the playground API/runtime surface.
-- UI2 now precedes final deployment. Final integration gate and deploy should wait until UI2-D visual QA is done.
+- UI2 is complete locally. Final integration gate and deploy can proceed after confirming no newer hotfix commits need backport.
 
 Live landmines to keep in mind:
 
