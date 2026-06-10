@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-06-10
 **Purpose:** copy one prompt into a zero-context Codex session after the shipped F1-F7/UX0 foundation reset.
-**Baseline:** local `main` at or after `02dc3182 cleanup: remove obsolete ops guide route`.
+**Baseline:** local `main` at or after `64ee8f01 S2: add runtime-backed scenario receipts`.
 
 The old [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) file is historical. Do not redispatch F1-F7 from it.
 
@@ -57,13 +57,22 @@ Current shipped baseline includes:
 - Q1 terminology/docs/i18n sweep.
 - Q2 light-first Build surface polish, logo/favicon copy-in, and loader/token-stream reference integration.
 - Obsolete `/ops/guide` route removed.
+- P1 ConfigPilot typed backend context/propose/apply draft flow.
+- R3 ProcedureRun runtime overlay and real memory tools.
+- S2 runtime-backed Scenario receipts.
+
+Current Pilot correction:
+- Logged-in/default authenticated route is `/build/pilot-lab`.
+- Pilot Lab has two main tabs: `Pilot` for chat-based agent building, and `Playground` for manual dry-run testing/debug.
+- ConfigPilot is not a global drawer in P0. Older drawer references in shipped U2/U3/Q2 prompts are historical and must not be used for new work.
+- Existing Playground dry-run and Trace Sidebar capability must be preserved under the Pilot Lab `Playground` tab before any old Playground route is removed.
 
 Design direction correction:
 - Use a unified light-first visual system across the entire Intera Console.
 - Do not introduce dark immersive workspaces for Pilot Lab, Diff Viewer, Trace, Release moments, ConfigPilot, or Scenario receipts in P0.
 - Use warm light canvas, graphite text, muted cyan accent, restrained amber/green/red signals, 8px controls, subtle row dividers, compact grouping, and slightly cooler or denser light surfaces where focus is needed.
 - Dark surfaces are allowed only for small functional code editors, JSON previews, and terminal-like raw trace payload viewers.
-- Product pages, drawers, receipts, Diff Viewer, and trace panels should remain light.
+- Product pages, Pilot work panels, receipts, Diff Viewer, and trace panels should remain light.
 - Approved logo source: `/Users/curtis/Desktop/design/Globe loader`.
 - Approved AI-generation loading sources for Playground and Pilot Lab: `/Users/curtis/Desktop/design/Organic Loaders (standalone).html` variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`.
 - Approved AI-generation text streaming source for Playground and Pilot Lab: `/Users/curtis/Desktop/design/Text streaming (standalone).html` variant `07 token stream`.
@@ -118,8 +127,8 @@ End with:
 | 2 | U2, U3, B1 | Shipped locally. Do not redispatch unless explicitly repairing. |
 | 3 | R2 | Shipped locally. Do not redispatch unless explicitly repairing. |
 | 4 | Q1, Q2 | Shipped. Do not redispatch unless explicitly repairing. |
-| 5 | P1 | ConfigPilot typed tools. Must own backend prompt/model/context/propose/apply/UI wiring end to end. |
-| 6 | R3, S2, PKG1, Q3 | Can run after P1 ownership is clear. R3 is ProcedureRun runtime overlay, not just a rename sweep. |
+| 5 | P1, R3, S2 | Shipped locally. Do not redispatch unless explicitly repairing. |
+| 6 | U-Pilot, PKG1, Q3 | U-Pilot is the next Pilot UI lane. PKG1 can run after S2 but should avoid Pilot UI files while U-Pilot is active. |
 
 Coordinator rule: prefer fewer concurrent runtime sessions. One runtime owner is worth more than five clever merge conflicts.
 
@@ -136,6 +145,9 @@ Current local post-foundation commits:
 - `20c3455b Q1 terminology and docs sweep`
 - `c276cedd Q2 polish light-first build surfaces`
 - `02dc3182 cleanup: remove obsolete ops guide route`
+- `864392c6 P1: add ConfigPilot typed draft flow`
+- `f9ed457c R3: ship ProcedureRun runtime overlay`
+- `64ee8f01 S2: add runtime-backed scenario receipts`
 
 ---
 
@@ -292,7 +304,7 @@ Tasks:
 3. Implement Package actions: Export, Import, Duplicate Version, Publish, Rollback preview.
 4. Build reusable Config Diff Viewer grouped by Brain, Procedures, Tools, Hooks, Knowledge, Integrations.
 5. Publish must be explicit. If validation requires override, require a non-empty override reason.
-6. ConfigPilot entry can open a placeholder drawer if U3 has not landed.
+6. ConfigPilot entry should link into Pilot Lab with current release context if U3/Pilot UI is available; do not add a global drawer in new work.
 
 Acceptance:
 - /build/release renders with real API data where available and clearly isolated placeholders where not.
@@ -308,8 +320,11 @@ Acceptance:
 ```text
 Lane: U3 - Pilot Lab, Scenario receipts, and ConfigPilot shell
 
+Status:
+Shipped as the first Pilot Lab shell. Superseded for new UI work by `U-Pilot - Pilot Chat Cockpit and Playground preservation`.
+
 Goal:
-Turn Scenario APIs into an operator-facing Pilot Lab and establish ConfigPilot as a global drawer/workbench shell. ConfigPilot may propose drafts but must not publish.
+Turn Scenario APIs into an operator-facing Pilot Lab. ConfigPilot may propose drafts but must not publish.
 
 Owned files:
 - apps/console/app/build/pilot-lab/**
@@ -329,7 +344,7 @@ Tasks:
 2. Use existing Scenario CRUD/run APIs from F7.
 3. Receipts show Tool calls, Hook decisions, Knowledge evidence, human transfer, final status, and forbidden/required phrase checks when present.
 4. ConfigPilot apply flow must stop at proposal -> diff -> confirm -> typed API save. It cannot publish.
-5. Add a global drawer mount only if U1 shell exists or if the mount is isolated and easy to merge.
+5. Do not add a global drawer in new work. Use the Pilot Lab route as the ConfigPilot home.
 
 Acceptance:
 - /build/pilot-lab renders saved Scenarios and latest receipts.
@@ -486,7 +501,7 @@ Owned files:
 Do not touch:
 - packages/shared/prisma/schema.prisma unless the coordinator explicitly assigns a schema slice
 - apps/console/lib/agent/** runtime loop files
-- release page layout except a shared ConfigPilot drawer trigger if unavoidable
+- release page layout except a shared link into Pilot Lab if unavoidable
 - global IA/sidebar
 
 Product constraints:
@@ -509,7 +524,7 @@ Tasks:
 4. Add an apply endpoint that accepts only typed patches for known surfaces and writes draft config through existing admin services.
 5. Mark validation stale after accepted writes.
 6. Add focused tests for permission checks, accept-required behavior, typed patch validation, stale-validation marking, and no-publish guarantee.
-7. Update the ConfigPilot drawer/workbench UI to show current context, proposed changes, accept/reject, and receipt/run suggestions.
+7. Update the ConfigPilot/Pilot Lab UI to show current context, proposed changes, accept/reject, and receipt/run suggestions. Do not add a global drawer.
 8. If a partial `apps/console/lib/config-pilot/**` or `apps/console/app/api/admin/config-pilot/**` skeleton already exists in the worktree, either take ownership of it and make it green or stop and report. Do not leave untracked code that breaks typecheck/build.
 9. Ensure the final P1 receipt proves `/context`, `/propose`, and `/apply` are all wired, and that UI no longer falls back to the old hardcoded scenario proposal builder.
 
@@ -681,6 +696,98 @@ Acceptance:
 
 ---
 
+## U-Pilot - Pilot Chat Cockpit and Playground preservation
+
+```text
+Lane: U-Pilot - Pilot Chat Cockpit and Playground preservation
+
+Goal:
+Rebuild `/build/pilot-lab` as Intera's primary agent-building cockpit. Pilot Lab is the logged-in default route and has two main tabs:
+
+1. `Pilot` - default. A ChatGPT-like conversation workspace where delivery staff build, modify, test, and revise the Agent through ConfigPilot.
+2. `Playground` - manual testing/debug. It preserves the current Playground dry-run execution, Trace Sidebar, and evidence visualization.
+
+Product decisions:
+- No global ConfigPilot drawer in P0. ConfigPilot lives in Pilot Lab.
+- Login/default authenticated route should go to `/build/pilot-lab`.
+- Pilot can read full allowed Agent config and propose changes to Brain, prompt/model settings, memory strategy, Procedures, Tools, Hooks, Knowledge refs, Integrations refs, Scenarios, and package drafts.
+- Pilot can write only through proposal -> diff -> explicit human accept -> typed backend draft APIs -> validation stale.
+- Pilot must never publish, activate, deploy, rollback, or bypass Scenario validation.
+- Keep the UI unified light-first. Do not introduce dark immersive workspaces.
+- Preserve S2 semantics: runtime-backed receipts and fixture-only receipts must be visibly distinct.
+
+Owned files:
+- apps/console/app/build/pilot-lab/**
+- apps/console/components/config-pilot/**
+- apps/console/components/scenario-receipts/**
+- apps/console/components/playground/** only if embedding/reusing Trace Sidebar
+- apps/console/app/admin/playground/page.tsx only for redirect or reuse; do not delete capability
+- apps/console/app/build/playground/** only for redirect or reuse; do not delete capability
+- apps/console/app/api/admin/playground/** only if the UI needs small route shape compatibility; do not rewrite runner internals
+- apps/console/components/console-sidebar.tsx only for removing global drawer entry or default navigation state
+- login/default-route/middleware files only for redirecting authenticated users to `/build/pilot-lab`
+- focused Pilot/Playground UI tests
+
+Do not touch:
+- packages/shared/prisma/**
+- apps/console/lib/agent/loop.ts
+- apps/console/app/api/messages/route.ts
+- apps/console/lib/agent/session-store.ts
+- ConfigPilot backend model/proposal/apply logic unless a UI call shape is broken
+- Release publish/activate/deploy/rollback logic
+- hotfix worktree `/Users/curtis/Desktop/intera-agent-hotfix`
+
+Pilot tab requirements:
+1. Center of the screen is a chat transcript and composer, similar to ChatGPT/Claude.
+2. On first load, call ConfigPilot context and simulate/stream an opening Pilot message that explains what it read and what the user can ask.
+3. Right work panel shows:
+   - current Agent/draft/version/validation context
+   - proposed changes
+   - config diff
+   - accept/reject/apply controls
+   - latest Scenario receipts
+   - runtime-backed vs fixture-only validation state
+   - missing info / open questions
+4. Apply stays disabled until the user explicitly accepts the proposed change.
+5. UI must not call publish/activate/deploy/rollback endpoints.
+6. Save/apply marks validation stale through the existing P1 flow.
+
+Playground tab requirements:
+1. Preserve the existing Playground dry-run capability. `runPlaygroundTurn` and `/api/admin/playground/run` or an equivalent adapter must still work.
+2. Preserve Trace Sidebar / trace evidence visualization. It may be embedded as the right panel inside the Playground tab.
+3. Preserve manual test input, dry-run Tool evidence, Hook decision visibility, and save/test transcript behavior where currently supported.
+4. Do not delete old `/admin/playground` or `/build/playground` routes until parity is proven with tests and browser smoke. Hiding old routes from navigation or redirecting after parity is acceptable; deleting capability is not.
+5. S2 runtime-backed Scenario receipts depend on the dry-run AgentLoop path and raw trace evidence. Do not break this dependency.
+
+Acceptance:
+- `/build/pilot-lab` renders with two tabs: `Pilot` and `Playground`.
+- Logged-in/default authenticated route lands on `/build/pilot-lab`.
+- Pilot tab shows streamed/simulated opening message, chat composer, proposal/diff panel, accept/apply flow, and runtime/fixture receipt labels.
+- Playground tab can run a manual dry-run test and show trace/evidence using the existing Trace Sidebar capability.
+- A regression test proves fixture-only receipt is not displayed as runtime validated.
+- A regression test proves apply is disabled before accept and enabled after accept.
+- A regression test proves no publish/activate/deploy/rollback call is made from Pilot.
+- A regression test or browser smoke proves Playground trace capability survived the refactor.
+- Typecheck, keyless full test, clean build pass.
+- Browser smoke:
+  - `/build/pilot-lab` desktop 1440
+  - `/build/pilot-lab` mobile 390
+  - Pilot tab no horizontal overflow and no console errors
+  - Playground tab no horizontal overflow and trace panel visible
+  - reduced-motion disables or degrades loader/token animations
+
+End receipt:
+- changed files
+- what changed
+- exact verification commands/results
+- browser screenshot paths
+- residual risks
+- commit hash if committed
+- whether runtime/API/schema high-conflict files were touched
+```
+
+---
+
 ## PKG1 - Package completeness and version cap
 
 ```text
@@ -790,7 +897,7 @@ Design target:
 Tasks:
 1. Normalize page headers, agent/version selectors, status chips, and command areas across Release and Pilot Lab.
 2. Polish Config Diff Viewer and Scenario receipts into compact grouped light surfaces.
-3. Add or refine a right ConfigPilot rail/drawer pattern without making it mandatory on every viewport.
+3. Add or refine the Pilot Lab right work panel pattern without making it mandatory on every viewport.
 4. Improve responsive layout at 1440px, 1280px, 1024px, and mobile width where practical.
 5. Apply the approved logo and AI-generation motion references where relevant.
 6. Remove any leftover dark immersive workspace styling from P0 product pages, except small code/JSON/raw payload viewers.

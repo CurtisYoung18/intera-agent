@@ -31,7 +31,7 @@ The owner-approved reset:
 - retire old stage/sub-agent customer-facing runtime
 - keep `Case`, `CaseType`, `Procedure`, `Tool`
 - introduce `.intera-agent.json` Agent Template Package
-- make ConfigPilot a real typed-API configuration assistant
+- make ConfigPilot a real typed-API configuration assistant inside Pilot Lab
 - use Scenario Lab receipts as the delivery validation path
 
 The owner-approved UI/UX direction is frozen in [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md). Do not rediscover the navigation, theme, or ConfigPilot shape in coding lanes.
@@ -110,23 +110,24 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | C1 | Procedure Builder + step Hook bindings | Shipped locally | Updates case-type/procedure admin path to use HookBinding, especially ProcedureStep scope. |
 | U1 | Build / Operate / Settings shell and redirects | Shipped locally | Establishes target IA without turning every page into one giant refactor. |
 | U2 | Release command center + package actions | Shipped locally | Uses existing package export/import and Scenario validation metadata. |
-| U3 | Pilot Lab + Scenario receipts | Shipped locally | Uses existing Scenario APIs; ConfigPilot starts as a drawer/workbench shell. |
+| U3 | Pilot Lab + Scenario receipts | Shipped locally | Uses existing Scenario APIs; its old drawer/workbench shell direction is superseded by U-Pilot. |
 | B1 | Brain Memory + compact strategy UX | Shipped locally | Turns memoryStrategy into Brain > Memory strategy, preserve rules, and Compact Test. |
 | R2 | Physical legacy cleanup | Shipped locally | Removes Policy/stage/sub-agent/skills physical runtime and backfills/archive legacy data. |
 | Q1 | Final terminology, i18n, docs, browser QA sweep | Shipped | Cleans user-facing copy, guide docs, redirects, and responsive states after R2. |
 | Q2 | Light-first UI polish pass | Shipped | Applies the designer sketch direction without IA/schema/runtime/API changes. |
-| P1 | ConfigPilot typed configuration tools | Next / in progress | Adds backend prompt/model/context/propose/apply typed draft writes; never publish. Must be green before push/deploy. |
-| R3 | ProcedureRun runtime overlay + system Tool rename + `remember` | After P1 ownership is clear | Keeps stable Core Agent prompt, appends dynamic ProcedureRun context at tail, resolves step Hooks by runtime timeline, handles interleaved messages with inputEpoch/reconcile gate, and exposes `start_procedure`, `finalize_procedure`, `remember`. |
-| S2 | Runtime-backed Scenario receipts | After R3 or parallel if no runtime file overlap | Distinguishes fixture receipts from actual Agent runtime validation. |
+| P1 | ConfigPilot typed configuration tools | Shipped locally | Backend prompt/model/context/propose/apply typed draft writes; never publish. |
+| R3 | ProcedureRun runtime overlay + system Tool rename + `remember` | Shipped locally | Keeps stable Core Agent prompt, appends dynamic ProcedureRun context at tail, resolves step Hooks by runtime timeline, handles interleaved messages with inputEpoch/reconcile gate, and exposes `start_procedure`, `finalize_procedure`, `remember`. |
+| S2 | Runtime-backed Scenario receipts | Shipped locally | Distinguishes fixture receipts from actual Agent runtime validation. |
+| U-Pilot | Pilot Chat Cockpit + Playground tab | Next / in progress | Makes `/build/pilot-lab` the logged-in default, removes global ConfigPilot drawer, and preserves Playground dry-run + Trace Sidebar under a dedicated tab. |
 | PKG1 | Package completeness + version cap | Can run after P1 | Completes package surfaces and enforces max five historical versions. |
 | Q3 | Legacy route/component/doc truth cleanup | Last | Removes stale active surfaces and updates drifted landmine docs. |
 
 Recommended coding-team shape:
 
 - R1, C1, U1, U2, U3, B1, R2, Q1, Q2, and `/ops/guide` cleanup are already shipped on main.
-- P1 should run alone or with strict ownership because it touches ConfigPilot APIs, backend prompt/model, apply service, and UI.
-- R3 touches high-collision runtime files and should not overlap with another runtime lane. It is an architecture lane, not a copy-only rename lane.
-- S2 and PKG1 can run after P1/R3 boundaries are clear.
+- P1, R3, and S2 are shipped locally; do not redispatch them except for focused repair.
+- U-Pilot should run before further Pilot polish: it replaces the old Pilot Lab page with the chat cockpit and preserves Playground capability under a second tab.
+- PKG1 can run after S2, but avoid editing Pilot Lab UI while U-Pilot is active.
 - Q3 should run after the product/runtime names are stable.
 - Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) for current lane prompts. Do not redispatch from the shipped F1-F7 prompts.
 
@@ -139,13 +140,14 @@ Recommended coding-team shape:
 - First industry template: Gaming / iGaming support.
 - First launch boundary: information collection, read-only lookup, structured human transfer.
 - Security/compliance: reserve architecture, do not let it block first functionality.
-- ConfigPilot: important first-class surface, can read the current Agent configuration and write draft config through permission check -> proposal -> diff -> human accept -> typed API -> Scenario receipt. It must never self-publish.
+- ConfigPilot / Pilot Lab: important first-class surface and logged-in default. It can read the current Agent configuration and write draft config through permission check -> proposal -> diff -> human accept -> typed API -> Scenario receipt. It must never self-publish.
 - Procedure count: keep small at first; too many CaseTypes/Procedures will weaken intent routing.
 - ProcedureStep-level Hook configuration must be visible in the Procedure Builder.
 - First launch supports declarative, restricted JavaScript, and HTTP Hooks.
 - Marketplace is reserved, not launched. `.intera-agent.json` should support internal sharing now and future selling later.
 - Historical/legacy fields may be exported under `legacy`; new top-level package fields must use current names.
-- UI/UX: first screen is Build -> Release; top-level nav is Build / Operate / Settings; Components has Brain, Procedures, Tools, Hooks, Knowledge, Integrations; Operate has Conversations and Human Handoff only.
+- UI/UX: first screen is Build -> Pilot Lab; top-level nav is Build / Operate / Settings; Components has Brain, Procedures, Tools, Hooks, Knowledge, Integrations; Operate has Conversations and Human Handoff only.
+- Pilot Lab has two main tabs: `Pilot` for ChatGPT-like agent building, and `Playground` for manual dry-run testing/debug with existing Trace Sidebar capability. ConfigPilot is not a global drawer in P0.
 - Brain owns memory and compact configuration. Expose strategy-level controls first: Memory Mode, Compact model, Preserve rules, Fact extraction rules, Profile, and Compact Test. Keep raw token thresholds and circuit-breaker knobs under Advanced.
 - `confirmedFacts` are business facts. `ProcedureRun`/runtime state is not a business fact and must not be stored in confirmedFacts.
 - `ProcedureRun` state is session-lifecycle runtime state. It may be summarized into chat memory when useful, but the canonical active/paused/completed ProcedureRun state belongs to the runtime-managed Procedure Run Tracker.
@@ -189,7 +191,7 @@ Shipped foundations already useful for the reset:
 - Safe local Postgres foundation shipped 2026-06-08. See [`../what's done/2026-06-08-foundation-safe-local-db.md`](../what's%20done/2026-06-08-foundation-safe-local-db.md).
 - Procedure additive Phases 1-3 shipped through `373d2eed`: Procedure contracts/columns exist, ProcedureExecutor prompt path is wired, and case-scoped legacy guardrail activation exists. Foundation Reset lanes must treat those as migration inputs, not as the target architecture.
 - Foundation reset first wave shipped through `d42c543e`: Hooks schema/API/UI, HookEngine checkpoints, Tool trace vocabulary, package import/export, Scenario soft gate, and Quiet Agent Studio primitives.
-- Post-foundation commits through `02dc3182`: target IA shell, ProcedureStep Hook binding UI, inline Procedure runtime cutover, Release command center, Pilot Lab, Brain Memory strategy workspace, R2 physical legacy cleanup, Q1 terminology sweep, Q2 light-first polish, and obsolete guide removal.
+- Post-foundation commits through `64ee8f01`: target IA shell, ProcedureStep Hook binding UI, inline Procedure runtime cutover, Release command center, Pilot Lab, Brain Memory strategy workspace, R2 physical legacy cleanup, Q1 terminology sweep, Q2 light-first polish, obsolete guide removal, ConfigPilot typed backend draft flow, ProcedureRun runtime overlay, and runtime-backed Scenario receipts.
 - Trace single-contract and playground hardening work shipped. See the relevant receipts under [`../what's done/`](../what's%20done/).
 - Agent-scoped architecture exists in code, but verify orgId -> agentConfig ownership whenever touching admin sub-module routes.
 
@@ -198,8 +200,8 @@ Live landmines to keep in mind:
 - Durable Case shells still exist on some route-level persistence paths because current Message/ActionTrace schema depends on `caseId`; solve this in a later schema/runtime lane, not by reintroducing background sub-agents.
 - Playground remains a large component and should not be casually expanded.
 - Legacy guardrail live-confirm gaps should be converted into Hook Scenario coverage during the reset.
-- ConfigPilot is currently the highest-risk incomplete surface: it must own backend prompt/model/context/propose/apply/UI wiring before it is trusted by delivery staff.
-- Scenario receipts are useful but must be labeled truthfully until runtime-backed Scenario execution lands.
+- ConfigPilot backend prompt/model/context/propose/apply is shipped; the current risk is UI product shape. Pilot Lab must become the chat cockpit and must preserve Playground dry-run + Trace Sidebar capability.
+- Scenario receipts now distinguish runtime-backed validation from fixture-only validation. Keep that distinction visible in Release and Pilot Lab.
 
 ---
 

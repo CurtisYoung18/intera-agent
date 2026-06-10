@@ -14,7 +14,7 @@ This document freezes the owner-approved UI/UX direction for Intera before the c
 
 ### 0.1 Product shell
 
-- The logged-in first screen is **Build -> Release**, not an analytics dashboard.
+- The logged-in first screen is **Build -> Pilot Lab**, not an analytics dashboard or release dashboard.
 - Top-level navigation has exactly three blocks:
   - `Build`
   - `Operate`
@@ -61,11 +61,14 @@ Members, organization defaults, billing placeholders, and language defaults belo
 
 ConfigPilot is a first-class product surface:
 
-- Global right-side assistant drawer.
-- Full workspace inside `Pilot Lab`.
+- No global right-side assistant drawer in P0. ConfigPilot lives in `Pilot Lab` as the primary workspace.
+- `Pilot Lab` has two main tabs:
+  - `Pilot`: the default ChatGPT-like agent-building cockpit.
+  - `Playground`: manual dry-run testing and trace/debug workspace.
 - Can generate draft Tools, Hooks, Procedures, Test Scenarios, and package changes.
 - Can apply draft configuration only through `proposal -> diff -> confirm -> typed API save`.
 - Cannot publish live versions.
+- Existing Playground dry-run and Trace Sidebar capability must be preserved and embedded under the `Playground` tab before any old standalone Playground route is removed.
 
 ### 0.5 Release and validation
 
@@ -154,8 +157,8 @@ Use this as the UI refactor target after the Foundation Reset contracts and Hook
 
 | Block | Target route | Purpose |
 |---|---|---|
-| Build | `/build/release` | Default landing page. Version, draft changes, receipts, package actions. |
-| Build | `/build/pilot-lab` | ConfigPilot full workspace, Free Test, Test Scenarios, Receipts. |
+| Build | `/build/release` | Version, draft changes, receipts, package actions. |
+| Build | `/build/pilot-lab` | Default landing page. Two-tab cockpit: Pilot chat for building, Playground for manual dry-run testing and trace. |
 | Build | `/build/components/brain` | Model, prompt, memory. |
 | Build | `/build/components/procedures` | Procedure types and ProcedureStep Hook bindings. |
 | Build | `/build/components/tools` | HTTP, Static Fixture, System Managed Tools, test panel, Tool Hook bindings. |
@@ -192,7 +195,7 @@ Route redirects may exist for old links, but new navigation, docs, tests, and sc
 
 ### 3.1 Build -> Release
 
-Release is the first screen and the Build command center.
+Release is the Build command center.
 
 Primary jobs:
 
@@ -210,20 +213,24 @@ Required sections:
 | Draft Changes | grouped by Brain, Procedures, Tools, Hooks, Knowledge, Integrations |
 | Validation Receipts | latest passing/failing Scenario receipts and changed-since-validation badge |
 | Package Actions | Publish, Rollback Preview, Export, Import, Duplicate Version |
-| ConfigPilot Entry | right drawer entry and contextual prompt suggestions |
+| Pilot Entry | link into Pilot Lab with current release/package context and contextual prompt suggestions |
 
 Do not show broad operational KPIs here. ProcedureRun count, handoff rate, and queue metrics belong in Operate.
 
 ### 3.2 Build -> Pilot Lab
 
-Pilot Lab is the Agent-level workbench.
+Pilot Lab is the Agent-level workbench and the logged-in default route.
 
-Subareas:
+Primary tabs:
 
-- `ConfigPilot Workspace`: conversational draft generation, proposal review, generated object previews.
-- `Free Test`: ad hoc playground-like conversation test.
-- `Test Scenarios`: saved Scenario definitions.
-- `Receipts`: validation run history and evidence.
+- `Pilot`: ChatGPT-like configuration cockpit. Delivery staff chat with Pilot to create or modify Brain, Procedures, Tools, Hooks, Knowledge refs, Integrations refs, Scenarios, and package drafts. The center is a conversation stream and composer; the right panel shows proposed changes, diff, accept/reject/apply controls, missing information, and relevant receipts.
+- `Playground`: manual testing/debug cockpit. Preserves the current Playground dry-run AgentLoop path, Trace Sidebar, tool/hook evidence, and transcript-saving behavior where supported. Use it when the operator wants to test the Agent directly instead of asking Pilot to change config.
+
+Supporting panels:
+
+- Recent Scenario receipts.
+- Runtime-backed vs fixture-only validation labels.
+- Trace / Evidence panel for dry-run and Scenario execution.
 
 Rules:
 
@@ -231,6 +238,7 @@ Rules:
 - Every applied ConfigPilot change must pass through Diff Viewer.
 - Scenario receipts must show Tool calls, Hook decisions, Knowledge hits, human transfer, and final response expectations where available.
 - Failed receipts should be useful as debugging artifacts, not only pass/fail badges.
+- Do not delete `/admin/playground`, `/build/playground`, `/api/admin/playground/run`, or `TraceSidebar` until the Pilot Lab `Playground` tab has proven equivalent dry-run and trace behavior with tests and browser smoke. Hiding old routes from navigation is acceptable; deleting capability is not.
 
 ### 3.3 Build -> Components
 
@@ -243,7 +251,7 @@ Shared rules:
 - Each route owns local dirty state.
 - Each route has a local test/simulation panel where applicable.
 - Local tests validate the component, not publish readiness.
-- Component pages can open ConfigPilot with the current object as context.
+- Component pages can link to Pilot Lab with the current object/context; they should not mount a global ConfigPilot drawer.
 
 #### Brain
 
@@ -406,7 +414,7 @@ Structure:
 - Global top navigation: Build, Operate, Settings.
 - Left rail changes by selected block.
 - Components workspace has an additional local nav for Brain, Procedures, Tools, Hooks, Knowledge, Integrations.
-- Right-side ConfigPilot drawer can be opened globally.
+- No global ConfigPilot drawer in P0. Pilot is opened through the main `Pilot Lab` route.
 
 The shell should feel calm and spacious. Avoid nested cards, stacked dashboards, and decorative background blobs.
 
@@ -424,7 +432,7 @@ Capabilities:
 - Search Agent config objects: Procedure, Tool, Hook, Knowledge source, Integration.
 - Quick create: New Tool, New Hook, New Procedure Step, New Test Scenario.
 - Quick action: Run Test Scenario, Open Diff, Export Package.
-- Ask ConfigPilot with current page context.
+- Open Pilot Lab with current page/object context.
 
 Visual:
 
@@ -433,21 +441,23 @@ Visual:
 - High-contrast selected row.
 - No traditional dashboard search box as the primary command surface.
 
-### 4.3 ConfigPilot Drawer and Workspace
+### 4.3 Pilot Chat Cockpit
 
-Drawer:
-
-- Right side.
-- Context-aware suggestions.
-- Shows current page/object context.
-- Can create proposals.
-- Can open full Pilot Lab workspace.
-
-Workspace:
+Pilot:
 
 - Lives in Pilot Lab.
+- Default logged-in workspace.
+- Chat-first, input-forward UI similar to ChatGPT/Claude.
 - Supports longer configuration generation and multi-object proposals.
 - Shows generated drafts before diff.
+- Uses a right-side work panel for current context, proposed changes, diff, accept/reject/apply, receipts, and missing information.
+
+Playground:
+
+- Lives as the second Pilot Lab tab.
+- Preserves the existing dry-run AgentLoop execution path.
+- Preserves Trace Sidebar / evidence visualization.
+- Supports manual test messages, dry-run Tool evidence, Hook decision visibility, and saved test transcript behavior where currently available.
 
 Rules:
 
@@ -548,7 +558,7 @@ Intera Console is light-first across the entire app in P0. Use the same warm lig
 - Components
 - Operate
 - Settings
-- ConfigPilot drawer
+- Pilot Chat Cockpit
 - Scenario receipts
 - Trace panels
 - Diff Viewer
@@ -590,7 +600,7 @@ Use:
 - Focused light workspaces for Pilot Lab, Diff Viewer, Trace detail, and Release publish/rollback moments. Use slightly cooler or denser light surfaces, not dark mode.
 - Precise status language and quiet micro-interactions.
 
-Do not make product pages, drawers, receipts, Diff Viewer, or trace panels dark. Long configuration work should remain calm, readable, and visually unified.
+Do not make product pages, receipts, Diff Viewer, Pilot work panels, or trace panels dark. Long configuration work should remain calm, readable, and visually unified.
 
 ### 5.4 Anti-patterns
 
@@ -762,7 +772,7 @@ These UI lanes are designed to be parallelizable without file conflicts. They sh
 | UX1 | IA, routes, app shell, redirects | After F8 route vocabulary | `components/console-shell.tsx`, `components/console-sidebar.tsx`, route layout files, dictionaries |
 | UX2 | Release command center and Config Diff Viewer | After package/version contracts | `/build/release`, Diff Viewer component, package action components |
 | UX3 | Components workspace shell | Parallel after UX1 | `/build/components/**`, component local nav, shared draft/test panel |
-| UX4 | Pilot Lab and ConfigPilot surfaces | Parallel after scenario + typed APIs | `/build/pilot-lab`, ConfigPilot drawer/workspace, receipt views |
+| UX4 | Pilot Lab and ConfigPilot surfaces | Parallel after scenario + typed APIs | `/build/pilot-lab`, Pilot Chat Cockpit, Playground tab, receipt views |
 | UX5 | Operate Conversations and Human Handoff | Parallel after trace/handoff contracts | `/operate/conversations`, `/operate/handoff`, Trace Panel |
 | UX6 | i18n, responsive, browser QA sweep | Last | `dictionaries.ts`, mobile/read-only states, Playwright/browser verification |
 
@@ -771,7 +781,7 @@ Coordination rules:
 - `dictionaries.ts` is high-collision. Let UX6 own the final parity sweep.
 - Do not let UX3 recreate Hook/Tool runtime contracts. It consumes Foundation Reset APIs.
 - Diff Viewer should be built once and reused by ConfigPilot, Release, Import, and Rollback.
-- ConfigPilot drawer should be globally mounted once in the shell, not reimplemented per page.
+- ConfigPilot should not be globally mounted as a drawer in P0. Use a single main Pilot Lab workspace and link into it with context.
 - Visual primitives should not depend on business logic.
 
 ---
@@ -780,13 +790,13 @@ Coordination rules:
 
 The UI/UX reset is done when:
 
-- Logged-in first route is Build -> Release.
+- Logged-in first route is Build -> Pilot Lab.
 - Main navigation is Build / Operate / Settings.
 - Build has Release, Pilot Lab, Components.
 - Components has Brain, Procedures, Tools, Hooks, Knowledge, Integrations as independent routes.
 - Operate has Conversations and Human Handoff only.
 - Settings has Organization only.
-- ConfigPilot exists as global drawer and Pilot Lab workspace.
+- ConfigPilot exists as the Pilot tab inside Pilot Lab; Playground exists as the second tab with dry-run and trace capability.
 - Command Bar is available.
 - Config Diff Viewer is used by ConfigPilot Apply, Publish, Import, and Rollback Preview.
 - Release shows live version, draft changes, receipts, and package actions.
