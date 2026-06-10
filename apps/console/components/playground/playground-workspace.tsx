@@ -1027,8 +1027,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           ═══════════════════════════════════════════ */}
       <header style={{
         position: 'relative', zIndex: 1, flexShrink: 0,
-        display: 'flex', flexDirection: 'column', gap: 14,
-        padding: '18px 20px 16px',
+        display: 'flex', flexDirection: 'column', gap: 10,
+        padding: '14px 20px 12px',
         borderBottom: '1px solid var(--border-subtle)',
         background: 'rgba(255,255,255,0.58)',
         backdropFilter: 'blur(20px)',
@@ -1057,27 +1057,16 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               </div>
               <h1 style={{
                 margin: 0,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: 650,
                 color: 'var(--mist)',
                 letterSpacing: '-0.02em',
               }}>
                 {workspaceTitle}
               </h1>
-              <p style={{
-                margin: '6px 0 0',
-                maxWidth: 760,
-                fontSize: 12.5,
-                lineHeight: 1.65,
-                color: 'var(--fog)',
-              }}>
-                {isZh
-                  ? <>当前所选 Agent 版本的手动多轮运行时工作台。Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；只有业务副作用仍会在 <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92em' }}>dryRun</code> 下被模拟。</>
-                  : <>Manual multi-turn runtime desk for the selected agent version. Prompting, Hooks, Procedure runtime, trace writing, and session restore follow the real AgentLoop path. Operational side effects remain mocked under <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92em' }}>dryRun</code>.</>}
-              </p>
               {surface === 'legacy' && (
                 <div style={{
-                  marginTop: 10,
+                  marginTop: 8,
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
@@ -1095,6 +1084,34 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flex: '0 1 auto' }}>
+            <div style={{ minWidth: 220, maxWidth: 320 }}>
+              <AgentVersionPicker
+                key={pickerRefreshKey}
+                agentId={selectedAgentId}
+                onChange={(id) => selectAgent(id)}
+                onAgentsChanged={() => setPickerRefreshKey((value) => value + 1)}
+              />
+            </div>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              minHeight: 34,
+              padding: '8px 12px',
+              borderRadius: 12,
+              border: '1px solid rgba(212,118,78,0.10)',
+              background: 'rgba(255,255,255,0.72)',
+              color: 'var(--fog)',
+              fontSize: 11,
+              fontWeight: 600,
+            }}>
+              <ToneBadge tone={selectedIsActive ? 'success' : 'warning'}>
+                {versionStateLabel}
+              </ToneBadge>
+              <span style={{ opacity: 0.75 }}>
+                {snapshot?.resolvedModelLabel || (isZh ? '加载模型中' : 'Loading model')}
+              </span>
+            </div>
             <ActionButton onClick={() => setSnapshotReloadKey((value) => value + 1)} title={isZh ? '刷新已保存的 Agent 快照和能力摘要。' : 'Refresh the saved agent snapshot and capability summary.'}>
               <RefreshCw size={13} />
               {isZh ? '刷新快照' : 'Refresh snapshot'}
@@ -1181,149 +1198,22 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             </Link>
           </div>
         </div>
-
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          paddingLeft: 52,
         }}>
-          <WorkspaceCard
-            title={isZh ? '当前测试对象' : 'Under test'}
-            icon={<FlaskConical size={14} color="#b87347" />}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <AgentVersionPicker
-                key={pickerRefreshKey}
-                agentId={selectedAgentId}
-                onChange={(id) => selectAgent(id)}
-                onAgentsChanged={() => setPickerRefreshKey((value) => value + 1)}
-              />
-              <ToneBadge tone={selectedIsActive ? 'success' : 'warning'}>
-                {versionStateLabel}
-              </ToneBadge>
-            </div>
-            <WorkspaceMetricRow label="Agent" value={snapshot?.name || (isZh ? '正在加载已保存快照…' : 'Loading saved snapshot…')} />
-            <WorkspaceMetricRow label={isZh ? '配置 ID' : 'Config id'} value={selectedAgentId || (isZh ? '尚未选择配置' : 'No config selected')} mono />
-            <WorkspaceMetricRow label={isZh ? '会话' : 'Session'} value={persistedSessionLabel} />
-            <WorkspaceNote label={isZh ? '已保存的核心 Prompt 预览' : 'Saved core prompt preview'}>
-              {snapshot?.promptPreview || (isZh ? '选定 Agent 快照加载完成后，这里会显示已保存的核心 Prompt 预览。' : 'The saved core prompt preview appears after the selected agent snapshot loads.')}
-            </WorkspaceNote>
-          </WorkspaceCard>
-
-          <WorkspaceCard
-            title={isZh ? '能力面板' : 'Capabilities'}
-            icon={<Sparkles size={14} color="#8b6ff5" />}
-          >
-            <WorkspaceMetricRow label={isZh ? '模型' : 'Model'} value={snapshot?.resolvedModelLabel || (isZh ? '正在加载模型信息…' : 'Loading model metadata…')} />
-            <WorkspaceMetricRow label={isZh ? '图片输入' : 'Image input'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
-            <WorkspaceMetricRow label={isZh ? 'Memory 模式' : 'Memory mode'} value={snapshot?.memoryModeLabel || (isZh ? '正在加载 Memory 模式…' : 'Loading memory mode…')} />
-            <WorkspaceMetricRow
-              label={isZh ? '已启用 Hooks' : 'Enabled Hooks'}
-              value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `已启用 ${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} enabled`}
-            />
-            <WorkspaceMetricRow label="Temperature" value={snapshot ? String(snapshot.temperature) : (isZh ? '加载中…' : 'Loading…')} />
-            <WorkspaceNote label={isZh ? '能力说明' : 'Capability note'}>
-              {visionSupport.note}
-            </WorkspaceNote>
-          </WorkspaceCard>
-
-          <WorkspaceCard
-            title={isZh ? '运行时真相' : 'Runtime truth'}
-            icon={<LockKeyhole size={14} color="#5b8af7" />}
-          >
-            <WorkspaceMetricRow label={isZh ? '执行层' : 'Execution surface'} value={executionSurfaceLabel} />
-            <WorkspaceMetricRow label={isZh ? '工具层' : 'Tool surface'} value={toolSurfaceSummary} />
-            <WorkspaceMetricRow label={isZh ? '业务副作用' : 'Operational side effects'} value={isZh ? '在 dry-run 下模拟' : 'Mocked under dry-run'} tone="warning" />
-            <WorkspaceMetricRow label={isZh ? 'Operate 桥接' : 'Operate bridge'} value={operateBridgeLabel} />
-            <WorkspaceNote label={isZh ? '运行时说明' : 'Runtime note'}>
-              {executionSurfaceNote}
-            </WorkspaceNote>
-            <WorkspaceNote label={isZh ? '当前提醒' : 'Current warning'}>
-              {runtimeWarnings[0]}
-            </WorkspaceNote>
-          </WorkspaceCard>
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-          gap: 12,
-        }}>
-          <WorkspaceCard
-            title={isZh ? '会话连续性' : 'Session continuity'}
-            icon={<Clock size={14} color="#8b6ff5" />}
-          >
-            <WorkspaceMetricRow label={isZh ? '转录' : 'Transcript'} value={persistedSessionLabel} tone={chatId ? 'success' : 'neutral'} />
-            <WorkspaceMetricRow label={isZh ? 'Trace 恢复' : 'Trace restore'} value={sessionTraceLabel} tone={turnTraces.length > 0 ? 'success' : 'neutral'} />
-            <WorkspaceMetricRow label={isZh ? '排队中的后续轮次' : 'Queued follow-up turns'} value={String(queuedMessages.length)} />
-            <WorkspaceMetricRow label={isZh ? 'Operate 导出' : 'Operate export'} value={operateBridgeLabel} tone="warning" />
-            <WorkspaceNote label={isZh ? '持久化说明' : 'Persistence note'}>
-              {isZh ? '当前 Agent 版本的会话转录和 trace 轮次都可以恢复。导出到 Operate 时，只会生成一份试跑评审副本，不会继续真实聊天。' : 'Session transcript and trace turns restore for the selected agent version. Export to Operate creates a synthetic review copy, not a live chat continuation.'}
-            </WorkspaceNote>
-          </WorkspaceCard>
-
-          <WorkspaceCard
-            title={isZh ? '当前运行焦点' : 'Current run focus'}
-            icon={<RefreshCw size={14} color="#5b8af7" />}
-          >
-            <WorkspaceMetricRow
-              label={isZh ? '最新轮次' : 'Latest turn'}
-              value={latestTurnDigest ? (isZh ? `第 ${latestTurnDigest.turnNumber} 轮` : `Turn ${latestTurnDigest.turnNumber}`) : (isZh ? '等待第一轮运行' : 'Waiting for the first runtime turn')}
-            />
-            <WorkspaceMetricRow
-              label={isZh ? '状态' : 'Status'}
-              value={latestTurnDigest?.statusLabel ?? (isZh ? '还没有运行时证据' : 'No runtime evidence yet')}
-              tone={latestTurnDigest ? toneForDigestStatus(latestTurnDigest.status) : 'neutral'}
-            />
-            <WorkspaceMetricRow
-              label={isZh ? 'Prompt 捕获' : 'Prompt capture'}
-              value={latestTurnDigest
-                ? latestTurnDigest.promptCaptured
-                  ? (isZh ? `已捕获 ${latestTurnDigest.promptChars.toLocaleString()} 个字符` : `${latestTurnDigest.promptChars.toLocaleString()} chars captured`)
-                  : latestTurnDigest.status === 'running'
-                    ? (isZh ? '等待模型请求' : 'Waiting for model request')
-                    : (isZh ? '还没有 Prompt 捕获' : 'No prompt capture yet')
-                : (isZh ? '还没有 Prompt 捕获' : 'No prompt capture yet')}
-              tone={latestTurnDigest?.promptCaptured ? 'success' : 'neutral'}
-            />
-            <WorkspaceMetricRow
-              label={isZh ? '耗时' : 'Wall time'}
-              value={latestTurnDigest ? formatDurationLabel(latestTurnDigest.turnMs) : '0ms'}
-            />
-            <WorkspaceNote label={isZh ? '最新运营输入' : 'Latest operator input'}>
-              {latestTurnDigest?.latestInput || (isZh ? '发送一轮手动测试后，这里会显示当前运行摘要。' : 'Send a manual turn to populate the current-run summary.')}
-            </WorkspaceNote>
-            <WorkspaceNote label={isZh ? '最新 Agent 回复' : 'Latest agent reply'}>
-              {latestTurnDigest?.latestReply || (isZh ? '还没有捕获到 Agent 回复。' : 'No agent reply has been captured yet.')}
-            </WorkspaceNote>
-          </WorkspaceCard>
-
-          <WorkspaceCard
-            title={isZh ? '调试摘要' : 'Debug digest'}
-            icon={<AlertCircle size={14} color="#d4912e" />}
-          >
-            <WorkspaceMetricRow label={isZh ? 'Tool 配对' : 'Tool pairing'} value={toolPairingLabel} tone={latestTurnDigest && latestTurnDigest.toolCalls !== latestTurnDigest.toolResults && !responding ? 'warning' : 'neutral'} />
-            <WorkspaceMetricRow label={isZh ? 'Hook 决策' : 'Hook decisions'} value={latestTurnDigest ? String(latestTurnDigest.hookEvents.length) : '0'} />
-            <WorkspaceMetricRow label={isZh ? 'Procedure 运行时' : 'Procedure runtime'} value={latestTurnDigest ? String(latestTurnDigest.procedureEvents.length) : '0'} />
-            <WorkspaceMetricRow
-              label={isZh ? '陈旧证据' : 'Stale evidence'}
-              value={latestTurnDigest ? String(latestTurnDigest.staleEvents.length) : '0'}
-              tone={latestTurnDigest && latestTurnDigest.staleEvents.length > 0 ? 'warning' : 'neutral'}
-            />
-            <WorkspaceNote label={isZh ? '关注点' : 'Attention points'}>
-              <DebugDigestList
-                items={latestTurnDigest
-                  ? [
-                      ...latestTurnDigest.warnings,
-                      ...latestTurnDigest.hookEvents.map((event) => event.label),
-                      ...latestTurnDigest.procedureEvents.map((event) => event.label),
-                      ...latestTurnDigest.staleEvents.map((event) => event.label),
-                    ].slice(0, 4)
-                  : []}
-                emptyLabel={isZh ? 'Hook 决策、Procedure reconcile 和陈旧证据标记会先在这里出现，你不用一上来就啃原始 payload。' : 'Hook decisions, Procedure reconcile, and stale-evidence markers will appear here before you need raw payloads.'}
-              />
-            </WorkspaceNote>
-          </WorkspaceCard>
+          <InlineTruthPill label={isZh ? '图片输入' : 'Image'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
+          <InlineTruthPill label="Memory" value={snapshot?.memoryModeLabel || (isZh ? '加载中' : 'Loading')} />
+          <InlineTruthPill
+            label={isZh ? 'Hooks' : 'Hooks'}
+            value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} enabled`}
+          />
+          <InlineTruthPill label="Temp" value={snapshot ? String(snapshot.temperature) : '...'} />
+          <InlineTruthPill label={isZh ? '会话' : 'Session'} value={persistedSessionLabel} />
+          <InlineTruthPill label="Trace" value={sessionTraceLabel} />
         </div>
       </header>
 
@@ -1341,165 +1231,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           overflow: 'hidden',
         }}>
-          <div style={{
-            width: '100%',
-            padding: '14px 16px 0 24px',
-            flexShrink: 0,
-          }}>
-            <section style={{
-              maxWidth: 1120,
-              margin: '0 auto',
-              padding: '12px 14px',
-              borderRadius: 18,
-              border: '1px solid rgba(212,118,78,0.08)',
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,252,249,0.74))',
-              boxShadow: '0 14px 30px rgba(58,39,24,0.05)',
-              display: 'grid',
-              gap: 10,
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: '0.12em',
-                    textTransform: 'uppercase',
-                    color: 'var(--fog)',
-                    opacity: 0.72,
-                    marginBottom: 4,
-                  }}>
-                    {isZh ? '手动调试入口' : 'Manual debug entry'}
-                  </div>
-                  <div style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: 'var(--mist)',
-                  }}>
-                    {isZh ? '在首屏直接发起下一轮手动测试，并随手打开 Trace 时间线。' : 'Start the next manual test turn from the first viewport and open the trace timeline right away.'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSidebarCollapsed(false)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    minHeight: 34,
-                    padding: '8px 12px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(91,138,247,0.16)',
-                    background: 'rgba(91,138,247,0.06)',
-                    color: 'var(--indigo)',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <ChevronRight size={13} />
-                  {isZh ? '查看 Trace 时间线' : 'View trace timeline'}
-                </button>
-              </div>
-
-              <div style={{
-                display: 'flex',
-                gap: 8,
-                background: 'rgba(255,255,255,0.62)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                borderRadius: 16,
-                border: '1px solid var(--border-subtle)',
-                boxShadow: 'var(--shadow-card)',
-                padding: 6,
-              }}>
-                <label
-                  title={canAttachImages
-                    ? (isZh ? '附加图片，在当前运行路径上测试视觉输入。' : 'Attach images to test vision input on the selected runtime path.')
-                    : visionSupport.note}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    width: 36, height: 36, borderRadius: 12,
-                    background: canAttachImages ? 'rgba(212,118,78,0.06)' : 'rgba(0,0,0,0.03)',
-                    border: canAttachImages ? '1px solid rgba(212,118,78,0.12)' : '1px solid rgba(0,0,0,0.06)',
-                    cursor: canAttachImages ? 'pointer' : 'not-allowed',
-                    opacity: canAttachImages ? 1 : 0.35,
-                    transition: 'all 0.15s',
-                    flexShrink: 0,
-                  }}
-                >
-                  <ImageIcon size={14} color={canAttachImages ? '#b87347' : 'var(--fog)'} />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    disabled={!canAttachImages}
-                    onChange={e => { if (e.target.files) { handleImageAttach(e.target.files); e.target.value = '' } }}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-
-                <input
-                  type="text"
-                  value={message}
-                  onChange={e => setMessage(e.target.value)}
-                  onKeyDown={handleComposerKeyDown}
-                  onCompositionStart={() => { composingRef.current = true }}
-                  onCompositionEnd={() => { composingRef.current = false }}
-                  placeholder={responding ? (isZh ? '排队下一轮手动测试…' : 'Queue the next manual turn…') : (isZh ? '输入一轮手动运行时测试…' : 'Type a manual runtime test turn…')}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    border: 'none',
-                    background: 'transparent',
-                    fontSize: 13,
-                    color: 'var(--mist)',
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    padding: '10px 8px 10px 14px',
-                  }}
-                />
-
-                <button
-                  type="button"
-                  onClick={submitManualTurn}
-                  disabled={!message.trim()}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    minHeight: 36,
-                    padding: '0 12px',
-                    borderRadius: 12,
-                    background: message.trim()
-                      ? responding
-                        ? 'linear-gradient(135deg, #8b6ff5, #d491e6)'
-                        : 'linear-gradient(135deg, #5b8af7, #8b6ff5)'
-                      : 'rgba(0,0,0,0.06)',
-                    border: 'none',
-                    color: 'white',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: message.trim() ? 'pointer' : 'default',
-                    opacity: message.trim() ? 1 : 0.4,
-                    flexShrink: 0,
-                  }}
-                >
-                  <Send size={14} color="white" />
-                  {responding ? (isZh ? '排队' : 'Queue') : (isZh ? '运行' : 'Run')}
-                </button>
-              </div>
-            </section>
-          </div>
-
           <div className="pg-chat-scroll" style={{
             flex: 1, width: '100%',
-            padding: '32px 16px 0 24px',
+            padding: '20px 16px 0 24px',
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
@@ -1624,21 +1358,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                   ))}
                 </div>
 
-                {snapshot?.promptPreview && (
-                  <div style={{
-                    width: '100%', maxWidth: 720, marginTop: 4,
-                    padding: '12px 16px', borderRadius: 12,
-                    background: 'rgba(212,118,78,0.03)',
-                    border: '1px solid rgba(212,118,78,0.06)',
-                  }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--fog)', opacity: 0.5, marginBottom: 6 }}>
-                      {isZh ? '已保存的核心 Prompt 预览' : 'Saved Core Prompt Preview'}
-                    </div>
-                    <p style={{ fontSize: 11, color: 'var(--fog)', margin: 0, lineHeight: 1.55, fontStyle: 'italic' }}>
-                      {snapshot.promptPreview}
-                    </p>
-                  </div>
-                )}
               </div>
             )}
 
@@ -2202,6 +1921,58 @@ function ActionButton({
     >
       {children}
     </button>
+  )
+}
+
+function InlineTruthPill({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string
+  value: string
+  tone?: 'neutral' | 'success' | 'warning'
+}) {
+  const textColor = tone === 'success'
+    ? 'var(--malachite)'
+    : tone === 'warning'
+      ? 'var(--amber)'
+      : 'var(--mist)'
+
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 8,
+      minHeight: 30,
+      padding: '6px 10px',
+      borderRadius: 999,
+      border: '1px solid rgba(212,118,78,0.08)',
+      background: 'rgba(255,255,255,0.72)',
+      fontSize: 11,
+      lineHeight: 1.2,
+      minWidth: 0,
+    }}>
+      <span style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: 'var(--fog)',
+        opacity: 0.65,
+      }}>
+        {label}
+      </span>
+      <span style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: textColor,
+        minWidth: 0,
+        whiteSpace: 'nowrap',
+      }}>
+        {value}
+      </span>
+    </div>
   )
 }
 

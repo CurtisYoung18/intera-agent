@@ -189,14 +189,14 @@ describe('PlaygroundPage snapshot truth', () => {
     await renderPage()
 
     expect(screen.getByText(/Compatibility route only/i)).toBeDefined()
-    expect(screen.getByText('Manual debug entry')).toBeDefined()
-    expect(screen.getByRole('button', { name: /View trace timeline/i })).toBeDefined()
+    expect(screen.getByPlaceholderText('Type a manual runtime test turn…')).toBeDefined()
+    expect(screen.getByRole('button', { name: /Open trace/i })).toBeDefined()
     await screen.findByText('DeepSeek V4 Flash')
     expect(screen.getByText('0.5')).toBeDefined()
     expect(screen.getByText('Balanced')).toBeDefined()
     expect(screen.getByText('1 enabled')).toBeDefined()
     expect(screen.getAllByText('Not supported').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Initial core prompt').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Initial core prompt')).toBeNull()
 
     currentAgentPayload = {
       data: {
@@ -233,11 +233,11 @@ describe('PlaygroundPage snapshot truth', () => {
       expect(screen.getByText('Short')).toBeDefined()
       expect(screen.getByText('2 enabled')).toBeDefined()
       expect(screen.getAllByText('Supported').length).toBeGreaterThan(0)
-      expect(screen.getAllByText('Updated prompt from Brain and Memory').length).toBeGreaterThan(0)
+      expect(screen.queryByText('Updated prompt from Brain and Memory')).toBeNull()
     })
   })
 
-  it('uses coreSystemPrompt for the preview and hides the hook pill when hook data is unavailable', async () => {
+  it('keeps the debug entry truthful and hides the hook pill details when hook data is unavailable', async () => {
     failHooksRequest = true
     currentAgentPayload = {
       data: {
@@ -256,9 +256,10 @@ describe('PlaygroundPage snapshot truth', () => {
     await renderPage()
 
     await waitFor(() => {
-      expect(screen.getAllByText('Real saved core prompt').length).toBeGreaterThan(0)
+      expect(screen.getByPlaceholderText('Type a manual runtime test turn…')).toBeDefined()
     })
     expect(screen.queryByText('Obsolete prompt field')).toBeNull()
+    expect(screen.queryByText('Real saved core prompt')).toBeNull()
     expect(screen.getByText('Unknown')).toBeDefined()
     expect(screen.queryByText(/rule/i)).toBeNull()
   })
