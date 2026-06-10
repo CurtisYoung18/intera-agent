@@ -151,16 +151,34 @@ export async function buildPromptContext(params: {
 }): Promise<PromptContext> {
   const { prisma } = await import('@intera/shared/prisma')
 
-  const [caseTypes, hooks] = await Promise.all([
+  const [caseTypes, hookBindings] = await Promise.all([
     prisma.caseType.findMany({
       where: { agentConfigId: params.agentConfigId, enabled: true },
       select: { type: true, displayName: true, description: true },
     }),
-    prisma.hook.findMany({
-      where: { agentConfigId: params.agentConfigId, enabled: true },
-      select: { name: true, checkpoint: true, description: true },
+    prisma.hookBinding.findMany({
+      where: {
+        agentConfigId: params.agentConfigId,
+        enabled: true,
+        hook: { enabled: true },
+      },
+      distinct: ['hookId'],
+      select: {
+        hook: {
+          select: { name: true, checkpoint: true, description: true },
+        },
+      },
     }),
   ])
+
+  const hooks = Array.from(
+    new Map(
+      hookBindings
+        .map((binding) => binding.hook)
+        .filter((hook): hook is NonNullable<typeof hook> => Boolean(hook))
+        .map((hook) => [hook.name, hook]),
+    ).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name))
 
   return {
     case_types: caseTypes.map((t) => ({ ...t, description: t.description ?? undefined })),

@@ -16,6 +16,9 @@ vi.mock('@/lib/agent/agent-context', () => ({
     selectedAgentId: 'agent-1',
     selectAgent: vi.fn(),
     refreshConfigs: vi.fn(),
+    agentConfigs: [
+      { id: 'agent-1', name: 'J1B', version: 1, isActive: true },
+    ],
   }),
 }))
 
@@ -90,10 +93,10 @@ describe('ConsoleSidebar', () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole('link', { name: /Pilot Lab/i }).getAttribute('href')).toBe('/build/pilot-lab')
-    expect(screen.getByRole('link', { name: /Pilot Lab/i }).getAttribute('data-active')).toBe('true')
-    expect(screen.getByRole('link', { name: /Release/i }).getAttribute('href')).toBe('/build/release')
-    expect(screen.getByRole('link', { name: /Components/i }).getAttribute('href')).toBe('/build/components')
+    const nav = container!.querySelector('nav')
+    expect(nav?.querySelector('a[href="/build/pilot-lab"]')?.getAttribute('data-active')).toBe('true')
+    expect(nav?.querySelector('a[href="/build/release"]')).toBeTruthy()
+    expect(nav?.querySelector('a[href="/build/components"]')).toBeTruthy()
     expect(screen.queryByText('Preview & Debug')).toBeNull()
     expect(container!.querySelector('a[href="/build/playground"]')).toBeNull()
   })
