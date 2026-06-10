@@ -1,7 +1,7 @@
 # Intera Current Roadmap
 
 **Last updated:** 2026-06-10
-**Status:** current checkpoint map after Q3-B Final. Version Control UX, final gate, and first customer delivery remain ahead.
+**Status:** current checkpoint map after VC1. Final gate, push/deploy, and first customer delivery remain ahead.
 **Audience:** founder, architect, coding-team leads, zero-context coding agents.
 
 This roadmap is the compact visual map from the earliest shipped project foundations through the current Foundation Reset and the remaining commercial-delivery checkpoints.
@@ -80,8 +80,8 @@ flowchart TD
 
   subgraph P6["Current and remaining P0 delivery checkpoints"]
     Q3BF["Q3-B Final cleanup<br/>Delete confirmed-unused UI, active docs truth, terminology cleanup"]:::done
-    VC1["Version control UX implementation<br/>Release timeline, Live/Draft/Historical, cap guidance, safer actions"]:::active
-    GATE["Final integration gate<br/>typecheck, tests, clean build, browser smoke, no stale active docs"]:::gate
+    VC1["Version control UX implementation<br/>Release timeline, Live/Draft/Historical, cap guidance, safer actions"]:::done
+    GATE["Final integration gate<br/>typecheck, tests, clean build, browser smoke, no stale active docs"]:::active
     PUSH["Push main<br/>Sync origin/main after green integration gate"]:::next
     DEPLOY["Deploy or cherry-pick to deploy/main<br/>Run server health and production smoke"]:::next
     SMOKE["Production smoke<br/>Pilot, Playground, Release package, Knowledge, model/vision, Conversations"]:::next
@@ -141,8 +141,8 @@ flowchart TD
 | BASE1 | Done | Core basics: model/prompt, Knowledge, Playground text/image, trace, package sanity. |
 | Q3-B1 | Done | Route/nav truth: old admin/ops links point to target IA. |
 | Q3-B Final | Done | Removed proven-dead UI, fixed compatibility case detail route, and aligned active docs/copy without deleting Playground runtime. |
-| Version control UX | Active | Make Release show Agent family timeline, Live/Draft/Historical states, and cap guidance. |
-| Final integration gate | Next | Run full gates and browser smoke before push/deploy. |
+| Version control UX | Done | Release now shows Agent-family timeline, live/draft/historical states, validation evidence, diff-vs-live context, action semantics, and 5-version retention guidance. |
+| Final integration gate | Active | Run full gates and browser smoke before push/deploy. |
 | Push main | Next | Sync local integration branch after clean gates. |
 | Deploy / production smoke | Next | Move validated main to deploy path and verify health plus real browser flows. |
 | First customer delivery | Next | Import starter package, configure, validate receipts, activate real channel. |
@@ -155,6 +155,5 @@ flowchart TD
 
 ## Current Dispatch Guidance
 
-1. Implement **Version Control UX** in Release without reopening runtime/schema scope.
-2. Run the **Final integration gate** before pushing.
-3. Use the hotfix worktree only for live minimal repair; cherry-pick hotfixes back into main before final deployment.
+1. Run the **Final integration gate** before pushing.
+2. Use the hotfix worktree only for live minimal repair; cherry-pick hotfixes back into main before final deployment.
