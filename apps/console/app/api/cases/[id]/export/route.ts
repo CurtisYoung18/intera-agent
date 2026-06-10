@@ -3,6 +3,7 @@
 
 import { NextResponse } from 'next/server'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { stripInternalMemoryKeys } from '@/lib/agent/memory'
 
 function safeJson(raw: string | null | undefined): unknown {
   if (!raw) return null
@@ -22,6 +23,11 @@ function formatValue(v: unknown, indent = 0): string {
     return v.map((item) => `${pad}- ${typeof item === 'object' ? JSON.stringify(item) : String(item)}`).join('\n')
   }
   return String(v)
+}
+
+function stripInternalKeysFromValue(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  return stripInternalMemoryKeys(value as Record<string, unknown>)
 }
 
 export const GET = defineRoute<void, { id: string }>({
@@ -98,7 +104,7 @@ export const GET = defineRoute<void, { id: string }>({
     if (memory) {
       sections.push('## Memory')
       sections.push('### Confirmed Facts')
-      sections.push(formatValue(safeJson(memory.confirmedFacts)))
+      sections.push(formatValue(stripInternalKeysFromValue(safeJson(memory.confirmedFacts))))
       sections.push('')
       sections.push('### Missing Facts')
       sections.push(formatValue(safeJson(memory.missingFacts)))
@@ -107,7 +113,7 @@ export const GET = defineRoute<void, { id: string }>({
       sections.push(formatValue(safeJson(memory.toolsCalled)))
       sections.push('')
       sections.push('### Tool Results')
-      sections.push(formatValue(safeJson(memory.toolResults)))
+      sections.push(formatValue(stripInternalKeysFromValue(safeJson(memory.toolResults))))
       sections.push('')
       if (memory.summary) {
         sections.push('### Summary')

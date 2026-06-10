@@ -26,3 +26,4 @@ debug-logs
 pnpm-lock.yaml
 coverage/
 .intera-agent-runtime/
+claude-code-source-code-ref-only/

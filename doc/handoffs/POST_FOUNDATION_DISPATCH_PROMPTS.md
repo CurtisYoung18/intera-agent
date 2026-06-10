@@ -89,7 +89,7 @@ Product/runtime decisions:
 - ProcedureRun state is session-lifecycle runtime state, not business memory. Do not store active/paused/completed ProcedureRun state inside confirmedFacts.
 - confirmedFacts are business facts only.
 - R3 should borrow Claude Code-style runtime semantics, not Claude Code source code: enqueue structured events, stamp epoch/uuid/origin metadata, separate explicit control interrupts from ordinary user messages, evaluate stable Hook lifecycle checkpoints with dynamic context, keep prompt-cache boundaries clear, and make memory Tools real.
-- Do not vendor or copy code from `claude-code-source-code-ref-only`; it is reference-only for architecture semantics.
+- Do not vendor or copy code from `/Users/curtis/Desktop/claude-code-source-code-ref-only`; it is outside the repo and reference-only for architecture semantics.
 - The runtime should expose ProcedureRun context to the main Agent as dynamic procedure todos/current state. The Agent decides whether a new message continues, supplements, pauses, resumes, or starts a Procedure inside the normal ReAct loop.
 - Do not add a standalone LLM ProcedureRouter unless the owner explicitly reopens that decision.
 - `record_facts` is not the target product/tool name. Use a controlled `remember` tool with explicit `scope: "chat" | "user"` if this lane adds memory writes.

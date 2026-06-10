@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
-import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type RuntimeEventSource } from '@/lib/agent/session-store'
+import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type CaseSession, type RuntimeEventSource } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { normalizeSSEEvent } from '@/lib/agent/stream-handler'
 import { prisma } from '@intera/shared/prisma'
@@ -143,6 +143,8 @@ export async function POST(request: NextRequest) {
           encoder.encode(`data: ${JSON.stringify(normalizedEvent)}\n\n`),
         )
       }
+
+      let registeredSession: CaseSession | null = null
 
       try {
         // Body size validation
@@ -296,6 +298,16 @@ export async function POST(request: NextRequest) {
           })
 
           if (task && task.status === 'resolved') {
+            if (authOrgId && task.case.orgId !== authOrgId) {
+              sendEvent({
+                type: 'error',
+                data: 'Task not found or not resolved',
+                timestamp: new Date().toISOString(),
+              })
+              controller.close()
+              return
+            }
+
             resolvedCaseId = task.caseId
             resolvedOrgId = task.case.orgId
             resolvedUserId = task.case.userId
@@ -675,6 +687,7 @@ export async function POST(request: NextRequest) {
 
         // Register the session so subsequent requests for this caseId are queued.
         const activeSession = getOrCreateSession(resolvedCaseId)
+        registeredSession = activeSession
         activeSession.resolved = false
         activeSession.aborted = false
         activeSession.lastActiveAt = Date.now()
@@ -925,6 +938,7 @@ export async function POST(request: NextRequest) {
           })
         } catch { /* stream already closed */ }
       } finally {
+        if (registeredSession) registeredSession.resolved = true
         controller.close()
       }
     },

@@ -83,6 +83,12 @@ Rules:
 - Schema/migration work is not parallel and is forbidden in hotfix unless separately approved.
 - After cherry-picking hotfixes into `main`, run typecheck, keyless tests, and clean `build:console`.
 
+Current hygiene note, 2026-06-10:
+
+- `claude-code-source-code-ref-only/` has been moved out of the repo to `/Users/curtis/Desktop/claude-code-source-code-ref-only` and is ignored. Keep it as reference-only material outside the worktree.
+- The old `hotfix/live-testing` branch is stale relative to current `main` (`ahead 7, behind 32`). Main contains adapted backports at `6615ae7d` and `3d765164`; do not merge or cherry-pick the stale branch wholesale without re-auditing against the current UI2/native-route code.
+- The active hotfix worktree at `/Users/curtis/Desktop/intera-agent-hotfix` is currently on `codex/profile-menu-adaptive-spacing` with local commit `461ee581` ahead of `deploy/main`; treat that as a separate pending hotfix decision, not as part of the old 7-commit hotfix backport.
+
 ---
 
 ## 2. Dispatch Order
@@ -187,6 +193,9 @@ Recommended coding-team shape:
 - Customer-facing text replies also record `basedOnInputEpoch`. Stale replies must not advance ProcedureRun; withhold them before send where possible, otherwise trace them as stale.
 - Ordinary customer messages are not interrupts. They should be queued and reconciled. Only explicit control events such as operator stop, session close, or human takeover may abort or cancel active Tool execution.
 - R3 first version should keep active ProcedureRun state in runtime/session-store rather than adding a Prisma table. It must increment `inputEpoch` at enqueue time, not AgentLoop drain time.
+- First commercial launch assumes one long-lived Node/Next server process for the Console runtime. The in-memory rate limiter, `/api/messages` runtime sessions, and active ProcedureRun tracker are approved only under that single-instance topology.
+- Do not move `/api/messages` or active ProcedureRun execution to serverless, multi-instance, rolling multi-worker, or horizontally scaled deployment until a Redis/lease-backed or schema-backed runtime authority and shared rate limiter are implemented.
+- AgentLoop post-turn compact/profile persistence is currently fire-and-forget. This is acceptable only for the long-lived single-process launch target; before serverless deployment or strict read-after-write memory guarantees, either await those writes before returning or move them to a durable worker/queue.
 - `session-store` must be upgraded from a bare message queue into structured runtime events, including customer messages, form results, human task results, text replies, Tool events, Hook decisions, reconcile actions, and explicit controls.
 - Human task results and form answers are input events, not finalization shortcuts. They increment `inputEpoch` before any terminal action.
 - `start_procedure` must be idempotent by request/event id and active run state.
