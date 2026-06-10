@@ -691,43 +691,64 @@ export default function ReleaseCommandCenter() {
 
   return (
     <main className="intera-q2-page mx-auto max-w-[1536px] px-5 py-6 text-[var(--color-text-primary)] sm:px-8">
-      <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
-            <span>Build</span>
-            <span className="text-[var(--color-border-strong)]">/</span>
-            <span className="text-[var(--color-text-primary)]">Release</span>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{selectedVersion?.name ?? data.live?.name ?? 'Agent'}</h1>
-            {selectedRole ? (
-              <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(roleTone(selectedRole))}`}>
-                Viewing {roleLabel(selectedRole)} version
+      <section className="intera-q2-panel mb-5 overflow-hidden">
+        <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
+              <span>Build</span>
+              <span className="text-[var(--color-border-strong)]">/</span>
+              <span className="text-[var(--color-text-primary)]">Release</span>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{selectedVersion?.name ?? data.live?.name ?? 'Agent'}</h1>
+              {selectedRole ? (
+                <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(roleTone(selectedRole))}`}>
+                  Viewing {roleLabel(selectedRole)} version
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">
+              Keep version selection, validation evidence, and package actions in one clear Release surface before any explicit publish.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-accent-primary)]">
+                Timeline stays the source of truth
               </span>
-            ) : null}
+              <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/72 px-2.5 py-1 text-[12px] font-semibold text-[var(--color-text-secondary)]">
+                Publish remains explicit
+              </span>
+            </div>
           </div>
-          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">Understand the Agent family timeline, validation evidence, and package actions before you publish.</p>
-        </div>
 
-        <label className="intera-q2-button flex min-h-11 items-center gap-3 border border-[var(--color-border-subtle)] bg-white px-4 text-[13px] shadow-[0_1px_2px_rgba(21,23,25,0.04)]">
-          <span className="text-[var(--color-text-tertiary)]">Selected version</span>
-          <select
-            aria-label="Release agent version"
-            value={selectedVersion?.id ?? ''}
-            onChange={(event) => selectAgent(event.target.value)}
-            className="min-w-[210px] bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
-          >
-            {data.family.map((config) => {
-              const role = versionRoleFor(config, data.live?.id ?? null, data.draft?.id ?? null)
-              return (
-                <option key={config.id} value={config.id}>
-                  {config.name} v{config.version}{role ? ` · ${roleLabel(role)}` : ''}
-                </option>
-              )
-            })}
-          </select>
-        </label>
-      </div>
+          <div className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-white/80 p-4 shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Release selection</p>
+            <label className="mt-3 flex min-h-11 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82 px-4 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+              <span className="text-[var(--color-text-tertiary)]">Version</span>
+              <select
+                aria-label="Release agent version"
+                value={selectedVersion?.id ?? ''}
+                onChange={(event) => selectAgent(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
+              >
+                {data.family.map((config) => {
+                  const role = versionRoleFor(config, data.live?.id ?? null, data.draft?.id ?? null)
+                  return (
+                    <option key={config.id} value={config.id}>
+                      {config.name} v{config.version}{role ? ` · ${roleLabel(role)}` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+            </label>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <HeroFact label="Retained" value={`${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS}`} />
+              <HeroFact label="Changed rows" value={String(diffSummary.changedRows)} />
+              <HeroFact label="Validation" value={selectedValidationSnapshot.label} tone={selectedValidationSnapshot.tone} />
+            </div>
+          </div>
+        </div>
+      </section>
 
       {(notice || error) ? (
         <div className={`mb-4 rounded-[var(--radius-control)] border px-4 py-3 text-[13px] ${error ? toneClass('danger') : toneClass('success')}`}>{error || notice}</div>
@@ -1150,14 +1171,16 @@ function SelectedVersionCard({
             {config.model ? <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/80 px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">{config.model}</span> : null}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <InfoCard label="Lineage" value={parentVersion ? `Forked from v${parentVersion}` : 'Original family baseline'} />
-            <InfoCard label="Updated" value={formatDate(config.updatedAt)} />
-            <InfoCard label="Published" value={formatDate(config.publishedAt, 'Not published')} />
-            <InfoCard label="Publisher" value={config.publishedBy || 'Unavailable'} />
-          </div>
+          <ReleaseMetaList
+            rows={[
+              { label: 'Lineage', value: parentVersion ? `Forked from v${parentVersion}` : 'Original family baseline' },
+              { label: 'Updated', value: formatDate(config.updatedAt) },
+              { label: 'Published', value: formatDate(config.publishedAt, 'Not published') },
+              { label: 'Publisher', value: config.publishedBy || 'Unavailable' },
+            ]}
+          />
 
-          <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 p-4">
+          <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.72)] p-4">
             <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
               <GitCompare className="h-4 w-4 text-[var(--color-accent-primary)]" />
               Changed since live
@@ -1186,11 +1209,15 @@ function SelectedVersionCard({
   )
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
+function ReleaseMetaList({ rows }: { rows: Array<{ label: string; value: string }> }) {
   return (
-    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/75 px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{label}</p>
-      <p className="mt-2 text-[13px] font-medium text-[var(--color-text-primary)]">{value}</p>
+    <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.62)]">
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between gap-4 border-t border-[var(--color-border-subtle)] px-4 py-3 first:border-t-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{row.label}</p>
+          <p className="text-right text-[13px] font-medium text-[var(--color-text-primary)]">{row.value}</p>
+        </div>
+      ))}
     </div>
   )
 }
@@ -1249,9 +1276,13 @@ function SelectedReceiptCard({
               ))}
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <InfoCard label="Receipt type" value={executionModeLabel(latestReceipt.executionMode)} />
-              <InfoCard label="Runtime-backed" value={validation?.runtimeValidated ? 'Yes' : 'No'} />
+            <div className="mt-5">
+              <ReleaseMetaList
+                rows={[
+                  { label: 'Receipt type', value: executionModeLabel(latestReceipt.executionMode) },
+                  { label: 'Runtime-backed', value: validation?.runtimeValidated ? 'Yes' : 'No' },
+                ]}
+              />
             </div>
           </>
         ) : (
@@ -1312,11 +1343,18 @@ function PackageActionsPanel({
   onRollback: () => void
 }) {
   const coverage = packageCoverageRows(coverageTemplate)
+  const rules = [
+    'Publish only activates a selected non-live version after confirmation and validation review.',
+    'Rollback preview stays read-only and never mutates live state by itself.',
+    'Create editable draft forks the selected version when retention capacity still exists.',
+    'Import always starts with a compatibility dry-run.',
+    'Export always downloads the currently selected package.',
+  ]
   const selectedLabel = current ? `${current.name} v${current.version}` : 'No version selected'
 
   return (
-    <section className="intera-q2-panel p-5">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <section className="intera-q2-panel overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Version control actions</h2>
           <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
@@ -1326,59 +1364,60 @@ function PackageActionsPanel({
         <input ref={importInputRef} aria-label="Import .intera-agent.json file" type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => onImport(event.target.files?.[0])} />
       </div>
 
-      <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-        <p><span className="font-semibold text-[var(--color-text-primary)]">Selected:</span> {selectedLabel}{role ? ` · ${roleLabel(role)}` : ''}</p>
-        <p className="mt-1">Export always downloads the currently selected package. Import always runs a dry-run first and never activates silently.</p>
+      <div className="grid gap-5 p-5">
+        <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.6)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+          <p><span className="font-semibold text-[var(--color-text-primary)]">Selected:</span> {selectedLabel}{role ? ` · ${roleLabel(role)}` : ''}</p>
+          <p className="mt-1">Export downloads the currently selected package. Import always starts with a dry-run report and never activates silently.</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export selected package" busy={busyAction === 'export'} onClick={onExport} />
+          <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={onImportClick} />
+          <ActionButton icon={<Copy className="h-4 w-4" />} label="Create editable draft" busy={busyAction === 'duplicate'} onClick={onDuplicate} />
+          <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish selected version" busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
+          <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackTarget} onClick={onRollback} />
+        </div>
+
+        {publishDisabledReason ? <p className="text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.56)] p-4">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Action rules</p>
+            <div className="mt-3 grid gap-2">
+              {rules.map((rule) => (
+                <div key={rule} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/78 px-3 py-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+                  {rule}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.56)] p-4">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Package coverage</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-3">
+              {coverage.map((item) => (
+                <PackageCoverageCell key={item.label} label={item.label} value={item.value} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {pendingImport ? (
+          <ImportDryRunReport
+            busy={busyAction === 'import-apply'}
+            pendingImport={pendingImport}
+            onClear={onClearImport}
+            onConfirm={onConfirmImport}
+          />
+        ) : null}
       </div>
-
-      <div className="mt-5 grid gap-3 lg:grid-cols-5">
-        <ActionRuleCard title="Publish" body="Activates the selected non-live version only after an explicit confirmation and validation review." />
-        <ActionRuleCard title="Rollback preview" body="Shows the diff from live to the selected non-live version. Preview stays read-only." />
-        <ActionRuleCard title="Create editable draft" body="Forks the selected version into a new draft when the family still has retention capacity." />
-        <ActionRuleCard title="Import" body="Runs a compatibility report first, then creates a draft package if you confirm apply." />
-        <ActionRuleCard title="Export" body="Exports the current selected version package so the file is never ambiguous." />
-      </div>
-
-      <div className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
-        {coverage.map((item) => (
-          <PackageCoverageCell key={item.label} label={item.label} value={item.value} />
-        ))}
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export selected package" busy={busyAction === 'export'} onClick={onExport} />
-        <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={onImportClick} />
-        <ActionButton icon={<Copy className="h-4 w-4" />} label="Create editable draft" busy={busyAction === 'duplicate'} onClick={onDuplicate} />
-        <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish selected version" busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
-        <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackTarget} onClick={onRollback} />
-      </div>
-
-      {publishDisabledReason ? <p className="mt-3 text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
-
-      {pendingImport ? (
-        <ImportDryRunReport
-          busy={busyAction === 'import-apply'}
-          pendingImport={pendingImport}
-          onClear={onClearImport}
-          onConfirm={onConfirmImport}
-        />
-      ) : null}
     </section>
-  )
-}
-
-function ActionRuleCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-3">
-      <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">{title}</p>
-      <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">{body}</p>
-    </div>
   )
 }
 
 function PackageCoverageCell({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
+    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/78 px-3 py-2">
       <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">{label}</p>
       <p className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">{value}</p>
     </div>
@@ -1481,49 +1520,68 @@ function ReleaseConfigPilotRail({
         Selected {role ? roleLabel(role).toLowerCase() : 'version'}{current ? ` v${current.version}` : ''} is ready for Release review.
       </p>
 
-      <RailInsight
-        tone={validated ? 'success' : 'warning'}
-        title={validated ? 'Validation is fresh' : 'Validation needs review'}
-        body={validated ? 'Ask ConfigPilot for one small draft improvement before the next publish.' : validationSnapshot.detail}
-        action="Open Pilot Lab"
-        onClick={onOpen}
-      />
-      <RailInsight
-        tone="info"
-        title="Latest evidence"
-        body={latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
-        action="Ask ConfigPilot"
-        onClick={onOpen}
-      />
-      <RailInsight
-        tone="success"
-        title="Release boundary"
-        body="Import, duplicate, and draft edits stay isolated until Release publishes explicitly. ConfigPilot cannot publish for you."
-        action="Review workflow"
-        onClick={onOpen}
-      />
+      <div className="mt-5 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.56)]">
+        <RailInsightRow
+          tone={validated ? 'success' : 'warning'}
+          title={validated ? 'Validation is fresh' : 'Validation needs review'}
+          body={validated ? 'Ask ConfigPilot for one small draft improvement before the next publish.' : validationSnapshot.detail}
+          action="Open Pilot Lab"
+          onClick={onOpen}
+        />
+        <RailInsightRow
+          tone="info"
+          title="Latest evidence"
+          body={latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
+          action="Ask ConfigPilot"
+          onClick={onOpen}
+        />
+        <RailInsightRow
+          tone="success"
+          title="Release boundary"
+          body="Import, duplicate, and draft edits stay isolated until Release publishes explicitly. ConfigPilot cannot publish for you."
+          action="Review workflow"
+          onClick={onOpen}
+        />
+      </div>
     </aside>
   )
 }
 
-function RailInsight({ tone, title, body, action, onClick }: { tone: 'warning' | 'info' | 'success'; title: string; body: string; action: string; onClick: () => void }) {
+function RailInsightRow({ tone, title, body, action, onClick }: { tone: 'warning' | 'info' | 'success'; title: string; body: string; action: string; onClick: () => void }) {
   const toneStyles = tone === 'warning'
     ? 'text-[var(--color-signal-warning)]'
     : tone === 'success'
       ? 'text-[var(--color-signal-success)]'
       : 'text-[var(--color-accent-primary)]'
   return (
-    <section className="mt-5 rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-4">
+    <section className="border-t border-[var(--color-border-subtle)] px-4 py-4 first:border-t-0">
       <p className={`flex items-center gap-2 text-[13px] font-semibold ${toneStyles}`}>
         <span className="flex h-5 w-5 items-center justify-center rounded-full border border-current text-[11px]">i</span>
         {title}
       </p>
-      <p className="mt-4 text-[13px] font-medium leading-6 text-[var(--color-text-primary)]">{body}</p>
-      <button type="button" onClick={onClick} className="intera-q2-button mt-5 inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-primary)]">
+      <p className="mt-3 text-[13px] font-medium leading-6 text-[var(--color-text-primary)]">{body}</p>
+      <button type="button" onClick={onClick} className="intera-q2-button mt-4 inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white/82 px-3 text-[12px] font-semibold text-[var(--color-text-primary)]">
         {action}
         <span aria-hidden>›</span>
       </button>
     </section>
+  )
+}
+
+function HeroFact({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string
+  value: string
+  tone?: 'success' | 'warning' | 'danger' | 'neutral'
+}) {
+  return (
+    <div className={`rounded-[var(--radius-control)] border px-3 py-3 ${toneClass(tone)}`}>
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{label}</p>
+      <p className="mt-2 text-[13px] font-semibold text-[var(--color-text-primary)]">{value}</p>
+    </div>
   )
 }
 

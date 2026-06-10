@@ -310,6 +310,26 @@ export default function PilotLabPage() {
       <div className="intera-q2-page flex min-h-screen flex-col overflow-hidden px-4 py-4 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
         <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-4">
           <VersionContextBar />
+          <section className="intera-q2-panel overflow-hidden">
+            <div className="flex flex-col gap-3 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--color-text-tertiary)]">
+                  <span>Build</span>
+                  <span className="text-[var(--color-border-strong)]">/</span>
+                  <span>Pilot Lab</span>
+                  <span className="text-[var(--color-border-strong)]">/</span>
+                  <span className="text-[var(--color-text-primary)]">Playground</span>
+                </div>
+                <h1 className="mt-2 text-[24px] font-semibold leading-tight text-[var(--color-text-primary)] sm:text-[28px]">Playground compatibility surface</h1>
+                <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[var(--color-text-secondary)]">
+                  Keep manual dry-run, trace inspection, and debugging flows inside Pilot Lab without restoring Playground to the global navigation.
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/78 px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-secondary)]">
+                Compatibility route only
+              </span>
+            </div>
+          </section>
           <PilotLabTabs activeTab="playground" />
           <div className="intera-q2-panel min-h-0 flex-1 overflow-hidden">
             <PlaygroundPage />
@@ -324,31 +344,36 @@ export default function PilotLabPage() {
       <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
         <VersionContextBar />
 
-        <header className="flex flex-col gap-4 border-b border-[var(--color-border-subtle)] pb-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--color-text-tertiary)]">
-              <span>Build</span>
-              <span className="text-[var(--color-border-strong)]">/</span>
-              <span className="text-[var(--color-text-primary)]">Pilot Lab</span>
-              <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.07)] px-2 py-1 text-[var(--color-accent-primary)]">Chat Cockpit</span>
+        <section className="intera-q2-panel overflow-hidden">
+          <div className="flex flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--color-text-tertiary)]">
+                <span>Build</span>
+                <span className="text-[var(--color-border-strong)]">/</span>
+                <span className="text-[var(--color-text-primary)]">Pilot Lab</span>
+                <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.07)] px-2 py-1 text-[var(--color-accent-primary)]">Chat Cockpit</span>
+              </div>
+              <h1 className="mt-3 text-[24px] font-semibold leading-tight text-[var(--color-text-primary)] sm:text-[28px]">U-Pilot Chat Cockpit</h1>
+              <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[var(--color-text-secondary)]">
+                Draft proposals, diff review, Scenario receipts, and Playground debugging stay together inside one Build-native cockpit.
+              </p>
             </div>
-            <h1 className="mt-3 text-[24px] font-semibold leading-tight text-[var(--color-text-primary)] sm:text-[28px]">U-Pilot Chat Cockpit</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <ContextBadge context={context} />
+              <ValidationBadge validation={validation} />
+              <button type="button" onClick={loadCockpit} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
+                <RefreshCw size={15} /> Refresh
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <ContextBadge context={context} />
-            <ValidationBadge validation={validation} />
-            <button type="button" onClick={loadCockpit} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
-              <RefreshCw size={15} /> Refresh
-            </button>
-          </div>
-        </header>
+        </section>
 
         <PilotLabTabs activeTab="pilot" />
 
         {(error || notice) && (
           <div className="grid gap-2">
-            {error && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-            {notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
+            {error && <div className="rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-signal-danger)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-signal-danger)_10%,white)] px-4 py-3 text-sm text-[var(--color-signal-danger)]">{error}</div>}
+            {notice && <div className="rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-signal-success)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-signal-success)_10%,white)] px-4 py-3 text-sm text-[var(--color-signal-success)]">{notice}</div>}
           </div>
         )}
 
@@ -462,7 +487,7 @@ function PilotLabTabs({ activeTab }: { activeTab: 'pilot' | 'playground' }) {
   ]
 
   return (
-    <nav className="flex flex-wrap gap-2 border-b border-[var(--color-border-subtle)] pb-3" aria-label="Pilot Lab tabs">
+    <nav className="intera-q2-panel flex flex-wrap gap-2 p-3" aria-label="Pilot Lab tabs">
       {tabs.map((tab) => {
         const active = activeTab === tab.id
         return (
@@ -646,16 +671,17 @@ function ControlPanel({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)]">
-        {proposalPhase === 'diff' || proposalPhase === 'accepted' || proposalPhase === 'applying' || proposalPhase === 'applied' ? (
-          <ConfigDiffViewer title="Diff viewer" subtitle="Review exact typed patch changes before accepting. Pilot can save draft only." groups={diffGroups} emptyLabel="No diff rows were returned." />
-        ) : (
-          <div className="p-4">
-            <PanelHeader icon={FileDiff} title="Diff viewer" eyebrow="Waiting" />
-            <div className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-8 text-center text-[13px] text-[var(--color-text-tertiary)]">Open proposal review to inspect the diff.</div>
-          </div>
-        )}
-        <div className="grid gap-3 border-t border-[var(--color-border-subtle)] p-4">
+      {proposalPhase === 'diff' || proposalPhase === 'accepted' || proposalPhase === 'applying' || proposalPhase === 'applied' ? (
+        <ConfigDiffViewer title="Diff viewer" subtitle="Review exact typed patch changes before accepting. Pilot can save draft only." groups={diffGroups} emptyLabel="No diff rows were returned." />
+      ) : (
+        <section className="intera-q2-panel p-4">
+          <PanelHeader icon={FileDiff} title="Diff viewer" eyebrow="Waiting" />
+          <div className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-8 text-center text-[13px] text-[var(--color-text-tertiary)]">Open proposal review to inspect the diff.</div>
+        </section>
+      )}
+
+      <section className="intera-q2-panel p-4">
+        <div className="grid gap-3">
           <label className={`flex items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-[13px] leading-5 ${proposalPhase === 'diff' || proposalPhase === 'accepted' || proposalPhase === 'applying' ? 'border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] text-[var(--color-text-secondary)]' : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-tertiary)]'}`}>
             <input type="checkbox" checked={accepted} disabled={proposalPhase !== 'diff' && proposalPhase !== 'accepted'} onChange={(event) => onAccept(event.target.checked)} className="mt-1" />
             <span>I reviewed the diff and explicitly accept these draft configuration changes.</span>

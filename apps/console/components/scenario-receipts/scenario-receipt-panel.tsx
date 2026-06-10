@@ -40,7 +40,7 @@ export function ScenarioReceiptPanel({
   const remainingChecks = receipt.checks.filter((check) => !isPhraseCheck(check))
 
   return (
-    <div className="intera-q2-panel overflow-hidden">
+    <div className="intera-q2-panel overflow-hidden bg-[rgba(255,255,255,0.84)] shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -53,7 +53,7 @@ export function ScenarioReceiptPanel({
             <ReceiptStatusBadge status={receipt.status} />
           </div>
         </div>
-        <div className="mt-4 grid overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2">
+        <div className="mt-4 grid overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/62 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2">
           <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Run: {receipt.runId}</span>
           <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">Started: {formatDate(receipt.startedAt)}</span>
           <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Execution: {executionModeLabel(receipt.executionMode)}</span>
@@ -225,7 +225,7 @@ function EvidenceSection({
 }) {
   const emptyState = isEmpty ?? false
   return (
-    <section className="border-b border-[var(--color-border-subtle)] bg-white/45 p-4 last:border-b-0">
+    <section className="border-b border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.28)] p-4 last:border-b-0">
       <div className="mb-3 flex items-center gap-2">
         <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-bg-surface-muted)] text-[var(--color-accent-primary)]">
           <Icon size={14} />
@@ -251,7 +251,7 @@ function CheckList({ checks, className = '' }: { checks: ScenarioReceiptCheck[];
   return (
     <div className={`grid gap-2 ${className}`}>
       {checks.map((check) => (
-        <div key={check.name} className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2">
+        <div key={check.name} className="rounded-md border border-[var(--color-border-subtle)] bg-white/68 px-3 py-2">
           <div className="flex items-center justify-between gap-3 text-xs">
             <span className="font-medium text-[var(--color-text-primary)]">{formatCheckName(check.name)}</span>
             <span className={`rounded-full px-2 py-0.5 font-semibold ${check.passed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{check.passed ? 'Pass' : 'Fail'}</span>

@@ -78,8 +78,8 @@ export default function ConfigDiffViewer({
   const hasGroups = groups.length > 0
 
   return (
-    <section className="intera-q2-panel overflow-hidden">
-      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+    <section className="intera-q2-panel overflow-hidden bg-[rgba(255,255,255,0.84)] shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
+      <div className="border-b border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.42)] px-5 py-4">
         <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{title}</h2>
         <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--color-text-secondary)]">{subtitle}</p>
       </div>
@@ -87,7 +87,7 @@ export default function ConfigDiffViewer({
         <div className="px-5 py-8 text-[13px] text-[var(--color-text-secondary)]">{emptyLabel}</div>
       ) : (
         <div>
-          <div className="hidden grid-cols-[minmax(150px,1fr)_80px_80px_minmax(140px,0.8fr)] gap-4 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-5 py-3 text-[12px] font-semibold text-[var(--color-text-tertiary)] lg:grid">
+          <div className="hidden grid-cols-[minmax(150px,1fr)_80px_80px_minmax(140px,0.8fr)] gap-4 border-b border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.46)] px-5 py-3 text-[12px] font-semibold text-[var(--color-text-tertiary)] lg:grid">
             <span>Component</span>
             <span>Live</span>
             <span>Draft</span>
@@ -100,7 +100,7 @@ export default function ConfigDiffViewer({
             const draftRows = group.items.filter((item) => item.after).length
             return (
               <details key={group.id} open={status !== 'unchanged'} className="group border-b border-[var(--color-border-subtle)] last:border-b-0">
-                <summary className="grid cursor-pointer list-none gap-3 px-5 py-4 transition hover:bg-[var(--color-bg-surface-muted)] lg:grid-cols-[minmax(150px,1fr)_80px_80px_minmax(140px,0.8fr)] lg:gap-4">
+                <summary className="grid cursor-pointer list-none gap-3 px-5 py-4 transition hover:bg-[rgba(255,255,255,0.6)] group-open:bg-[rgba(255,255,255,0.42)] lg:grid-cols-[minmax(150px,1fr)_80px_80px_minmax(140px,0.8fr)] lg:gap-4">
                   <div className="min-w-0">
                     <h3 className="text-[14px] font-semibold text-[var(--color-text-primary)]">{group.title}</h3>
                     <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">{group.description}</p>
@@ -118,14 +118,14 @@ export default function ConfigDiffViewer({
                     {group.action}
                   </div>
                 </summary>
-                <div className="border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-5 py-4">
+                <div className="border-t border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.32)] px-5 py-4">
                   {group.placeholder ? (
                     <div className="rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">{group.placeholder}</div>
                   ) : group.items.length === 0 ? (
-                    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-4 py-3 text-[12px] text-[var(--color-text-tertiary)]">No rows in this group.</div>
+                    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82 px-4 py-3 text-[12px] text-[var(--color-text-tertiary)]">No rows in this group.</div>
                   ) : (
-                    <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white">
-                      <div className="hidden grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-2 text-[11px] font-semibold text-[var(--color-text-tertiary)] lg:grid">
+                    <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82">
+                      <div className="hidden grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] border-b border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.48)] px-4 py-2 text-[11px] font-semibold text-[var(--color-text-tertiary)] lg:grid">
                         <span>Change</span>
                         <span>Live</span>
                         <span>Draft</span>
@@ -141,7 +141,7 @@ export default function ConfigDiffViewer({
                             <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] lg:hidden">Live</p>
                             <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--color-text-secondary)]">{item.before ?? 'Not present'}</p>
                           </div>
-                          <div className="min-w-0 rounded-[var(--radius-control)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_4%,white)] px-3 py-2 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0">
+                          <div className="min-w-0 rounded-[var(--radius-control)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_5%,white)] px-3 py-2 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0">
                             <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] lg:hidden">Draft</p>
                             <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--color-text-secondary)]">{item.after ?? 'Not present'}</p>
                           </div>
