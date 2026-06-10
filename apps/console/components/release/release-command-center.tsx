@@ -124,8 +124,9 @@ function validationTone(state?: string) {
 }
 
 function receiptTone(status?: string) {
-  if (status === 'passed') return 'success'
-  if (status === 'failed' || status === 'error') return 'danger'
+  if (status === 'pass') return 'success'
+  if (status === 'fail') return 'danger'
+  if (status === 'blocked') return 'warning'
   return 'neutral'
 }
 
@@ -559,7 +560,7 @@ export default function ReleaseCommandCenter() {
           />
         </div>
 
-        <ReleaseConfigPilotRail validationState={validationState} latestReceipt={latestReceipt} onOpen={() => setPilotOpen(true)} />
+        <ReleaseConfigPilotRail validation={validation} validationState={validationState} latestReceipt={latestReceipt} onOpen={() => setPilotOpen(true)} />
       </div>
 
       {Object.keys(data.templateErrors).length > 0 ? (
@@ -643,6 +644,16 @@ function ReleaseSummaryStrip({
   latestReceipt: ScenarioReceipt | null
   onOpenPilot: () => void
 }) {
+  const runtimeValidated = Boolean(validation?.runtimeValidated)
+  const validationTitle = runtimeValidated ? 'Runtime validated' : validationState === 'Validated' ? 'Fixture only' : validationState
+  const validationDetail = runtimeValidated
+    ? `Runtime validated ${formatDate(validation?.runtimeValidatedAt ?? validation?.lastValidatedAt)}`
+    : latestReceipt?.executionMode === 'fixture'
+      ? 'Latest receipt is fixture-only'
+      : 'No runtime-backed validation'
+  const validationMeta = latestReceipt
+    ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}`
+    : 'Run Pilot Lab before publish'
   return (
     <section className="intera-q2-panel overflow-hidden">
       <div className="grid divide-y divide-[var(--color-border-subtle)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(320px,1.15fr)] lg:divide-x lg:divide-y-0">
@@ -655,11 +666,11 @@ function ReleaseSummaryStrip({
         />
         <SummaryMetric
           label="Validation State"
-          title={validationState}
-          detail={validation?.lastValidatedAt ? `Validated ${formatDate(validation.lastValidatedAt)}` : 'No fresh validation'}
-          meta={latestReceipt ? `Receipt ${latestReceipt.status}` : 'Run Pilot Lab before publish'}
-          tone={validationTone(validationState)}
-          icon={validationState === 'Validated' ? <CheckCircle2 className="h-5 w-5 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-5 w-5 text-[var(--color-signal-warning)]" />}
+          title={validationTitle}
+          detail={validationDetail}
+          meta={validationMeta}
+          tone={runtimeValidated ? 'success' : validationTone(validationState)}
+          icon={runtimeValidated ? <CheckCircle2 className="h-5 w-5 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-5 w-5 text-[var(--color-signal-warning)]" />}
         />
         <SummaryMetric
           label="Draft"
@@ -729,14 +740,14 @@ function LatestReceiptCard({ latestReceipt }: { latestReceipt: ScenarioReceipt |
             <div>
               <span className={`inline-flex rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold capitalize ${toneClass(receiptTone(latestReceipt.status))}`}>{latestReceipt.status}</span>
               <h3 className="mt-4 text-[14px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</h3>
-              <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">Run {formatDate(latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
+              <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{executionModeLabel(latestReceipt.executionMode)} · Run {formatDate(latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
             </div>
           </div>
           <dl className="mt-5 grid grid-cols-2 gap-0 overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] text-[12px]">
             <ReceiptStat label="Total" value={String(latestReceipt.checks.length)} />
             <ReceiptStat label="Passed" value={String(latestReceipt.checks.filter((check) => check.passed).length)} tone="success" />
             <ReceiptStat label="Failed" value={String(latestReceipt.checks.filter((check) => !check.passed).length)} tone={latestReceipt.checks.some((check) => !check.passed) ? 'danger' : 'neutral'} />
-            <ReceiptStat label="Trace" value={latestReceipt.traceId ? 'Linked' : 'None'} />
+            <ReceiptStat label="Tool mode" value={latestReceipt.toolExecutionMode} />
           </dl>
           <div className="mt-5 space-y-3">
             {latestReceipt.checks.slice(0, 5).map((check) => (
@@ -816,15 +827,17 @@ function PackageActionsPanel({
 }
 
 function ReleaseConfigPilotRail({
+  validation,
   validationState,
   latestReceipt,
   onOpen,
 }: {
+  validation: ScenarioValidationSummary | undefined
   validationState: string
   latestReceipt: ScenarioReceipt | null
   onOpen: () => void
 }) {
-  const validated = validationState === 'Validated'
+  const validated = Boolean(validation?.runtimeValidated)
   return (
     <aside className="intera-q2-rail p-5 xl:sticky xl:top-6 xl:self-start">
       <div className="flex items-center justify-between gap-4">
@@ -853,7 +866,7 @@ function ReleaseConfigPilotRail({
       <RailInsight
         tone="info"
         title="Recommendation"
-        body={latestReceipt ? `Latest receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
+        body={latestReceipt ? `Latest ${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
         action="Ask ConfigPilot"
         onClick={onOpen}
       />
@@ -866,6 +879,10 @@ function ReleaseConfigPilotRail({
       />
     </aside>
   )
+}
+
+function executionModeLabel(mode: ScenarioReceipt['executionMode']): string {
+  return mode === 'agentRuntime' ? 'Runtime-backed' : 'Fixture-only'
 }
 
 function RailInsight({ tone, title, body, action, onClick }: { tone: 'warning' | 'info' | 'success'; title: string; body: string; action: string; onClick: () => void }) {

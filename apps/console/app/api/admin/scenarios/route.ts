@@ -27,7 +27,11 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
       lastValidatedAt: result.lastValidatedAt,
       lastReceiptId: result.lastReceiptId,
       lastReceiptStatus: result.lastReceiptStatus,
-      overrideRequired: result.validationState !== 'Validated',
+      lastReceiptExecutionMode: result.lastReceiptExecutionMode,
+      runtimeValidated: result.runtimeValidated,
+      runtimeValidatedAt: result.runtimeValidatedAt,
+      lastRuntimeReceiptId: result.lastRuntimeReceiptId,
+      overrideRequired: result.overrideRequired,
     })
     return apiOk({
       scenarios: result.scenarios,

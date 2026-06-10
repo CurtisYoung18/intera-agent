@@ -93,8 +93,8 @@ export default function PilotLabPage() {
 
   const selectedScenario = useMemo(() => scenarios.find((scenario) => scenario.name === selectedName) ?? null, [scenarios, selectedName])
   const selectedReceipt = useMemo(() => receipts.find((receipt) => receipt.runId === selectedReceiptRunId) ?? receipts[0] ?? null, [receipts, selectedReceiptRunId])
-  const passingReceipts = receipts.filter((receipt) => receipt.status === 'passed').length
-  const failingReceipts = receipts.filter((receipt) => receipt.status !== 'passed').length
+  const passingReceipts = receipts.filter((receipt) => receipt.status === 'pass').length
+  const runtimeReceipts = receipts.filter((receipt) => receipt.executionMode === 'agentRuntime').length
 
   const load = useCallback(async () => {
     if (!agentConfigId) return
@@ -190,7 +190,7 @@ export default function PilotLabPage() {
     }
   }, [agentConfigId, load, selectedScenario])
 
-  const runScenario = useCallback(async (observed?: ScenarioObservedEvidenceInput) => {
+  const runScenario = useCallback(async (options: { observed?: ScenarioObservedEvidenceInput; executionMode?: 'fixture' | 'agentRuntime' } = {}) => {
     if (!agentConfigId || !selectedScenario) return
     setRunning(selectedScenario.name)
     setError(null)
@@ -198,13 +198,13 @@ export default function PilotLabPage() {
     try {
       const result = await apiClient<{ receipt: ScenarioReceipt; validation: ScenarioValidationSummary }>(
         `/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}/run`,
-        { method: 'POST', body: { agentConfigId, observed } },
+        { method: 'POST', body: { agentConfigId, observed: options.observed, executionMode: options.executionMode ?? 'agentRuntime' } },
       )
       setReceipts((prev) => [result.data.receipt, ...prev.filter((receipt) => receipt.runId !== result.data.receipt.runId)])
       setSelectedReceiptRunId(result.data.receipt.runId)
       setValidation(result.data.validation)
       setActiveArea('receipts')
-      setNotice(result.data.receipt.status === 'passed' ? 'Scenario passed' : 'Scenario failed')
+      setNotice(result.data.receipt.status === 'pass' ? 'Scenario passed' : result.data.receipt.status === 'blocked' ? 'Scenario runtime blocked' : 'Scenario failed')
       await load()
     } catch (err) {
       setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to run Scenario')
@@ -216,7 +216,7 @@ export default function PilotLabPage() {
   const runFreeTest = useCallback(async () => {
     try {
       const observed = observedJson.trim() ? JSON.parse(observedJson) as ScenarioObservedEvidenceInput : undefined
-      await runScenario(observed)
+      await runScenario({ observed, executionMode: 'fixture' })
     } catch (err) {
       setError(err instanceof SyntaxError ? `Invalid observed evidence JSON: ${err.message}` : 'Failed to parse observed evidence')
     }
@@ -263,7 +263,7 @@ export default function PilotLabPage() {
             <MetricTile label="Test Scenarios" value={scenarios.length.toString()} />
             <MetricTile label="Receipts" value={receipts.length.toString()} />
             <MetricTile label="Passing" value={passingReceipts.toString()} tone="success" />
-            <MetricTile label="Needs review" value={failingReceipts.toString()} tone={failingReceipts > 0 ? 'danger' : 'neutral'} />
+            <MetricTile label="Runtime-backed" value={runtimeReceipts.toString()} tone={runtimeReceipts > 0 ? 'success' : 'neutral'} />
           </div>
         </section>
 
@@ -317,7 +317,7 @@ export default function PilotLabPage() {
               <FreeTestPanel selectedScenario={selectedScenario} observedJson={observedJson} setObservedJson={setObservedJson} running={Boolean(running)} onRun={runFreeTest} />
             )}
             {activeArea === 'test-cases' && (
-              <TestCaseEditorPanel editor={editor} setEditor={setEditor} selectedScenario={selectedScenario} saving={saving} running={running === selectedScenario?.name} onSave={saveScenario} onDelete={deleteScenario} onRun={() => runScenario()} />
+              <TestCaseEditorPanel editor={editor} setEditor={setEditor} selectedScenario={selectedScenario} saving={saving} running={running === selectedScenario?.name} onSave={saveScenario} onDelete={deleteScenario} onRun={() => runScenario({ executionMode: 'agentRuntime' })} />
             )}
             {activeArea === 'receipts' && (
               <ScenarioReceiptPanel receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceipt?.runId ?? null} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
@@ -345,7 +345,7 @@ function PilotLabRail({ running, activeArea, onOpenDrawer }: { running: boolean;
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[var(--color-text-primary)]">{running ? 'Scenario running' : 'ConfigPilot rail'}</p>
           <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-            {running ? 'Pilot Lab is collecting observed evidence and receipt checks.' : `Context: ${activeArea.replace('-', ' ')}.`}
+            {running ? 'Pilot Lab is collecting runtime trace evidence and receipt checks.' : `Context: ${activeArea.replace('-', ' ')}.`}
           </p>
         </div>
       </div>
@@ -456,7 +456,7 @@ function FreeTestPanel({
         )}
         <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3">
           <p className="text-sm font-medium text-[var(--color-text-primary)]">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Select a Test Scenario first'}</p>
-          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Observed evidence is sent to the Scenario run API and compared against saved expectations.</p>
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Observed evidence runs fixture validation only. Use the saved Test Scenario run button for runtime-backed validation.</p>
         </div>
         <TextArea label="Observed evidence JSON" value={observedJson} onChange={setObservedJson} rows={16} />
       </div>
@@ -503,11 +503,12 @@ function TextArea({ label, value, onChange, rows }: { label: string; value: stri
 
 function ValidationBadge({ validation }: { validation: ScenarioValidationSummary | null }) {
   const state = validation?.state ?? 'Not validated'
-  const color = state === 'Validated' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : state === 'Validation failed' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'
-  const Icon = state === 'Validated' ? CheckCircle2 : state === 'Validation failed' ? XCircle : AlertTriangle
+  const runtimeValidated = Boolean(validation?.runtimeValidated)
+  const color = runtimeValidated ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : state === 'Validation failed' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'
+  const Icon = runtimeValidated ? CheckCircle2 : state === 'Validation failed' ? XCircle : AlertTriangle
   return (
     <span className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium ${color}`}>
-      <Icon size={15} /> {state}
+      <Icon size={15} /> {runtimeValidated ? 'Runtime validated' : state === 'Validated' ? 'Fixture only' : state}
     </span>
   )
 }

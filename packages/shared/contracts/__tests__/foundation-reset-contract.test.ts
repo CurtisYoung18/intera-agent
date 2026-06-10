@@ -189,14 +189,26 @@ describe('Scenario contract', () => {
     const receipt = scenarioReceiptSchema.parse({
       scenarioName: 'deposit_pending_handoff',
       runId: 'scn_1',
-      status: 'passed',
+      status: 'pass',
+      executionMode: 'agentRuntime',
+      toolExecutionMode: 'mocked',
       startedAt: '2026-06-08T00:00:00.000Z',
+      completedAt: '2026-06-08T00:00:01.000Z',
       finishedAt: '2026-06-08T00:00:01.000Z',
       evidence,
       checks: [{ name: 'tool:get_latest_deposit', passed: true }],
     })
+    const legacyReceipt = scenarioReceiptSchema.parse({
+      scenarioName: 'deposit_pending_handoff',
+      runId: 'scn_legacy',
+      status: 'passed',
+      startedAt: '2026-06-08T00:00:00.000Z',
+      evidence,
+    })
     expect(receipt.evidence.knowledgeHits[0]).toMatchObject({ source: 'gptbots' })
     expect(receipt.checks[0].passed).toBe(true)
+    expect(legacyReceipt.status).toBe('pass')
+    expect(legacyReceipt.executionMode).toBe('fixture')
   })
 })
 

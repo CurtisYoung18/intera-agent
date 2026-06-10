@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SavedScenario } from '@intera/shared/contracts/scenarios'
-import { evaluateScenario, runScenarioHarness } from '../runner'
+import { buildScenarioReceipt, evaluateScenario, runScenarioHarness } from '../runner'
 
 const baseScenario: SavedScenario = {
   id: 'scenario-1',
@@ -33,7 +33,9 @@ describe('Scenario runner harness', () => {
       knowledgeHits: [{ source: 'gptbots', title: 'Deposit FAQ' }],
     })
 
-    expect(receipt.status).toBe('passed')
+    expect(receipt.status).toBe('pass')
+    expect(receipt.executionMode).toBe('fixture')
+    expect(receipt.toolExecutionMode).toBe('mocked')
     expect(receipt.evidence.toolsCalled).toContain('get_latest_deposit')
     expect(receipt.evidence.hookDecisions[0]).toMatchObject({
       hookName: 'conflict_requires_human',
@@ -55,10 +57,37 @@ describe('Scenario runner harness', () => {
       finalResponse: 'Your guaranteed compensation is ready.',
     })
 
-    expect(receipt.status).toBe('failed')
+    expect(receipt.status).toBe('fail')
     expect(receipt.checks.some((check) => check.name === 'tool:get_latest_deposit' && !check.passed)).toBe(true)
     expect(receipt.checks.some((check) => check.name === 'human_transfer' && !check.passed)).toBe(true)
     expect(receipt.checks.some((check) => check.name === 'forbidden_phrase:guaranteed compensation' && !check.passed)).toBe(true)
+    expect(receipt.failureReasons.map((reason) => reason.code)).toEqual(expect.arrayContaining([
+      'required_tool_missing',
+      'forbidden_phrase_present',
+    ]))
+  })
+
+  it('builds runtime-backed receipts from observed runtime evidence', () => {
+    const receipt = buildScenarioReceipt(baseScenario, {
+      caseType: 'deposit_issue',
+      toolsCalled: ['get_latest_deposit'],
+      toolCalls: [{ name: 'get_latest_deposit', input: { id: 'D123' }, executionMode: 'mocked' }],
+      toolResults: [{ name: 'get_latest_deposit', output: { _dryRun: true, status: 'needs_review' }, executionMode: 'mocked' }],
+      hookDecisions: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate', reason: 'Provider proof mismatch' }],
+      humanTransfer: true,
+      handoff: [{ required: true, reason: 'create_human_task observed', target: 'human' }],
+      finalResponse: 'I will transfer this to a human specialist.',
+      finalStatus: 'waiting_human',
+    }, {
+      executionMode: 'agentRuntime',
+      toolExecutionMode: 'mocked',
+    })
+
+    expect(receipt.status).toBe('pass')
+    expect(receipt.executionMode).toBe('agentRuntime')
+    expect(receipt.evidence.toolCalls[0]).toMatchObject({ name: 'get_latest_deposit', executionMode: 'mocked' })
+    expect(receipt.evidence.toolResults[0]).toMatchObject({ name: 'get_latest_deposit', executionMode: 'mocked' })
+    expect(receipt.evidence.hookDecisions[0]).toMatchObject({ hookName: 'conflict_requires_human', decision: 'escalate' })
   })
 
   it('supports explicit Tool call count ranges', () => {
@@ -66,6 +95,8 @@ describe('Scenario runner harness', () => {
       { toolCalls: [{ name: 'get_latest_deposit', minCalls: 1, maxCalls: 1 }] },
       {
         toolsCalled: ['get_latest_deposit', 'get_latest_deposit'],
+        toolCalls: [],
+        toolResults: [],
         hookDecisions: [],
         knowledgeHits: [],
         humanTransfer: false,

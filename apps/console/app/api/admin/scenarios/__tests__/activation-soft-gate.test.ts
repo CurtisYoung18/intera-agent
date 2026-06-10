@@ -98,6 +98,15 @@ describe('Scenario activation soft gate', () => {
     expect(h.transactions).toHaveLength(0)
   })
 
+  it('rejects activation without override reason when validation is fixture-only', async () => {
+    h.validationByAgent.ac2 = { state: 'Validated', overrideRequired: true }
+    const res = await ActivateConfig(makeRequest(), routeCtx('ac2'))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(h.transactions).toHaveLength(0)
+  })
+
   it('allows activation with override reason when validation is stale', async () => {
     const res = await ActivateConfig(makeRequest({ overrideValidationReason: 'Reviewed receipt risk before launch.' }), routeCtx('ac2'))
     const body = await res.json()

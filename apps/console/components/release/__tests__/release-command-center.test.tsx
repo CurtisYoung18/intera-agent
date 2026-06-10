@@ -94,8 +94,11 @@ function installFetchMock() {
           receipts: [{
             scenarioName: 'deposit_happy_path',
             runId: 'run_123',
-            status: 'passed',
+            status: 'pass',
+            executionMode: 'fixture',
+            toolExecutionMode: 'mocked',
             startedAt: '2026-06-04T00:00:00.000Z',
+            completedAt: '2026-06-04T00:02:00.000Z',
             finishedAt: '2026-06-04T00:02:00.000Z',
             agentConfigId: 'draft-2',
             summary: 'All required evidence matched',
@@ -108,7 +111,9 @@ function installFetchMock() {
             changedAt: '2026-06-04T01:00:00.000Z',
             lastValidatedAt: '2026-06-04T00:02:00.000Z',
             lastReceiptId: 'run_123',
-            lastReceiptStatus: 'passed',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'fixture',
+            runtimeValidated: false,
             overrideRequired: true,
           },
         },
@@ -164,6 +169,8 @@ describe('ReleaseCommandCenter', () => {
     expect(screen.getByText('Live Version')).toBeDefined()
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
     expect(screen.getByText('Changed since last validation')).toBeDefined()
+    expect(screen.getAllByText(/Fixture-only/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Latest receipt is fixture-only')).toBeDefined()
     expect(screen.getByText('deposit_happy_path')).toBeDefined()
     expect(screen.getByText('get_deposit_status')).toBeDefined()
     expect(screen.getByText('Knowledge')).toBeDefined()

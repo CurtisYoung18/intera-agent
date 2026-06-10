@@ -42,6 +42,27 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
+vi.mock('@/lib/scenarios/runtime-runner', async () => {
+  const runner = await vi.importActual<typeof import('@/lib/scenarios/runner')>('@/lib/scenarios/runner')
+  return {
+    runScenarioAgentRuntime: vi.fn(async (scenario: any) => runner.buildScenarioReceipt(scenario, {
+      caseType: 'deposit_issue',
+      toolsCalled: ['get_latest_deposit'],
+      toolCalls: [{ name: 'get_latest_deposit', executionMode: 'mocked' }],
+      toolResults: [{ name: 'get_latest_deposit', output: { _dryRun: true }, executionMode: 'mocked' }],
+      hookDecisions: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
+      humanTransfer: true,
+      handoff: [{ required: true, target: 'human' }],
+      finalResponse: 'I will transfer this case to a human specialist.',
+      finalStatus: 'waiting_human',
+    }, {
+      executionMode: 'agentRuntime',
+      toolExecutionMode: 'mocked',
+      traceId: 'trace-runtime-1',
+    })),
+  }
+})
+
 import { GET, POST } from '@/app/api/admin/scenarios/route'
 import { DELETE, GET as GetScenario, PUT } from '@/app/api/admin/scenarios/[name]/route'
 import { POST as RunScenario } from '@/app/api/admin/scenarios/[name]/run/route'
@@ -128,9 +149,25 @@ describe('Scenario APIs', () => {
     }), routeCtx('deposit_missing_evidence'))
     const runBody = await runRes.json()
     expect(runBody.ok).toBe(true)
-    expect(runBody.data.receipt.status).toBe('passed')
+    expect(runBody.data.receipt.status).toBe('pass')
+    expect(runBody.data.receipt.executionMode).toBe('fixture')
     expect(runBody.data.receipt.evidence.knowledgeHits[0]).toMatchObject({ source: 'fixture' })
-    expect(runBody.data.validation.state).toBe('Validated')
+    expect(runBody.data.validation.state).toBe('Changed since last validation')
+    expect(runBody.data.validation.runtimeValidated).toBe(false)
+    expect(runBody.data.validation.overrideRequired).toBe(true)
+
+    const runtimeRunRes = await RunScenario(bodyRequest({
+      agentConfigId: 'agent_default_v1',
+      executionMode: 'agentRuntime',
+    }), routeCtx('deposit_missing_evidence'))
+    const runtimeRunBody = await runtimeRunRes.json()
+    expect(runtimeRunBody.ok).toBe(true)
+    expect(runtimeRunBody.data.receipt.status).toBe('pass')
+    expect(runtimeRunBody.data.receipt.executionMode).toBe('agentRuntime')
+    expect(runtimeRunBody.data.receipt.evidence.toolResults[0]).toMatchObject({ name: 'get_latest_deposit', executionMode: 'mocked' })
+    expect(runtimeRunBody.data.validation.state).toBe('Validated')
+    expect(runtimeRunBody.data.validation.runtimeValidated).toBe(true)
+    expect(runtimeRunBody.data.validation.overrideRequired).toBe(false)
 
     const deleteRes = await DELETE(makeRequest('agent_default_v1', undefined, 'DELETE'), routeCtx('deposit_missing_evidence'))
     const deleteBody = await deleteRes.json()
@@ -152,7 +189,8 @@ describe('Scenario APIs', () => {
       },
     }), routeCtx('deposit_missing_evidence'))
     const runBody = await runRes.json()
-    expect(runBody.data.receipt.status).toBe('failed')
+    expect(runBody.data.receipt.status).toBe('fail')
+    expect(runBody.data.receipt.failureReasons.map((reason: any) => reason.code)).toContain('required_tool_missing')
     expect(runBody.data.validation.state).toBe('Validation failed')
   })
 

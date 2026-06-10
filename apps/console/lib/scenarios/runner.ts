@@ -8,30 +8,65 @@ import {
   type ScenarioObservedEvidenceInput,
   type ScenarioReceipt,
   type ScenarioReceiptCheck,
+  type ScenarioReceiptFailureReason,
+  type ScenarioReceiptStatus,
+  type ScenarioExecutionMode,
+  type ScenarioToolExecutionMode,
 } from '@intera/shared/contracts/scenarios'
+
+export interface ScenarioReceiptBuildOptions {
+  executionMode?: ScenarioExecutionMode
+  toolExecutionMode?: ScenarioToolExecutionMode
+  startedAt?: string
+  completedAt?: string
+  statusOverride?: ScenarioReceiptStatus
+  failureReasons?: ScenarioReceiptFailureReason[]
+  traceId?: string
+  summary?: string
+}
 
 export function runScenarioHarness(
   scenario: SavedScenario,
   observedInput?: ScenarioObservedEvidenceInput,
 ): ScenarioReceipt {
+  return buildScenarioReceipt(scenario, buildFixtureEvidence(scenario, observedInput), {
+    executionMode: 'fixture',
+    toolExecutionMode: 'mocked',
+  })
+}
+
+export function buildScenarioReceipt(
+  scenario: SavedScenario,
+  observedInput: ScenarioObservedEvidenceInput | undefined,
+  options: ScenarioReceiptBuildOptions = {},
+): ScenarioReceipt {
   const startedAt = new Date().toISOString()
-  const evidence = buildEvidence(scenario, observedInput)
+  const completedAt = new Date().toISOString()
+  const evidence = scenarioObservedEvidenceSchema.parse(observedInput ?? {})
   const checks = evaluateScenario(scenario.expected ?? {}, evidence)
-  const status = checks.every((check) => check.passed) ? 'passed' : 'failed'
-  const finishedAt = new Date().toISOString()
+  const failureReasons = [
+    ...failureReasonsFromChecks(checks),
+    ...(options.failureReasons ?? []),
+  ]
+  const status = options.statusOverride ?? (failureReasons.length > 0 ? 'fail' : 'pass')
 
   return {
     scenarioName: scenario.name,
     runId: `scn_${randomUUID()}`,
     status,
-    startedAt,
-    finishedAt,
+    executionMode: options.executionMode ?? 'fixture',
+    toolExecutionMode: options.toolExecutionMode ?? 'mocked',
+    startedAt: options.startedAt ?? startedAt,
+    completedAt: options.completedAt ?? completedAt,
+    finishedAt: options.completedAt ?? completedAt,
     agentConfigId: scenario.agentConfigId,
-    summary: summarizeChecks(checks),
+    scenarioVersion: scenario.updatedAt,
+    summary: options.summary ?? summarizeChecks(checks, status),
     expected: scenario.expected ?? {},
     evidence,
     checks,
-    traceId: evidence.traceId,
+    failureReasons,
+    traceId: options.traceId ?? evidence.traceId,
   }
 }
 
@@ -47,6 +82,7 @@ export function evaluateScenario(
       expected: expected.caseType,
       actual: evidence.caseType,
       passed: evidence.caseType === expected.caseType,
+      code: evidence.caseType === expected.caseType ? undefined : 'case_type_mismatch',
       detail: evidence.caseType === expected.caseType
         ? undefined
         : `Expected CaseType ${expected.caseType}, saw ${evidence.caseType ?? 'none'}`,
@@ -68,6 +104,7 @@ export function evaluateScenario(
       expected: { name: toolName, minCalls, maxCalls },
       actual: { calls: actualCount },
       passed,
+      code: passed ? undefined : (actualCount < minCalls ? 'required_tool_missing' : 'tool_call_count_mismatch'),
       detail: passed ? undefined : `Expected ${toolName} ${formatCallRange(minCalls, maxCalls)}, saw ${actualCount}`,
     })
   }
@@ -79,6 +116,7 @@ export function evaluateScenario(
       expected: hook,
       actual: match ?? null,
       passed: Boolean(match),
+      code: match ? undefined : 'hook_decision_missing',
       detail: match ? undefined : `Expected Hook decision for ${hook.hookName}`,
     })
   }
@@ -89,6 +127,7 @@ export function evaluateScenario(
       expected: expected.humanTransfer,
       actual: evidence.humanTransfer,
       passed: evidence.humanTransfer === expected.humanTransfer,
+      code: evidence.humanTransfer === expected.humanTransfer ? undefined : 'human_transfer_mismatch',
       detail: evidence.humanTransfer === expected.humanTransfer
         ? undefined
         : `Expected human transfer ${String(expected.humanTransfer)}, saw ${String(evidence.humanTransfer)}`,
@@ -101,6 +140,7 @@ export function evaluateScenario(
       expected: expected.finalStatus,
       actual: evidence.finalStatus,
       passed: evidence.finalStatus === expected.finalStatus,
+      code: evidence.finalStatus === expected.finalStatus ? undefined : 'final_status_mismatch',
       detail: evidence.finalStatus === expected.finalStatus
         ? undefined
         : `Expected final status ${expected.finalStatus}, saw ${evidence.finalStatus ?? 'none'}`,
@@ -115,6 +155,7 @@ export function evaluateScenario(
       expected: `not present: ${phrase}`,
       actual: found ? phrase : null,
       passed: !found,
+      code: found ? 'forbidden_phrase_present' : undefined,
       detail: found ? `Forbidden phrase appeared: ${phrase}` : undefined,
     })
   }
@@ -126,6 +167,7 @@ export function evaluateScenario(
       expected: `present: ${phrase}`,
       actual: found ? phrase : null,
       passed: found,
+      code: found ? undefined : 'required_phrase_missing',
       detail: found ? undefined : `Required phrase missing: ${phrase}`,
     })
   }
@@ -133,7 +175,7 @@ export function evaluateScenario(
   return checks
 }
 
-function buildEvidence(
+function buildFixtureEvidence(
   scenario: SavedScenario,
   observedInput?: ScenarioObservedEvidenceInput,
 ): ScenarioObservedEvidence {
@@ -157,6 +199,13 @@ function buildEvidence(
       ...(expected.toolsCalled ?? []),
       ...(expected.toolCalls?.map((tool) => tool.name) ?? []),
     ],
+    toolCalls: [
+      ...(expected.toolsCalled ?? []),
+      ...(expected.toolCalls?.map((tool) => tool.name) ?? []),
+    ].map((name) => ({
+      name,
+      executionMode: 'mocked' as const,
+    })),
     hookDecisions: fallbackHookDecisions,
     knowledgeHits: [],
     humanTransfer: fallbackHumanTransfer,
@@ -165,6 +214,18 @@ function buildEvidence(
     finalStatus: expected.finalStatus ?? (fallbackHumanTransfer ? 'waiting_human' : 'completed'),
     ...observedInput,
   })
+}
+
+function failureReasonsFromChecks(checks: ScenarioReceiptCheck[]): ScenarioReceiptFailureReason[] {
+  return checks
+    .filter((check) => !check.passed)
+    .map((check) => ({
+      code: check.code ?? 'expectation_failed',
+      message: check.detail ?? `Scenario expectation failed: ${check.name}`,
+      checkName: check.name,
+      expected: check.expected,
+      actual: check.actual,
+    }))
 }
 
 function findHookDecision(
@@ -185,7 +246,8 @@ function formatCallRange(minCalls: number, maxCalls: number | undefined): string
   return `between ${minCalls} and ${maxCalls} times`
 }
 
-function summarizeChecks(checks: ScenarioReceiptCheck[]): string {
+function summarizeChecks(checks: ScenarioReceiptCheck[], status: ScenarioReceiptStatus): string {
+  if (status === 'blocked') return 'Runtime execution was blocked before Scenario expectations could be fully validated.'
   if (checks.length === 0) return 'No explicit expectations were defined.'
   const failures = checks.filter((check) => !check.passed)
   if (failures.length === 0) return `${checks.length} expectation${checks.length === 1 ? '' : 's'} passed.`

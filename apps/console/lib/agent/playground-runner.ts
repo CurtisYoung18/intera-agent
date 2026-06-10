@@ -30,6 +30,7 @@ export interface PlaygroundResult {
   reply: string
   blocked: boolean
   trace: PlaygroundTraceStep[]
+  rawTrace?: TraceRecord[]
   resolvedModel: string
   applicableStages: string[]
   totalMs: number
@@ -53,7 +54,7 @@ export async function* runPlaygroundTurn(input: {
   const persistence: typeof basePersistence = {
     ...basePersistence,
     async saveTrace(record: TraceRecord) {
-      traces.push(record)
+      traces.push({ ...record, createdAt: record.createdAt ?? new Date().toISOString() })
       await basePersistence.saveTrace(record)
     },
   }
@@ -255,7 +256,17 @@ export async function* runPlaygroundTurn(input: {
   const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages)
   const caseType = ''
 
-  const result: PlaygroundResult = { turnId, caseType, reply, blocked, trace, resolvedModel, applicableStages, totalMs }
+  const result: PlaygroundResult = {
+    turnId,
+    caseType,
+    reply,
+    blocked,
+    trace,
+    rawTrace: pc.debug ? traces : undefined,
+    resolvedModel,
+    applicableStages,
+    totalMs,
+  }
   yield { type: 'trace', data: { ...result, totalMs }, timestamp: new Date().toISOString() }
   yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
 }

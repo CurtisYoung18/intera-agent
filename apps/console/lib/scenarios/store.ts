@@ -18,6 +18,9 @@ interface AgentScenarioBucket {
   lastValidatedAt?: string
   lastReceiptId?: string
   lastReceiptStatus?: ScenarioReceipt['status']
+  lastReceiptExecutionMode?: ScenarioReceipt['executionMode']
+  runtimeValidatedAt?: string
+  lastRuntimeReceiptId?: string
   scenarios: Record<string, SavedScenario>
   receipts: ScenarioReceipt[]
 }
@@ -82,14 +85,35 @@ async function updateStore<T>(mutate: (store: ScenarioStoreFile) => T | Promise<
 function bucketFor(store: ScenarioStoreFile, agentConfigId: string): AgentScenarioBucket {
   const existing = store.agents[agentConfigId]
   if (existing) {
-    existing.validationState = scenarioValidationStateSchema.parse(existing.validationState)
-    existing.scenarios ??= {}
-    existing.receipts ??= []
-    return existing
+    return normalizeBucket(existing)
   }
   const created = emptyBucket()
   store.agents[agentConfigId] = created
   return created
+}
+
+function normalizeBucket(bucket: AgentScenarioBucket): AgentScenarioBucket {
+  bucket.validationState = scenarioValidationStateSchema.parse(bucket.validationState)
+  bucket.scenarios ??= {}
+  bucket.receipts = (bucket.receipts ?? []).map((receipt) => scenarioReceiptSchema.parse(receipt))
+  for (const [name, scenario] of Object.entries(bucket.scenarios)) {
+    bucket.scenarios[name] = {
+      ...scenario,
+      lastRunStatus: scenario.lastRunStatus
+        ? scenarioReceiptSchema.shape.status.parse(scenario.lastRunStatus)
+        : undefined,
+    }
+  }
+  bucket.lastReceiptStatus = bucket.lastReceiptStatus
+    ? scenarioReceiptSchema.shape.status.parse(bucket.lastReceiptStatus)
+    : undefined
+  bucket.lastReceiptExecutionMode = bucket.lastReceiptExecutionMode
+    ? scenarioReceiptSchema.shape.executionMode.parse(bucket.lastReceiptExecutionMode)
+    : bucket.receipts[0]?.executionMode
+  bucket.lastRuntimeReceiptId ??= bucket.receipts.find((receipt) => receipt.executionMode === 'agentRuntime' && receipt.status === 'pass')?.runId
+  bucket.runtimeValidatedAt ??= bucket.receipts.find((receipt) => receipt.runId === bucket.lastRuntimeReceiptId)?.completedAt
+    ?? bucket.receipts.find((receipt) => receipt.runId === bucket.lastRuntimeReceiptId)?.finishedAt
+  return bucket
 }
 
 function sortedScenarios(bucket: AgentScenarioBucket): SavedScenario[] {
@@ -103,10 +127,16 @@ export async function listScenarios(agentConfigId: string): Promise<{
   lastValidatedAt?: string
   lastReceiptId?: string
   lastReceiptStatus?: ScenarioReceipt['status']
+  lastReceiptExecutionMode?: ScenarioReceipt['executionMode']
+  runtimeValidated: boolean
+  runtimeValidatedAt?: string
+  lastRuntimeReceiptId?: string
+  overrideRequired: boolean
   receipts: ScenarioReceipt[]
 }> {
   const store = await readStore()
-  const bucket = store.agents[agentConfigId] ?? emptyBucket()
+  const bucket = store.agents[agentConfigId] ? normalizeBucket(store.agents[agentConfigId]) : emptyBucket()
+  const runtimeValidated = bucket.validationState === 'Validated' && Boolean(bucket.lastRuntimeReceiptId)
   return {
     scenarios: sortedScenarios(bucket),
     validationState: bucket.validationState,
@@ -114,6 +144,11 @@ export async function listScenarios(agentConfigId: string): Promise<{
     lastValidatedAt: bucket.lastValidatedAt,
     lastReceiptId: bucket.lastReceiptId,
     lastReceiptStatus: bucket.lastReceiptStatus,
+    lastReceiptExecutionMode: bucket.lastReceiptExecutionMode,
+    runtimeValidated,
+    runtimeValidatedAt: bucket.runtimeValidatedAt,
+    lastRuntimeReceiptId: bucket.lastRuntimeReceiptId,
+    overrideRequired: bucket.validationState !== 'Validated' || !runtimeValidated,
     receipts: [...bucket.receipts].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
   }
 }
@@ -204,9 +239,17 @@ export async function appendScenarioReceipt(
     bucket.receipts = bucket.receipts.slice(0, 50)
     bucket.lastReceiptId = parsed.runId
     bucket.lastReceiptStatus = parsed.status
-    if (parsed.status === 'passed') {
+    bucket.lastReceiptExecutionMode = parsed.executionMode
+    if (parsed.status === 'pass' && parsed.executionMode === 'agentRuntime') {
       bucket.validationState = 'Validated'
-      bucket.lastValidatedAt = parsed.finishedAt ?? parsed.startedAt
+      bucket.lastValidatedAt = parsed.completedAt ?? parsed.finishedAt ?? parsed.startedAt
+      bucket.runtimeValidatedAt = parsed.completedAt ?? parsed.finishedAt ?? parsed.startedAt
+      bucket.lastRuntimeReceiptId = parsed.runId
+    } else if (parsed.status === 'pass') {
+      if (bucket.validationState !== 'Validated' || !bucket.lastRuntimeReceiptId) {
+        bucket.validationState = 'Changed since last validation'
+        bucket.changedAt ??= parsed.completedAt ?? parsed.finishedAt ?? parsed.startedAt
+      }
     } else {
       bucket.validationState = 'Validation failed'
     }
@@ -237,17 +280,26 @@ export async function getScenarioValidationSummary(agentConfigId: string): Promi
   lastValidatedAt?: string
   lastReceiptId?: string
   lastReceiptStatus?: ScenarioReceipt['status']
+  lastReceiptExecutionMode?: ScenarioReceipt['executionMode']
+  runtimeValidated: boolean
+  runtimeValidatedAt?: string
+  lastRuntimeReceiptId?: string
   overrideRequired: boolean
 }> {
   const store = await readStore()
-  const bucket = store.agents[agentConfigId] ?? emptyBucket()
+  const bucket = store.agents[agentConfigId] ? normalizeBucket(store.agents[agentConfigId]) : emptyBucket()
+  const runtimeValidated = bucket.validationState === 'Validated' && Boolean(bucket.lastRuntimeReceiptId)
   return {
     state: bucket.validationState,
     changedAt: bucket.changedAt,
     lastValidatedAt: bucket.lastValidatedAt,
     lastReceiptId: bucket.lastReceiptId,
     lastReceiptStatus: bucket.lastReceiptStatus,
-    overrideRequired: bucket.validationState !== 'Validated',
+    lastReceiptExecutionMode: bucket.lastReceiptExecutionMode,
+    runtimeValidated,
+    runtimeValidatedAt: bucket.runtimeValidatedAt,
+    lastRuntimeReceiptId: bucket.lastRuntimeReceiptId,
+    overrideRequired: bucket.validationState !== 'Validated' || !runtimeValidated,
   }
 }
 

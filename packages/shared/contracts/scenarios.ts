@@ -12,6 +12,23 @@ export const SCENARIO_VALIDATION_STATES = [
 export const scenarioValidationStateSchema = z.enum(SCENARIO_VALIDATION_STATES)
 export type ScenarioValidationState = z.infer<typeof scenarioValidationStateSchema>
 
+export const SCENARIO_EXECUTION_MODES = ['fixture', 'agentRuntime'] as const
+export const scenarioExecutionModeSchema = z.enum(SCENARIO_EXECUTION_MODES)
+export type ScenarioExecutionMode = z.infer<typeof scenarioExecutionModeSchema>
+
+export const SCENARIO_TOOL_EXECUTION_MODES = ['mocked', 'runtime'] as const
+export const scenarioToolExecutionModeSchema = z.enum(SCENARIO_TOOL_EXECUTION_MODES)
+export type ScenarioToolExecutionMode = z.infer<typeof scenarioToolExecutionModeSchema>
+
+export const SCENARIO_RECEIPT_STATUSES = ['pass', 'fail', 'blocked'] as const
+export const scenarioReceiptStatusSchema = z.preprocess((value) => {
+  if (value === 'passed') return 'pass'
+  if (value === 'failed') return 'fail'
+  if (value === 'error') return 'blocked'
+  return value
+}, z.enum(SCENARIO_RECEIPT_STATUSES))
+export type ScenarioReceiptStatus = z.infer<typeof scenarioReceiptStatusSchema>
+
 export const scenarioTurnSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
@@ -63,7 +80,7 @@ export const savedScenarioSchema = templateScenarioSchema.extend({
   createdAt: z.string(),
   updatedAt: z.string(),
   lastRunId: z.string().optional(),
-  lastRunStatus: z.enum(['passed', 'failed', 'error']).optional(),
+  lastRunStatus: scenarioReceiptStatusSchema.optional(),
 })
 export type SavedScenario = z.infer<typeof savedScenarioSchema>
 
@@ -82,8 +99,32 @@ export const scenarioHookEvidenceSchema = z.object({
   checkpoint: hookCheckpointSchema,
   decision: hookDecisionActionSchema,
   reason: z.string().optional(),
+  toolName: stableNameSchema.optional(),
+  model: z.string().optional(),
+  at: z.string().optional(),
 })
 export type ScenarioHookEvidence = z.infer<typeof scenarioHookEvidenceSchema>
+
+export const scenarioToolCallEvidenceSchema = z.object({
+  name: stableNameSchema,
+  input: z.unknown().optional(),
+  toolUseId: z.string().optional(),
+  executionMode: scenarioToolExecutionModeSchema.optional(),
+  at: z.string().optional(),
+}).passthrough()
+export type ScenarioToolCallEvidence = z.infer<typeof scenarioToolCallEvidenceSchema>
+
+export const scenarioToolResultEvidenceSchema = z.object({
+  name: stableNameSchema,
+  output: z.unknown().optional(),
+  error: z.string().optional(),
+  toolUseId: z.string().optional(),
+  executionMode: scenarioToolExecutionModeSchema.optional(),
+  basedOnInputEpoch: z.number().optional(),
+  evidenceState: z.enum(['canonical', 'stale']).optional(),
+  at: z.string().optional(),
+}).passthrough()
+export type ScenarioToolResultEvidence = z.infer<typeof scenarioToolResultEvidenceSchema>
 
 export const scenarioHandoffEvidenceSchema = z.object({
   required: z.boolean().optional(),
@@ -97,6 +138,8 @@ export type ScenarioHandoffEvidence = z.infer<typeof scenarioHandoffEvidenceSche
 export const scenarioObservedEvidenceInputSchema = z.object({
   caseType: stableNameSchema.optional(),
   toolsCalled: z.array(stableNameSchema).optional(),
+  toolCalls: z.array(scenarioToolCallEvidenceSchema).optional(),
+  toolResults: z.array(scenarioToolResultEvidenceSchema).optional(),
   hookDecisions: z.array(scenarioHookEvidenceSchema).optional(),
   knowledgeHits: z.array(z.record(z.unknown())).optional(),
   humanTransfer: z.boolean().optional(),
@@ -104,11 +147,23 @@ export const scenarioObservedEvidenceInputSchema = z.object({
   finalResponse: z.string().optional(),
   finalStatus: z.string().optional(),
   traceId: z.string().optional(),
+  runtime: z.object({
+    sessionId: z.string().optional(),
+    chatId: z.string().optional(),
+    caseId: z.string().optional(),
+    transition: z.string().optional(),
+    blockedReason: z.string().optional(),
+    staleEvidence: z.array(z.record(z.unknown())).default([]),
+    reconcileEvidence: z.array(z.record(z.unknown())).default([]),
+    eventsObserved: z.number().int().nonnegative().optional(),
+  }).partial().optional(),
 })
 export type ScenarioObservedEvidenceInput = z.infer<typeof scenarioObservedEvidenceInputSchema>
 
 export const scenarioObservedEvidenceSchema = scenarioObservedEvidenceInputSchema.extend({
   toolsCalled: z.array(stableNameSchema).default([]),
+  toolCalls: z.array(scenarioToolCallEvidenceSchema).default([]),
+  toolResults: z.array(scenarioToolResultEvidenceSchema).default([]),
   hookDecisions: z.array(scenarioHookEvidenceSchema).default([]),
   knowledgeHits: z.array(z.record(z.unknown())).default([]),
   humanTransfer: z.boolean().default(false),
@@ -119,29 +174,45 @@ export type ScenarioObservedEvidence = z.infer<typeof scenarioObservedEvidenceSc
 export const scenarioReceiptCheckSchema = z.object({
   name: z.string(),
   passed: z.boolean(),
+  code: z.string().optional(),
   expected: z.unknown().optional(),
   actual: z.unknown().optional(),
   detail: z.string().optional(),
 })
 export type ScenarioReceiptCheck = z.infer<typeof scenarioReceiptCheckSchema>
 
+export const scenarioReceiptFailureReasonSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  checkName: z.string().optional(),
+  expected: z.unknown().optional(),
+  actual: z.unknown().optional(),
+})
+export type ScenarioReceiptFailureReason = z.infer<typeof scenarioReceiptFailureReasonSchema>
+
 export const scenarioReceiptSchema = z.object({
   scenarioName: stableNameSchema,
   runId: z.string(),
-  status: z.enum(['passed', 'failed', 'error']),
+  status: scenarioReceiptStatusSchema,
+  executionMode: scenarioExecutionModeSchema.default('fixture'),
+  toolExecutionMode: scenarioToolExecutionModeSchema.default('mocked'),
   startedAt: z.string(),
+  completedAt: z.string().optional(),
   finishedAt: z.string().optional(),
   agentConfigId: z.string().optional(),
   version: z.number().optional(),
+  scenarioVersion: z.string().optional(),
   summary: z.string().optional(),
   expected: scenarioExpectedOutcomeSchema.optional(),
   evidence: scenarioObservedEvidenceSchema,
   checks: z.array(scenarioReceiptCheckSchema).default([]),
+  failureReasons: z.array(scenarioReceiptFailureReasonSchema).default([]),
   traceId: z.string().optional(),
 })
 export type ScenarioReceipt = z.infer<typeof scenarioReceiptSchema>
 
 export const scenarioRunRequestSchema = z.object({
+  executionMode: scenarioExecutionModeSchema.optional().default('fixture'),
   observed: scenarioObservedEvidenceInputSchema.optional(),
 })
 export type ScenarioRunRequest = z.infer<typeof scenarioRunRequestSchema>
@@ -151,7 +222,11 @@ export const scenarioValidationSummarySchema = z.object({
   changedAt: z.string().optional(),
   lastValidatedAt: z.string().optional(),
   lastReceiptId: z.string().optional(),
-  lastReceiptStatus: z.enum(['passed', 'failed', 'error']).optional(),
+  lastReceiptStatus: scenarioReceiptStatusSchema.optional(),
+  lastReceiptExecutionMode: scenarioExecutionModeSchema.optional(),
+  runtimeValidated: z.boolean().default(false),
+  runtimeValidatedAt: z.string().optional(),
+  lastRuntimeReceiptId: z.string().optional(),
   overrideRequired: z.boolean().default(false),
 })
 export type ScenarioValidationSummary = z.infer<typeof scenarioValidationSummarySchema>

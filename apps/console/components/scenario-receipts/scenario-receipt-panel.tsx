@@ -48,19 +48,54 @@ export function ScenarioReceiptPanel({
             <h2 className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{receipt.scenarioName}</h2>
             {receipt.summary && <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{receipt.summary}</p>}
           </div>
-          <ReceiptStatusBadge status={receipt.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ExecutionModeBadge receipt={receipt} />
+            <ReceiptStatusBadge status={receipt.status} />
+          </div>
         </div>
         <div className="mt-4 grid overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 text-xs text-[var(--color-text-secondary)] sm:grid-cols-2">
           <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Run: {receipt.runId}</span>
           <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">Started: {formatDate(receipt.startedAt)}</span>
-          {receipt.finishedAt && <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r sm:border-b-0">Finished: {formatDate(receipt.finishedAt)}</span>}
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r">Execution: {executionModeLabel(receipt.executionMode)}</span>
+          <span className="border-b border-[var(--color-border-subtle)] px-3 py-2">Tool mode: {receipt.toolExecutionMode}</span>
+          {(receipt.completedAt ?? receipt.finishedAt) && <span className="border-b border-[var(--color-border-subtle)] px-3 py-2 sm:border-r sm:border-b-0">Completed: {formatDate(receipt.completedAt ?? receipt.finishedAt!)}</span>}
           {receipt.traceId && <span className="px-3 py-2">Trace: {receipt.traceId}</span>}
         </div>
       </div>
 
       <div className={`grid ${compact ? '' : 'xl:grid-cols-2'}`}>
         <EvidenceSection icon={Wrench} title="Tool calls" empty="No tool calls recorded.">
-          <TokenList values={evidence.toolsCalled} tone="cyan" />
+          {evidence.toolCalls.length > 0 ? (
+            <div className="grid gap-2">
+              {evidence.toolCalls.map((call, index) => (
+                <div key={`${call.name}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-semibold text-[var(--color-text-primary)]">{call.name}</span>
+                    <span className="rounded-full bg-[rgba(53,127,124,0.10)] px-2 py-0.5 font-medium text-[var(--color-accent-primary)]">{call.executionMode ?? receipt.toolExecutionMode}</span>
+                  </div>
+                  {call.input !== undefined && <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-[var(--primitive-deep-950)] p-2 font-mono text-[11px] leading-4 text-[var(--color-workspace-text)]">{stringify(call.input)}</pre>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <TokenList values={evidence.toolsCalled} tone="cyan" />
+          )}
+        </EvidenceSection>
+
+        <EvidenceSection icon={Wrench} title="Tool results" empty="No tool results recorded." isEmpty={evidence.toolResults.length === 0}>
+          <div className="grid gap-2">
+            {evidence.toolResults.map((result, index) => (
+              <div key={`${result.name}-${index}`} className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold text-[var(--color-text-primary)]">{result.name}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[var(--color-text-secondary)]">{result.executionMode ?? receipt.toolExecutionMode}</span>
+                  {result.evidenceState === 'stale' && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">stale evidence</span>}
+                </div>
+                {result.error && <p className="mt-2 text-xs text-red-700">{result.error}</p>}
+                {result.output !== undefined && <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-[var(--primitive-deep-950)] p-2 font-mono text-[11px] leading-4 text-[var(--color-workspace-text)]">{stringify(result.output)}</pre>}
+              </div>
+            ))}
+          </div>
         </EvidenceSection>
 
         <EvidenceSection icon={ShieldCheck} title="Hook decisions" empty="No Hook decisions recorded." isEmpty={evidence.hookDecisions.length === 0}>
@@ -110,6 +145,7 @@ export function ScenarioReceiptPanel({
               {evidence.finalStatus ?? 'Not recorded'}
             </div>
             {evidence.finalResponse && <p className="rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-sm leading-5 text-[var(--color-text-secondary)]">{evidence.finalResponse}</p>}
+            {evidence.runtime?.staleEvidence?.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Runtime recorded stale evidence that still requires reconciliation.</p> : null}
           </div>
         </EvidenceSection>
 
@@ -135,7 +171,7 @@ export function ScenarioReceiptPanel({
               <button key={item.runId} type="button" onClick={() => onSelectReceipt(item)} className={`intera-q2-button flex items-center justify-between border px-3 py-2 text-left text-xs transition ${selectedRunId === item.runId ? 'border-[var(--color-accent-primary)] bg-[rgba(53,127,124,0.08)]' : 'border-[var(--color-border-subtle)] bg-white hover:bg-[var(--color-bg-surface-muted)]'}`}>
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-[var(--color-text-primary)]">{item.scenarioName}</span>
-                  <span className="mt-0.5 block text-[var(--color-text-tertiary)]">{formatDate(item.startedAt)}</span>
+                  <span className="mt-0.5 block text-[var(--color-text-tertiary)]">{executionModeLabel(item.executionMode)} · {formatDate(item.startedAt)}</span>
                 </span>
                 <span className="flex items-center gap-2">
                   <ReceiptStatusIcon status={item.status} />
@@ -151,19 +187,27 @@ export function ScenarioReceiptPanel({
 }
 
 export function ReceiptStatusBadge({ status }: { status: ScenarioReceipt['status'] }) {
-  const className = status === 'passed'
+  const className = status === 'pass'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-    : status === 'failed'
+    : status === 'fail'
       ? 'border-red-200 bg-red-50 text-red-700'
       : 'border-amber-200 bg-amber-50 text-amber-700'
   return <span className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold capitalize ${className}`}>{status}</span>
 }
 
 export function ReceiptStatusIcon({ status }: { status?: ScenarioReceipt['status'] }) {
-  if (status === 'passed') return <CheckCircle2 size={16} className="text-emerald-600" />
-  if (status === 'failed') return <XCircle size={16} className="text-red-600" />
-  if (status === 'error') return <AlertTriangle size={16} className="text-amber-600" />
+  if (status === 'pass') return <CheckCircle2 size={16} className="text-emerald-600" />
+  if (status === 'fail') return <XCircle size={16} className="text-red-600" />
+  if (status === 'blocked') return <AlertTriangle size={16} className="text-amber-600" />
   return <AlertTriangle size={16} className="text-[var(--color-text-tertiary)]" />
+}
+
+function ExecutionModeBadge({ receipt }: { receipt: ScenarioReceipt }) {
+  const runtime = receipt.executionMode === 'agentRuntime'
+  const className = runtime
+    ? 'border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] text-[var(--color-accent-primary)]'
+    : 'border-amber-200 bg-amber-50 text-amber-800'
+  return <span className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold ${className}`}>{executionModeLabel(receipt.executionMode)}</span>
 }
 
 function EvidenceSection({
@@ -221,6 +265,10 @@ function CheckList({ checks, className = '' }: { checks: ScenarioReceiptCheck[];
 
 function isPhraseCheck(check: ScenarioReceiptCheck): boolean {
   return check.name.startsWith('forbidden_phrase:') || check.name.startsWith('required_phrase:')
+}
+
+function executionModeLabel(mode: ScenarioReceipt['executionMode']): string {
+  return mode === 'agentRuntime' ? 'Agent runtime' : 'Fixture validation'
 }
 
 function formatCheckName(name: string): string {

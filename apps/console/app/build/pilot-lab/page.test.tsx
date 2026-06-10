@@ -31,7 +31,7 @@ const scenario = {
   createdAt: '2026-06-09T00:00:00.000Z',
   updatedAt: '2026-06-09T00:00:00.000Z',
   lastRunId: 'run-1',
-  lastRunStatus: 'passed',
+  lastRunStatus: 'pass',
   turns: [
     { role: 'user', content: 'My deposit has not arrived yet.' },
     { role: 'assistant', content: 'I checked the available evidence and will transfer this case to a human specialist.' },
@@ -50,8 +50,11 @@ const scenario = {
 const receipt = {
   scenarioName: 'deposit_missing_evidence',
   runId: 'run-1',
-  status: 'passed',
+  status: 'pass',
+  executionMode: 'agentRuntime',
+  toolExecutionMode: 'mocked',
   startedAt: '2026-06-09T00:01:00.000Z',
+  completedAt: '2026-06-09T00:01:03.000Z',
   finishedAt: '2026-06-09T00:01:03.000Z',
   agentConfigId: 'agent-1',
   summary: '7 expectations passed.',
@@ -59,6 +62,8 @@ const receipt = {
   evidence: {
     caseType: 'deposit_issue',
     toolsCalled: ['get_latest_deposit'],
+    toolCalls: [{ name: 'get_latest_deposit', executionMode: 'mocked' }],
+    toolResults: [{ name: 'get_latest_deposit', output: { _dryRun: true }, executionMode: 'mocked' }],
     hookDecisions: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate', reason: 'Provider proof mismatch' }],
     knowledgeHits: [{ source: 'fixture', title: 'Deposit runbook' }],
     humanTransfer: true,
@@ -125,6 +130,9 @@ function setupApi() {
             lastValidatedAt: receipt.finishedAt,
             lastReceiptId: receipt.runId,
             lastReceiptStatus: receipt.status,
+            lastReceiptExecutionMode: receipt.executionMode,
+            runtimeValidated: true,
+            runtimeValidatedAt: receipt.completedAt,
             overrideRequired: false,
           },
         },
@@ -138,7 +146,10 @@ function setupApi() {
             state: 'Validated',
             lastValidatedAt: '2026-06-09T00:02:03.000Z',
             lastReceiptId: 'run-2',
-            lastReceiptStatus: 'passed',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'agentRuntime',
+            runtimeValidated: true,
+            runtimeValidatedAt: '2026-06-09T00:02:03.000Z',
             overrideRequired: false,
           },
         },
@@ -154,7 +165,7 @@ function setupApi() {
           permissions: { role: 'admin', canRead: true, canPropose: true, canApply: true, canPublish: false },
           lockedCapabilities: [{ id: 'hook_engine', name: 'Hook Engine', surface: 'runtime', reason: 'runtime-managed', editable: false }],
           configuration: { brain: { model: 'deepseek-v4-flash' }, procedures: [], tools: [], hooks: [], hookBindings: [], knowledge: [], integrations: [], scenarios: [scenario] },
-          validation: { state: 'Validated', lastValidatedAt: receipt.finishedAt, lastReceiptId: receipt.runId, lastReceiptStatus: receipt.status, overrideRequired: false },
+          validation: { state: 'Validated', lastValidatedAt: receipt.finishedAt, lastReceiptId: receipt.runId, lastReceiptStatus: receipt.status, lastReceiptExecutionMode: receipt.executionMode, runtimeValidated: true, runtimeValidatedAt: receipt.completedAt, overrideRequired: false },
         },
       }
     }
@@ -224,7 +235,7 @@ describe('PilotLabPage', () => {
     await renderPage()
 
     expect((await screen.findAllByText('Deposit missing evidence')).length).toBeGreaterThan(0)
-    expect(screen.getByText('get_latest_deposit')).toBeTruthy()
+    expect(screen.getAllByText('get_latest_deposit').length).toBeGreaterThan(0)
     expect(screen.getByText('conflict_requires_human')).toBeTruthy()
     expect(screen.getByText('Deposit runbook')).toBeTruthy()
     expect(screen.getByText('Forbidden phrase: guaranteed compensation')).toBeTruthy()
@@ -241,6 +252,8 @@ describe('PilotLabPage', () => {
     await waitFor(() => {
       expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST')).toBe(true)
     })
+    const runCall = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST')
+    expect(runCall?.[1]?.body).toMatchObject({ executionMode: 'agentRuntime' })
   }, 10000)
 
   it('requires ConfigPilot diff review and confirmation before typed API save', async () => {
