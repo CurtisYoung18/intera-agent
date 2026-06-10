@@ -1091,7 +1091,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       </div>
 
       {/* ═══════════════════════════════════════════
-          Runtime desk header
+          Playground toolbar
           ═══════════════════════════════════════════ */}
       <header style={{
         position: 'relative', zIndex: 1, flexShrink: 0,
@@ -1319,87 +1319,17 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             {chatMessages.length === 0 && !responding && !error && !isRestoringSession && (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
-                paddingTop: '8vh', gap: 20,
+                justifyContent: 'center',
+                minHeight: '100%',
+                padding: 'clamp(28px, 13vh, 108px) 0',
+                gap: 12,
               }}>
                 <div style={{
-                  width: '100%', maxWidth: 720,
-                  padding: '20px 22px',
-                  borderRadius: 22,
-                  background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,252,249,0.72))',
-                  border: '1px solid rgba(212,118,78,0.08)',
-                  boxShadow: '0 18px 50px rgba(58,39,24,0.06)',
                   display: 'grid',
-                  gap: 14,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <div style={{
-                      width: 42, height: 42, borderRadius: 14,
-                      background: 'linear-gradient(135deg, rgba(212,118,78,0.12), rgba(201,136,74,0.08))',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: '0 0 0 1px rgba(212,118,78,0.08) inset',
-                      flexShrink: 0,
-                    }}>
-                      <FlaskConical size={18} color="#b87347" />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{
-                        fontSize: 10, fontWeight: 700, letterSpacing: '0.12em',
-                        textTransform: 'uppercase', color: 'var(--fog)', opacity: 0.7, marginBottom: 4,
-                      }}>
-                        {isZh ? '运行时工作台' : 'Runtime desk'}
-                      </div>
-                      <h2 style={{
-                        margin: 0,
-                        fontSize: 20,
-                        fontWeight: 650,
-                        color: 'var(--mist)',
-                        letterSpacing: '-0.02em',
-                      }}>
-                        {snapshot
-                          ? (isZh ? `在真实运行路径上测试 ${snapshot.name}` : `Test ${snapshot.name} on the real runtime path`)
-                          : (isZh ? '选择一个 Agent 版本并开始手动测试' : 'Select an agent version and run a manual turn')}
-                      </h2>
-                      <p style={{
-                        margin: '8px 0 0',
-                        fontSize: 13,
-                        color: 'var(--fog)',
-                        lineHeight: 1.7,
-                      }}>
-                        {isZh
-                          ? 'Playground 会保留多轮连续性、恢复当前 Agent 版本最近一次的会话与 trace，并记录与 runtime-backed Scenario receipt 相同的运行时证据路径。'
-                          : 'Playground preserves multi-turn continuity, restores its latest session and trace for the selected agent version, and records the same runtime evidence path used by runtime-backed Scenario receipts.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                    gap: 10,
-                  }}>
-                    <MiniTruthCard
-                      label={isZh ? '当前测试对象' : 'Under test'}
-                      value={snapshot ? `${snapshot.resolvedModelLabel} · ${versionStateLabel}` : (isZh ? '等待快照加载' : 'Waiting for snapshot')}
-                    />
-                    <MiniTruthCard
-                      label={isZh ? '图片输入' : 'Image input'}
-                      value={visionSupport.label}
-                      tone={toneForVisionSupport(visionSupport.status)}
-                    />
-                    <MiniTruthCard
-                      label={isZh ? '运行时边界' : 'Runtime boundary'}
-                      value={isZh ? '真实运行路径，业务副作用模拟' : 'Real runtime path, mocked operational side effects'}
-                    />
-                    <MiniTruthCard
-                      label={isZh ? 'Trace 时间线' : 'Trace timeline'}
-                      value={isZh ? '调用、结果、Hook、reconcile、陈旧证据' : 'Call, result, Hook, reconcile, stale evidence'}
-                    />
-                  </div>
-                </div>
-
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8,
-                  width: '100%', maxWidth: 720,
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gap: 10,
+                  width: '100%',
+                  maxWidth: 820,
                 }}>
                   {quickStarts.map(q => (
                     <button
@@ -2251,49 +2181,6 @@ function ToneBadge({
     }}>
       {children}
     </span>
-  )
-}
-
-function MiniTruthCard({
-  label,
-  tone = 'neutral',
-  value,
-}: {
-  label: string
-  tone?: 'neutral' | 'success' | 'warning'
-  value: string
-}) {
-  return (
-    <div style={{
-      padding: '10px 12px',
-      borderRadius: 14,
-      background: 'rgba(255,255,255,0.72)',
-      border: tone === 'warning'
-        ? '1px solid rgba(212,145,46,0.16)'
-        : tone === 'success'
-          ? '1px solid rgba(46,160,74,0.14)'
-          : '1px solid rgba(0,0,0,0.05)',
-    }}>
-      <div style={{
-        fontSize: 9,
-        fontWeight: 700,
-        letterSpacing: '0.12em',
-        textTransform: 'uppercase',
-        color: 'var(--fog)',
-        opacity: 0.6,
-        marginBottom: 4,
-      }}>
-        {label}
-      </div>
-      <div style={{
-        fontSize: 11.5,
-        fontWeight: 600,
-        lineHeight: 1.5,
-        color: tone === 'warning' ? 'var(--amber)' : tone === 'success' ? 'var(--malachite)' : 'var(--mist)',
-      }}>
-        {value}
-      </div>
-    </div>
   )
 }
 

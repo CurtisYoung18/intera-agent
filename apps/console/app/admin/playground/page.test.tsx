@@ -313,8 +313,9 @@ describe('PlaygroundPage snapshot truth', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('Runtime desk')).toBeDefined()
+      expect(screen.getByText('My deposit still has not arrived. Please check it.')).toBeDefined()
     })
+    expect(screen.queryByText('Runtime desk')).toBeNull()
   })
 
   it('keeps immersive mode scoped to the console content region outside the global sidebar', async () => {
