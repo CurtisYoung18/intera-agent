@@ -10,13 +10,17 @@ import {
   Save,
   Sparkles,
   ShieldCheck,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Unlink,
 } from 'lucide-react'
+import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import SlashPlaceholderEditor, { type SlashPlaceholderGroup } from '@/components/admin/slash-placeholder-editor'
 import { ApiClientError, apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
+import type { TranslateFn } from '@/lib/i18n/types'
 import type { HookHandler } from '@intera/shared/contracts/hooks'
 
 type HookCheckpoint = 'PreToolUse' | 'PostToolUse' | 'Stop'
@@ -107,44 +111,11 @@ interface BindingDraft {
 
 const CHECKPOINTS: HookCheckpoint[] = ['PreToolUse', 'PostToolUse', 'Stop']
 const SEVERITIES: HookSeverity[] = ['low', 'medium', 'high', 'critical']
-const EVALUATOR_MODES: Array<{ value: EvaluatorMode; label: string; icon: typeof ShieldCheck | typeof Sparkles }> = [
-  { value: 'rule', label: 'Rule', icon: ShieldCheck },
-  { value: 'llm', label: 'LLM eval', icon: Sparkles },
+const EVALUATOR_MODES: Array<{ value: EvaluatorMode; icon: typeof ShieldCheck | typeof Sparkles }> = [
+  { value: 'rule', icon: ShieldCheck },
+  { value: 'llm', icon: Sparkles },
 ]
-const MATCH_ACTIONS: Array<{ value: MatchAction; label: string }> = [
-  { value: 'block', label: 'Block' },
-  { value: 'warn', label: 'Warn' },
-  { value: 'escalate', label: 'Escalate + task' },
-]
-const PLACEHOLDER_GROUPS: SlashPlaceholderGroup[] = [
-  {
-    id: 'tool',
-    label: 'Tool runtime',
-    description: 'Current tool call data at this checkpoint.',
-    items: [
-      { token: 'tool_name', label: 'Tool name', description: 'Current tool name.', typeLabel: 'string' },
-      { token: 'tool_input', label: 'Tool input', description: 'Current tool input, JSON stringified.', typeLabel: 'json string' },
-      { token: 'tool_output', label: 'Tool output', description: 'Current tool output, JSON stringified.', typeLabel: 'json string' },
-    ],
-  },
-  {
-    id: 'case',
-    label: 'Case memory',
-    description: 'Confirmed facts and prior tool trace from this case.',
-    items: [
-      { token: 'confirmed_facts', label: 'Confirmed facts', description: 'Current confirmed facts map.', typeLabel: 'json string' },
-      { token: 'tools_called', label: 'Tools called', description: 'Names of tools already called.', typeLabel: 'json string' },
-    ],
-  },
-  {
-    id: 'reply',
-    label: 'Reply draft',
-    description: 'Customer-facing reply text before send.',
-    items: [
-      { token: 'reply_draft', label: 'Reply draft', description: 'Current reply draft text.', typeLabel: 'string' },
-    ],
-  },
-]
+const MATCH_ACTIONS: MatchAction[] = ['block', 'warn', 'escalate']
 
 function jsonText(value: unknown, fallback = '{}') {
   if (value === undefined || value === null) return fallback
@@ -187,6 +158,35 @@ function humanizeStableName(name: string): string {
   return compact ? compact.replace(/\b\w/g, (ch) => ch.toUpperCase()) : ''
 }
 
+function checkpointLabel(checkpoint: HookCheckpoint, t: TranslateFn) {
+  if (checkpoint === 'PreToolUse') return t('hooks.checkpoint.preToolUse')
+  if (checkpoint === 'PostToolUse') return t('hooks.checkpoint.postToolUse')
+  return t('hooks.checkpoint.stop')
+}
+
+function checkpointDescription(checkpoint: HookCheckpoint, t: TranslateFn) {
+  if (checkpoint === 'PreToolUse') return t('hooks.checkpoint.preToolUseHint')
+  if (checkpoint === 'PostToolUse') return t('hooks.checkpoint.postToolUseHint')
+  return t('hooks.checkpoint.stopHint')
+}
+
+function severityLabel(severity: HookSeverity, t: TranslateFn) {
+  if (severity === 'low') return t('hooks.severity.low')
+  if (severity === 'medium') return t('hooks.severity.medium')
+  if (severity === 'high') return t('hooks.severity.high')
+  return t('hooks.severity.critical')
+}
+
+function evaluatorLabel(mode: EvaluatorMode, t: TranslateFn) {
+  return mode === 'llm' ? t('hooks.evaluator.llm') : t('hooks.evaluator.rule')
+}
+
+function matchActionLabel(action: MatchAction, t: TranslateFn) {
+  if (action === 'block') return t('hooks.match.block')
+  if (action === 'warn') return t('hooks.match.warn')
+  return t('hooks.match.escalate')
+}
+
 function isAiHandler(handler: HookHandler): handler is Extract<HookHandler, { kind: 'declarative' }> {
   return handler.kind === 'declarative'
     && typeof (handler.check as Record<string, unknown>)?.kind === 'string'
@@ -198,23 +198,23 @@ function parseMatchAction(value: unknown): MatchAction {
   return value === 'warn' || value === 'escalate' ? value : 'block'
 }
 
-function hookModeLabel(hook: HookItem): string {
+function hookModeLabel(hook: HookItem, t: TranslateFn): string {
   if (hook.handler.kind === 'declarative') {
-    return isAiHandler(hook.handler) ? 'LLM eval' : 'Rule'
+    return isAiHandler(hook.handler) ? t('hooks.evaluator.llm') : t('hooks.evaluator.rule')
   }
-  return `Legacy ${hook.handler.kind}`
+  return t('hooks.legacyMode', { mode: hook.handler.kind })
 }
 
-function matchActionDescription(action: MatchAction, checkpoint: HookCheckpoint): string {
+function matchActionDescription(action: MatchAction, checkpoint: HookCheckpoint, t: TranslateFn): string {
   if (action === 'block') {
-    if (checkpoint === 'PreToolUse') return 'The Tool will not execute until the Hook issue is fixed.'
-    if (checkpoint === 'Stop') return 'The reply draft will not be sent until the answer is repaired.'
-    return 'The result is treated as unsafe and must be repaired before the flow can continue cleanly.'
+    if (checkpoint === 'PreToolUse') return t('hooks.match.blockDesc.preToolUse')
+    if (checkpoint === 'Stop') return t('hooks.match.blockDesc.stop')
+    return t('hooks.match.blockDesc.default')
   }
   if (action === 'warn') {
-    return 'The flow can continue, but Hook feedback is written back into the current turn and trace.'
+    return t('hooks.match.warnDesc')
   }
-  return 'A human-task escalation is triggered automatically, and channel-level human handoff can follow.'
+  return t('hooks.match.escalateDesc')
 }
 
 function draftFromHook(hook: HookItem): HookDraft {
@@ -239,7 +239,7 @@ function draftFromHook(hook: HookItem): HookDraft {
   return draft
 }
 
-function handlerFromDraft(draft: HookDraft): HookHandler {
+function handlerFromDraft(draft: HookDraft, t: TranslateFn): HookHandler {
   const effect: Record<string, unknown> = {
     decision: draft.whenMatched,
   }
@@ -247,7 +247,7 @@ function handlerFromDraft(draft: HookDraft): HookHandler {
   if (draft.whenMatched === 'escalate') effect.tool = 'create_human_task'
 
   if (draft.evaluatorMode === 'llm') {
-    if (!draft.evaluationPrompt.trim()) throw new Error('Evaluation prompt is required')
+    if (!draft.evaluationPrompt.trim()) throw new Error(t('hooks.error.promptRequired'))
     return {
       kind: 'declarative',
       check: {
@@ -258,9 +258,9 @@ function handlerFromDraft(draft: HookDraft): HookHandler {
     }
   }
 
-  const parsedCheck = parseJsonField(draft.ruleCheck, 'Rule JSON')
+  const parsedCheck = parseJsonField(draft.ruleCheck, t('hooks.ruleJson'))
   if (!parsedCheck || typeof parsedCheck !== 'object' || Array.isArray(parsedCheck)) {
-    throw new Error('Rule JSON must be an object')
+    throw new Error(t('hooks.error.ruleObject'))
   }
   const check = { ...(parsedCheck as Record<string, unknown>) }
   if (typeof check.kind !== 'string') check.kind = 'rule'
@@ -287,16 +287,17 @@ function parseProcedureStepValue(value: string) {
   }
 }
 
-function scopeTypeLabel(scopeType: ScopeType) {
-  if (scopeType === 'agent') return 'Agent'
-  if (scopeType === 'caseType') return 'Procedure type'
-  if (scopeType === 'procedureStep') return 'Procedure step'
-  return 'Tool'
+function scopeTypeLabel(scopeType: ScopeType, t: TranslateFn) {
+  if (scopeType === 'agent') return t('hooks.scope.agent')
+  if (scopeType === 'caseType') return t('hooks.scope.caseType')
+  if (scopeType === 'procedureStep') return t('hooks.scope.procedureStep')
+  return t('hooks.scope.tool')
 }
 
 export default function HookBuilder({ embedded = false }: { embedded?: boolean }) {
   const agentConfigId = useSelectedAgentId()
   const { orgId } = useSession()
+  const { t } = useConsoleLocale()
   const [hooks, setHooks] = useState<HookItem[]>([])
   const [caseTypes, setCaseTypes] = useState<CaseTypeOption[]>([])
   const [procedureSteps, setProcedureSteps] = useState<ProcedureStepOption[]>([])
@@ -317,6 +318,39 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
   const saveDisabled = saving
     || !draft.name.trim()
     || (draft.evaluatorMode === 'llm' && !draft.evaluationPrompt.trim())
+
+  const placeholderGroups = useMemo<SlashPlaceholderGroup[]>(
+    () => [
+      {
+        id: 'tool',
+        label: t('hooks.placeholderGroup.tool.label'),
+        description: t('hooks.placeholderGroup.tool.description'),
+        items: [
+          { token: 'tool_name', label: t('hooks.placeholder.toolName'), description: t('hooks.placeholder.toolNameDesc'), typeLabel: t('hooks.placeholder.type.string') },
+          { token: 'tool_input', label: t('hooks.placeholder.toolInput'), description: t('hooks.placeholder.toolInputDesc'), typeLabel: t('hooks.placeholder.type.jsonString') },
+          { token: 'tool_output', label: t('hooks.placeholder.toolOutput'), description: t('hooks.placeholder.toolOutputDesc'), typeLabel: t('hooks.placeholder.type.jsonString') },
+        ],
+      },
+      {
+        id: 'case',
+        label: t('hooks.placeholderGroup.case.label'),
+        description: t('hooks.placeholderGroup.case.description'),
+        items: [
+          { token: 'confirmed_facts', label: t('hooks.placeholder.confirmedFacts'), description: t('hooks.placeholder.confirmedFactsDesc'), typeLabel: t('hooks.placeholder.type.jsonString') },
+          { token: 'tools_called', label: t('hooks.placeholder.toolsCalled'), description: t('hooks.placeholder.toolsCalledDesc'), typeLabel: t('hooks.placeholder.type.jsonString') },
+        ],
+      },
+      {
+        id: 'reply',
+        label: t('hooks.placeholderGroup.reply.label'),
+        description: t('hooks.placeholderGroup.reply.description'),
+        items: [
+          { token: 'reply_draft', label: t('hooks.placeholder.replyDraft'), description: t('hooks.placeholder.replyDraftDesc'), typeLabel: t('hooks.placeholder.type.string') },
+        ],
+      },
+    ],
+    [t],
+  )
 
   useEffect(() => {
     selectedNameRef.current = selectedName
@@ -346,11 +380,11 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
         setIsNew(true)
       }
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to load hooks')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : t('hooks.error.load'))
     } finally {
       setLoading(false)
     }
-  }, [agentConfigId])
+  }, [agentConfigId, t])
 
   useEffect(() => { load() }, [load])
 
@@ -375,7 +409,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     setSaving(true)
     setError(null)
     try {
-      const handler = handlerFromDraft(draft)
+      const handler = handlerFromDraft(draft, t)
       const body = {
         agentConfigId,
         name: draft.name,
@@ -399,7 +433,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
       setIsNew(false)
       await load()
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : err instanceof Error ? err.message : 'Save failed')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : err instanceof Error ? err.message : t('hooks.error.save'))
     } finally {
       setSaving(false)
     }
@@ -419,7 +453,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
       setDraft(emptyDraft())
       await load()
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Delete failed')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : t('hooks.error.delete'))
     } finally {
       setSaving(false)
     }
@@ -450,7 +484,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
       setBindingDraft(bindingDraftDefault())
       await load()
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Binding save failed')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : t('hooks.error.bindingSave'))
     } finally {
       setSaving(false)
     }
@@ -476,7 +510,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
   }
 
   const scopeLabel = (binding: HookBinding) => {
-    if (binding.scopeType === 'agent') return 'Agent'
+    if (binding.scopeType === 'agent') return t('hooks.scope.agent')
     if (binding.scopeType === 'caseType') {
       const ct = caseTypes.find((item) => item.id === binding.caseTypeId)
       return ct?.displayName || ct?.type || binding.scopeKey
@@ -493,28 +527,28 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     <section className="rounded-lg border border-black/[0.06] bg-white/70 p-5 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
       <div className="mb-4 flex items-center gap-2">
         <Link2 className="h-5 w-5 text-indigo" />
-        <h2 className="text-[15px] font-semibold text-[var(--mist)]">Bindings</h2>
+        <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('hooks.bindings.title')}</h2>
       </div>
 
       {!selectedHook ? (
-        <div className="rounded-lg border border-dashed border-black/15 px-4 py-5 text-[13px] text-[var(--fog)]">Save a Hook first.</div>
+        <div className="rounded-lg border border-dashed border-black/15 px-4 py-5 text-[13px] text-[var(--fog)]">{t('hooks.bindings.saveFirst')}</div>
       ) : (
         <div className="space-y-4">
           <div className="space-y-3">
             {selectedHook.bindings.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-black/15 px-4 py-4 text-[13px] text-[var(--fog)]">No bindings</div>
+              <div className="rounded-lg border border-dashed border-black/15 px-4 py-4 text-[13px] text-[var(--fog)]">{t('hooks.bindings.empty')}</div>
             ) : selectedHook.bindings.map((binding) => (
               <div key={binding.id} className="rounded-lg border border-black/[0.06] bg-white/65 px-3 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="break-words text-[13px] font-medium text-[var(--mist)]">{scopeLabel(binding)}</div>
-                    <div className="mt-1 text-[11px] text-[var(--fog)]">{scopeTypeLabel(binding.scopeType)}</div>
+                    <div className="mt-1 text-[11px] text-[var(--fog)]">{scopeTypeLabel(binding.scopeType, t)}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
                       onClick={() => toggleBinding(binding)}
-                      title={binding.enabled ? 'Disable binding' : 'Enable binding'}
+                      title={binding.enabled ? t('hooks.bindings.disable') : t('hooks.bindings.enable')}
                       className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${binding.enabled ? 'border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10' : 'border-black/10 text-[var(--fog)] hover:bg-black/[0.04]'}`}
                     >
                       <CheckCircle2 className="h-4 w-4" />
@@ -522,7 +556,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                     <button
                       type="button"
                       onClick={() => deleteBinding(binding)}
-                      title="Remove binding"
+                      title={t('hooks.bindings.remove')}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 text-red-600 transition hover:bg-red-500/10"
                     >
                       <Unlink className="h-4 w-4" />
@@ -535,28 +569,28 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
           <div className="border-t border-black/[0.06] pt-4">
             <label className="space-y-1.5">
-              <span className="text-[12px] font-medium text-[var(--fog)]">Scope</span>
+              <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.bindings.scope')}</span>
               <select
                 value={bindingDraft.scopeType}
                 onChange={(event) => setBindingDraft({ ...bindingDraftDefault(), scopeType: event.target.value as ScopeType })}
                 className="glass-input-console text-[13px]"
               >
-                <option value="agent">Agent</option>
-                <option value="caseType">Procedure type</option>
-                <option value="procedureStep">Procedure step</option>
-                <option value="tool">Tool</option>
+                <option value="agent">{t('hooks.scope.agent')}</option>
+                <option value="caseType">{t('hooks.scope.caseType')}</option>
+                <option value="procedureStep">{t('hooks.scope.procedureStep')}</option>
+                <option value="tool">{t('hooks.scope.tool')}</option>
               </select>
             </label>
 
             {bindingDraft.scopeType === 'caseType' ? (
               <label className="mt-3 block space-y-1.5">
-                <span className="text-[12px] font-medium text-[var(--fog)]">Procedure type</span>
+                <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.scope.caseType')}</span>
                 <select
                   value={bindingDraft.caseTypeId}
                   onChange={(event) => setBindingDraft({ ...bindingDraft, caseTypeId: event.target.value })}
                   className="glass-input-console text-[13px]"
                 >
-                  <option value="">Select Procedure type</option>
+                  <option value="">{t('hooks.bindings.selectCaseType')}</option>
                   {caseTypes.map((ct) => <option key={ct.id} value={ct.id}>{ct.displayName || ct.type}</option>)}
                 </select>
               </label>
@@ -564,13 +598,13 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
             {bindingDraft.scopeType === 'procedureStep' ? (
               <label className="mt-3 block space-y-1.5">
-                <span className="text-[12px] font-medium text-[var(--fog)]">Procedure step</span>
+                <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.scope.procedureStep')}</span>
                 <select
                   value={bindingDraft.procedureStepValue}
                   onChange={(event) => setBindingDraft({ ...bindingDraft, procedureStepValue: event.target.value })}
                   className="glass-input-console text-[13px]"
                 >
-                  <option value="">Select Procedure step</option>
+                  <option value="">{t('hooks.bindings.selectProcedureStep')}</option>
                   {procedureSteps.map((step) => <option key={`${step.caseTypeId}:${step.id}`} value={procedureStepValue(step)}>{step.label}</option>)}
                 </select>
               </label>
@@ -578,13 +612,13 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
             {bindingDraft.scopeType === 'tool' ? (
               <label className="mt-3 block space-y-1.5">
-                <span className="text-[12px] font-medium text-[var(--fog)]">Tool</span>
+                <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.scope.tool')}</span>
                 <select
                   value={bindingDraft.toolId}
                   onChange={(event) => setBindingDraft({ ...bindingDraft, toolId: event.target.value })}
                   className="glass-input-console text-[13px]"
                 >
-                  <option value="">Select Tool</option>
+                  <option value="">{t('hooks.bindings.selectTool')}</option>
                   {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
                 </select>
               </label>
@@ -597,7 +631,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-indigo/20 bg-indigo/[0.08] px-4 py-2 text-[13px] font-medium text-indigo transition hover:bg-indigo/[0.14] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
-              Add Binding
+              {t('hooks.bindings.add')}
             </button>
           </div>
         </div>
@@ -611,8 +645,8 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
       <div className={embedded ? 'px-0 py-2' : 'px-8 py-8'}>
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-[20px] font-semibold text-[var(--mist)]">Hooks</h1>
-            <p className="mt-1 text-[13px] text-[var(--fog)]">{hooks.length} configured controls</p>
+            <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('hooks.title')}</h1>
+            <p className="mt-1 text-[13px] text-[var(--fog)]">{t('hooks.configuredControls', { n: hooks.length })}</p>
           </div>
           <button
             type="button"
@@ -620,25 +654,25 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
             className="inline-flex items-center gap-2 rounded-lg border border-indigo/20 bg-indigo/[0.08] px-4 py-2 text-[13px] font-medium text-indigo transition hover:bg-indigo/[0.14]"
           >
             <Plus className="h-4 w-4" />
-            New Hook
+            {t('hooks.new')}
           </button>
         </div>
 
         {loading ? (
           <div className="flex items-center gap-2 rounded-lg border border-black/[0.06] bg-white/60 px-4 py-3 text-[13px] text-[var(--fog)]">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading hooks
+            {t('hooks.loading')}
           </div>
         ) : !agentConfigId ? (
-          <div className="rounded-lg border border-black/[0.06] bg-white/60 px-4 py-3 text-[13px] text-[var(--fog)]">Select an agent version.</div>
+          <div className="rounded-lg border border-black/[0.06] bg-white/60 px-4 py-3 text-[13px] text-[var(--fog)]">{t('hooks.selectAgent')}</div>
         ) : (
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start">
             <aside className="space-y-4">
               <section className="rounded-lg border border-black/[0.06] bg-white/70 p-4 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[var(--fog)]">Hook list</div>
-                    <div className="mt-1 text-[12px] text-[var(--fog)]">Switch between controls without splitting the editor canvas.</div>
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[var(--fog)]">{t('hooks.listTitle')}</div>
+                    <div className="mt-1 text-[12px] text-[var(--fog)]">{t('hooks.listHint')}</div>
                   </div>
                   <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-semibold text-[var(--fog)]">{hooks.length}</span>
                 </div>
@@ -650,7 +684,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                       onClick={startNew}
                       className="w-full rounded-lg border border-dashed border-black/15 bg-white/50 px-4 py-5 text-left text-[13px] text-[var(--fog)] transition hover:border-indigo/30 hover:text-[var(--mist)]"
                     >
-                      Create the first Hook
+                      {t('hooks.first')}
                     </button>
                   ) : null}
                   {hooks.map((hook) => (
@@ -663,13 +697,13 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                       <div className="flex items-center justify-between gap-3">
                         <span className="truncate text-[13px] font-semibold text-[var(--mist)]">{hook.displayName || humanizeStableName(hook.name) || hook.name}</span>
                         <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] ${hook.enabled ? 'bg-emerald-500/10 text-emerald-700' : 'bg-black/[0.05] text-[var(--fog)]'}`}>
-                          {hook.enabled ? 'On' : 'Off'}
+                          {hook.enabled ? t('hooks.status.enabled') : t('hooks.status.disabled')}
                         </span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-[var(--fog)]">
-                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.checkpoint}</span>
-                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hookModeLabel(hook)}</span>
-                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.bindings.length} bindings</span>
+                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{checkpointLabel(hook.checkpoint, t)}</span>
+                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hookModeLabel(hook, t)}</span>
+                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{t('hooks.bindings.count', { n: hook.bindings.length })}</span>
                       </div>
                     </button>
                   ))}
@@ -684,14 +718,14 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                 <div className="mb-5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="h-5 w-5 text-indigo" />
-                    <h2 className="text-[15px] font-semibold text-[var(--mist)]">{isNew ? 'Create Hook' : 'Edit Hook'}</h2>
+                    <h2 className="text-[15px] font-semibold text-[var(--mist)]">{isNew ? t('hooks.editor.create') : t('hooks.editor.edit')}</h2>
                   </div>
                   <div className="flex items-center gap-2">
                     {!isNew && selectedHook ? (
                       <button
                         type="button"
                         onClick={deleteHook}
-                        title="Delete hook"
+                        title={t('hooks.delete')}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 text-red-600 transition hover:bg-red-500/10"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -699,12 +733,25 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                     ) : null}
                     <button
                       type="button"
+                      aria-pressed={draft.enabled}
+                      onClick={() => setDraft({ ...draft, enabled: !draft.enabled })}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium transition ${
+                        draft.enabled
+                          ? 'border-emerald-500/24 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/14'
+                          : 'border-black/[0.08] bg-white/72 text-[var(--fog)] hover:bg-white'
+                      }`}
+                    >
+                      {draft.enabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                      {draft.enabled ? t('hooks.status.enabled') : t('hooks.status.disabled')}
+                    </button>
+                    <button
+                      type="button"
                       onClick={saveHook}
                       disabled={saveDisabled}
                       className="inline-flex items-center gap-2 rounded-lg bg-[var(--mist)] px-4 py-2 text-[13px] font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      Save
+                      {t('hooks.save')}
                     </button>
                   </div>
                 </div>
@@ -718,17 +765,17 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <label className="space-y-1.5 lg:col-span-2">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Hook name</span>
+                    <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.name')}</span>
                     <input
                       value={draft.name}
                       onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                       className="glass-input-console text-[13px]"
-                      placeholder="investigate_before_transfer"
+                      placeholder={t('hooks.namePlaceholder')}
                     />
-                    <p className="text-[11px] text-[var(--fog)]">One stable name is enough. The UI title is derived automatically.</p>
+                    <p className="text-[11px] text-[var(--fog)]">{t('hooks.nameHint')}</p>
                   </label>
                   <label className="space-y-1.5 lg:col-span-2">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Optional note</span>
+                    <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.note')}</span>
                     <textarea
                       value={draft.description}
                       onChange={(event) => setDraft({ ...draft, description: event.target.value })}
@@ -739,7 +786,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
                 {draft.legacyHandlerKind ? (
                   <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-[12px] text-amber-800">
-                    This Hook currently uses legacy engineering mode <strong>{draft.legacyHandlerKind}</strong>. Saving here will convert it into the product declarative flow.
+                    {t('hooks.legacyNotice', { mode: draft.legacyHandlerKind })}
                   </div>
                 ) : null}
 
@@ -747,7 +794,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
                     <div className="space-y-4">
                       <div>
-                        <span className="text-[12px] font-medium text-[var(--fog)]">Checkpoint</span>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.checkpoint.title')}</span>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {CHECKPOINTS.map((checkpoint) => (
                             <button
@@ -756,14 +803,15 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                               onClick={() => setDraft({ ...draft, checkpoint })}
                               className={`rounded-full border px-3 py-1.5 text-[12px] font-medium transition ${draft.checkpoint === checkpoint ? 'border-indigo/30 bg-indigo/[0.08] text-indigo' : 'border-black/[0.08] bg-white/70 text-[var(--fog)] hover:bg-white'}`}
                             >
-                              {checkpoint}
+                              {checkpointLabel(checkpoint, t)}
                             </button>
                           ))}
                         </div>
+                        <p className="mt-2 text-[11px] leading-5 text-[var(--fog)]">{checkpointDescription(draft.checkpoint, t)}</p>
                       </div>
 
                       <div>
-                        <span className="text-[12px] font-medium text-[var(--fog)]">Evaluator</span>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.evaluator.title')}</span>
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           {EVALUATOR_MODES.map((mode) => {
                             const Icon = mode.icon
@@ -772,10 +820,10 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                                 key={mode.value}
                                 type="button"
                                 onClick={() => setDraft({ ...draft, evaluatorMode: mode.value })}
-                                className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition ${draft.evaluatorMode === mode.value ? 'border-indigo/35 bg-indigo/[0.08] text-indigo' : 'border-black/[0.06] bg-white/60 text-[var(--fog)] hover:bg-white'}`}
-                              >
+                              className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition ${draft.evaluatorMode === mode.value ? 'border-indigo/35 bg-indigo/[0.08] text-indigo' : 'border-black/[0.06] bg-white/60 text-[var(--fog)] hover:bg-white'}`}
+                            >
                                 <Icon className="h-4 w-4" />
-                                {mode.label}
+                                {evaluatorLabel(mode.value, t)}
                               </button>
                             )
                           })}
@@ -783,27 +831,27 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                       </div>
 
                       <div>
-                        <span className="text-[12px] font-medium text-[var(--fog)]">When matched</span>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.match.title')}</span>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {MATCH_ACTIONS.map((action) => (
                             <button
-                              key={action.value}
+                              key={action}
                               type="button"
-                              onClick={() => setDraft({ ...draft, whenMatched: action.value })}
-                              className={`rounded-full border px-3 py-1.5 text-[12px] font-medium transition ${draft.whenMatched === action.value ? 'border-indigo/30 bg-indigo/[0.08] text-indigo' : 'border-black/[0.08] bg-white/70 text-[var(--fog)] hover:bg-white'}`}
+                              onClick={() => setDraft({ ...draft, whenMatched: action })}
+                              className={`rounded-full border px-3 py-1.5 text-[12px] font-medium transition ${draft.whenMatched === action ? 'border-indigo/30 bg-indigo/[0.08] text-indigo' : 'border-black/[0.08] bg-white/70 text-[var(--fog)] hover:bg-white'}`}
                             >
-                              {action.label}
+                              {matchActionLabel(action, t)}
                             </button>
                           ))}
                         </div>
                         <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
                           {MATCH_ACTIONS.map((action) => (
                             <div
-                              key={action.value}
-                              className={`rounded-lg border px-3 py-3 text-[12px] leading-5 ${draft.whenMatched === action.value ? 'border-indigo/20 bg-indigo/[0.05] text-[var(--mist)]' : 'border-black/[0.06] bg-white/65 text-[var(--fog)]'}`}
+                              key={action}
+                              className={`rounded-lg border px-3 py-3 text-[12px] leading-5 ${draft.whenMatched === action ? 'border-indigo/20 bg-indigo/[0.05] text-[var(--mist)]' : 'border-black/[0.06] bg-white/65 text-[var(--fog)]'}`}
                             >
-                              <div className="font-semibold">{action.label}</div>
-                              <p className="mt-1">{matchActionDescription(action.value, draft.checkpoint)}</p>
+                              <div className="font-semibold">{matchActionLabel(action, t)}</div>
+                              <p className="mt-1">{matchActionDescription(action, draft.checkpoint, t)}</p>
                             </div>
                           ))}
                         </div>
@@ -812,22 +860,22 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
                     <div className="space-y-3 rounded-xl border border-black/[0.06] bg-white/68 p-4">
                       <div>
-                        <span className="text-[12px] font-medium text-[var(--fog)]">Severity</span>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.severity.title')}</span>
                         <select
                           value={draft.severity}
                           onChange={(event) => setDraft({ ...draft, severity: event.target.value as HookSeverity })}
                           className="glass-input-console mt-2 text-[13px]"
                         >
-                          {SEVERITIES.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+                          {SEVERITIES.map((severity) => <option key={severity} value={severity}>{severityLabel(severity, t)}</option>)}
                         </select>
                       </div>
                       <label className="block space-y-1.5">
-                        <span className="text-[12px] font-medium text-[var(--fog)]">Guidance</span>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.guidance')}</span>
                         <textarea
                           value={draft.guidance}
                           onChange={(event) => setDraft({ ...draft, guidance: event.target.value })}
                           className="glass-input-console min-h-[112px] resize-y text-[13px]"
-                          placeholder="Explain what the agent should do next when this Hook matches."
+                          placeholder={t('hooks.guidancePlaceholder')}
                         />
                       </label>
                     </div>
@@ -836,66 +884,45 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
                 {draft.evaluatorMode === 'rule' ? (
                   <label className="mt-4 block space-y-1.5">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Rule JSON</span>
+                    <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.ruleJson')}</span>
                     <textarea
                       value={draft.ruleCheck}
                       onChange={(event) => setDraft({ ...draft, ruleCheck: event.target.value })}
                       className="glass-input-console min-h-[260px] w-full resize-y font-mono text-[12px]"
                       spellCheck={false}
                     />
-                    <p className="text-[11px] text-[var(--fog)]">Use declarative rule fields like <code>requireTools</code>, <code>requireFacts</code>, <code>replyContains</code>, or <code>match.tools</code>.</p>
+                    <p className="text-[11px] text-[var(--fog)]">{t('hooks.ruleJsonHint')}</p>
                   </label>
                 ) : (
                   <div className="mt-4 space-y-3">
                     <div className="rounded-xl border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-4 py-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <div className="text-[12px] font-semibold text-[var(--mist)]">Global internal default model</div>
-                          <p className="mt-1 text-[11px] text-[var(--fog)]">Hook evaluation uses the Console internal default model when this flow is not user-configurable.</p>
+                          <div className="text-[12px] font-semibold text-[var(--mist)]">{t('hooks.internalModel.title')}</div>
+                          <p className="mt-1 text-[11px] text-[var(--fog)]">{t('hooks.internalModel.hint')}</p>
                         </div>
                         <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-[var(--mist)]">deepseek-v4-flash</span>
                       </div>
                     </div>
 
                     <label className="block space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Evaluation prompt</span>
+                      <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.evaluationPrompt')}</span>
                       <SlashPlaceholderEditor
-                        ariaLabel="Evaluation prompt"
+                        ariaLabel={t('hooks.evaluationPrompt')}
                         value={draft.evaluationPrompt}
                         onChange={(nextValue) => setDraft({ ...draft, evaluationPrompt: nextValue })}
-                        groups={PLACEHOLDER_GROUPS}
+                        groups={placeholderGroups}
                         minHeightClassName="min-h-[280px]"
-                        helperText='Type "/" to insert runtime placeholders such as tool output or confirmed facts.'
-                        placeholder="Check whether the customer-visible answer cites evidence gathered during the case."
+                        helperText={t('hooks.evaluationPromptHint')}
+                        placeholder={t('hooks.evaluationPromptPlaceholder')}
                       />
                     </label>
 
-                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                      {PLACEHOLDER_GROUPS.flatMap((group) => group.items).map((item) => (
-                        <div key={item.token} className="rounded-lg border border-black/[0.06] bg-white/68 px-3 py-2 text-[12px]">
-                          <div className="font-semibold text-[var(--mist)]">{`{{${item.token}}}`}</div>
-                          <div className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
-                            {item.typeLabel} · {item.description}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
                     <div className="rounded-lg border border-black/[0.06] bg-white/65 px-3 py-3 text-[11px] leading-5 text-[var(--fog)]">
-                      <strong className="text-[var(--mist)]">{'{{skill_input}}'}</strong> remains a compatibility alias in runtime, but this UI intentionally standardizes on the <code>tool_*</code> vocabulary.
+                      <strong className="text-[var(--mist)]">{'{{skill_input}}'}</strong> {t('hooks.compatAliasNote')}
                     </div>
                   </div>
                 )}
-
-                <label className="mt-5 flex items-center gap-3 text-[13px] text-[var(--mist)]">
-                  <input
-                    type="checkbox"
-                    checked={draft.enabled}
-                    onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
-                    className="h-4 w-4 rounded border-black/20"
-                  />
-                  Enabled
-                </label>
               </section>
             </main>
           </div>

@@ -79,11 +79,14 @@ afterEach(() => {
 
 async function renderHookBuilder() {
   const { default: HookBuilder } = await import('@/components/admin/hook-builder')
+  const { LocaleProvider } = await import('@/components/locale-provider')
   await act(async () => {
     render(
-      <React.Suspense>
-        <HookBuilder />
-      </React.Suspense>,
+      <LocaleProvider>
+        <React.Suspense>
+          <HookBuilder />
+        </React.Suspense>
+      </LocaleProvider>,
     )
   })
   return screen.findByText('Investigate before transfer')
@@ -157,9 +160,16 @@ describe('HookBuilder', () => {
       fireEvent.click(screen.getByRole('button', { name: /Tool runtime/ }))
     })
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /\{\{tool_output\}\}/ }))
+      fireEvent.click(screen.getAllByRole('button', { name: /\{\{tool_output\}\}/ })[0]!)
     })
 
     expect(prompt.value).toContain('{{tool_output}}')
+  })
+
+  it('shows the enabled toggle beside save controls', async () => {
+    await renderHookBuilder()
+
+    expect(screen.getByRole('button', { name: 'Enabled' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDefined()
   })
 })
