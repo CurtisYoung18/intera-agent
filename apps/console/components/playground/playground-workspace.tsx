@@ -15,6 +15,7 @@ import type { LifecycleNotice } from '@intera/shared/types'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useSession } from '@/lib/hooks/use-session'
+import { useConsoleLocale } from '@/components/locale-provider'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import { detectMemoryMode, normalizeMemoryStrategy } from '@/components/memory/memory-strategy-utils'
 import CopyButton from '@/components/ui/copy-button'
@@ -326,6 +327,8 @@ function toneForDigestStatus(status: TurnDebugDigest['status']) {
 export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: PlaygroundSurface }) {
   const { selectedAgentId, selectAgent } = useAgentContext()
   const { userId, orgId } = useSession()
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
   const scopeId = userId || orgId || 'default'
 
   // Scoped localStorage keys — prevents chat history from leaking across orgs/agents
@@ -702,26 +705,46 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     () => buildTurnDebugDigest(turnTraces, turnTotalMs, responding, chatMessages, reply),
     [chatMessages, reply, responding, turnTotalMs, turnTraces],
   )
-  const versionStateLabel = selectedVersion ? `${selectedIsActive ? 'Live' : 'Draft'} v${selectedVersion}` : selectedIsActive ? 'Live version' : 'Draft version'
-  const workspaceEyebrow = surface === 'pilot-lab' ? 'Pilot Lab / Playground' : 'Compatibility route / Playground'
-  const workspaceTitle = surface === 'pilot-lab' ? 'Runtime truth desk' : 'Playground compatibility desk'
-  const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? 'Dry-run runtime path'
+  const versionStateLabel = selectedVersion
+    ? `${selectedIsActive ? (isZh ? '当前版本' : 'Live') : (isZh ? '草稿版本' : 'Draft')} v${selectedVersion}`
+    : selectedIsActive
+      ? (isZh ? '当前版本' : 'Live version')
+      : (isZh ? '草稿版本' : 'Draft version')
+  const workspaceEyebrow = surface === 'pilot-lab'
+    ? 'Pilot Lab / Playground'
+    : (isZh ? '兼容路由 / Playground' : 'Compatibility route / Playground')
+  const workspaceTitle = surface === 'pilot-lab'
+    ? (isZh ? '运行时真相工作台' : 'Runtime truth desk')
+    : (isZh ? 'Playground 兼容工作台' : 'Playground compatibility desk')
+  const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? (isZh ? 'dry-run 运行路径' : 'Dry-run runtime path')
   const executionSurfaceNote = latestRuntimeTruth?.executionSurface.note
-    ?? 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational side effects remain mocked in Playground.'
-  const toolSurfaceSummary = latestRuntimeTruth ? formatToolSurfaceSummary(latestRuntimeTruth.toolSummary) : 'Refreshes after the first run'
-  const persistedSessionLabel = chatId ? 'Persisted and restorable' : 'Created on first send'
-  const runtimeWarnings = latestRuntimeTruth?.warnings ?? ['Operational side effects remain mocked under dry-run even though the runtime path is real.']
-  const toolPairingLabel = latestTurnDigest ? summarizeToolPairing(latestTurnDigest.toolCalls, latestTurnDigest.toolResults, responding) : 'No tool events yet'
-  const sessionTraceLabel = turnTraces.length > 0 ? `${turnTraces.length} persisted turn${turnTraces.length === 1 ? '' : 's'}` : 'No persisted turns yet'
-  const operateBridgeLabel = 'Synthetic export only'
+    ?? (isZh
+      ? 'Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；只有业务副作用仍会在 Playground 中以 dry-run 方式模拟。'
+      : 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational side effects remain mocked in Playground.')
+  const toolSurfaceSummary = latestRuntimeTruth ? formatToolSurfaceSummary(latestRuntimeTruth.toolSummary) : (isZh ? '首轮运行后刷新' : 'Refreshes after the first run')
+  const persistedSessionLabel = chatId ? (isZh ? '已持久化，可恢复' : 'Persisted and restorable') : (isZh ? '首次发送后创建' : 'Created on first send')
+  const runtimeWarnings = latestRuntimeTruth?.warnings ?? [isZh ? '虽然运行路径是真实的，但业务副作用仍会在 dry-run 下被模拟。' : 'Operational side effects remain mocked under dry-run even though the runtime path is real.']
+  const toolPairingLabel = latestTurnDigest ? summarizeToolPairing(latestTurnDigest.toolCalls, latestTurnDigest.toolResults, responding) : (isZh ? '暂无工具事件' : 'No tool events yet')
+  const sessionTraceLabel = turnTraces.length > 0
+    ? (isZh ? `已持久化 ${turnTraces.length} 轮` : `${turnTraces.length} persisted turn${turnTraces.length === 1 ? '' : 's'}`)
+    : (isZh ? '还没有持久化轮次' : 'No persisted turns yet')
+  const operateBridgeLabel = isZh ? '仅导出评审副本' : 'Synthetic export only'
+  const quickStarts = isZh
+    ? [
+        { label: '我的充值还没到账，请帮我查一下。', hint: 'Procedure 启动 + 证据查询' },
+        { label: '在转人工前，你还缺哪些证据？', hint: 'Hook + 转人工推理' },
+        { label: '继续之前，请先对齐我刚补充的支付金额。', hint: 'Reconcile + 陈旧证据路径' },
+        { label: '我上传了回单截图，你现在能确认什么？', hint: '图片输入能力测试' },
+      ]
+    : QUICK_STARTS
 
   /* ── Image helpers ── */
 
   const handleImageAttach = useCallback(async (files: FileList | File[]) => {
     if (!canAttachImages) {
       setToastMessage(visionSupport.status === 'unknown'
-        ? 'Image input support is unknown for this model. Switch to a confirmed vision-capable model before attaching screenshots.'
-        : `${snapshot?.resolvedModelLabel || 'This model'} does not support image input. Switch to a confirmed vision-capable model before attaching screenshots.`)
+        ? (isZh ? '当前模型的图片输入支持状态未知，请先切到已确认支持视觉的模型再附加截图。' : 'Image input support is unknown for this model. Switch to a confirmed vision-capable model before attaching screenshots.')
+        : `${snapshot?.resolvedModelLabel || (isZh ? '当前模型' : 'This model')}${isZh ? ' 不支持图片输入，请先切到已确认支持视觉的模型再附加截图。' : ' does not support image input. Switch to a confirmed vision-capable model before attaching screenshots.'}`)
       setTimeout(() => setToastMessage(''), 4000)
       return
     }
@@ -729,7 +752,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     const newImages: AttachedImage[] = []
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue
-      if (file.size > limit) { setToastMessage(`"${file.name}" exceeds 5MB limit`); setTimeout(() => setToastMessage(''), 3000); continue }
+      if (file.size > limit) { setToastMessage(isZh ? `“${file.name}” 超过 5MB 限制` : `"${file.name}" exceeds 5MB limit`); setTimeout(() => setToastMessage(''), 3000); continue }
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve((reader.result as string).split(',')[1])
@@ -764,13 +787,13 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           traces: turnTraces,
         }),
       })
-      if (!res.ok) { setToastMessage(`Export failed: HTTP ${res.status}`); setTimeout(() => setToastMessage(''), 4000); return }
+      if (!res.ok) { setToastMessage(isZh ? `导出失败：HTTP ${res.status}` : `Export failed: HTTP ${res.status}`); setTimeout(() => setToastMessage(''), 4000); return }
       const data = await res.json(); const p = data.data || data
       setSavedChatId(p.chatId)
-      setToastMessage('Exported synthetic review transcript to Operate.')
+      setToastMessage(isZh ? '已将试跑评审副本导出到 Operate。' : 'Exported synthetic review transcript to Operate.')
       setTimeout(() => setToastMessage(''), 4000)
     } catch (err) {
-      setToastMessage('Export failed: network error')
+      setToastMessage(isZh ? '导出失败：网络错误' : 'Export failed: network error')
       setTimeout(() => setToastMessage(''), 4000)
     } finally {
       setSavingToChat(false)
@@ -784,8 +807,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     const currentImages = queuedImages ?? attachedImagesRef.current
     if (currentImages.length > 0 && !canAttachImages) {
       setError(visionSupport.status === 'unknown'
-        ? 'Image input support is unknown for this model in the active runtime registry. Switch to a confirmed vision-capable model before running this turn.'
-        : `${snapshot?.resolvedModelLabel || 'This model'} does not support image input. Switch to a confirmed vision-capable model before running this turn.`)
+        ? (isZh ? '当前激活运行时目录里还无法确认此模型是否支持图片输入，请先切到已确认支持视觉的模型再运行。' : 'Image input support is unknown for this model in the active runtime registry. Switch to a confirmed vision-capable model before running this turn.')
+        : `${snapshot?.resolvedModelLabel || (isZh ? '当前模型' : 'This model')}${isZh ? ' 不支持图片输入，请先切到已确认支持视觉的模型再运行。' : ' does not support image input. Switch to a confirmed vision-capable model before running this turn.'}`)
       return
     }
     runningRef.current = true
@@ -828,7 +851,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       if (!res.ok) { setError(`HTTP ${res.status}: ${await res.text()}`); return }
 
       const reader = res.body?.getReader()
-      if (!reader) { setError('No response stream'); return }
+      if (!reader) { setError(isZh ? '响应流不可用' : 'No response stream'); return }
 
       const decoder = new TextDecoder()
       let buffer = ''
@@ -857,7 +880,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             else if (event.type === 'error') {
               const errData = event.data
               if (typeof errData === 'string') setError(errData)
-              else if (errData && typeof errData === 'object') setError((errData as any)?.message ?? 'Unknown error')
+              else if (errData && typeof errData === 'object') setError((errData as any)?.message ?? (isZh ? '未知错误' : 'Unknown error'))
               else setError(String(errData))
             }
             else if (event.type === 'tool_executing') {
@@ -880,7 +903,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             else if (event.type === 'form_request') {
               const d = event.data as any
               const fr = {
-                title: d?.title || 'Information Needed',
+                title: d?.title || (isZh ? '需要补充信息' : 'Information Needed'),
                 description: d?.description,
                 fields: d?.fields || [],
                 skillCallId: d?.skillCallId || '',
@@ -901,15 +924,15 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 return next
               })
             }
-            else if (event.type === 'escalated') pushNotice({ kind: 'escalated', label: 'Agent escalated to a human', detail: (event.data as any)?.reason })
-            else if (event.type === 'case_created') pushNotice({ kind: 'case_created', label: `ProcedureRun started: ${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` })
-            else if (event.type === 'human_task_created') pushNotice({ kind: 'human_task', label: 'Human task created' })
-            else if (event.type === 'retry_pending') pushNotice({ kind: 'retry', label: `Retrying (${(event.data as any)?.errorClass ?? 'transient'})…` })
+            else if (event.type === 'escalated') pushNotice({ kind: 'escalated', label: isZh ? 'Agent 已转给人工' : 'Agent escalated to a human', detail: (event.data as any)?.reason })
+            else if (event.type === 'case_created') pushNotice({ kind: 'case_created', label: isZh ? `ProcedureRun 已启动：${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` : `ProcedureRun started: ${(event.data as any)?.displayName ?? (event.data as any)?.caseType ?? ''}` })
+            else if (event.type === 'human_task_created') pushNotice({ kind: 'human_task', label: isZh ? '已创建人工任务' : 'Human task created' })
+            else if (event.type === 'retry_pending') pushNotice({ kind: 'retry', label: isZh ? `正在重试（${(event.data as any)?.errorClass ?? 'transient'}）…` : `Retrying (${(event.data as any)?.errorClass ?? 'transient'})…` })
           } catch { /* */ }
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error')
+      setError(err instanceof Error ? err.message : (isZh ? '网络错误' : 'Network error'))
     } finally {
       runningRef.current = false
       setResponding(false)
@@ -1022,9 +1045,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 lineHeight: 1.65,
                 color: 'var(--fog)',
               }}>
-                Manual multi-turn runtime desk for the selected agent version. Prompting, Hooks, Procedure runtime,
-                trace writing, and session restore follow the real AgentLoop path. Operational side effects remain mocked
-                under <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92em' }}>dryRun</code>.
+                {isZh
+                  ? <>当前所选 Agent 版本的手动多轮运行时工作台。Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；只有业务副作用仍会在 <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92em' }}>dryRun</code> 下被模拟。</>
+                  : <>Manual multi-turn runtime desk for the selected agent version. Prompting, Hooks, Procedure runtime, trace writing, and session restore follow the real AgentLoop path. Operational side effects remain mocked under <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92em' }}>dryRun</code>.</>}
               </p>
               {surface === 'legacy' && (
                 <div style={{
@@ -1040,23 +1063,23 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                   fontWeight: 600,
                   color: '#8a5a38',
                 }}>
-                  Compatibility route only. Build -&gt; Pilot Lab owns the product workspace.
+                  {isZh ? '这里只是兼容入口。产品主工作台已迁到 Build -> Pilot Lab。' : 'Compatibility route only. Build -> Pilot Lab owns the product workspace.'}
                 </div>
               )}
             </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flex: '0 1 auto' }}>
-            <ActionButton onClick={() => setSnapshotReloadKey((value) => value + 1)} title="Refresh the saved agent snapshot and capability summary.">
+            <ActionButton onClick={() => setSnapshotReloadKey((value) => value + 1)} title={isZh ? '刷新已保存的 Agent 快照和能力摘要。' : 'Refresh the saved agent snapshot and capability summary.'}>
               <RefreshCw size={13} />
-              Refresh snapshot
+              {isZh ? '刷新快照' : 'Refresh snapshot'}
             </ActionButton>
             <ActionButton
               active={showThinking}
               onClick={() => setShowThinking((value) => !value)}
-              title="Show or hide the model thinking stream captured during Playground runs."
+              title={isZh ? '显示或隐藏 Playground 运行时捕获的模型思考流。' : 'Show or hide the model thinking stream captured during Playground runs.'}
             >
               <Brain size={13} />
-              Show thinking
+              {isZh ? '显示思考' : 'Show thinking'}
             </ActionButton>
             <ActionButton
               tone="danger"
@@ -1078,20 +1101,20 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 try { localStorage.removeItem(lsk.chatId); localStorage.removeItem(lsk.formRequest); localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
               }}
               disabled={!chatId}
-              title="Clear the persisted Playground session and its restored traces for the selected agent version."
+              title={isZh ? '清空当前 Agent 版本已持久化的 Playground 会话和恢复 trace。' : 'Clear the persisted Playground session and its restored traces for the selected agent version.'}
             >
               <XCircle size={13} />
-              Clear session
+              {isZh ? '清空会话' : 'Clear session'}
             </ActionButton>
             <ActionButton
               onClick={handleSaveToChat}
               disabled={chatMessages.length === 0 || savingToChat}
               title={chatMessages.length === 0
-                ? 'Send at least one turn before exporting a review transcript.'
-                : 'Creates a synthetic review transcript in Operate. It does not resume a live customer chat.'}
+                ? (isZh ? '至少先发起一轮测试，再导出评审副本。' : 'Send at least one turn before exporting a review transcript.')
+                : (isZh ? '会在 Operate 中创建一份试跑评审副本，不会继续真实客户会话。' : 'Creates a synthetic review transcript in Operate. It does not resume a live customer chat.')}
             >
               <Clock size={13} />
-              {savingToChat ? 'Exporting…' : 'Export synthetic review transcript'}
+              {savingToChat ? (isZh ? '导出中…' : 'Exporting…') : (isZh ? '导出试跑评审副本' : 'Export synthetic review transcript')}
             </ActionButton>
             {savedChatId ? (
               <Link
@@ -1105,7 +1128,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                   background: 'rgba(212,118,78,0.05)',
                 }}
               >
-                Open in Operate <ExternalLink size={12} />
+                {isZh ? '在 Operate 打开' : 'Open in Operate'} <ExternalLink size={12} />
               </Link>
             ) : null}
             <Link
@@ -1118,7 +1141,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 background: 'rgba(255,255,255,0.6)',
               }}
             >
-              Open Brain <ExternalLink size={12} />
+              {isZh ? '打开 Brain' : 'Open Brain'} <ExternalLink size={12} />
             </Link>
           </div>
         </div>
@@ -1129,7 +1152,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           gap: 12,
         }}>
           <WorkspaceCard
-            title="Under test"
+            title={isZh ? '当前测试对象' : 'Under test'}
             icon={<FlaskConical size={14} color="#b87347" />}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -1143,43 +1166,43 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 {versionStateLabel}
               </ToneBadge>
             </div>
-            <WorkspaceMetricRow label="Agent" value={snapshot?.name || 'Loading saved snapshot…'} />
-            <WorkspaceMetricRow label="Config id" value={selectedAgentId || 'No config selected'} mono />
-            <WorkspaceMetricRow label="Session" value={persistedSessionLabel} />
-            <WorkspaceNote label="Saved core prompt preview">
-              {snapshot?.promptPreview || 'The saved core prompt preview appears after the selected agent snapshot loads.'}
+            <WorkspaceMetricRow label="Agent" value={snapshot?.name || (isZh ? '正在加载已保存快照…' : 'Loading saved snapshot…')} />
+            <WorkspaceMetricRow label={isZh ? '配置 ID' : 'Config id'} value={selectedAgentId || (isZh ? '尚未选择配置' : 'No config selected')} mono />
+            <WorkspaceMetricRow label={isZh ? '会话' : 'Session'} value={persistedSessionLabel} />
+            <WorkspaceNote label={isZh ? '已保存的核心 Prompt 预览' : 'Saved core prompt preview'}>
+              {snapshot?.promptPreview || (isZh ? '选定 Agent 快照加载完成后，这里会显示已保存的核心 Prompt 预览。' : 'The saved core prompt preview appears after the selected agent snapshot loads.')}
             </WorkspaceNote>
           </WorkspaceCard>
 
           <WorkspaceCard
-            title="Capabilities"
+            title={isZh ? '能力面板' : 'Capabilities'}
             icon={<Sparkles size={14} color="#8b6ff5" />}
           >
-            <WorkspaceMetricRow label="Model" value={snapshot?.resolvedModelLabel || 'Loading model metadata…'} />
-            <WorkspaceMetricRow label="Image input" value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
-            <WorkspaceMetricRow label="Memory mode" value={snapshot?.memoryModeLabel || 'Loading memory mode…'} />
+            <WorkspaceMetricRow label={isZh ? '模型' : 'Model'} value={snapshot?.resolvedModelLabel || (isZh ? '正在加载模型信息…' : 'Loading model metadata…')} />
+            <WorkspaceMetricRow label={isZh ? '图片输入' : 'Image input'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
+            <WorkspaceMetricRow label={isZh ? 'Memory 模式' : 'Memory mode'} value={snapshot?.memoryModeLabel || (isZh ? '正在加载 Memory 模式…' : 'Loading memory mode…')} />
             <WorkspaceMetricRow
-              label="Enabled Hooks"
-              value={snapshot?.enabledHookCount == null ? 'Unknown' : `${snapshot.enabledHookCount} enabled`}
+              label={isZh ? '已启用 Hooks' : 'Enabled Hooks'}
+              value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `已启用 ${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} enabled`}
             />
-            <WorkspaceMetricRow label="Temperature" value={snapshot ? String(snapshot.temperature) : 'Loading…'} />
-            <WorkspaceNote label="Capability note">
+            <WorkspaceMetricRow label="Temperature" value={snapshot ? String(snapshot.temperature) : (isZh ? '加载中…' : 'Loading…')} />
+            <WorkspaceNote label={isZh ? '能力说明' : 'Capability note'}>
               {visionSupport.note}
             </WorkspaceNote>
           </WorkspaceCard>
 
           <WorkspaceCard
-            title="Runtime truth"
+            title={isZh ? '运行时真相' : 'Runtime truth'}
             icon={<LockKeyhole size={14} color="#5b8af7" />}
           >
-            <WorkspaceMetricRow label="Execution surface" value={executionSurfaceLabel} />
-            <WorkspaceMetricRow label="Tool surface" value={toolSurfaceSummary} />
-            <WorkspaceMetricRow label="Operational side effects" value="Mocked under dry-run" tone="warning" />
-            <WorkspaceMetricRow label="Operate bridge" value={operateBridgeLabel} />
-            <WorkspaceNote label="Runtime note">
+            <WorkspaceMetricRow label={isZh ? '执行层' : 'Execution surface'} value={executionSurfaceLabel} />
+            <WorkspaceMetricRow label={isZh ? '工具层' : 'Tool surface'} value={toolSurfaceSummary} />
+            <WorkspaceMetricRow label={isZh ? '业务副作用' : 'Operational side effects'} value={isZh ? '在 dry-run 下模拟' : 'Mocked under dry-run'} tone="warning" />
+            <WorkspaceMetricRow label={isZh ? 'Operate 桥接' : 'Operate bridge'} value={operateBridgeLabel} />
+            <WorkspaceNote label={isZh ? '运行时说明' : 'Runtime note'}>
               {executionSurfaceNote}
             </WorkspaceNote>
-            <WorkspaceNote label="Current warning">
+            <WorkspaceNote label={isZh ? '当前提醒' : 'Current warning'}>
               {runtimeWarnings[0]}
             </WorkspaceNote>
           </WorkspaceCard>
@@ -1191,67 +1214,67 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           gap: 12,
         }}>
           <WorkspaceCard
-            title="Session continuity"
+            title={isZh ? '会话连续性' : 'Session continuity'}
             icon={<Clock size={14} color="#8b6ff5" />}
           >
-            <WorkspaceMetricRow label="Transcript" value={persistedSessionLabel} tone={chatId ? 'success' : 'neutral'} />
-            <WorkspaceMetricRow label="Trace restore" value={sessionTraceLabel} tone={turnTraces.length > 0 ? 'success' : 'neutral'} />
-            <WorkspaceMetricRow label="Queued follow-up turns" value={String(queuedMessages.length)} />
-            <WorkspaceMetricRow label="Operate export" value={operateBridgeLabel} tone="warning" />
-            <WorkspaceNote label="Persistence note">
-              Session transcript and trace turns restore for the selected agent version. Export to Operate creates a synthetic review copy, not a live chat continuation.
+            <WorkspaceMetricRow label={isZh ? '转录' : 'Transcript'} value={persistedSessionLabel} tone={chatId ? 'success' : 'neutral'} />
+            <WorkspaceMetricRow label={isZh ? 'Trace 恢复' : 'Trace restore'} value={sessionTraceLabel} tone={turnTraces.length > 0 ? 'success' : 'neutral'} />
+            <WorkspaceMetricRow label={isZh ? '排队中的后续轮次' : 'Queued follow-up turns'} value={String(queuedMessages.length)} />
+            <WorkspaceMetricRow label={isZh ? 'Operate 导出' : 'Operate export'} value={operateBridgeLabel} tone="warning" />
+            <WorkspaceNote label={isZh ? '持久化说明' : 'Persistence note'}>
+              {isZh ? '当前 Agent 版本的会话转录和 trace 轮次都可以恢复。导出到 Operate 时，只会生成一份试跑评审副本，不会继续真实聊天。' : 'Session transcript and trace turns restore for the selected agent version. Export to Operate creates a synthetic review copy, not a live chat continuation.'}
             </WorkspaceNote>
           </WorkspaceCard>
 
           <WorkspaceCard
-            title="Current run focus"
+            title={isZh ? '当前运行焦点' : 'Current run focus'}
             icon={<RefreshCw size={14} color="#5b8af7" />}
           >
             <WorkspaceMetricRow
-              label="Latest turn"
-              value={latestTurnDigest ? `Turn ${latestTurnDigest.turnNumber}` : 'Waiting for the first runtime turn'}
+              label={isZh ? '最新轮次' : 'Latest turn'}
+              value={latestTurnDigest ? (isZh ? `第 ${latestTurnDigest.turnNumber} 轮` : `Turn ${latestTurnDigest.turnNumber}`) : (isZh ? '等待第一轮运行' : 'Waiting for the first runtime turn')}
             />
             <WorkspaceMetricRow
-              label="Status"
-              value={latestTurnDigest?.statusLabel ?? 'No runtime evidence yet'}
+              label={isZh ? '状态' : 'Status'}
+              value={latestTurnDigest?.statusLabel ?? (isZh ? '还没有运行时证据' : 'No runtime evidence yet')}
               tone={latestTurnDigest ? toneForDigestStatus(latestTurnDigest.status) : 'neutral'}
             />
             <WorkspaceMetricRow
-              label="Prompt capture"
+              label={isZh ? 'Prompt 捕获' : 'Prompt capture'}
               value={latestTurnDigest
                 ? latestTurnDigest.promptCaptured
-                  ? `${latestTurnDigest.promptChars.toLocaleString()} chars captured`
+                  ? (isZh ? `已捕获 ${latestTurnDigest.promptChars.toLocaleString()} 个字符` : `${latestTurnDigest.promptChars.toLocaleString()} chars captured`)
                   : latestTurnDigest.status === 'running'
-                    ? 'Waiting for model request'
-                    : 'No prompt capture yet'
-                : 'No prompt capture yet'}
+                    ? (isZh ? '等待模型请求' : 'Waiting for model request')
+                    : (isZh ? '还没有 Prompt 捕获' : 'No prompt capture yet')
+                : (isZh ? '还没有 Prompt 捕获' : 'No prompt capture yet')}
               tone={latestTurnDigest?.promptCaptured ? 'success' : 'neutral'}
             />
             <WorkspaceMetricRow
-              label="Wall time"
+              label={isZh ? '耗时' : 'Wall time'}
               value={latestTurnDigest ? formatDurationLabel(latestTurnDigest.turnMs) : '0ms'}
             />
-            <WorkspaceNote label="Latest operator input">
-              {latestTurnDigest?.latestInput || 'Send a manual turn to populate the current-run summary.'}
+            <WorkspaceNote label={isZh ? '最新运营输入' : 'Latest operator input'}>
+              {latestTurnDigest?.latestInput || (isZh ? '发送一轮手动测试后，这里会显示当前运行摘要。' : 'Send a manual turn to populate the current-run summary.')}
             </WorkspaceNote>
-            <WorkspaceNote label="Latest agent reply">
-              {latestTurnDigest?.latestReply || 'No agent reply has been captured yet.'}
+            <WorkspaceNote label={isZh ? '最新 Agent 回复' : 'Latest agent reply'}>
+              {latestTurnDigest?.latestReply || (isZh ? '还没有捕获到 Agent 回复。' : 'No agent reply has been captured yet.')}
             </WorkspaceNote>
           </WorkspaceCard>
 
           <WorkspaceCard
-            title="Debug digest"
+            title={isZh ? '调试摘要' : 'Debug digest'}
             icon={<AlertCircle size={14} color="#d4912e" />}
           >
-            <WorkspaceMetricRow label="Tool pairing" value={toolPairingLabel} tone={latestTurnDigest && latestTurnDigest.toolCalls !== latestTurnDigest.toolResults && !responding ? 'warning' : 'neutral'} />
-            <WorkspaceMetricRow label="Hook decisions" value={latestTurnDigest ? String(latestTurnDigest.hookEvents.length) : '0'} />
-            <WorkspaceMetricRow label="Procedure runtime" value={latestTurnDigest ? String(latestTurnDigest.procedureEvents.length) : '0'} />
+            <WorkspaceMetricRow label={isZh ? 'Tool 配对' : 'Tool pairing'} value={toolPairingLabel} tone={latestTurnDigest && latestTurnDigest.toolCalls !== latestTurnDigest.toolResults && !responding ? 'warning' : 'neutral'} />
+            <WorkspaceMetricRow label={isZh ? 'Hook 决策' : 'Hook decisions'} value={latestTurnDigest ? String(latestTurnDigest.hookEvents.length) : '0'} />
+            <WorkspaceMetricRow label={isZh ? 'Procedure 运行时' : 'Procedure runtime'} value={latestTurnDigest ? String(latestTurnDigest.procedureEvents.length) : '0'} />
             <WorkspaceMetricRow
-              label="Stale evidence"
+              label={isZh ? '陈旧证据' : 'Stale evidence'}
               value={latestTurnDigest ? String(latestTurnDigest.staleEvents.length) : '0'}
               tone={latestTurnDigest && latestTurnDigest.staleEvents.length > 0 ? 'warning' : 'neutral'}
             />
-            <WorkspaceNote label="Attention points">
+            <WorkspaceNote label={isZh ? '关注点' : 'Attention points'}>
               <DebugDigestList
                 items={latestTurnDigest
                   ? [
@@ -1261,7 +1284,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                       ...latestTurnDigest.staleEvents.map((event) => event.label),
                     ].slice(0, 4)
                   : []}
-                emptyLabel="Hook decisions, Procedure reconcile, and stale-evidence markers will appear here before you need raw payloads."
+                emptyLabel={isZh ? 'Hook 决策、Procedure reconcile 和陈旧证据标记会先在这里出现，你不用一上来就啃原始 payload。' : 'Hook decisions, Procedure reconcile, and stale-evidence markers will appear here before you need raw payloads.'}
               />
             </WorkspaceNote>
           </WorkspaceCard>
@@ -1319,7 +1342,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                         fontSize: 10, fontWeight: 700, letterSpacing: '0.12em',
                         textTransform: 'uppercase', color: 'var(--fog)', opacity: 0.7, marginBottom: 4,
                       }}>
-                        Runtime desk
+                        {isZh ? '运行时工作台' : 'Runtime desk'}
                       </div>
                       <h2 style={{
                         margin: 0,
@@ -1328,7 +1351,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                         color: 'var(--mist)',
                         letterSpacing: '-0.02em',
                       }}>
-                        {snapshot ? `Test ${snapshot.name} on the real runtime path` : 'Select an agent version and run a manual turn'}
+                        {snapshot
+                          ? (isZh ? `在真实运行路径上测试 ${snapshot.name}` : `Test ${snapshot.name} on the real runtime path`)
+                          : (isZh ? '选择一个 Agent 版本并开始手动测试' : 'Select an agent version and run a manual turn')}
                       </h2>
                       <p style={{
                         margin: '8px 0 0',
@@ -1336,8 +1361,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                         color: 'var(--fog)',
                         lineHeight: 1.7,
                       }}>
-                        Playground preserves multi-turn continuity, restores its latest session and trace for the selected
-                        agent version, and records the same runtime evidence path used by runtime-backed Scenario receipts.
+                        {isZh
+                          ? 'Playground 会保留多轮连续性、恢复当前 Agent 版本最近一次的会话与 trace，并记录与 runtime-backed Scenario receipt 相同的运行时证据路径。'
+                          : 'Playground preserves multi-turn continuity, restores its latest session and trace for the selected agent version, and records the same runtime evidence path used by runtime-backed Scenario receipts.'}
                       </p>
                     </div>
                   </div>
@@ -1348,21 +1374,21 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     gap: 10,
                   }}>
                     <MiniTruthCard
-                      label="Under test"
-                      value={snapshot ? `${snapshot.resolvedModelLabel} · ${versionStateLabel}` : 'Waiting for snapshot'}
+                      label={isZh ? '当前测试对象' : 'Under test'}
+                      value={snapshot ? `${snapshot.resolvedModelLabel} · ${versionStateLabel}` : (isZh ? '等待快照加载' : 'Waiting for snapshot')}
                     />
                     <MiniTruthCard
-                      label="Image input"
+                      label={isZh ? '图片输入' : 'Image input'}
                       value={visionSupport.label}
                       tone={toneForVisionSupport(visionSupport.status)}
                     />
                     <MiniTruthCard
-                      label="Runtime boundary"
-                      value="Real runtime path, mocked operational side effects"
+                      label={isZh ? '运行时边界' : 'Runtime boundary'}
+                      value={isZh ? '真实运行路径，业务副作用模拟' : 'Real runtime path, mocked operational side effects'}
                     />
                     <MiniTruthCard
-                      label="Trace timeline"
-                      value="Call, result, Hook, reconcile, stale evidence"
+                      label={isZh ? 'Trace 时间线' : 'Trace timeline'}
+                      value={isZh ? '调用、结果、Hook、reconcile、陈旧证据' : 'Call, result, Hook, reconcile, stale evidence'}
                     />
                   </div>
                 </div>
@@ -1371,7 +1397,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                   display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8,
                   width: '100%', maxWidth: 720,
                 }}>
-                  {QUICK_STARTS.map(q => (
+                  {quickStarts.map(q => (
                     <button
                       key={q.label}
                       onClick={() => { runTurn(q.label); setMessage('') }}
@@ -1414,7 +1440,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     border: '1px solid rgba(212,118,78,0.06)',
                   }}>
                     <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--fog)', opacity: 0.5, marginBottom: 6 }}>
-                      Saved Core Prompt Preview
+                      {isZh ? '已保存的核心 Prompt 预览' : 'Saved Core Prompt Preview'}
                     </div>
                     <p style={{ fontSize: 11, color: 'var(--fog)', margin: 0, lineHeight: 1.55, fontStyle: 'italic' }}>
                       {snapshot.promptPreview}
@@ -1491,7 +1517,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                           color: '#b87347',
                           letterSpacing: '0.01em',
                         }}>
-                          Thinking
+                          {isZh ? '思考过程' : 'Thinking'}
                         </span>
                         <span style={{
                           width: 7, height: 7, borderRadius: '50%',
@@ -1537,7 +1563,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     fontSize: 11, fontWeight: 600, color: 'var(--fog)',
                     marginBottom: 4, opacity: 0.5,
                   }}>
-                    {m.role === 'user' ? 'You' : snapshot?.name || 'Agent'}
+                    {m.role === 'user' ? (isZh ? '你' : 'You') : snapshot?.name || 'Agent'}
                   </div>
                   {m.role === 'agent' ? (
                     <MessageContent content={m.content} />
@@ -1600,7 +1626,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               }}>
                 <OrganicLoader icon="spin" size={16} className="text-[#b87347]" />
                 <span style={{ fontSize: 12, color: 'var(--fog)' }}>
-                  Thinking…
+                  {isZh ? '思考中…' : 'Thinking…'}
                 </span>
               </div>
             )}
@@ -1683,7 +1709,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                       boxShadow: '0 1px 2px rgba(212,118,78,0.25)',
                       fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
                     }}>
-                    Submit
+                    {isZh ? '提交' : 'Submit'}
                   </button>
                 </form>
               </div>
@@ -1752,7 +1778,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               {/* ── Attach button ── */}
               <label
                 title={canAttachImages
-                  ? 'Attach images to test vision input on the selected runtime path.'
+                  ? (isZh ? '附加图片，在当前运行路径上测试视觉输入。' : 'Attach images to test vision input on the selected runtime path.')
                   : visionSupport.note}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1798,15 +1824,15 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     e.preventDefault()
                     if (!canAttachImages) {
                       setToastMessage(visionSupport.status === 'unknown'
-                        ? 'Image input support is unknown for this model. Switch to a confirmed vision-capable model before pasting screenshots.'
-                        : `${snapshot?.resolvedModelLabel || 'This model'} does not support image input. Switch to a confirmed vision-capable model before pasting screenshots.`)
+                        ? (isZh ? '当前模型的图片输入支持状态未知，请先切到已确认支持视觉的模型再粘贴截图。' : 'Image input support is unknown for this model. Switch to a confirmed vision-capable model before pasting screenshots.')
+                        : `${snapshot?.resolvedModelLabel || (isZh ? '当前模型' : 'This model')}${isZh ? ' 不支持图片输入，请先切到已确认支持视觉的模型再粘贴截图。' : ' does not support image input. Switch to a confirmed vision-capable model before pasting screenshots.'}`)
                       setTimeout(() => setToastMessage(''), 4000)
                       return
                     }
                     handleImageAttach(imageFiles)
                   }
                 }}
-                placeholder={responding ? 'Queue the next manual turn…' : 'Type a manual runtime test turn…'}
+                placeholder={responding ? (isZh ? '排队下一轮手动测试…' : 'Queue the next manual turn…') : (isZh ? '输入一轮手动运行时测试…' : 'Type a manual runtime test turn…')}
                 style={{
                   flex: 1, border: 'none', background: 'transparent',
                   fontSize: 13, color: 'var(--mist)',
@@ -1869,7 +1895,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                       }}
                       onMouseEnter={e => { e.currentTarget.style.background = 'rgba(230,69,57,0.12)'; e.currentTarget.style.color = '#e64539' }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; e.currentTarget.style.color = '#b8a99a' }}
-                      title="Remove from queue"
+                      title={isZh ? '从队列移除' : 'Remove from queue'}
                     >
                       x
                     </button>
@@ -1890,9 +1916,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 {toastMessage}
-                {savedChatId && toastMessage === 'Exported synthetic review transcript to Operate.' && (
+                {savedChatId && (toastMessage === 'Exported synthetic review transcript to Operate.' || toastMessage === '已将试跑评审副本导出到 Operate。') && (
                   <Link href={`/operate/conversations/${savedChatId}`} target="_blank" style={{ color: 'white', fontWeight: 600, textDecoration: 'underline', fontSize: 11 }}>
-                    Open in Operate
+                    {isZh ? '在 Operate 打开' : 'Open in Operate'}
                   </Link>
                 )}
               </div>

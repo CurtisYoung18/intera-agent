@@ -44,8 +44,12 @@ interface IterationMetrics {
   model?: string
 }
 
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+function fmtTime(iso: string, locale: 'zh' | 'en' = 'en'): string {
+  return new Date(iso).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function fmtMs(ms: number): string {
@@ -60,7 +64,8 @@ function fmtTokens(n: number): string {
 
 export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string }) {
   const router = useRouter()
-  const { t } = useConsoleLocale()
+  const { t, locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
 
   const [caseData, setCaseData] = useState<CaseData | null>(null)
   const [traces, setTraces] = useState<TraceRow[]>([])
@@ -199,7 +204,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
       <header className="sticky top-0 z-30 rounded-[26px] border border-black/[0.06] bg-white/[0.68] px-4 py-4 shadow-[var(--shadow-card)] backdrop-blur-xl sm:px-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <ConsoleBackButton label="Conversation" ariaLabel="Back to conversation" onClick={() => router.back()} />
+            <ConsoleBackButton label={isZh ? '会话' : 'Conversation'} ariaLabel={isZh ? '返回会话' : 'Back to conversation'} onClick={() => router.back()} />
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">ProcedureRun</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -229,7 +234,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
             className="whitespace-nowrap rounded-[14px] border border-[var(--border-subtle)] px-3 py-2 text-[12px] text-[var(--fog)] transition-colors hover:bg-black/[0.03] hover:text-[var(--mist)]"
             onClick={(e) => { e.preventDefault(); window.open(`/api/cases/${encodeURIComponent(caseData.id)}/export`, '_blank') }}
           >
-            Export .md
+            {isZh ? '导出 .md' : 'Export .md'}
           </a>
           </div>
         </div>
@@ -237,9 +242,11 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
 
       {sourceTruth?.isSynthetic ? (
         <div className="rounded-2xl border border-amber/18 bg-amber/[0.06] px-4 py-3 text-[13px] leading-6 text-[var(--mist)] shadow-[var(--shadow-card)]">
-          <p className="font-semibold text-amber">Synthetic review export</p>
+          <p className="font-semibold text-amber">{isZh ? '试跑评审导出' : 'Synthetic review export'}</p>
           <p className="mt-1 text-[var(--fog)]">
-            This ProcedureRun was exported from Playground for review. It is not a live customer chat, and its timeline can include exported stage summaries rather than raw live runtime events.
+            {isZh
+              ? '这个 ProcedureRun 来自 Playground 的评审导出，不是真实客户会话，它的时间线可能包含导出的阶段摘要，而不是原始实时运行事件。'
+              : 'This ProcedureRun was exported from Playground for review. It is not a live customer chat, and its timeline can include exported stage summaries rather than raw live runtime events.'}
           </p>
         </div>
       ) : null}
@@ -337,7 +344,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
           <h3 className="text-[13px] font-bold text-[var(--mist)] mb-3">{t('caseDetail.toolCalls', { n: metrics.toolCalls.length })}</h3>
           <div className="space-y-2">
             {metrics.toolCalls.map((tc, i) => (
-              <ToolCallCard key={i} toolCall={tc} t={t as any} />
+              <ToolCallCard key={i} toolCall={tc} t={t as any} locale={locale} />
             ))}
           </div>
         </div>
@@ -384,7 +391,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
                     ) : (
                       <ReactMarkdown>{m.content}</ReactMarkdown>
                     )}
-                    <span className="block mt-1 text-[9px] text-[var(--fog)]/50">{fmtTime(m.createdAt)}</span>
+                    <span className="block mt-1 text-[9px] text-[var(--fog)]/50">{fmtTime(m.createdAt, locale)}</span>
                   </div>
                 </div>
               ))}
@@ -396,7 +403,15 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
   )
 }
 
-function ToolCallCard({ toolCall: tc, t }: { toolCall: ToolCall; t: (key: string, vars?: Record<string, unknown>) => string }) {
+function ToolCallCard({
+  toolCall: tc,
+  t,
+  locale,
+}: {
+  toolCall: ToolCall
+  t: (key: string, vars?: Record<string, unknown>) => string
+  locale: 'zh' | 'en'
+}) {
   const [expanded, setExpanded] = useState(true)
   return (
     <div className="rounded-lg border border-black/[0.04] bg-white/40 overflow-hidden">
@@ -427,7 +442,7 @@ function ToolCallCard({ toolCall: tc, t }: { toolCall: ToolCall; t: (key: string
               </pre>
             </div>
           )}
-          <span className="text-[9px] text-[var(--fog)]/40">{fmtTime(tc.createdAt)}</span>
+          <span className="text-[9px] text-[var(--fog)]/40">{fmtTime(tc.createdAt, locale)}</span>
         </div>
       )}
     </div>

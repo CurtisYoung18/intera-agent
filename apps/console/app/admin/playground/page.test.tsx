@@ -3,6 +3,7 @@ import React from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
+import { LocaleProvider } from '@/components/locale-provider'
 
 const mockApiClient = vi.fn()
 const mockSelectAgent = vi.fn()
@@ -175,7 +176,11 @@ afterEach(() => {
 async function renderPage() {
   const { default: PlaygroundPage } = await import('./page')
   await act(async () => {
-    render(<PlaygroundPage />)
+    render(
+      <LocaleProvider>
+        <PlaygroundPage />
+      </LocaleProvider>,
+    )
   })
 }
 

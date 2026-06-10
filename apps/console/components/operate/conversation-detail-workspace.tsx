@@ -64,8 +64,8 @@ const STATUS_COLOR: Record<string, string> = {
   waiting_human: '#d4912e', resolved: '#2ea04a', escalated: '#e64539',
 }
 
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+function fmtTime(iso: string, locale: 'en' | 'zh'): string {
+  return new Date(iso).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function fmtMs(ms: number): string {
@@ -85,7 +85,7 @@ function CasePill({ caseItem }: { caseItem: CaseSummary }) {
   )
 }
 
-function MessageRow({ msg }: { msg: MsgItem }) {
+function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
   const isUser = msg.role === 'user'
   const isToolResult = msg.content.startsWith('Tool ') && msg.role === 'assistant'
   return (
@@ -101,7 +101,7 @@ function MessageRow({ msg }: { msg: MsgItem }) {
           : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'}`}>
           <MessageContent content={msg.content} />
         </div>
-        <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt)}</span>
+        <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt, locale)}</span>
       </div>
     </div>
   )
@@ -142,7 +142,8 @@ function computeMetrics(traces: TraceItem[]): Metrics {
 export default function ConversationDetailWorkspace({ chatId }: { chatId: string }) {
   const decodedChatId = decodeURIComponent(chatId)
   const router = useRouter()
-  const { t } = useConsoleLocale()
+  const { t, locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
 
   const [session, setSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<MsgItem[]>([])
@@ -278,12 +279,12 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
   async function handleDelete() {
     if (!session) return
-    if (!confirm(`Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} linked ProcedureRun(s)?`)) return
+    if (!confirm(isZh ? `删除会话 ${decodedChatId.slice(0, 16)}… 以及关联的 ${session.cases.length} 个 ProcedureRun？` : `Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} linked ProcedureRun(s)?`)) return
     setDeleting(true)
     try {
       await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
       router.push('/operate/conversations')
-    } catch { alert('Delete failed'); setDeleting(false) }
+    } catch { alert(isZh ? '删除失败' : 'Delete failed'); setDeleting(false) }
   }
 
   return (
@@ -294,22 +295,22 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <ConsoleBackButton
-                label="Conversations"
-                ariaLabel="Back to conversations"
+                label={isZh ? '会话' : 'Conversations'}
+                ariaLabel={isZh ? '返回会话列表' : 'Back to conversations'}
                 onClick={() => router.push('/operate/conversations')}
               />
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">Operate</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">{isZh ? '运营' : 'Operate'}</p>
                 <h1 className="truncate text-[16px] font-semibold tracking-tight text-[var(--mist)]">
                   {conversationTruth.kind === 'synthetic_review'
-                    ? 'Review transcript · Playground export'
+                    ? (isZh ? '评审记录 · Playground 导出' : 'Review transcript · Playground export')
                     : conversationTruth.kind === 'mixed'
-                      ? 'Conversation · Mixed sources'
-                      : `Chat · ${session?.userId ?? `${decodedChatId.slice(0, 16)}…`}`}
+                      ? (isZh ? '会话 · 混合来源' : 'Conversation · Mixed sources')
+                      : `${isZh ? '会话' : 'Chat'} · ${session?.userId ?? `${decodedChatId.slice(0, 16)}…`}`}
                 </h1>
                 {session ? (
                   <p className="mt-1 text-[12px] text-[var(--fog)]/80">
-                    {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} timeline events
+                    {session.cases.length} {isZh ? '个 ProcedureRun' : `ProcedureRun${session.cases.length !== 1 ? 's' : ''}`} · {session.messageCount} {isZh ? '条消息' : 'msgs'} · {traces.length} {isZh ? '个时间线事件' : 'timeline events'}
                   </p>
                 ) : null}
               </div>
@@ -328,16 +329,16 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                     <Link
                       href={`/operate/handoff/${encodeURIComponent(profileKey)}`}
                       className="inline-flex items-center gap-1.5 rounded-[14px] border border-indigo/18 bg-indigo/[0.06] px-3 py-2 text-[12px] font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
-                      title="Open this user's profile (cross-chat history & preferences)"
+                      title={isZh ? '打开该用户档案（跨会话历史与偏好）' : "Open this user's profile (cross-chat history & preferences)"}
                     >
                       <User className="h-3.5 w-3.5" />
-                      User
+                      {isZh ? '用户' : 'User'}
                     </Link>
                   )
                 })()}
                 <ExportButton
                   filename={`chat-${decodedChatId.slice(0, 8)}`}
-                  label="Export"
+                  label={isZh ? '导出' : 'Export'}
                   getData={() => ({ session, messages, traces, exportedAt: new Date().toISOString() })}
                 />
                 <button
@@ -360,7 +361,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                   <Link
                     href={`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
                     className="console-btn-icon-square h-8 w-8"
-                    title="View ProcedureRun details"
+                    title={isZh ? '查看 ProcedureRun 详情' : 'View ProcedureRun details'}
                   >
                     <BarChart3 className="h-3.5 w-3.5" />
                   </Link>
@@ -389,29 +390,29 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         {metrics.llmCalls > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label="LLM Calls" value={String(metrics.llmCalls)} />
-            <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label="Tokens" value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
-            <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label="Wall Time" value={fmtMs(metrics.turnWallMs)} />
-            <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label="Tool Phase" value={fmtMs(metrics.toolPhaseMs)} />
+            <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label={isZh ? 'Token' : 'Tokens'} value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
+            <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label={isZh ? '总耗时' : 'Wall Time'} value={fmtMs(metrics.turnWallMs)} />
+            <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label={isZh ? '工具阶段' : 'Tool Phase'} value={fmtMs(metrics.toolPhaseMs)} />
           </div>
         )}
         <div className="flex flex-wrap gap-2">
           <button onClick={toggleMemory}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-teal/20 bg-teal/[0.04] hover:bg-teal/[0.08] transition-colors text-teal">
             <MessageSquare className="w-3.5 h-3.5" />
-            {showMemory ? 'Hide Memory' : 'Memory'}
+            {showMemory ? (isZh ? '收起 Memory' : 'Hide Memory') : 'Memory'}
           </button>
           {traces.length > 0 && (
             <button onClick={() => setShowTraces(!showTraces)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-black/[0.06] bg-white/60 hover:bg-white transition-colors">
               <BarChart3 className="w-3.5 h-3.5" />
-              {showTraces ? 'Hide Timeline' : `Timeline & Evidence (${traces.length})`}
+              {showTraces ? (isZh ? '收起时间线' : 'Hide Timeline') : `${isZh ? '时间线与证据' : 'Timeline & Evidence'} (${traces.length})`}
             </button>
           )}
           {metrics.llmCalls > 0 && (
             <button onClick={() => setShowAnalysis(!showAnalysis)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo/20 bg-indigo/[0.04] hover:bg-indigo/[0.08] transition-colors text-indigo">
               <Zap className="w-3.5 h-3.5" />
-              {showAnalysis ? 'Hide Analysis' : 'Analysis'}
+              {showAnalysis ? (isZh ? '收起分析' : 'Hide Analysis') : (isZh ? '分析' : 'Analysis')}
             </button>
           )}
         </div>
@@ -420,22 +421,22 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
       {/* Analysis panel */}
       {showAnalysis && metrics.llmCalls > 0 && (
         <div className="mb-4 rounded-2xl border border-indigo/[0.08] bg-white/70 p-5 space-y-4">
-          <h3 className="text-[13px] font-bold text-[var(--mist)]">Token & Timing Analysis</h3>
+          <h3 className="text-[13px] font-bold text-[var(--mist)]">{isZh ? 'Token 与耗时分析' : 'Token & Timing Analysis'}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <AnalysisStat label="Input Tokens" value={metrics.inputTokens.toLocaleString()} />
-            <AnalysisStat label="Output Tokens" value={metrics.outputTokens.toLocaleString()} />
-            <AnalysisStat label="Cache Read" value={metrics.cacheReadTokens.toLocaleString()} sub={metrics.cacheReadTokens > 0 ? `${((metrics.cacheReadTokens / Math.max(metrics.totalTokens, 1)) * 100).toFixed(0)}% hit` : undefined} />
-            <AnalysisStat label="Cache Write" value={metrics.cacheWriteTokens.toLocaleString()} />
+            <AnalysisStat label={isZh ? '输入 Token' : 'Input Tokens'} value={metrics.inputTokens.toLocaleString()} />
+            <AnalysisStat label={isZh ? '输出 Token' : 'Output Tokens'} value={metrics.outputTokens.toLocaleString()} />
+            <AnalysisStat label={isZh ? '缓存命中' : 'Cache Read'} value={metrics.cacheReadTokens.toLocaleString()} sub={metrics.cacheReadTokens > 0 ? `${((metrics.cacheReadTokens / Math.max(metrics.totalTokens, 1)) * 100).toFixed(0)}% ${isZh ? '命中' : 'hit'}` : undefined} />
+            <AnalysisStat label={isZh ? '缓存写入' : 'Cache Write'} value={metrics.cacheWriteTokens.toLocaleString()} />
             {metrics.compactTokens > 0 && (
-              <AnalysisStat label="Compact Tokens" value={metrics.compactTokens.toLocaleString()} />
+              <AnalysisStat label={isZh ? 'Compact Token' : 'Compact Tokens'} value={metrics.compactTokens.toLocaleString()} />
             )}
-            <AnalysisStat label="Avg Tokens/Call" value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
-            <AnalysisStat label="Avg Output/Call" value={metrics.llmCalls > 0 ? (metrics.outputTokens / metrics.llmCalls).toFixed(0) : '0'} />
-            <AnalysisStat label="Tokens/sec" value={metrics.turnWallMs > 0 ? ((metrics.outputTokens / (metrics.turnWallMs / 1000))).toFixed(0) : '0'} />
+            <AnalysisStat label={isZh ? '每次平均 Token' : 'Avg Tokens/Call'} value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
+            <AnalysisStat label={isZh ? '每次平均输出' : 'Avg Output/Call'} value={metrics.llmCalls > 0 ? (metrics.outputTokens / metrics.llmCalls).toFixed(0) : '0'} />
+            <AnalysisStat label={isZh ? '每秒 Token' : 'Tokens/sec'} value={metrics.turnWallMs > 0 ? ((metrics.outputTokens / (metrics.turnWallMs / 1000))).toFixed(0) : '0'} />
           </div>
           {session && (
             <div className="pt-2 border-t border-black/[0.04]">
-              <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">Per-ProcedureRun Summary</h4>
+              <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">{isZh ? '按 ProcedureRun 汇总' : 'Per-ProcedureRun Summary'}</h4>
               <div className="space-y-1.5">
                 {session.cases.map((c) => {
                   const caseTraces = traces.filter((t) => t.caseId === c.id)
@@ -444,7 +445,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                     <div key={c.id} className="flex items-center gap-2 text-[11px]">
                       <span className="w-16 text-[var(--fog)]/50">{c.id.slice(0, 8)}</span>
                       <span className="text-[var(--mist)]">{c.type.replace(/_/g, ' ')}</span>
-                      <span className="text-[var(--fog)]/50">· {caseTraces.length} traces · {caseTools} tools</span>
+                      <span className="text-[var(--fog)]/50">· {caseTraces.length} {isZh ? '条轨迹' : 'traces'} · {caseTools} {isZh ? '个工具' : 'tools'}</span>
                     </div>
                   )
                 })}
@@ -459,27 +460,27 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         <div className="mb-4 rounded-2xl border border-teal/[0.08] bg-white/70 p-5 space-y-4">
           {/* Header + action buttons */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h3 className="text-[13px] font-bold text-[var(--mist)]">Chat Memory</h3>
+            <h3 className="text-[13px] font-bold text-[var(--mist)]">{isZh ? '会话 Memory' : 'Chat Memory'}</h3>
             <div className="flex gap-2 flex-wrap">
               {/* Compact Chat — generate a summary of this conversation */}
               <button onClick={handleCompact} disabled={compacting}
                 className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-teal/20 bg-teal/[0.06] text-teal hover:bg-teal/[0.12] disabled:opacity-50"
-                title="Generate a summary of this conversation">
+                title={isZh ? '为这段会话生成摘要' : 'Generate a summary of this conversation'}>
                 <Zap className="w-3 h-3" />
-                {compacting ? 'Compacting…' : 'Compact Chat'}
+                {compacting ? (isZh ? 'Compact 中…' : 'Compacting…') : (isZh ? 'Compact 会话' : 'Compact Chat')}
               </button>
               {/* Update User Profile — merges chat summaries into the cross-chat UserProfile */}
               <button onClick={handleUpdateProfile} disabled={updatingProfile}
                 className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-indigo/20 bg-indigo/[0.04] text-indigo hover:bg-indigo/[0.08] disabled:opacity-50"
-                title="Merge this chat's summaries into the user's cross-chat profile">
+                title={isZh ? '把这段会话的摘要合并进用户的跨会话档案' : "Merge this chat's summaries into the user's cross-chat profile"}>
                 <User className="w-3 h-3" />
-                {updatingProfile ? 'Updating…' : 'Update User Profile'}
+                {updatingProfile ? (isZh ? '更新中…' : 'Updating…') : (isZh ? '更新用户档案' : 'Update User Profile')}
               </button>
               {/* Link to full User Profile page */}
               {memoryData?.profile && (
                 <Link href={`/operate/handoff/${encodeURIComponent(memoryData.profile.userId)}`}
                   className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-black/[0.06] text-[var(--fog)] hover:text-[var(--mist)] hover:border-black/10">
-                  <User className="w-3 h-3" /> View Profile →
+                  <User className="w-3 h-3" /> {isZh ? '查看档案' : 'View Profile'} →
                 </Link>
               )}
             </div>
@@ -488,8 +489,8 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           {/* Compact Chat result banner */}
           {compactResult && !compactResult.error && (
             <div className="rounded-xl border border-teal/10 bg-teal/[0.04] p-3 text-[11px] text-[var(--mist)]">
-              ✓ Compact complete · Model: {compactResult.compactModel} · {compactResult.beforeChars?.toLocaleString()} → {compactResult.afterChars?.toLocaleString()} chars
-              {!compactResult.summary && <span className="ml-2 text-amber">(no summary generated — conversation may be too short)</span>}
+              ✓ {isZh ? 'Compact 完成' : 'Compact complete'} · Model: {compactResult.compactModel} · {compactResult.beforeChars?.toLocaleString()} → {compactResult.afterChars?.toLocaleString()} chars
+              {!compactResult.summary && <span className="ml-2 text-amber">{isZh ? '（没有生成摘要，可能是会话太短）' : '(no summary generated — conversation may be too short)'}</span>}
             </div>
           )}
           {compactResult?.error && (
@@ -499,7 +500,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           {/* Update User Profile result banner */}
           {profileResult && !profileResult.error && (
             <div className="rounded-xl border border-indigo/10 bg-indigo/[0.04] p-3 text-[11px] text-[var(--mist)]">
-              ✓ User Profile updated · {profileResult.memoriesMerged} summaries merged · Profile key: <code className="font-mono text-indigo/80">{profileResult.profileKey}</code>
+              ✓ {isZh ? '用户档案已更新' : 'User Profile updated'} · {profileResult.memoriesMerged} {isZh ? '条摘要已合并' : 'summaries merged'} · Profile key: <code className="font-mono text-indigo/80">{profileResult.profileKey}</code>
             </div>
           )}
           {profileResult?.error && (
@@ -521,22 +522,22 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                       <MessageContent content={mem.summary.slice(0, 3000)} />
                     </div>
                   ) : (
-                    <p className="text-[11px] text-[var(--fog)]/50 italic">No summary yet — click "Compact Chat" to generate one.</p>
+                    <p className="text-[11px] text-[var(--fog)]/50 italic">{isZh ? '还没有摘要，点击「Compact 会话」生成。' : 'No summary yet — click "Compact Chat" to generate one.'}</p>
                   )}
                   <div className="mt-2 flex gap-3 text-[10px] text-[var(--fog)]/50">
-                    <span>{(mem.toolsCalled?.length ?? 0)} tools</span>
-                    <span>{Object.keys(mem.confirmedFacts ?? {}).length} facts</span>
+                    <span>{(mem.toolsCalled?.length ?? 0)} {isZh ? '个工具' : 'tools'}</span>
+                    <span>{Object.keys(mem.confirmedFacts ?? {}).length} {isZh ? '条事实' : 'facts'}</span>
                   </div>
                 </div>
               ))}
               {(!memoryData.memories || memoryData.memories.length === 0) && (
-                <p className="text-[12px] text-[var(--fog)]/50 py-4 text-center">No memory data for this chat yet.</p>
+                <p className="text-[12px] text-[var(--fog)]/50 py-4 text-center">{isZh ? '这段会话还没有 Memory 数据。' : 'No memory data for this chat yet.'}</p>
               )}
 
               {/* User Profile preview (cross-chat accumulation) */}
               {memoryData.profile?.profile && (
                 <div className="rounded-xl border border-indigo/[0.08] bg-indigo/[0.03] p-3">
-                  <p className="text-[10px] font-medium text-indigo/70 mb-2">User Profile (cross-chat)</p>
+                  <p className="text-[10px] font-medium text-indigo/70 mb-2">{isZh ? '用户档案（跨会话）' : 'User Profile (cross-chat)'}</p>
                   <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[160px] overflow-auto">
                     <MessageContent content={memoryData.profile.profile.slice(0, 1500)} />
                   </div>
@@ -553,9 +554,11 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 shadow-[var(--shadow-card)]">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-[14px] font-semibold text-[var(--mist)]">Timeline & evidence</h2>
+                <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '时间线与证据' : 'Timeline & evidence'}</h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
-                  Read call vs result, Hook decisions, Procedure reconcile, and stale evidence with the same runtime language used in Playground.
+                  {isZh
+                    ? '用和 Playground 一样的运行时语言来阅读 tool call / result、Hook decision、Procedure reconcile 和 stale evidence。'
+                    : 'Read call vs result, Hook decisions, Procedure reconcile, and stale evidence with the same runtime language used in Playground.'}
                 </p>
               </div>
               <p className={`rounded-full border px-3 py-1.5 text-[11px] ${
@@ -571,9 +574,9 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           {unassignedTraces.length > 0 ? (
             <section className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 shadow-[var(--shadow-card)]">
               <div className="mb-3">
-                <h3 className="text-[13px] font-semibold text-[var(--mist)]">Chat-level runtime events</h3>
+                <h3 className="text-[13px] font-semibold text-[var(--mist)]">{isZh ? '会话级运行时事件' : 'Chat-level runtime events'}</h3>
                 <p className="mt-1 text-[12px] text-[var(--fog)]">
-                  These events were recorded at the chat level instead of under a single ProcedureRun.
+                  {isZh ? '这些事件记录在 chat 层，而不是单个 ProcedureRun 之下。' : 'These events were recorded at the chat level instead of under a single ProcedureRun.'}
                 </p>
               </div>
               <CaseTraceTimeline traces={unassignedTraces} t={t} groupByIteration={false} />
@@ -594,19 +597,19 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                     </div>
                     <p className="mt-2 text-[12px] leading-5 text-[var(--fog)]">
                       {caseSourceTruth.isSynthetic
-                        ? 'This ProcedureRun is a review copy from Playground export. Treat the evidence below as review-oriented runtime history, not a live customer continuation.'
-                        : 'This ProcedureRun carries the recorded runtime evidence for this chat.'}
+                        ? (isZh ? '这个 ProcedureRun 是从 Playground 导出的评审副本。下面的证据应视为偏评审用途的运行历史，而不是实时客户续聊。' : 'This ProcedureRun is a review copy from Playground export. Treat the evidence below as review-oriented runtime history, not a live customer continuation.')
+                        : (isZh ? '这个 ProcedureRun 承载了该 chat 的已记录运行证据。' : 'This ProcedureRun carries the recorded runtime evidence for this chat.')}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--fog)]">
                     <span className="rounded-full border border-black/[0.06] bg-white/70 px-2.5 py-1">
-                      {caseTraces.length} timeline events
+                      {caseTraces.length} {isZh ? '个时间线事件' : 'timeline events'}
                     </span>
                     <Link
                       href={`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
                       className="inline-flex items-center gap-1.5 rounded-full border border-indigo/18 bg-indigo/[0.06] px-3 py-1.5 font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
                     >
-                      ProcedureRun detail
+                      {isZh ? 'ProcedureRun 详情' : 'ProcedureRun detail'}
                       <BarChart3 className="h-3.5 w-3.5" />
                     </Link>
                   </div>
@@ -616,7 +619,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                   <CaseTraceTimeline traces={caseTraces} t={t} />
                 ) : (
                   <p className="rounded-2xl border border-dashed border-black/[0.08] bg-white/50 px-4 py-6 text-[12px] text-[var(--fog)]">
-                    No timeline evidence was recorded for this ProcedureRun.
+                    {isZh ? '这个 ProcedureRun 还没有记录到时间线证据。' : 'No timeline evidence was recorded for this ProcedureRun.'}
                   </p>
                 )}
               </section>
@@ -634,7 +637,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         ) : rows.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center text-[var(--fog)]">
             <MessageSquare className="mb-2 h-8 w-8 opacity-20" strokeWidth={1} />
-            <p className="text-[13px]">No messages</p>
+            <p className="text-[13px]">{isZh ? '没有消息' : 'No messages'}</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -648,7 +651,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                   </div>
                 )
               }
-              return <MessageRow key={row.msg.id} msg={row.msg} />
+              return <MessageRow key={row.msg.id} msg={row.msg} locale={locale} />
             })}
           </div>
         )}
