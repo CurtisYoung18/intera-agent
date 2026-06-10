@@ -298,7 +298,7 @@ export default function ConsoleSidebar() {
           <NavGroup label={t('sidebar.settings')} items={SETTINGS_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
         </nav>
 
-        <div className="border-t border-black/5 bg-white/[0.14] px-3 pb-2 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+        <div className="mt-auto flex-shrink-0 border-t border-black/5 bg-white/[0.14] px-3 pb-3 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
           {/* Controls panel — opens upward from bottom */}
           {avatarOpen && !collapsed && (
             <ConsoleSurface tone="floating" padding="sm" className="mb-3 rounded-[22px]">
@@ -395,8 +395,30 @@ export default function ConsoleSidebar() {
             )}
           </button>
 
-          {!collapsed && (
-            <p className="px-1.5 pt-1 text-[10px] font-mono text-[var(--color-text-tertiary)]/55">{t('shell.version')}</p>
+          {!collapsed ? (
+            <div className="mt-2 rounded-[18px] border border-white/60 bg-white/[0.42] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-[10px] font-semibold text-[var(--color-text-tertiary)]/70">
+                  {t('shell.version')}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#357f7c]/15 bg-[#357f7c]/[0.07] px-2 py-1 text-[10px] font-semibold text-[#357f7c]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {t('sidebar.online')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleLocale()}
+                className="mt-2 flex w-full items-center justify-between rounded-[14px] px-2 py-1.5 text-[11px] font-medium text-[var(--fog)] transition-colors hover:bg-white/[0.68] hover:text-[var(--mist)]"
+              >
+                <span>{t('sidebar.language')}</span>
+                <span className="font-semibold text-[#357f7c]">{langButtonLabel}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 flex justify-center">
+              <span className="h-2 w-2 rounded-full bg-[#357f7c]/80 shadow-[0_0_10px_rgba(53,127,124,0.34)]" aria-label={t('sidebar.online')} />
+            </div>
           )}
         </div>
       </aside>
