@@ -23,7 +23,7 @@ describe('OrgPickerPage', () => {
   beforeEach(() => {
     mockApiClient.mockReset()
 
-    delete (window as Window & { location?: Location }).location
+    Reflect.deleteProperty(window, 'location')
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: { href: 'http://localhost/org-picker' },

@@ -171,6 +171,7 @@ export default function ChatsPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -180,8 +181,13 @@ export default function ChatsPage() {
       const result = await apiClient<ChatsListResponse>('/api/chats?limit=200')
       setSessions(result.data.sessions)
       setTotal(result.data.total)
+      setLoadError(null)
     } catch {
-      if (showLoading) setSessions([])
+      if (showLoading) {
+        setSessions([])
+        setTotal(0)
+      }
+      setLoadError('Failed to load conversations')
     } finally {
       if (showLoading) setLoading(false)
     }
@@ -221,6 +227,7 @@ export default function ChatsPage() {
   const waitingCount = sessions.filter((session) => session.hasHumanTask || session.cases.some((item) => item.status === 'waiting_human')).length
   const procedureRunCount = sessions.reduce((sum, session) => sum + session.cases.length, 0)
   const latestActivity = sessions[0]?.lastActivity ? fmtRelative(sessions[0].lastActivity) : 'No activity'
+  const hasVisibleData = sessions.length > 0 || total > 0
 
   return (
     <div className="mx-auto flex max-w-[1580px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
@@ -277,8 +284,30 @@ export default function ChatsPage() {
         </div>
       </header>
 
+      {loadError && hasVisibleData ? (
+        <div className="inline-flex items-center gap-2 self-start rounded-full border border-vermillion/18 bg-vermillion/[0.06] px-3 py-1.5 text-[12px] text-vermillion shadow-[var(--shadow-card)]">
+          <AlertCircle className="h-3.5 w-3.5" />
+          {loadError}
+        </div>
+      ) : null}
+
       {loading ? (
         <ListSkeleton count={6} />
+      ) : loadError && !hasVisibleData ? (
+        <section className="mx-auto w-full max-w-xl rounded-[28px] border border-dashed border-vermillion/18 bg-white/[0.6] px-6 py-16 text-center shadow-[var(--shadow-card)]">
+          <AlertCircle className="mx-auto h-8 w-8 text-vermillion/60" />
+          <h2 className="mt-4 text-[16px] font-semibold text-[var(--mist)]">Unable to load conversations</h2>
+          <p className="mt-2 text-[13px] leading-6 text-[var(--fog)]">
+            The conversation inbox could not read live chat data just now. Retry after the local session and data source are available.
+          </p>
+          <button
+            type="button"
+            onClick={() => void load(true)}
+            className="mt-5 inline-flex items-center justify-center rounded-[16px] border border-indigo/20 bg-indigo/[0.08] px-4 py-2.5 text-[13px] font-semibold text-indigo transition-all hover:bg-indigo/[0.14]"
+          >
+            Retry inbox
+          </button>
+        </section>
       ) : filtered.length === 0 ? (
         <div className="mx-auto w-full max-w-xl rounded-[28px] border border-dashed border-black/[0.08] bg-white/[0.56] px-6 py-16 text-center shadow-[var(--shadow-card)]">
           <EmptyState

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ArrowRight, Building2, Loader2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, Building2, Loader2 } from 'lucide-react'
 import { apiClient } from '@/lib/api/client'
 import { ConsoleAuthShell } from '@/components/auth/console-auth-shell'
 
@@ -26,7 +26,7 @@ function OrgPicker() {
 
   const [orgs, setOrgs] = useState<Membership[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(errorParam || '')
+  const [error, setError] = useState<string | null>(errorParam || null)
   const [switching, setSwitching] = useState<string | null>(null)
 
   useEffect(() => {
@@ -36,6 +36,7 @@ function OrgPicker() {
         if (cancelled) return
         if (r.data?.orgs && Array.isArray(r.data.orgs)) {
           setOrgs(r.data.orgs)
+          setError(null)
         } else {
           setError('Unable to load organizations')
         }
@@ -53,7 +54,7 @@ function OrgPicker() {
 
   const selectOrg = async (orgId: string) => {
     setSwitching(orgId)
-    setError('')
+    setError(null)
     try {
       await apiClient('/api/auth/switch-org', { method: 'POST', body: { orgId } })
       window.location.href = '/build/pilot-lab'
@@ -78,6 +79,9 @@ function OrgPicker() {
     : loading
       ? 'Loading organization memberships'
       : `${orgs.length} organization${orgs.length === 1 ? '' : 's'} available`
+  const statusDetail = error
+    ? 'Retry membership lookup once your session is available.'
+    : 'You can switch later from the identity menu.'
 
   return (
     <ConsoleAuthShell
@@ -91,7 +95,7 @@ function OrgPicker() {
       description="If your account belongs to more than one workspace, choose the organization that should power the next Build, Operate, and Settings session."
       statusLabel={statusLabel}
       statusTone={error ? 'danger' : loading ? 'neutral' : 'success'}
-      statusDetail="You can switch later from the identity menu."
+      statusDetail={statusDetail}
       panelEyebrow="Workspace Access"
       panelTitle="Select Organization"
       panelDescription="Choose which organization you want to access before entering the Console."
@@ -118,6 +122,23 @@ function OrgPicker() {
                 </div>
               </div>
             ))}
+          </div>
+        ) : error ? (
+          <div className="px-6 py-10 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[18px] border border-vermillion/16 bg-vermillion/[0.08] text-vermillion">
+              <AlertCircle className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-[15px] font-semibold text-[var(--mist)]">Membership lookup failed</p>
+            <p className="mt-2 text-[13px] leading-6 text-[var(--fog)]">
+              We could not confirm your organization memberships yet. Retry once the session and membership data are available.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-5 inline-flex items-center justify-center rounded-[16px] border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-4 py-2.5 text-[13px] font-semibold text-[#357f7c] transition-all hover:bg-[#357f7c]/[0.14]"
+            >
+              Retry lookup
+            </button>
           </div>
         ) : orgs.length === 0 ? (
           <div className="px-6 py-10 text-center">

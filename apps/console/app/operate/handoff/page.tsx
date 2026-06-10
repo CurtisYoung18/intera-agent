@@ -210,7 +210,22 @@ export default function HumanHandoffPage() {
         </div>
       ) : null}
 
-      {cases.length === 0 ? (
+      {error && cases.length === 0 ? (
+        <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-vermillion/18 bg-white/[0.58] px-6 text-center shadow-[var(--shadow-card)]">
+          <AlertCircle className="h-6 w-6 text-vermillion/60" />
+          <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">Unable to read the handoff queue</h2>
+          <p className="mt-2 max-w-md text-[13px] leading-6 text-[var(--fog)]">
+            The waiting queue could not load just now, so this view pauses instead of pretending the queue is empty.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-5 inline-flex items-center justify-center rounded-full border border-indigo/20 bg-indigo/[0.08] px-4 py-2 text-[12px] font-semibold text-indigo transition-colors hover:bg-indigo/[0.14]"
+          >
+            Retry queue
+          </button>
+        </div>
+      ) : cases.length === 0 ? (
         <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-black/[0.08] bg-white/55 px-6 text-center shadow-[var(--shadow-card)]">
           <Sparkles className="h-6 w-6 text-indigo/55" />
           <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">No active handoffs</h2>

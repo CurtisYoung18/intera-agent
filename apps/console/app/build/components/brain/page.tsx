@@ -8,7 +8,7 @@ export default function BrainComponentPage() {
       currentLabel="Brain"
       description="Adjust memory, model, profile, and compact-test behavior inside the same Components workspace."
     >
-      <Suspense fallback={<main className="px-8 py-8 text-[13px] text-[var(--fog)]">Loading Brain workspace...</main>}>
+      <Suspense fallback={<div className="intera-q2-panel px-5 py-5 text-[13px] text-[var(--color-text-secondary)]">Loading Brain workspace…</div>}>
         <BrainWorkspace />
       </Suspense>
     </BuildComponentsRouteShell>

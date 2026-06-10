@@ -47,10 +47,10 @@ export function ConsoleAuthShell({
       <div className="pointer-events-none absolute inset-x-[-8%] top-[-12%] h-[36rem] rounded-full bg-[radial-gradient(circle,rgba(53,127,124,0.16)_0%,rgba(53,127,124,0.04)_36%,transparent_72%)] blur-3xl" />
       <div className="pointer-events-none absolute bottom-[-20%] right-[-8%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(91,138,247,0.14)_0%,rgba(91,138,247,0.02)_34%,transparent_72%)] blur-3xl" />
 
-      <div className="relative mx-auto grid min-h-[calc(100dvh-2rem)] max-w-[1180px] gap-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+      <div className="relative mx-auto grid max-w-[1180px] gap-4 lg:min-h-[calc(100dvh-2rem)] lg:gap-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
         <aside className="relative overflow-hidden rounded-[34px] border border-white/72 bg-[rgba(255,252,246,0.78)] px-6 py-7 shadow-[0_24px_60px_rgba(21,23,25,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-[22px] sm:px-8 sm:py-8 lg:px-10 lg:py-10">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.45),transparent_46%),radial-gradient(circle_at_bottom_right,rgba(53,127,124,0.1),transparent_34%)]" />
-          <div className="relative flex h-full flex-col justify-between gap-10">
+          <div className="relative flex flex-col gap-8 lg:h-full lg:justify-between lg:gap-10">
             <div className="space-y-8">
               <span className="inline-flex w-fit items-center rounded-full border border-white/70 bg-white/[0.8] px-3.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#357f7c] shadow-[0_8px_24px_rgba(21,23,25,0.04)]">
                 {badge}
@@ -80,7 +80,7 @@ export function ConsoleAuthShell({
           </div>
         </aside>
 
-        <section className="flex items-center">
+        <section className="flex items-start lg:items-center">
           <div className="w-full rounded-[32px] border border-white/75 bg-[rgba(255,253,249,0.84)] px-5 py-6 shadow-[0_24px_60px_rgba(21,23,25,0.08),inset_0_1px_0_rgba(255,255,255,0.74)] backdrop-blur-[20px] sm:px-7 sm:py-8">
             <div className={`mx-auto w-full ${panelWidthClassName}`}>
               <div className="mb-6">
