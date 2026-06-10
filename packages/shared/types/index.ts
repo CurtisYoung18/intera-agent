@@ -111,6 +111,9 @@ export interface ToolDefinition {
   /** Customer-visible label shown in the chat spinner while this tool is executing.
    *  When absent, the tool name is formatted and used as a fallback. */
   displayVerb?: { text: string; icon: SpinnerIcon }
+  /** Internal source mapping for generated knowledge-search tools. */
+  knowledgeSourceId?: string
+  knowledgeSourceName?: string
   // Zod validation — catches type errors at runtime, feeds back to LLM for correction
   // Pattern from Claude Code: tool.inputSchema.safeParse(input)
   zodSchema?: import('zod').ZodType

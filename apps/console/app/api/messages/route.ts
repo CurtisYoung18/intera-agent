@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
 import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type CaseSession, type RuntimeEventSource } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
+import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { normalizeSSEEvent } from '@/lib/agent/stream-handler'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
@@ -625,11 +626,11 @@ export async function POST(request: NextRequest) {
           }
           const kbSources = await prisma.knowledgeSource.findMany({
             where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
-            select: { name: true, description: true },
+            select: { id: true, name: true, description: true },
           })
           for (const ks of kbSources) {
             toolSummaries.push({
-              name: `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+              name: knowledgeSourceToolName(ks.name, ks.id),
               description: ks.description || `Search the ${ks.name} knowledge base`,
               needsMemberId: false,
             })

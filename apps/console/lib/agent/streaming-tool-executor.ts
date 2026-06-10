@@ -8,6 +8,7 @@
 // Supports both batch mode (executeAll) and streaming mode (enqueue + waitForAll).
 
 import type { ToolUse, ToolResult, ToolDefinition } from '@intera/shared/types'
+import { knowledgeSourceToolName } from './tool-names'
 
 /** Tool execution stores `{ ok, output, latencyMs }`; consumers need the inner tool payload. */
 export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknown {
@@ -379,16 +380,24 @@ export class StreamingToolExecutor {
 
         // kb_search_<sourceName>: load the specific source
         let sources: Array<{
-          groupIds: string; topK: number; embeddingRate: number;
+          id: string; name: string; groupIds: string; topK: number; embeddingRate: number;
           docCorrelation: number | null; rerankVersion: string | null;
           modelControlTopK: boolean;
         }> = []
 
-        if (definition.name.startsWith('kb_search_')) {
-          const sourceName = definition.name.slice('kb_search_'.length)
+        if (definition.knowledgeSourceId) {
           const source = await prisma.knowledgeSource.findFirst({
-            where: { agentConfigId: this.agentConfigId ?? '', name: sourceName, enabled: true },
+            where: { agentConfigId: this.agentConfigId ?? '', id: definition.knowledgeSourceId, enabled: true },
           })
+          if (source) sources = [source]
+        } else if (definition.name.startsWith('kb_search_')) {
+          const enabledSources = await prisma.knowledgeSource.findMany({
+            where: { agentConfigId: this.agentConfigId ?? '', enabled: true },
+          })
+          const source = enabledSources.find((candidate) => (
+            knowledgeSourceToolName(candidate.name, candidate.id) === definition.name ||
+            `kb_search_${candidate.name.replace(/[^a-zA-Z0-9_-]/g, '_')}` === definition.name
+          ))
           if (source) sources = [source]
         }
 

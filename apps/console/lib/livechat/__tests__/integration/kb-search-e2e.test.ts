@@ -24,22 +24,22 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
 
     // Each kb_search_* tool should have the source's description
     const names = kbTools.map((t: { name: string }) => t.name)
-    expect(names).toContain('kb_search_Deposit')
-    expect(names).toContain('kb_search_General')
-    expect(names).toContain('kb_search_Game')
-    expect(names).toContain('kb_search_Account')
-    expect(names).toContain('kb_search_Withdraw')
-    expect(names).toContain('kb_search_Promotion')
-    expect(names).toContain('kb_search_Abbreviation_Mapping')
+    expect(names).toContain('kb_search_deposit')
+    expect(names).toContain('kb_search_general')
+    expect(names).toContain('kb_search_game')
+    expect(names).toContain('kb_search_account')
+    expect(names).toContain('kb_search_withdraw')
+    expect(names).toContain('kb_search_promotion')
+    expect(names).toContain('kb_search_abbreviation_mapping')
 
     // Verify descriptions are from DB
-    const deposit = kbTools.find((t: { name: string }) => t.name === 'kb_search_Deposit')!
+    const deposit = kbTools.find((t: { name: string }) => t.name === 'kb_search_deposit')!
     expect(deposit.description).toBe('Deposit QA')
 
-    const game = kbTools.find((t: { name: string }) => t.name === 'kb_search_Game')!
+    const game = kbTools.find((t: { name: string }) => t.name === 'kb_search_game')!
     expect(game.description).toBe('Game QA')
 
-    const general = kbTools.find((t: { name: string }) => t.name === 'kb_search_General')!
+    const general = kbTools.find((t: { name: string }) => t.name === 'kb_search_general')!
     expect(general.description).toBe('General QA')
 
     // Each tool should have query + topK input schema
@@ -62,14 +62,14 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
     }
   })
 
-  it('kb_search_Deposit executes against GPTBots API and returns results', async () => {
+  it('kb_search_deposit executes against GPTBots API and returns results', async () => {
     if (!process.env.GPTBOTS_API_KEY) {
       console.warn('GPTBOTS_API_KEY not set — skipping live API test')
       return
     }
 
     const router = await ToolRouter.create('api')
-    const depositDef = router.getTool('kb_search_Deposit')
+    const depositDef = router.getTool('kb_search_deposit')
     expect(depositDef).toBeDefined()
 
     const executor = new StreamingToolExecutor(
@@ -82,7 +82,7 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* end-to-end (DB + GPTB
     // Use executeAll to call the tool synchronously
     const results = await (StreamingToolExecutor as any).executeAll?.(
       router.getToolDefinitions(),
-      [{ id: 'tool-1', name: 'kb_search_Deposit', input: { query: 'how to deposit' } }],
+      [{ id: 'tool-1', name: 'kb_search_deposit', input: { query: 'how to deposit' } }],
     )
 
     // If executeAll doesn't exist, test via the internal http execution path

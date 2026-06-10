@@ -9,7 +9,6 @@ import RenderHintCard from '@/components/chat/render-hint-card'
 import CopyButton from '@/components/ui/copy-button'
 import { OrganicLoader } from '@/components/config-pilot/ai-motion'
 import type {
-  PlaygroundCapabilityTruth,
   PlaygroundTraceEvent,
   PlaygroundTraceStep,
 } from '@/lib/agent/trace-aggregator'
@@ -147,92 +146,6 @@ function BreakdownCell({ label, value }: { label: string; value: string }) {
         fontSize: 9, fontWeight: 600, color: '#b8a99a',
         textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2,
       }}>{label}</div>
-    </div>
-  )
-}
-
-function TruthCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{
-      padding: '8px 10px',
-      borderRadius: 9,
-      background: 'rgba(255,252,249,0.55)',
-      border: '1px solid rgba(0,0,0,0.04)',
-    }}>
-      <div style={{
-        fontSize: 11, fontWeight: 600, color: '#3d3833',
-        lineHeight: 1.5,
-      }}>
-        {value}
-      </div>
-      <div style={{
-        fontSize: 9, fontWeight: 600, color: '#b8a99a',
-        textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 3,
-      }}>
-        {label}
-      </div>
-    </div>
-  )
-}
-
-function formatToolSurface(truth: PlaygroundCapabilityTruth['toolSummary']): string {
-  const parts: string[] = []
-  if (truth.mockedDryRun > 0) parts.push(`${truth.mockedDryRun} mocked`)
-  if (truth.runtimeBacked > 0) parts.push(`${truth.runtimeBacked} runtime-backed`)
-  if (truth.runtimeManaged > 0) parts.push(`${truth.runtimeManaged} runtime-managed`)
-  if (truth.staticFixture > 0) parts.push(`${truth.staticFixture} fixture-backed`)
-  if (truth.unknown > 0) parts.push(`${truth.unknown} unknown`)
-  return parts.join(' · ') || 'No confirmed tools yet'
-}
-
-function RuntimeTruthPanel({ truth }: { truth: PlaygroundCapabilityTruth }) {
-  return (
-    <div style={{
-      margin: '0 14px 10px 26px',
-      padding: '10px 12px',
-      borderRadius: 12,
-      background: 'rgba(212,118,78,0.035)',
-      border: '1px solid rgba(212,118,78,0.08)',
-    }}>
-      <div style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-        textTransform: 'uppercase', color: '#8a7e74', marginBottom: 8,
-      }}>
-        Runtime truth
-      </div>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-        gap: 6,
-      }}>
-        <TruthCell label="Resolved model" value={truth.model} />
-        <TruthCell label="Image support" value={truth.imageSupport.label} />
-        <TruthCell label="Execution mode" value={truth.executionSurface.label} />
-        <TruthCell label="Tool surface" value={formatToolSurface(truth.toolSummary)} />
-      </div>
-      {(truth.imageSupport.note || truth.executionSurface.note || truth.warnings.length > 0) && (
-        <div style={{ marginTop: 8, display: 'grid', gap: 5 }}>
-          {truth.imageSupport.note && (
-            <div style={{ fontSize: 10.5, color: '#8a7e74', lineHeight: 1.5 }}>
-              {truth.imageSupport.note}
-            </div>
-          )}
-          {truth.executionSurface.note && (
-            <div style={{ fontSize: 10.5, color: '#8a7e74', lineHeight: 1.5 }}>
-              {truth.executionSurface.note}
-            </div>
-          )}
-          {truth.warnings.map((warning, idx) => (
-            <div key={idx} style={{
-              fontSize: 10.5, color: 'var(--amber)', lineHeight: 1.5,
-              background: 'rgba(212,145,46,0.07)', borderRadius: 8,
-              border: '1px solid rgba(212,145,46,0.12)', padding: '6px 8px',
-            }}>
-              {warning}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -639,8 +552,6 @@ function TurnSection({
   const toolCount = toolSteps.reduce((sum, s) => sum + (s.detail?.length || 0), 0)
   const hasLiveTools = isLatest && isResponding && liveTools.length > 0
   const hasTraceData = steps.length > 0
-  const runtimeTruth = steps.find((step) => step.runtimeTruth)?.runtimeTruth
-
   const chevronStyle: React.CSSProperties = {
     transition: 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
     transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
@@ -715,10 +626,6 @@ function TurnSection({
               <BreakdownCell label={tb('trace.breakdownTools')} value={turnMs >= modelStep.ms && turnMs - modelStep.ms >= 0 ? ((turnMs - modelStep.ms) >= 1000 ? ((turnMs - modelStep.ms) / 1000).toFixed(1) + 's' : (turnMs - modelStep.ms) + 'ms') : '-'} />
               <BreakdownCell label={tb('trace.breakdownTokPerS')} value={modelStep.ms > 0 ? String(Math.round(turnOutput / (modelStep.ms / 1000))) : '-'} />
             </div>
-          )}
-
-          {runtimeTruth && (
-            <RuntimeTruthPanel truth={runtimeTruth} />
           )}
 
           {steps.filter((s) => s.fired !== false).map((step, i) => {

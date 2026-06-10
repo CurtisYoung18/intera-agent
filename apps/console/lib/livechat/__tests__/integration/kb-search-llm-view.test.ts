@@ -30,7 +30,7 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
     console.log(`All ${defs.length} kb_search tools are concurrency-safe → LLM can call multiple in parallel`)
   })
 
-  it('Deposit query example: LLM picks kb_search_Deposit based on description', async () => {
+  it('Deposit query example: LLM picks kb_search_deposit based on description', async () => {
     const { ToolRouter } = await import('../../../agent/tools')
     const router = await ToolRouter.create('api')
     const allTools = router.getTools()
@@ -38,36 +38,36 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
     // Simulate the LLM's decision:
     // User asks: "how do I deposit money?"
     // LLM scans tool descriptions:
-    //   kb_search_Deposit: "Deposit QA" → MATCH
-    //   kb_search_Game: "Game QA" → no
-    //   kb_search_General: "General QA" → maybe
+    //   kb_search_deposit: "Deposit QA" → MATCH
+    //   kb_search_game: "Game QA" → no
+    //   kb_search_general: "General QA" → maybe
     //
-    // LLM decides: call kb_search_Deposit AND kb_search_General in parallel
+    // LLM decides: call kb_search_deposit AND kb_search_general in parallel
 
-    const depositTool = allTools.find((t: { name: string }) => t.name === 'kb_search_Deposit')
+    const depositTool = allTools.find((t: { name: string }) => t.name === 'kb_search_deposit')
     expect(depositTool).toBeDefined()
     expect(depositTool!.description).toBe('Deposit QA')
 
-    const generalTool = allTools.find((t: { name: string }) => t.name === 'kb_search_General')
+    const generalTool = allTools.find((t: { name: string }) => t.name === 'kb_search_general')
     expect(generalTool).toBeDefined()
     expect(generalTool!.description).toBe('General QA')
 
     console.log('\n=== Simulated LLM decision for "how do I deposit money?" ===')
-    console.log(`LLM picks: kb_search_Deposit ("${depositTool!.description}") + kb_search_General ("${generalTool!.description}")`)
+    console.log(`LLM picks: kb_search_deposit ("${depositTool!.description}") + kb_search_general ("${generalTool!.description}")`)
     console.log('Both called in parallel (isConcurrencySafe: true)')
   })
 
-  it('Abbreviation query example: LLM picks kb_search_Abbreviation_Mapping', async () => {
+  it('Abbreviation query example: LLM picks kb_search_abbreviation_mapping', async () => {
     const { ToolRouter } = await import('../../../agent/tools')
     const router = await ToolRouter.create('api')
     const allTools = router.getTools()
 
-    const abbrevTool = allTools.find((t: { name: string }) => t.name === 'kb_search_Abbreviation_Mapping')
+    const abbrevTool = allTools.find((t: { name: string }) => t.name === 'kb_search_abbreviation_mapping')
     expect(abbrevTool).toBeDefined()
     expect(abbrevTool!.description).toBe('Only when customer said possbile abbreviation')
 
     console.log('\n=== Simulated LLM decision for "what does P2P mean?" ===')
-    console.log(`LLM scans descriptions, sees kb_search_Abbreviation_Mapping: "${abbrevTool!.description}"`)
+    console.log(`LLM scans descriptions, sees kb_search_abbreviation_mapping: "${abbrevTool!.description}"`)
     console.log('Customer said "P2P" which is a possible abbreviation → triggers this tool')
   })
 
@@ -78,11 +78,11 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
 
     // Simulate: user asks a broad question that spans multiple domains
     // "I deposited money but it's not showing. Also, is there a promo?"
-    // LLM decides: call kb_search_Deposit + kb_search_Promotion in parallel
+    // LLM decides: call kb_search_deposit + kb_search_promotion in parallel
 
-    const depositDef = defs.find((d: { name: string }) => d.name === 'kb_search_Deposit')
-    const promoDef = defs.find((d: { name: string }) => d.name === 'kb_search_Promotion')
-    const generalDef = defs.find((d: { name: string }) => d.name === 'kb_search_General')
+    const depositDef = defs.find((d: { name: string }) => d.name === 'kb_search_deposit')
+    const promoDef = defs.find((d: { name: string }) => d.name === 'kb_search_promotion')
+    const generalDef = defs.find((d: { name: string }) => d.name === 'kb_search_general')
 
     for (const d of [depositDef, promoDef, generalDef]) {
       expect(d).toBeDefined()
@@ -94,9 +94,9 @@ describe.skipIf(!process.env.GPTBOTS_API_KEY)('kb_search_* — LLM perspective v
     console.log('\n=== Multi-source parallel query ===')
     console.log('User: "I deposited money but it is not showing. Any promo?"')
     console.log('LLM decides to call in parallel:')
-    console.log(`  1. kb_search_Deposit → ${depositDef!.description}`)
-    console.log(`  2. kb_search_Promotion → ${promoDef!.description}`)
-    console.log(`  3. kb_search_General → ${generalDef!.description}`)
+    console.log(`  1. kb_search_deposit → ${depositDef!.description}`)
+    console.log(`  2. kb_search_promotion → ${promoDef!.description}`)
+    console.log(`  3. kb_search_general → ${generalDef!.description}`)
     console.log('\nAll 3 execute concurrently, results merged into LLM context')
   })
 })

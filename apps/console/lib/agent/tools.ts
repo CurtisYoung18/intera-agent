@@ -10,6 +10,7 @@
 import type { ToolDefinition, ToolUse } from '@intera/shared/types'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { z } from 'zod'
+import { knowledgeSourceToolName, stableToolNameSegment } from './tool-names'
 
 /**
  * System Tools — always-available core tools registered directly in the constructor.
@@ -520,8 +521,14 @@ export class ToolRouter {
         if (config?.gptbotsApiKey) gptbotsApiKey = config.gptbotsApiKey
       } catch { /* DB may not be ready, use env fallback */ }
 
+      const usedKnowledgeToolNames = new Set<string>()
       for (const ks of knowledgeSources) {
-        const toolName = `kb_search_${ks.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+        const baseToolName = knowledgeSourceToolName(ks.name, ks.id)
+        const fallbackSuffix = ks.id ? `_${stableToolNameSegment(ks.id).slice(-6)}` : ''
+        const toolName = usedKnowledgeToolNames.has(baseToolName)
+          ? `${baseToolName}${fallbackSuffix}`
+          : baseToolName
+        usedKnowledgeToolNames.add(toolName)
         const baseDesc = ks.description || `Search the "${ks.name}" knowledge base`
         router.tools.set(toolName, {
           name: toolName,
@@ -545,6 +552,8 @@ export class ToolRouter {
           enabled: true,
           toolCategory: 'system_info',
           displayVerb: { text: `Searching ${ks.name}`, icon: 'dots' },
+          knowledgeSourceId: ks.id,
+          knowledgeSourceName: ks.name,
           renderHints: {
             livechat: {
               kind: 'carousel',

@@ -56,7 +56,7 @@ describe('TraceSidebar', () => {
     expect(screen.getByText('Tool: kb_search_deposit')).toBeTruthy()
   })
 
-  it('renders runtime truth, hook decisions, procedure guards, and tool execution labels', () => {
+  it('renders hook decisions, procedure guards, and tool execution labels without the runtime-truth summary card', () => {
     renderSidebar([
       {
         stage: 'Model generation',
@@ -170,9 +170,9 @@ describe('TraceSidebar', () => {
     ])
 
     expect(screen.getByText('Trace timeline')).toBeTruthy()
-    expect(screen.getByText('Runtime truth')).toBeTruthy()
-    expect(screen.getByText('Dry-run mixed surface')).toBeTruthy()
-    expect(screen.getByText('Resolved model')).toBeTruthy()
+    expect(screen.queryByText('Runtime truth')).toBeNull()
+    expect(screen.queryByText('Dry-run mixed surface')).toBeNull()
+    expect(screen.queryByText('Resolved model')).toBeNull()
     expect(screen.queryByText((_, node) => node?.textContent?.includes('Call requests a tool.') ?? false)).toBeNull()
     expect(screen.getAllByText('Mocked in Playground dry-run').length).toBeGreaterThan(0)
     expect(screen.getByText('Hook blocked Tool: query_order_status')).toBeTruthy()

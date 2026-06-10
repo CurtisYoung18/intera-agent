@@ -29,6 +29,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import SlidePanel from '@/components/ui/slide-panel'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
+import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { useSession } from '@/lib/hooks/use-session'
 import type { ToolsListResponse, ToolCreateResponse } from '@intera/shared/contracts/tools'
 import { normalizeToolMode, type ToolItem as ContractToolItem } from '@intera/shared/contracts/tools'
@@ -138,8 +139,8 @@ function displayToolDescription(tool: Pick<ToolItem, 'name' | 'description'>) {
     .replace(/\bplatform policy\b/gi, 'platform rule')
 }
 
-function getToolName(name: string) {
-  return `kb_search_${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+function getToolName(name: string, sourceId?: string) {
+  return knowledgeSourceToolName(name, sourceId)
 }
 
 function toolIcon(tool: ToolItem) {
@@ -574,7 +575,7 @@ export default function BuildToolsPage() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[13px] font-semibold text-[var(--mist)]">
-                              {getToolName(source.name)}
+                              {getToolName(source.name, source.id)}
                             </p>
                             <span className="mt-0.5 inline-block rounded-full bg-teal-500/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-teal-600">
                               KB source
@@ -583,7 +584,7 @@ export default function BuildToolsPage() {
                           <button
                             type="button"
                             onClick={() => toggleKnowledgeSource(source)}
-                            aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getToolName(source.name)}`}
+                            aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getToolName(source.name, source.id)}`}
                             className="flex-shrink-0 transition-opacity hover:opacity-80"
                           >
                             {source.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}

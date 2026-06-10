@@ -23,6 +23,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import EmptyState from '@/components/ui/empty-state'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
+import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { useSession } from '@/lib/hooks/use-session'
 import type { CaseTypeItem } from '@intera/shared/contracts/case-types'
 
@@ -110,8 +111,8 @@ function toEditingSource(source?: KnowledgeSource | null): EditingSource {
   }
 }
 
-function getToolName(name: string) {
-  return `kb_search_${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+function getToolName(name: string, sourceId?: string) {
+  return knowledgeSourceToolName(name, sourceId)
 }
 
 function getKbName(kbs: GptBotKb[], groupId: string) {
@@ -528,7 +529,7 @@ export default function BuildKnowledgePage() {
                           <div className="flex items-center gap-2">
                             <p className="truncate text-[14px] font-semibold text-[var(--mist)]">{source.name}</p>
                             <code className="rounded-full border border-black/[0.06] bg-white/82 px-2 py-1 text-[10px] text-[var(--fog)]">
-                              {getToolName(source.name)}
+                              {getToolName(source.name, source.id)}
                             </code>
                           </div>
                           {source.description ? (

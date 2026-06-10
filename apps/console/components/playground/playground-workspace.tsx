@@ -786,7 +786,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     ? 'Pilot Lab / Playground'
     : (isZh ? '兼容路由 / Playground' : 'Compatibility route / Playground')
   const workspaceTitle = surface === 'pilot-lab'
-    ? (isZh ? '运行时真相工作台' : 'Runtime truth desk')
+    ? (isZh ? '运行调试工作台' : 'Runtime test desk')
     : (isZh ? 'Playground 兼容工作台' : 'Playground compatibility desk')
   const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? (isZh ? 'dry-run 运行路径' : 'Dry-run runtime path')
   const executionSurfaceNote = latestRuntimeTruth?.executionSurface.note
