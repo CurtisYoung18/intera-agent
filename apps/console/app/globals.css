@@ -642,6 +642,7 @@ body {
   .console-shell {
     position: relative;
     display: flex;
+    height: 100dvh;
     min-height: 100dvh;
     overflow: hidden;
     background: var(--console-shell-bg);
@@ -663,8 +664,10 @@ body {
     position: relative;
     z-index: 10;
     display: flex;
+    height: 100dvh;
     min-width: 0;
     min-height: 0;
+    max-height: 100dvh;
     flex: 1 1 auto;
     flex-direction: column;
   }
@@ -822,7 +825,8 @@ body {
     z-index: 20;
     display: flex;
     min-height: 0;
-    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
     flex-shrink: 0;
     flex-direction: column;
     overflow: hidden;
