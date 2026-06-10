@@ -158,9 +158,9 @@ function toolTone(tool: ToolItem) {
 }
 
 function modeLabel(tool: ToolItem) {
-  if (tool.isSystem) return 'System'
-  if (tool.isChannel) return 'Channel'
-  if (tool.isSpecial) return 'Special'
+  if (tool.isSystem) return 'Runtime-managed'
+  if (tool.isChannel) return 'Channel-managed'
+  if (tool.isSpecial) return 'Dedicated surface'
   return normalizeToolMode(tool.mode) === 'http' ? 'HTTP' : 'Static fixture'
 }
 
@@ -248,10 +248,10 @@ export default function BuildToolsPage() {
     )
   }, [search, tools])
 
-  const systemTools = filtered.filter((tool) => SYSTEM_TOOL_NAMES.has(tool.name))
-  const channelTools = filtered.filter((tool) => CHANNEL_TOOL_NAMES.has(tool.name))
-  const specialTools = filtered.filter((tool) => SPECIAL_TOOL_NAMES.has(tool.name))
-  const businessTools = filtered.filter((tool) => !SYSTEM_TOOL_NAMES.has(tool.name) && !CHANNEL_TOOL_NAMES.has(tool.name) && !SPECIAL_TOOL_NAMES.has(tool.name))
+  const systemTools = filtered.filter((tool) => tool.isSystem || SYSTEM_TOOL_NAMES.has(tool.name))
+  const channelTools = filtered.filter((tool) => tool.isChannel || CHANNEL_TOOL_NAMES.has(tool.name))
+  const specialTools = filtered.filter((tool) => tool.isSpecial || SPECIAL_TOOL_NAMES.has(tool.name))
+  const customTools = filtered.filter((tool) => !tool.isSystem && !tool.isChannel && !tool.isSpecial && !SYSTEM_TOOL_NAMES.has(tool.name) && !CHANNEL_TOOL_NAMES.has(tool.name) && !SPECIAL_TOOL_NAMES.has(tool.name))
 
   const updateToolEnabled = useCallback(async (tool: ToolItem) => {
     if (!agentConfigId) return
@@ -427,7 +427,7 @@ export default function BuildToolsPage() {
             <div>
               <h1 className="text-[20px] font-semibold text-[var(--mist)]">Tools</h1>
               <p className="mt-0.5 text-[13px] text-[var(--fog)]">
-                Configure business tools, inspect runtime-managed tools, and verify endpoint behavior without leaving Build.
+                Configure custom tools, inspect runtime-managed tools, and verify endpoint behavior without leaving Build.
               </p>
             </div>
             <button
@@ -461,7 +461,7 @@ export default function BuildToolsPage() {
           ) : (
             <div className="space-y-10">
               {systemTools.length > 0 ? (
-                <section>
+                <section data-testid="runtime-tools-section">
                   <div className="mb-4 flex items-center gap-2">
                     <h2 className="text-[15px] font-semibold text-[var(--mist)]">Runtime-managed tools</h2>
                     <span className="rounded-full border border-amber/20 bg-amber/[0.08] px-2 py-0.5 text-[10px] font-medium text-amber">
@@ -530,7 +530,12 @@ export default function BuildToolsPage() {
                                 {modeLabel(tool)}
                               </span>
                             </div>
-                            <button type="button" onClick={() => updateToolEnabled(tool)} className="flex-shrink-0 transition-opacity hover:opacity-80">
+                            <button
+                              type="button"
+                              onClick={() => updateToolEnabled(tool)}
+                              aria-label={`${tool.enabled ? 'Disable' : 'Enable'} ${displayToolName(tool)}`}
+                              className="flex-shrink-0 transition-opacity hover:opacity-80"
+                            >
                               {tool.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}
                             </button>
                           </div>
@@ -575,7 +580,12 @@ export default function BuildToolsPage() {
                               KB source
                             </span>
                           </div>
-                          <button type="button" onClick={() => toggleKnowledgeSource(source)} className="flex-shrink-0 transition-opacity hover:opacity-80">
+                          <button
+                            type="button"
+                            onClick={() => toggleKnowledgeSource(source)}
+                            aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getToolName(source.name)}`}
+                            className="flex-shrink-0 transition-opacity hover:opacity-80"
+                          >
                             {source.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}
                           </button>
                         </div>
@@ -625,20 +635,20 @@ export default function BuildToolsPage() {
                 </section>
               ) : null}
 
-              <section>
+              <section data-testid="custom-tools-section">
                 <div className="mb-4 flex items-center gap-2">
-                  <h2 className="text-[15px] font-semibold text-[var(--mist)]">Business tools</h2>
+                  <h2 className="text-[15px] font-semibold text-[var(--mist)]">Custom tools</h2>
                   <span className="rounded-full border border-indigo/20 bg-indigo/[0.08] px-2 py-0.5 text-[10px] font-medium text-indigo">
                     Editable
                   </span>
                 </div>
-                {businessTools.length === 0 ? (
+                {customTools.length === 0 ? (
                   <div className="rounded-xl border border-black/[0.06] bg-white/[0.72] p-5 text-[12px] text-[var(--fog)] shadow-[var(--shadow-card)] backdrop-blur-xl">
-                    No business tools yet. Create one to start wiring customer-facing capabilities.
+                    No custom tools yet. Create one to start wiring customer-facing capabilities.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {businessTools.map((tool) => {
+                    {customTools.map((tool) => {
                       const Icon = toolIcon(tool)
                       const chips = mockFixtureChips(tool.mockFixture)
                       return (
@@ -684,6 +694,7 @@ export default function BuildToolsPage() {
                                 event.stopPropagation()
                                 updateToolEnabled(tool)
                               }}
+                              aria-label={`${tool.enabled ? 'Disable' : 'Enable'} ${displayToolName(tool)}`}
                               className="flex-shrink-0 transition-opacity hover:opacity-80"
                             >
                               {tool.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}

@@ -9,10 +9,11 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, ImageIcon,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
+import { apiClient } from '@/lib/api/client'
 import type { LifecycleNotice } from '@intera/shared/types'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
-import { apiClient } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import CopyButton from '@/components/ui/copy-button'
@@ -109,6 +110,7 @@ export default function PlaygroundPage() {
   const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
+  const [snapshotReloadKey, setSnapshotReloadKey] = useState(0)
   const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(() => {
     try { const s = localStorage.getItem('pg_formRequest'); return s ? JSON.parse(s) : null } catch { return null }
   })
@@ -373,13 +375,24 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/admin/agent-configs').then(r => r.json()).then(d => d.data || d),
-      fetch('/api/admin/models').then(r => r.json()).then(d => d.data || d),
+      fetch('/api/admin/agent-configs', { cache: 'no-store' }).then(r => r.json()).then(d => d.data || d),
+      fetch('/api/admin/models', { cache: 'no-store' }).then(r => r.json()).then(d => d.data || d),
     ]).then(([agentsData, modelsData]) => {
       setAgentList(agentsData.configs || [])
       setModels(modelsData.models || [])
     }).catch(() => { /* non-critical; picker will retry */ })
   }, [])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ agentId?: string }>).detail
+      if (!detail?.agentId || detail.agentId === selectedAgentId) {
+        setSnapshotReloadKey((value) => value + 1)
+      }
+    }
+    window.addEventListener(AGENT_CONFIG_UPDATED_EVENT, handler)
+    return () => window.removeEventListener(AGENT_CONFIG_UPDATED_EVENT, handler)
+  }, [selectedAgentId])
 
   useEffect(() => {
     if (!selectedAgentId) return
@@ -399,17 +412,17 @@ export default function PlaygroundPage() {
     }
     prevAgentConfigIdRef.current = selectedAgentId
 
-    fetch(`/api/admin/agent?agentId=${selectedAgentId}`)
-      .then(r => r.json())
-      .then(data => {
-        const raw = data.data?.config || data.config || {}
+    apiClient(`/api/admin/agent?agentId=${selectedAgentId}`, { cache: 'no-store' })
+      .then((data) => {
+        const payload = data as any
+        const raw = payload.data?.config || payload.config || {}
         let memoryStrategy = {}
         try { memoryStrategy = typeof raw.memoryStrategy === 'string' ? JSON.parse(raw.memoryStrategy || '{}') : raw.memoryStrategy || {} } catch { /* */ }
 
         const sp = raw.systemPrompt || ''
 
         // Resolved model: prefer the API-resolved name, fall back to modelInfo lookup, then raw model id
-        const resolvedModel: string = data.data?.resolvedModel || data.resolvedModel || data.data?.config?.resolvedModel || data.config?.resolvedModel ||
+        const resolvedModel: string = payload.data?.resolvedModel || payload.resolvedModel || payload.data?.config?.resolvedModel || payload.config?.resolvedModel ||
           (models.find(m => m.id === raw.model)?.name || raw.model || resolveEffectiveModel({ model: raw.model }))
 
         setSnapshot({
@@ -424,7 +437,7 @@ export default function PlaygroundPage() {
         if (raw.showThinking !== undefined) setShowThinking(Boolean(raw.showThinking))
       })
       .catch(() => setSnapshot(null))
-  }, [selectedAgentId, models, agentList])
+  }, [selectedAgentId, models, agentList, snapshotReloadKey])
 
   /* ── Auto-scroll ── */
 

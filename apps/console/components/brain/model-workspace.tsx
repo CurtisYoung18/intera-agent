@@ -11,6 +11,7 @@ import {
 } from '@/components/admin/agent-config-drawer-ui'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { emitAgentConfigUpdated } from '@/lib/agent-config-events'
 import { useSession } from '@/lib/hooks/use-session'
 import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { CORE_SYSTEM_PROMPT, DEFAULT_MODEL } from '@intera/shared/defaults'
@@ -99,8 +100,8 @@ export default function ModelWorkspace() {
     if (!agentId) return
     setLoading(true)
     Promise.all([
-      apiClient(`/api/admin/agent?agentId=${agentId}`),
-      apiClient('/api/admin/models'),
+      apiClient(`/api/admin/agent?agentId=${agentId}`, { cache: 'no-store' }),
+      apiClient('/api/admin/models', { cache: 'no-store' }),
     ])
       .then(([agentResult, modelsResult]) => {
         const raw = (agentResult.data as any).config || {}
@@ -148,7 +149,8 @@ export default function ModelWorkspace() {
       await apiClient(`/api/admin/agent?agentId=${agentId}`, {
         body: config,
       })
-      await bustConfigCache(orgId)
+      await bustConfigCache(orgId, agentId)
+      emitAgentConfigUpdated(agentId)
       setSaveResult('saved')
       refreshPreview()
       setTimeout(() => setSaveResult('idle'), 2500)

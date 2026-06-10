@@ -54,6 +54,7 @@ interface ClientOptions {
   method?: string
   body?: unknown
   headers?: Record<string, string>
+  cache?: RequestCache
 }
 
 class ApiClientError extends Error {
@@ -71,6 +72,7 @@ async function apiClient<T = unknown>(
   const fetchOptions: RequestInit = {
     method: method ?? (body ? 'POST' : 'GET'),
     headers: { 'Content-Type': 'application/json', ...headers },
+    cache: options.cache,
   }
   if (body !== undefined) {
     fetchOptions.body = JSON.stringify(body)
@@ -180,11 +182,11 @@ function useApi<T = unknown>(
 }
 
 // ── bustConfigCache ──
-async function bustConfigCache(orgId: string): Promise<void> {
+async function bustConfigCache(orgId: string, agentConfigId?: string): Promise<void> {
   const res = await fetch('/api/admin/config-changed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orgId }),
+    body: JSON.stringify({ orgId, agentConfigId }),
   })
   if (!res.ok) {
     console.error('Config cache bust failed:', res.status)

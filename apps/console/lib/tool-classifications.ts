@@ -1,9 +1,13 @@
-// Shared classification constants for Tools Admin page.
+// Shared classification constants for Tools workspace.
 // Built-in tools are defined in BUILT_IN_TOOLS (tools.ts).
-// Business tools come from the database.
+// Custom tools come from the database.
 
 /** System Tools — engine-managed, READ-ONLY. Auto-gifted to every agent. */
 export const SYSTEM_TOOL_NAMES = new Set([
+  'start_procedure',
+  'reconcile_procedure_input',
+  'finalize_procedure',
+  'remember',
   'dispatch_case_agent',
   'finalize_case',
   'read_chat_memory',
