@@ -20,7 +20,6 @@ import {
 import { useConsoleLocale } from '@/components/locale-provider'
 import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
-import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { ConsoleSurface } from '@/components/ui/console-chrome'
 
 interface NavItem {
@@ -126,7 +125,7 @@ export default function ConsoleSidebar() {
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [switchOpen, setSwitchOpen] = useState(false)
   const { t, toggleLocale, locale } = useConsoleLocale()
-  const { selectedAgentId, selectAgent, refreshConfigs } = useAgentContext()
+  const { selectedAgentId, selectAgent, refreshConfigs, agentConfigs } = useAgentContext()
 
   // Session state
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
@@ -145,6 +144,11 @@ export default function ConsoleSidebar() {
   const [passwordLoading, setPasswordLoading] = useState(false)
 
   const langButtonLabel = locale === 'en' ? t('sidebar.switchToZh') : t('sidebar.switchToEn')
+  const selectedAgent =
+    agentConfigs.find((config) => config.id === selectedAgentId) ??
+    agentConfigs.find((config) => config.isActive) ??
+    agentConfigs[0] ??
+    null
 
   // Load session on mount
   useEffect(() => {
@@ -276,11 +280,43 @@ export default function ConsoleSidebar() {
           <div className="flex-shrink-0 border-b border-black/[0.04] px-3 py-3">
             <ConsoleSurface tone="toolbar" padding="sm" className="flex items-center gap-2.5 rounded-[24px]">
               <div className="flex-1 min-w-0">
-                <AgentVersionPicker
-                  agentId={selectedAgentId}
-                  onChange={handleAgentSelect}
-                  onAgentsChanged={refreshConfigs}
-                />
+                <Link
+                  href="/build/release"
+                  className="flex items-center gap-2.5 rounded-[18px] border border-white/70 bg-white/[0.72] px-3 py-2.5 shadow-[0_6px_16px_rgba(21,23,25,0.04),inset_0_1px_0_rgba(255,255,255,0.58)] transition-all hover:bg-white/[0.92]"
+                  aria-label={t('sidebar.release')}
+                  title={t('sidebar.release')}
+                >
+                  <span
+                    aria-hidden
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      selectedAgent?.isActive
+                        ? 'bg-[var(--color-signal-success)] shadow-[0_0_0_3px_rgba(46,160,74,0.18)]'
+                        : 'bg-[var(--color-text-tertiary)] opacity-55'
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-semibold text-[var(--mist)]">
+                      {selectedAgent?.name ?? t('common.loading')}
+                    </span>
+                  </span>
+                  {selectedAgent ? (
+                    <span className="rounded-[10px] bg-black/[0.045] px-2 py-1 text-[11px] font-semibold text-[var(--fog)]">
+                      v{selectedAgent.version}
+                    </span>
+                  ) : null}
+                  {selectedAgent ? (
+                    <span
+                      className={`rounded-[10px] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.04em] ${
+                        selectedAgent.isActive
+                          ? 'bg-[rgba(46,160,74,0.1)] text-[var(--color-signal-success)]'
+                          : 'bg-black/[0.05] text-[var(--fog)]'
+                      }`}
+                    >
+                      {selectedAgent.isActive ? t('agentVersion.active') : t('agentVersion.draft')}
+                    </span>
+                  ) : null}
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--fog)] opacity-70" />
+                </Link>
               </div>
               <button
                 type="button"
