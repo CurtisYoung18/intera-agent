@@ -8,19 +8,20 @@ import {
   FileDown,
   GitCompare,
   Loader2,
-  MoreHorizontal,
   PackageOpen,
   RotateCcw,
   SendHorizontal,
   Upload,
-  Wand2,
   X,
 } from 'lucide-react'
 import ConfigDiffViewer, { type ConfigDiffGroup, type ConfigDiffItem } from '@/components/config-diff/config-diff-viewer'
 import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import { MAX_AGENT_CONFIG_VERSIONS } from '@/lib/agent-config/versioning'
 import type { AgentTemplateImportReport, InteraAgentTemplateV1 } from '@intera/shared/contracts/agent-template'
 import type { ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
+
+type VersionRole = 'live' | 'draft' | 'historical'
 
 interface AgentVersion {
   id: string
@@ -53,28 +54,37 @@ interface PendingPackageImport {
   report: AgentTemplateImportReport
 }
 
+interface VersionValidationSnapshot {
+  label: string
+  detail: string
+  meta: string
+  tone: 'success' | 'warning' | 'danger' | 'neutral'
+}
+
 interface ReleaseData {
   configs: AgentVersion[]
+  family: AgentVersion[]
   current: AgentVersion | null
   live: AgentVersion | null
   draft: AgentVersion | null
-  rollbackCandidate: AgentVersion | null
-  scenarios: ScenarioListResponse | null
+  history: AgentVersion[]
+  scenariosById: Record<string, ScenarioListResponse | null>
+  scenarioErrors: Record<string, string>
   templates: Record<string, InteraAgentTemplateV1 | null>
   templateErrors: Record<string, string>
-  scenarioError: string | null
 }
 
 const EMPTY_RELEASE_DATA: ReleaseData = {
   configs: [],
+  family: [],
   current: null,
   live: null,
   draft: null,
-  rollbackCandidate: null,
-  scenarios: null,
+  history: [],
+  scenariosById: {},
+  scenarioErrors: {},
   templates: {},
   templateErrors: {},
-  scenarioError: null,
 }
 
 const GROUP_COPY = {
@@ -226,28 +236,28 @@ function makeGroup(id: keyof typeof GROUP_COPY, items: ConfigDiffItem[]): Config
   }
 }
 
-function buildDiffGroups(liveTemplate: InteraAgentTemplateV1 | null, draftTemplate: InteraAgentTemplateV1 | null): ConfigDiffGroup[] {
+function buildDiffGroups(liveTemplate: InteraAgentTemplateV1 | null, selectedTemplate: InteraAgentTemplateV1 | null): ConfigDiffGroup[] {
   const brainBefore = liveTemplate?.agent ? [{ key: 'brain', ...liveTemplate.agent }] : []
-  const brainAfter = draftTemplate?.agent ? [{ key: 'brain', ...draftTemplate.agent }] : []
+  const brainAfter = selectedTemplate?.agent ? [{ key: 'brain', ...selectedTemplate.agent }] : []
   const hookRowsBefore = [
     ...(liveTemplate?.hooks ?? []).map((hook) => ({ kind: 'Hook', key: `hook:${hook.name}`, ...hook })),
     ...(liveTemplate?.hookBindings ?? []).map((binding) => ({ kind: 'Binding', key: `binding:${binding.hookName}:${binding.scopeKey}`, ...binding })),
   ]
   const hookRowsAfter = [
-    ...(draftTemplate?.hooks ?? []).map((hook) => ({ kind: 'Hook', key: `hook:${hook.name}`, ...hook })),
-    ...(draftTemplate?.hookBindings ?? []).map((binding) => ({ kind: 'Binding', key: `binding:${binding.hookName}:${binding.scopeKey}`, ...binding })),
+    ...(selectedTemplate?.hooks ?? []).map((hook) => ({ kind: 'Hook', key: `hook:${hook.name}`, ...hook })),
+    ...(selectedTemplate?.hookBindings ?? []).map((binding) => ({ kind: 'Binding', key: `binding:${binding.hookName}:${binding.scopeKey}`, ...binding })),
   ]
   const scenarioRowsBefore = scenarioRows(liveTemplate)
-  const scenarioRowsAfter = scenarioRows(draftTemplate)
+  const scenarioRowsAfter = scenarioRows(selectedTemplate)
 
   return [
     makeGroup('brain', diffCollection(brainBefore, brainAfter, (item) => item.key, () => 'Agent Brain settings', (item) => typeof item.model === 'string' ? `Model ${item.model}` : undefined)),
-    makeGroup('procedures', diffCollection(liveTemplate?.caseTypes ?? [], draftTemplate?.caseTypes ?? [], (item) => item.type, (item) => item.displayName || item.type, (item) => `${item.type} · ${item.procedure?.steps?.length ?? 0} steps`)),
-    makeGroup('tools', diffCollection(liveTemplate?.tools ?? [], draftTemplate?.tools ?? [], (item) => item.name, (item) => item.name, (item) => `${item.mode}${item.enabled === false ? ' · disabled' : ''}`)),
+    makeGroup('procedures', diffCollection(liveTemplate?.caseTypes ?? [], selectedTemplate?.caseTypes ?? [], (item) => item.type, (item) => item.displayName || item.type, (item) => `${item.type} · ${item.procedure?.steps?.length ?? 0} steps`)),
+    makeGroup('tools', diffCollection(liveTemplate?.tools ?? [], selectedTemplate?.tools ?? [], (item) => item.name, (item) => item.name, (item) => `${item.mode}${item.enabled === false ? ' · disabled' : ''}`)),
     makeGroup('hooks', diffCollection(hookRowsBefore, hookRowsAfter, (item) => item.key, (item) => `${item.kind}: ${'name' in item ? item.name : item.hookName}`, (item) => 'checkpoint' in item ? String(item.checkpoint) : String(item.scopeType))),
     makeGroup('scenarios', diffCollection(scenarioRowsBefore, scenarioRowsAfter, (item) => item.name, (item) => item.displayName || item.name, (item) => `${item.turns?.length ?? 0} turns`)),
-    makeGroup('knowledge', diffCollection(liveTemplate?.knowledgeRefs ?? [], draftTemplate?.knowledgeRefs ?? [], (item) => item.name, (item) => item.name, (item) => `${item.provider}${item.status ? ` · ${item.status}` : ''}`)),
-    makeGroup('integrations', diffCollection(liveTemplate?.integrationRefs ?? [], draftTemplate?.integrationRefs ?? [], (item) => item.channel, (item) => item.name || item.channel, (item) => `${item.provider ?? item.channel}${item.status ? ` · ${item.status}` : ''}`)),
+    makeGroup('knowledge', diffCollection(liveTemplate?.knowledgeRefs ?? [], selectedTemplate?.knowledgeRefs ?? [], (item) => item.name, (item) => item.name, (item) => `${item.provider}${item.status ? ` · ${item.status}` : ''}`)),
+    makeGroup('integrations', diffCollection(liveTemplate?.integrationRefs ?? [], selectedTemplate?.integrationRefs ?? [], (item) => item.channel, (item) => item.name || item.channel, (item) => `${item.provider ?? item.channel}${item.status ? ` · ${item.status}` : ''}`)),
   ]
 }
 
@@ -264,8 +274,8 @@ function packageCoverageRows(template: InteraAgentTemplateV1 | null) {
     { label: 'Hooks', value: template?.hooks.length ?? 0 },
     { label: 'HookBindings', value: template?.hookBindings.length ?? 0 },
     { label: 'Scenarios', value: scenarios.length },
-    { label: 'Knowledge refs', value: template?.knowledgeRefs.length ?? 0 },
-    { label: 'Integration refs', value: template?.integrationRefs.length ?? 0 },
+    { label: 'Knowledge', value: template?.knowledgeRefs.length ?? 0 },
+    { label: 'Integrations', value: template?.integrationRefs.length ?? 0 },
     { label: 'Required secrets', value: template?.requiredSecrets.length ?? template?.secrets?.length ?? 0 },
   ]
 }
@@ -281,6 +291,133 @@ function pickLatestReceipt(receipts: ScenarioReceipt[]) {
 async function fetchTemplate(agentConfigId: string) {
   const response = await readJson<ExportResponse>(`/api/admin/agent-templates/export?agentConfigId=${encodeURIComponent(agentConfigId)}`)
   return response.template
+}
+
+function versionRoleFor(config: AgentVersion | null, liveId: string | null, draftId: string | null): VersionRole | null {
+  if (!config) return null
+  if (config.id === liveId) return 'live'
+  if (config.id === draftId) return 'draft'
+  return 'historical'
+}
+
+function roleLabel(role: VersionRole) {
+  if (role === 'live') return 'Live'
+  if (role === 'draft') return 'Draft'
+  return 'Historical'
+}
+
+function roleTone(role: VersionRole): 'success' | 'warning' | 'neutral' {
+  if (role === 'live') return 'success'
+  if (role === 'draft') return 'warning'
+  return 'neutral'
+}
+
+function roleSubtitle(role: VersionRole) {
+  if (role === 'live') return 'Customer channels are currently using this version.'
+  if (role === 'draft') return 'Edits stay isolated until Publish is confirmed explicitly.'
+  return 'Frozen reference version for rollback review or draft forking.'
+}
+
+function executionModeLabel(mode: ScenarioReceipt['executionMode'] | undefined): string {
+  return mode === 'agentRuntime' ? 'Runtime-backed' : 'Fixture-only'
+}
+
+function buildValidationSnapshot(
+  validation: ScenarioValidationSummary | undefined,
+  latestReceipt: ScenarioReceipt | null,
+  error?: string | null,
+): VersionValidationSnapshot {
+  if (error) {
+    return {
+      label: 'Validation unavailable',
+      detail: error,
+      meta: 'Release can still show version history, but evidence failed to load.',
+      tone: 'danger',
+    }
+  }
+  if (!validation) {
+    return {
+      label: 'Not validated',
+      detail: 'No Scenario receipt is recorded for this version.',
+      meta: 'Publish requires an override reason until fresh validation exists.',
+      tone: 'warning',
+    }
+  }
+  if (validation.runtimeValidated) {
+    return {
+      label: 'Runtime validated',
+      detail: `Runtime receipt recorded ${formatDate(validation.runtimeValidatedAt ?? validation.lastValidatedAt)}`,
+      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status} · ${latestReceipt.scenarioName}` : 'Runtime-backed validation is available.',
+      tone: 'success',
+    }
+  }
+  if (validation.state === 'Validated') {
+    return {
+      label: latestReceipt?.executionMode === 'fixture' ? 'Fixture-only validated' : 'Validated',
+      detail: latestReceipt?.executionMode === 'fixture' ? 'Latest receipt is fixture-only' : `Validated ${formatDate(validation.lastValidatedAt)}`,
+      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}` : 'Validation exists but no receipt summary loaded.',
+      tone: latestReceipt?.executionMode === 'fixture' ? 'warning' : 'success',
+    }
+  }
+  if (validation.state === 'Changed since last validation') {
+    return {
+      label: validation.state,
+      detail: `Draft changed after ${formatDate(validation.lastValidatedAt, 'the last validation run')}`,
+      meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status} · override required before publish` : 'Override required before publish.',
+      tone: 'warning',
+    }
+  }
+  if (validation.state === 'Validation failed') {
+    return {
+      label: validation.state,
+      detail: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt failed` : 'The latest validation did not pass.',
+      meta: 'Publish is still possible, but an override reason is required.',
+      tone: 'danger',
+    }
+  }
+  return {
+    label: validation.state ?? 'Not validated',
+    detail: 'No fresh validation summary is available.',
+    meta: latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}` : 'Run Pilot Lab before publish.',
+    tone: validationTone(validation.state),
+  }
+}
+
+function summarizeDiffGroups(groups: ConfigDiffGroup[]) {
+  return groups.reduce(
+    (summary, group) => {
+      const changedRows = group.items.filter((item) => item.status !== 'unchanged').length
+      if (changedRows > 0) {
+        summary.changedGroups += 1
+        summary.changedRows += changedRows
+      }
+      return summary
+    },
+    { changedGroups: 0, changedRows: 0 },
+  )
+}
+
+function describeDiffSummary(liveTemplate: InteraAgentTemplateV1 | null, versionTemplate: InteraAgentTemplateV1 | null, role: VersionRole) {
+  if (role === 'live') return 'Current live baseline'
+  if (!liveTemplate || !versionTemplate) return 'Template diff preview unavailable'
+  const summary = summarizeDiffGroups(buildDiffGroups(liveTemplate, versionTemplate))
+  if (summary.changedRows === 0) return 'No material changes vs live'
+  return `${summary.changedRows} changed rows across ${summary.changedGroups} groups vs live`
+}
+
+function parentVersionFor(config: AgentVersion, family: AgentVersion[]) {
+  return family.find((item) => item.id === config.parentId)?.version ?? null
+}
+
+function selectedTitle(config: AgentVersion | null, role: VersionRole | null) {
+  if (!config || !role) return 'Selected version'
+  return `Selected ${roleLabel(role).toLowerCase()} version`
+}
+
+function actionHintsForRole(role: VersionRole) {
+  if (role === 'live') return ['Export selected package', 'Create editable draft']
+  if (role === 'draft') return ['Publish selected version', 'Export selected package', 'Create editable draft']
+  return ['Preview rollback', 'Create editable draft', 'Export selected package']
 }
 
 export default function ReleaseCommandCenter() {
@@ -300,12 +437,13 @@ export default function ReleaseCommandCenter() {
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
   const openPilotLab = useCallback(() => {
-    window.location.href = '/build/pilot-lab'
+    window.location.assign('/build/pilot-lab')
   }, [])
 
   useEffect(() => {
     if (agentLoading) return
     let cancelled = false
+
     async function load() {
       setLoading(true)
       setError(null)
@@ -314,42 +452,49 @@ export default function ReleaseCommandCenter() {
         const configs = [...(configResponse.configs ?? [])].sort((a, b) => a.name.localeCompare(b.name) || a.version - b.version)
         const current = configs.find((config) => config.id === selectedAgentId) ?? configs.find((config) => config.isActive) ?? configs[0] ?? null
         if (current && selectedAgentId !== current.id) selectAgent(current.id)
+
         const family = current ? configs.filter((config) => config.name === current.name).sort((a, b) => a.version - b.version) : []
         const live = family.find((config) => config.isActive) ?? configs.find((config) => config.isActive) ?? current
-        const draft = current && !current.isActive ? current : [...family].reverse().find((config) => !config.isActive) ?? current
-        const rollbackCandidate = live ? [...family].reverse().find((config) => config.id !== live.id) ?? null : null
-        const templateIds = Array.from(new Set([live?.id, draft?.id, rollbackCandidate?.id].filter(Boolean))) as string[]
-        const [scenarioResult, templateResults] = await Promise.all([
-          draft
-            ? readJson<ScenarioListResponse>(`/api/admin/scenarios?agentConfigId=${encodeURIComponent(draft.id)}`).then((scenarios) => ({ scenarios, error: null })).catch((err: Error) => ({ scenarios: null, error: err.message }))
-            : Promise.resolve({ scenarios: null, error: null }),
-          Promise.all(templateIds.map(async (id) => {
-            try {
-              return { id, template: await fetchTemplate(id), error: null }
-            } catch (err) {
-              return { id, template: null, error: err instanceof Error ? err.message : 'Template export failed' }
-            }
-          })),
-        ])
+        const draft = [...family].filter((config) => !config.isActive).sort((a, b) => b.version - a.version)[0] ?? null
+        const history = family.filter((config) => config.id !== live?.id && config.id !== draft?.id).sort((a, b) => b.version - a.version)
+        const versionIds = family.map((config) => config.id)
+
         const templates: Record<string, InteraAgentTemplateV1 | null> = {}
         const templateErrors: Record<string, string> = {}
-        for (const result of templateResults) {
-          templates[result.id] = result.template
-          if (result.error) templateErrors[result.id] = result.error
-        }
+        const scenariosById: Record<string, ScenarioListResponse | null> = {}
+        const scenarioErrors: Record<string, string> = {}
+
+        await Promise.all(versionIds.map(async (id) => {
+          const [scenarioResult, templateResult] = await Promise.all([
+            readJson<ScenarioListResponse>(`/api/admin/scenarios?agentConfigId=${encodeURIComponent(id)}`)
+              .then((scenarios) => ({ scenarios, error: null as string | null }))
+              .catch((err: Error) => ({ scenarios: null, error: err.message })),
+            fetchTemplate(id)
+              .then((template) => ({ template, error: null as string | null }))
+              .catch((err: Error) => ({ template: null, error: err.message })),
+          ])
+
+          scenariosById[id] = scenarioResult.scenarios
+          if (scenarioResult.error) scenarioErrors[id] = scenarioResult.error
+
+          templates[id] = templateResult.template
+          if (templateResult.error) templateErrors[id] = templateResult.error
+        }))
+
         if (!cancelled) {
           setData({
             configs,
+            family,
             current,
             live,
             draft,
-            rollbackCandidate,
-            scenarios: scenarioResult.scenarios,
+            history,
+            scenariosById,
+            scenarioErrors,
             templates,
             templateErrors,
-            scenarioError: scenarioResult.error,
           })
-          setReleaseNote(draft?.releaseNote ?? live?.releaseNote ?? '')
+          setReleaseNote(current?.releaseNote ?? '')
           setOverrideReason('')
         }
       } catch (err) {
@@ -361,26 +506,35 @@ export default function ReleaseCommandCenter() {
         if (!cancelled) setLoading(false)
       }
     }
+
     load()
     return () => {
       cancelled = true
     }
   }, [agentLoading, reloadKey, selectedAgentId, selectAgent])
 
-  const validation = data.scenarios?.validation
-  const validationState = validation?.state ?? (data.scenarioError ? 'Not validated' : 'Not validated')
-  const overrideRequired = validation?.overrideRequired ?? true
-  const latestReceipt = useMemo(() => pickLatestReceipt(data.scenarios?.receipts ?? []), [data.scenarios?.receipts])
+  const selectedVersion = data.current
+  const selectedRole = versionRoleFor(selectedVersion, data.live?.id ?? null, data.draft?.id ?? null)
+  const selectedScenarioData = selectedVersion ? data.scenariosById[selectedVersion.id] ?? null : null
+  const selectedScenarioError = selectedVersion ? data.scenarioErrors[selectedVersion.id] ?? null : null
+  const selectedValidation = selectedScenarioData?.validation
+  const selectedReceipt = useMemo(() => pickLatestReceipt(selectedScenarioData?.receipts ?? []), [selectedScenarioData?.receipts])
+  const selectedValidationSnapshot = buildValidationSnapshot(selectedValidation, selectedReceipt, selectedScenarioError)
   const liveTemplate = data.live ? data.templates[data.live.id] ?? null : null
-  const draftTemplate = data.draft ? data.templates[data.draft.id] ?? null : null
-  const diffGroups = useMemo(() => buildDiffGroups(liveTemplate, draftTemplate), [liveTemplate, draftTemplate])
-  const rollbackTemplate = data.rollbackCandidate ? data.templates[data.rollbackCandidate.id] ?? null : null
-  const rollbackGroups = useMemo(() => buildDiffGroups(liveTemplate, rollbackTemplate), [liveTemplate, rollbackTemplate])
-  const canPublish = Boolean(data.draft && !data.draft.isActive)
-  const publishDisabledReason = data.draft?.isActive ? 'Duplicate the live version before publishing a new draft.' : null
+  const selectedTemplate = selectedVersion ? data.templates[selectedVersion.id] ?? null : null
+  const diffGroups = useMemo(() => buildDiffGroups(liveTemplate, selectedTemplate), [liveTemplate, selectedTemplate])
+  const diffSummary = useMemo(() => summarizeDiffGroups(diffGroups), [diffGroups])
+  const rollbackTarget = selectedVersion && data.live && selectedVersion.id !== data.live.id ? selectedVersion : null
+  const rollbackTemplate = rollbackTarget ? data.templates[rollbackTarget.id] ?? null : null
+  const rollbackGroups = useMemo(() => (rollbackTarget ? buildDiffGroups(liveTemplate, rollbackTemplate) : []), [liveTemplate, rollbackTarget, rollbackTemplate])
+  const canPublish = Boolean(selectedVersion && !selectedVersion.isActive)
+  const overrideRequired = canPublish ? (selectedValidation?.overrideRequired ?? true) : false
+  const publishDisabledReason = selectedVersion?.isActive
+    ? 'Select the draft or a historical version from the timeline before publishing.'
+    : null
 
   async function handleExport() {
-    const target = data.draft ?? data.current
+    const target = selectedVersion ?? data.draft ?? data.live
     if (!target) return
     setBusyAction('export')
     setNotice(null)
@@ -421,7 +575,7 @@ export default function ReleaseCommandCenter() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           template,
-          parentAgentConfigId: data.current?.id,
+          parentAgentConfigId: selectedVersion?.id,
           dryRun: true,
           strategy: 'createDraft',
         }),
@@ -447,7 +601,7 @@ export default function ReleaseCommandCenter() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           template: pendingImport.template,
-          parentAgentConfigId: data.current?.id,
+          parentAgentConfigId: selectedVersion?.id,
           strategy: 'createDraft',
         }),
       })
@@ -464,7 +618,7 @@ export default function ReleaseCommandCenter() {
   }
 
   async function handleDuplicate() {
-    const target = data.current ?? data.live
+    const target = selectedVersion ?? data.live
     if (!target) return
     setBusyAction('duplicate')
     setNotice(null)
@@ -473,7 +627,7 @@ export default function ReleaseCommandCenter() {
       const result = await readJson<{ config: AgentVersion }>(`/api/admin/agent-configs/${encodeURIComponent(target.id)}/fork`, { method: 'POST' })
       await refreshConfigs()
       if (result.config?.id) selectAgent(result.config.id)
-      setNotice(`Duplicated ${target.name} v${target.version} into draft v${result.config.version}`)
+      setNotice(`Created editable draft v${result.config.version} from ${target.name} v${target.version}`)
       reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Duplicate failed')
@@ -483,7 +637,7 @@ export default function ReleaseCommandCenter() {
   }
 
   async function handlePublish() {
-    const target = data.draft
+    const target = selectedVersion
     if (!target || target.isActive) return
     if (overrideRequired && !overrideReason.trim()) {
       setError('Override reason is required when validation is stale, failing, or unvalidated.')
@@ -524,7 +678,7 @@ export default function ReleaseCommandCenter() {
     )
   }
 
-  if (loadError || error && !data.current) {
+  if (loadError || (error && !data.current)) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
         <section className="rounded-[var(--radius-panel)] border border-[color:color-mix(in_srgb,var(--color-signal-danger)_35%,transparent)] bg-white/80 p-6 shadow-[var(--shadow-raised)]">
@@ -545,32 +699,34 @@ export default function ReleaseCommandCenter() {
             <span className="text-[var(--color-text-primary)]">Release</span>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{data.current?.name ?? data.live?.name ?? 'Agent'}</h1>
-            <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(data.current?.isActive ? 'success' : 'warning')}`}>
-              {data.current?.isActive ? 'Active' : 'Draft'}
-            </span>
+            <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{selectedVersion?.name ?? data.live?.name ?? 'Agent'}</h1>
+            {selectedRole ? (
+              <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(roleTone(selectedRole))}`}>
+                Viewing {roleLabel(selectedRole)} version
+              </span>
+            ) : null}
           </div>
-          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">Manage versions, validate quality, and publish with confidence.</p>
+          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">Understand the Agent family timeline, validation evidence, and package actions before you publish.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="intera-q2-button flex min-h-11 items-center gap-3 border border-[var(--color-border-subtle)] bg-white px-4 text-[13px] shadow-[0_1px_2px_rgba(21,23,25,0.04)]">
-            <span className="text-[var(--color-text-tertiary)]">Agent</span>
-            <select
-              aria-label="Release agent version"
-              value={data.current?.id ?? ''}
-              onChange={(event) => selectAgent(event.target.value)}
-              className="min-w-[190px] bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
-            >
-              {data.configs.map((config) => (
-                <option key={config.id} value={config.id}>{config.name} v{config.version}</option>
-              ))}
-            </select>
-          </label>
-          <button type="button" aria-label="Release actions" className="intera-q2-button flex h-11 w-11 items-center justify-center border border-[var(--color-border-subtle)] bg-white text-[var(--color-text-secondary)]">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-        </div>
+        <label className="intera-q2-button flex min-h-11 items-center gap-3 border border-[var(--color-border-subtle)] bg-white px-4 text-[13px] shadow-[0_1px_2px_rgba(21,23,25,0.04)]">
+          <span className="text-[var(--color-text-tertiary)]">Selected version</span>
+          <select
+            aria-label="Release agent version"
+            value={selectedVersion?.id ?? ''}
+            onChange={(event) => selectAgent(event.target.value)}
+            className="min-w-[210px] bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
+          >
+            {data.family.map((config) => {
+              const role = versionRoleFor(config, data.live?.id ?? null, data.draft?.id ?? null)
+              return (
+                <option key={config.id} value={config.id}>
+                  {config.name} v{config.version}{role ? ` · ${roleLabel(role)}` : ''}
+                </option>
+              )
+            })}
+          </select>
+        </label>
       </div>
 
       {(notice || error) ? (
@@ -579,28 +735,53 @@ export default function ReleaseCommandCenter() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
-          <ReleaseSummaryStrip
-            live={data.live}
-            draft={data.draft}
-            validationState={validationState}
-            validation={validation}
-            latestReceipt={latestReceipt}
-            onOpenPilot={openPilotLab}
+          <VersionTimelineSection
+            currentId={selectedVersion?.id ?? null}
+            draftId={data.draft?.id ?? null}
+            family={data.family}
+            history={data.history}
+            liveId={data.live?.id ?? null}
+            liveTemplate={liveTemplate}
+            scenariosById={data.scenariosById}
+            scenarioErrors={data.scenarioErrors}
+            templates={data.templates}
+            onSelectVersion={selectAgent}
           />
 
-          <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-            <ConfigDiffViewer groups={diffGroups} subtitle={`${data.live ? `${data.live.name} v${data.live.version}` : 'No live version'} compared with ${data.draft ? `v${data.draft.version}` : 'no draft'}.`} />
-            <LatestReceiptCard latestReceipt={latestReceipt} />
+          <div className="grid gap-4 2xl:grid-cols-[minmax(340px,0.78fr)_minmax(0,1.22fr)]">
+            <SelectedVersionCard
+              config={selectedVersion}
+              role={selectedRole}
+              family={data.family}
+              diffSummary={diffSummary}
+              validationSnapshot={selectedValidationSnapshot}
+            />
+            <SelectedReceiptCard
+              config={selectedVersion}
+              latestReceipt={selectedReceipt}
+              validationSnapshot={selectedValidationSnapshot}
+              validation={selectedValidation}
+            />
           </div>
+
+          <ConfigDiffViewer
+            title="Changed since live"
+            subtitle={selectedVersion && data.live
+              ? `${data.live.name} v${data.live.version} compared with selected v${selectedVersion.version}.`
+              : 'Select a version in the timeline to compare it with live.'}
+            groups={diffGroups}
+          />
 
           <PackageActionsPanel
             busyAction={busyAction}
             canPublish={canPublish}
-            coverageTemplate={draftTemplate}
+            coverageTemplate={selectedTemplate}
+            current={selectedVersion}
             importInputRef={importInputRef}
             pendingImport={pendingImport}
             publishDisabledReason={publishDisabledReason}
-            rollbackCandidate={data.rollbackCandidate}
+            rollbackTarget={rollbackTarget}
+            role={selectedRole}
             onClearImport={() => setPendingImport(null)}
             onConfirmImport={handleConfirmImport}
             onDuplicate={handleDuplicate}
@@ -612,12 +793,19 @@ export default function ReleaseCommandCenter() {
           />
         </div>
 
-        <ReleaseConfigPilotRail validation={validation} validationState={validationState} latestReceipt={latestReceipt} onOpen={openPilotLab} />
+        <ReleaseConfigPilotRail
+          current={selectedVersion}
+          role={selectedRole}
+          validation={selectedValidation}
+          validationSnapshot={selectedValidationSnapshot}
+          latestReceipt={selectedReceipt}
+          onOpen={openPilotLab}
+        />
       </div>
 
       {Object.keys(data.templateErrors).length > 0 ? (
         <section className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
-          Template diff placeholders are isolated because export failed for: {Object.entries(data.templateErrors).map(([id, message]) => `${id} (${message})`).join(', ')}
+          Template previews are isolated because export failed for: {Object.entries(data.templateErrors).map(([id, message]) => `${id} (${message})`).join(', ')}
         </section>
       ) : null}
 
@@ -627,21 +815,36 @@ export default function ReleaseCommandCenter() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Explicit publish</p>
-                <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">Publish {data.draft?.name} v{data.draft?.version}</h2>
-                <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">This activates the selected draft for customer channels. Draft save/import actions remain isolated.</p>
+                <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">
+                  Publish {selectedVersion?.name} v{selectedVersion?.version}
+                </h2>
+                <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+                  {selectedRole === 'historical'
+                    ? 'This reactivates the selected historical version. Rollback preview stays read-only until you confirm publish.'
+                    : 'This activates the selected non-live version for customer channels. Draft save and import actions remain isolated until publish.'}
+                </p>
               </div>
               <button type="button" aria-label="Close publish dialog" onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-2 text-[var(--color-text-tertiary)]">
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            <div className={`mt-5 rounded-[var(--radius-control)] border px-4 py-3 text-[12px] ${toneClass(selectedValidationSnapshot.tone)}`}>
+              <p className="font-semibold text-[var(--color-text-primary)]">{selectedValidationSnapshot.label}</p>
+              <p className="mt-1 text-[var(--color-text-secondary)]">{selectedValidationSnapshot.detail}</p>
+              <p className="mt-1 text-[var(--color-text-tertiary)]">{selectedValidationSnapshot.meta}</p>
+            </div>
+
             <label className="mt-5 block text-[12px] font-medium text-[var(--color-text-primary)]" htmlFor="release-note">Release note</label>
             <textarea id="release-note" aria-label="Release note" value={releaseNote} onChange={(event) => setReleaseNote(event.target.value)} rows={3} className="mt-2 w-full rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" placeholder="What changed in this publish?" />
+
             {overrideRequired ? (
               <>
                 <label className="mt-4 block text-[12px] font-medium text-[var(--color-text-primary)]" htmlFor="override-reason">Override reason</label>
                 <textarea id="override-reason" aria-label="Override reason" value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} rows={3} className="mt-2 w-full rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-signal-warning)_40%,var(--color-border-subtle))] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-signal-warning)]" placeholder="Required because validation is stale, failing, or missing." />
               </>
             ) : null}
+
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">Cancel</button>
               <button type="button" disabled={busyAction === 'publish' || (overrideRequired && !overrideReason.trim())} onClick={handlePublish} className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-accent-primary)_45%,transparent)] bg-[var(--color-accent-primary)] px-3 py-2 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
@@ -655,160 +858,408 @@ export default function ReleaseCommandCenter() {
 
       {rollbackOpen ? (
         <LightDrawer title="Rollback preview" eyebrow="Release safety" onClose={() => setRollbackOpen(false)}>
-          <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">Preview how live v{data.live?.version ?? '?'} differs from {data.rollbackCandidate ? `v${data.rollbackCandidate.version}` : 'the selected historical version'}. This drawer does not activate rollback; select the historical version and publish explicitly when ready.</p>
-          {data.rollbackCandidate ? (
+          <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+            Preview how live v{data.live?.version ?? '?'} differs from {rollbackTarget ? `selected v${rollbackTarget.version}` : 'a non-live version'} before any mutation. This drawer never activates rollback by itself.
+          </p>
+          {rollbackTarget ? (
             <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
-              Candidate: <span className="font-semibold text-[var(--color-text-primary)]">{data.rollbackCandidate.name} v{data.rollbackCandidate.version}</span>
-              <button type="button" onClick={() => { selectAgent(data.rollbackCandidate!.id); setRollbackOpen(false); reload() }} className="ml-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2.5 py-1.5 text-[11px] text-[var(--color-text-primary)]">Select candidate</button>
+              Candidate: <span className="font-semibold text-[var(--color-text-primary)]">{rollbackTarget.name} v{rollbackTarget.version}</span>
+              <span className="ml-3 text-[var(--color-text-tertiary)]">If you want to reactivate it, close this preview and use Publish explicitly.</span>
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
+              Select a draft or historical version from the timeline first.
+            </div>
+          )}
           <div className="mt-4">
-            <ConfigDiffViewer title="Rollback diff preview" subtitle="Live version compared with the rollback candidate." groups={rollbackGroups} />
+            <ConfigDiffViewer title="Rollback diff preview" subtitle="Live version compared with the selected non-live version." groups={rollbackGroups} />
           </div>
         </LightDrawer>
       ) : null}
-
     </main>
   )
 }
 
-function ReleaseSummaryStrip({
-  live,
-  draft,
-  validationState,
-  validation,
-  latestReceipt,
-  onOpenPilot,
+function VersionTimelineSection({
+  family,
+  history,
+  liveId,
+  draftId,
+  currentId,
+  scenariosById,
+  scenarioErrors,
+  templates,
+  liveTemplate,
+  onSelectVersion,
 }: {
-  live: AgentVersion | null
-  draft: AgentVersion | null
-  validationState: string
-  validation: ScenarioValidationSummary | undefined
-  latestReceipt: ScenarioReceipt | null
-  onOpenPilot: () => void
+  family: AgentVersion[]
+  history: AgentVersion[]
+  liveId: string | null
+  draftId: string | null
+  currentId: string | null
+  scenariosById: Record<string, ScenarioListResponse | null>
+  scenarioErrors: Record<string, string>
+  templates: Record<string, InteraAgentTemplateV1 | null>
+  liveTemplate: InteraAgentTemplateV1 | null
+  onSelectVersion: (id: string) => void
 }) {
-  const runtimeValidated = Boolean(validation?.runtimeValidated)
-  const validationTitle = runtimeValidated ? 'Runtime validated' : validationState === 'Validated' ? 'Fixture only' : validationState
-  const validationDetail = runtimeValidated
-    ? `Runtime validated ${formatDate(validation?.runtimeValidatedAt ?? validation?.lastValidatedAt)}`
-    : latestReceipt?.executionMode === 'fixture'
-      ? 'Latest receipt is fixture-only'
-      : 'No runtime-backed validation'
-  const validationMeta = latestReceipt
-    ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}`
-    : 'Run Pilot Lab before publish'
+  const live = family.find((config) => config.id === liveId) ?? null
+  const draft = family.find((config) => config.id === draftId) ?? null
+  const retainedRatio = family.length / MAX_AGENT_CONFIG_VERSIONS
+
   return (
     <section className="intera-q2-panel overflow-hidden">
-      <div className="grid divide-y divide-[var(--color-border-subtle)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(320px,1.15fr)] lg:divide-x lg:divide-y-0">
-        <SummaryMetric
-          label="Live Version"
-          title={live ? `v${live.version}` : 'No live'}
-          detail={formatDate(live?.publishedAt, 'Not published')}
-          meta={live?.publishedBy ? `by ${live.publishedBy}` : 'Publisher unknown'}
-          tone="success"
-        />
-        <SummaryMetric
-          label="Validation State"
-          title={validationTitle}
-          detail={validationDetail}
-          meta={validationMeta}
-          tone={runtimeValidated ? 'success' : validationTone(validationState)}
-          icon={runtimeValidated ? <CheckCircle2 className="h-5 w-5 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-5 w-5 text-[var(--color-signal-warning)]" />}
-        />
-        <SummaryMetric
-          label="Draft"
-          title={draft ? `v${draft.version}${draft.isActive ? '' : ' draft'}` : 'No draft'}
-          detail={formatDate(draft?.updatedAt, 'Not updated')}
-          meta={draft?.parentId ? 'Has parent version' : 'No parent version'}
-          tone={draft?.isActive ? 'neutral' : 'warning'}
-        />
-        <div className="p-5">
-          <p className="text-[13px] font-semibold text-[var(--color-text-secondary)]">Command</p>
-          <button type="button" onClick={onOpenPilot} className="intera-q2-button mt-4 flex min-h-12 w-full items-center gap-3 border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-4 text-left text-[13px] text-[var(--color-text-tertiary)] transition hover:border-[var(--color-accent-primary)]/35">
-            <span className="min-w-0 flex-1">
-              <TokenStreamPreview text="Ask ConfigPilot or enter a command." />
-            </span>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--color-accent-primary)] text-[var(--color-text-inverse)]">
-              <SendHorizontal className="h-4 w-4" />
-            </span>
-          </button>
+      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">Version control UX</p>
+            <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">Agent version timeline</h2>
+            <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[var(--color-text-secondary)]">
+              One Agent family timeline: one live version, one editable draft, and retained historical versions for rollback review.
+            </p>
+          </div>
+
+          <div className="min-w-[240px] rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 text-[12px] font-semibold text-[var(--color-text-primary)]">
+              <span>{family.length} of {MAX_AGENT_CONFIG_VERSIONS} retained</span>
+              <span className="text-[var(--color-text-tertiary)]">{Math.max(MAX_AGENT_CONFIG_VERSIONS - family.length, 0)} slots left</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--color-bg-surface-muted)]">
+              <div className="h-full rounded-full bg-[var(--color-accent-primary)]" style={{ width: `${Math.min(retainedRatio, 1) * 100}%` }} />
+            </div>
+            <p className="mt-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+              P0 keeps at most {MAX_AGENT_CONFIG_VERSIONS} retained versions in one family so publish, rollback preview, and package diff stay readable. When the family is full, duplicate and import-to-draft stop until older history is retired intentionally.
+            </p>
+          </div>
         </div>
+      </div>
+
+      <div className="divide-y divide-[var(--color-border-subtle)]">
+        <TimelineGroup
+          title="Live version"
+          empty="No live version is currently active."
+          versions={live ? [live] : []}
+          family={family}
+          currentId={currentId}
+          liveId={liveId}
+          draftId={draftId}
+          scenariosById={scenariosById}
+          scenarioErrors={scenarioErrors}
+          templates={templates}
+          liveTemplate={liveTemplate}
+          onSelectVersion={onSelectVersion}
+        />
+        <TimelineGroup
+          title="Draft version"
+          empty="No editable draft exists yet. Create editable draft from live or a historical version."
+          versions={draft ? [draft] : []}
+          family={family}
+          currentId={currentId}
+          liveId={liveId}
+          draftId={draftId}
+          scenariosById={scenariosById}
+          scenarioErrors={scenarioErrors}
+          templates={templates}
+          liveTemplate={liveTemplate}
+          onSelectVersion={onSelectVersion}
+        />
+        <TimelineGroup
+          title="Historical versions"
+          empty="No historical versions retained yet."
+          versions={history}
+          family={family}
+          currentId={currentId}
+          liveId={liveId}
+          draftId={draftId}
+          scenariosById={scenariosById}
+          scenarioErrors={scenarioErrors}
+          templates={templates}
+          liveTemplate={liveTemplate}
+          onSelectVersion={onSelectVersion}
+        />
       </div>
     </section>
   )
 }
 
-function SummaryMetric({
-  label,
+function TimelineGroup({
   title,
-  detail,
-  meta,
-  tone,
-  icon,
+  empty,
+  versions,
+  family,
+  currentId,
+  liveId,
+  draftId,
+  scenariosById,
+  scenarioErrors,
+  templates,
+  liveTemplate,
+  onSelectVersion,
 }: {
-  label: string
   title: string
-  detail: string
-  meta: string
-  tone: 'success' | 'warning' | 'danger' | 'neutral'
-  icon?: ReactNode
+  empty: string
+  versions: AgentVersion[]
+  family: AgentVersion[]
+  currentId: string | null
+  liveId: string | null
+  draftId: string | null
+  scenariosById: Record<string, ScenarioListResponse | null>
+  scenarioErrors: Record<string, string>
+  templates: Record<string, InteraAgentTemplateV1 | null>
+  liveTemplate: InteraAgentTemplateV1 | null
+  onSelectVersion: (id: string) => void
 }) {
   return (
-    <div className="min-w-0 p-5">
-      <p className="text-[13px] font-semibold text-[var(--color-text-secondary)]">{label}</p>
-      <div className="mt-4 flex min-w-0 items-center gap-3">
-        {icon}
-        <h2 className="min-w-0 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">{title}</h2>
+    <div>
+      <div className="bg-[var(--color-bg-surface-muted)] px-5 py-3">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{title}</p>
       </div>
-      <div className="mt-4 space-y-2 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-        <p className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${tone === 'success' ? 'bg-[var(--color-signal-success)]' : tone === 'warning' ? 'bg-[var(--color-signal-warning)]' : tone === 'danger' ? 'bg-[var(--color-signal-danger)]' : 'bg-[var(--color-text-tertiary)]'}`} />
-          <span>{detail}</span>
-        </p>
-        <p>{meta}</p>
-      </div>
+      {versions.length > 0 ? (
+        <div className="divide-y divide-[var(--color-border-subtle)]">
+          {versions.map((config) => {
+            const role = versionRoleFor(config, liveId, draftId) as VersionRole
+            const latestReceipt = pickLatestReceipt(scenariosById[config.id]?.receipts ?? [])
+            const validationSnapshot = buildValidationSnapshot(scenariosById[config.id]?.validation, latestReceipt, scenarioErrors[config.id] ?? null)
+            const diffLabel = describeDiffSummary(liveTemplate, templates[config.id] ?? null, role)
+            return (
+              <VersionTimelineRow
+                key={config.id}
+                config={config}
+                current={config.id === currentId}
+                diffLabel={diffLabel}
+                family={family}
+                role={role}
+                validationSnapshot={validationSnapshot}
+                onSelectVersion={onSelectVersion}
+              />
+            )
+          })}
+        </div>
+      ) : (
+        <div className="px-5 py-4 text-[13px] text-[var(--color-text-secondary)]">{empty}</div>
+      )}
     </div>
   )
 }
 
-function LatestReceiptCard({ latestReceipt }: { latestReceipt: ScenarioReceipt | null }) {
+function VersionTimelineRow({
+  config,
+  current,
+  diffLabel,
+  family,
+  role,
+  validationSnapshot,
+  onSelectVersion,
+}: {
+  config: AgentVersion
+  current: boolean
+  diffLabel: string
+  family: AgentVersion[]
+  role: VersionRole
+  validationSnapshot: VersionValidationSnapshot
+  onSelectVersion: (id: string) => void
+}) {
+  const parentVersion = parentVersionFor(config, family)
+
   return (
-    <section className="intera-q2-panel overflow-hidden">
-      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
-        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Latest Scenario Receipt</h2>
+    <article className={`grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.05fr)_160px] ${current ? 'bg-[color:color-mix(in_srgb,var(--color-accent-primary)_4%,white)]' : 'bg-white/80'}`}>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[11px] font-semibold ${toneClass(roleTone(role))}`}>{roleLabel(role)}</span>
+          {current ? <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.24)] bg-[rgba(53,127,124,0.08)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-primary)]">Selected</span> : null}
+        </div>
+        <h3 className="mt-3 text-[16px] font-semibold text-[var(--color-text-primary)]">v{config.version}</h3>
+        <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role)}</p>
+        <div className="mt-3 space-y-1 text-[12px] text-[var(--color-text-tertiary)]">
+          <p>{config.publishedAt ? `Published ${formatDate(config.publishedAt)}` : 'Not published yet'}</p>
+          <p>{config.publishedBy ? `Published by ${config.publishedBy}` : 'Publisher unavailable'}</p>
+          <p>Last edited {formatDate(config.updatedAt)}</p>
+        </div>
       </div>
-      {latestReceipt ? (
-        <div className="p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <span className={`inline-flex rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold capitalize ${toneClass(receiptTone(latestReceipt.status))}`}>{latestReceipt.status}</span>
-              <h3 className="mt-4 text-[14px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</h3>
-              <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{executionModeLabel(latestReceipt.executionMode)} · Run {formatDate(latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
-            </div>
-          </div>
-          <dl className="mt-5 grid grid-cols-2 gap-0 overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] text-[12px]">
-            <ReceiptStat label="Total" value={String(latestReceipt.checks.length)} />
-            <ReceiptStat label="Passed" value={String(latestReceipt.checks.filter((check) => check.passed).length)} tone="success" />
-            <ReceiptStat label="Failed" value={String(latestReceipt.checks.filter((check) => !check.passed).length)} tone={latestReceipt.checks.some((check) => !check.passed) ? 'danger' : 'neutral'} />
-            <ReceiptStat label="Tool mode" value={latestReceipt.toolExecutionMode} />
-          </dl>
-          <div className="mt-5 space-y-3">
-            {latestReceipt.checks.slice(0, 5).map((check) => (
-              <div key={check.name} className="flex items-center justify-between gap-3 text-[13px]">
-                <span className="flex min-w-0 items-center gap-2 font-medium text-[var(--color-text-primary)]">
-                  {check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--color-signal-danger)]" />}
-                  <span className="truncate">{check.name.replace(/_/g, ' ')}</span>
-                </span>
-                <span className="shrink-0 rounded bg-[var(--color-bg-surface-muted)] px-2 py-1 text-[11px] text-[var(--color-text-tertiary)]">{check.passed ? 'Passed' : 'Failed'}</span>
-              </div>
+
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Validation</p>
+        <div className={`mt-3 rounded-[var(--radius-control)] border px-3 py-3 text-[12px] ${toneClass(validationSnapshot.tone)}`}>
+          <p className="font-semibold text-[var(--color-text-primary)]">{validationSnapshot.label}</p>
+          <p className="mt-1 text-[var(--color-text-secondary)]">{validationSnapshot.detail}</p>
+          <p className="mt-2 text-[var(--color-text-tertiary)]">{validationSnapshot.meta}</p>
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Lineage and actions</p>
+        <div className="mt-3 space-y-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+          <p>{parentVersion ? `Forked from v${parentVersion}` : 'Original family baseline'}</p>
+          <p>{diffLabel}</p>
+          <div className="flex flex-wrap gap-2">
+            {actionHintsForRole(role).map((label) => (
+              <span key={label} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
+                {label}
+              </span>
             ))}
           </div>
         </div>
-      ) : (
-        <div className="p-5">
-          <p className="rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">No Scenario receipt has been recorded for this draft yet. Run Pilot Lab validation before publishing or provide an override reason.</p>
+      </div>
+
+      <div className="flex items-start justify-start lg:justify-end">
+        <button
+          type="button"
+          onClick={() => onSelectVersion(config.id)}
+          disabled={current}
+          className="intera-q2-button inline-flex min-h-[40px] items-center justify-center border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text-primary)] disabled:cursor-default disabled:opacity-55"
+        >
+          {current ? 'Viewing' : 'View version'}
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function SelectedVersionCard({
+  config,
+  role,
+  family,
+  diffSummary,
+  validationSnapshot,
+}: {
+  config: AgentVersion | null
+  role: VersionRole | null
+  family: AgentVersion[]
+  diffSummary: { changedGroups: number; changedRows: number }
+  validationSnapshot: VersionValidationSnapshot
+}) {
+  const parentVersion = config ? parentVersionFor(config, family) : null
+  const diffLabel = !config || !role
+    ? 'No version selected.'
+    : role === 'live'
+      ? 'Live baseline'
+      : diffSummary.changedRows > 0
+        ? `${diffSummary.changedRows} changed rows across ${diffSummary.changedGroups} groups vs live`
+        : 'No material changes vs live'
+
+  return (
+    <section className="intera-q2-panel overflow-hidden">
+      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{selectedTitle(config, role)}</h2>
+      </div>
+
+      {config && role ? (
+        <div className="space-y-5 p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[11px] font-semibold ${toneClass(roleTone(role))}`}>{roleLabel(role)}</span>
+            {config.model ? <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/80 px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">{config.model}</span> : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InfoCard label="Lineage" value={parentVersion ? `Forked from v${parentVersion}` : 'Original family baseline'} />
+            <InfoCard label="Updated" value={formatDate(config.updatedAt)} />
+            <InfoCard label="Published" value={formatDate(config.publishedAt, 'Not published')} />
+            <InfoCard label="Publisher" value={config.publishedBy || 'Unavailable'} />
+          </div>
+
+          <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 p-4">
+            <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+              <GitCompare className="h-4 w-4 text-[var(--color-accent-primary)]" />
+              Changed since live
+            </p>
+            <p className="mt-3 text-[14px] font-semibold text-[var(--color-text-primary)]">{diffLabel}</p>
+            <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role)}</p>
+          </div>
+
+          <div className={`rounded-[var(--radius-control)] border px-4 py-3 text-[12px] ${toneClass(validationSnapshot.tone)}`}>
+            <p className="font-semibold text-[var(--color-text-primary)]">{validationSnapshot.label}</p>
+            <p className="mt-1 text-[var(--color-text-secondary)]">{validationSnapshot.detail}</p>
+            <p className="mt-1 text-[var(--color-text-tertiary)]">{validationSnapshot.meta}</p>
+          </div>
+
+          {config.releaseNote ? (
+            <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">Release note</p>
+              <p className="mt-2 text-[13px] leading-6 text-[var(--color-text-secondary)]">{config.releaseNote}</p>
+            </div>
+          ) : null}
         </div>
+      ) : (
+        <div className="p-5 text-[13px] text-[var(--color-text-secondary)]">Select a version in the timeline to inspect validation and diff context.</div>
       )}
+    </section>
+  )
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/75 px-4 py-3">
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{label}</p>
+      <p className="mt-2 text-[13px] font-medium text-[var(--color-text-primary)]">{value}</p>
+    </div>
+  )
+}
+
+function SelectedReceiptCard({
+  config,
+  latestReceipt,
+  validationSnapshot,
+  validation,
+}: {
+  config: AgentVersion | null
+  latestReceipt: ScenarioReceipt | null
+  validationSnapshot: VersionValidationSnapshot
+  validation: ScenarioValidationSummary | undefined
+}) {
+  return (
+    <section className="intera-q2-panel overflow-hidden">
+      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+        <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Validation evidence</h2>
+      </div>
+
+      <div className="p-5">
+        <div className={`rounded-[var(--radius-control)] border px-4 py-3 text-[12px] ${toneClass(validationSnapshot.tone)}`}>
+          <p className="font-semibold text-[var(--color-text-primary)]">{validationSnapshot.label}</p>
+          <p className="mt-1 text-[var(--color-text-secondary)]">{validationSnapshot.detail}</p>
+          <p className="mt-1 text-[var(--color-text-tertiary)]">{validationSnapshot.meta}</p>
+        </div>
+
+        {latestReceipt ? (
+          <>
+            <div className="mt-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <span className={`inline-flex rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold capitalize ${toneClass(receiptTone(latestReceipt.status))}`}>{latestReceipt.status}</span>
+                <h3 className="mt-4 text-[14px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</h3>
+                <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{executionModeLabel(latestReceipt.executionMode)} · Run {formatDate(latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}</p>
+              </div>
+              {config ? <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">v{config.version}</span> : null}
+            </div>
+
+            <dl className="mt-5 grid grid-cols-2 gap-0 overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] text-[12px]">
+              <ReceiptStat label="Total" value={String(latestReceipt.checks.length)} />
+              <ReceiptStat label="Passed" value={String(latestReceipt.checks.filter((check) => check.passed).length)} tone="success" />
+              <ReceiptStat label="Failed" value={String(latestReceipt.checks.filter((check) => !check.passed).length)} tone={latestReceipt.checks.some((check) => !check.passed) ? 'danger' : 'neutral'} />
+              <ReceiptStat label="Tool mode" value={latestReceipt.toolExecutionMode} />
+            </dl>
+
+            <div className="mt-5 space-y-3">
+              {latestReceipt.checks.slice(0, 5).map((check) => (
+                <div key={check.name} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span className="flex min-w-0 items-center gap-2 font-medium text-[var(--color-text-primary)]">
+                    {check.passed ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--color-signal-success)]" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--color-signal-danger)]" />}
+                    <span className="truncate">{check.name.replace(/_/g, ' ')}</span>
+                  </span>
+                  <span className="shrink-0 rounded bg-[var(--color-bg-surface-muted)] px-2 py-1 text-[11px] text-[var(--color-text-tertiary)]">{check.passed ? 'Passed' : 'Failed'}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <InfoCard label="Receipt type" value={executionModeLabel(latestReceipt.executionMode)} />
+              <InfoCard label="Runtime-backed" value={validation?.runtimeValidated ? 'Yes' : 'No'} />
+            </div>
+          </>
+        ) : (
+          <p className="mt-5 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+            No Scenario receipt has been recorded for this selected version yet. Run Pilot Lab validation before publishing or provide an override reason.
+          </p>
+        )}
+      </div>
     </section>
   )
 }
@@ -827,10 +1278,12 @@ function PackageActionsPanel({
   busyAction,
   canPublish,
   coverageTemplate,
+  current,
   importInputRef,
   pendingImport,
   publishDisabledReason,
-  rollbackCandidate,
+  rollbackTarget,
+  role,
   onClearImport,
   onConfirmImport,
   onDuplicate,
@@ -843,10 +1296,12 @@ function PackageActionsPanel({
   busyAction: string | null
   canPublish: boolean
   coverageTemplate: InteraAgentTemplateV1 | null
+  current: AgentVersion | null
   importInputRef: RefObject<HTMLInputElement | null>
   pendingImport: PendingPackageImport | null
   publishDisabledReason: string | null
-  rollbackCandidate: AgentVersion | null
+  rollbackTarget: AgentVersion | null
+  role: VersionRole | null
   onClearImport: () => void
   onConfirmImport: () => void
   onDuplicate: () => void
@@ -857,28 +1312,49 @@ function PackageActionsPanel({
   onRollback: () => void
 }) {
   const coverage = packageCoverageRows(coverageTemplate)
+  const selectedLabel = current ? `${current.name} v${current.version}` : 'No version selected'
+
   return (
     <section className="intera-q2-panel p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Package Actions</h2>
-          <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">Import, export, duplicate, publish, and rollback from the existing package endpoints.</p>
+          <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">Version control actions</h2>
+          <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+            Release owns publish, rollback preview, duplicate draft creation, and package import/export for the selected version.
+          </p>
         </div>
         <input ref={importInputRef} aria-label="Import .intera-agent.json file" type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => onImport(event.target.files?.[0])} />
       </div>
-      <div className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+
+      <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+        <p><span className="font-semibold text-[var(--color-text-primary)]">Selected:</span> {selectedLabel}{role ? ` · ${roleLabel(role)}` : ''}</p>
+        <p className="mt-1">Export always downloads the currently selected package. Import always runs a dry-run first and never activates silently.</p>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-5">
+        <ActionRuleCard title="Publish" body="Activates the selected non-live version only after an explicit confirmation and validation review." />
+        <ActionRuleCard title="Rollback preview" body="Shows the diff from live to the selected non-live version. Preview stays read-only." />
+        <ActionRuleCard title="Create editable draft" body="Forks the selected version into a new draft when the family still has retention capacity." />
+        <ActionRuleCard title="Import" body="Runs a compatibility report first, then creates a draft package if you confirm apply." />
+        <ActionRuleCard title="Export" body="Exports the current selected version package so the file is never ambiguous." />
+      </div>
+
+      <div className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
         {coverage.map((item) => (
           <PackageCoverageCell key={item.label} label={item.label} value={item.value} />
         ))}
       </div>
+
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export package" busy={busyAction === 'export'} onClick={onExport} />
+        <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export selected package" busy={busyAction === 'export'} onClick={onExport} />
         <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={onImportClick} />
-        <ActionButton icon={<Copy className="h-4 w-4" />} label="Duplicate Version" busy={busyAction === 'duplicate'} onClick={onDuplicate} />
-        <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish draft" busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
-        <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackCandidate} onClick={onRollback} />
+        <ActionButton icon={<Copy className="h-4 w-4" />} label="Create editable draft" busy={busyAction === 'duplicate'} onClick={onDuplicate} />
+        <ActionButton icon={<PackageOpen className="h-4 w-4" />} label="Publish selected version" busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
+        <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackTarget} onClick={onRollback} />
       </div>
+
       {publishDisabledReason ? <p className="mt-3 text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
+
       {pendingImport ? (
         <ImportDryRunReport
           busy={busyAction === 'import-apply'}
@@ -888,6 +1364,15 @@ function PackageActionsPanel({
         />
       ) : null}
     </section>
+  )
+}
+
+function ActionRuleCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-3">
+      <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">{title}</p>
+      <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">{body}</p>
+    </div>
   )
 }
 
@@ -928,12 +1413,22 @@ function ImportDryRunReport({
           </button>
         </div>
       </div>
+
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <ReportList title="Missing secrets" items={report.requiredSecrets.map((secret) => secret.name)} empty="No required secret placeholders." tone={report.requiredSecrets.length > 0 ? 'warning' : 'neutral'} />
         <ReportList title="Conflicts" items={report.conflicts.map((conflict) => conflict.message)} empty="No blocking conflicts." tone={report.conflicts.some((conflict) => conflict.severity === 'error') ? 'danger' : 'warning'} />
         <ReportList title="Unsupported integrations" items={report.unsupportedIntegrations.map((integration) => `${integration.channel}: ${integration.reason}`)} empty="No unsupported integrations." tone={report.unsupportedIntegrations.length > 0 ? 'warning' : 'neutral'} />
         <ReportList title="Knowledge requirements" items={report.missingKnowledgeRefs.map((ref) => ref.name)} empty="No missing Knowledge refs." tone={report.missingKnowledgeRefs.length > 0 ? 'warning' : 'neutral'} />
       </div>
+
+      {report.warnings.length > 0 ? (
+        <div className="mt-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-3 text-[12px] text-[var(--color-text-secondary)]">
+          <p className="font-semibold text-[var(--color-text-primary)]">Warnings</p>
+          <ul className="mt-2 space-y-1">
+            {report.warnings.slice(0, 4).map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -954,62 +1449,61 @@ function ReportList({ title, items, empty, tone }: { title: string; items: strin
 }
 
 function ReleaseConfigPilotRail({
+  current,
+  role,
   validation,
-  validationState,
+  validationSnapshot,
   latestReceipt,
   onOpen,
 }: {
+  current: AgentVersion | null
+  role: VersionRole | null
   validation: ScenarioValidationSummary | undefined
-  validationState: string
+  validationSnapshot: VersionValidationSnapshot
   latestReceipt: ScenarioReceipt | null
   onOpen: () => void
 }) {
   const validated = Boolean(validation?.runtimeValidated)
+
   return (
     <aside className="intera-q2-rail p-5 xl:sticky xl:top-6 xl:self-start">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-accent-primary)]">
-            <OrganicLoader variant={validated ? '20' : '12'} size={24} title="ConfigPilot release rail loader" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">ConfigPilot <span className="ml-1 rounded bg-[var(--color-bg-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-text-tertiary)]">BETA</span></p>
-          </div>
+      <div className="flex items-center gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-accent-primary)]">
+          <OrganicLoader variant={validated ? '20' : '12'} size={24} title="ConfigPilot release rail loader" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">ConfigPilot <span className="ml-1 rounded bg-[var(--color-bg-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-text-tertiary)]">BETA</span></p>
+          <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">Pilot Lab owns conversational building. Release links there when you need guided fixes.</p>
         </div>
-        <button type="button" aria-label="Collapse ConfigPilot rail" className="text-[var(--color-text-tertiary)]">⌃</button>
       </div>
 
       <p className="mt-8 text-[13px] leading-6 text-[var(--color-text-secondary)]">
-        Based on your draft changes and latest receipt.
+        Selected {role ? roleLabel(role).toLowerCase() : 'version'}{current ? ` v${current.version}` : ''} is ready for Release review.
       </p>
 
       <RailInsight
-        tone="warning"
-        title={validated ? 'Recommendation' : 'High impact'}
-        body={validated ? 'Validation is fresh. Ask for a small draft improvement before the next publish.' : 'Validation needs attention. Run Pilot Lab or ask ConfigPilot for the smallest reviewable fix.'}
-        action={validated ? 'Review suggestion' : 'Open suggestion'}
+        tone={validated ? 'success' : 'warning'}
+        title={validated ? 'Validation is fresh' : 'Validation needs review'}
+        body={validated ? 'Ask ConfigPilot for one small draft improvement before the next publish.' : validationSnapshot.detail}
+        action="Open Pilot Lab"
         onClick={onOpen}
       />
       <RailInsight
         tone="info"
-        title="Recommendation"
-        body={latestReceipt ? `Latest ${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
+        title="Latest evidence"
+        body={latestReceipt ? `${executionModeLabel(latestReceipt.executionMode)} receipt ${latestReceipt.status}: ${latestReceipt.scenarioName}` : 'No receipt yet. Run validation before publishing.'}
         action="Ask ConfigPilot"
         onClick={onOpen}
       />
       <RailInsight
         tone="success"
-        title="Insight"
-        body="Package changes stay draft-only until Release publishes explicitly."
-        action="View context"
+        title="Release boundary"
+        body="Import, duplicate, and draft edits stay isolated until Release publishes explicitly. ConfigPilot cannot publish for you."
+        action="Review workflow"
         onClick={onOpen}
       />
     </aside>
   )
-}
-
-function executionModeLabel(mode: ScenarioReceipt['executionMode']): string {
-  return mode === 'agentRuntime' ? 'Runtime-backed' : 'Fixture-only'
 }
 
 function RailInsight({ tone, title, body, action, onClick }: { tone: 'warning' | 'info' | 'success'; title: string; body: string; action: string; onClick: () => void }) {
@@ -1030,15 +1524,6 @@ function RailInsight({ tone, title, body, action, onClick }: { tone: 'warning' |
         <span aria-hidden>›</span>
       </button>
     </section>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-3 border-b border-[var(--color-border-subtle)] pb-2 last:border-b-0 last:pb-0">
-      <dt className="w-28 shrink-0 text-[var(--color-text-tertiary)]">{label}</dt>
-      <dd className="min-w-0 flex-1 break-words text-[var(--color-text-secondary)]">{value}</dd>
-    </div>
   )
 }
 

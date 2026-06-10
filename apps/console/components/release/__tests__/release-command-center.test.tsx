@@ -7,7 +7,7 @@ const h = vi.hoisted(() => {
   const mockSelectAgent = vi.fn()
   const mockRefreshConfigs = vi.fn(async () => {})
   const context = {
-    selectedAgentId: 'draft-2',
+    selectedAgentId: 'draft-3',
     agentConfigs: [],
     loading: false,
     loadError: null as string | null,
@@ -24,24 +24,37 @@ vi.mock('@/lib/agent/agent-context', () => ({
 
 const configs = [
   {
-    id: 'live-1',
+    id: 'history-1',
     name: 'Gaming Support',
     version: 1,
-    isActive: true,
+    isActive: false,
     parentId: null,
     model: 'deepseek-v4-flash',
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T01:00:00.000Z',
+    releaseNote: 'Original launch baseline',
+    publishedAt: '2026-06-01T02:00:00.000Z',
+    publishedBy: 'launch-owner',
+  },
+  {
+    id: 'live-2',
+    name: 'Gaming Support',
+    version: 2,
+    isActive: true,
+    parentId: 'history-1',
+    model: 'deepseek-v4-flash',
+    createdAt: '2026-06-02T00:00:00.000Z',
+    updatedAt: '2026-06-02T01:00:00.000Z',
     releaseNote: 'Stable launch package',
-    publishedAt: '2026-06-02T00:00:00.000Z',
+    publishedAt: '2026-06-02T02:00:00.000Z',
     publishedBy: 'lead-delivery',
   },
   {
-    id: 'draft-2',
+    id: 'draft-3',
     name: 'Gaming Support',
-    version: 2,
+    version: 3,
     isActive: false,
-    parentId: 'live-1',
+    parentId: 'live-2',
     model: 'deepseek-v4-flash',
     createdAt: '2026-06-03T00:00:00.000Z',
     updatedAt: '2026-06-03T01:00:00.000Z',
@@ -51,7 +64,7 @@ const configs = [
   },
 ]
 
-const liveTemplate = {
+const historyTemplate = {
   schemaVersion: 'intera.agentTemplate.v1',
   metadata: { name: 'Gaming Support' },
   agent: { name: 'Gaming Support', model: 'deepseek-v4-flash', memoryStrategy: { mode: 'compact' } },
@@ -68,6 +81,11 @@ const liveTemplate = {
   systemToolPolicy: { runtimeManaged: true, importMode: 'ignore', runtimeManagedTools: [{ name: 'start_procedure' }] },
 }
 
+const liveTemplate = {
+  ...historyTemplate,
+  requiredSecrets: [{ name: 'livechat_bot_access_token', required: true }],
+}
+
 const draftTemplate = {
   ...liveTemplate,
   agent: { name: 'Gaming Support', model: 'deepseek-v4-flash', memoryStrategy: { mode: 'profile-plus-facts' } },
@@ -82,7 +100,6 @@ const draftTemplate = {
   }],
   knowledgeRefs: [{ name: 'Deposit FAQ', provider: 'gptbots', status: 'enabled', groupRefs: ['deposit'] }],
   integrationRefs: [{ channel: 'livechat', provider: 'livechat', name: 'LiveChat production', status: 'enabled', requiredSecrets: ['livechat_bot_access_token'] }],
-  requiredSecrets: [{ name: 'livechat_bot_access_token', required: true }],
 }
 
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400) {
@@ -100,31 +117,102 @@ function installFetchMock(options: { forkLimit?: boolean } = {}) {
     if (url === '/api/admin/agent-configs') {
       return jsonResponse({ ok: true, data: { configs } })
     }
-    if (url === '/api/admin/scenarios?agentConfigId=draft-2') {
+
+    if (url === '/api/admin/scenarios?agentConfigId=history-1') {
+      return jsonResponse({
+        ok: true,
+        data: {
+          scenarios: [],
+          receipts: [{
+            scenarioName: 'launch_baseline',
+            runId: 'run_history',
+            status: 'pass',
+            executionMode: 'agentRuntime',
+            toolExecutionMode: 'live',
+            startedAt: '2026-06-01T02:00:00.000Z',
+            completedAt: '2026-06-01T02:02:00.000Z',
+            finishedAt: '2026-06-01T02:02:00.000Z',
+            agentConfigId: 'history-1',
+            summary: 'Original launch validation passed',
+            evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
+            checks: [{ name: 'baseline', passed: true }],
+            traceId: 'trace_history',
+          }],
+          validation: {
+            state: 'Validated',
+            changedAt: '2026-06-01T02:02:00.000Z',
+            lastValidatedAt: '2026-06-01T02:02:00.000Z',
+            lastReceiptId: 'run_history',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'agentRuntime',
+            runtimeValidated: true,
+            runtimeValidatedAt: '2026-06-01T02:02:00.000Z',
+            overrideRequired: false,
+          },
+        },
+      })
+    }
+
+    if (url === '/api/admin/scenarios?agentConfigId=live-2') {
+      return jsonResponse({
+        ok: true,
+        data: {
+          scenarios: [],
+          receipts: [{
+            scenarioName: 'live_release_check',
+            runId: 'run_live',
+            status: 'pass',
+            executionMode: 'agentRuntime',
+            toolExecutionMode: 'live',
+            startedAt: '2026-06-02T02:00:00.000Z',
+            completedAt: '2026-06-02T02:02:00.000Z',
+            finishedAt: '2026-06-02T02:02:00.000Z',
+            agentConfigId: 'live-2',
+            summary: 'Live release validation passed',
+            evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
+            checks: [{ name: 'baseline', passed: true }],
+            traceId: 'trace_live',
+          }],
+          validation: {
+            state: 'Validated',
+            changedAt: '2026-06-02T02:02:00.000Z',
+            lastValidatedAt: '2026-06-02T02:02:00.000Z',
+            lastReceiptId: 'run_live',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'agentRuntime',
+            runtimeValidated: true,
+            runtimeValidatedAt: '2026-06-02T02:02:00.000Z',
+            overrideRequired: false,
+          },
+        },
+      })
+    }
+
+    if (url === '/api/admin/scenarios?agentConfigId=draft-3') {
       return jsonResponse({
         ok: true,
         data: {
           scenarios: [],
           receipts: [{
             scenarioName: 'deposit_happy_path',
-            runId: 'run_123',
+            runId: 'run_draft',
             status: 'pass',
             executionMode: 'fixture',
             toolExecutionMode: 'mocked',
             startedAt: '2026-06-04T00:00:00.000Z',
             completedAt: '2026-06-04T00:02:00.000Z',
             finishedAt: '2026-06-04T00:02:00.000Z',
-            agentConfigId: 'draft-2',
+            agentConfigId: 'draft-3',
             summary: 'All required evidence matched',
             evidence: { toolsCalled: ['get_deposit_status'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
             checks: [],
-            traceId: 'trace_123',
+            traceId: 'trace_draft',
           }],
           validation: {
             state: 'Changed since last validation',
             changedAt: '2026-06-04T01:00:00.000Z',
             lastValidatedAt: '2026-06-04T00:02:00.000Z',
-            lastReceiptId: 'run_123',
+            lastReceiptId: 'run_draft',
             lastReceiptStatus: 'pass',
             lastReceiptExecutionMode: 'fixture',
             runtimeValidated: false,
@@ -133,19 +221,24 @@ function installFetchMock(options: { forkLimit?: boolean } = {}) {
         },
       })
     }
-    if (url === '/api/admin/agent-templates/export?agentConfigId=live-1') {
+
+    if (url === '/api/admin/agent-templates/export?agentConfigId=history-1') {
+      return jsonResponse({ ok: true, data: { template: historyTemplate, filename: 'history.intera-agent.json' } })
+    }
+    if (url === '/api/admin/agent-templates/export?agentConfigId=live-2') {
       return jsonResponse({ ok: true, data: { template: liveTemplate, filename: 'live.intera-agent.json' } })
     }
-    if (url === '/api/admin/agent-templates/export?agentConfigId=draft-2') {
+    if (url === '/api/admin/agent-templates/export?agentConfigId=draft-3') {
       return jsonResponse({ ok: true, data: { template: draftTemplate, filename: 'draft.intera-agent.json' } })
     }
-    if (url === '/api/admin/agent-templates/export?agentConfigId=draft-2&download=1') {
+    if (url === '/api/admin/agent-templates/export?agentConfigId=draft-3&download=1') {
       return jsonResponse(draftTemplate)
     }
-    if (url === '/api/admin/agent-configs/draft-2/activate' && init?.method === 'PUT') {
-      return jsonResponse({ ok: true, data: { config: { ...configs[1], isActive: true }, validation: { overrideRequired: true, overrideReason: 'Reviewed stale receipt.' } } })
+
+    if (url === '/api/admin/agent-configs/draft-3/activate' && init?.method === 'PUT') {
+      return jsonResponse({ ok: true, data: { config: { ...configs[2], isActive: true }, validation: { overrideRequired: true, overrideReason: 'Reviewed stale receipt.' } } })
     }
-    if (url === '/api/admin/agent-configs/draft-2/fork' && init?.method === 'POST') {
+    if (url === '/api/admin/agent-configs/draft-3/fork' && init?.method === 'POST') {
       if (options.forkLimit) {
         return jsonResponse({
           ok: false,
@@ -156,8 +249,9 @@ function installFetchMock(options: { forkLimit?: boolean } = {}) {
           },
         }, false, 400)
       }
-      return jsonResponse({ ok: true, data: { config: { ...configs[1], id: 'draft-3', version: 3 } } }, true, 201)
+      return jsonResponse({ ok: true, data: { config: { ...configs[2], id: 'draft-4', version: 4 } } }, true, 201)
     }
+
     if (url === '/api/admin/agent-templates/import' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body))
       if (body.dryRun) {
@@ -180,8 +274,9 @@ function installFetchMock(options: { forkLimit?: boolean } = {}) {
           },
         })
       }
-      return jsonResponse({ ok: true, data: { config: { ...configs[1], id: 'imported-1', name: 'Imported Starter' }, imported: {}, warnings: [] } }, true, 201)
+      return jsonResponse({ ok: true, data: { config: { ...configs[2], id: 'imported-1', name: 'Imported Starter' }, imported: {}, warnings: [] } }, true, 201)
     }
+
     throw new Error(`Unexpected fetch: ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -193,34 +288,47 @@ async function renderReleaseCommandCenter() {
   await act(async () => {
     render(<ReleaseCommandCenter />)
   })
-  await screen.findByText('Manage versions, validate quality, and publish with confidence.')
+  await screen.findByText('Agent version timeline')
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  h.context.selectedAgentId = 'draft-2'
+  h.context.selectedAgentId = 'draft-3'
+  if (!('createObjectURL' in URL)) {
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:mock'), writable: true })
+  } else {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock')
+  }
+  if (!('revokeObjectURL' in URL)) {
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true })
+  } else {
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  }
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
 })
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('ReleaseCommandCenter', () => {
-  it('renders live, draft, Scenario receipt, and grouped config diff data from APIs', async () => {
+  it('renders timeline, retention guidance, and selected validation evidence', async () => {
     installFetchMock()
     await renderReleaseCommandCenter()
 
-    expect(screen.getByText('Live Version')).toBeDefined()
+    expect(screen.getByText('Live version')).toBeDefined()
+    expect(screen.getByText('Draft version')).toBeDefined()
+    expect(screen.getByText('Historical versions')).toBeDefined()
+    expect(screen.getByText('3 of 5 retained')).toBeDefined()
+    expect(screen.getAllByText('Live').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
-    expect(screen.getByText('Changed since last validation')).toBeDefined()
+    expect(screen.getAllByText('Historical').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Changed since last validation').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Fixture-only/).length).toBeGreaterThan(0)
-    expect(screen.getByText('Latest receipt is fixture-only')).toBeDefined()
-    expect(screen.getAllByText('deposit_happy_path').length).toBeGreaterThan(0)
-    expect(screen.getByText('get_deposit_status')).toBeDefined()
-    expect(screen.getByText('Knowledge')).toBeDefined()
-    expect(screen.getByText('Deposit FAQ')).toBeDefined()
-    expect(screen.queryByText('Package v1 placeholder')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Create editable draft' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Rollback preview' })).toBeDefined()
     expect(screen.getByText('Required secrets')).toBeDefined()
   })
 
@@ -228,7 +336,7 @@ describe('ReleaseCommandCenter', () => {
     const fetchMock = installFetchMock()
     await renderReleaseCommandCenter()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publish draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Publish selected version' }))
     const publishButton = await screen.findByRole('button', { name: 'Publish version' })
     expect((publishButton as HTMLButtonElement).disabled).toBe(true)
 
@@ -239,27 +347,30 @@ describe('ReleaseCommandCenter', () => {
     fireEvent.click(publishButton)
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/admin/agent-configs/draft-2/activate', expect.objectContaining({ method: 'PUT' }))
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/agent-configs/draft-3/activate', expect.objectContaining({ method: 'PUT' }))
     })
-    const activateCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/admin/agent-configs/draft-2/activate')
+    const activateCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/admin/agent-configs/draft-3/activate')
     expect(JSON.parse(String(activateCall?.[1]?.body))).toMatchObject({
       releaseNote: 'Ready after receipt review.',
       overrideValidationReason: 'Reviewed stale receipt.',
     })
   })
 
-  it('calls existing F6 package endpoints and duplicate-version endpoint', async () => {
+  it('calls version control package endpoints and shows rollback preview', async () => {
     const fetchMock = installFetchMock()
     await renderReleaseCommandCenter()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export package' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export selected package' }))
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/admin/agent-templates/export?agentConfigId=draft-2&download=1')
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/agent-templates/export?agentConfigId=draft-3&download=1')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Duplicate Version' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Rollback preview' }))
+    expect(await screen.findByText('Rollback diff preview')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create editable draft' }))
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/admin/agent-configs/draft-2/fork', expect.objectContaining({ method: 'POST' }))
+      expect(fetchMock).toHaveBeenCalledWith('/api/admin/agent-configs/draft-3/fork', expect.objectContaining({ method: 'POST' }))
     })
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
@@ -272,7 +383,7 @@ describe('ReleaseCommandCenter', () => {
 
     const dryRunCall = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/admin/agent-templates/import' && JSON.parse(String(init?.body)).dryRun)
     expect(JSON.parse(String(dryRunCall?.[1]?.body))).toMatchObject({
-      parentAgentConfigId: 'draft-2',
+      parentAgentConfigId: 'draft-3',
       dryRun: true,
       strategy: 'createDraft',
       template: expect.objectContaining({ schemaVersion: 'intera.agentTemplate.v1' }),
@@ -284,7 +395,7 @@ describe('ReleaseCommandCenter', () => {
     })
     const applyCall = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/admin/agent-templates/import' && !JSON.parse(String(init?.body)).dryRun)
     expect(JSON.parse(String(applyCall?.[1]?.body))).toMatchObject({
-      parentAgentConfigId: 'draft-2',
+      parentAgentConfigId: 'draft-3',
       strategy: 'createDraft',
     })
   })
@@ -293,7 +404,7 @@ describe('ReleaseCommandCenter', () => {
     installFetchMock({ forkLimit: true })
     await renderReleaseCommandCenter()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Duplicate Version' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create editable draft' }))
 
     await screen.findByText(/Maximum retained versions is 5/)
   })
