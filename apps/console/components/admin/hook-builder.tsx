@@ -640,7 +640,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
   )
 
   return (
-    <div>
+    <div className={embedded ? 'relative isolate min-h-[calc(100dvh-176px)] rounded-[18px] bg-[var(--color-bg-app)]' : undefined}>
       {!embedded ? <VersionContextBar /> : null}
       <div className={embedded ? 'px-0 py-2' : 'px-8 py-8'}>
         <div className="mb-6 flex items-start justify-between gap-4">

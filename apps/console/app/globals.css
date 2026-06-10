@@ -670,6 +670,7 @@ body {
     max-height: 100dvh;
     flex: 1 1 auto;
     flex-direction: column;
+    background: color-mix(in srgb, var(--color-bg-app) 70%, white 30%);
   }
 
   .console-surface,
