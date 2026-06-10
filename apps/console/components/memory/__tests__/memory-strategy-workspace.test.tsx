@@ -4,11 +4,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockApiClient = vi.fn()
-const mockBustConfigCache = vi.fn(async (_orgId: string) => {})
+const mockBustConfigCache = vi.fn(async (_orgId: string, _agentConfigId?: string) => {})
+const mockEmitAgentConfigUpdated = vi.fn()
 
 vi.mock('@/lib/api/client', () => ({
   apiClient: (...args: any[]) => mockApiClient(...args),
-  bustConfigCache: (orgId: string) => mockBustConfigCache(orgId),
+  bustConfigCache: (orgId: string, agentConfigId?: string) => mockBustConfigCache(orgId, agentConfigId),
+}))
+
+vi.mock('@/lib/agent-config-events', () => ({
+  emitAgentConfigUpdated: (agentId: string) => mockEmitAgentConfigUpdated(agentId),
 }))
 
 vi.mock('@/components/admin/version-context-bar', () => ({
@@ -86,7 +91,8 @@ describe('MemoryStrategyWorkspace', () => {
     expect(savedStrategy.autocompactThresholdTokens).toBe(20000)
     expect(savedStrategy.compactionKeepMin).toBe(10)
     expect(savedStrategy.l1MaxMessages).toBe(10)
-    expect(mockBustConfigCache).toHaveBeenCalledWith('default')
+    expect(mockBustConfigCache).toHaveBeenCalledWith('default', 'agent_default_v1')
+    expect(mockEmitAgentConfigUpdated).toHaveBeenCalledWith('agent_default_v1')
   })
 
   it('keeps raw engineering parameters hidden until Advanced is opened', async () => {

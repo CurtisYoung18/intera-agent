@@ -23,6 +23,7 @@ import type { ModelInfo } from '@/app/admin/agent/types'
 import { DEFAULT_MODEL } from '@intera/shared/defaults'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { emitAgentConfigUpdated } from '@/lib/agent-config-events'
 import { useSession } from '@/lib/hooks/use-session'
 import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import {
@@ -303,7 +304,8 @@ export default function MemoryStrategyWorkspace({
         method: 'PUT',
         body: payload,
       })
-      await bustConfigCache(orgId)
+      await bustConfigCache(orgId, agentId)
+      emitAgentConfigUpdated(agentId)
       setDirty(false)
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2400)

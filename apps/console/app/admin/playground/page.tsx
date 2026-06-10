@@ -16,6 +16,7 @@ import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useSession } from '@/lib/hooks/use-session'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
+import { detectMemoryMode, normalizeMemoryStrategy } from '@/components/memory/memory-strategy-utils'
 import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
 import RenderHintCard from '@/components/chat/render-hint-card'
@@ -46,10 +47,11 @@ interface AgentListItem {
 
 interface AgentSnapshot {
   name: string
-  resolvedModel: string
-  systemPromptPreview: string
-  memoryTierLabel: string
-  guardrailCount: number
+  resolvedModelId: string
+  resolvedModelLabel: string
+  promptPreview: string | null
+  memoryModeLabel: string
+  enabledHookCount: number | null
   temperature: number
 }
 
@@ -66,12 +68,40 @@ const QUICK_STARTS = [
 
 /* ── Helpers ── */
 
-function detectMemoryTier(ms: any): string {
-  const t = ms?.autocompactThresholdTokens
-  if (!t) return 'Balanced'
-  if (t <= 20000) return 'Short-term'
-  if (t <= 40000) return 'Balanced'
-  return 'Long-term'
+function formatMemoryModeLabel(raw: unknown): string {
+  const mode = detectMemoryMode(normalizeMemoryStrategy(raw))
+  if (mode === 'short') return 'Short'
+  if (mode === 'long') return 'Long'
+  if (mode === 'custom') return 'Custom'
+  return 'Balanced'
+}
+
+function buildPromptPreview(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  return trimmed.length > 120 ? `${trimmed.slice(0, 120)}…` : trimmed
+}
+
+function resolveSnapshotModel(
+  resolvedModel: unknown,
+  rawModel: unknown,
+  models: ModelInfo[],
+): { id: string; label: string } {
+  const fallbackId = resolveEffectiveModel({
+    model: typeof rawModel === 'string' ? rawModel : null,
+  })
+  const resolvedId =
+    typeof resolvedModel === 'string' && resolvedModel.trim()
+      ? resolvedModel.trim()
+      : typeof rawModel === 'string' && rawModel.trim()
+        ? rawModel.trim()
+        : fallbackId
+  const match = models.find((model) => model.id === resolvedId || model.name === resolvedId)
+  return {
+    id: match?.id || resolvedId,
+    label: match?.name || resolvedId,
+  }
 }
 
 function imagesFromContentBlocks(blocks: unknown): AttachedImage[] | undefined {
@@ -412,31 +442,50 @@ export default function PlaygroundPage() {
     }
     prevAgentConfigIdRef.current = selectedAgentId
 
-    apiClient(`/api/admin/agent?agentId=${selectedAgentId}`, { cache: 'no-store' })
-      .then((data) => {
-        const payload = data as any
+    let cancelled = false
+
+    async function loadSnapshot() {
+      try {
+        const [agentResult, hooksResult] = await Promise.all([
+          apiClient(`/api/admin/agent?agentId=${selectedAgentId}`, { cache: 'no-store' }),
+          apiClient(`/api/admin/hooks?agentConfigId=${selectedAgentId}`, { cache: 'no-store' }).catch(() => null),
+        ])
+        if (cancelled) return
+
+        const payload = agentResult as any
         const raw = payload.data?.config || payload.config || {}
-        let memoryStrategy = {}
-        try { memoryStrategy = typeof raw.memoryStrategy === 'string' ? JSON.parse(raw.memoryStrategy || '{}') : raw.memoryStrategy || {} } catch { /* */ }
-
-        const sp = raw.systemPrompt || ''
-
-        // Resolved model: prefer the API-resolved name, fall back to modelInfo lookup, then raw model id
-        const resolvedModel: string = payload.data?.resolvedModel || payload.resolvedModel || payload.data?.config?.resolvedModel || payload.config?.resolvedModel ||
-          (models.find(m => m.id === raw.model)?.name || raw.model || resolveEffectiveModel({ model: raw.model }))
+        const hooksPayload = hooksResult as any
+        const hooks = Array.isArray(hooksPayload?.data?.hooks)
+          ? hooksPayload.data.hooks
+          : Array.isArray(hooksPayload?.hooks)
+            ? hooksPayload.hooks
+            : null
+        const resolvedModel = resolveSnapshotModel(
+          payload.data?.resolvedModel || payload.resolvedModel || payload.data?.config?.resolvedModel || payload.config?.resolvedModel,
+          raw.model,
+          models,
+        )
 
         setSnapshot({
           name: raw.name || 'Default',
-          resolvedModel,
-          systemPromptPreview: sp.length > 120 ? sp.slice(0, 120) + '…' : sp,
-          memoryTierLabel: detectMemoryTier(memoryStrategy),
-          guardrailCount: 0,
+          resolvedModelId: resolvedModel.id,
+          resolvedModelLabel: resolvedModel.label,
+          promptPreview: buildPromptPreview(raw.coreSystemPrompt),
+          memoryModeLabel: formatMemoryModeLabel(raw.memoryStrategy),
+          enabledHookCount: hooks ? hooks.filter((hook: any) => hook?.enabled !== false).length : null,
           temperature: raw.temperature ?? 0.5,
         })
         setDebugMode(Boolean(raw.debugMode))
         if (raw.showThinking !== undefined) setShowThinking(Boolean(raw.showThinking))
-      })
-      .catch(() => setSnapshot(null))
+      } catch {
+        if (!cancelled) setSnapshot(null)
+      }
+    }
+
+    loadSnapshot()
+    return () => {
+      cancelled = true
+    }
   }, [selectedAgentId, models, agentList, snapshotReloadKey])
 
   /* ── Auto-scroll ── */
@@ -449,8 +498,7 @@ export default function PlaygroundPage() {
 
   const supportsVision = (() => {
     if (!snapshot) return false
-    // Find the resolved model in the models list
-    const model = models.find(m => m.name === snapshot.resolvedModel || m.id === snapshot.resolvedModel)
+    const model = models.find(m => m.id === snapshot.resolvedModelId || m.name === snapshot.resolvedModelId)
     return model?.supportsVision ?? false
   })()
 
@@ -458,7 +506,7 @@ export default function PlaygroundPage() {
 
   const handleImageAttach = useCallback(async (files: FileList | File[]) => {
     if (!supportsVision) {
-      setToastMessage(`${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+      setToastMessage(`${snapshot?.resolvedModelLabel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
       setTimeout(() => setToastMessage(''), 4000)
       return
     }
@@ -476,7 +524,7 @@ export default function PlaygroundPage() {
       newImages.push({ base64, mimeType: file.type, name: file.name })
     }
     setAttachedImages(prev => [...prev, ...newImages])
-  }, [supportsVision, snapshot?.resolvedModel])
+  }, [supportsVision, snapshot?.resolvedModelLabel])
 
   const removeImage = useCallback((idx: number) => {
     setAttachedImages(prev => prev.filter((_, i) => i !== idx))
@@ -751,10 +799,12 @@ export default function PlaygroundPage() {
 
         {snapshot && (
           <>
-            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.resolvedModel} />
+            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.resolvedModelLabel} />
             <ConfigPill icon={<span style={{ fontSize: 10, fontWeight: 600 }}>&#123;t&#125;</span>} label={`Temp ${snapshot.temperature}`} />
-            <ConfigPill icon={<Clock size={11} />} label={snapshot.memoryTierLabel} />
-            <ConfigPill icon={<Shield size={11} />} label={`${snapshot.guardrailCount} rule${snapshot.guardrailCount !== 1 ? 's' : ''}`} />
+            <ConfigPill icon={<Clock size={11} />} label={snapshot.memoryModeLabel} />
+            {snapshot.enabledHookCount !== null ? (
+              <ConfigPill icon={<Shield size={11} />} label={`${snapshot.enabledHookCount} hook${snapshot.enabledHookCount !== 1 ? 's' : ''}`} />
+            ) : null}
 
             <div style={{ flex: 1 }} />
 
@@ -893,7 +943,7 @@ export default function PlaygroundPage() {
                   textAlign: 'center', lineHeight: 1.6,
                 }}>
                   {snapshot
-                    ? `Testing "${snapshot.name}" · ${snapshot.resolvedModel}`
+                    ? `Testing "${snapshot.name}" · ${snapshot.resolvedModelLabel}`
                     : 'Select an agent and send a message to test its behaviour.'}
                 </p>
 
@@ -936,7 +986,7 @@ export default function PlaygroundPage() {
                   ))}
                 </div>
 
-                {snapshot?.systemPromptPreview && (
+                {snapshot?.promptPreview && (
                   <div style={{
                     width: '100%', maxWidth: 440, marginTop: 8,
                     padding: '12px 16px', borderRadius: 12,
@@ -944,10 +994,10 @@ export default function PlaygroundPage() {
                     border: '1px solid rgba(212,118,78,0.06)',
                   }}>
                     <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--fog)', opacity: 0.5, marginBottom: 6 }}>
-                      System Prompt
+                      Core Prompt
                     </div>
                     <p style={{ fontSize: 11, color: 'var(--fog)', margin: 0, lineHeight: 1.55, fontStyle: 'italic' }}>
-                      {snapshot.systemPromptPreview}
+                      {snapshot.promptPreview}
                     </p>
                   </div>
                 )}
@@ -1281,7 +1331,7 @@ export default function PlaygroundPage() {
             >
               {/* ── Attach button ── */}
               <label
-                title={supportsVision ? 'Attach image' : `${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`}
+                title={supportsVision ? 'Attach image' : `${snapshot?.resolvedModelLabel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 36, height: 36, borderRadius: 12,
@@ -1325,7 +1375,7 @@ export default function PlaygroundPage() {
                   if (imageFiles.length > 0) {
                     e.preventDefault()
                     if (!supportsVision) {
-                      setToastMessage(`${snapshot?.resolvedModel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+                      setToastMessage(`${snapshot?.resolvedModelLabel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
                       setTimeout(() => setToastMessage(''), 4000)
                       return
                     }
