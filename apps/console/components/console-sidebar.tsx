@@ -1,18 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import type { TranslateFn } from '@/lib/i18n/types'
 import {
-  ClipboardList, Puzzle, Shield, Layers,
+  Layers,
+  type LucideIcon,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Globe, Lock, Unlock, ArrowRightLeft,
   MessageSquare,
-  Search,
   Loader2,
-  Plug,
   Users2,
   FlaskConical,
   TestTubeDiagonal,
@@ -22,11 +21,12 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import InteraLogo from '@intera/shared/ui/intera-logo'
 import AgentManagementDrawer from '@/components/admin/agent-management-drawer'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
+import { ConsoleSurface } from '@/components/ui/console-chrome'
 
 interface NavItem {
   href: string
   slug: NavSlug
-  icon: typeof ClipboardList
+  icon: LucideIcon
   color: string
   matchPattern?: string
   badge?: string
@@ -59,17 +59,17 @@ type NavSlug =
 
 const BUILD_ITEMS: NavItem[] = [
   { href: '/build/pilot-lab', slug: 'pilotLab', icon: TestTubeDiagonal, color: '#357f7c', matchPattern: '/build/pilot-lab' },
-  { href: '/build/release', slug: 'release', icon: FlaskConical, color: '#8b6ff5', matchPattern: '/build/release' },
-  { href: '/build/components', slug: 'components', icon: Layers, color: '#5b8af7', matchPattern: '/build/components' },
+  { href: '/build/release', slug: 'release', icon: FlaskConical, color: '#5f7f78', matchPattern: '/build/release' },
+  { href: '/build/components', slug: 'components', icon: Layers, color: '#628595', matchPattern: '/build/components' },
 ]
 
 const OPERATE_ITEMS: NavItem[] = [
-  { href: '/operate/conversations', slug: 'chats', icon: MessageSquare, color: '#6366f1', matchPattern: '/operate/conversations' },
-  { href: '/operate/handoff', slug: 'users', icon: Users2, color: '#8b6ff5', matchPattern: '/operate/handoff' },
+  { href: '/operate/conversations', slug: 'chats', icon: MessageSquare, color: '#5d7487', matchPattern: '/operate/conversations' },
+  { href: '/operate/handoff', slug: 'users', icon: Users2, color: '#7d7a63', matchPattern: '/operate/handoff' },
 ]
 
 const SETTINGS_ITEMS: NavItem[] = [
-  { href: '/settings/organization', slug: 'organization', icon: Building2, color: '#6366f1', matchPattern: '/settings/organization' },
+  { href: '/settings/organization', slug: 'organization', icon: Building2, color: '#6a746b', matchPattern: '/settings/organization' },
 ]
 
 function isActive(pathname: string, item: NavItem): boolean {
@@ -230,34 +230,35 @@ export default function ConsoleSidebar() {
   return (
     <>
       <aside
-        className={`relative z-20 flex min-h-0 flex-shrink-0 flex-col overflow-hidden transition-[width] duration-300 ease-out
-          border-r border-white/75 bg-[rgba(255,252,246,0.78)] shadow-[0_18px_48px_rgba(21,23,25,0.07),inset_-1px_0_0_rgba(255,255,255,0.58)] backdrop-blur-[24px]
-          ${collapsed ? 'w-14' : 'w-56'} h-full`}
+        className="console-sidebar"
+        data-collapsed={collapsed}
       >
-        <div className="relative z-30 flex-shrink-0 border-b border-black/[0.045] bg-white/[0.14] pb-3 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
+        <div className="console-sidebar-header flex-shrink-0 pb-3 pt-3">
           {collapsed ? (
-            <div className="flex flex-col items-center px-2">
-              <button
-                type="button"
-                onClick={() => setCollapsed(false)}
-                className="flex w-full flex-col items-center gap-2 rounded-[18px] border border-white/70 bg-white/80 p-3 text-[var(--fog)] shadow-[0_8px_20px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25 focus-visible:ring-offset-2"
-                aria-label={t('sidebar.expandAria')}
-              >
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
+            <div className="px-2">
+              <ConsoleSurface tone="toolbar" padding="sm" className="flex flex-col items-center gap-2">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
                   <CollapsedSidebarMark />
                 </div>
-                <ChevronRight className="h-4 w-4 opacity-75" strokeWidth={2.25} aria-hidden />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setCollapsed(false)}
+                  className="console-sidebar-toggle"
+                  aria-label={t('sidebar.expandAria')}
+                >
+                  <ChevronRight className="h-4 w-4 opacity-75" strokeWidth={2.25} aria-hidden />
+                </button>
+              </ConsoleSurface>
             </div>
           ) : (
             <div className="flex items-center gap-3 px-3">
-              <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[22px] border border-white/60 bg-white/[0.68] px-3 py-2.5 shadow-[0_10px_24px_rgba(21,23,25,0.04),inset_0_1px_0_rgba(255,255,255,0.58)]">
+              <ConsoleSurface tone="toolbar" padding="sm" className="flex min-w-0 flex-1 items-center gap-2.5">
                 <InteraLogo size={26} mode="idle" />
-              </div>
+              </ConsoleSurface>
               <button
                 type="button"
                 onClick={() => setCollapsed(true)}
-                className="console-sidebar-toggle flex-shrink-0 border border-white/75 bg-white/[0.88] shadow-[0_8px_18px_rgba(21,23,25,0.06),inset_0_1px_0_rgba(255,255,255,0.72)]"
+                className="console-sidebar-toggle"
                 aria-expanded
                 aria-label={t('sidebar.collapseAria')}
               >
@@ -270,7 +271,7 @@ export default function ConsoleSidebar() {
         {/* Agent switcher — always visible below logo */}
         {!collapsed && (
           <div className="flex-shrink-0 border-b border-black/[0.04] px-3 py-3">
-            <div className="flex items-center gap-2.5 rounded-[24px] border border-white/70 bg-white/[0.76] px-3 py-2.5 shadow-[0_12px_28px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.62)]">
+            <ConsoleSurface tone="toolbar" padding="sm" className="flex items-center gap-2.5 rounded-[24px]">
               <div className="flex-1 min-w-0">
                 <AgentVersionPicker
                   agentId={selectedAgentId}
@@ -281,12 +282,13 @@ export default function ConsoleSidebar() {
               <button
                 type="button"
                 onClick={() => setAgentDrawerOpen(true)}
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[16px] border border-white/65 bg-white/[0.72] text-[var(--fog)] shadow-[0_4px_10px_rgba(21,23,25,0.04)] transition-colors hover:bg-white hover:text-[var(--mist)]"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[16px] border border-white/70 bg-white/[0.68] text-[var(--color-text-secondary)] shadow-[0_8px_16px_rgba(21,23,25,0.04)] transition-colors hover:bg-white hover:text-[var(--color-text-primary)]"
                 title={t('sidebar.openAgents')}
+                aria-label={t('sidebar.openAgents')}
               >
                 <Settings className="w-3.5 h-3.5" />
               </button>
-            </div>
+            </ConsoleSurface>
           </div>
         )}
 
@@ -299,7 +301,7 @@ export default function ConsoleSidebar() {
         <div className="border-t border-black/5 bg-white/[0.14] px-3 pb-2 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
           {/* Controls panel — opens upward from bottom */}
           {avatarOpen && !collapsed && (
-            <div className="mb-3 rounded-[22px] border border-white/70 bg-white/[0.92] p-2 shadow-[0_16px_40px_rgba(21,23,25,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-xl">
+            <ConsoleSurface tone="floating" padding="sm" className="mb-3 rounded-[22px]">
               <button
                 type="button"
                 onClick={() => toggleLocale()}
@@ -321,7 +323,7 @@ export default function ConsoleSidebar() {
               )}
 
               {isStaff && switchOpen && (
-                <div className="mt-2 rounded-[18px] border border-black/[0.04] bg-[rgba(247,247,243,0.9)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                <div className="mt-2 rounded-[18px] border border-white/80 bg-white/[0.7] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
                   {customersLoading ? (
                     <div className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-[12px] text-[var(--fog)]">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -355,19 +357,20 @@ export default function ConsoleSidebar() {
                 <LogOut className="h-4 w-4 flex-shrink-0" />
                 <span className="truncate">{t('sidebar.signOut')}</span>
               </button>
-            </div>
+            </ConsoleSurface>
           )}
 
           {/* Bottom bar — always visible */}
           <button
             type="button"
             onClick={() => { setAvatarOpen(!avatarOpen); setSwitchOpen(false) }}
-            className={`flex w-full items-center gap-2.5 rounded-[18px] border bg-white/[0.84] shadow-[0_10px_24px_rgba(21,23,25,0.08),inset_0_1px_0_rgba(255,255,255,0.62)] backdrop-blur-xl transition-all ${
+            className={`flex w-full items-center gap-2.5 rounded-[18px] border shadow-[0_10px_24px_rgba(21,23,25,0.08),inset_0_1px_0_rgba(255,255,255,0.62)] backdrop-blur-xl transition-all ${
               avatarOpen
-                ? 'border-[rgba(53,127,124,0.16)] bg-white'
-                : 'border-white/75 hover:bg-white'
+                ? 'border-[rgba(53,127,124,0.16)] bg-white/[0.96]'
+                : 'border-white/75 bg-white/[0.82] hover:bg-white/[0.94]'
             } ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}`}
             aria-expanded={avatarOpen}
+            aria-label={customerName}
           >
             <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(21,23,25,0.05)]">
               {showAvatarImage ? (
@@ -393,7 +396,7 @@ export default function ConsoleSidebar() {
           </button>
 
           {!collapsed && (
-            <p className="px-1.5 pt-1 text-[10px] font-mono text-[var(--fog)]/45">{t('shell.version')}</p>
+            <p className="px-1.5 pt-1 text-[10px] font-mono text-[var(--color-text-tertiary)]/55">{t('shell.version')}</p>
           )}
         </div>
       </aside>
@@ -425,11 +428,11 @@ function NavGroup({
   return (
     <div>
       {!collapsed && (
-        <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mist)]/70">
+        <p className="console-sidebar-section-label">
           {label}
         </p>
       )}
-      <div className="space-y-1.5">
+      <div className="console-sidebar-nav">
         {items.map(item => {
           const active = isActive(pathname, item)
           const itemLabel = navLabel(t, item.slug)
@@ -438,29 +441,13 @@ function NavGroup({
               key={item.href}
               href={item.href}
               title={collapsed ? itemLabel : undefined}
-              className={`group relative flex items-center rounded-[18px] border transition-all duration-200 ${
-                collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3.5 py-3'
-              } ${
-                active
-                  ? 'border-white/80 bg-white/[0.88] shadow-[0_10px_24px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.62)]'
-                  : 'border-transparent bg-transparent hover:border-white/60 hover:bg-white/[0.58] hover:shadow-[0_8px_20px_rgba(21,23,25,0.03)]'
-              }`}
+              aria-label={itemLabel}
+              className="console-sidebar-link group"
+              data-active={active}
+              data-collapsed={collapsed}
+              style={{ '--console-nav-accent': item.color } as CSSProperties}
             >
-              {active && !collapsed && (
-                <div
-                  className="absolute left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full opacity-85"
-                  style={{ background: `linear-gradient(180deg, ${item.color}, color-mix(in srgb, ${item.color} 48%, white))` }}
-                />
-              )}
-
-              {active && collapsed && (
-                <div
-                  className="absolute inset-x-1.5 top-1/2 h-11 -translate-y-1/2 rounded-[16px] border border-white/80 bg-white/[0.92] shadow-[0_10px_22px_rgba(21,23,25,0.06),inset_0_1px_0_rgba(255,255,255,0.7)]"
-                  style={{ backgroundColor: `color-mix(in srgb, ${item.color} 8%, white)` }}
-                />
-              )}
-
-              <div className={`relative z-10 flex items-center justify-center ${collapsed ? 'h-9 w-9 rounded-[14px]' : ''}`}>
+              <div className="console-sidebar-link-icon">
                 <item.icon
                   className="h-5 w-5 flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
                   style={{ color: active ? item.color : 'var(--fog)', opacity: active ? 1 : 0.62 }}
@@ -469,12 +456,10 @@ function NavGroup({
               </div>
 
               {!collapsed && (
-                <span className={`whitespace-nowrap text-[14px] transition-colors ${
-                  active ? 'text-[var(--mist)] font-medium' : 'text-[var(--fog)]'
-                }`}>
+                <span className="console-sidebar-link-label">
                   {itemLabel}
                   {item.badge && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-indigo/10 px-1.5 py-0.5 text-[9px] font-semibold text-indigo">
+                    <span className="console-sidebar-link-badge ml-1.5">
                       {item.badge}
                     </span>
                   )}

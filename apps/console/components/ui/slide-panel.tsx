@@ -1,8 +1,8 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { useEffect } from 'react'
+import { ConsoleSurface } from '@/components/ui/console-chrome'
 
 interface SlidePanelProps {
   open: boolean
@@ -12,6 +12,8 @@ interface SlidePanelProps {
 }
 
 export default function SlidePanel({ open, onClose, title, children }: SlidePanelProps) {
+  const titleId = useId()
+
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -23,29 +25,32 @@ export default function SlidePanel({ open, onClose, title, children }: SlidePane
 
   return (
     <>
-      {/* Backdrop — simple dark overlay, no blur to avoid ghosting */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20 animate-[fadeIn_150ms_ease-out]"
-        onClick={onClose}
-      />
+      <div className="console-overlay animate-[fadeIn_150ms_ease-out]" onClick={onClose} />
 
-      {/* Panel — opaque white, no backdrop-blur to avoid rendering artifacts */}
-      <div className="fixed top-0 right-0 z-50 h-dvh w-full max-w-lg bg-white border-l border-black/5 shadow-2xl flex flex-col animate-[slideIn_250ms_cubic-bezier(0.22,1,0.36,1)]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 flex-shrink-0">
-          <h2 className="text-[16px] font-semibold text-[var(--mist)]">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-black/5 transition-colors"
-          >
-            <X className="w-4 h-4 text-[var(--fog)]" />
-          </button>
-        </div>
+      <div className="console-sheet animate-[slideIn_250ms_cubic-bezier(0.22,1,0.36,1)]">
+        <ConsoleSurface
+          tone="floating"
+          padding="none"
+          className="flex h-full w-full flex-col"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+        >
+          <div className="console-sheet-header flex-shrink-0">
+            <h2 id={titleId} className="text-[16px] font-semibold text-[var(--color-text-primary)]">{title}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-[14px] border border-white/70 bg-white/[0.72] text-[var(--color-text-secondary)] shadow-[0_8px_16px_rgba(21,23,25,0.04)] transition-colors hover:bg-white hover:text-[var(--color-text-primary)]"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {children}
-        </div>
+          <div className="console-sheet-body scroll-thin">
+            {children}
+          </div>
+        </ConsoleSurface>
       </div>
     </>
   )

@@ -1,6 +1,7 @@
 // Neumorphic glass card wrapper — unified card style for all console content
 
 import type { ReactNode } from 'react'
+import { ConsoleSurface } from '@/components/ui/console-chrome'
 
 interface GlassCardProps {
   children: ReactNode
@@ -11,11 +12,13 @@ interface GlassCardProps {
 
 export default function GlassCard({ children, className = '', glow, onClick }: GlassCardProps) {
   return (
-    <div
-      className={`glass-card ${glow ? 'glass-card-glow' : ''} ${onClick ? 'cursor-pointer' : ''} ${className}`}
+    <ConsoleSurface
+      className={`${onClick ? 'cursor-pointer' : ''} ${className}`}
+      glow={glow}
+      interactive={Boolean(onClick)}
       onClick={onClick}
     >
       {children}
-    </div>
+    </ConsoleSurface>
   )
 }

@@ -16,36 +16,34 @@ interface ConsoleShellProps {
 
 export default function ConsoleShell({ children }: ConsoleShellProps) {
   const pathname = usePathname()
-  // The login page renders standalone — no sidebar / preview chrome.
-  if (pathname === '/login') return <>{children}</>
+  // Auth entry pages render standalone — no sidebar / preview chrome.
+  if (pathname === '/login' || pathname === '/org-picker') return <>{children}</>
 
   return (
     <AgentProvider>
-      <div className="relative flex h-[100dvh] min-h-0 overflow-hidden">
-      {/* Liquid glass background */}
-      <LiquidGlassBg variant="console" />
+      <div className="console-shell intera-app-surface">
+        {/* Liquid glass background */}
+        <LiquidGlassBg variant="console" />
 
-      {/* Subtle dot grid overlay — command center feel */}
-      <div
-        className="fixed inset-0 z-[1] pointer-events-none opacity-[0.025]"
-        style={{
-          backgroundImage: `radial-gradient(circle, #1a1814 1px, transparent 1px)`,
-          backgroundSize: '24px 24px',
-        }}
-      />
+        {/* Subtle dot grid overlay — command center feel */}
+        <div
+          className="fixed inset-0 z-[1] pointer-events-none opacity-[0.025]"
+          style={{
+            backgroundImage: `radial-gradient(circle, #1a1814 1px, transparent 1px)`,
+            backgroundSize: '24px 24px',
+          }}
+        />
 
-      <ConsoleSidebar />
+        <ConsoleSidebar />
 
-      <main
-        id="console-scroll-root"
-        className="relative z-10 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain"
-      >
-        <AgentOnboardingGate>
-          {children}
-        </AgentOnboardingGate>
-        <ConsoleBackToTop />
-      </main>
-    </div>
+        <main
+          id="console-scroll-root"
+          className="console-shell-main overflow-y-auto overscroll-y-contain"
+        >
+          <AgentOnboardingGate>{children}</AgentOnboardingGate>
+          <ConsoleBackToTop />
+        </main>
+      </div>
     </AgentProvider>
   )
 }

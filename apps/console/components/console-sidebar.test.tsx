@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/link', () => ({
@@ -90,9 +90,40 @@ describe('ConsoleSidebar', () => {
     })
 
     expect(screen.getByRole('link', { name: /Pilot Lab/i }).getAttribute('href')).toBe('/build/pilot-lab')
+    expect(screen.getByRole('link', { name: /Pilot Lab/i }).getAttribute('data-active')).toBe('true')
     expect(screen.getByRole('link', { name: /Release/i }).getAttribute('href')).toBe('/build/release')
     expect(screen.getByRole('link', { name: /Components/i }).getAttribute('href')).toBe('/build/components')
     expect(screen.queryByText('Preview & Debug')).toBeNull()
     expect(container!.querySelector('a[href="/build/playground"]')).toBeNull()
+  })
+
+  it('opens the identity menu from the shared avatar control', async () => {
+    await act(async () => {
+      render(<ConsoleSidebar />)
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+
+    expect(screen.getByRole('button', { name: /Sign Out/i })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Switch Project/i })).toBeDefined()
+  })
+
+  it('starts collapsed on narrow viewports and exposes the expand control', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    })
+
+    await act(async () => {
+      render(<ConsoleSidebar />)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('button', { name: /Expand sidebar/i })).toBeDefined()
   })
 })

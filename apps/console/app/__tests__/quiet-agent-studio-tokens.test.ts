@@ -19,7 +19,7 @@ const tokenSection = sectionBetween(
 
 const primitiveSection = sectionBetween(
   '.intera-app-surface',
-  '.glass-card',
+  '.glass-card-glow',
 )
 
 describe('Quiet Agent Studio design primitives', () => {
@@ -43,6 +43,13 @@ describe('Quiet Agent Studio design primitives', () => {
       '.intera-command-panel',
       '.intera-diff-surface',
       '.intera-diff-row',
+      '.console-shell',
+      '.console-surface',
+      '.console-page-header',
+      '.console-toolbar-surface',
+      '.console-sidebar',
+      '.console-overlay',
+      '.console-sheet',
     ]) {
       expect(primitiveSection).toContain(className)
     }

@@ -1,6 +1,7 @@
 // Empty state — friendly placeholder when lists are empty
 
 import type { LucideIcon } from 'lucide-react'
+import { ConsoleSurface } from '@/components/ui/console-chrome'
 
 interface EmptyStateProps {
   icon: LucideIcon
@@ -21,26 +22,25 @@ export default function EmptyState({
   const large = size === 'large'
 
   return (
-    <div
+    <ConsoleSurface
+      padding={large ? 'lg' : 'md'}
       className={
         large
-          ? 'glass-card mx-auto w-full max-w-xl px-10 py-12 sm:px-14 sm:py-14 text-center shadow-[0_18px_50px_-24px_rgba(0,0,0,0.18)]'
-          : 'glass-card p-10 text-center max-w-md mx-auto'
+          ? 'console-empty-state mx-auto w-full max-w-xl px-10 py-12 sm:px-14 sm:py-14 shadow-[0_18px_50px_-24px_rgba(21,23,25,0.18)]'
+          : 'console-empty-state mx-auto max-w-md p-10'
       }
     >
-      <Icon
-        className={
-          large
-            ? 'w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-6 text-fog/25'
-            : 'w-10 h-10 mx-auto mb-4 text-fog/20'
-        }
-        strokeWidth={1.5}
-      />
+      <div className={`console-empty-state-icon ${large ? 'h-20 w-20 rounded-[22px]' : 'h-14 w-14'}`}>
+        <Icon
+          className={large ? 'h-9 w-9 text-[var(--color-text-tertiary)]/55' : 'h-6 w-6 text-[var(--color-text-tertiary)]/45'}
+          strokeWidth={1.5}
+        />
+      </div>
       <h3
         className={
           large
-            ? 'text-[18px] sm:text-[20px] font-semibold text-primary mb-2 tracking-[-0.02em]'
-            : 'text-[15px] font-medium text-primary mb-1'
+            ? 'mb-2 text-[18px] font-semibold tracking-[-0.02em] text-[var(--color-text-primary)] sm:text-[20px]'
+            : 'mb-1 text-[15px] font-medium text-[var(--color-text-primary)]'
         }
       >
         {title}
@@ -48,8 +48,8 @@ export default function EmptyState({
       <p
         className={
           large
-            ? 'text-[14px] sm:text-[15px] text-secondary leading-relaxed mb-4 max-w-md mx-auto'
-            : 'text-[13px] text-secondary leading-relaxed mb-4'
+            ? 'mx-auto mb-4 max-w-md text-[14px] leading-relaxed text-[var(--color-text-secondary)] sm:text-[15px]'
+            : 'mb-4 text-[13px] leading-relaxed text-[var(--color-text-secondary)]'
         }
       >
         {description}
@@ -57,11 +57,11 @@ export default function EmptyState({
       {action && (
         <button
           onClick={action.onClick}
-          className="px-4 py-2 rounded-lg text-[13px] font-medium bg-indigo/15 border border-indigo/25 text-indigo hover:bg-indigo/25 transition-all duration-200"
+          className="rounded-[14px] border border-[rgba(53,127,124,0.16)] bg-[rgba(53,127,124,0.08)] px-4 py-2 text-[13px] font-semibold text-[var(--color-accent-primary)] shadow-[0_8px_18px_rgba(21,23,25,0.04)] transition-all duration-200 hover:bg-[rgba(53,127,124,0.14)]"
         >
           {action.label}
         </button>
       )}
-    </div>
+    </ConsoleSurface>
   )
 }

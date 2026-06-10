@@ -1,5 +1,7 @@
 // Skeleton loader with shimmer — replaces "Loading…" text
 
+import { ConsoleSurface } from '@/components/ui/console-chrome'
+
 interface SkeletonProps {
   className?: string
 }
@@ -7,18 +9,18 @@ interface SkeletonProps {
 export function Skeleton({ className = '' }: SkeletonProps) {
   return (
     <div
-      className={`animate-shimmer rounded-md bg-[var(--surface)] ${className}`}
+      className={`console-skeleton animate-shimmer rounded-md ${className}`}
     />
   )
 }
 
 export function CardSkeleton() {
   return (
-    <div className="glass-card p-5 space-y-3">
+    <ConsoleSurface className="space-y-3 p-5" padding="none">
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="h-3 w-2/3" />
       <Skeleton className="h-3 w-1/2" />
-    </div>
+    </ConsoleSurface>
   )
 }
 
