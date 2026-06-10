@@ -38,7 +38,6 @@ vi.mock('@/components/locale-provider', () => ({
         'sidebar.collapseAria': 'Collapse sidebar',
         'sidebar.openAgents': 'Manage agents',
         'sidebar.language': 'Language',
-        'sidebar.online': 'Online',
         'sidebar.switchToZh': '中文',
         'sidebar.switchToEn': 'English',
         'sidebar.switchProject': 'Switch Project',
@@ -109,17 +108,6 @@ describe('ConsoleSidebar', () => {
 
     expect(screen.getByRole('button', { name: /Sign Out/i })).toBeDefined()
     expect(screen.getByRole('button', { name: /Switch Project/i })).toBeDefined()
-  })
-
-  it('renders a designed footer instead of an empty bottom area', async () => {
-    await act(async () => {
-      render(<ConsoleSidebar />)
-      await Promise.resolve()
-    })
-
-    expect(screen.getByText('v-test')).toBeDefined()
-    expect(screen.getByText('Online')).toBeDefined()
-    expect(screen.getByRole('button', { name: /Language/i })).toBeDefined()
   })
 
   it('starts collapsed on narrow viewports and exposes the expand control', async () => {

@@ -4,6 +4,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockApiClient = vi.fn()
+let searchParams = new URLSearchParams()
+
+const labels: Record<string, string> = {
+  'pilotLab.tabs.aria': 'Pilot Lab tabs',
+  'pilotLab.tabs.pilot': 'Pilot',
+  'pilotLab.tabs.pilotDesc': 'Draft changes and Scenario receipts',
+  'pilotLab.tabs.playground': 'Playground',
+  'pilotLab.tabs.playgroundDesc': 'Manual dry-run and trace debug',
+}
 
 vi.mock('@/lib/api/client', () => ({
   apiClient: (...args: unknown[]) => mockApiClient(...args),
@@ -19,8 +28,20 @@ vi.mock('@/components/admin/version-context-bar', () => ({
   useSelectedAgentId: vi.fn(() => 'agent-1'),
 }))
 
+vi.mock('@/components/locale-provider', () => ({
+  useConsoleLocale: () => ({
+    locale: 'en',
+    toggleLocale: vi.fn(),
+    t: (key: string) => labels[key] ?? key,
+  }),
+}))
+
+vi.mock('@/app/admin/playground/page', () => ({
+  default: () => <div data-testid="embedded-playground">Embedded Playground</div>,
+}))
+
 vi.mock('next/navigation', () => ({
-  useSearchParams: vi.fn(() => new URLSearchParams()),
+  useSearchParams: vi.fn(() => searchParams),
 }))
 
 const scenario = {
@@ -238,6 +259,7 @@ async function submitChatPrompt(text = 'Create a deposit handoff Scenario') {
 }
 
 beforeEach(() => {
+  searchParams = new URLSearchParams()
   mockApiClient.mockReset()
   setupApi()
 })
@@ -250,12 +272,23 @@ describe('PilotLabPage U-Pilot cockpit', () => {
   it('renders the initial chat cockpit around current draft context', async () => {
     await renderPage()
 
-    expect(await screen.findByText('U-Pilot Chat Cockpit')).toBeTruthy()
     expect(screen.getByRole('link', { name: /Pilot/ }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('link', { name: /Playground/ })).toBeTruthy()
     expect(screen.getByLabelText('Message U-Pilot')).toBeTruthy()
     expect(await screen.findAllByText('Current context')).toBeTruthy()
     expect(mockApiClient.mock.calls[0][0]).toBe('/api/admin/config-pilot/context?agentConfigId=agent-1')
+  }, 10000)
+
+  it('renders playground as a compact workspace without compatibility chrome', async () => {
+    searchParams = new URLSearchParams('tab=playground')
+    await renderPage()
+
+    expect(screen.getByTestId('embedded-playground')).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Playground/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.queryByText('Playground compatibility surface')).toBeNull()
+    expect(screen.queryByText(/Compatibility route only/i)).toBeNull()
+    expect(screen.queryByText('U-Pilot Chat Cockpit')).toBeNull()
   }, 10000)
 
   it('shows the initial streaming Pilot greeting after context loads', async () => {
@@ -266,7 +299,7 @@ describe('PilotLabPage U-Pilot cockpit', () => {
 
   it('shows a proposal diff after chat propose, while apply stays disabled before accept', async () => {
     await renderPage()
-    await screen.findByText('U-Pilot Chat Cockpit')
+    await screen.findByLabelText('Message U-Pilot')
 
     await submitChatPrompt()
     expect(await screen.findByText('Deposit handoff Scenario')).toBeTruthy()

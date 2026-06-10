@@ -21,6 +21,7 @@ import {
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import ConfigDiffViewer from '@/components/config-diff/config-diff-viewer'
 import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
+import { useConsoleLocale } from '@/components/locale-provider'
 import { ReceiptStatusIcon, ScenarioReceiptPanel } from '@/components/scenario-receipts/scenario-receipt-panel'
 import { apiClient, ApiClientError } from '@/lib/api/client'
 import type {
@@ -63,6 +64,7 @@ function nextMessageId(prefix: string) {
 
 export default function PilotLabPage() {
   const searchParams = useSearchParams()
+  const { t } = useConsoleLocale()
   const activeTab = searchParams.get('tab') === 'playground' ? 'playground' : 'pilot'
   const agentConfigId = useSelectedAgentId()
   const chatEndRef = useRef<HTMLDivElement | null>(null)
@@ -307,30 +309,10 @@ export default function PilotLabPage() {
 
   if (activeTab === 'playground') {
     return (
-      <div className="intera-q2-page flex min-h-screen flex-col overflow-hidden px-4 py-4 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
-        <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-4">
+      <div className="intera-q2-page flex h-full min-h-0 flex-col overflow-hidden px-3 py-3 text-[var(--color-text-primary)] sm:px-4 lg:px-5">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-3">
           <VersionContextBar />
-          <section className="intera-q2-panel overflow-hidden">
-            <div className="flex flex-col gap-3 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--color-text-tertiary)]">
-                  <span>Build</span>
-                  <span className="text-[var(--color-border-strong)]">/</span>
-                  <span>Pilot Lab</span>
-                  <span className="text-[var(--color-border-strong)]">/</span>
-                  <span className="text-[var(--color-text-primary)]">Playground</span>
-                </div>
-                <h1 className="mt-2 text-[24px] font-semibold leading-tight text-[var(--color-text-primary)] sm:text-[28px]">Playground compatibility surface</h1>
-                <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[var(--color-text-secondary)]">
-                  Keep manual dry-run, trace inspection, and debugging flows inside Pilot Lab without restoring Playground to the global navigation.
-                </p>
-              </div>
-              <span className="inline-flex items-center rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/78 px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-secondary)]">
-                Compatibility route only
-              </span>
-            </div>
-          </section>
-          <PilotLabTabs activeTab="playground" />
+          <PilotLabTabs activeTab="playground" t={t} />
           <div className="intera-q2-panel min-h-0 flex-1 overflow-hidden">
             <PlaygroundPage />
           </div>
@@ -340,35 +322,11 @@ export default function PilotLabPage() {
   }
 
   return (
-    <div className="intera-q2-page min-h-screen overflow-x-hidden px-4 py-4 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
+    <div className="intera-q2-page flex h-full min-h-0 flex-col overflow-hidden px-3 py-3 text-[var(--color-text-primary)] sm:px-4 lg:px-5">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-3">
         <VersionContextBar />
 
-        <section className="intera-q2-panel overflow-hidden">
-          <div className="flex flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--color-text-tertiary)]">
-                <span>Build</span>
-                <span className="text-[var(--color-border-strong)]">/</span>
-                <span className="text-[var(--color-text-primary)]">Pilot Lab</span>
-                <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.07)] px-2 py-1 text-[var(--color-accent-primary)]">Chat Cockpit</span>
-              </div>
-              <h1 className="mt-3 text-[24px] font-semibold leading-tight text-[var(--color-text-primary)] sm:text-[28px]">U-Pilot Chat Cockpit</h1>
-              <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[var(--color-text-secondary)]">
-                Draft proposals, diff review, Scenario receipts, and Playground debugging stay together inside one Build-native cockpit.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <ContextBadge context={context} />
-              <ValidationBadge validation={validation} />
-              <button type="button" onClick={loadCockpit} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
-                <RefreshCw size={15} /> Refresh
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <PilotLabTabs activeTab="pilot" />
+        <PilotLabTabs activeTab="pilot" t={t} />
 
         {(error || notice) && (
           <div className="grid gap-2">
@@ -377,8 +335,8 @@ export default function PilotLabPage() {
           </div>
         )}
 
-        <div className="grid min-h-[calc(100vh-190px)] gap-4 xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
-          <main className="intera-q2-panel flex min-h-[620px] min-w-0 flex-col overflow-hidden">
+        <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
+          <main className="intera-q2-panel flex min-h-0 min-w-0 flex-col overflow-hidden">
             <section className="flex items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <p className="text-[12px] font-medium text-[var(--color-text-tertiary)]">Current agent</p>
@@ -388,6 +346,11 @@ export default function PilotLabPage() {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {loading ? <OrganicLoader variant="02" size={22} title="Loading Pilot context" /> : <OrganicLoader variant={proposalPhase === 'proposing' ? '05' : '11'} size={22} title="Pilot status loader" />}
+                <ContextBadge context={context} />
+                <ValidationBadge validation={validation} />
+                <button type="button" onClick={loadCockpit} className="intera-q2-button inline-flex h-8 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
+                  <RefreshCw size={13} /> Refresh
+                </button>
                 <span className="hidden text-[12px] text-[var(--color-text-tertiary)] sm:inline">{proposalPhaseLabel(proposalPhase)}</span>
               </div>
             </section>
@@ -480,14 +443,14 @@ export default function PilotLabPage() {
   )
 }
 
-function PilotLabTabs({ activeTab }: { activeTab: 'pilot' | 'playground' }) {
+function PilotLabTabs({ activeTab, t, compact = false }: { activeTab: 'pilot' | 'playground'; t: (key: string) => string; compact?: boolean }) {
   const tabs = [
-    { id: 'pilot' as const, href: '/build/pilot-lab', label: 'Pilot', description: 'Draft changes and Scenario receipts' },
-    { id: 'playground' as const, href: '/build/pilot-lab?tab=playground', label: 'Playground', description: 'Manual dry-run and trace debug' },
+    { id: 'pilot' as const, href: '/build/pilot-lab', label: t('pilotLab.tabs.pilot'), description: t('pilotLab.tabs.pilotDesc') },
+    { id: 'playground' as const, href: '/build/pilot-lab?tab=playground', label: t('pilotLab.tabs.playground'), description: t('pilotLab.tabs.playgroundDesc') },
   ]
 
   return (
-    <nav className="intera-q2-panel flex flex-wrap gap-2 p-3" aria-label="Pilot Lab tabs">
+    <nav className={`${compact ? 'flex flex-shrink-0 flex-wrap gap-2 px-1' : 'intera-q2-panel flex flex-wrap gap-2 p-3'}`} aria-label={t('pilotLab.tabs.aria')}>
       {tabs.map((tab) => {
         const active = activeTab === tab.id
         return (
@@ -502,7 +465,7 @@ function PilotLabTabs({ activeTab }: { activeTab: 'pilot' | 'playground' }) {
             }`}
           >
             <span>{tab.label}</span>
-            <span className="hidden text-[11px] font-medium text-[var(--color-text-tertiary)] sm:inline">{tab.description}</span>
+            {!compact && <span className="hidden text-[11px] font-medium text-[var(--color-text-tertiary)] sm:inline">{tab.description}</span>}
           </Link>
         )
       })}
@@ -617,7 +580,7 @@ function ControlPanel({
   onUseDefaultPrompt: () => void
 }) {
   return (
-    <aside className="min-w-0 space-y-4 xl:max-h-[calc(100vh-190px)] xl:overflow-y-auto xl:pr-1">
+    <aside className="min-h-0 min-w-0 space-y-3 overflow-y-auto xl:h-full xl:pr-1">
       <section className="intera-q2-rail p-4">
         <PanelHeader icon={ClipboardList} title="Current context" eyebrow="Draft lens" />
         {context ? (
