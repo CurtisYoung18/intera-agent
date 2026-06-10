@@ -14,7 +14,9 @@ type Coord = [number, number]
 const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const SOFT = 'cubic-bezier(0.16, 1, 0.3, 1)'
 const BACK = 'cubic-bezier(0.34, 1.56, 0.64, 1)'
-const CYCLE_HOLD_END = 5600
+const CYCLE_ACTIVE_END = 4400
+const LOOP_REST_MS = 5000
+const CYCLE_HOLD_END = CYCLE_ACTIVE_END + LOOP_REST_MS
 const SCATTER: Coord[] = [
   [-72, -44],
   [58, -66],
