@@ -489,6 +489,122 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     return tool?.name || binding.scopeKey
   }
 
+  const bindingsPanel = (
+    <section className="rounded-lg border border-black/[0.06] bg-white/70 p-5 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
+      <div className="mb-4 flex items-center gap-2">
+        <Link2 className="h-5 w-5 text-indigo" />
+        <h2 className="text-[15px] font-semibold text-[var(--mist)]">Bindings</h2>
+      </div>
+
+      {!selectedHook ? (
+        <div className="rounded-lg border border-dashed border-black/15 px-4 py-5 text-[13px] text-[var(--fog)]">Save a Hook first.</div>
+      ) : (
+        <div className="space-y-4">
+          <div className="space-y-3">
+            {selectedHook.bindings.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-black/15 px-4 py-4 text-[13px] text-[var(--fog)]">No bindings</div>
+            ) : selectedHook.bindings.map((binding) => (
+              <div key={binding.id} className="rounded-lg border border-black/[0.06] bg-white/65 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="break-words text-[13px] font-medium text-[var(--mist)]">{scopeLabel(binding)}</div>
+                    <div className="mt-1 text-[11px] text-[var(--fog)]">{scopeTypeLabel(binding.scopeType)}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleBinding(binding)}
+                      title={binding.enabled ? 'Disable binding' : 'Enable binding'}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${binding.enabled ? 'border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10' : 'border-black/10 text-[var(--fog)] hover:bg-black/[0.04]'}`}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteBinding(binding)}
+                      title="Remove binding"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 text-red-600 transition hover:bg-red-500/10"
+                    >
+                      <Unlink className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-black/[0.06] pt-4">
+            <label className="space-y-1.5">
+              <span className="text-[12px] font-medium text-[var(--fog)]">Scope</span>
+              <select
+                value={bindingDraft.scopeType}
+                onChange={(event) => setBindingDraft({ ...bindingDraftDefault(), scopeType: event.target.value as ScopeType })}
+                className="glass-input-console text-[13px]"
+              >
+                <option value="agent">Agent</option>
+                <option value="caseType">Procedure type</option>
+                <option value="procedureStep">Procedure step</option>
+                <option value="tool">Tool</option>
+              </select>
+            </label>
+
+            {bindingDraft.scopeType === 'caseType' ? (
+              <label className="mt-3 block space-y-1.5">
+                <span className="text-[12px] font-medium text-[var(--fog)]">Procedure type</span>
+                <select
+                  value={bindingDraft.caseTypeId}
+                  onChange={(event) => setBindingDraft({ ...bindingDraft, caseTypeId: event.target.value })}
+                  className="glass-input-console text-[13px]"
+                >
+                  <option value="">Select Procedure type</option>
+                  {caseTypes.map((ct) => <option key={ct.id} value={ct.id}>{ct.displayName || ct.type}</option>)}
+                </select>
+              </label>
+            ) : null}
+
+            {bindingDraft.scopeType === 'procedureStep' ? (
+              <label className="mt-3 block space-y-1.5">
+                <span className="text-[12px] font-medium text-[var(--fog)]">Procedure step</span>
+                <select
+                  value={bindingDraft.procedureStepValue}
+                  onChange={(event) => setBindingDraft({ ...bindingDraft, procedureStepValue: event.target.value })}
+                  className="glass-input-console text-[13px]"
+                >
+                  <option value="">Select Procedure step</option>
+                  {procedureSteps.map((step) => <option key={`${step.caseTypeId}:${step.id}`} value={procedureStepValue(step)}>{step.label}</option>)}
+                </select>
+              </label>
+            ) : null}
+
+            {bindingDraft.scopeType === 'tool' ? (
+              <label className="mt-3 block space-y-1.5">
+                <span className="text-[12px] font-medium text-[var(--fog)]">Tool</span>
+                <select
+                  value={bindingDraft.toolId}
+                  onChange={(event) => setBindingDraft({ ...bindingDraft, toolId: event.target.value })}
+                  className="glass-input-console text-[13px]"
+                >
+                  <option value="">Select Tool</option>
+                  {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
+                </select>
+              </label>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={addBinding}
+              disabled={saving}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-indigo/20 bg-indigo/[0.08] px-4 py-2 text-[13px] font-medium text-indigo transition hover:bg-indigo/[0.14] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Add Binding
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+
   return (
     <div>
       {!embedded ? <VersionContextBar /> : null}
@@ -516,40 +632,54 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
         ) : !agentConfigId ? (
           <div className="rounded-lg border border-black/[0.06] bg-white/60 px-4 py-3 text-[13px] text-[var(--fog)]">Select an agent version.</div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-            <aside className="space-y-3">
-              {hooks.length === 0 && !isNew ? (
-                <button
-                  type="button"
-                  onClick={startNew}
-                  className="w-full rounded-lg border border-dashed border-black/15 bg-white/50 px-4 py-5 text-left text-[13px] text-[var(--fog)] transition hover:border-indigo/30 hover:text-[var(--mist)]"
-                >
-                  Create the first Hook
-                </button>
-              ) : null}
-              {hooks.map((hook) => (
-                <button
-                  key={hook.id}
-                  type="button"
-                  onClick={() => selectHook(hook)}
-                  className={`w-full rounded-lg border px-4 py-3 text-left transition ${hook.name === selectedName ? 'border-indigo/35 bg-indigo/[0.08]' : 'border-black/[0.06] bg-white/60 hover:border-black/10 hover:bg-white/80'}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-[13px] font-semibold text-[var(--mist)]">{hook.displayName || humanizeStableName(hook.name) || hook.name}</span>
-                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] ${hook.enabled ? 'bg-emerald-500/10 text-emerald-700' : 'bg-black/[0.05] text-[var(--fog)]'}`}>
-                      {hook.enabled ? 'On' : 'Off'}
-                    </span>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start">
+            <aside className="space-y-4">
+              <section className="rounded-lg border border-black/[0.06] bg-white/70 p-4 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[var(--fog)]">Hook list</div>
+                    <div className="mt-1 text-[12px] text-[var(--fog)]">Switch between controls without splitting the editor canvas.</div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-[var(--fog)]">
-                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.checkpoint}</span>
-                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hookModeLabel(hook)}</span>
-                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.bindings.length} bindings</span>
-                  </div>
-                </button>
-              ))}
+                  <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-semibold text-[var(--fog)]">{hooks.length}</span>
+                </div>
+
+                <div className="space-y-3">
+                  {hooks.length === 0 && !isNew ? (
+                    <button
+                      type="button"
+                      onClick={startNew}
+                      className="w-full rounded-lg border border-dashed border-black/15 bg-white/50 px-4 py-5 text-left text-[13px] text-[var(--fog)] transition hover:border-indigo/30 hover:text-[var(--mist)]"
+                    >
+                      Create the first Hook
+                    </button>
+                  ) : null}
+                  {hooks.map((hook) => (
+                    <button
+                      key={hook.id}
+                      type="button"
+                      onClick={() => selectHook(hook)}
+                      className={`w-full rounded-lg border px-4 py-3 text-left transition ${hook.name === selectedName ? 'border-indigo/35 bg-indigo/[0.08]' : 'border-black/[0.06] bg-white/60 hover:border-black/10 hover:bg-white/80'}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-[13px] font-semibold text-[var(--mist)]">{hook.displayName || humanizeStableName(hook.name) || hook.name}</span>
+                        <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] ${hook.enabled ? 'bg-emerald-500/10 text-emerald-700' : 'bg-black/[0.05] text-[var(--fog)]'}`}>
+                          {hook.enabled ? 'On' : 'Off'}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-[var(--fog)]">
+                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.checkpoint}</span>
+                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hookModeLabel(hook)}</span>
+                        <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.bindings.length} bindings</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {bindingsPanel}
             </aside>
 
-            <main className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+            <main>
               <section className="rounded-lg border border-black/[0.06] bg-white/70 p-5 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
                 <div className="mb-5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -767,120 +897,6 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                   Enabled
                 </label>
               </section>
-
-              <aside className="rounded-lg border border-black/[0.06] bg-white/70 p-5 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
-                <div className="mb-4 flex items-center gap-2">
-                  <Link2 className="h-5 w-5 text-indigo" />
-                  <h2 className="text-[15px] font-semibold text-[var(--mist)]">Bindings</h2>
-                </div>
-
-                {!selectedHook ? (
-                  <div className="rounded-lg border border-dashed border-black/15 px-4 py-5 text-[13px] text-[var(--fog)]">Save a Hook first.</div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="space-y-3">
-                      {selectedHook.bindings.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-black/15 px-4 py-4 text-[13px] text-[var(--fog)]">No bindings</div>
-                      ) : selectedHook.bindings.map((binding) => (
-                        <div key={binding.id} className="rounded-lg border border-black/[0.06] bg-white/65 px-3 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="break-words text-[13px] font-medium text-[var(--mist)]">{scopeLabel(binding)}</div>
-                              <div className="mt-1 text-[11px] text-[var(--fog)]">{scopeTypeLabel(binding.scopeType)}</div>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => toggleBinding(binding)}
-                                title={binding.enabled ? 'Disable binding' : 'Enable binding'}
-                                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${binding.enabled ? 'border-emerald-500/20 text-emerald-700 hover:bg-emerald-500/10' : 'border-black/10 text-[var(--fog)] hover:bg-black/[0.04]'}`}
-                              >
-                                <CheckCircle2 className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteBinding(binding)}
-                                title="Remove binding"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 text-red-600 transition hover:bg-red-500/10"
-                              >
-                                <Unlink className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="border-t border-black/[0.06] pt-4">
-                      <label className="space-y-1.5">
-                        <span className="text-[12px] font-medium text-[var(--fog)]">Scope</span>
-                        <select
-                          value={bindingDraft.scopeType}
-                          onChange={(event) => setBindingDraft({ ...bindingDraftDefault(), scopeType: event.target.value as ScopeType })}
-                          className="glass-input-console text-[13px]"
-                        >
-                          <option value="agent">Agent</option>
-                          <option value="caseType">Procedure type</option>
-                          <option value="procedureStep">Procedure step</option>
-                          <option value="tool">Tool</option>
-                        </select>
-                      </label>
-
-                      {bindingDraft.scopeType === 'caseType' ? (
-                        <label className="mt-3 block space-y-1.5">
-                          <span className="text-[12px] font-medium text-[var(--fog)]">Procedure type</span>
-                          <select
-                            value={bindingDraft.caseTypeId}
-                            onChange={(event) => setBindingDraft({ ...bindingDraft, caseTypeId: event.target.value })}
-                            className="glass-input-console text-[13px]"
-                          >
-                            <option value="">Select Procedure type</option>
-                            {caseTypes.map((ct) => <option key={ct.id} value={ct.id}>{ct.displayName || ct.type}</option>)}
-                          </select>
-                        </label>
-                      ) : null}
-
-                      {bindingDraft.scopeType === 'procedureStep' ? (
-                        <label className="mt-3 block space-y-1.5">
-                          <span className="text-[12px] font-medium text-[var(--fog)]">Procedure step</span>
-                          <select
-                            value={bindingDraft.procedureStepValue}
-                            onChange={(event) => setBindingDraft({ ...bindingDraft, procedureStepValue: event.target.value })}
-                            className="glass-input-console text-[13px]"
-                          >
-                            <option value="">Select Procedure step</option>
-                            {procedureSteps.map((step) => <option key={`${step.caseTypeId}:${step.id}`} value={procedureStepValue(step)}>{step.label}</option>)}
-                          </select>
-                        </label>
-                      ) : null}
-
-                      {bindingDraft.scopeType === 'tool' ? (
-                        <label className="mt-3 block space-y-1.5">
-                          <span className="text-[12px] font-medium text-[var(--fog)]">Tool</span>
-                          <select
-                            value={bindingDraft.toolId}
-                            onChange={(event) => setBindingDraft({ ...bindingDraft, toolId: event.target.value })}
-                            className="glass-input-console text-[13px]"
-                          >
-                            <option value="">Select Tool</option>
-                            {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
-                          </select>
-                        </label>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        onClick={addBinding}
-                        disabled={saving}
-                        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-indigo/20 bg-indigo/[0.08] px-4 py-2 text-[13px] font-medium text-indigo transition hover:bg-indigo/[0.14] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add Binding
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </aside>
             </main>
           </div>
         )}
