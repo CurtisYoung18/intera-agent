@@ -28,7 +28,13 @@ vi.mock('@/lib/db/repo-for-org', () => ({
     return {
       orgId,
       agentConfig: {
-        findMany: vi.fn(async () => [...configs]),
+        findMany: vi.fn(async (args?: any) => {
+          let rows = [...configs]
+          if (args?.where?.name) rows = rows.filter((config) => config.name === args.where.name)
+          if (args?.orderBy?.version === 'asc') rows = rows.sort((a: any, b: any) => (a.version as number) - (b.version as number))
+          if (Array.isArray(args?.orderBy)) rows = rows.sort((a: any, b: any) => (a.version as number) - (b.version as number))
+          return rows
+        }),
         findUnique: vi.fn(async (args: any) => {
           const id = args?.where?.id
           return configs.find((c) => c.id === id) ?? null
@@ -178,6 +184,41 @@ describe('G3 — Mutations', () => {
     expect(body.ok).toBe(true)
     expect(body.data.config.parentId).toBe('ac1')
     expect(res.status).toBe(201)
+  })
+
+  it('blocks a sixth version without deleting the active version', async () => {
+    h.configsByOrg.default = Array.from({ length: 5 }, (_, index) => ({
+      id: `ac${index + 1}`,
+      orgId: 'default',
+      name: 'Default',
+      version: index + 1,
+      isActive: index === 0,
+      parentId: index === 0 ? null : `ac${index}`,
+      model: 'deepseek-v4-flash',
+      temperature: 0.5,
+      thinkingBudget: 4096,
+      maxIterations: 20,
+      maxOutputTokens: 4096,
+      systemPrompt: '',
+      coreSystemPrompt: null,
+      showThinking: false,
+      memoryStrategy: '{}',
+      gptbotsApiKey: null,
+      invariantCheck: false,
+      resumePrompt: null,
+      debugMode: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }))
+
+    const res = await ForkConfig(makeRequest(), routeCtx('ac1'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(body.error.fields.maxVersions).toBe('5')
+    expect(h.configsByOrg.default).toHaveLength(5)
+    expect(h.configsByOrg.default.find((config) => config.id === 'ac1')?.isActive).toBe(true)
   })
 
   it('activate returns config info', async () => {

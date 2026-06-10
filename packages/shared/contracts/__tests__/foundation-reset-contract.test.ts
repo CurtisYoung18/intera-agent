@@ -118,6 +118,17 @@ describe('Tool and package contracts', () => {
           effect: { decision: 'block' },
         },
       }],
+      procedures: [{
+        procedureId: 'deposit_issue',
+        displayName: 'Deposit not credited',
+        caseTypeType: 'deposit_issue',
+        procedure: {
+          steps: [
+            { id: 'ask_member_id', action: 'ask', target: 'member_id', required: true },
+            { id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit' },
+          ],
+        },
+      }],
       hookBindings: [{
         hookName: 'investigate_before_resolve',
         scopeType: 'caseType',
@@ -133,6 +144,50 @@ describe('Tool and package contracts', () => {
           hooks: [{ hookName: 'investigate_before_resolve', decision: 'allow' }],
         },
       }],
+      scenarioDefinitions: [{
+        name: 'deposit_runtime_reference',
+        turns: [{ role: 'user', content: 'Check my latest deposit' }],
+        expected: {
+          caseType: 'deposit_issue',
+          toolsCalled: ['get_latest_deposit'],
+        },
+      }],
+      knowledgeRefs: [{
+        sourceId: 'ks_123',
+        name: 'Deposit FAQ',
+        provider: 'gptbots',
+        groupRefs: ['group_deposit'],
+        retrieval: { topK: 5 },
+      }],
+      integrationRefs: [{
+        channel: 'livechat',
+        provider: 'livechat',
+        name: 'LiveChat production',
+        requiredCapabilities: ['transfer:transfer_chat'],
+        requiredSecrets: ['livechat_bot_access_token'],
+      }],
+      requiredSecrets: [{
+        name: 'livechat_bot_access_token',
+        required: true,
+        exampleRef: 'integrationRefs.livechat',
+      }],
+      systemToolPolicy: {
+        runtimeManaged: true,
+        importMode: 'ignore',
+        runtimeManagedTools: [{ name: 'start_procedure', runtimeManaged: true }],
+      },
+      validationEvidence: {
+        source: 'historical_reference',
+        runtimeValidated: true,
+        scenarioCount: 1,
+        receiptCount: 1,
+        latestReceipts: [{
+          scenarioName: 'deposit_pending_handoff',
+          runId: 'scn_1',
+          status: 'pass',
+          executionMode: 'agentRuntime',
+        }],
+      },
       legacy: {
         policies: [{ name: 'old_policy' }],
         guardrails: [{ name: 'old_guardrail' }],
@@ -143,6 +198,10 @@ describe('Tool and package contracts', () => {
     expect(parsed.schemaVersion).toBe('intera.agentTemplate.v1')
     expect(parsed.hooks[0].checkpoint).toBe('Stop')
     expect(parsed.hookBindings[0].scopeType).toBe('caseType')
+    expect(parsed.scenarioDefinitions[0].name).toBe('deposit_runtime_reference')
+    expect(parsed.knowledgeRefs[0].provider).toBe('gptbots')
+    expect(parsed.integrationRefs[0].requiredSecrets).toEqual(['livechat_bot_access_token'])
+    expect(parsed.systemToolPolicy.importMode).toBe('ignore')
   })
 
   it('rejects old vocabulary as top-level package fields', () => {
@@ -151,6 +210,14 @@ describe('Tool and package contracts', () => {
       metadata: { name: 'Bad package' },
       agent: {},
       skills: [],
+    })).toThrow()
+  })
+
+  it('rejects unsupported package versions', () => {
+    expect(() => interaAgentTemplateV1Schema.parse({
+      schemaVersion: 'intera.agentTemplate.v0',
+      metadata: { name: 'Old package' },
+      agent: {},
     })).toThrow()
   })
 })

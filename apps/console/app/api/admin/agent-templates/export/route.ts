@@ -41,7 +41,10 @@ export const GET = defineRoute<ExportQuery>({
           tools: template.tools.length,
           hooks: template.hooks.length,
           hookBindings: template.hookBindings.length,
-          scenarios: template.scenarios.length,
+          scenarios: template.scenarioDefinitions.length || template.scenarios.length,
+          knowledgeRefs: template.knowledgeRefs.length,
+          integrationRefs: template.integrationRefs.length,
+          requiredSecrets: template.requiredSecrets.length,
         },
       })
 

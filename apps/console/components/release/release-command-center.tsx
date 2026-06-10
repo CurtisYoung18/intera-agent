@@ -19,7 +19,7 @@ import {
 import ConfigDiffViewer, { type ConfigDiffGroup, type ConfigDiffItem } from '@/components/config-diff/config-diff-viewer'
 import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
 import { useAgentContext } from '@/lib/agent/agent-context'
-import type { InteraAgentTemplateV1 } from '@intera/shared/contracts/agent-template'
+import type { AgentTemplateImportReport, InteraAgentTemplateV1 } from '@intera/shared/contracts/agent-template'
 import type { ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
 
 interface AgentVersion {
@@ -45,6 +45,12 @@ interface ScenarioListResponse {
 interface ExportResponse {
   template: InteraAgentTemplateV1
   filename: string
+}
+
+interface PendingPackageImport {
+  fileName: string
+  template: InteraAgentTemplateV1
+  report: AgentTemplateImportReport
 }
 
 interface ReleaseData {
@@ -87,6 +93,10 @@ const GROUP_COPY = {
   hooks: {
     title: 'Hooks',
     description: 'Hook definitions and binding scopes across Agent, Procedure type, Procedure step, and Tool.',
+  },
+  scenarios: {
+    title: 'Scenarios',
+    description: 'Portable Scenario definitions for fixture and runtime-backed validation.',
   },
   knowledge: {
     title: 'Knowledge',
@@ -227,30 +237,36 @@ function buildDiffGroups(liveTemplate: InteraAgentTemplateV1 | null, draftTempla
     ...(draftTemplate?.hooks ?? []).map((hook) => ({ kind: 'Hook', key: `hook:${hook.name}`, ...hook })),
     ...(draftTemplate?.hookBindings ?? []).map((binding) => ({ kind: 'Binding', key: `binding:${binding.hookName}:${binding.scopeKey}`, ...binding })),
   ]
+  const scenarioRowsBefore = scenarioRows(liveTemplate)
+  const scenarioRowsAfter = scenarioRows(draftTemplate)
 
   return [
     makeGroup('brain', diffCollection(brainBefore, brainAfter, (item) => item.key, () => 'Agent Brain settings', (item) => typeof item.model === 'string' ? `Model ${item.model}` : undefined)),
     makeGroup('procedures', diffCollection(liveTemplate?.caseTypes ?? [], draftTemplate?.caseTypes ?? [], (item) => item.type, (item) => item.displayName || item.type, (item) => `${item.type} · ${item.procedure?.steps?.length ?? 0} steps`)),
     makeGroup('tools', diffCollection(liveTemplate?.tools ?? [], draftTemplate?.tools ?? [], (item) => item.name, (item) => item.name, (item) => `${item.mode}${item.enabled === false ? ' · disabled' : ''}`)),
     makeGroup('hooks', diffCollection(hookRowsBefore, hookRowsAfter, (item) => item.key, (item) => `${item.kind}: ${'name' in item ? item.name : item.hookName}`, (item) => 'checkpoint' in item ? String(item.checkpoint) : String(item.scopeType))),
-    {
-      id: 'knowledge',
-      title: GROUP_COPY.knowledge.title,
-      description: GROUP_COPY.knowledge.description,
-      status: 'placeholder',
-      summary: 'Package v1 placeholder',
-      items: [],
-      placeholder: 'Knowledge sources are not part of the current .intera-agent.json package contract. This section is intentionally isolated until the package schema carries Knowledge metadata.',
-    },
-    {
-      id: 'integrations',
-      title: GROUP_COPY.integrations.title,
-      description: GROUP_COPY.integrations.description,
-      status: 'placeholder',
-      summary: 'Package v1 placeholder',
-      items: [],
-      placeholder: 'Channel bindings and external integration credentials are intentionally not exported in package v1. Release shows this as a placeholder instead of synthesizing incomplete data.',
-    },
+    makeGroup('scenarios', diffCollection(scenarioRowsBefore, scenarioRowsAfter, (item) => item.name, (item) => item.displayName || item.name, (item) => `${item.turns?.length ?? 0} turns`)),
+    makeGroup('knowledge', diffCollection(liveTemplate?.knowledgeRefs ?? [], draftTemplate?.knowledgeRefs ?? [], (item) => item.name, (item) => item.name, (item) => `${item.provider}${item.status ? ` · ${item.status}` : ''}`)),
+    makeGroup('integrations', diffCollection(liveTemplate?.integrationRefs ?? [], draftTemplate?.integrationRefs ?? [], (item) => item.channel, (item) => item.name || item.channel, (item) => `${item.provider ?? item.channel}${item.status ? ` · ${item.status}` : ''}`)),
+  ]
+}
+
+function scenarioRows(template: InteraAgentTemplateV1 | null) {
+  return template?.scenarioDefinitions?.length ? template.scenarioDefinitions : template?.scenarios ?? []
+}
+
+function packageCoverageRows(template: InteraAgentTemplateV1 | null) {
+  const scenarios = scenarioRows(template)
+  return [
+    { label: 'Brain', value: template?.agent ? 1 : 0 },
+    { label: 'Procedures', value: template?.caseTypes.filter((item) => item.procedure).length ?? 0 },
+    { label: 'Tools', value: template?.tools.length ?? 0 },
+    { label: 'Hooks', value: template?.hooks.length ?? 0 },
+    { label: 'HookBindings', value: template?.hookBindings.length ?? 0 },
+    { label: 'Scenarios', value: scenarios.length },
+    { label: 'Knowledge refs', value: template?.knowledgeRefs.length ?? 0 },
+    { label: 'Integration refs', value: template?.integrationRefs.length ?? 0 },
+    { label: 'Required secrets', value: template?.requiredSecrets.length ?? template?.secrets?.length ?? 0 },
   ]
 }
 
@@ -279,6 +295,7 @@ export default function ReleaseCommandCenter() {
   const [releaseNote, setReleaseNote] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [rollbackOpen, setRollbackOpen] = useState(false)
+  const [pendingImport, setPendingImport] = useState<PendingPackageImport | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -399,20 +416,50 @@ export default function ReleaseCommandCenter() {
     setError(null)
     try {
       const template = JSON.parse(await file.text())
+      const result = await readJson<{ dryRun: true; report: AgentTemplateImportReport }>('/api/admin/agent-templates/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template,
+          parentAgentConfigId: data.current?.id,
+          dryRun: true,
+          strategy: 'createDraft',
+        }),
+      })
+      setPendingImport({ fileName: file.name, template, report: result.report })
+      setNotice(`Package dry-run completed for ${file.name}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import dry-run failed')
+    } finally {
+      setBusyAction(null)
+      if (importInputRef.current) importInputRef.current.value = ''
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!pendingImport) return
+    setBusyAction('import-apply')
+    setNotice(null)
+    setError(null)
+    try {
       const result = await readJson<{ config: AgentVersion; imported?: Record<string, number>; warnings?: string[] }>('/api/admin/agent-templates/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template, parentAgentConfigId: data.current?.id }),
+        body: JSON.stringify({
+          template: pendingImport.template,
+          parentAgentConfigId: data.current?.id,
+          strategy: 'createDraft',
+        }),
       })
       await refreshConfigs()
       if (result.config?.id) selectAgent(result.config.id)
-      setNotice(`Imported ${result.config?.name ?? file.name} as a draft package`)
+      setPendingImport(null)
+      setNotice(`Imported ${result.config?.name ?? pendingImport.fileName} as a draft package`)
       reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed')
     } finally {
       setBusyAction(null)
-      if (importInputRef.current) importInputRef.current.value = ''
     }
   }
 
@@ -549,9 +596,13 @@ export default function ReleaseCommandCenter() {
           <PackageActionsPanel
             busyAction={busyAction}
             canPublish={canPublish}
+            coverageTemplate={draftTemplate}
             importInputRef={importInputRef}
+            pendingImport={pendingImport}
             publishDisabledReason={publishDisabledReason}
             rollbackCandidate={data.rollbackCandidate}
+            onClearImport={() => setPendingImport(null)}
+            onConfirmImport={handleConfirmImport}
             onDuplicate={handleDuplicate}
             onExport={handleExport}
             onImport={(file) => handleImport(file)}
@@ -775,9 +826,13 @@ function ReceiptStat({ label, value, tone = 'neutral' }: { label: string; value:
 function PackageActionsPanel({
   busyAction,
   canPublish,
+  coverageTemplate,
   importInputRef,
+  pendingImport,
   publishDisabledReason,
   rollbackCandidate,
+  onClearImport,
+  onConfirmImport,
   onDuplicate,
   onExport,
   onImport,
@@ -787,9 +842,13 @@ function PackageActionsPanel({
 }: {
   busyAction: string | null
   canPublish: boolean
+  coverageTemplate: InteraAgentTemplateV1 | null
   importInputRef: RefObject<HTMLInputElement | null>
+  pendingImport: PendingPackageImport | null
   publishDisabledReason: string | null
   rollbackCandidate: AgentVersion | null
+  onClearImport: () => void
+  onConfirmImport: () => void
   onDuplicate: () => void
   onExport: () => void
   onImport: (file: File | undefined) => void
@@ -797,6 +856,7 @@ function PackageActionsPanel({
   onPublish: () => void
   onRollback: () => void
 }) {
+  const coverage = packageCoverageRows(coverageTemplate)
   return (
     <section className="intera-q2-panel p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -806,6 +866,11 @@ function PackageActionsPanel({
         </div>
         <input ref={importInputRef} aria-label="Import .intera-agent.json file" type="file" accept="application/json,.json,.intera-agent.json" className="hidden" onChange={(event) => onImport(event.target.files?.[0])} />
       </div>
+      <div className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {coverage.map((item) => (
+          <PackageCoverageCell key={item.label} label={item.label} value={item.value} />
+        ))}
+      </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <ActionButton icon={<FileDown className="h-4 w-4" />} label="Export package" busy={busyAction === 'export'} onClick={onExport} />
         <ActionButton icon={<Upload className="h-4 w-4" />} label="Import package" busy={busyAction === 'import'} onClick={onImportClick} />
@@ -814,7 +879,77 @@ function PackageActionsPanel({
         <ActionButton icon={<RotateCcw className="h-4 w-4" />} label="Rollback preview" disabled={!rollbackCandidate} onClick={onRollback} />
       </div>
       {publishDisabledReason ? <p className="mt-3 text-[12px] text-[var(--color-text-tertiary)]">{publishDisabledReason}</p> : null}
+      {pendingImport ? (
+        <ImportDryRunReport
+          busy={busyAction === 'import-apply'}
+          pendingImport={pendingImport}
+          onClear={onClearImport}
+          onConfirm={onConfirmImport}
+        />
+      ) : null}
     </section>
+  )
+}
+
+function PackageCoverageCell({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
+      <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">{label}</p>
+      <p className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">{value}</p>
+    </div>
+  )
+}
+
+function ImportDryRunReport({
+  busy,
+  pendingImport,
+  onClear,
+  onConfirm,
+}: {
+  busy: boolean
+  pendingImport: PendingPackageImport
+  onClear: () => void
+  onConfirm: () => void
+}) {
+  const report = pendingImport.report
+  return (
+    <section className="mt-5 rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[12px] font-semibold text-[var(--color-text-tertiary)]">Import dry-run report</p>
+          <h3 className="mt-1 text-[15px] font-semibold text-[var(--color-text-primary)]">{pendingImport.fileName}</h3>
+          <p className="mt-1 text-[12px] text-[var(--color-text-secondary)]">{report.canImport ? 'Ready to create a draft version.' : 'Import is blocked until conflicts are resolved.'}</p>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={onClear} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">Clear</button>
+          <button type="button" disabled={!report.canImport || busy} onClick={onConfirm} className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-accent-primary)_45%,transparent)] bg-[var(--color-accent-primary)] px-3 py-2 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageOpen className="h-4 w-4" />}
+            Create draft
+          </button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <ReportList title="Missing secrets" items={report.requiredSecrets.map((secret) => secret.name)} empty="No required secret placeholders." tone={report.requiredSecrets.length > 0 ? 'warning' : 'neutral'} />
+        <ReportList title="Conflicts" items={report.conflicts.map((conflict) => conflict.message)} empty="No blocking conflicts." tone={report.conflicts.some((conflict) => conflict.severity === 'error') ? 'danger' : 'warning'} />
+        <ReportList title="Unsupported integrations" items={report.unsupportedIntegrations.map((integration) => `${integration.channel}: ${integration.reason}`)} empty="No unsupported integrations." tone={report.unsupportedIntegrations.length > 0 ? 'warning' : 'neutral'} />
+        <ReportList title="Knowledge requirements" items={report.missingKnowledgeRefs.map((ref) => ref.name)} empty="No missing Knowledge refs." tone={report.missingKnowledgeRefs.length > 0 ? 'warning' : 'neutral'} />
+      </div>
+    </section>
+  )
+}
+
+function ReportList({ title, items, empty, tone }: { title: string; items: string[]; empty: string; tone: 'warning' | 'danger' | 'neutral' }) {
+  return (
+    <div className={`rounded-[var(--radius-control)] border px-3 py-3 text-[12px] ${toneClass(tone)}`}>
+      <p className="font-semibold text-[var(--color-text-primary)]">{title}</p>
+      {items.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-[var(--color-text-secondary)]">
+          {items.slice(0, 4).map((item) => <li key={item} className="break-words">{item}</li>)}
+        </ul>
+      ) : (
+        <p className="mt-2 text-[var(--color-text-tertiary)]">{empty}</p>
+      )}
+    </div>
   )
 }
 

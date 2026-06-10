@@ -1,6 +1,7 @@
 // POST /api/admin/agent-configs/[id]/fork
 import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
 import { apiCreated } from '@intera/shared/contracts/envelope'
+import { allocateNextAgentVersion, isAgentVersioningError } from '@/lib/agent-config/versioning'
 
 interface AgentConfigParams { id: string }
 
@@ -16,17 +17,12 @@ export const POST = defineRoute<void, AgentConfigParams>({
     if (!source) throw new NotFoundError('Config not found')
 
     for (let attempt = 0; attempt < 3; attempt++) {
-      const max = await repo.agentConfig.findFirst({
-        where: { name: source.name },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      })
-      const newVersion = (max?.version ?? 0) + 1
       try {
+        const allocation = await allocateNextAgentVersion(repo, source.name)
         const forked = await (repo.agentConfig.create as any)({
           data: {
             name: source.name,
-            version: newVersion,
+            version: allocation.version,
             isActive: false,
             parentId: source.id,
             model: source.model,
@@ -122,6 +118,7 @@ export const POST = defineRoute<void, AgentConfigParams>({
         return apiCreated({ config: forked })
       } catch (err: unknown) {
         if ((err as any)?.code === 'P2002') continue
+        if (isAgentVersioningError(err)) throw new ValidationError(err.message, err.fields)
         throw err
       }
     }

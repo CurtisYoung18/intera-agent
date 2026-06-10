@@ -106,52 +106,37 @@
       }
     }
   ],
+  "procedures": [
+    {
+      "procedureId": "deposit_issue",
+      "displayName": "Deposit not credited",
+      "caseTypeType": "deposit_issue",
+      "enabled": true,
+      "procedure": {
+        "steps": [
+          { "id": "collect_deposit_details", "action": "ask", "target": "deposit_details", "guidance": "Collect member id, amount, currency, payment method, and approximate deposit time.", "required": true },
+          { "id": "lookup_latest_deposit", "action": "use", "target": "get_latest_deposit", "guidance": "Read the latest platform-side deposit record before drawing a conclusion.", "required": true },
+          { "id": "decide_deposit_status", "action": "decide", "guidance": "Compare the customer claim with platform evidence and mark conflicts for human review." },
+          { "id": "handoff_if_conflict", "action": "escalate", "target": "create_human_task", "when": "Platform evidence is conflicting, unavailable, or requires manual payment-ops action." },
+          { "id": "explain_deposit_next_step", "action": "finalize", "guidance": "Explain the current status, cite evidence, and avoid promising compensation." }
+        ]
+      }
+    },
+    {
+      "procedureId": "withdrawal_status",
+      "displayName": "Withdrawal status",
+      "caseTypeType": "withdrawal_status",
+      "enabled": true,
+      "procedure": {
+        "steps": [
+          { "id": "collect_withdrawal_details", "action": "ask", "target": "withdrawal_details", "guidance": "Collect member id and withdrawal id if they are missing.", "required": true },
+          { "id": "lookup_withdrawal_status", "action": "use", "target": "get_withdrawal_status", "guidance": "Check current withdrawal status and turnover requirements.", "required": true },
+          { "id": "explain_withdrawal_next_step", "action": "finalize", "guidance": "Explain status and next step without making unsupported payout promises." }
+        ]
+      }
+    }
+  ],
   "tools": [
-    {
-      "name": "ask_user_questions",
-      "description": "Collect structured information from the customer through a channel form.",
-      "mode": "system_managed",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "fields": { "type": "array" },
-          "title": { "type": "string" }
-        },
-        "required": ["fields"]
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "answers": { "type": "object" }
-        }
-      },
-      "toolCategory": "operational",
-      "isConcurrencySafe": true,
-      "enabled": true
-    },
-    {
-      "name": "create_human_task",
-      "description": "Create a structured handoff task for a human support operator.",
-      "mode": "system_managed",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "queue": { "type": "string" },
-          "question": { "type": "string" }
-        },
-        "required": ["queue", "question"]
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "taskId": { "type": "string" },
-          "status": { "type": "string" }
-        }
-      },
-      "toolCategory": "operational",
-      "isConcurrencySafe": true,
-      "enabled": true
-    },
     {
       "name": "get_latest_deposit",
       "description": "Static starter fixture for the latest deposit state. Replace with the customer's HTTP API during delivery.",
@@ -381,7 +366,109 @@
       "enabled": true
     }
   ],
-  "secrets": [],
+  "scenarioDefinitions": [
+    {
+      "name": "deposit_pending_handoff",
+      "displayName": "Deposit pending handoff",
+      "description": "Customer reports a missing deposit that remains pending in platform evidence.",
+      "locale": "en-US",
+      "tags": ["deposit", "handoff"],
+      "turns": [
+        {
+          "role": "user",
+          "content": "My USDT deposit was charged but my balance is still not updated."
+        }
+      ],
+      "expected": {
+        "caseType": "deposit_issue",
+        "toolsCalled": ["ask_user_questions", "get_latest_deposit"],
+        "hooks": [
+          {
+            "hookName": "no_compensation_promise",
+            "checkpoint": "Stop"
+          }
+        ],
+        "humanTransfer": true,
+        "forbiddenPhrases": ["we will refund", "guaranteed payout"]
+      },
+      "enabled": true
+    },
+    {
+      "name": "withdrawal_turnover_explained",
+      "displayName": "Withdrawal turnover explained",
+      "description": "Customer asks why withdrawal is unavailable and the fixture shows turnover is incomplete.",
+      "locale": "en-US",
+      "tags": ["withdrawal", "turnover"],
+      "turns": [
+        {
+          "role": "user",
+          "content": "Why can't I withdraw right now?"
+        }
+      ],
+      "expected": {
+        "caseType": "withdrawal_status",
+        "toolsCalled": ["ask_user_questions", "get_withdrawal_status"],
+        "humanTransfer": false,
+        "requiredPhrases": ["turnover"]
+      },
+      "enabled": true
+    }
+  ],
+  "knowledgeRefs": [
+    {
+      "name": "Gaming support FAQ",
+      "type": "knowledge_source",
+      "provider": "gptbots",
+      "description": "Delivery-time placeholder for deposit and withdrawal support articles.",
+      "status": "required",
+      "groupRefs": ["customer-support-faq"],
+      "dataRefs": [],
+      "retrieval": {
+        "topK": 5,
+        "embeddingRate": 0.9
+      }
+    }
+  ],
+  "integrationRefs": [
+    {
+      "channel": "livechat",
+      "provider": "livechat",
+      "name": "LiveChat customer channel",
+      "status": "required",
+      "requiredCapabilities": ["webhook:incoming_chat", "transfer:transfer_chat"],
+      "samplePayloadRefs": ["channel:livechat:incoming_message"],
+      "requiredSecrets": ["livechat_bot_access_token"]
+    }
+  ],
+  "requiredSecrets": [
+    {
+      "name": "livechat_bot_access_token",
+      "description": "LiveChat bot access token supplied by the target environment.",
+      "required": true,
+      "exampleRef": "integrationRefs.livechat"
+    }
+  ],
+  "secrets": [
+    {
+      "name": "livechat_bot_access_token",
+      "description": "LiveChat bot access token supplied by the target environment.",
+      "required": true,
+      "exampleRef": "integrationRefs.livechat"
+    }
+  ],
+  "systemToolPolicy": {
+    "runtimeManaged": true,
+    "importMode": "ignore",
+    "runtimeManagedTools": [
+      { "name": "start_procedure", "visibility": "runtime", "runtimeManaged": true },
+      { "name": "finalize_procedure", "visibility": "runtime", "runtimeManaged": true },
+      { "name": "remember", "visibility": "runtime", "runtimeManaged": true },
+      { "name": "read_chat_memory", "visibility": "runtime", "runtimeManaged": true },
+      { "name": "read_user_profile", "visibility": "runtime", "runtimeManaged": true },
+      { "name": "ask_user_questions", "visibility": "runtime", "runtimeManaged": true },
+      { "name": "create_human_task", "visibility": "runtime", "runtimeManaged": true }
+    ]
+  },
   "legacy": {
     "caseTypes": [],
     "policies": [],

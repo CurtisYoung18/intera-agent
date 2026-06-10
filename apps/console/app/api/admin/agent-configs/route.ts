@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import { DEFAULT_MODEL } from '@intera/shared/defaults'
+import { allocateNextAgentVersion, isAgentVersioningError } from '@/lib/agent-config/versioning'
 
 const AGENT_CARD_SELECT = {
   id: true, name: true, version: true, isActive: true, parentId: true, model: true, createdAt: true, updatedAt: true,
@@ -35,12 +36,11 @@ export const POST = defineRoute<PostInput>({
       const source = await repo.raw.agentConfig.findUnique({ where: { id: templateId } })
       if (source) {
         for (let attempt = 0; attempt < 3; attempt++) {
-          const max = await repo.agentConfig.findFirst({ where: { name: source.name }, orderBy: { version: 'desc' }, select: { version: true } })
-          const newVersion = (max?.version ?? 0) + 1
           try {
+            const allocation = await allocateNextAgentVersion(repo, source.name)
             const forked = await (repo.agentConfig.create as any)({
               data: {
-                name: source.name, version: newVersion, isActive: false, parentId: source.id,
+                name: source.name, version: allocation.version, isActive: false, parentId: source.id,
                 model: source.model, temperature: source.temperature, thinkingBudget: source.thinkingBudget,
                 maxIterations: source.maxIterations, maxOutputTokens: source.maxOutputTokens,
                 coreSystemPrompt: source.coreSystemPrompt,
@@ -54,6 +54,7 @@ export const POST = defineRoute<PostInput>({
             return apiCreated({ config: forked })
           } catch (err: unknown) {
             if ((err as any)?.code === 'P2002') continue
+            if (isAgentVersioningError(err)) throw new ValidationError(err.message, err.fields)
             throw err
           }
         }

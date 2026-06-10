@@ -1,6 +1,8 @@
 import {
   AGENT_TEMPLATE_SCHEMA_VERSION,
+  agentTemplateImportReportSchema,
   interaAgentTemplateV1Schema,
+  type AgentTemplateImportReport,
   type InteraAgentTemplateV1,
   type TemplateSecretPlaceholder,
 } from '@intera/shared/contracts/agent-template'
@@ -14,6 +16,13 @@ import {
 import { procedureSchema } from '@intera/shared/contracts/case-types'
 import { normalizeToolMode } from '@intera/shared/contracts/tools'
 import { DEFAULT_MEMORY_STRATEGY, DEFAULT_MODEL } from '@intera/shared/defaults'
+import { listScenarios, saveScenario } from '@/lib/scenarios/store'
+import {
+  AgentDraftConflictError,
+  AgentVersionLimitError,
+  allocateNextAgentVersion,
+  listAgentVersionFamily,
+} from '@/lib/agent-config/versioning'
 
 type AgentTemplateRepo = {
   orgId: string
@@ -61,9 +70,12 @@ export interface ExportAgentTemplateOptions {
 export interface ImportAgentTemplateOptions {
   name?: string
   parentAgentConfigId?: string
+  dryRun?: boolean
+  strategy?: 'createDraft'
 }
 
 export interface ImportAgentTemplateResult {
+  dryRun: false
   config: {
     id: string
     name: string
@@ -83,10 +95,29 @@ export interface ImportAgentTemplateResult {
     secretPlaceholders: number
   }
   warnings: string[]
+  report: AgentTemplateImportReport
 }
+
+export interface ImportAgentTemplateDryRunResult {
+  dryRun: true
+  report: AgentTemplateImportReport
+}
+
+export type ImportAgentTemplateResponse = ImportAgentTemplateResult | ImportAgentTemplateDryRunResult
 
 const SECRET_PLACEHOLDER_RE = /^\{\{secret\.([a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*)\}\}$/
 const SAFE_HEADER_NAMES = new Set(['accept', 'accept-language', 'content-type'])
+const SUPPORTED_INTEGRATION_CHANNELS = new Set(['web-chat', 'livechat'])
+export const RUNTIME_MANAGED_TOOL_NAMES = [
+  'start_procedure',
+  'finalize_procedure',
+  'remember',
+  'read_chat_memory',
+  'read_user_profile',
+  'ask_user_questions',
+  'create_human_task',
+] as const
+const RUNTIME_MANAGED_TOOL_SET = new Set<string>(RUNTIME_MANAGED_TOOL_NAMES)
 
 class SecretRegistry {
   private readonly byName = new Map<string, TemplateSecretPlaceholder>()
@@ -114,11 +145,14 @@ export async function exportAgentTemplate(
   const agent = await repo.agentConfig.findUnique({ where: { id: agentConfigId } }) as AgentConfigRow | null
   if (!agent) throw new AgentTemplateNotFoundError('Agent config not found')
 
-  const [caseTypes, tools, hooks, hookBindings] = await Promise.all([
+  const [caseTypes, tools, hooks, hookBindings, knowledgeSources, channelBindings, scenarioResult] = await Promise.all([
     repo.raw.caseType.findMany({ where: { agentConfigId }, orderBy: { type: 'asc' } }),
     repo.raw.tool.findMany({ where: { agentConfigId }, orderBy: { name: 'asc' } }),
     repo.raw.hook.findMany({ where: { agentConfigId }, orderBy: { name: 'asc' } }),
     repo.raw.hookBinding.findMany({ where: { agentConfigId }, orderBy: [{ scopeType: 'asc' }, { scopeKey: 'asc' }] }),
+    findManyOrEmpty(repo.raw.knowledgeSource, { where: { agentConfigId }, orderBy: { name: 'asc' } }),
+    findManyOrEmpty(repo.raw.channelBinding, { where: { agentConfigId }, orderBy: { channel: 'asc' } }),
+    listScenarios(agentConfigId),
   ])
 
   const secrets = new SecretRegistry()
@@ -134,6 +168,7 @@ export async function exportAgentTemplate(
   const caseTypeById = new Map<string, any>(caseTypes.map((ct: any) => [ct.id, ct]))
   const toolById = new Map<string, any>(tools.map((tool: any) => [tool.id, tool]))
   const hookById = new Map<string, any>(hooks.map((hook: any) => [hook.id, hook]))
+  const packageTools = tools.filter((tool: any) => !isRuntimeManagedToolName(tool.name))
 
   const template: InteraAgentTemplateV1 = interaAgentTemplateV1Schema.parse({
     schemaVersion: AGENT_TEMPLATE_SCHEMA_VERSION,
@@ -156,37 +191,65 @@ export async function exportAgentTemplate(
       gptbotsApiKeyRef: agent.gptbotsApiKey ? '{{secret.gptbots_api_key}}' : undefined,
     }),
     caseTypes: caseTypes.map((ct: any) => exportCaseType(ct)),
-    tools: tools.map((tool: any) => exportTool(tool, secrets)),
+    procedures: caseTypes
+      .map((ct: any) => exportProcedureSummary(ct))
+      .filter((procedure: ReturnType<typeof exportProcedureSummary>): procedure is NonNullable<ReturnType<typeof exportProcedureSummary>> => procedure !== null),
+    tools: packageTools.map((tool: any) => exportTool(tool, secrets)),
     hooks: hooks.map((hook: any) => exportHook(hook, secrets)),
     hookBindings: hookBindings
       .map((binding: any) => exportHookBinding(binding, hookById, caseTypeById, toolById))
       .filter((binding: HookBindingContract | null): binding is HookBindingContract => binding !== null),
-    scenarios: [],
+    scenarios: scenarioResult.scenarios,
+    scenarioDefinitions: scenarioResult.scenarios,
+    knowledgeRefs: knowledgeSources.map((source: any) => exportKnowledgeRef(source)),
+    integrationRefs: channelBindings.map((binding: any) => exportIntegrationRef(binding, secrets)),
     secrets: secrets.values(),
+    requiredSecrets: secrets.values(),
+    systemToolPolicy: buildSystemToolPolicy(tools),
+    validationEvidence: exportValidationEvidence(scenarioResult),
     legacy: compactRecord({
       caseTypes: caseTypes.map((ct: any) => sanitizeLegacyRow(ct)),
-      skills: tools.map((tool: any) => sanitizeLegacyRow(tool)),
+      skills: packageTools.map((tool: any) => sanitizeLegacyRow(tool)),
     }),
   })
 
   return template
 }
 
+export async function analyzeAgentTemplateImport(
+  repo: AgentTemplateRepo,
+  input: unknown,
+  options: ImportAgentTemplateOptions = {},
+): Promise<AgentTemplateImportReport> {
+  const template = parseAgentTemplateInput(input)
+  assertUniqueNames('case type', template.caseTypes.map((ct) => ct.type))
+  assertUniqueNames('tool', template.tools.map((tool) => tool.name))
+  assertUniqueNames('hook', template.hooks.map((hook) => hook.name))
+  assertUniqueNames('scenario', getTemplateScenarios(template).map((scenario) => scenario.name))
+  validateTemplateReferences(template)
+
+  return buildImportReport(repo, template, options)
+}
+
 export async function importAgentTemplate(
   repo: AgentTemplateRepo,
   input: unknown,
   options: ImportAgentTemplateOptions = {},
-): Promise<ImportAgentTemplateResult> {
-  const parsed = interaAgentTemplateV1Schema.safeParse(input)
-  if (!parsed.success) {
-    throw new AgentTemplateValidationError(parsed.error.issues.map((issue) => issue.message).join('; '))
-  }
-  const template = parsed.data
+): Promise<ImportAgentTemplateResponse> {
+  const template = parseAgentTemplateInput(input)
   assertUniqueNames('case type', template.caseTypes.map((ct) => ct.type))
   assertUniqueNames('tool', template.tools.map((tool) => tool.name))
   assertUniqueNames('hook', template.hooks.map((hook) => hook.name))
-  assertUniqueNames('scenario', template.scenarios.map((scenario) => scenario.name))
+  assertUniqueNames('scenario', getTemplateScenarios(template).map((scenario) => scenario.name))
   validateTemplateReferences(template)
+
+  const report = await buildImportReport(repo, template, options)
+  if (options.dryRun) {
+    return { dryRun: true, report }
+  }
+  if (!report.canImport) {
+    throw new AgentTemplateValidationError(report.errors[0] ?? report.conflicts.find((conflict) => conflict.severity === 'error')?.message ?? 'Package import is blocked by compatibility conflicts')
+  }
 
   await repo.raw.organization.upsert({
     where: { id: repo.orgId },
@@ -202,16 +265,23 @@ export async function importAgentTemplate(
   }
 
   const config = await createDraftAgentConfig(repo, template, options, parent)
-  const warnings: string[] = []
+  const warnings = [...report.warnings]
   const registry = new SecretRegistry()
   for (const secret of template.secrets ?? []) registry.add(secret)
+  for (const secret of template.requiredSecrets ?? []) registry.add(secret)
+  const scenarioDefinitions = getTemplateScenarios(template)
+  const importableTools = template.tools.filter((tool) => !isRuntimeManagedToolName(tool.name))
+  const skippedRuntimeTools = template.tools.filter((tool) => isRuntimeManagedToolName(tool.name))
+  if (skippedRuntimeTools.length > 0) {
+    warnings.push(`Skipped ${skippedRuntimeTools.length} runtime-managed system tools; package import does not create or overwrite system tools.`)
+  }
 
   const counts = await repo.raw.$transaction(async (tx: any) => {
     const toolsByName = new Map<string, { id: string }>()
     const caseTypesByName = new Map<string, { id: string; procedure?: { steps: Array<{ id: string }> } }>()
     const hooksByName = new Map<string, { id: string }>()
 
-    for (const tool of template.tools) {
+    for (const tool of importableTools) {
       const headers = sanitizeHeaders(tool.headers, registry, `tool_${tool.name}`)
       const created = await tx.tool.create({
         data: {
@@ -282,6 +352,10 @@ export async function importAgentTemplate(
         throw new AgentTemplateValidationError(`HookBinding references unknown hook "${binding.hookName}"`)
       }
       const scope = resolveImportedScope(binding, caseTypesByName, toolsByName)
+      if (!scope) {
+        warnings.push(`Skipped HookBinding "${binding.hookName}" on runtime-managed Tool scope "${binding.scopeKey}".`)
+        continue
+      }
       await tx.hookBinding.create({
         data: {
           agentConfigId: config.id,
@@ -299,25 +373,166 @@ export async function importAgentTemplate(
 
     return {
       caseTypes: template.caseTypes.length,
-      tools: template.tools.length,
+      tools: importableTools.length,
       hooks: template.hooks.length,
       hookBindings: hookBindingCount,
     }
   })
 
-  if (template.scenarios.length > 0) {
-    warnings.push('Scenario definitions are validated in the package but are not persisted until Scenario storage lands.')
+  let importedScenarios = 0
+  for (const scenario of scenarioDefinitions) {
+    await saveScenario(config.id, scenario)
+    importedScenarios += 1
   }
 
   return {
+    dryRun: false,
     config,
     imported: {
       ...counts,
-      scenarios: 0,
+      scenarios: importedScenarios,
       secretPlaceholders: registry.values().length,
     },
     warnings,
+    report,
   }
+}
+
+function parseAgentTemplateInput(input: unknown): InteraAgentTemplateV1 {
+  const version = isRecord(input) ? input.schemaVersion : undefined
+  if (version !== AGENT_TEMPLATE_SCHEMA_VERSION) {
+    throw new AgentTemplateValidationError(`Unsupported package version "${String(version ?? 'missing')}". Expected ${AGENT_TEMPLATE_SCHEMA_VERSION}.`)
+  }
+  const parsed = interaAgentTemplateV1Schema.safeParse(input)
+  if (!parsed.success) {
+    throw new AgentTemplateValidationError(parsed.error.issues.map((issue) => issue.message).join('; '))
+  }
+  return parsed.data
+}
+
+async function buildImportReport(
+  repo: AgentTemplateRepo,
+  template: InteraAgentTemplateV1,
+  options: ImportAgentTemplateOptions,
+): Promise<AgentTemplateImportReport> {
+  const parent = options.parentAgentConfigId
+    ? await repo.agentConfig.findUnique({ where: { id: options.parentAgentConfigId } }) as AgentConfigRow | null
+    : null
+  if (options.parentAgentConfigId && !parent) {
+    throw new AgentTemplateNotFoundError('Parent agent config not found')
+  }
+
+  const agent = template.agent as Record<string, unknown>
+  const name = resolveImportAgentName(template, options, parent)
+  const requiredSecrets = collectRequiredSecrets(template)
+  const scenarioDefinitions = getTemplateScenarios(template)
+  const importableTools = template.tools.filter((tool) => !isRuntimeManagedToolName(tool.name))
+  const runtimeTools = template.tools.filter((tool) => isRuntimeManagedToolName(tool.name))
+  const warnings: string[] = []
+  const errors: string[] = []
+  const conflicts: AgentTemplateImportReport['conflicts'] = []
+
+  const missingKnowledgeRefs = template.knowledgeRefs
+  if (missingKnowledgeRefs.length > 0) {
+    warnings.push(`${missingKnowledgeRefs.length} Knowledge refs require target-environment setup; package import does not migrate source documents.`)
+  }
+
+  const unsupportedIntegrations = template.integrationRefs
+    .filter((integration) => !SUPPORTED_INTEGRATION_CHANNELS.has(integration.channel))
+    .map((integration) => ({
+      channel: integration.channel,
+      provider: integration.provider,
+      name: integration.name,
+      reason: `Channel "${integration.channel}" is not currently provisioned by package import.`,
+    }))
+  if (unsupportedIntegrations.length > 0) {
+    warnings.push(`${unsupportedIntegrations.length} integration refs are requirements for the target environment, not automatic imports.`)
+  }
+  if (requiredSecrets.length > 0) {
+    warnings.push(`${requiredSecrets.length} required secret placeholders must be supplied after import.`)
+  }
+  if (runtimeTools.length > 0 || (template.systemToolPolicy?.runtimeManagedTools?.length ?? 0) > 0) {
+    warnings.push('Runtime-managed system tools are treated as read-only; package import will not create or overwrite them.')
+  }
+  if (template.validationEvidence) {
+    warnings.push('Validation evidence is historical reference only and will not mark the imported draft as validated.')
+  }
+
+  try {
+    const family = await listAgentVersionFamily(repo, name)
+    const existingDrafts = family.filter((config) => !config.isActive)
+    if (family.length >= 5) {
+      const message = `Agent "${name}" already has ${family.length} versions. Maximum retained versions is 5.`
+      errors.push(message)
+      conflicts.push({
+        code: 'agent_version_limit',
+        message,
+        severity: 'error',
+        target: name,
+      })
+    }
+    if (existingDrafts.length > 0) {
+      conflicts.push({
+        code: 'existing_draft',
+        message: `Agent "${name}" has ${existingDrafts.length} existing draft version(s).`,
+        severity: options.strategy === 'createDraft' ? 'warning' : 'error',
+        target: name,
+      })
+      if (options.strategy !== 'createDraft') {
+        errors.push(`Agent "${name}" already has an existing draft. Use strategy "createDraft" to create another draft version explicitly.`)
+      }
+    }
+  } catch (err) {
+    if (err instanceof AgentVersionLimitError || err instanceof AgentDraftConflictError) {
+      errors.push(err.message)
+      conflicts.push({
+        code: err.code,
+        message: err.message,
+        severity: 'error',
+        target: name,
+      })
+    } else {
+      throw err
+    }
+  }
+
+  const report = agentTemplateImportReportSchema.parse({
+    canImport: errors.length === 0,
+    warnings,
+    errors,
+    requiredSecrets,
+    unsupportedIntegrations,
+    missingKnowledgeRefs,
+    conflicts,
+    plannedCreates: {
+      agentConfigs: 1,
+      brain: Object.keys(agent).length > 0 ? 1 : 0,
+      procedures: template.caseTypes.filter((ct) => ct.procedure).length,
+      caseTypes: template.caseTypes.length,
+      tools: importableTools.length,
+      hooks: template.hooks.length,
+      hookBindings: template.hookBindings.length,
+      scenarios: scenarioDefinitions.length,
+      knowledgeRefs: template.knowledgeRefs.length,
+      integrationRefs: template.integrationRefs.length,
+      requiredSecrets: requiredSecrets.length,
+    },
+    plannedUpdates: {},
+    packageCoverage: {
+      brain: 1,
+      procedures: template.caseTypes.filter((ct) => ct.procedure).length,
+      caseTypes: template.caseTypes.length,
+      tools: importableTools.length,
+      hooks: template.hooks.length,
+      hookBindings: template.hookBindings.length,
+      scenarios: scenarioDefinitions.length,
+      knowledgeRefs: template.knowledgeRefs.length,
+      integrationRefs: template.integrationRefs.length,
+      requiredSecrets: requiredSecrets.length,
+      runtimeManagedTools: template.systemToolPolicy?.runtimeManagedTools?.length ?? RUNTIME_MANAGED_TOOL_NAMES.length,
+    },
+  })
+  return report
 }
 
 function validateTemplateReferences(template: InteraAgentTemplateV1): void {
@@ -349,11 +564,25 @@ function validateTemplateReferences(template: InteraAgentTemplateV1): void {
     }
     if (binding.scopeType === 'tool') {
       const toolName = binding.toolName ?? parseScopeName(binding.scopeKey, 'tool')
-      if (!toolName || !toolsByName.has(toolName)) {
+      if (!toolName || (!toolsByName.has(toolName) && !isRuntimeManagedToolName(toolName))) {
         throw new AgentTemplateValidationError(`HookBinding references unknown Tool "${toolName ?? binding.scopeKey}"`)
       }
     }
   }
+}
+
+function exportProcedureSummary(ct: any) {
+  const parsed = procedureSchema.safeParse(parseJsonLoose(ct.procedure))
+  if (!parsed.success) return null
+  return compactRecord({
+    procedureId: toStableName(ct.type, 'procedure'),
+    displayName: ct.displayName ?? ct.type,
+    description: ct.description ?? undefined,
+    caseTypeType: ct.type,
+    enabled: ct.enabled !== false,
+    procedure: parsed.data,
+    legacy: compactRecord({ caseTypeId: ct.id }),
+  })
 }
 
 function exportCaseType(ct: any) {
@@ -476,6 +705,7 @@ function exportHookBinding(
     const tool = binding.toolId ? toolById.get(binding.toolId) : undefined
     const toolName = tool?.name ?? parseScopeName(binding.scopeKey, 'tool')
     if (!toolName) return null
+    if (isRuntimeManagedToolName(toolName)) return null
     return {
       hookName: hook.name,
       enabled: binding.enabled !== false,
@@ -487,6 +717,116 @@ function exportHookBinding(
   return null
 }
 
+function exportKnowledgeRef(source: any) {
+  return compactRecord({
+    sourceId: source.id,
+    name: source.name,
+    type: 'knowledge_source',
+    provider: 'gptbots',
+    description: source.description ?? undefined,
+    status: source.enabled === false ? 'disabled' : 'enabled',
+    enabled: source.enabled !== false,
+    caseTypeTag: source.caseTypeTag ?? undefined,
+    groupRefs: parseStringArray(source.groupIds),
+    dataRefs: parseStringArray(source.dataIds),
+    retrieval: compactRecord({
+      embeddingRate: source.embeddingRate,
+      topK: source.topK,
+      rerankVersion: source.rerankVersion ?? undefined,
+      docCorrelation: source.docCorrelation ?? undefined,
+      modelControlTopK: source.modelControlTopK,
+    }),
+    legacy: compactRecord({ id: source.id }),
+  })
+}
+
+function exportIntegrationRef(binding: any, secrets: SecretRegistry) {
+  const credentials = parseRecord(binding.credentials) ?? {}
+  const requiredSecrets = collectCredentialSecretNames(binding, credentials)
+  for (const name of requiredSecrets) {
+    secrets.add({
+      name,
+      description: `Required secret for ${binding.channel} integration.`,
+      required: true,
+      exampleRef: `integrationRefs.${binding.channel}`,
+    })
+  }
+
+  return compactRecord({
+    channel: binding.channel,
+    provider: binding.channel,
+    name: `${binding.channel} binding`,
+    status: binding.enabled === false ? 'disabled' : 'enabled',
+    enabled: binding.enabled !== false,
+    requiredCapabilities: [
+      ...parseStringArray(binding.channelSkillBinding),
+      ...(binding.transferStrategy ? [`transfer:${binding.transferStrategy}`] : []),
+      ...(binding.licenseId ? ['license_id'] : []),
+      ...(binding.botAccessToken ? ['bot_access_token'] : []),
+    ],
+    samplePayloadRefs: [`channel:${binding.channel}:sample_payload`],
+    requiredSecrets,
+    defaults: parseRecord(binding.defaults) ?? undefined,
+    toolOverrides: parseRecord(binding.toolOverrides) ?? undefined,
+    legacy: compactRecord({
+      id: binding.id,
+      transferStrategy: binding.transferStrategy ?? undefined,
+      transferTarget: sanitizeLegacyUnknown(parseJsonLoose(binding.transferTarget)),
+    }),
+  })
+}
+
+function collectCredentialSecretNames(binding: any, credentials: Record<string, unknown>): string[] {
+  const names = new Set<string>()
+  if (binding.botAccessToken) names.add(toStableName(`${binding.channel}_bot_access_token`, 'integration_token'))
+  for (const key of Object.keys(credentials)) {
+    const lower = key.toLowerCase()
+    if (lower === 'botaccesstoken' && binding.botAccessToken) continue
+    if (lower.includes('token') || lower.includes('secret') || lower.includes('password') || lower.includes('apikey') || lower.includes('api_key')) {
+      names.add(toStableName(`${binding.channel}_${key}`, 'integration_secret'))
+    }
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b))
+}
+
+function buildSystemToolPolicy(tools: any[]) {
+  const byName = new Map<string, any>(tools.map((tool) => [tool.name, tool]))
+  return {
+    runtimeManaged: true,
+    importMode: 'ignore' as const,
+    runtimeManagedTools: RUNTIME_MANAGED_TOOL_NAMES.map((name) => compactRecord({
+      name,
+      description: byName.get(name)?.description ?? undefined,
+      visibility: 'runtime' as const,
+      runtimeManaged: true,
+      category: byName.get(name)?.toolCategory ?? undefined,
+    })),
+  }
+}
+
+function exportValidationEvidence(result: Awaited<ReturnType<typeof listScenarios>>) {
+  return {
+    source: 'historical_reference' as const,
+    runtimeValidated: result.runtimeValidated,
+    lastValidatedAt: result.lastValidatedAt,
+    lastReceiptId: result.lastReceiptId,
+    lastReceiptStatus: result.lastReceiptStatus,
+    lastReceiptExecutionMode: result.lastReceiptExecutionMode,
+    scenarioCount: result.scenarios.length,
+    receiptCount: result.receipts.length,
+    latestReceipts: result.receipts.slice(0, 5).map((receipt) => compactRecord({
+      scenarioName: receipt.scenarioName,
+      runId: receipt.runId,
+      status: receipt.status,
+      executionMode: receipt.executionMode,
+      completedAt: receipt.completedAt ?? undefined,
+      finishedAt: receipt.finishedAt ?? undefined,
+      startedAt: receipt.startedAt,
+      summary: receipt.summary ?? undefined,
+    })),
+  }
+}
+
 async function createDraftAgentConfig(
   repo: AgentTemplateRepo,
   template: InteraAgentTemplateV1,
@@ -494,23 +834,20 @@ async function createDraftAgentConfig(
   parent: AgentConfigRow | null,
 ): Promise<ImportAgentTemplateResult['config']> {
   const agent = template.agent as Record<string, unknown>
-  const name = (options.name || parent?.name || stringOrUndefined(agent.name) || template.metadata.name).trim()
+  const name = resolveImportAgentName(template, options, parent)
   const memoryStrategy = JSON.stringify(isRecord(agent.memoryStrategy)
     ? agent.memoryStrategy
     : parent ? parseJson(parent.memoryStrategy, DEFAULT_MEMORY_STRATEGY) : DEFAULT_MEMORY_STRATEGY)
 
   for (let attempt = 0; attempt < 5; attempt++) {
-    const max = await repo.agentConfig.findFirst({
-      where: { name },
-      orderBy: { version: 'desc' },
-      select: { version: true },
+    const allocation = await allocateNextAgentVersion(repo, name, {
+      allowExistingDraft: options.strategy === 'createDraft',
     })
-    const version = (max?.version ?? 0) + 1
     try {
       return await repo.agentConfig.create({
         data: {
           name,
-          version,
+          version: allocation.version,
           isActive: false,
           parentId: parent?.id ?? null,
           model: stringOrUndefined(agent.model) ?? parent?.model ?? DEFAULT_MODEL,
@@ -547,7 +884,7 @@ function resolveImportedScope(
   binding: HookBindingContract,
   caseTypesByName: Map<string, { id: string; procedure?: { steps: Array<{ id: string }> } }>,
   toolsByName: Map<string, { id: string }>,
-): { scopeKey: string; caseTypeId?: string; procedureStepId?: string; toolId?: string } {
+): { scopeKey: string; caseTypeId?: string; procedureStepId?: string; toolId?: string } | null {
   if (binding.scopeType === 'agent') return { scopeKey: 'agent' }
 
   if (binding.scopeType === 'caseType') {
@@ -578,6 +915,7 @@ function resolveImportedScope(
   }
 
   const toolName = binding.toolName ?? parseScopeName(binding.scopeKey, 'tool')
+  if (toolName && isRuntimeManagedToolName(toolName)) return null
   const tool = toolName ? toolsByName.get(toolName) : undefined
   if (!tool || !toolName) {
     throw new AgentTemplateValidationError(`HookBinding references unknown Tool "${toolName ?? binding.scopeKey}"`)
@@ -703,6 +1041,11 @@ function parseHeaders(value: unknown): Record<string, string> | undefined {
   return out
 }
 
+async function findManyOrEmpty(model: unknown, args: unknown): Promise<any[]> {
+  if (!model || typeof model !== 'object' || typeof (model as any).findMany !== 'function') return []
+  return (model as any).findMany(args)
+}
+
 function parseRecord(value: unknown): Record<string, unknown> | undefined {
   const parsed = parseJsonLoose(value)
   return isRecord(parsed) ? parsed : undefined
@@ -763,6 +1106,54 @@ function assertUniqueNames(kind: string, names: string[]): void {
     if (seen.has(name)) throw new AgentTemplateValidationError(`Duplicate ${kind} name "${name}" in package`)
     seen.add(name)
   }
+}
+
+function resolveImportAgentName(
+  template: InteraAgentTemplateV1,
+  options: ImportAgentTemplateOptions,
+  parent: AgentConfigRow | null,
+): string {
+  const agent = template.agent as Record<string, unknown>
+  return (options.name || parent?.name || stringOrUndefined(agent.name) || template.metadata.name).trim()
+}
+
+function getTemplateScenarios(template: InteraAgentTemplateV1): InteraAgentTemplateV1['scenarios'] {
+  return template.scenarioDefinitions.length > 0 ? template.scenarioDefinitions : template.scenarios
+}
+
+function collectRequiredSecrets(template: InteraAgentTemplateV1): TemplateSecretPlaceholder[] {
+  const registry = new SecretRegistry()
+  for (const secret of template.secrets ?? []) registry.add(secret)
+  for (const secret of template.requiredSecrets ?? []) registry.add(secret)
+
+  const agent = template.agent as Record<string, unknown>
+  const gptbotsRef = typeof agent.gptbotsApiKeyRef === 'string' ? agent.gptbotsApiKeyRef.match(SECRET_PLACEHOLDER_RE) : null
+  if (gptbotsRef) {
+    registry.add({
+      name: gptbotsRef[1],
+      description: 'GPTBots API key for the imported Agent configuration.',
+      required: true,
+      exampleRef: 'agent.gptbotsApiKeyRef',
+    })
+  }
+
+  for (const tool of template.tools) sanitizeHeaders(tool.headers, registry, `tool_${tool.name}`)
+  for (const hook of template.hooks) sanitizeHookHandler(hook.handler, registry, `hook_${hook.name}`)
+  for (const integration of template.integrationRefs) {
+    for (const secretName of integration.requiredSecrets ?? []) {
+      registry.add({
+        name: secretName,
+        description: `Required secret for ${integration.channel} integration.`,
+        required: true,
+        exampleRef: `integrationRefs.${integration.channel}`,
+      })
+    }
+  }
+  return registry.values()
+}
+
+function isRuntimeManagedToolName(name: string | undefined | null): boolean {
+  return typeof name === 'string' && RUNTIME_MANAGED_TOOL_SET.has(name)
 }
 
 function parseScopeName(scopeKey: string, prefix: 'caseType' | 'tool'): string | undefined {
