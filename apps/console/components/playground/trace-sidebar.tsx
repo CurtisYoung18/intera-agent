@@ -52,9 +52,9 @@ interface TraceSidebarProps {
 function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       gap: 12,
-      padding: '14px 16px 12px',
+      padding: '14px 16px',
       borderBottom: '1px solid rgba(0,0,0,0.04)',
       background: 'rgba(255,252,249,0.4)',
     }}>
@@ -71,11 +71,6 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
             fontSize: 12, fontWeight: 700, color: '#5a524b',
             textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>Trace timeline</div>
-          <div style={{
-            fontSize: 10.5, color: '#8a7e74', marginTop: 2, lineHeight: 1.5,
-          }}>
-            Call vs result, Hook decisions, Procedure reconcile, and stale evidence.
-          </div>
         </div>
       </div>
       <button onClick={onCollapse} style={{
@@ -89,56 +84,6 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
       >
         <ChevronLeft size={13} />
       </button>
-    </div>
-  )
-}
-
-function LegendPill({ children }: { children: React.ReactNode }) {
-  return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      padding: '3px 7px',
-      borderRadius: 999,
-      border: '1px solid rgba(0,0,0,0.05)',
-      background: 'rgba(255,255,255,0.7)',
-      fontSize: 10,
-      fontWeight: 700,
-      color: '#6a615a',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-    }}>
-      {children}
-    </span>
-  )
-}
-
-function TraceLegend() {
-  return (
-    <div style={{
-      padding: '10px 14px 12px',
-      borderBottom: '1px solid rgba(0,0,0,0.04)',
-      display: 'grid',
-      gap: 8,
-    }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        <LegendPill>Call</LegendPill>
-        <LegendPill>Result</LegendPill>
-        <LegendPill>Hook</LegendPill>
-        <LegendPill>Reconcile</LegendPill>
-        <LegendPill>Stale evidence</LegendPill>
-      </div>
-      <p style={{
-        margin: 0,
-        fontSize: 10.5,
-        lineHeight: 1.55,
-        color: '#8a7e74',
-      }}>
-        <strong style={{ color: '#5a524b' }}>Call</strong> requests a tool.
-        {' '}
-        <strong style={{ color: '#5a524b' }}>Result</strong> shows the payload or dry-run stub returned to the agent.
-        Hook and Procedure cards capture runtime decisions, reconcile gates, and stale evidence.
-      </p>
     </div>
   )
 }
@@ -936,18 +881,14 @@ export default function TraceSidebar({
       overflow: 'hidden',
     }}>
       <TraceHeader onCollapse={onCollapse} />
-      <TraceLegend />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {!hasData ? (
           <div style={{
-            padding: '28px 20px', textAlign: 'center',
-            fontSize: 12, color: '#8a7e74', lineHeight: 1.7,
+            padding: '20px 16px', textAlign: 'center',
+            fontSize: 12, color: '#8a7e74', lineHeight: 1.6,
           }}>
             Run a manual turn to populate the timeline.
-            <br />
-            The sidebar will show model generation, tool calls and results, Hook decisions, Procedure reconcile gates,
-            and stale evidence from the persisted runtime path.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>

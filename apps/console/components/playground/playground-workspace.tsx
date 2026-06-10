@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import Link from 'next/link'
 import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
   Brain, ExternalLink, RefreshCw,
-  ChevronDown, ChevronLeft, ChevronRight, ImageIcon, LockKeyhole,
+  ChevronDown, ChevronLeft, ChevronRight, ImageIcon, LockKeyhole, Maximize2, Minimize2,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
@@ -383,6 +383,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [savingToChat, setSavingToChat] = useState(false)
   const [savedChatId, setSavedChatId] = useState<string | null>(null)
   const [isRestoringSession, setIsRestoringSession] = useState(true)
+  const [immersiveMode, setImmersiveMode] = useState(false)
   const [chatId, setChatId] = useState<string | null>(() => {
     try { return localStorage.getItem('pg_chatId') } catch { return null }
   })
@@ -713,6 +714,25 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [reply, turnTraces])
 
+  useEffect(() => {
+    if (!immersiveMode) return
+
+    const previousOverflow = document.body.style.overflow
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setImmersiveMode(false)
+      }
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [immersiveMode])
+
   const latestRuntimeTruth = useMemo(() => findLatestRuntimeTruth(turnTraces), [turnTraces])
   const visionSupport = useMemo(() => deriveVisionSupport(snapshot, models, latestRuntimeTruth), [snapshot, models, latestRuntimeTruth])
   const canAttachImages = visionSupport.status === 'supported'
@@ -975,7 +995,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     runTurn(trimmed, queuedImages)
   }, [message, responding, runTurn])
 
-  const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+  const handleComposerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !composingRef.current && message.trim()) {
       event.preventDefault()
       submitManualTurn()
@@ -1014,7 +1034,18 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   return (
     <>
     <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes wc-think-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:.8;transform:scale(1)}}`}</style>
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: immersiveMode ? '100dvh' : '100%',
+        overflow: 'hidden',
+        position: immersiveMode ? 'fixed' : 'relative',
+        inset: immersiveMode ? 0 : 'auto',
+        zIndex: immersiveMode ? 120 : 'auto',
+        background: immersiveMode ? 'linear-gradient(180deg, rgba(255,252,249,0.98), rgba(255,249,245,0.96))' : 'transparent',
+      }}
+    >
       {/* ═══════════════════════════════════════════
           Ambient background orbs
           ═══════════════════════════════════════════ */}
@@ -1142,6 +1173,16 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             >
               {sidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
               {sidebarCollapsed ? (isZh ? '打开 Trace' : 'Open trace') : (isZh ? '收起 Trace' : 'Hide trace')}
+            </ActionButton>
+            <ActionButton
+              active={immersiveMode}
+              onClick={() => setImmersiveMode((value) => !value)}
+              title={immersiveMode
+                ? (isZh ? '退出沉浸式全屏。也可以按 Esc。' : 'Exit immersive full screen. You can also press Esc.')
+                : (isZh ? '进入沉浸式全屏，专注进行手动调试。' : 'Enter immersive full screen for focused manual debugging.')}
+            >
+              {immersiveMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              {immersiveMode ? (isZh ? '退出全屏' : 'Exit full screen') : (isZh ? '沉浸全屏' : 'Immersive full screen')}
             </ActionButton>
             <ActionButton
               tone="danger"

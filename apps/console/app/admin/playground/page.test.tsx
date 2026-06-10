@@ -206,6 +206,7 @@ describe('PlaygroundPage snapshot truth', () => {
     expect(screen.getByText('Balanced')).toBeDefined()
     expect(screen.getByText('1 enabled')).toBeDefined()
     expect(screen.getAllByText('Not supported').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Immersive full screen/i })).toBeDefined()
     expect(screen.queryByText('Initial core prompt')).toBeNull()
 
     currentAgentPayload = {
