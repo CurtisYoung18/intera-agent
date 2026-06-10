@@ -57,7 +57,22 @@ export function getProviderConfig(model?: string): ProviderConfig {
   }
 }
 
-export function convertAnthropicImagesForOpenRouterBody(body: string): string {
+function imageUrlToAnthropicBlock(block: any): any {
+  if (block?.type !== 'image_url') return block
+  const url = typeof block.image_url?.url === 'string' ? block.image_url.url : ''
+  const match = url.match(/^data:([^;,]+);base64,(.+)$/)
+  if (!match) return block
+  return {
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: match[1],
+      data: match[2],
+    },
+  }
+}
+
+export function normalizeOpenRouterAnthropicBody(body: string): string {
   try {
     const parsed = JSON.parse(body)
     if (!parsed.messages) return body
@@ -65,14 +80,10 @@ export function convertAnthropicImagesForOpenRouterBody(body: string): string {
     for (const msg of parsed.messages) {
       if (!Array.isArray(msg.content)) continue
       const newContent = msg.content.map((block: any) => {
-        if (block.type === 'image' && block.source?.type === 'base64') {
+        const normalized = imageUrlToAnthropicBlock(block)
+        if (normalized !== block) {
           modified = true
-          return {
-            type: 'image_url',
-            image_url: {
-              url: `data:${block.source.media_type};base64,${block.source.data}`,
-            },
-          }
+          return normalized
         }
         return block
       })
@@ -84,12 +95,11 @@ export function convertAnthropicImagesForOpenRouterBody(body: string): string {
   }
 }
 
+export const convertAnthropicImagesForOpenRouterBody = normalizeOpenRouterAnthropicBody
+
 /**
  * Custom fetch for OpenRouter that rewrites Anthropic SDK auth header
- * and converts Anthropic-format image blocks to OpenAI format.
- *
- * OpenRouter's Anthropic-compatible endpoint doesn't reliably handle
- * image content blocks for non-Anthropic models (e.g. GPT-4.1 Mini).
+ * and keeps request bodies in Anthropic Messages format.
  */
 function createOpenRouterFetch(apiKey: string): typeof fetch {
   return async (input, init) => {
@@ -99,9 +109,11 @@ function createOpenRouterFetch(apiKey: string): typeof fetch {
     headers.set('HTTP-Referer', 'https://intera.app')
     headers.set('X-Title', 'Intera')
 
-    // Convert Anthropic image blocks → OpenAI image_url format
+    // OpenRouter's Anthropic-compatible endpoint expects Anthropic content
+    // block discriminators. Normalize legacy image_url blocks back if any
+    // caller provides them, but do not rewrite valid Anthropic image blocks.
     if (init?.body && typeof init.body === 'string') {
-      init = { ...init, body: convertAnthropicImagesForOpenRouterBody(init.body) }
+      init = { ...init, body: normalizeOpenRouterAnthropicBody(init.body) }
     }
 
     return fetch(input, { ...init, headers })

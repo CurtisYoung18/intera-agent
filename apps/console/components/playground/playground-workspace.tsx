@@ -384,6 +384,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [savedChatId, setSavedChatId] = useState<string | null>(null)
   const [isRestoringSession, setIsRestoringSession] = useState(true)
   const [immersiveMode, setImmersiveMode] = useState(false)
+  const [immersiveLeft, setImmersiveLeft] = useState(0)
   const [chatId, setChatId] = useState<string | null>(() => {
     try { return localStorage.getItem('pg_chatId') } catch { return null }
   })
@@ -733,6 +734,29 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     }
   }, [immersiveMode])
 
+  useEffect(() => {
+    if (!immersiveMode) return
+
+    const syncSidebarInset = () => {
+      const sidebar = document.querySelector('.console-sidebar')
+      setImmersiveLeft(sidebar?.getBoundingClientRect().right ?? 0)
+    }
+
+    syncSidebarInset()
+    window.addEventListener('resize', syncSidebarInset)
+
+    const sidebar = document.querySelector('.console-sidebar')
+    const observer = sidebar ? new MutationObserver(syncSidebarInset) : null
+    if (sidebar && observer) {
+      observer.observe(sidebar, { attributes: true, attributeFilter: ['data-collapsed', 'class', 'style'] })
+    }
+
+    return () => {
+      window.removeEventListener('resize', syncSidebarInset)
+      observer?.disconnect()
+    }
+  }, [immersiveMode])
+
   const latestRuntimeTruth = useMemo(() => findLatestRuntimeTruth(turnTraces), [turnTraces])
   const visionSupport = useMemo(() => deriveVisionSupport(snapshot, models, latestRuntimeTruth), [snapshot, models, latestRuntimeTruth])
   const canAttachImages = visionSupport.status === 'supported'
@@ -1041,10 +1065,14 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
         height: immersiveMode ? '100dvh' : '100%',
         overflow: 'hidden',
         position: immersiveMode ? 'fixed' : 'relative',
-        inset: immersiveMode ? 0 : 'auto',
-        zIndex: immersiveMode ? 120 : 'auto',
+        top: immersiveMode ? 0 : undefined,
+        right: immersiveMode ? 0 : undefined,
+        bottom: immersiveMode ? 0 : undefined,
+        left: immersiveMode ? immersiveLeft : undefined,
+        zIndex: immersiveMode ? 18 : 'auto',
         background: immersiveMode ? 'linear-gradient(180deg, rgba(255,252,249,0.98), rgba(255,249,245,0.96))' : 'transparent',
       }}
+      data-playground-immersive={immersiveMode ? 'true' : 'false'}
     >
       {/* ═══════════════════════════════════════════
           Ambient background orbs
@@ -1178,11 +1206,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               active={immersiveMode}
               onClick={() => setImmersiveMode((value) => !value)}
               title={immersiveMode
-                ? (isZh ? '退出沉浸式全屏。也可以按 Esc。' : 'Exit immersive full screen. You can also press Esc.')
-                : (isZh ? '进入沉浸式全屏，专注进行手动调试。' : 'Enter immersive full screen for focused manual debugging.')}
+                ? (isZh ? '退出沉浸模式。也可以按 Esc。' : 'Exit immersive mode. You can also press Esc.')
+                : (isZh ? '进入沉浸模式，专注进行手动调试。' : 'Enter immersive mode for focused manual debugging.')}
             >
               {immersiveMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              {immersiveMode ? (isZh ? '退出全屏' : 'Exit full screen') : (isZh ? '沉浸全屏' : 'Immersive full screen')}
+              {immersiveMode ? (isZh ? '退出沉浸' : 'Exit immersion') : (isZh ? '沉浸模式' : 'Immersive mode')}
             </ActionButton>
             <ActionButton
               tone="danger"

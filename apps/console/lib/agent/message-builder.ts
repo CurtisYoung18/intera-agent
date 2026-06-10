@@ -45,11 +45,16 @@ export function buildApiMessages(
 
   const toAnthropic = (msg: Message): { role: string; content: unknown } => {
     if (msg.contentBlocks?.length) {
-      const blocks = msg.contentBlocks.map((b) => {
+      const blocks = []
+      const hasTextBlock = msg.contentBlocks.some((b) => b.type === 'text' && b.text.trim())
+      if (!hasTextBlock && typeof msg.content === 'string' && msg.content.trim()) {
+        blocks.push({ type: 'text' as const, text: msg.content })
+      }
+      blocks.push(...msg.contentBlocks.map((b) => {
         if (b.type === 'text') return { type: 'text' as const, text: b.text }
         if (b.type === 'image') return { type: 'image' as const, source: { type: b.source.type, media_type: b.source.media_type, data: b.source.data } }
         return { type: 'text' as const, text: '' }
-      })
+      }))
       return { role: msg.role, content: blocks }
     }
     // If this is an assistant message with tool_use blocks, build content

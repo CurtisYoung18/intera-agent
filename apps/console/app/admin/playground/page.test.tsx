@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
 import { LocaleProvider } from '@/components/locale-provider'
@@ -206,7 +206,7 @@ describe('PlaygroundPage snapshot truth', () => {
     expect(screen.getByText('Balanced')).toBeDefined()
     expect(screen.getByText('1 active')).toBeDefined()
     expect(screen.getAllByText('Not supported').length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: /Immersive full screen/i })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Immersive mode/i })).toBeDefined()
     expect(screen.queryByText('Initial core prompt')).toBeNull()
 
     currentAgentPayload = {
@@ -315,5 +315,40 @@ describe('PlaygroundPage snapshot truth', () => {
     await waitFor(() => {
       expect(screen.getByText('Runtime desk')).toBeDefined()
     })
+  })
+
+  it('keeps immersive mode scoped to the console content region outside the global sidebar', async () => {
+    const sidebar = document.createElement('aside')
+    sidebar.className = 'console-sidebar'
+    sidebar.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: 248,
+      top: 0,
+      bottom: 900,
+      width: 248,
+      height: 900,
+      toJSON: () => ({}),
+    } as DOMRect)
+    document.body.appendChild(sidebar)
+
+    await renderPage()
+
+    const root = document.querySelector('[data-playground-immersive]') as HTMLElement
+    expect(root).toBeTruthy()
+    expect(root.dataset.playgroundImmersive).toBe('false')
+
+    fireEvent.click(screen.getByRole('button', { name: /Immersive mode/i }))
+
+    expect(root.dataset.playgroundImmersive).toBe('true')
+    await waitFor(() => {
+      expect(root.style.position).toBe('fixed')
+      expect(root.style.left).toBe('248px')
+      expect(root.style.top).toBe('0px')
+      expect(root.style.height).toBe('100dvh')
+    })
+
+    sidebar.remove()
   })
 })
