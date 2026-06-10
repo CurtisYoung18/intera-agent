@@ -1258,8 +1258,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           <InlineTruthPill label={isZh ? '图片输入' : 'Image'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
           <InlineTruthPill label="Memory" value={snapshot?.memoryModeLabel || (isZh ? '加载中' : 'Loading')} />
           <InlineTruthPill
-            label={isZh ? 'Hooks' : 'Hooks'}
-            value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} enabled`}
+            label={isZh ? '自定义 Hooks' : 'Custom Hooks'}
+            value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} active`}
           />
           <InlineTruthPill label="Temp" value={snapshot ? String(snapshot.temperature) : '...'} />
           <InlineTruthPill label={isZh ? '会话' : 'Session'} value={persistedSessionLabel} />

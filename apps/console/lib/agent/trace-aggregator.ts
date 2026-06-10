@@ -169,6 +169,20 @@ function isHookLoopDecision(title: string): boolean {
     || title === 'Exit: max Hook hits'
 }
 
+function isPassiveHookCheckpoint(record: TraceRecord): boolean {
+  const actionType = normalizeTraceActionType(record.actionType)
+  if (actionType !== 'loop_decision') return false
+  if (!isHookLoopDecision(record.title ?? '')) return false
+
+  const parsedPayload = parseJson(record.payload)
+  if (!parsedPayload) return false
+
+  const summary = typeof parsedPayload.summary === 'string' ? parsedPayload.summary : ''
+  const results = Array.isArray(parsedPayload.results) ? parsedPayload.results : []
+
+  return summary === 'allow' && results.length === 0
+}
+
 function isProcedureRuntimeDecision(title: string): boolean {
   return title.includes('ProcedureRun reconcile')
     || title.includes('Stale ProcedureRun')
@@ -457,6 +471,11 @@ export function aggregateTraces(
   for (const trace of traces) {
     const mapping = mapTraceRecord(trace)
     if (!mapping) {
+      bookkeeping.push(trace)
+      continue
+    }
+
+    if (mapping.stage === 'Hooks' && isPassiveHookCheckpoint(trace)) {
       bookkeeping.push(trace)
       continue
     }

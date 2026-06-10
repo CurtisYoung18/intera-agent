@@ -137,6 +137,28 @@ describe('aggregateTraces', () => {
     expect(procedure?.events?.[0]?.detail).toContain('inputEpoch')
   })
 
+  it('suppresses passive allow-only hook checkpoints when no hook actually matched', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'loop_decision',
+        title: 'Hook checkpoint Stop: allow',
+        payload: JSON.stringify({
+          checkpoint: 'Stop',
+          summary: 'allow',
+          results: [],
+        }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, false, ['Hooks'])
+    const hooks = result.find((step) => step.stage === 'Hooks')
+
+    expect(hooks?.fired).toBe(false)
+    expect(hooks?.events).toEqual([])
+  })
+
   it('attaches runner capability truth from llm_request_start payloads', () => {
     const traces = [
       {
