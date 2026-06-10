@@ -804,7 +804,7 @@ export default function PlaygroundPage() {
             </button>
 
             <Link
-              href={`/admin/agent?agentId=${selectedAgentId}`}
+              href={`/admin/model?agentId=${selectedAgentId}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 fontSize: 11, fontWeight: 500, color: '#b87347',

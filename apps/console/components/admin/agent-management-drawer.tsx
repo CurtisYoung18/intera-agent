@@ -302,7 +302,7 @@ export default function AgentManagementDrawer({
 
   const handleEdit = (v: AgentVersion) => {
     selectAgent(v.id)
-    router.push(`/admin/agent?agentId=${v.id}`)
+    router.push(`/admin/model?agentId=${v.id}`)
     onClose()
   }
 

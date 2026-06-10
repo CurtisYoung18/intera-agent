@@ -119,11 +119,28 @@ function OrganizationPageInner() {
 
 function GeneralTab() {
   const { t } = useConsoleLocale()
-  const { orgId, userId, loading: sessionLoading } = useSession()
+  const { orgId, loading: sessionLoading } = useSession()
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (sessionLoading || !orgId) return
+    let cancelled = false
+
+    apiClient<{ organization: { name: string } }>(`/api/admin/organizations/${orgId}`)
+      .then((res) => {
+        if (!cancelled) setName(res.data.organization.name)
+      })
+      .catch(() => {
+        if (!cancelled) setError(t('common.failedLoad'))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [orgId, sessionLoading, t])
 
   const handleSave = async () => {
     setSaving(true)

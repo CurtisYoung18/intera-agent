@@ -124,21 +124,28 @@ export default function ToolsPage() {
   const { orgId } = useSession()
 
   const loadKnowledgeSources = useCallback(async () => {
+    if (!agentConfigId) {
+      setKnowledgeSources([])
+      setKbLoading(false)
+      return
+    }
+    setKbLoading(true)
     try {
-      const r = await apiClient<{ sources: KnowledgeSourceRow[] }>('/api/admin/knowledge/sources')
+      const r = await apiClient<{ sources: KnowledgeSourceRow[] }>(`/api/admin/knowledge/sources?agentConfigId=${encodeURIComponent(agentConfigId)}`)
       setKnowledgeSources(r.data.sources || [])
     } catch { /* ignore */ }
     finally { setKbLoading(false) }
-  }, [])
+  }, [agentConfigId])
 
   const toggleKnowledgeSource = useCallback(async (src: KnowledgeSourceRow) => {
+    if (!agentConfigId) return
     const updated = { ...src, enabled: !src.enabled }
     await apiClient(`/api/admin/knowledge/sources/${encodeURIComponent(src.id)}`, {
       method: 'PUT',
-      body: { enabled: updated.enabled },
+      body: { agentConfigId, enabled: updated.enabled },
     })
     loadKnowledgeSources()
-  }, [loadKnowledgeSources])
+  }, [agentConfigId, loadKnowledgeSources])
 
   const load = useCallback(async () => {
     try {

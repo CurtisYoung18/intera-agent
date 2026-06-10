@@ -82,10 +82,10 @@ function ChatCard({
   const latestStatus = session.cases[0]?.status ?? 'created'
 
   return (
-    <div className="group/card relative">
+    <div className="group/card relative min-w-0">
       <Link
         href={`/ops/chats/${encodeURIComponent(session.chatId)}`}
-        className="block rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/70 via-white/45 to-white/25 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-[1px] hover:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.16)]"
+        className="block min-w-0 overflow-hidden rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/70 via-white/45 to-white/25 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-[1px] hover:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.16)]"
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-2">
@@ -154,7 +154,7 @@ function ChatCard({
           onDelete(session.chatId)
         }}
         disabled={deleting}
-        className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[var(--vermillion)]/40 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,color,background,border-color,transform] duration-200 hover:scale-[1.03] hover:border-[var(--vermillion)]/20 hover:bg-[var(--vermillion)]/[0.08] hover:text-[var(--vermillion)] group-hover/card:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vermillion)]/25 disabled:pointer-events-none disabled:opacity-40"
+        className="absolute right-2 top-2 z-20 flex h-10 w-10 items-center justify-center rounded-lg border border-transparent text-[var(--vermillion)]/40 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,color,background,border-color,transform] duration-200 hover:scale-[1.03] hover:border-[var(--vermillion)]/20 hover:bg-[var(--vermillion)]/[0.08] hover:text-[var(--vermillion)] group-hover/card:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vermillion)]/25 disabled:pointer-events-none disabled:opacity-40 sm:h-8 sm:w-8"
         aria-label="Delete chat session"
         title="Delete chat session"
       >
