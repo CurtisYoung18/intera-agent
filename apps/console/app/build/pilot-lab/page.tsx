@@ -22,6 +22,7 @@ import VersionContextBar, { useSelectedAgentId } from '@/components/admin/versio
 import ConfigDiffViewer from '@/components/config-diff/config-diff-viewer'
 import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
 import { useConsoleLocale } from '@/components/locale-provider'
+import PlaygroundWorkspace from '@/components/playground/playground-workspace'
 import { ReceiptStatusIcon, ScenarioReceiptPanel } from '@/components/scenario-receipts/scenario-receipt-panel'
 import { apiClient, ApiClientError } from '@/lib/api/client'
 import type {
@@ -32,7 +33,6 @@ import type {
   ConfigPilotProposeResponse,
 } from '@/lib/config-pilot/contracts'
 import type { SavedScenario, ScenarioObservedEvidenceInput, ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
-import PlaygroundPage from '@/app/admin/playground/page'
 
 interface ScenarioListResponse {
   scenarios: SavedScenario[]
@@ -375,8 +375,8 @@ export default function PilotLabPage() {
         <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-3">
           <VersionContextBar />
           <PilotLabTabs activeTab="playground" t={t} />
-          <div className="intera-q2-panel min-h-0 flex-1 overflow-hidden">
-            <PlaygroundPage />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <PlaygroundWorkspace surface="pilot-lab" />
           </div>
         </div>
       </div>

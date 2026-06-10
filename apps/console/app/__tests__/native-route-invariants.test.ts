@@ -9,12 +9,7 @@ const TARGET_COMPONENT_ROOTS = ['brain', 'operate', 'settings', 'integrations', 
   path.join(COMPONENT_ROOT, segment),
 )
 const DICTIONARIES_PATH = path.join(process.cwd(), 'apps/console/lib/i18n/dictionaries.ts')
-const ALLOWED_COMPATIBILITY_IMPORTS = new Map<string, string[]>([
-  [
-    path.join(ROOT, 'build', 'pilot-lab', 'page.tsx'),
-    ["import PlaygroundPage from '@/app/admin/playground/page'"],
-  ],
-])
+const ALLOWED_COMPATIBILITY_IMPORTS = new Map<string, string[]>()
 const ALLOWED_TERMINOLOGY_LITERALS: Array<{ pattern: RegExp; note: string }> = [
   { pattern: /showSkillStatus/g, note: 'internal LiveChat config field name' },
   { pattern: /skillOverrides/g, note: 'internal i18n key stem' },
@@ -132,7 +127,7 @@ describe('native route invariants', () => {
   const targetSources = [...targetPages, ...TARGET_COMPONENT_ROOTS.flatMap((dir) => walkSourceFiles(dir)).sort()]
   const terminologySources = targetSources
 
-  it('keeps Build / Operate / Settings pages free of old admin/ops page imports except the approved Playground compatibility surface', () => {
+  it('keeps Build / Operate / Settings pages free of old admin/ops page imports', () => {
     const violations: string[] = []
 
     for (const filePath of targetPages) {
@@ -166,10 +161,15 @@ describe('native route invariants', () => {
     expect(violations).toEqual([])
   })
 
-  it('pins the only approved compatibility reuse to Pilot Lab -> old admin Playground', () => {
+  it('keeps Playground product ownership in the shared workspace while /admin/playground stays a thin wrapper', () => {
     const pilotLabPage = path.join(ROOT, 'build', 'pilot-lab', 'page.tsx')
-    const src = readFileSync(pilotLabPage, 'utf8')
-    expect(src).toContain("import PlaygroundPage from '@/app/admin/playground/page'")
+    const pilotLabSrc = readFileSync(pilotLabPage, 'utf8')
+    expect(pilotLabSrc).toContain("import PlaygroundWorkspace from '@/components/playground/playground-workspace'")
+    expect(pilotLabSrc).not.toContain("from '@/app/admin/playground/page'")
+
+    const legacyPlaygroundPage = path.join(ROOT, 'admin', 'playground', 'page.tsx')
+    const legacySrc = readFileSync(legacyPlaygroundPage, 'utf8')
+    expect(legacySrc).toContain("import PlaygroundWorkspace from '@/components/playground/playground-workspace'")
   })
 
   it('keeps primary route surfaces and visible dictionaries free of stale legacy product terminology', () => {

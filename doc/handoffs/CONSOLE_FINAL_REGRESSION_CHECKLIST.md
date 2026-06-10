@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-06-10  
 **Scope:** final native-route verification for `Build / Operate / Settings` after the Console rebuild  
-**Approved compatibility exception:** `Playground` only
+**Approved compatibility boundary:** legacy `/admin/*` and `/ops/*` may remain only as thin wrappers or redirects; target route implementation ownership must stay native
 
 ---
 
@@ -18,11 +18,6 @@ must not import or re-export old page components from:
 
 - `@/app/admin/**`
 - `@/app/ops/**`
-
-except:
-
-- `apps/console/app/build/pilot-lab/page.tsx`
-  - `import PlaygroundPage from '@/app/admin/playground/page'`
 
 Enforced by:
 

@@ -44,7 +44,7 @@ The owner-approved UI/UX direction is frozen in [`../spec/Intera_UI_UX_Design_Sy
 Current delivery constraint after UI2/Q3:
 
 - treat Build / Operate / Settings target pages as needing native implementations, not wrapper routes around old `admin` or `ops` pages
-- the only approved P0 compatibility reuse is `Playground`
+- `/admin/*` and `/ops/*` may remain only as compatibility redirects or thin wrappers; product ownership must stay on the native Build / Operate / Settings surfaces
 - the route rebuild is now locally complete; before broader production smoke, hold the line with the regression plan in [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) and the checklist in [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md)
 
 The previous standalone Procedure refactor is superseded and archived at [`../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md`](../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md). Do not dispatch from it.
@@ -179,7 +179,7 @@ Recommended coding-team shape:
 - Historical/legacy fields may be exported under `legacy`; new top-level package fields must use current names.
 - UI/UX: first screen is Build -> Pilot Lab; top-level nav is Build / Operate / Settings; Components has Brain, Procedures, Tools, Hooks, Knowledge, Integrations; Operate has Conversations and Human Handoff only.
 - Pilot Lab has two main tabs: `Pilot` for ChatGPT-like agent building, and `Playground` for manual dry-run testing/debug with existing Trace Sidebar capability. ConfigPilot is not a global drawer in P0.
-- Playground is the current Runtime Truth Desk + Manual Test Bench. It reuses the compatibility UI, runs the selected Agent version through the real AgentLoop/prompt/runtime path with `dryRun` side-effect mocking, and persists/restores Playground session messages plus traces. Treat it as runtime truth, not config-authoring truth.
+- Playground is the current Runtime Truth Desk + Manual Test Bench. Pilot Lab now owns the shared native workspace, while `/admin/playground` is a compatibility wrapper. It runs the selected Agent version through the real AgentLoop/prompt/runtime path with `dryRun` side-effect mocking, and persists/restores Playground session messages plus traces. Treat it as runtime truth, not config-authoring truth.
 - Brain owns memory and compact configuration. Expose strategy-level controls first: Memory Mode, Compact model, Preserve rules, Fact extraction rules, Profile, and Compact Test. Keep raw token thresholds and circuit-breaker knobs under Advanced.
 - `confirmedFacts` are business facts. `ProcedureRun`/runtime state is not a business fact and must not be stored in confirmedFacts.
 - `ProcedureRun` state is session-lifecycle runtime state. It may be summarized into chat memory when useful, but the canonical active/paused/completed ProcedureRun state belongs to the runtime-managed Procedure Run Tracker.
@@ -217,7 +217,7 @@ Recommended coding-team shape:
 - Approved brand/motion assets: logo source is `/Users/curtis/Desktop/design/Globe loader`; Playground and Pilot Lab AI-generation loaders use `/Users/curtis/Desktop/design/Organic Loaders (standalone).html` variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`; AI-generation text streaming uses `/Users/curtis/Desktop/design/Text streaming (standalone).html` variant `07 token stream`.
 - Config Diff Viewer and Command Bar are first-class UI primitives.
 - Product UI supports `en-US` and `zh-CN`; business configuration content is not auto-translated.
-- Local native-route truth on `main`: Brain, Procedures, Tools, Knowledge, Hooks, Integrations, Settings Organization, the Operate conversation/detail family, and the Handoff detail page are all native routes. The only approved P0 compatibility reuse is Playground.
+- Local native-route truth on `main`: Brain, Procedures, Tools, Knowledge, Hooks, Integrations, Settings Organization, the Operate conversation/detail family, the Handoff detail page, and the Pilot Lab Playground workspace are all native routes. Legacy `/admin/*` and `/ops/*` paths remain compatibility wrappers or redirects only.
 
 ---
 

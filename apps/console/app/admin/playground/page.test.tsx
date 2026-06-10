@@ -183,6 +183,7 @@ describe('PlaygroundPage snapshot truth', () => {
   it('refreshes model, memory, prompt, and hook summary after agent config updates', async () => {
     await renderPage()
 
+    expect(screen.getByText(/Compatibility route only/i)).toBeDefined()
     await screen.findByText('DeepSeek V4 Flash')
     expect(screen.getByText('0.5')).toBeDefined()
     expect(screen.getByText('Balanced')).toBeDefined()

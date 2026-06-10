@@ -36,8 +36,8 @@ vi.mock('@/components/locale-provider', () => ({
   }),
 }))
 
-vi.mock('@/app/admin/playground/page', () => ({
-  default: () => <div data-testid="embedded-playground">Embedded Playground</div>,
+vi.mock('@/components/playground/playground-workspace', () => ({
+  default: ({ surface }: { surface?: string }) => <div data-testid="native-playground">{surface === 'pilot-lab' ? 'Native Playground' : 'Legacy Playground'}</div>,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -283,7 +283,8 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     searchParams = new URLSearchParams('tab=playground')
     await renderPage()
 
-    expect(screen.getByTestId('embedded-playground')).toBeTruthy()
+    expect(screen.getByTestId('native-playground')).toBeTruthy()
+    expect(screen.getByText('Native Playground')).toBeTruthy()
     expect(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Playground/ }).getAttribute('aria-current')).toBe('page')
     expect(screen.queryByText('Playground compatibility surface')).toBeNull()

@@ -16,7 +16,7 @@ Current truth:
 
 - `Pilot Lab` is the logged-in default and the only approved home for Pilot plus Playground.
 - `Playground` is the current **Runtime Truth Desk + Manual Test Bench**.
-- The `Playground` tab still reuses the old admin page component, but the data/runtime path beneath it is not fake.
+- The active Playground surface is now a shared native workspace owned by Pilot Lab, while `/admin/playground` remains a compatibility wrapper around the same implementation.
 - `Release` still owns version/package/publish truth.
 - `Components` still owns draft editing truth.
 
@@ -45,8 +45,8 @@ The main thing future lanes must stop assuming is:
 | Route | Purpose now | Authoritative data sources | Known fake/stale fields or leftovers | Recommended fix lane |
 |---|---|---|---|---|
 | `/build/pilot-lab` | Native two-tab workspace. `Pilot` is the config desk; `Playground` is the runtime desk. | `apps/console/app/build/pilot-lab/page.tsx`; `/api/admin/config-pilot/context`; `/api/admin/config-pilot/propose`; `/api/admin/config-pilot/apply`; `/api/admin/scenarios`; `/api/admin/scenarios/[name]/run` | Older docs still call this a drawer shell, `Free Test`, or `Test Cases` home. Those are historical, not current product IA. | `PGR1-DOC-TRUTH` |
-| `/build/pilot-lab?tab=playground` | Manual multi-turn runtime test bench for the selected Agent version, with trace/evidence inspection and session restore. | `PlaygroundPage` imported into Pilot Lab; `/api/admin/playground/run`; `/api/admin/playground/sessions`; `/api/admin/playground/sessions/[chatId]`; `runPlaygroundTurn()` | Visible residue remains: `guardrailCount` is hardcoded to `0`, some sample phrasing is older generic-CS wording, and save-to-chat semantics are easy to over-read. | `PGR2-PLAYGROUND-COPY-CLEANUP` |
-| `/admin/playground` | Legacy compatibility entry point and component source, not the active IA home. | `apps/console/middleware.ts`; `apps/console/app/admin/playground/page.tsx` | The route is legacy, but the reused component still powers the real Playground tab. Future lanes must not confuse "legacy route" with "fake runtime." | `PGR3-PLAYGROUND-NATIVE-SPLIT` |
+| `/build/pilot-lab?tab=playground` | Manual multi-turn runtime test bench for the selected Agent version, with trace/evidence inspection and session restore. | `apps/console/app/build/pilot-lab/page.tsx`; `apps/console/components/playground/playground-workspace.tsx`; `/api/admin/playground/run`; `/api/admin/playground/sessions`; `/api/admin/playground/sessions/[chatId]`; `runPlaygroundTurn()` | Visible residue remains: some internal compatibility field names such as `skillCallId`, and older sample/debug phrasing should still be tightened over time. | `PGR2-PLAYGROUND-COPY-CLEANUP` |
+| `/admin/playground` | Legacy compatibility entry point, not the active IA home. | `apps/console/middleware.ts`; `apps/console/app/admin/playground/page.tsx`; `apps/console/components/playground/playground-workspace.tsx` | The route is intentionally a thin wrapper so future lanes do not mistake it for the product-defining surface. | `Q3-COMPAT-CLEANUP` |
 | `/build/playground` | Redirect-only compatibility path to the Playground tab. | `apps/console/app/build/playground/page.tsx` | Not a product surface of its own. Keep only as compatibility until the owner approves removal. | `Q3-COMPAT-CLEANUP` |
 | `/build/release` | Version/package/release truth. Publish, rollback preview, import/export, and validation posture live here, not in Pilot or Playground. | `apps/console/components/release/release-command-center.tsx`; version endpoints; scenario validation summaries | Docs must not imply Pilot or Playground can publish, activate, deploy, or own package history. | `REL-DOC-BOUNDARY` |
 | `/build/components/**` | Draft authoring truth for Brain, Procedures, Tools, Hooks, Knowledge, and Integrations. | Native `build/components` routes plus current admin-backed APIs | Docs must not imply Playground owns Tool/Hook/Knowledge editing or that Components owns runtime/debug truth. | `COMPONENT-BOUNDARY-TRUTH` |
@@ -57,7 +57,7 @@ The main thing future lanes must stop assuming is:
 
 ### 4.1 Playground runtime truth
 
-- The Playground tab renders the reused admin `PlaygroundPage`, but the actual turn execution goes through `/api/admin/playground/run`.
+- The Playground tab renders the shared native `playground-workspace`, and the actual turn execution goes through `/api/admin/playground/run`.
 - `/api/admin/playground/run` calls `runPlaygroundTurn()`.
 - `runPlaygroundTurn()` loads the selected Agent config from DB via `loadAgentConfig(input.configId)`.
 - Prompt assembly is shared with the production message path through `buildModePrompt(...)`, not a separate fake playground-only prompt model.
@@ -83,7 +83,7 @@ The main thing future lanes must stop assuming is:
 
 ### 4.4 Save-to-chat truth
 
-- `Save to Chat` does not convert the Playground session into a live customer conversation.
+- `Export synthetic review transcript` does not convert the Playground session into a live customer conversation.
 - It creates a synthetic resolved `Case` with a generated `playground-test-*` user id.
 - It persists a reviewable transcript plus summarized trace rows so Operate surfaces can inspect the run.
 - Treat it as a debugging/export bridge, not as channel-runtime truth.
@@ -102,8 +102,8 @@ The main thing future lanes must stop assuming is:
 
 - `guardrailCount` in the reused Playground snapshot is hardcoded to `0`, so the visible `0 rules` pill is not authoritative runtime truth.
 - `skillCallId` still exists in internal form-request state naming inside the reused page component; treat that as compatibility residue, not approved product vocabulary.
-- The reused page still lives at `apps/console/app/admin/playground/page.tsx`, so "admin" remains an implementation path even though Pilot Lab owns the product surface.
-- `Save to Chat` is easy to misread as a production continuation path when it is really a synthetic debug bridge.
+- `/admin/playground` remains as a compatibility wrapper route only; product ownership now lives in the shared `playground-workspace`.
+- The Operate bridge is still synthetic/export-style behavior and must not be mistaken for a production continuation path.
 
 ---
 
@@ -121,9 +121,8 @@ The main thing future lanes must stop assuming is:
 
 ### Deferred or still partial
 
-- Playground still uses a compatibility UI implementation instead of a fully native Pilot-Lab-owned page.
 - Runtime-backed Scenario runs still mock operational tool side effects.
-- Playground does not yet surface every truth clearly enough in UI copy, especially draft/live distinction, mocked side effects, and synthetic save-to-chat behavior.
+- Playground still benefits from more copy cleanup around sample phrasing and internal compatibility field names, even though the native workspace split is complete.
 - Operate surfaces still do not get the same aggregated trace experience Playground has.
 
 ---
@@ -134,17 +133,13 @@ The main thing future lanes must stop assuming is:
    - Remove visible residue such as the hardcoded `0 rules` signal and older sample/debug phrasing.
    - Keep this wording/UI-only unless a runtime owner explicitly expands scope.
 
-2. `PGR3-PLAYGROUND-NATIVE-SPLIT`
-   - Rebuild the Playground tab as Pilot-Lab-owned UI without changing the proven runtime path underneath.
-   - Keep `/admin/playground` as compatibility only until parity is proven.
-
-3. `S2.1-RUNTIME-SIDE-EFFECT-TRUTH`
+2. `S2.1-RUNTIME-SIDE-EFFECT-TRUTH`
    - Decide whether runtime-backed Scenario execution should remain mocked for operational tools or gain a safer semi-real execution tier.
 
-4. `TRACE-OPS-UNIFICATION`
+3. `TRACE-OPS-UNIFICATION`
    - Bring the richer aggregated trace/evidence model into Operate conversation and ProcedureRun detail surfaces.
 
-5. `REL-PILOT-COMPONENT-BOUNDARY-SWEEP`
+4. `REL-PILOT-COMPONENT-BOUNDARY-SWEEP`
    - Keep Release, Pilot, Playground, and Components docs/copy strict about who owns config truth, runtime truth, and publish truth.
 
 ---

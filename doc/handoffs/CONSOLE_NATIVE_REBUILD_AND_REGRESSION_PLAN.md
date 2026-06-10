@@ -43,7 +43,7 @@ Use these backend surfaces as the current integration baseline while rebuilding 
 |---|---|---|
 | Release | agent config/version endpoints, package import/export endpoints, scenario validation metadata, config-changed state | native already; keep package and validation truth |
 | Pilot Lab | `/api/admin/config-pilot/context`, `/propose`, `/apply`; `/api/admin/scenarios`, `/run` | no publish/deploy/rollback inside Pilot; Scenario `fixture` and `agentRuntime` truth must stay visibly distinct |
-| Playground | `/api/admin/playground/run`, `/api/admin/playground/sessions*`, shared prompt/runtime path | approved compatibility exception; selected Agent version runs through real prompt/runtime with `dryRun` side-effect mocking and persisted trace/message restore |
+| Playground | `/api/admin/playground/run`, `/api/admin/playground/sessions*`, shared prompt/runtime path | native Pilot Lab workspace over the proven runtime path; `/admin/playground` remains a compatibility wrapper while selected Agent version runs through real prompt/runtime with `dryRun` side-effect mocking and persisted trace/message restore |
 | Brain | `/api/admin/agent?agentId=...`, `/api/admin/models`, `/api/admin/agent/assembled-prompt` | one native Brain workspace; no old model page reuse |
 | Procedures | `/api/admin/case-types`, `/api/admin/case-types/[name]`, Hook data needed for step bindings | UI now says Procedure Type even if backend still says case type |
 | Hooks | `/api/admin/hooks`, `/api/admin/hooks/[name]`, bindings routes | native route exists; Hook simulation still needs explicit native UI |

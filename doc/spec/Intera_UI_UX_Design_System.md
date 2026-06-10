@@ -201,7 +201,7 @@ Target-state rule for the Console rebuild:
 - `Build`, `Operate`, and `Settings` routes must render native workspace pages aligned to the target IA.
 - A target route must not satisfy this requirement by importing an old route component from `@/app/admin/**` or `@/app/ops/**`.
 - Compatibility redirects for old URLs may remain, but they are not the implementation source of the target route.
-- The only approved first-launch exception is `Playground`: Pilot Lab may continue to embed the existing dry-run/trace implementation while parity is preserved.
+- `/admin/playground` may remain as a compatibility wrapper route, but the product implementation source must live in the shared native Playground workspace owned by Pilot Lab.
 
 This means:
 
@@ -452,7 +452,7 @@ Scope:
 
 Current audit date: 2026-06-10.
 
-This audit began because several Build > Components routes used to preserve old admin implementations under the new IA. The current target truth is stricter: Build / Operate / Settings primary routes are now native and the only approved P0 compatibility reuse is Playground. Any route that still creates old objects by default, links back into old admin routes, or exposes CaseType/Policy/Skill/Guardrail semantics is not delivery-ready even if the runtime/API beneath it works.
+This audit began because several Build > Components routes used to preserve old admin implementations under the new IA. The current target truth is stricter: Build / Operate / Settings primary routes are now native, and any remaining `/admin/*` or `/ops/*` pages are compatibility wrappers or redirects only. Any route that still creates old objects by default, links back into old admin routes, or exposes CaseType/Policy/Skill/Guardrail semantics is not delivery-ready even if the runtime/API beneath it works.
 
 For current `main` implementation truth, prefer the matrix below over older target-language bullets elsewhere in this document.
 
@@ -467,12 +467,12 @@ For current `main` implementation truth, prefer the matrix below over older targ
 | Integrations | `/build/components/integrations` is a native Build workspace, but the shipped top-level truth is narrower than some earlier docs implied: the route is `Channels` plus `API Keys`, LiveChat uses current `agentConfigId`-scoped config/groups APIs, and Web Chat is still an embed-script/coming-soon surface rather than a full widget workspace. | Mostly usable with scope debt | Add focused browser verification for LiveChat and Web Chat detail states, and keep docs/specs constrained to the current embed-first Web Chat truth unless a richer lane is approved. |
 | Operate / Conversations | `/operate/conversations`, `/operate/conversations/[chatId]`, and `/operate/conversations/cases/[caseId]` are now native Operate routes. They mount shared conversation, chat-detail, and ProcedureRun-detail workspaces directly instead of exporting old `ops/chats` or `ops/cases` pages. | Mostly usable | Add focused browser verification for inbox, transcript, Memory, Trace, export, delete, and jump-link states with real data. |
 | Operate / Handoff detail | `/operate/handoff/[userId]` now mounts a native User Profile workspace directly instead of exporting the old `ops/users/[userId]` page. | Mostly usable | Add focused browser verification for profile edit/delete and linked chat history states with real data. |
-| Pilot Lab / Playground | Pilot Lab now owns Pilot and Playground tabs and preserves dry-run plus Trace Sidebar. The embedded Playground still has some legacy field names and labels such as `guardrailCount`, `skillCallId`, and older sample phrasing. | P0 cleanup, not deletion | Do not delete Playground dry-run or Trace Sidebar. Clean remaining visible legacy copy while leaving internal compatibility field names alone unless a focused runtime lane owns them. |
+| Pilot Lab / Playground | Pilot Lab now owns Pilot and Playground tabs through a shared native Playground workspace, while `/admin/playground` is a compatibility wrapper. Dry-run plus Trace Sidebar remain intact. Some internal compatibility field names such as `skillCallId` and older sample phrasing still remain. | P0 cleanup, not deletion | Do not delete Playground dry-run or Trace Sidebar. Clean remaining visible legacy copy while leaving internal compatibility field names alone unless a focused runtime lane owns them. |
 
 Remaining wrapper truth outside Components:
 
 - No remaining primary Build / Operate / Settings target route should export old `admin` or `ops` page components.
-- `Playground` remains the only approved P0 compatibility reuse and may continue to import the old `/app/admin/playground/page`.
+- `/admin/playground` may remain as a compatibility wrapper, but the active Playground implementation source must stay in the shared native workspace.
 - `/settings/organization`, `/operate/conversations*`, and `/operate/handoff/[userId]` are now native but still need focused browser verification against real data/auth states.
 - Current source-level stale-term hits on primary surfaces are limited to internal/backend contract names such as `CaseTypeItem`, `CaseTypeOption`, `lastCaseType`, and `showSkillStatus`. These are tolerated only while they remain non-user-facing.
 
