@@ -678,7 +678,7 @@ export default function CaseTypeDetailPage() {
           <p className="text-[10px] text-[var(--smoke)]">
             {isStageMode
               ? 'Legacy runtime mode (migration only). New configurations should use Procedure mode with step-level Hook bindings.'
-              : 'Procedure mode executes defined steps and evaluates hook bindings at each step. Hook behavior is inherited from Agent/CaseType scopes.'}
+              : 'Procedure mode executes defined steps and evaluates hook bindings at each step. Hook behavior is inherited from Agent and Procedure type scopes.'}
           </p>
         </div>
 
@@ -686,7 +686,7 @@ export default function CaseTypeDetailPage() {
         <div className="border-t border-[var(--border-subtle)] pt-4 space-y-4">
           {renderFieldEditor('requiredFacts', 'Required Facts', 'Facts the agent must collect before advancing (e.g. transaction_id, amount, payment_method)')}
           {renderFieldEditor('escalateOn', 'Escalate On', 'Conditions that trigger human escalation (e.g. "payment_not_found", "fraud_suspected")')}
-          {renderFieldEditor('autoCloseConditions', 'Auto-Close Conditions', 'Conditions that allow automatic case resolution')}
+          {renderFieldEditor('autoCloseConditions', 'Auto-Close Conditions', 'Conditions that allow automatic ProcedureRun resolution')}
         </div>
 
         {legacyHooks.length > 0 && (
@@ -790,7 +790,7 @@ export default function CaseTypeDetailPage() {
           </div>
 
           <p className="text-[11px] text-[var(--fog)] mb-3">
-            Procedure steps live in the CaseType procedure JSON and can be tied to step-level Hook bindings.
+            Procedure steps live in the Procedure type JSON and can be tied to step-level Hook bindings.
           </p>
 
           {procedureSteps.length === 0 ? (

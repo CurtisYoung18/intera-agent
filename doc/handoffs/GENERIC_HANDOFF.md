@@ -115,7 +115,7 @@ apps/console/             ← the only app (apps/chat was deleted post-migration
   lib/auth.ts             ← getSession / getActiveOrgId / getActiveVendor (verified session only)
   lib/api-auth.ts         ← Bearer-key resolution + isTrustedInternalCall
   middleware.ts           ← edge gate for /admin /ops + gated /api/*
-  components/             ← React (sidebar, docked-preview, admin editors)
+  components/             ← React (sidebar, pilot/release workspaces, admin editors)
 
 packages/shared/
   prisma/schema.prisma    ← Agent-scoped config models including Tool, Hook, HookBinding, CaseType, KnowledgeSource, ChannelBinding, Scenario, and durable Case shells.

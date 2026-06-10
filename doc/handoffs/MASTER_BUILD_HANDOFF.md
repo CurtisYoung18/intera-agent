@@ -10,7 +10,7 @@ Read first:
 2. [`../README.md`](../README.md) - doc map and current vocabulary.
 3. [`FOUNDATION_RESET_ROADMAP_CURRENT.md`](./FOUNDATION_RESET_ROADMAP_CURRENT.md) - current Mermaid roadmap from project start through remaining delivery checkpoints.
 4. [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md) - local browser-smoke/auth timebox rules.
-5. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - current copy-ready prompts for the next zero-context coding sessions.
+5. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompts and historical lane prompts for zero-context coding sessions; do not redispatch shipped lanes without an explicit repair ask.
 6. [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md) - current risk map and next-lane split before first commercial deployment.
 7. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
 8. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
@@ -104,6 +104,14 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 - `20c3455b`: Q1 terminology/docs/i18n sweep.
 - `c276cedd`: Q2 light-first Build surface polish.
 - `02dc3182`: obsolete `/ops/guide` route removed.
+- `864392c6`: P1 ConfigPilot typed draft flow.
+- `f9ed457c`: R3 ProcedureRun runtime overlay and real memory tools.
+- `64ee8f01`: S2 runtime-backed Scenario receipts.
+- `ec06aaf4`: U-Pilot Pilot chat cockpit + Playground tab.
+- `ccd10c79`: PKG1 package completeness and version cap.
+- `9041049e`: BASE1 core console regression stabilization.
+- `f27570b1`: Release/version-control docs truth refresh.
+- `ed9430bb`: Q3-B1 legacy route + navigation truth alignment.
 
 | Lane | Scope | Parallel? | Notes |
 |---|---|---|---|
@@ -119,18 +127,16 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | P1 | ConfigPilot typed configuration tools | Shipped locally | Backend prompt/model/context/propose/apply typed draft writes; never publish. |
 | R3 | ProcedureRun runtime overlay + system Tool rename + `remember` | Shipped locally | Keeps stable Core Agent prompt, appends dynamic ProcedureRun context at tail, resolves step Hooks by runtime timeline, handles interleaved messages with inputEpoch/reconcile gate, and exposes `start_procedure`, `finalize_procedure`, `remember`. |
 | S2 | Runtime-backed Scenario receipts | Shipped locally | Distinguishes fixture receipts from actual Agent runtime validation. |
-| U-Pilot | Pilot Chat Cockpit + Playground tab | Next / in progress | Makes `/build/pilot-lab` the logged-in default, removes global ConfigPilot drawer, and preserves Playground dry-run + Trace Sidebar under a dedicated tab. |
-| PKG1 | Package completeness + version cap | Can run after P1 | Completes package surfaces and enforces max five historical versions. |
-| Q3 | Legacy route/component/doc truth cleanup | Last | Removes stale active surfaces and updates drifted landmine docs. |
+| U-Pilot | Pilot Chat Cockpit + Playground tab | Shipped locally | `/build/pilot-lab` is the logged-in default; `Pilot` and `Playground` live in the same workspace and preserve dry-run + Trace Sidebar capability. |
+| PKG1 | Package completeness + version cap | Shipped locally | Completes package surfaces and enforces the five-version history cap. |
+| BASE1 | Core console regression stabilization | Shipped locally | Locks in post-PKG1/U-Pilot regression fixes on the active Build surfaces. |
+| Q3 | Legacy route/component/doc truth cleanup | Shipped locally | Q3-B1 aligned route/nav truth; Q3-B final removes dead UI remnants and refreshes current docs to real status. |
 
 Recommended coding-team shape:
 
-- R1, C1, U1, U2, U3, B1, R2, Q1, Q2, and `/ops/guide` cleanup are already shipped on main.
-- P1, R3, and S2 are shipped locally; do not redispatch them except for focused repair.
-- U-Pilot should run before further Pilot polish: it replaces the old Pilot Lab page with the chat cockpit and preserves Playground capability under a second tab.
-- PKG1 can run after S2, but avoid editing Pilot Lab UI while U-Pilot is active.
-- Q3 should run after the product/runtime names are stable.
-- Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) for current lane prompts. Do not redispatch from the shipped F1-F7 prompts.
+- R1, C1, U1, U2, U3, B1, R2, Q1, Q2, `/ops/guide` cleanup, P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`.
+- Q3-B final completes the remaining dead-component cleanup and docs truth pass on the current branch; future work should be focused repair only unless the owner reopens product scope.
+- Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) only for repair-oriented zero-context sessions. Do not redispatch from the shipped F1-F7 prompts or from already-shipped post-foundation lane blocks.
 
 ---
 
@@ -192,9 +198,12 @@ Shipped foundations already useful for the reset:
 - Safe local Postgres foundation shipped 2026-06-08. See [`../what's done/2026-06-08-foundation-safe-local-db.md`](../what's%20done/2026-06-08-foundation-safe-local-db.md).
 - Procedure additive Phases 1-3 shipped through `373d2eed`: Procedure contracts/columns exist, ProcedureExecutor prompt path is wired, and case-scoped legacy guardrail activation exists. Foundation Reset lanes must treat those as migration inputs, not as the target architecture.
 - Foundation reset first wave shipped through `d42c543e`: Hooks schema/API/UI, HookEngine checkpoints, Tool trace vocabulary, package import/export, Scenario soft gate, and Quiet Agent Studio primitives.
-- Post-foundation commits through `64ee8f01`: target IA shell, ProcedureStep Hook binding UI, inline Procedure runtime cutover, Release command center, Pilot Lab, Brain Memory strategy workspace, R2 physical legacy cleanup, Q1 terminology sweep, Q2 light-first polish, obsolete guide removal, ConfigPilot typed backend draft flow, ProcedureRun runtime overlay, and runtime-backed Scenario receipts.
+- Post-foundation commits through `ed9430bb`: target IA shell, ProcedureStep Hook binding UI, inline Procedure runtime cutover, Release command center, Pilot chat cockpit + Playground tab, Brain Memory strategy workspace, R2 physical legacy cleanup, Q1 terminology sweep, Q2 light-first polish, obsolete guide removal, ConfigPilot typed backend draft flow, ProcedureRun runtime overlay, runtime-backed Scenario receipts, package completeness/version cap, BASE1 regression stabilization, and legacy route/navigation truth alignment.
 - Trace single-contract and playground hardening work shipped. See the relevant receipts under [`../what's done/`](../what's%20done/).
 - Agent-scoped architecture exists in code, but verify orgId -> agentConfig ownership whenever touching admin sub-module routes.
+- Logged-in default is `/build/pilot-lab`; Pilot Lab has `Pilot` and `Playground` tabs in the same workspace.
+- Release owns package actions and version control. ConfigPilot no longer mounts as a global drawer.
+- Q3 cleanup keeps `/admin/*` and `/ops/*` legacy paths as compatibility redirects/wrappers while preserving Playground dry-run, Trace Sidebar, and the playground API/runtime surface.
 
 Live landmines to keep in mind:
 

@@ -1,10 +1,12 @@
 # Post-Foundation Dispatch Prompts
 
 **Last updated:** 2026-06-10
-**Purpose:** copy one prompt into a zero-context Codex session after the shipped F1-F7/UX0 foundation reset.
-**Baseline:** local `main` at or after `64ee8f01 S2: add runtime-backed scenario receipts`.
+**Purpose:** preserve repair-ready prompts after the shipped F1-F7/UX0 foundation reset and post-foundation lanes.
+**Baseline:** local `main` at or after `ed9430bb Q3-B1: align legacy routes and navigation`.
 
 The old [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) file is historical. Do not redispatch F1-F7 from it.
+
+**Status on 2026-06-10:** P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`. The lane blocks below are historical repair prompts unless the coordinator explicitly reopens one. For current truth and next-step status, read [`MASTER_BUILD_HANDOFF.md`](./MASTER_BUILD_HANDOFF.md) first.
 
 ---
 
@@ -60,6 +62,10 @@ Current shipped baseline includes:
 - P1 ConfigPilot typed backend context/propose/apply draft flow.
 - R3 ProcedureRun runtime overlay and real memory tools.
 - S2 runtime-backed Scenario receipts.
+- U-Pilot Pilot chat cockpit + Playground tab.
+- PKG1 package completeness and version cap.
+- BASE1 core console regression stabilization.
+- Q3-B1 legacy route and navigation truth alignment.
 
 Current Pilot correction:
 - Logged-in/default authenticated route is `/build/pilot-lab`.
@@ -128,7 +134,7 @@ End with:
 | 3 | R2 | Shipped locally. Do not redispatch unless explicitly repairing. |
 | 4 | Q1, Q2 | Shipped. Do not redispatch unless explicitly repairing. |
 | 5 | P1, R3, S2 | Shipped locally. Do not redispatch unless explicitly repairing. |
-| 6 | U-Pilot, PKG1, Q3 | U-Pilot is the next Pilot UI lane. PKG1 can run after S2 but should avoid Pilot UI files while U-Pilot is active. |
+| 6 | U-Pilot, PKG1, Q3 | Shipped locally/main. Use these prompts only for focused repair, compatibility cleanup, or doc-truth follow-up. |
 
 Coordinator rule: prefer fewer concurrent runtime sessions. One runtime owner is worth more than five clever merge conflicts.
 
@@ -148,6 +154,10 @@ Current local post-foundation commits:
 - `864392c6 P1: add ConfigPilot typed draft flow`
 - `f9ed457c R3: ship ProcedureRun runtime overlay`
 - `64ee8f01 S2: add runtime-backed scenario receipts`
+- `ec06aaf4 U-Pilot: add chat cockpit workspace`
+- `ccd10c79 PKG1: complete agent package import export`
+- `9041049e BASE1: stabilize core console regression paths`
+- `ed9430bb Q3-B1: align legacy routes and navigation`
 
 ---
 
@@ -822,6 +832,8 @@ Acceptance:
 
 ## Q3 - Legacy route/component cleanup and docs truth pass
 
+Historical repair prompt: Q3-B1 route/nav truth is already shipped. Use this block only for follow-up cleanup, compatibility wrappers, or docs truth repairs.
+
 ```text
 Lane: Q3 - Legacy route/component cleanup and docs truth pass
 
@@ -833,9 +845,7 @@ Owned files:
 - apps/console/app/admin/playground/**
 - apps/console/app/admin/guardrails/**
 - apps/console/components/admin/stage-config-editor.tsx
-- apps/console/components/admin/sub-agent-summary-list.tsx
 - apps/console/components/admin/agent-human-interaction-panel.tsx
-- apps/console/components/docked-preview.tsx
 - apps/console/lib/livechat/** showSkillStatus compatibility rename if scoped
 - doc/handoffs/**
 - doc/spec/**
@@ -843,7 +853,7 @@ Owned files:
 
 Tasks:
 1. Keep `/admin/playground` and `/admin/guardrails` as redirects only, matching the target Build routes.
-2. Delete unreferenced stage/sub-agent/docked-preview components only after grep proves no live imports.
+2. Confirm deleted stage/sub-agent/docked-preview remnants stay unreferenced, and delete any newly discovered dead UI only after grep proves no live imports.
 3. Rename LiveChat internal `showSkillStatus` toward Tool status in code where safe; keep DB/API compatibility if needed.
 4. Update `HARD_BUGS.md` so retired dispatch/background sub-agent issues are not listed as live.
 5. Update historical docs only by adding "historical/superseded" framing; do not rewrite archive evidence.

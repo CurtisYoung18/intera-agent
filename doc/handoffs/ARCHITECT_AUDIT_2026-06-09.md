@@ -6,6 +6,8 @@
 
 **Important working-tree note:** during this audit, an uncommitted ConfigPilot skeleton was present under `apps/console/lib/config-pilot/**` and `apps/console/app/api/admin/config-pilot/**`. Treat it as an in-progress P1 lane, not as shipped baseline, until it is committed with green gates.
 
+**2026-06-10 follow-up:** P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are now shipped on local `main`. Treat the audit sections below as dated risk context; use [`MASTER_BUILD_HANDOFF.md`](./MASTER_BUILD_HANDOFF.md) for current dispatch truth.
+
 ---
 
 ## Executive Read
@@ -29,14 +31,13 @@ Until those six are handled, the Console can demo well, but a delivery person ma
 
 ### 1. ConfigPilot Backend Is Incomplete
 
-Current shipped UI still uses `apps/console/components/config-pilot/config-pilot-workbench.tsx` with a local deterministic scenario proposal path.
+At audit time, shipped UI still used `apps/console/components/config-pilot/config-pilot-workbench.tsx` with a local deterministic scenario proposal path.
 
-An in-progress backend skeleton now exists, but it is not shippable:
+Follow-up status on 2026-06-10:
 
-- `npx tsc --noEmit -p apps/console/tsconfig.json` fails on `apps/console/lib/config-pilot/apply.ts` Prisma create-data typing and `apps/console/lib/config-pilot/model.ts` env typing.
-- `npm run build:console` fails for the same uncommitted P1 code.
-- `/api/admin/config-pilot/context` and `/api/admin/config-pilot/propose` exist in the working tree, but `/api/admin/config-pilot/apply` is missing.
-- UI is not yet wired to these backend routes.
+- P1 shipped the typed `/api/admin/config-pilot/context`, `/propose`, and `/apply` flow.
+- Pilot Lab is now wired to those backend routes.
+- The old local deterministic workbench surface has been removed in the Q3-B final cleanup.
 
 Required direction:
 
@@ -164,14 +165,12 @@ Scenario storage is JSON-backed under `.intera-agent-runtime/`. That is fine for
 
 ### Legacy Route/Component Cleanup
 
-Redirects exist for `/admin/playground` and `/admin/guardrails`, but active code still contains old-heavy surfaces and dead components:
+Redirects exist for `/admin/playground` and `/admin/guardrails`. Q3-B follow-up has since removed the dead ConfigPilot workbench/drawer path and other unreferenced legacy UI components, but two cleanup boundaries remain relevant:
 
-- large `apps/console/app/admin/playground/page.tsx`
-- stage/sub-agent admin components
-- LiveChat `showSkillStatus` internal field names
-- some archived docs still useful as history but dangerous if copied as active prompt
+- large `apps/console/app/admin/playground/page.tsx` still exists as the compatibility implementation source for Pilot Lab `Playground`
+- LiveChat `showSkillStatus` internal field names and some archived docs still need careful historical framing so they are not mistaken for current product truth
 
-Dispatch: use `Q3 - Legacy route/component cleanup and docs truth pass`.
+Dispatch history: this pointed to `Q3 - Legacy route/component cleanup and docs truth pass` at audit time. Current follow-up should only reopen the remaining cleanup if `MASTER_BUILD_HANDOFF.md` still lists it as active.
 
 ---
 

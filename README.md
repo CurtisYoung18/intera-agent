@@ -1,6 +1,8 @@
 # Intera — AI 客服 SaaS 平台
 
-Intera 是一个以 **AI Agent 为核心**的多租户智能客服 SaaS。客户发起对话 → 自治 Agent 把问题当作一个 `Case` 调查：检索知识、调用 Tools、追问澄清、触发 Hooks 时升级人工、端到端解决。
+Intera 是一个以 **AI Agent 为核心**的多租户智能客服 SaaS。客户发起对话后，Agent 会围绕 **Chat / User / ProcedureRun / HumanTask / Trace / Memory** 推进问题：检索知识、调用 Tools、追问澄清、在 Hook 命中时升级人工，并把过程留成可验证的运行时证据。底层仍暂保留 durable `Case` shell 来兼容现有 message/trace 持久化，但这不再是产品层主概念。
+
+当前 Console 的真实产品壳是：登录后默认进入 **Build -> Pilot Lab**，其中 `Pilot` 负责对话式构建，`Playground` 保留 dry-run 与 TraceSidebar 调试能力；**Release** 拥有版本与 package 动作；**ConfigPilot** 只存在于 Pilot Lab 内，不再作为全局 drawer。
 
 长期目标：Intera Console 要成为 **客服 Agent 的 AgentOps Workbench**。第一阶段的对话式工具命名为 **ConfigPilot**：交付人员可以用自然语言检查、调优、测试并直接配置一个 Intera Agent，但它不开放服务器 shell、不读写服务器文件，只通过 typed admin / scenario / trace APIs 修改 Procedure、Tools、Hooks、Human Transfer，并输出 diff、验证记录和回滚路径。
 
@@ -56,13 +58,13 @@ git push deploy main           # post-receive hook → scripts/deploy.sh
 ## 调试功能
 
 ### Debug Mode
-在 Console 的 Agent Config 页面开启 `Debug Mode`，每次 LLM 调用的完整 request/response payload 写入 `debug-logs/<caseId>/`。无需重启，实时生效。
+在 Console 的 Brain 工作台开启 `Debug Mode`，每次 LLM 调用的完整 request/response payload 写入 `debug-logs/<caseId>/`。无需重启，实时生效。
 
-### Case 导出
+### ProcedureRun 导出
 ```bash
 curl http://localhost:3001/api/cases/{caseId}/export -o case-export.md
 ```
-也可在 Console 的 Case 详情页找到导出入口。
+兼容 API 仍使用 `/api/cases/*` 路径，也可在 Console 的 ProcedureRun 详情页找到导出入口。
 
 ## 外部 API
 

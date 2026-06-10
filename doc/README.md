@@ -1,14 +1,14 @@
 # Intera Documentation Map
 
 **Last updated:** 2026-06-10
-**Purpose:** keep the docs usable for parallel AI coding teams after the shipped Foundation Reset baseline.
+**Purpose:** keep the docs usable for parallel AI coding teams after the shipped Foundation Reset baseline and the Q3 truth-cleanup pass.
 
 ## Read order
 
 1. [`handoffs/GENERIC_HANDOFF.md`](./handoffs/GENERIC_HANDOFF.md) - stable repo context and collaboration rules.
 2. [`handoffs/MASTER_BUILD_HANDOFF.md`](./handoffs/MASTER_BUILD_HANDOFF.md) - current macro priority, active lanes, and dispatch order.
 3. [`handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md`](./handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md) - Mermaid roadmap from project start through remaining P0 delivery checkpoints.
-4. [`handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md`](./handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md) - current copy-ready prompts after the F1-F7/UX0/R1-C1-U1-U3-B1-R2 baseline.
+4. [`handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md`](./handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompt history after the shipped baseline; do not redispatch shipped lanes from it without an explicit repair ask.
 5. [`to-do/2026-06-08-foundation-reset-domain-model.md`](./to-do/2026-06-08-foundation-reset-domain-model.md) - the owner-approved reset plan and historical migration record.
 6. [`spec/Intera_Harness_架构梳理.md`](./spec/Intera_Harness_架构梳理.md) - current product and architecture source of truth.
 7. [`spec/Intera_UI_UX_Design_System.md`](./spec/Intera_UI_UX_Design_System.md) - current Console IA, visual system, and UI refactor lanes.
@@ -34,6 +34,13 @@ Use these names in new docs, APIs, UI, traces, and package manifests:
 | `Quiet Agent Studio` | First-launch UI theme: unified light-first product shell with focused light workspaces. |
 
 Legacy names may appear in historical receipts, raw input, archived plans, and the original philosophy reference: `Skill`, `Policy`, `Guardrail`, `stage`, `sub-agent`, `preFinalize`.
+
+## Current product truth
+
+- Logged-in default route is `/build/pilot-lab`, with `Pilot` and `Playground` tabs in the same workspace.
+- `Release` owns version history, publish/rollback flow, and package import/export actions.
+- `ConfigPilot` is a Pilot Lab workspace, not a global drawer.
+- Legacy `/admin/*` and `/ops/*` paths are compatibility redirects/wrappers only; current docs should teach the Build / Operate / Settings IA.
 
 ## Directory guide
 

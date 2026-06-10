@@ -215,6 +215,13 @@ function parseProcedureStepValue(value: string) {
   }
 }
 
+function scopeTypeLabel(scopeType: ScopeType) {
+  if (scopeType === 'agent') return 'Agent'
+  if (scopeType === 'caseType') return 'Procedure type'
+  if (scopeType === 'procedureStep') return 'Procedure step'
+  return 'Tool'
+}
+
 export default function HookBuilder() {
   const agentConfigId = useSelectedAgentId()
   const { orgId } = useSession()
@@ -679,7 +686,7 @@ export default function HookBuilder() {
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="break-words text-[13px] font-medium text-[var(--mist)]">{scopeLabel(binding)}</div>
-                              <div className="mt-1 text-[11px] text-[var(--fog)]">{binding.scopeType}</div>
+                              <div className="mt-1 text-[11px] text-[var(--fog)]">{scopeTypeLabel(binding.scopeType)}</div>
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
                               <button
@@ -713,21 +720,21 @@ export default function HookBuilder() {
                           className="glass-input-console text-[13px]"
                         >
                           <option value="agent">Agent</option>
-                          <option value="caseType">CaseType</option>
-                          <option value="procedureStep">ProcedureStep</option>
+                          <option value="caseType">Procedure type</option>
+                          <option value="procedureStep">Procedure step</option>
                           <option value="tool">Tool</option>
                         </select>
                       </label>
 
                       {bindingDraft.scopeType === 'caseType' ? (
                         <label className="mt-3 block space-y-1.5">
-                          <span className="text-[12px] font-medium text-[var(--fog)]">CaseType</span>
+                          <span className="text-[12px] font-medium text-[var(--fog)]">Procedure type</span>
                           <select
                             value={bindingDraft.caseTypeId}
                             onChange={(event) => setBindingDraft({ ...bindingDraft, caseTypeId: event.target.value })}
                             className="glass-input-console text-[13px]"
                           >
-                            <option value="">Select CaseType</option>
+                            <option value="">Select Procedure type</option>
                             {caseTypes.map((ct) => <option key={ct.id} value={ct.id}>{ct.displayName || ct.type}</option>)}
                           </select>
                         </label>
@@ -735,13 +742,13 @@ export default function HookBuilder() {
 
                       {bindingDraft.scopeType === 'procedureStep' ? (
                         <label className="mt-3 block space-y-1.5">
-                          <span className="text-[12px] font-medium text-[var(--fog)]">ProcedureStep</span>
+                          <span className="text-[12px] font-medium text-[var(--fog)]">Procedure step</span>
                           <select
                             value={bindingDraft.procedureStepValue}
                             onChange={(event) => setBindingDraft({ ...bindingDraft, procedureStepValue: event.target.value })}
                             className="glass-input-console text-[13px]"
                           >
-                            <option value="">Select ProcedureStep</option>
+                            <option value="">Select Procedure step</option>
                             {procedureSteps.map((step) => <option key={`${step.caseTypeId}:${step.id}`} value={procedureStepValue(step)}>{step.label}</option>)}
                           </select>
                         </label>

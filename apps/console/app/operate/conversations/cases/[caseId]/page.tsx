@@ -1,6 +1,4 @@
-import { redirect } from 'next/navigation'
-
-export default async function OperateCaseConversationRedirect({ params }: { params: Promise<{ caseId: string }> }) {
-  const { caseId } = await params
-  redirect(`/operate/conversations/${encodeURIComponent(caseId)}`)
-}
+// Canonical ProcedureRun detail route reuses the legacy case detail implementation.
+// Middleware already redirects `/ops/cases/:id` here, so this route must render the
+// detail surface instead of treating `caseId` like a chat id.
+export { default } from '@/app/ops/cases/[caseId]/page'
