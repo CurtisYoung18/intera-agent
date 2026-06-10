@@ -59,8 +59,8 @@ type NavSlug =
   | 'organization'
 
 const BUILD_ITEMS: NavItem[] = [
+  { href: '/build/pilot-lab', slug: 'pilotLab', icon: MessageSquare, color: '#357f7c', matchPattern: '/build/pilot-lab' },
   { href: '/build/release', slug: 'release', icon: FlaskConical, color: '#8b6ff5', matchPattern: '/build/release' },
-  { href: '/build/pilot-lab', slug: 'pilotLab', icon: MessageSquare, color: '#6366f1', matchPattern: '/build/pilot-lab' },
   { href: '/build/components', slug: 'components', icon: Layers, color: '#5b8af7', matchPattern: '/build/components' },
   { href: '/build/playground', slug: 'playground', icon: Sparkles, color: '#0ea5e9', matchPattern: '/build/playground' },
 ]

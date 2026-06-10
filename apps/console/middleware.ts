@@ -23,7 +23,7 @@ export function mapLegacyRoute(pathname: string): string | null {
   if (pathname === '/') {
     return null
   }
-  if (normalizedPathname === '/admin') return '/build/release'
+  if (normalizedPathname === '/admin') return '/build/pilot-lab'
   if (normalizedPathname === '/ops') return '/operate/conversations'
 
   if (normalizedPathname === '/admin/playground') return '/build/pilot-lab'
@@ -64,7 +64,7 @@ export function mapLegacyRoute(pathname: string): string | null {
     return `/operate/handoff/${encodeURIComponent(tail)}`
   }
   if (normalizedPathname === '/ops/dashboards') return '/operate/handoff'
-  if (normalizedPathname === '/ops/guide') return '/build/release'
+  if (normalizedPathname === '/ops/guide') return '/build/pilot-lab'
 
   return null
 }
@@ -90,11 +90,11 @@ export async function middleware(req: NextRequest) {
 
   // Root path — redirect with correct host via x-forwarded-host
   if (pathname === '/') {
-    if (session) return redirectPreservingQuery('/build/release', req)
+    if (session) return redirectPreservingQuery('/build/pilot-lab', req)
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
     const proto = req.headers.get('x-forwarded-proto') || 'https'
     const loginUrl = new URL(`/login`, `${proto}://${host}`)
-    loginUrl.searchParams.set('next', '/build/release')
+    loginUrl.searchParams.set('next', '/build/pilot-lab')
     return NextResponse.redirect(loginUrl)
   }
 

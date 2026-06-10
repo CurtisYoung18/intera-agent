@@ -294,14 +294,14 @@ describe('Scenario 1: Invitation-only registration via Google SSO', () => {
     }
   })
 
-  it('creates User + Membership, marks invitation accepted, issues session, redirects to /build/release', async () => {
+  it('creates User + Membership, marks invitation accepted, issues session, redirects to /build/pilot-lab', async () => {
     const req = makeCallbackRequest({ code: 'auth-code-1', state: 'valid-csrf-state' })
     const res = await GET(req as any)
 
     // Check redirect to guide
     expect(res.status).toBe(307) // App Router redirect uses 307
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     // Check session cookie is set
     const cookie = getSetCookie(res)
@@ -390,7 +390,7 @@ describe('Scenario 3: Existing user logs in via Google (googleSub match)', () =>
     })
   })
 
-  it('signs session and redirects to /build/release for existing user', async () => {
+  it('signs session and redirects to /build/pilot-lab for existing user', async () => {
     h.mockClaims = {
       sub: 'google-sub-123',
       email: 'returning@example.com',
@@ -403,7 +403,7 @@ describe('Scenario 3: Existing user logs in via Google (googleSub match)', () =>
 
     expect(res.status).toBe(307)
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     // Session issued
     expect(h.issuedTokens.length).toBe(1)
@@ -566,7 +566,7 @@ describe('Google account linking for existing email+password users', () => {
 
     expect(res.status).toBe(307)
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     // Session issued for existing user
     expect(h.issuedTokens.length).toBe(1)
@@ -650,10 +650,10 @@ describe('Task 2: Existing user with 0 memberships + pending invite succeeds (st
     const req = makeCallbackRequest({ code: 'auth-code-stale-gsub', state: 'valid-csrf-state' })
     const res = await GET(req as any)
 
-    // Must succeed (307 → /build/release), NOT error with "No organization membership"
+    // Must succeed (307 -> /build/pilot-lab), NOT error with "No organization membership"
     expect(res.status).toBe(307)
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     const cookie = getSetCookie(res)
     expect(cookie).toContain('intera_session=mock-token-')
@@ -708,7 +708,7 @@ describe('Task 2: Existing user with 0 memberships + pending invite succeeds (st
 
     expect(res.status).toBe(307)
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     const cookie = getSetCookie(res)
     expect(cookie).toContain('intera_session=mock-token-')
@@ -764,14 +764,14 @@ describe('S8: Share link — new user registers via Google', () => {
     }
   })
 
-  it('creates User + Membership with viewer role, increments useCount, redirects /build/release', async () => {
+  it('creates User + Membership with viewer role, increments useCount, redirects /build/pilot-lab', async () => {
     const req = makeCallbackRequest({ code: 'auth-code-s8', state: 'valid-csrf-state' })
     const res = await GET(req as any)
 
     // Success redirect
     expect(res.status).toBe(307)
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     // Session issued
     const cookie = getSetCookie(res)
@@ -873,7 +873,7 @@ describe('S10: Share link — last use flips state to accepted', () => {
 
     expect(res.status).toBe(307)
     const location = getLocation(res)
-    expect(location).toBe('http://localhost:3001/build/release')
+    expect(location).toBe('http://localhost:3001/build/pilot-lab')
 
     // useCount incremented to 2
     expect(h.invitations['inv-share-1'].useCount).toBe(2)

@@ -47,7 +47,7 @@ const scenario = {
   },
 }
 
-const receipt = {
+const runtimeReceipt = {
   scenarioName: 'deposit_missing_evidence',
   runId: 'run-1',
   status: 'pass',
@@ -79,6 +79,35 @@ const receipt = {
     { name: 'forbidden_phrase:guaranteed compensation', passed: true },
     { name: 'required_phrase:human specialist', passed: true },
   ],
+}
+
+const fixtureReceipt = {
+  ...runtimeReceipt,
+  runId: 'fixture-run-1',
+  executionMode: 'fixture',
+  summary: 'Fixture expectations passed.',
+}
+
+const runtimeValidation = {
+  state: 'Validated',
+  lastValidatedAt: runtimeReceipt.finishedAt,
+  lastReceiptId: runtimeReceipt.runId,
+  lastReceiptStatus: runtimeReceipt.status,
+  lastReceiptExecutionMode: runtimeReceipt.executionMode,
+  runtimeValidated: true,
+  runtimeValidatedAt: runtimeReceipt.completedAt,
+  overrideRequired: false,
+}
+
+const fixtureValidation = {
+  state: 'Validated',
+  lastValidatedAt: fixtureReceipt.finishedAt,
+  lastReceiptId: fixtureReceipt.runId,
+  lastReceiptStatus: fixtureReceipt.status,
+  lastReceiptExecutionMode: fixtureReceipt.executionMode,
+  runtimeValidated: false,
+  runtimeValidatedAt: null,
+  overrideRequired: true,
 }
 
 const configPilotProposal = {
@@ -118,56 +147,28 @@ const configPilotProposal = {
   safetyNotes: ['Draft only; publish remains locked.'],
 }
 
-function setupApi() {
+function contextResponse(validation: any = runtimeValidation) {
+  return {
+    agentConfigId: 'agent-1',
+    selected: { id: 'agent-1', name: 'Gaming Support', version: 2, isActive: false, model: 'deepseek-v4-flash', updatedAt: '2026-06-09T00:00:00.000Z', publishedAt: null },
+    active: { id: 'agent-live', name: 'Gaming Support', version: 1, isActive: true, model: 'deepseek-v4-flash', updatedAt: '2026-06-08T00:00:00.000Z', publishedAt: '2026-06-08T01:00:00.000Z' },
+    draft: { id: 'agent-1', name: 'Gaming Support', version: 2, isActive: false, model: 'deepseek-v4-flash', updatedAt: '2026-06-09T00:00:00.000Z', publishedAt: null },
+    permissions: { role: 'admin', canRead: true, canPropose: true, canApply: true, canPublish: false },
+    lockedCapabilities: [{ id: 'hook_engine', name: 'Hook Engine', surface: 'runtime', reason: 'runtime-managed', editable: false }],
+    configuration: { brain: { model: 'deepseek-v4-flash' }, procedures: [], tools: [], hooks: [], hookBindings: [], knowledge: [], integrations: [], scenarios: [scenario] },
+    validation,
+  }
+}
+
+function setupApi(mode: 'runtime' | 'fixture' = 'runtime') {
+  const receipt = mode === 'runtime' ? runtimeReceipt : fixtureReceipt
+  const validation = mode === 'runtime' ? runtimeValidation : fixtureValidation
   mockApiClient.mockImplementation(async (url: string, options?: any) => {
-    if (url === '/api/admin/scenarios?agentConfigId=agent-1') {
-      return {
-        data: {
-          scenarios: [scenario],
-          receipts: [receipt],
-          validation: {
-            state: 'Validated',
-            lastValidatedAt: receipt.finishedAt,
-            lastReceiptId: receipt.runId,
-            lastReceiptStatus: receipt.status,
-            lastReceiptExecutionMode: receipt.executionMode,
-            runtimeValidated: true,
-            runtimeValidatedAt: receipt.completedAt,
-            overrideRequired: false,
-          },
-        },
-      }
-    }
-    if (url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST') {
-      return {
-        data: {
-          receipt: { ...receipt, runId: 'run-2', startedAt: '2026-06-09T00:02:00.000Z' },
-          validation: {
-            state: 'Validated',
-            lastValidatedAt: '2026-06-09T00:02:03.000Z',
-            lastReceiptId: 'run-2',
-            lastReceiptStatus: 'pass',
-            lastReceiptExecutionMode: 'agentRuntime',
-            runtimeValidated: true,
-            runtimeValidatedAt: '2026-06-09T00:02:03.000Z',
-            overrideRequired: false,
-          },
-        },
-      }
-    }
     if (url === '/api/admin/config-pilot/context?agentConfigId=agent-1') {
-      return {
-        data: {
-          agentConfigId: 'agent-1',
-          selected: { id: 'agent-1', name: 'Gaming Support', version: 2, isActive: false, model: 'deepseek-v4-flash', updatedAt: '2026-06-09T00:00:00.000Z', publishedAt: null },
-          active: { id: 'agent-live', name: 'Gaming Support', version: 1, isActive: true, model: 'deepseek-v4-flash', updatedAt: '2026-06-08T00:00:00.000Z', publishedAt: '2026-06-08T01:00:00.000Z' },
-          draft: { id: 'agent-1', name: 'Gaming Support', version: 2, isActive: false, model: 'deepseek-v4-flash', updatedAt: '2026-06-09T00:00:00.000Z', publishedAt: null },
-          permissions: { role: 'admin', canRead: true, canPropose: true, canApply: true, canPublish: false },
-          lockedCapabilities: [{ id: 'hook_engine', name: 'Hook Engine', surface: 'runtime', reason: 'runtime-managed', editable: false }],
-          configuration: { brain: { model: 'deepseek-v4-flash' }, procedures: [], tools: [], hooks: [], hookBindings: [], knowledge: [], integrations: [], scenarios: [scenario] },
-          validation: { state: 'Validated', lastValidatedAt: receipt.finishedAt, lastReceiptId: receipt.runId, lastReceiptStatus: receipt.status, lastReceiptExecutionMode: receipt.executionMode, runtimeValidated: true, runtimeValidatedAt: receipt.completedAt, overrideRequired: false },
-        },
-      }
+      return { data: contextResponse(validation) }
+    }
+    if (url === '/api/admin/scenarios?agentConfigId=agent-1') {
+      return { data: { scenarios: [scenario], receipts: [receipt], validation } }
     }
     if (url === '/api/admin/config-pilot/propose' && options?.method === 'POST') {
       return {
@@ -197,16 +198,14 @@ function setupApi() {
         },
       }
     }
-    if (url === '/api/admin/scenarios' && options?.method === 'POST') {
+    if (url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST') {
+      const nextReceipt = options.body.executionMode === 'fixture' ? { ...fixtureReceipt, runId: 'fixture-run-2' } : { ...runtimeReceipt, runId: 'run-2' }
       return {
         data: {
-          scenario: {
-            ...scenario,
-            ...options.body,
-            id: 'scenario-configpilot',
-            createdAt: '2026-06-09T00:03:00.000Z',
-            updatedAt: '2026-06-09T00:03:00.000Z',
-          },
+          receipt: nextReceipt,
+          validation: nextReceipt.executionMode === 'agentRuntime'
+            ? { ...runtimeValidation, lastReceiptId: nextReceipt.runId, runtimeValidatedAt: nextReceipt.completedAt }
+            : { ...fixtureValidation, lastReceiptId: nextReceipt.runId },
         },
       }
     }
@@ -221,6 +220,19 @@ async function renderPage() {
   })
 }
 
+function textIncludes(text: string) {
+  return (_content: string, element: Element | null) => Boolean(element?.textContent?.includes(text))
+}
+
+async function submitChatPrompt(text = 'Create a deposit handoff Scenario') {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Message U-Pilot'), { target: { value: text } })
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+  })
+}
+
 beforeEach(() => {
   mockApiClient.mockReset()
   setupApi()
@@ -230,43 +242,28 @@ afterEach(() => {
   cleanup()
 })
 
-describe('PilotLabPage', () => {
-  it('renders saved Scenarios and latest receipt evidence', async () => {
+describe('PilotLabPage U-Pilot cockpit', () => {
+  it('renders the initial chat cockpit around current draft context', async () => {
     await renderPage()
 
-    expect((await screen.findAllByText('Deposit missing evidence')).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('get_latest_deposit').length).toBeGreaterThan(0)
-    expect(screen.getByText('conflict_requires_human')).toBeTruthy()
-    expect(screen.getByText('Deposit runbook')).toBeTruthy()
-    expect(screen.getByText('Forbidden phrase: guaranteed compensation')).toBeTruthy()
+    expect(await screen.findByText('U-Pilot Chat Cockpit')).toBeTruthy()
+    expect(screen.getByLabelText('Message U-Pilot')).toBeTruthy()
+    expect(await screen.findAllByText('Current context')).toBeTruthy()
+    expect(mockApiClient.mock.calls[0][0]).toBe('/api/admin/config-pilot/context?agentConfigId=agent-1')
   }, 10000)
 
-  it('runs the selected Scenario through the Scenario run API', async () => {
+  it('shows the initial streaming Pilot greeting after context loads', async () => {
     await renderPage()
 
-    await screen.findAllByText('Deposit missing evidence')
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^Run$/ }))
-    })
-
-    await waitFor(() => {
-      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST')).toBe(true)
-    })
-    const runCall = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST')
-    expect(runCall?.[1]?.body).toMatchObject({ executionMode: 'agentRuntime' })
+    expect((await screen.findAllByText(textIncludes('我已读取当前 draft'))).length).toBeGreaterThan(0)
   }, 10000)
 
-  it('requires ConfigPilot diff review and confirmation before typed API save', async () => {
+  it('shows a proposal diff after chat propose, while apply stays disabled before accept', async () => {
     await renderPage()
+    await screen.findByText('U-Pilot Chat Cockpit')
 
-    await screen.findAllByText('Deposit missing evidence')
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'ConfigPilot Workspace' }))
-    })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Generate proposal/ }))
-    })
-    await screen.findByText('Deposit handoff Scenario')
+    await submitChatPrompt()
+    expect(await screen.findByText('Deposit handoff Scenario')).toBeTruthy()
 
     const applyButton = screen.getByTestId('config-pilot-apply-draft')
     expect(applyButton).toHaveProperty('disabled', true)
@@ -274,19 +271,60 @@ describe('PilotLabPage', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Review diff/ }))
     })
+    expect(await screen.findByText('Diff viewer')).toBeTruthy()
     expect(applyButton).toHaveProperty('disabled', true)
+  }, 10000)
 
+  it('enables apply only after explicit accept', async () => {
+    await renderPage()
+    await submitChatPrompt()
+    await screen.findByText('Deposit handoff Scenario')
+    const applyButton = screen.getByTestId('config-pilot-apply-draft')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Review diff/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText(/I reviewed the diff/))
+    })
+
+    await waitFor(() => expect(applyButton).toHaveProperty('disabled', false))
+  }, 10000)
+
+  it('applies accepted drafts without calling publish activate deploy or rollback endpoints', async () => {
+    await renderPage()
+    await submitChatPrompt()
+    await screen.findByText('Deposit handoff Scenario')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Review diff/ }))
+    })
     await act(async () => {
       fireEvent.click(screen.getByLabelText(/I reviewed the diff/))
     })
     await act(async () => {
-      fireEvent.click(applyButton)
+      fireEvent.click(screen.getByTestId('config-pilot-apply-draft'))
     })
 
     await waitFor(() => {
       expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/config-pilot/apply' && options?.method === 'POST')).toBe(true)
     })
-    expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios' && options?.method === 'POST')).toBe(false)
-    expect(mockApiClient.mock.calls.some(([url]) => typeof url === 'string' && /activate|publish/i.test(url))).toBe(false)
+    expect(mockApiClient.mock.calls.some(([url]) => typeof url === 'string' && /publish|activate|deploy|rollback/i.test(url))).toBe(false)
+  }, 10000)
+
+  it('does not label fixture-only receipts as runtime validated', async () => {
+    setupApi('fixture')
+    await renderPage()
+
+    expect(await screen.findByText('Fixture-only validation')).toBeTruthy()
+    expect(await screen.findByText('Not runtime validated')).toBeTruthy()
+    expect(screen.queryByText('Runtime validated')).toBeNull()
+  }, 10000)
+
+  it('labels runtime-backed receipts explicitly', async () => {
+    await renderPage()
+
+    expect(await screen.findAllByText('Runtime validated')).toBeTruthy()
+    expect(await screen.findByText('Agent runtime')).toBeTruthy()
   }, 10000)
 })

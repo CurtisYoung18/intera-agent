@@ -4,7 +4,7 @@
 // exchanges the code for tokens, verifies the id_token, then performs
 // login-or-register logic:
 //
-//   1. Look up User by googleSub → sign session, redirect to /build/release
+//   1. Look up User by googleSub -> sign session, redirect to /build/pilot-lab
 //   2. Look up User by email → link googleSub, sign session, redirect
 //   3. Check for pending Invitation → create User + Membership, sign session
 //   4. No Invitation + no Membership → 403 denied
@@ -195,7 +195,7 @@ export async function GET(req: NextRequest) {
       if (!token) {
         return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
       }
-      return redirectWithSession(token, '/build/release')
+      return redirectWithSession(token, '/build/pilot-lab')
     }
 
     // 5b. Look up User by email — link googleSub
@@ -242,7 +242,7 @@ export async function GET(req: NextRequest) {
       if (!token) {
         return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
       }
-      return redirectWithSession(token, '/build/release')
+      return redirectWithSession(token, '/build/pilot-lab')
     }
 
     // 5c. No existing user — check invite token first (passed through state cookie from /api/auth/google?invite=)
@@ -275,7 +275,7 @@ export async function GET(req: NextRequest) {
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
         }
-        return redirectWithSession(token, '/build/release')
+        return redirectWithSession(token, '/build/pilot-lab')
       }
 
       // Also check email-bound invite by token
@@ -357,7 +357,7 @@ export async function GET(req: NextRequest) {
     if (!token) {
       return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
     }
-    return redirectWithSession(token, '/build/release')
+    return redirectWithSession(token, '/build/pilot-lab')
       },
     })(req)
   } catch (err) {

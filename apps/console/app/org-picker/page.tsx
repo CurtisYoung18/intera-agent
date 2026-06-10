@@ -58,7 +58,7 @@ function OrgPicker() {
     setError('')
     try {
       await apiClient('/api/auth/switch-org', { method: 'POST', body: { orgId } })
-      window.location.href = '/build/release'
+      window.location.href = '/build/pilot-lab'
     } catch {
       setError('Network error — try again')
       setSwitching(null)

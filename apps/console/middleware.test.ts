@@ -4,8 +4,8 @@ import { mapLegacyRoute } from './middleware'
 describe('mapLegacyRoute', () => {
   const cases: Array<[string, string | null]> = [
     ['/', null],
-    ['/admin', '/build/release'],
-    ['/admin/', '/build/release'],
+    ['/admin', '/build/pilot-lab'],
+    ['/admin/', '/build/pilot-lab'],
     ['/admin/playground', '/build/pilot-lab'],
     ['/admin/model', '/build/components/brain'],
     ['/admin/memory', '/build/components/brain?mode=memory'],
@@ -38,8 +38,8 @@ describe('mapLegacyRoute', () => {
     ['/ops/users/u1', '/operate/handoff/u1'],
     ['/ops/users/u1/', '/operate/handoff/u1'],
     ['/ops/dashboards', '/operate/handoff'],
-    ['/ops/guide', '/build/release'],
-    ['/ops/guide/', '/build/release'],
+    ['/ops/guide', '/build/pilot-lab'],
+    ['/ops/guide/', '/build/pilot-lab'],
     ['/build/release', null],
     ['/some/other/path', null],
   ]

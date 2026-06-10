@@ -19,7 +19,7 @@ export default function LoginPage() {
 
 function LoginForm() {
   const params = useSearchParams()
-  const next = params.get('next') || '/build/release'
+  const next = params.get('next') || '/build/pilot-lab'
   const invite = params.get('invite')
 
   const [email, setEmail] = useState('')

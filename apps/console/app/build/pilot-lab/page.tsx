@@ -1,13 +1,33 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, ClipboardList, FileJson, FlaskConical, Loader2, Play, Plus, RefreshCw, Save, Trash2, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  ClipboardList,
+  FileDiff,
+  Loader2,
+  LockKeyhole,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  SendHorizontal,
+  Sparkles,
+  XCircle,
+} from 'lucide-react'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import ConfigDiffViewer from '@/components/config-diff/config-diff-viewer'
 import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
-import { ConfigPilotDrawer, ConfigPilotWorkbench } from '@/components/config-pilot/config-pilot-workbench'
 import { ReceiptStatusIcon, ScenarioReceiptPanel } from '@/components/scenario-receipts/scenario-receipt-panel'
-import EmptyState from '@/components/ui/empty-state'
 import { apiClient, ApiClientError } from '@/lib/api/client'
+import type {
+  ConfigPilotApplyResponse,
+  ConfigPilotContextResponse,
+  ConfigPilotPatch,
+  ConfigPilotProposal,
+  ConfigPilotProposeResponse,
+} from '@/lib/config-pilot/contracts'
 import type { SavedScenario, ScenarioObservedEvidenceInput, ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
 
 interface ScenarioListResponse {
@@ -16,256 +36,293 @@ interface ScenarioListResponse {
   validation: ScenarioValidationSummary
 }
 
-interface ScenarioEditorState {
-  name: string
-  displayName: string
-  description: string
-  locale: string
-  tags: string
-  enabled: boolean
-  turnsJson: string
-  expectedJson: string
+interface ChatMessage {
+  id: string
+  role: 'pilot' | 'user' | 'system'
+  content: string
+  streaming?: boolean
+  tone?: 'normal' | 'success' | 'warning' | 'danger'
 }
 
-type PilotArea = 'config-pilot' | 'free-test' | 'test-cases' | 'receipts'
+type ProposalPhase = 'idle' | 'proposing' | 'proposal' | 'diff' | 'accepted' | 'applying' | 'applied'
 
-const DEFAULT_TURNS = JSON.stringify([
-  { role: 'user', content: 'My deposit has not arrived yet.' },
-  { role: 'assistant', content: 'I checked the available evidence and will transfer this case to a human specialist.' },
-], null, 2)
-
-const DEFAULT_EXPECTED = JSON.stringify({
-  caseType: 'deposit_issue',
-  toolsCalled: ['get_latest_deposit'],
-  hooks: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
-  humanTransfer: true,
-  finalStatus: 'waiting_human',
-  forbiddenPhrases: ['guaranteed compensation'],
-  requiredPhrases: ['human specialist'],
-}, null, 2)
-
+const PILOT_GREETING = '我已读取当前 draft。你可以让我创建流程、修改 prompt、添加 hook、运行 scenario，或检查发布前风险。'
+const DEFAULT_PROMPT = 'Create a repeatable deposit handoff Scenario with tool evidence, Hook escalation, human transfer, and forbidden compensation wording.'
 const DEFAULT_OBSERVED = JSON.stringify({
   knowledgeHits: [{ source: 'fixture', title: 'Deposit runbook' }],
 }, null, 2)
 
-function emptyEditor(): ScenarioEditorState {
-  return {
-    name: '',
-    displayName: '',
-    description: '',
-    locale: 'en-US',
-    tags: '',
-    enabled: true,
-    turnsJson: DEFAULT_TURNS,
-    expectedJson: DEFAULT_EXPECTED,
-  }
-}
-
-function editorFromScenario(scenario: SavedScenario): ScenarioEditorState {
-  return {
-    name: scenario.name,
-    displayName: scenario.displayName ?? '',
-    description: scenario.description ?? '',
-    locale: scenario.locale ?? 'en-US',
-    tags: scenario.tags.join(', '),
-    enabled: scenario.enabled,
-    turnsJson: JSON.stringify(scenario.turns, null, 2),
-    expectedJson: JSON.stringify(scenario.expected ?? {}, null, 2),
-  }
+let messageCounter = 0
+function nextMessageId(prefix: string) {
+  messageCounter += 1
+  return `${prefix}-${messageCounter}`
 }
 
 export default function PilotLabPage() {
   const agentConfigId = useSelectedAgentId()
-  const [activeArea, setActiveArea] = useState<PilotArea>('test-cases')
+  const chatEndRef = useRef<HTMLDivElement | null>(null)
+  const [context, setContext] = useState<ConfigPilotContextResponse | null>(null)
   const [scenarios, setScenarios] = useState<SavedScenario[]>([])
   const [receipts, setReceipts] = useState<ScenarioReceipt[]>([])
   const [validation, setValidation] = useState<ScenarioValidationSummary | null>(null)
-  const [selectedName, setSelectedName] = useState<string | null>(null)
+  const [selectedScenarioName, setSelectedScenarioName] = useState<string | null>(null)
   const [selectedReceiptRunId, setSelectedReceiptRunId] = useState<string | null>(null)
-  const [editor, setEditor] = useState<ScenarioEditorState>(() => emptyEditor())
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [composer, setComposer] = useState('')
+  const [proposal, setProposal] = useState<ConfigPilotProposal | null>(null)
+  const [proposalPhase, setProposalPhase] = useState<ProposalPhase>('idle')
+  const [accepted, setAccepted] = useState(false)
+  const [modelUsed, setModelUsed] = useState<string | null>(null)
+  const [promptVersion, setPromptVersion] = useState<string | null>(null)
   const [observedJson, setObservedJson] = useState(DEFAULT_OBSERVED)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [running, setRunning] = useState<string | null>(null)
+  const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const selectedScenario = useMemo(() => scenarios.find((scenario) => scenario.name === selectedName) ?? null, [scenarios, selectedName])
-  const selectedReceipt = useMemo(() => receipts.find((receipt) => receipt.runId === selectedReceiptRunId) ?? receipts[0] ?? null, [receipts, selectedReceiptRunId])
-  const passingReceipts = receipts.filter((receipt) => receipt.status === 'pass').length
-  const runtimeReceipts = receipts.filter((receipt) => receipt.executionMode === 'agentRuntime').length
+  const selectedScenario = useMemo(
+    () => scenarios.find((scenario) => scenario.name === selectedScenarioName) ?? scenarios[0] ?? null,
+    [scenarios, selectedScenarioName],
+  )
+  const selectedReceipt = useMemo(
+    () => receipts.find((receipt) => receipt.runId === selectedReceiptRunId) ?? receipts[0] ?? null,
+    [receipts, selectedReceiptRunId],
+  )
+  const latestRuntimeReceipt = receipts.find((receipt) => receipt.executionMode === 'agentRuntime') ?? null
+  const latestFixtureReceipt = receipts.find((receipt) => receipt.executionMode === 'fixture') ?? null
+  const canApply = Boolean(context?.permissions.canApply && proposal && accepted && proposalPhase === 'accepted')
+  const diffGroups = proposal?.diffGroups ?? []
 
-  const load = useCallback(async () => {
+  const addMessage = useCallback((message: Omit<ChatMessage, 'id'> & { id?: string }) => {
+    setMessages((prev) => [...prev, { ...message, id: message.id ?? nextMessageId(message.role) }])
+  }, [])
+
+  const loadScenarios = useCallback(async (id: string) => {
+    const result = await apiClient<ScenarioListResponse>(`/api/admin/scenarios?agentConfigId=${encodeURIComponent(id)}`)
+    const data = result.data
+    setScenarios(data.scenarios)
+    setReceipts(data.receipts)
+    setValidation(data.validation)
+    setSelectedScenarioName((prev) => {
+      if (prev && data.scenarios.some((scenario) => scenario.name === prev)) return prev
+      return data.scenarios[0]?.name ?? null
+    })
+    setSelectedReceiptRunId((prev) => {
+      if (prev && data.receipts.some((receipt) => receipt.runId === prev)) return prev
+      return data.receipts[0]?.runId ?? null
+    })
+  }, [])
+
+  const loadCockpit = useCallback(async () => {
     if (!agentConfigId) return
     setLoading(true)
     setError(null)
     try {
-      const result = await apiClient<ScenarioListResponse>(`/api/admin/scenarios?agentConfigId=${encodeURIComponent(agentConfigId)}`)
-      const data = result.data
-      setScenarios(data.scenarios)
-      setReceipts(data.receipts)
-      setValidation(data.validation)
-      setSelectedName((prev) => {
-        const nextName = prev && data.scenarios.some((scenario) => scenario.name === prev) ? prev : data.scenarios[0]?.name ?? null
-        const nextScenario = data.scenarios.find((scenario) => scenario.name === nextName)
-        if (nextScenario) setEditor(editorFromScenario(nextScenario))
-        else setEditor(emptyEditor())
-        return nextName
-      })
-      setSelectedReceiptRunId((prev) => {
-        if (prev && data.receipts.some((receipt) => receipt.runId === prev)) return prev
-        return data.receipts[0]?.runId ?? null
-      })
+      const contextResult = await apiClient<ConfigPilotContextResponse>(`/api/admin/config-pilot/context?agentConfigId=${encodeURIComponent(agentConfigId)}`)
+      setContext(contextResult.data)
+      setValidation(contextResult.data.validation)
+      setMessages([
+        {
+          id: 'pilot-greeting',
+          role: 'pilot',
+          content: PILOT_GREETING,
+          streaming: true,
+        },
+      ])
+      await loadScenarios(agentConfigId)
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to load Pilot Lab')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to load Pilot cockpit')
+      setMessages([
+        {
+          id: 'pilot-greeting-error',
+          role: 'pilot',
+          tone: 'danger',
+          content: 'I could not read the current draft context. Refresh or select another Agent version.',
+        },
+      ])
     } finally {
       setLoading(false)
     }
-  }, [agentConfigId])
+  }, [agentConfigId, loadScenarios])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { loadCockpit() }, [loadCockpit])
 
-  const selectScenario = useCallback((scenario: SavedScenario) => {
-    setSelectedName(scenario.name)
-    setEditor(editorFromScenario(scenario))
-    setActiveArea('test-cases')
+  useEffect(() => {
+    if (!messages.some((message) => message.streaming)) return
+    const timer = window.setTimeout(() => {
+      setMessages((prev) => prev.map((message) => ({ ...message, streaming: false })))
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [messages])
+
+  useEffect(() => {
+    if (typeof chatEndRef.current?.scrollIntoView === 'function') {
+      chatEndRef.current.scrollIntoView({ block: 'end' })
+    }
+  }, [messages, proposalPhase])
+
+  const proposeFromPrompt = useCallback(async (request: string) => {
+    if (!agentConfigId || !request.trim()) return
     setError(null)
     setNotice(null)
-  }, [])
+    setProposal(null)
+    setAccepted(false)
+    setProposalPhase('proposing')
+    try {
+      const result = await apiClient<ConfigPilotProposeResponse>('/api/admin/config-pilot/propose', {
+        method: 'POST',
+        body: { agentConfigId, request },
+      })
+      setProposal(result.data.proposal)
+      setModelUsed(result.data.modelUsed)
+      setPromptVersion(result.data.promptVersion)
+      setProposalPhase('proposal')
+      addMessage({
+        role: 'pilot',
+        content: `I drafted a typed proposal: ${result.data.proposal.title}. Review the right panel diff before accepting.`,
+        streaming: true,
+      })
+    } catch (err) {
+      setProposalPhase('idle')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to generate ConfigPilot proposal')
+      addMessage({
+        role: 'pilot',
+        tone: 'danger',
+        content: 'ConfigPilot could not create a typed proposal. The draft was not changed.',
+      })
+    }
+  }, [addMessage, agentConfigId])
 
-  const newScenario = useCallback(() => {
-    setSelectedName(null)
-    setEditor(emptyEditor())
-    setActiveArea('test-cases')
-    setError(null)
+  const sendComposer = useCallback(async () => {
+    const request = composer.trim()
+    if (!request) return
+    setComposer('')
+    addMessage({ role: 'user', content: request })
+    await proposeFromPrompt(request)
+  }, [addMessage, composer, proposeFromPrompt])
+
+  const reviewDiff = useCallback(() => {
+    if (!proposal) return
+    setProposalPhase('diff')
+    setAccepted(false)
     setNotice(null)
-  }, [])
+    addMessage({
+      role: 'pilot',
+      content: 'Diff is open in the control panel. Apply remains disabled until you explicitly accept it.',
+    })
+  }, [addMessage, proposal])
 
-  const saveScenario = useCallback(async () => {
-    if (!agentConfigId) return
-    setSaving(true)
+  const rejectProposal = useCallback(() => {
+    setProposal(null)
+    setAccepted(false)
+    setProposalPhase('idle')
+    setNotice('Proposal rejected. No draft changes were written.')
+    addMessage({
+      role: 'pilot',
+      tone: 'warning',
+      content: 'Rejected. Nothing was saved to the draft.',
+    })
+  }, [addMessage])
+
+  const acceptProposal = useCallback((checked: boolean) => {
+    setAccepted(checked)
+    if (checked && proposalPhase === 'diff') {
+      setProposalPhase('accepted')
+      addMessage({
+        role: 'system',
+        tone: 'success',
+        content: 'Human accept recorded. The apply action is now available.',
+      })
+    }
+    if (!checked && proposalPhase === 'accepted') setProposalPhase('diff')
+  }, [addMessage, proposalPhase])
+
+  const applyProposal = useCallback(async () => {
+    if (!agentConfigId || !proposal || !accepted || proposalPhase !== 'accepted') return
+    setProposalPhase('applying')
     setError(null)
     setNotice(null)
     try {
-      const turns = JSON.parse(editor.turnsJson)
-      const expected = JSON.parse(editor.expectedJson)
-      const body = {
-        agentConfigId,
-        name: editor.name.trim(),
-        displayName: editor.displayName.trim() || undefined,
-        description: editor.description.trim() || undefined,
-        locale: editor.locale.trim() || undefined,
-        tags: editor.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-        enabled: editor.enabled,
-        turns,
-        expected,
+      const result = await apiClient<ConfigPilotApplyResponse>('/api/admin/config-pilot/apply', {
+        method: 'POST',
+        body: { agentConfigId, accepted: true, proposal },
+      })
+      setProposalPhase('applied')
+      setValidation(result.data.validation)
+      setNotice(`Applied ${result.data.appliedPatches.length} draft ${result.data.appliedPatches.length === 1 ? 'change' : 'changes'}. Validation is now ${result.data.validation.state}.`)
+      addMessage({
+        role: 'pilot',
+        tone: 'success',
+        content: `Draft saved through typed APIs. Validation is now ${result.data.validation.state}; run a runtime-backed Scenario before publishing.`,
+        streaming: true,
+      })
+      await loadScenarios(result.data.draftAgentConfigId)
+      const contextResult = await apiClient<ConfigPilotContextResponse>(`/api/admin/config-pilot/context?agentConfigId=${encodeURIComponent(result.data.draftAgentConfigId)}`)
+      setContext(contextResult.data)
+    } catch (err) {
+      setProposalPhase('accepted')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to apply accepted draft')
+      addMessage({
+        role: 'pilot',
+        tone: 'danger',
+        content: 'Apply failed. The accepted proposal remains available, but no publish or activation action was called.',
+      })
+    }
+  }, [accepted, addMessage, agentConfigId, loadScenarios, proposal, proposalPhase])
+
+  const runSelectedScenario = useCallback(async (executionMode: 'fixture' | 'agentRuntime') => {
+    if (!agentConfigId || !selectedScenario) return
+    setRunning(true)
+    setError(null)
+    setNotice(null)
+    try {
+      let observed: ScenarioObservedEvidenceInput | undefined
+      if (executionMode === 'fixture' && observedJson.trim()) {
+        observed = JSON.parse(observedJson) as ScenarioObservedEvidenceInput
       }
-      const url = selectedScenario ? `/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}` : '/api/admin/scenarios'
-      const result = await apiClient<{ scenario: SavedScenario }>(url, { method: selectedScenario ? 'PUT' : 'POST', body })
-      setSelectedName(result.data.scenario.name)
-      setEditor(editorFromScenario(result.data.scenario))
-      setNotice('Test Scenario draft saved')
-      await load()
-    } catch (err) {
-      if (err instanceof SyntaxError) setError(`Invalid JSON: ${err.message}`)
-      else setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to save Scenario')
-    } finally {
-      setSaving(false)
-    }
-  }, [agentConfigId, editor, load, selectedScenario])
-
-  const deleteScenario = useCallback(async () => {
-    if (!agentConfigId || !selectedScenario) return
-    setError(null)
-    setNotice(null)
-    try {
-      await apiClient(`/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, { method: 'DELETE' })
-      setSelectedName(null)
-      setEditor(emptyEditor())
-      setNotice('Test Scenario deleted')
-      await load()
-    } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to delete Scenario')
-    }
-  }, [agentConfigId, load, selectedScenario])
-
-  const runScenario = useCallback(async (options: { observed?: ScenarioObservedEvidenceInput; executionMode?: 'fixture' | 'agentRuntime' } = {}) => {
-    if (!agentConfigId || !selectedScenario) return
-    setRunning(selectedScenario.name)
-    setError(null)
-    setNotice(null)
-    try {
       const result = await apiClient<{ receipt: ScenarioReceipt; validation: ScenarioValidationSummary }>(
         `/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}/run`,
-        { method: 'POST', body: { agentConfigId, observed: options.observed, executionMode: options.executionMode ?? 'agentRuntime' } },
+        { method: 'POST', body: { agentConfigId, executionMode, observed } },
       )
       setReceipts((prev) => [result.data.receipt, ...prev.filter((receipt) => receipt.runId !== result.data.receipt.runId)])
       setSelectedReceiptRunId(result.data.receipt.runId)
       setValidation(result.data.validation)
-      setActiveArea('receipts')
-      setNotice(result.data.receipt.status === 'pass' ? 'Scenario passed' : result.data.receipt.status === 'blocked' ? 'Scenario runtime blocked' : 'Scenario failed')
-      await load()
+      addMessage({
+        role: 'pilot',
+        tone: result.data.receipt.status === 'pass' ? 'success' : 'warning',
+        content: `${executionMode === 'agentRuntime' ? 'Runtime-backed' : 'Fixture-only'} Scenario run finished: ${result.data.receipt.status}.`,
+        streaming: true,
+      })
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.envelope.error.message : 'Failed to run Scenario')
+      setError(err instanceof SyntaxError ? `Invalid observed evidence JSON: ${err.message}` : err instanceof ApiClientError ? err.envelope.error.message : 'Failed to run Scenario')
     } finally {
-      setRunning(null)
+      setRunning(false)
     }
-  }, [agentConfigId, load, selectedScenario])
-
-  const runFreeTest = useCallback(async () => {
-    try {
-      const observed = observedJson.trim() ? JSON.parse(observedJson) as ScenarioObservedEvidenceInput : undefined
-      await runScenario({ observed, executionMode: 'fixture' })
-    } catch (err) {
-      setError(err instanceof SyntaxError ? `Invalid observed evidence JSON: ${err.message}` : 'Failed to parse observed evidence')
-    }
-  }, [observedJson, runScenario])
-
-  const handleConfigPilotSaved = useCallback(async (scenario: SavedScenario) => {
-    setSelectedName(scenario.name)
-    setEditor(editorFromScenario(scenario))
-    setActiveArea('test-cases')
-    await load()
-  }, [load])
+  }, [addMessage, agentConfigId, observedJson, selectedScenario])
 
   return (
-    <div className="intera-q2-page min-h-screen px-5 py-6 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
+    <div className="intera-q2-page min-h-screen overflow-x-hidden px-4 py-4 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
         <VersionContextBar />
 
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <header className="flex flex-col gap-4 border-b border-[var(--color-border-subtle)] pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
+            <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--color-text-tertiary)]">
               <span>Build</span>
               <span className="text-[var(--color-border-strong)]">/</span>
               <span className="text-[var(--color-text-primary)]">Pilot Lab</span>
+              <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.07)] px-2 py-1 text-[var(--color-accent-primary)]">Chat Cockpit</span>
             </div>
-            <h1 className="mt-4 text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">Pilot Lab</h1>
-            <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">Run saved Scenarios, inspect receipts, and let ConfigPilot draft safe changes before validation.</p>
+            <h1 className="mt-3 text-[24px] font-semibold leading-tight text-[var(--color-text-primary)] sm:text-[28px]">U-Pilot Chat Cockpit</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <ContextBadge context={context} />
             <ValidationBadge validation={validation} />
-            <button type="button" onClick={load} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
+            <button type="button" onClick={loadCockpit} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
               <RefreshCw size={15} /> Refresh
-            </button>
-            <button type="button" onClick={() => setDrawerOpen(true)} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] px-3 text-[13px] font-medium text-[var(--color-accent-primary)] hover:bg-[rgba(53,127,124,0.12)]">
-              <Bot size={15} /> ConfigPilot
-            </button>
-            <button type="button" onClick={newScenario} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-[13px] font-medium text-white hover:opacity-90">
-              <Plus size={15} /> New Test Scenario
             </button>
           </div>
         </header>
-
-        <section className="intera-q2-panel overflow-hidden">
-          <div className="grid divide-y divide-[var(--color-border-subtle)] md:grid-cols-4 md:divide-x md:divide-y-0">
-            <MetricTile label="Test Scenarios" value={scenarios.length.toString()} />
-            <MetricTile label="Receipts" value={receipts.length.toString()} />
-            <MetricTile label="Passing" value={passingReceipts.toString()} tone="success" />
-            <MetricTile label="Runtime-backed" value={runtimeReceipts.toString()} tone={runtimeReceipts > 0 ? 'success' : 'neutral'} />
-          </div>
-        </section>
 
         {(error || notice) && (
           <div className="grid gap-2">
@@ -274,230 +331,391 @@ export default function PilotLabPage() {
           </div>
         )}
 
-        <div className="grid gap-5 xl:grid-cols-[256px_minmax(0,1fr)_380px] 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
-          <aside className="grid gap-4">
-            <section className="intera-q2-panel p-2">
-              <PilotAreaButton active={activeArea === 'config-pilot'} icon={Bot} label="ConfigPilot Workspace" onClick={() => setActiveArea('config-pilot')} />
-              <PilotAreaButton active={activeArea === 'free-test'} icon={FlaskConical} label="Free Test" onClick={() => setActiveArea('free-test')} />
-              <PilotAreaButton active={activeArea === 'test-cases'} icon={ClipboardList} label="Test Scenarios" onClick={() => setActiveArea('test-cases')} />
-              <PilotAreaButton active={activeArea === 'receipts'} icon={FileJson} label="Receipts" onClick={() => setActiveArea('receipts')} />
+        <div className="grid min-h-[calc(100vh-190px)] gap-4 xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
+          <main className="intera-q2-panel flex min-h-[620px] min-w-0 flex-col overflow-hidden">
+            <section className="flex items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <p className="text-[12px] font-medium text-[var(--color-text-tertiary)]">Current agent</p>
+                <h2 className="truncate text-[16px] font-semibold text-[var(--color-text-primary)]">
+                  {context ? `${context.selected.name} v${context.selected.version}` : 'Loading draft context'}
+                </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {loading ? <OrganicLoader variant="02" size={22} title="Loading Pilot context" /> : <OrganicLoader variant={proposalPhase === 'proposing' ? '05' : '11'} size={22} title="Pilot status loader" />}
+                <span className="hidden text-[12px] text-[var(--color-text-tertiary)] sm:inline">{proposalPhaseLabel(proposalPhase)}</span>
+              </div>
             </section>
 
-            <section className="intera-q2-panel overflow-hidden">
-              <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-4 py-3">
-                <h2 className="text-sm font-semibold">Scenario index</h2>
-                {loading && <OrganicLoader variant="02" size={16} className="text-[var(--color-text-tertiary)]" />}
-              </div>
-              <div className="max-h-[520px] overflow-y-auto">
-                {loading ? (
-                  <div className="p-3 text-sm text-[var(--color-text-tertiary)]">Loading Scenarios</div>
-                ) : scenarios.length === 0 ? (
-                  <EmptyState icon={ClipboardList} title="No Test Scenarios" description="Create a Scenario or ask ConfigPilot for a draft." />
-                ) : (
-                  scenarios.map((scenario) => (
-                    <button key={scenario.id} type="button" onClick={() => selectScenario(scenario)} className={`intera-q2-row w-full px-3 py-3 text-left transition ${selectedName === scenario.name ? 'bg-[rgba(53,127,124,0.08)]' : 'hover:bg-[var(--color-bg-surface-muted)]'}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">{scenario.displayName || scenario.name}</p>
-                          <p className="mt-1 truncate text-xs text-[var(--color-text-tertiary)]">{scenario.name}</p>
-                        </div>
-                        <ReceiptStatusIcon status={scenario.lastRunStatus} />
-                      </div>
-                      {scenario.description && <p className="mt-2 line-clamp-2 text-xs text-[var(--color-text-secondary)]">{scenario.description}</p>}
-                    </button>
-                  ))
+            <section className="min-h-0 flex-1 overflow-y-auto bg-[color:color-mix(in_srgb,var(--color-bg-surface-muted)_62%,white)] px-4 py-5 sm:px-6">
+              <div className="mx-auto flex max-w-[860px] flex-col gap-4">
+                {messages.map((message) => (
+                  <ChatBubble key={message.id} message={message} />
+                ))}
+                {proposalPhase === 'proposing' && (
+                  <ChatBubble
+                    message={{
+                      id: 'pilot-proposing',
+                      role: 'pilot',
+                      content: 'ConfigPilot is generating a typed patch proposal. The draft is not changed yet.',
+                      streaming: true,
+                    }}
+                  />
                 )}
+                <QuickPromptRow disabled={!agentConfigId || proposalPhase === 'proposing'} onSelect={(prompt) => { setComposer(prompt); void proposeFromPrompt(prompt) }} />
+                <div ref={chatEndRef} />
               </div>
             </section>
-          </aside>
 
-          <main className="min-w-0">
-            {activeArea === 'config-pilot' && <ConfigPilotWorkbench agentConfigId={agentConfigId} onScenarioSaved={handleConfigPilotSaved} />}
-            {activeArea === 'free-test' && (
-              <FreeTestPanel selectedScenario={selectedScenario} observedJson={observedJson} setObservedJson={setObservedJson} running={Boolean(running)} onRun={runFreeTest} />
-            )}
-            {activeArea === 'test-cases' && (
-              <TestCaseEditorPanel editor={editor} setEditor={setEditor} selectedScenario={selectedScenario} saving={saving} running={running === selectedScenario?.name} onSave={saveScenario} onDelete={deleteScenario} onRun={() => runScenario({ executionMode: 'agentRuntime' })} />
-            )}
-            {activeArea === 'receipts' && (
-              <ScenarioReceiptPanel receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceipt?.runId ?? null} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
-            )}
+            <section className="sticky bottom-0 border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-4 py-3 sm:px-5">
+              <form
+                className="mx-auto flex max-w-[920px] items-end gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void sendComposer()
+                }}
+              >
+                <label htmlFor="pilot-composer" className="sr-only">Message U-Pilot</label>
+                <textarea
+                  id="pilot-composer"
+                  value={composer}
+                  onChange={(event) => setComposer(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      void sendComposer()
+                    }
+                  }}
+                  rows={2}
+                  placeholder="Ask U-Pilot to create a flow, modify a prompt, add a Hook, run a Scenario, or check release risk..."
+                  className="min-h-[52px] flex-1 resize-none rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[14px] leading-5 text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-accent-primary)]"
+                />
+                <button type="submit" disabled={!composer.trim() || proposalPhase === 'proposing'} className="intera-q2-button flex h-[52px] w-[52px] shrink-0 items-center justify-center bg-[var(--color-accent-primary)] text-white disabled:opacity-50" aria-label="Send message">
+                  {proposalPhase === 'proposing' ? <Loader2 size={18} className="animate-spin" /> : <SendHorizontal size={18} />}
+                </button>
+              </form>
+            </section>
           </main>
 
-          <aside className="min-w-0 space-y-4">
-            <PilotLabRail running={Boolean(running)} activeArea={activeArea} onOpenDrawer={() => setDrawerOpen(true)} />
-            <ScenarioReceiptPanel compact receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceipt?.runId ?? null} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
-          </aside>
+          <ControlPanel
+            context={context}
+            scenarios={scenarios}
+            selectedScenario={selectedScenario}
+            setSelectedScenarioName={setSelectedScenarioName}
+            receipts={receipts}
+            selectedReceipt={selectedReceipt}
+            selectedReceiptRunId={selectedReceiptRunId}
+            setSelectedReceiptRunId={setSelectedReceiptRunId}
+            latestRuntimeReceipt={latestRuntimeReceipt}
+            latestFixtureReceipt={latestFixtureReceipt}
+            validation={validation}
+            proposal={proposal}
+            proposalPhase={proposalPhase}
+            diffGroups={diffGroups}
+            accepted={accepted}
+            canApply={canApply}
+            modelUsed={modelUsed}
+            promptVersion={promptVersion}
+            observedJson={observedJson}
+            setObservedJson={setObservedJson}
+            running={running}
+            onReviewDiff={reviewDiff}
+            onReject={rejectProposal}
+            onAccept={acceptProposal}
+            onApply={applyProposal}
+            onRunScenario={runSelectedScenario}
+            onUseDefaultPrompt={() => {
+              setComposer(DEFAULT_PROMPT)
+              void proposeFromPrompt(DEFAULT_PROMPT)
+            }}
+          />
         </div>
       </div>
-      <ConfigPilotDrawer open={drawerOpen} agentConfigId={agentConfigId} onClose={() => setDrawerOpen(false)} onScenarioSaved={handleConfigPilotSaved} />
     </div>
   )
 }
 
-function PilotLabRail({ running, activeArea, onOpenDrawer }: { running: boolean; activeArea: PilotArea; onOpenDrawer: () => void }) {
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const isUser = message.role === 'user'
+  const toneClass = message.tone === 'success'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+    : message.tone === 'warning'
+      ? 'border-amber-200 bg-amber-50 text-amber-900'
+      : message.tone === 'danger'
+        ? 'border-red-200 bg-red-50 text-red-900'
+        : isUser
+          ? 'border-[rgba(53,127,124,0.20)] bg-[rgba(53,127,124,0.09)] text-[var(--color-text-primary)]'
+          : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-primary)]'
   return (
-    <aside className="intera-q2-rail p-4">
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-white/75 text-[var(--color-accent-primary)]">
-          <OrganicLoader variant={running ? '17' : '11'} size={24} title={running ? 'Scenario running loader' : 'ConfigPilot rail loader'} />
+    <article className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+      {!isUser && (
+        <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-white text-[var(--color-accent-primary)]">
+          {message.role === 'system' ? <CheckCircle2 size={15} /> : <Bot size={15} />}
         </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[var(--color-text-primary)]">{running ? 'Scenario running' : 'ConfigPilot rail'}</p>
-          <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-            {running ? 'Pilot Lab is collecting runtime trace evidence and receipt checks.' : `Context: ${activeArea.replace('-', ' ')}.`}
-          </p>
-        </div>
+      )}
+      <div className={`max-w-[min(720px,100%)] rounded-[var(--radius-panel)] border px-4 py-3 text-[14px] leading-6 shadow-[0_1px_2px_rgba(21,23,25,0.04)] ${toneClass}`}>
+        {message.streaming ? <TokenStreamPreview text={message.content} /> : message.content}
       </div>
-      <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-xs leading-5 text-[var(--color-text-secondary)]">
-        <TokenStreamPreview text={running ? 'Running Scenario token stream.' : 'Ask for a focused draft, then review the diff.'} />
-      </p>
-      <button type="button" onClick={onOpenDrawer} className="intera-q2-button mt-4 inline-flex h-9 w-full items-center justify-center gap-2 border border-[rgba(53,127,124,0.22)] bg-white/75 px-3 text-sm font-medium text-[var(--color-accent-primary)] hover:bg-white">
-        <Bot size={15} /> Open ConfigPilot
-      </button>
+    </article>
+  )
+}
+
+function QuickPromptRow({ disabled, onSelect }: { disabled: boolean; onSelect: (prompt: string) => void }) {
+  const prompts = [
+    'Create a Procedure for deposit evidence collection and handoff.',
+    'Modify the prompt so the Agent asks one clarification before using tools.',
+    'Add a Hook that escalates when provider evidence conflicts.',
+    'Check release risk from the latest Scenario receipt.',
+  ]
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {prompts.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          disabled={disabled}
+          onClick={() => onSelect(prompt)}
+          className="intera-q2-button min-h-11 border border-[var(--color-border-subtle)] bg-white/80 px-3 py-2 text-left text-[12px] leading-4 text-[var(--color-text-secondary)] hover:border-[rgba(53,127,124,0.28)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+        >
+          {prompt}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ControlPanel({
+  context,
+  scenarios,
+  selectedScenario,
+  setSelectedScenarioName,
+  receipts,
+  selectedReceipt,
+  selectedReceiptRunId,
+  setSelectedReceiptRunId,
+  latestRuntimeReceipt,
+  latestFixtureReceipt,
+  validation,
+  proposal,
+  proposalPhase,
+  diffGroups,
+  accepted,
+  canApply,
+  modelUsed,
+  promptVersion,
+  observedJson,
+  setObservedJson,
+  running,
+  onReviewDiff,
+  onReject,
+  onAccept,
+  onApply,
+  onRunScenario,
+  onUseDefaultPrompt,
+}: {
+  context: ConfigPilotContextResponse | null
+  scenarios: SavedScenario[]
+  selectedScenario: SavedScenario | null
+  setSelectedScenarioName: (name: string) => void
+  receipts: ScenarioReceipt[]
+  selectedReceipt: ScenarioReceipt | null
+  selectedReceiptRunId: string | null
+  setSelectedReceiptRunId: (runId: string) => void
+  latestRuntimeReceipt: ScenarioReceipt | null
+  latestFixtureReceipt: ScenarioReceipt | null
+  validation: ScenarioValidationSummary | null
+  proposal: ConfigPilotProposal | null
+  proposalPhase: ProposalPhase
+  diffGroups: ConfigPilotProposal['diffGroups']
+  accepted: boolean
+  canApply: boolean
+  modelUsed: string | null
+  promptVersion: string | null
+  observedJson: string
+  setObservedJson: (value: string) => void
+  running: boolean
+  onReviewDiff: () => void
+  onReject: () => void
+  onAccept: (checked: boolean) => void
+  onApply: () => void
+  onRunScenario: (executionMode: 'fixture' | 'agentRuntime') => void
+  onUseDefaultPrompt: () => void
+}) {
+  return (
+    <aside className="min-w-0 space-y-4 xl:max-h-[calc(100vh-190px)] xl:overflow-y-auto xl:pr-1">
+      <section className="intera-q2-rail p-4">
+        <PanelHeader icon={ClipboardList} title="Current context" eyebrow="Draft lens" />
+        {context ? (
+          <div className="mt-4 grid gap-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+            <ContextRow label="Selected" value={`${context.selected.name} v${context.selected.version}`} />
+            <ContextRow label="Draft" value={context.draft ? `v${context.draft.version}` : 'none'} />
+            <ContextRow label="Active" value={context.active ? `v${context.active.version}` : 'none'} />
+            <ContextRow label="Model" value={modelUsed ?? context.selected.model} />
+            <ContextRow label="Prompt" value={promptVersion ?? 'context loaded'} />
+            <ContextRow label="Apply permission" value={context.permissions.canApply ? 'allowed after accept' : 'read-only'} />
+          </div>
+        ) : (
+          <p className="mt-4 text-[13px] text-[var(--color-text-tertiary)]">Loading ConfigPilot context.</p>
+        )}
+      </section>
+
+      <section className="intera-q2-panel overflow-hidden">
+        <div className="border-b border-[var(--color-border-subtle)] px-4 py-3">
+          <PanelHeader icon={FileDiff} title="Proposed changes" eyebrow="Accept required" />
+        </div>
+        <div className="grid gap-4 p-4">
+          {proposal ? (
+            <>
+              <div>
+                <p className="text-[14px] font-semibold text-[var(--color-text-primary)]">{proposal.title}</p>
+                <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">{proposal.summary}</p>
+                {proposal.rationale ? <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-tertiary)]">{proposal.rationale}</p> : null}
+              </div>
+              <ConfigPilotPatchList patches={proposal.patches} />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={onReviewDiff} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-surface-muted)]">
+                  <FileDiff size={15} /> Review diff
+                </button>
+                <button type="button" onClick={onReject} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-red-200 bg-white px-3 text-[13px] font-medium text-red-700 hover:bg-red-50">
+                  <RotateCcw size={15} /> Reject
+                </button>
+              </div>
+            </>
+          ) : proposalPhase === 'proposing' ? (
+            <div className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.06)] px-3 py-3 text-[13px] text-[var(--color-text-secondary)]">
+              <TokenStreamPreview text="Generating typed draft proposal." />
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              <p className="text-[13px] leading-5 text-[var(--color-text-tertiary)]">No proposal yet. Start from chat or use the backend ConfigPilot default prompt.</p>
+              <button type="button" onClick={onUseDefaultPrompt} className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] px-3 text-[13px] font-medium text-[var(--color-accent-primary)]">
+                <Sparkles size={15} /> Generate proposal
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)]">
+        {proposalPhase === 'diff' || proposalPhase === 'accepted' || proposalPhase === 'applying' || proposalPhase === 'applied' ? (
+          <ConfigDiffViewer title="Diff viewer" subtitle="Review exact typed patch changes before accepting. Pilot can save draft only." groups={diffGroups} emptyLabel="No diff rows were returned." />
+        ) : (
+          <div className="p-4">
+            <PanelHeader icon={FileDiff} title="Diff viewer" eyebrow="Waiting" />
+            <div className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-8 text-center text-[13px] text-[var(--color-text-tertiary)]">Open proposal review to inspect the diff.</div>
+          </div>
+        )}
+        <div className="grid gap-3 border-t border-[var(--color-border-subtle)] p-4">
+          <label className={`flex items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-[13px] leading-5 ${proposalPhase === 'diff' || proposalPhase === 'accepted' || proposalPhase === 'applying' ? 'border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] text-[var(--color-text-secondary)]' : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-tertiary)]'}`}>
+            <input type="checkbox" checked={accepted} disabled={proposalPhase !== 'diff' && proposalPhase !== 'accepted'} onChange={(event) => onAccept(event.target.checked)} className="mt-1" />
+            <span>I reviewed the diff and explicitly accept these draft configuration changes.</span>
+          </label>
+          <button type="button" onClick={onApply} disabled={!canApply || proposalPhase === 'applying'} className="intera-q2-button inline-flex h-10 items-center justify-center gap-2 bg-[var(--color-accent-primary)] px-4 text-[13px] font-semibold text-white disabled:opacity-50" data-testid="config-pilot-apply-draft">
+            {proposalPhase === 'applying' ? <Loader2 size={15} className="animate-spin" /> : <LockKeyhole size={15} />} Apply accepted draft
+          </button>
+          <p className="text-[12px] leading-5 text-[var(--color-text-tertiary)]">Apply calls only `/api/admin/config-pilot/apply`, writes draft config, and marks validation stale. Publish, activate, deploy, and rollback are unavailable here.</p>
+        </div>
+      </section>
+
+      <section className="intera-q2-panel overflow-hidden">
+        <div className="border-b border-[var(--color-border-subtle)] px-4 py-3">
+          <PanelHeader icon={Play} title="Scenario controls" eyebrow="Receipt truth" />
+        </div>
+        <div className="grid gap-3 p-4">
+          <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+            Scenario
+            <select value={selectedScenario?.name ?? ''} onChange={(event) => setSelectedScenarioName(event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 text-[13px] text-[var(--color-text-primary)]">
+              {scenarios.length === 0 ? <option value="">No scenarios</option> : null}
+              {scenarios.map((scenario) => <option key={scenario.id} value={scenario.name}>{scenario.displayName || scenario.name}</option>)}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onRunScenario('agentRuntime')} disabled={!selectedScenario || running} className="intera-q2-button inline-flex h-9 flex-1 items-center justify-center gap-2 bg-[var(--color-accent-primary)] px-3 text-[13px] font-medium text-white disabled:opacity-50">
+              {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} Run runtime
+            </button>
+            <button type="button" onClick={() => onRunScenario('fixture')} disabled={!selectedScenario || running} className="intera-q2-button inline-flex h-9 flex-1 items-center justify-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium text-[var(--color-text-primary)] disabled:opacity-50">
+              Fixture check
+            </button>
+          </div>
+          <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+            Fixture observed evidence JSON
+            <textarea value={observedJson} onChange={(event) => setObservedJson(event.target.value)} rows={5} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 py-2 font-mono text-[11px] leading-4 text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+          </label>
+          <ValidationTruthBlock validation={validation} latestRuntimeReceipt={latestRuntimeReceipt} latestFixtureReceipt={latestFixtureReceipt} />
+        </div>
+      </section>
+
+      <ScenarioReceiptPanel compact receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceiptRunId} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
     </aside>
   )
 }
 
-function TestCaseEditorPanel({
-  editor,
-  setEditor,
-  selectedScenario,
-  saving,
-  running,
-  onSave,
-  onDelete,
-  onRun,
-}: {
-  editor: ScenarioEditorState
-  setEditor: (updater: (prev: ScenarioEditorState) => ScenarioEditorState) => void
-  selectedScenario: SavedScenario | null
-  saving: boolean
-  running: boolean
-  onSave: () => void
-  onDelete: () => void
-  onRun: () => void
-}) {
+function PanelHeader({ icon: Icon, title, eyebrow }: { icon: typeof ClipboardList; title: string; eyebrow: string }) {
   return (
-    <section className="intera-q2-panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4">
-        <div>
-          <p className="text-xs font-medium text-[var(--color-text-tertiary)]">{selectedScenario ? 'Saved Test Scenario' : 'New Test Scenario'}</p>
-          <h2 className="mt-1 text-lg font-semibold">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Draft Scenario'}</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {selectedScenario && (
-            <button type="button" onClick={onRun} disabled={running} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-sm font-medium hover:bg-[var(--color-bg-surface-muted)] disabled:opacity-60">
-              {running ? <OrganicLoader variant="06" size={15} /> : <Play size={15} />} {running ? 'Running' : 'Run'}
-            </button>
-          )}
-          {selectedScenario && (
-            <button type="button" onClick={onDelete} className="intera-q2-button inline-flex h-9 items-center gap-2 border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50">
-              <Trash2 size={15} /> Delete
-            </button>
-          )}
-          <button type="button" onClick={onSave} disabled={saving || !editor.name.trim()} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} {saving ? 'Saving' : 'Save draft'}
-          </button>
-        </div>
+    <div className="flex items-center gap-2">
+      <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] bg-[rgba(53,127,124,0.09)] text-[var(--color-accent-primary)]">
+        <Icon size={14} />
+      </span>
+      <div>
+        <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">{eyebrow}</p>
+        <h3 className="text-[14px] font-semibold text-[var(--color-text-primary)]">{title}</h3>
       </div>
-      <div className="grid gap-4 p-5">
-        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))]">
-          <Field label="Name" value={editor.name} onChange={(value) => setEditor((prev) => ({ ...prev, name: value }))} placeholder="deposit_missing_evidence" />
-          <Field label="Display name" value={editor.displayName} onChange={(value) => setEditor((prev) => ({ ...prev, displayName: value }))} placeholder="Deposit missing evidence" />
-        </div>
-        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr))]">
-          <Field label="Description" value={editor.description} onChange={(value) => setEditor((prev) => ({ ...prev, description: value }))} placeholder="Covers provider evidence and handoff" />
-          <Field label="Locale" value={editor.locale} onChange={(value) => setEditor((prev) => ({ ...prev, locale: value }))} placeholder="en-US" />
-          <Field label="Tags" value={editor.tags} onChange={(value) => setEditor((prev) => ({ ...prev, tags: value }))} placeholder="gaming, deposit" />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-          <input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor((prev) => ({ ...prev, enabled: event.target.checked }))} />
-          Enabled
-        </label>
-        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr))]">
-          <TextArea label="Turns JSON" value={editor.turnsJson} onChange={(value) => setEditor((prev) => ({ ...prev, turnsJson: value }))} rows={13} />
-          <TextArea label="Expected outcome JSON" value={editor.expectedJson} onChange={(value) => setEditor((prev) => ({ ...prev, expectedJson: value }))} rows={13} />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function FreeTestPanel({
-  selectedScenario,
-  observedJson,
-  setObservedJson,
-  running,
-  onRun,
-}: {
-  selectedScenario: SavedScenario | null
-  observedJson: string
-  setObservedJson: (value: string) => void
-  running: boolean
-  onRun: () => void
-}) {
-  return (
-    <section className="intera-q2-panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4">
-        <div>
-          <p className="text-xs font-medium text-[var(--color-text-tertiary)]">Free Test</p>
-          <h2 className="mt-1 text-lg font-semibold">Run with observed evidence</h2>
-        </div>
-        <button type="button" onClick={onRun} disabled={!selectedScenario || running} className="intera-q2-button inline-flex h-9 items-center gap-2 bg-[var(--color-accent-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
-          {running ? <OrganicLoader variant="05" size={15} /> : <Play size={15} />} Run Free Test
-        </button>
-      </div>
-      <div className="grid gap-4 p-5">
-        {running && (
-          <div className="rounded-md border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.06)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
-            <TokenStreamPreview text="Running observed evidence through Scenario validation." />
-          </div>
-        )}
-        <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-4 py-3">
-          <p className="text-sm font-medium text-[var(--color-text-primary)]">{selectedScenario ? (selectedScenario.displayName || selectedScenario.name) : 'Select a Test Scenario first'}</p>
-          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Observed evidence runs fixture validation only. Use the saved Test Scenario run button for runtime-backed validation.</p>
-        </div>
-        <TextArea label="Observed evidence JSON" value={observedJson} onChange={setObservedJson} rows={16} />
-      </div>
-    </section>
-  )
-}
-
-function PilotAreaButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Bot; label: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className={`mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium transition last:mb-0 ${active ? 'bg-[rgba(53,127,124,0.10)] text-[var(--color-accent-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface-muted)] hover:text-[var(--color-text-primary)]'}`}>
-      <Icon size={15} />
-      {label}
-    </button>
-  )
-}
-
-function MetricTile({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'success' | 'danger' }) {
-  const toneClass = tone === 'success' ? 'text-emerald-700' : tone === 'danger' ? 'text-red-700' : 'text-[var(--color-text-primary)]'
-  return (
-    <div className="min-w-0 px-5 py-4">
-      <p className="text-[12px] text-[var(--color-text-tertiary)]">{label}</p>
-      <p className={`mt-2 text-[24px] font-semibold leading-none ${toneClass}`}>{value}</p>
     </div>
   )
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+function ContextRow({ label, value }: { label: string; value: string }) {
   return (
-    <label className="grid min-w-0 gap-1 text-sm">
-      <span className="font-medium text-[var(--color-text-secondary)]">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-10 min-w-0 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 text-sm outline-none focus:border-[var(--color-accent-primary)]" />
-    </label>
+    <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] py-1.5 last:border-b-0">
+      <span className="text-[var(--color-text-tertiary)]">{label}</span>
+      <span className="min-w-0 truncate text-right font-medium text-[var(--color-text-primary)]">{value}</span>
+    </div>
   )
 }
 
-function TextArea({ label, value, onChange, rows }: { label: string; value: string; onChange: (value: string) => void; rows: number }) {
+function ConfigPilotPatchList({ patches }: { patches: ConfigPilotPatch[] }) {
   return (
-    <label className="grid min-w-0 gap-1 text-sm">
-      <span className="font-medium text-[var(--color-text-secondary)]">{label}</span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={rows} className="w-full min-w-0 rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-[var(--color-accent-primary)]" />
-    </label>
+    <div className="grid gap-2">
+      {patches.map((patch, index) => (
+        <div key={`${patch.surface}-${patch.operation}-${index}`} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">
+          <span className="font-semibold text-[var(--color-text-primary)]">{patch.surface}</span>
+          <span> / {patch.operation}</span>
+          <span className="ml-2 text-[var(--color-text-tertiary)]">{patchLabel(patch)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ValidationTruthBlock({
+  validation,
+  latestRuntimeReceipt,
+  latestFixtureReceipt,
+}: {
+  validation: ScenarioValidationSummary | null
+  latestRuntimeReceipt: ScenarioReceipt | null
+  latestFixtureReceipt: ScenarioReceipt | null
+}) {
+  const runtimeValidated = Boolean(validation?.runtimeValidated)
+  return (
+    <div className="grid gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+      <div className="flex items-center justify-between gap-3">
+        <span>Runtime-backed validation status</span>
+        <span className={`rounded-[var(--radius-control)] border px-2 py-0.5 font-semibold ${runtimeValidated ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+          {runtimeValidated ? 'Runtime validated' : 'Not runtime validated'}
+        </span>
+      </div>
+      <p>{runtimeValidated ? `Runtime receipt: ${latestRuntimeReceipt?.runId ?? validation?.lastReceiptId ?? 'recorded'}` : 'Fixture-only receipts are useful debugging evidence, but they are not runtime validation.'}</p>
+      {latestFixtureReceipt && !runtimeValidated ? <p>Latest fixture-only receipt: {latestFixtureReceipt.status} ({latestFixtureReceipt.runId})</p> : null}
+    </div>
+  )
+}
+
+function ContextBadge({ context }: { context: ConfigPilotContextResponse | null }) {
+  return (
+    <span className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium text-[var(--color-text-secondary)]">
+      <Bot size={15} className="text-[var(--color-accent-primary)]" />
+      {context ? `${context.selected.name} v${context.selected.version}` : 'Reading draft'}
+    </span>
   )
 }
 
@@ -507,8 +725,33 @@ function ValidationBadge({ validation }: { validation: ScenarioValidationSummary
   const color = runtimeValidated ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : state === 'Validation failed' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'
   const Icon = runtimeValidated ? CheckCircle2 : state === 'Validation failed' ? XCircle : AlertTriangle
   return (
-    <span className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium ${color}`}>
-      <Icon size={15} /> {runtimeValidated ? 'Runtime validated' : state === 'Validated' ? 'Fixture only' : state}
+    <span className={`inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] border px-3 text-[13px] font-medium ${color}`}>
+      <Icon size={15} /> {runtimeValidated ? 'Runtime validated' : state === 'Validated' ? 'Fixture-only validation' : state}
     </span>
   )
+}
+
+function proposalPhaseLabel(phase: ProposalPhase) {
+  if (phase === 'proposing') return 'Generating proposal'
+  if (phase === 'proposal') return 'Proposal ready'
+  if (phase === 'diff') return 'Diff review'
+  if (phase === 'accepted') return 'Accepted'
+  if (phase === 'applying') return 'Applying draft'
+  if (phase === 'applied') return 'Draft saved'
+  return 'Ready'
+}
+
+function patchLabel(patch: ConfigPilotPatch): string {
+  if (patch.surface === 'brain') return 'Agent Brain'
+  if (patch.surface === 'hookBindings') return `${patch.value.hookName} -> ${patch.value.scopeType}`
+  if ('target' in patch && patch.target) {
+    if ('name' in patch.target) return String(patch.target.name)
+    if ('type' in patch.target) return String(patch.target.type)
+    if ('channel' in patch.target) return String(patch.target.channel)
+  }
+  if ('value' in patch && patch.value && typeof patch.value === 'object') {
+    const value = patch.value as Record<string, unknown>
+    return String(value.name ?? value.type ?? 'new draft object')
+  }
+  return 'draft object'
 }

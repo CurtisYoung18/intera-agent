@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import Link from 'next/link'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -280,10 +279,12 @@ export default function ReleaseCommandCenter() {
   const [releaseNote, setReleaseNote] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [rollbackOpen, setRollbackOpen] = useState(false)
-  const [pilotOpen, setPilotOpen] = useState(false)
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
+  const openPilotLab = useCallback(() => {
+    window.location.href = '/build/pilot-lab'
+  }, [])
 
   useEffect(() => {
     if (agentLoading) return
@@ -537,7 +538,7 @@ export default function ReleaseCommandCenter() {
             validationState={validationState}
             validation={validation}
             latestReceipt={latestReceipt}
-            onOpenPilot={() => setPilotOpen(true)}
+            onOpenPilot={openPilotLab}
           />
 
           <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
@@ -560,7 +561,7 @@ export default function ReleaseCommandCenter() {
           />
         </div>
 
-        <ReleaseConfigPilotRail validation={validation} validationState={validationState} latestReceipt={latestReceipt} onOpen={() => setPilotOpen(true)} />
+        <ReleaseConfigPilotRail validation={validation} validationState={validationState} latestReceipt={latestReceipt} onOpen={openPilotLab} />
       </div>
 
       {Object.keys(data.templateErrors).length > 0 ? (
@@ -616,15 +617,6 @@ export default function ReleaseCommandCenter() {
         </LightDrawer>
       ) : null}
 
-      {pilotOpen ? (
-        <LightDrawer title="ConfigPilot drawer" eyebrow="Placeholder entry" onClose={() => setPilotOpen(false)}>
-          <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">ConfigPilot proposes package-safe changes, reviewable diffs, and typed draft saves. Publishing stays in Release after Scenario validation.</p>
-          <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_7%,white)] px-4 py-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
-            <TokenStreamPreview text="Compare draft against live and propose the smallest fix for the failing Scenario receipt." />
-          </div>
-          <Link href="/build/pilot-lab" className="intera-q2-button mt-4 inline-flex border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] font-medium text-[var(--color-text-primary)]">Open Pilot Lab</Link>
-        </LightDrawer>
-      ) : null}
     </main>
   )
 }
