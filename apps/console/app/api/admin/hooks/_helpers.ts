@@ -176,6 +176,44 @@ export function normalizeHandler(kind: HookHandlerKind, input: unknown): HookHan
   return parsed.data
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export async function validateHandlerToolReferences(
+  repo: RepoForOrg,
+  agentConfigId: string,
+  handler: HookHandler,
+): Promise<void> {
+  if (handler.kind !== 'declarative') return
+
+  const check = record(handler.check)
+  const match = record(check.match)
+  const referenced = new Set<string>([
+    ...stringArray(match.tools),
+    ...stringArray(check.denyTools),
+    ...stringArray(check.requireTools),
+    ...stringArray(check.requireToolsAny),
+  ])
+  if (referenced.size === 0) return
+
+  const tools = await repo.raw.tool.findMany({
+    where: { agentConfigId },
+    select: { name: true },
+  }) as Array<{ name: string }>
+  const validNames = new Set(tools.map((tool) => tool.name))
+  const missing = [...referenced].filter((name) => !validNames.has(name))
+  if (missing.length > 0) {
+    throw new ValidationError('Hook rule references unknown Tool names', {
+      tools: missing.join(', '),
+    })
+  }
+}
+
 export function serializeHandler(handler: HookHandler): string {
   return JSON.stringify(handler)
 }
