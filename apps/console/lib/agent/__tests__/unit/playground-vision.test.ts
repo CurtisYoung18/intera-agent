@@ -39,6 +39,36 @@ vi.mock('@intera/shared/prisma', () => ({
     humanTask: {
       create: vi.fn(async () => ({})),
     },
+    tool: {
+      findMany: vi.fn(async () => ([
+        {
+          name: 'query_order_status',
+          description: 'Lookup an order',
+          inputSchema: '{}',
+          outputSchema: null,
+          mode: 'http',
+          endpoint: 'https://example.com/query-order',
+          httpMethod: 'POST',
+          headers: null,
+          timeoutMs: 1000,
+          mockFixture: null,
+          displayVerb: null,
+          renderHints: null,
+          toolCategory: 'operational',
+          isConcurrencySafe: true,
+          enabled: true,
+        },
+      ])),
+    },
+    knowledgeSource: {
+      findMany: vi.fn(async () => []),
+    },
+    agentConfig: {
+      findUnique: vi.fn(async () => ({ gptbotsApiKey: null })),
+    },
+    caseType: {
+      findMany: vi.fn(async () => []),
+    },
     $transaction: h.mockTransaction,
   },
 }))
@@ -111,6 +141,29 @@ describe('runPlaygroundTurn vision handling', () => {
       type: 'error',
       data: { code: 'unsupported_media', message: '当前模型不支持图片，请切换 vision-capable model。' },
     }))
+    const traceEvent = events.find((event) => event.type === 'trace')
+    expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.imageSupport.status).toBe('unsupported')
+    expect(h.mockAgentRun).not.toHaveBeenCalled()
+  })
+
+  it('treats missing model metadata as unknown image support instead of claiming unsupported', async () => {
+    h.config = { ...h.config, model: 'custom/experimental-model' }
+
+    const events = await collect({
+      orgId: 'org-1',
+      message: 'inspect this',
+      playgroundConfig: { debug: false },
+      configId: 'agent-1',
+      userId: 'user-1',
+      contentBlocks: [imageBlock()],
+    })
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      data: { code: 'unsupported_media', message: '当前模型的图片能力未确认或未接入，请切换到明确支持 vision 的模型。' },
+    }))
+    const traceEvent = events.find((event) => event.type === 'trace')
+    expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.imageSupport.status).toBe('unknown')
     expect(h.mockAgentRun).not.toHaveBeenCalled()
   })
 
@@ -129,6 +182,9 @@ describe('runPlaygroundTurn vision handling', () => {
     })
 
     expect(h.mockAgentRun).toHaveBeenCalledWith('inspect this', expect.any(Function), contentBlocks)
-    expect(events.some((event) => event.type === 'trace')).toBe(true)
+    const traceEvent = events.find((event) => event.type === 'trace')
+    expect(traceEvent).toBeTruthy()
+    expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.imageSupport.status).toBe('supported')
+    expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('dry_run_mixed')
   })
 })

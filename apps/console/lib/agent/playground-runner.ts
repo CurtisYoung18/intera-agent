@@ -1,18 +1,22 @@
-// Playground turn runner — uses the REAL AgentLoop pipeline with injected
-// Prisma persistence (messages written through port) + dry-run tool execution.
+// Playground turn runner — uses the real AgentLoop runtime with DB-backed config,
+// but keeps Playground-safe dry-run interception for side-effecting tools.
 
 import { prisma } from '@intera/shared/prisma'
 import { AgentLoop } from './loop'
 import { type TraceRecord, createPrismaPersistence } from './persistence-port'
-import { aggregateTraces, type PlaygroundTraceStep } from './trace-aggregator'
-import type { SSEEvent, CaseSchemaConfig, ContentBlock } from '@intera/shared/types'
-import { DEFAULT_MODEL } from '@intera/shared/defaults'
-import { resolvePrompt, buildPromptContext } from './prompt-resolver'
+import {
+  aggregateTraces,
+  type PlaygroundCapabilityTruth,
+  type PlaygroundToolExecutionTruth,
+  type PlaygroundTraceStep,
+} from './trace-aggregator'
+import type { ContentBlock, SSEEvent, ToolDefinition } from '@intera/shared/types'
 import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
-import { generateCaseId } from '@/lib/utils'
 import { buildModelList } from './build-model-list'
+import { resolveEffectiveModel } from './resolve-model'
 import { normalizeSSEEvent } from './stream-handler'
+import { ToolRouter } from './tools'
 
 /** Lightweight overrides for playground runs. Real AgentConfig is loaded from DB. */
 export interface PlaygroundConfig {
@@ -23,6 +27,226 @@ export interface PlaygroundConfig {
 }
 
 const MAX_PLAYGROUND_SESSIONS = 5
+
+function parsePayload(raw?: string | null): Record<string, unknown> | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function toolNameFromTrace(record: TraceRecord, payload?: Record<string, unknown> | null): string | undefined {
+  const toolName = payload?.toolName
+  if (typeof toolName === 'string' && toolName.trim()) return toolName
+
+  const title = record.title ?? ''
+  const match = title.match(/(?:Tool(?: called| result)?|ProcedureRun reconcile gate blocked Tool):\s*(.+)$/)
+  return match?.[1]?.trim() || undefined
+}
+
+function classifyToolExecution(
+  toolName: string,
+  definition: ToolDefinition | undefined,
+  dryRun: boolean,
+): PlaygroundToolExecutionTruth {
+  if (!definition) {
+    return {
+      effectiveMode: 'unknown',
+      label: 'Unknown wiring',
+      dryRun,
+      note: `No active tool definition was found for "${toolName}".`,
+    }
+  }
+
+  const toolCategory = definition.toolCategory
+  const definitionMode = definition.mode
+  const isKnowledgeTool = toolName.startsWith('kb_search_')
+
+  if (dryRun && toolCategory !== 'system_info') {
+    return {
+      effectiveMode: 'mocked_dry_run',
+      label: 'Mocked in Playground dry-run',
+      dryRun,
+      definitionMode,
+      toolCategory,
+      note: 'Operational tools are intercepted in Playground and do not perform live side effects.',
+    }
+  }
+
+  if (definitionMode === 'static_fixture') {
+    return {
+      effectiveMode: 'static_fixture',
+      label: isKnowledgeTool ? 'Fixture-backed lookup' : 'Static fixture',
+      dryRun,
+      definitionMode,
+      toolCategory,
+      note: 'This tool returns fixture data from its stored definition.',
+    }
+  }
+
+  if (definitionMode === 'http') {
+    return {
+      effectiveMode: 'runtime_backed',
+      label: isKnowledgeTool ? 'Runtime-backed knowledge tool' : 'Runtime-backed tool',
+      dryRun,
+      definitionMode,
+      toolCategory,
+      note: 'This tool executes through its configured runtime endpoint.',
+    }
+  }
+
+  if (definitionMode === 'system_managed' || definitionMode === 'channel' || definitionMode === 'workflow' || definitionMode === 'code_transform') {
+    return {
+      effectiveMode: 'runtime_managed',
+      label: 'Runtime-managed tool',
+      dryRun,
+      definitionMode,
+      toolCategory,
+      note: 'This capability is handled directly by the runtime instead of an HTTP mock.',
+    }
+  }
+
+  return {
+    effectiveMode: 'unknown',
+    label: 'Unknown execution mode',
+    dryRun,
+    definitionMode,
+    toolCategory,
+    note: 'The active runtime could not confirm how this tool executes.',
+  }
+}
+
+function buildCapabilityTruth(
+  resolvedModel: string,
+  toolDefinitions: ToolDefinition[],
+  dryRun: boolean,
+): PlaygroundCapabilityTruth {
+  const models = buildModelList()
+  const modelMeta = models.find((model) => model.name === resolvedModel || model.id === resolvedModel)
+
+  const toolSummary = {
+    mockedDryRun: 0,
+    runtimeBacked: 0,
+    runtimeManaged: 0,
+    staticFixture: 0,
+    unknown: 0,
+  }
+
+  for (const definition of toolDefinitions) {
+    const truth = classifyToolExecution(definition.name, definition, dryRun)
+    if (truth.effectiveMode === 'mocked_dry_run') toolSummary.mockedDryRun++
+    else if (truth.effectiveMode === 'runtime_backed') toolSummary.runtimeBacked++
+    else if (truth.effectiveMode === 'runtime_managed') toolSummary.runtimeManaged++
+    else if (truth.effectiveMode === 'static_fixture') toolSummary.staticFixture++
+    else toolSummary.unknown++
+  }
+
+  const warnings: string[] = []
+  if (!modelMeta) {
+    warnings.push('Image support is unconfirmed because this model is missing from the active runtime model registry.')
+  }
+  if (toolSummary.mockedDryRun > 0) {
+    warnings.push('Playground is in dry-run mode: operational tools are mocked and cannot perform live side effects.')
+  }
+  if (toolSummary.staticFixture > 0) {
+    warnings.push('Some enabled system-info tools still return fixture data rather than runtime-backed results.')
+  }
+  if (toolSummary.unknown > 0) {
+    warnings.push('Some enabled tools do not have confirmed execution wiring in the active runtime.')
+  }
+
+  const executionSurface = (() => {
+    if (toolSummary.mockedDryRun > 0 && (toolSummary.runtimeBacked > 0 || toolSummary.runtimeManaged > 0 || toolSummary.staticFixture > 0)) {
+      return {
+        mode: 'dry_run_mixed' as const,
+        label: 'Dry-run mixed surface',
+        note: 'Prompting, hooks, and runtime-managed tools are real, while operational tools are mocked.',
+      }
+    }
+    if (toolSummary.mockedDryRun > 0) {
+      return {
+        mode: 'dry_run_mock_only' as const,
+        label: 'Dry-run mocked surface',
+        note: 'The active tool surface is intercepted and no live side effects are executed.',
+      }
+    }
+    if (toolSummary.runtimeBacked > 0 || toolSummary.runtimeManaged > 0 || toolSummary.staticFixture > 0) {
+      return {
+        mode: 'runtime_only' as const,
+        label: 'Runtime-backed surface',
+        note: 'No operational dry-run interception was detected in the active tool surface.',
+      }
+    }
+    return {
+      mode: 'unknown' as const,
+      label: 'Unknown execution surface',
+      note: 'The active runtime could not confirm whether this surface is mocked or live-backed.',
+    }
+  })()
+
+  return {
+    model: resolvedModel,
+    imageSupport: modelMeta
+      ? {
+          status: modelMeta.supportsVision ? 'supported' : 'unsupported',
+          label: modelMeta.supportsVision ? 'Supported' : 'Unsupported',
+          source: 'configured_model_registry',
+          note: `Resolved from configured model metadata for ${modelMeta.name}.`,
+        }
+      : {
+          status: 'unknown',
+          label: 'Unknown',
+          source: 'missing_model_metadata',
+          note: 'This model is not present in the active /api/admin/models registry.',
+        },
+    executionSurface,
+    toolSummary,
+    warnings,
+  }
+}
+
+function enrichTraceRecord(
+  record: TraceRecord,
+  toolDefinitions: Map<string, ToolDefinition>,
+  capabilityTruth: PlaygroundCapabilityTruth,
+  dryRun: boolean,
+): TraceRecord {
+  const actionType = record.actionType
+  const parsed = parsePayload(record.payload)
+
+  if (actionType === 'llm_request_start') {
+    const nextPayload = { ...(parsed ?? {}), playgroundCapabilityTruth: capabilityTruth }
+    return { ...record, payload: JSON.stringify(nextPayload) }
+  }
+
+  if (actionType !== 'tool_call' && actionType !== 'tool_result') {
+    return record
+  }
+
+  const toolName = toolNameFromTrace(record, parsed)
+  if (!toolName) return record
+
+  const executionTruth = classifyToolExecution(toolName, toolDefinitions.get(toolName), dryRun)
+  const nextPayload = { ...(parsed ?? {}), toolName, executionTruth }
+  return { ...record, payload: JSON.stringify(nextPayload) }
+}
+
+function deriveApplicableStages(toolDefinitions: ToolDefinition[]): string[] {
+  const applicable = new Set<string>(['Hooks', 'Model generation'])
+  if (toolDefinitions.some((definition) => definition.name.startsWith('kb_search_'))) {
+    applicable.add('Knowledge retrieval')
+  }
+  if (toolDefinitions.some((definition) => !definition.name.startsWith('kb_search_'))) {
+    applicable.add('Tools')
+  }
+  return ['Hooks', 'Knowledge retrieval', 'Tools', 'Procedure', 'Model generation']
+    .filter((stage) => applicable.has(stage))
+}
 
 export interface PlaygroundResult {
   turnId: string
@@ -44,9 +268,56 @@ export async function* runPlaygroundTurn(input: {
   userId?: string
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId } = input
+  const agentConfigId = input.configId || orgId
+  const dryRun = true
   const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
+
+  // ── Load real config from DB ──
+  const agentConfig = await loadAgentConfig(input.configId)
+  if (pc.emitThinking !== undefined) { (agentConfig as any).extendedThinking = pc.emitThinking }
+  const resolvedModel = resolveEffectiveModel(agentConfig)
+
+  const toolRouter = await ToolRouter.create(agentConfigId, dryRun)
+  const toolDefinitions = toolRouter.getToolDefinitions()
+  const toolDefinitionMap = new Map(toolDefinitions.map((definition) => [definition.name, definition]))
+  const capabilityTruth = buildCapabilityTruth(resolvedModel, toolDefinitions, dryRun)
+  const applicableStages = deriveApplicableStages(toolDefinitions)
+
+  const hasImageBlock = input.contentBlocks?.some(
+    (block) => block.type === 'image' || (block as { source?: { type?: string } }).source?.type === 'base64',
+  )
+  if (hasImageBlock && capabilityTruth.imageSupport.status !== 'supported') {
+    const totalMs = Math.max(1, Date.now() - startTime)
+    const trace = aggregateTraces([], startTime, pc.debug ?? false, ['Model generation'], capabilityTruth)
+    yield {
+      type: 'trace',
+      data: {
+        turnId,
+        caseType: '',
+        reply: '',
+        blocked: true,
+        trace,
+        resolvedModel,
+        applicableStages: ['Model generation'],
+        totalMs,
+      },
+      timestamp: new Date().toISOString(),
+    }
+    yield {
+      type: 'error',
+      data: {
+        code: 'unsupported_media',
+        message: capabilityTruth.imageSupport.status === 'unknown'
+          ? '当前模型的图片能力未确认或未接入，请切换到明确支持 vision 的模型。'
+          : '当前模型不支持图片，请切换 vision-capable model。',
+      },
+      timestamp: new Date().toISOString(),
+    }
+    yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
+    return
+  }
 
   // ── Persistence (Prisma, messages written through port) ──
   const traces: TraceRecord[] = []
@@ -54,18 +325,15 @@ export async function* runPlaygroundTurn(input: {
   const persistence: typeof basePersistence = {
     ...basePersistence,
     async saveTrace(record: TraceRecord) {
-      traces.push({ ...record, createdAt: record.createdAt ?? new Date().toISOString() })
-      await basePersistence.saveTrace(record)
+      const enriched = enrichTraceRecord(record, toolDefinitionMap, capabilityTruth, dryRun)
+      traces.push({ ...enriched, createdAt: enriched.createdAt ?? new Date().toISOString() })
+      await basePersistence.saveTrace(enriched)
     },
   }
 
-  // ── Load real config from DB ──
-  const agentConfig = await loadAgentConfig(input.configId)
-  if (pc.emitThinking !== undefined) { (agentConfig as any).extendedThinking = pc.emitThinking }
-
   // ── Unified prompt assembly (matches production messages/route.ts) ──
   const assembled = await buildModePrompt({
-    agentConfigId: input.configId ?? orgId,
+    agentConfigId,
     coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
     hasActiveCase: true, // playground always simulates a case
     caseSchema: null,
@@ -127,7 +395,7 @@ export async function* runPlaygroundTurn(input: {
 
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
-    configId: input.configId || orgId,
+    configId: agentConfigId,
     caseId,
     orgId,
     userId,
@@ -137,7 +405,7 @@ export async function* runPlaygroundTurn(input: {
     chatId: effectiveChatId,
     bootstrapNewCase,
     persistence,     // ← Prisma port
-    dryRun: true,    // ← operational tools mocked, system_info allowed
+    dryRun,          // ← operational tools mocked, system_info allowed
     emitThinking: pc.emitThinking ?? false,
   })
 
@@ -190,29 +458,6 @@ export async function* runPlaygroundTurn(input: {
     wake()
   }
 
-  // ── Resolve effective model (used by guard + result) ──
-  const resolvedModel = agentConfig.model || DEFAULT_MODEL
-
-  // ── Non-vision guard (defense-in-depth) ──
-  // UI should gate this first (Task 0h + Task 1), but if bypassed, fail clearly.
-  const hasImageBlock = input.contentBlocks?.some(
-    (b) => b.type === 'image' || (b as any).source?.type === 'base64',
-  )
-  if (hasImageBlock) {
-    const models = buildModelList()
-    const model = models.find(m => m.name === resolvedModel || m.id === resolvedModel)
-    const supportsVision = model?.supportsVision ?? false // unknown model → block (fail-safe)
-    if (!supportsVision) {
-      yield {
-        type: 'error',
-        data: { code: 'unsupported_media', message: '当前模型不支持图片，请切换 vision-capable model。' },
-        timestamp: new Date().toISOString(),
-      }
-      yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
-      return
-    }
-  }
-
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
@@ -240,20 +485,9 @@ export async function* runPlaygroundTurn(input: {
     { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
   ])
 
-  // ── Derive applicable pipeline sections from agent config ──
-
-  // Tools and knowledge sources are always available (scoped to agentConfigId)
-  const toolsConfigured = true
-  const knowledgeConfigured = true
-
-  const applicableStages: string[] = ['Hooks', 'Model generation']
-  if (knowledgeConfigured) applicableStages.push('Knowledge retrieval')
-  if (toolsConfigured) applicableStages.push('Tools')
-  // Hooks always included in base, and fired=false is correct when no Hook event occurs.
-
   // ── Aggregate traces ──
   const totalMs = Math.max(1, Date.now() - startTime)
-  const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages)
+  const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages, capabilityTruth)
   const caseType = ''
 
   const result: PlaygroundResult = {

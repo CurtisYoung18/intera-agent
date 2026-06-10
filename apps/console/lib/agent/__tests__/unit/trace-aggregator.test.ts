@@ -68,7 +68,17 @@ describe('aggregateTraces', () => {
         caseId: 'c',
         actionType: 'tool_result',
         title: 'Tool: kb_search',
-        payload: JSON.stringify({ toolName: 'kb_search', output: { hits: 1 } }),
+        payload: JSON.stringify({
+          toolName: 'kb_search',
+          output: { hits: 1 },
+          executionTruth: {
+            effectiveMode: 'runtime_backed',
+            label: 'Runtime-backed knowledge tool',
+            dryRun: true,
+            definitionMode: 'http',
+            toolCategory: 'system_info',
+          },
+        }),
         createdAt: new Date(t0 + 50).toISOString(),
       },
     ]
@@ -76,6 +86,7 @@ describe('aggregateTraces', () => {
     const tools = result.find(s => s.stage === 'Tools')
     expect(tools?.fired).toBe(true)
     expect(tools?.detail[0]?.[0]).toBe('tool_result')
+    expect(tools?.events?.[0]?.executionTruth?.label).toBe('Runtime-backed knowledge tool')
   })
 
   it('uses real llmWallMs from Iteration Snapshot for Model generation ms (AC-C2)', () => {
@@ -89,5 +100,86 @@ describe('aggregateTraces', () => {
     const model = result.find(s => s.stage === 'Model generation')
     expect(model?.fired).toBe(true)
     expect(model?.ms).toBe(1200) // from llmWallMs, NOT from createdAt span
+  })
+
+  it('surfaces hook loop decisions and procedure runtime guards instead of hiding them as bookkeeping', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'loop_decision',
+        title: 'Hook blocked Tool: query_order_status',
+        payload: JSON.stringify({
+          results: [{ hookName: 'risk_gate', action: 'block', reason: 'Missing receipt evidence' }],
+        }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+      {
+        caseId: 'c',
+        actionType: 'loop_decision',
+        title: 'ProcedureRun reconcile gate blocked Tool: finalize_procedure',
+        payload: JSON.stringify({ inputEpoch: 4, lastReconciledInputEpoch: 3 }),
+        createdAt: new Date(t0 + 20).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, false, ['Hooks', 'Procedure'])
+    const hooks = result.find((step) => step.stage === 'Hooks')
+    const procedure = result.find((step) => step.stage === 'Procedure')
+
+    expect(hooks?.fired).toBe(true)
+    expect(hooks?.status).toBe('block')
+    expect(hooks?.events?.[0]?.kind).toBe('hook_decision')
+    expect(hooks?.events?.[0]?.detail).toContain('risk_gate')
+
+    expect(procedure?.fired).toBe(true)
+    expect(procedure?.status).toBe('block')
+    expect(procedure?.events?.[0]?.kind).toBe('runtime_guard')
+    expect(procedure?.events?.[0]?.detail).toContain('inputEpoch')
+  })
+
+  it('attaches runner capability truth from llm_request_start payloads', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'llm_request_start',
+        title: 'LLM request',
+        payload: JSON.stringify({
+          model: 'custom-model',
+          playgroundCapabilityTruth: {
+            model: 'custom-model',
+            imageSupport: {
+              status: 'unknown',
+              label: 'Unknown',
+              source: 'missing_model_metadata',
+            },
+            executionSurface: {
+              mode: 'dry_run_mixed',
+              label: 'Dry-run mixed surface',
+            },
+            toolSummary: {
+              mockedDryRun: 2,
+              runtimeBacked: 1,
+              runtimeManaged: 0,
+              staticFixture: 0,
+              unknown: 1,
+            },
+            warnings: ['Image support is unconfirmed.'],
+          },
+        }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+      {
+        caseId: 'c',
+        actionType: 'llm_response',
+        title: 'LLM response',
+        detail: JSON.stringify({ usage: { input_tokens: 10, output_tokens: 4 } }),
+        createdAt: new Date(t0 + 30).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, false, ['Model generation'])
+    expect(result[0].runtimeTruth?.imageSupport.status).toBe('unknown')
+    expect(result[0].runtimeTruth?.executionSurface.label).toBe('Dry-run mixed surface')
+    expect(result[0].runtimeTruth?.toolSummary.mockedDryRun).toBe(2)
   })
 })

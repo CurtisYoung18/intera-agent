@@ -7,7 +7,11 @@ import {
 } from 'lucide-react'
 import RenderHintCard from '@/components/chat/render-hint-card'
 import CopyButton from '@/components/ui/copy-button'
-import type { PlaygroundTraceStep } from '@/lib/agent/trace-aggregator'
+import type {
+  PlaygroundCapabilityTruth,
+  PlaygroundTraceEvent,
+  PlaygroundTraceStep,
+} from '@/lib/agent/trace-aggregator'
 
 /* ── Types ── */
 
@@ -143,13 +147,132 @@ function BreakdownCell({ label, value }: { label: string; value: string }) {
   )
 }
 
+function TruthCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{
+      padding: '8px 10px',
+      borderRadius: 9,
+      background: 'rgba(255,252,249,0.55)',
+      border: '1px solid rgba(0,0,0,0.04)',
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 600, color: '#3d3833',
+        lineHeight: 1.5,
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: 9, fontWeight: 600, color: '#b8a99a',
+        textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 3,
+      }}>
+        {label}
+      </div>
+    </div>
+  )
+}
+
+function formatToolSurface(truth: PlaygroundCapabilityTruth['toolSummary']): string {
+  const parts: string[] = []
+  if (truth.mockedDryRun > 0) parts.push(`${truth.mockedDryRun} mocked`)
+  if (truth.runtimeBacked > 0) parts.push(`${truth.runtimeBacked} live`)
+  if (truth.runtimeManaged > 0) parts.push(`${truth.runtimeManaged} runtime`)
+  if (truth.staticFixture > 0) parts.push(`${truth.staticFixture} fixture`)
+  if (truth.unknown > 0) parts.push(`${truth.unknown} unknown`)
+  return parts.join(' · ') || 'No confirmed tools'
+}
+
+function RuntimeTruthPanel({ truth }: { truth: PlaygroundCapabilityTruth }) {
+  return (
+    <div style={{
+      margin: '0 14px 10px 26px',
+      padding: '10px 12px',
+      borderRadius: 12,
+      background: 'rgba(212,118,78,0.035)',
+      border: '1px solid rgba(212,118,78,0.08)',
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+        textTransform: 'uppercase', color: '#8a7e74', marginBottom: 8,
+      }}>
+        Runtime truth
+      </div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gap: 6,
+      }}>
+        <TruthCell label="Image support" value={truth.imageSupport.label} />
+        <TruthCell label="Execution mode" value={truth.executionSurface.label} />
+        <TruthCell label="Tool surface" value={formatToolSurface(truth.toolSummary)} />
+      </div>
+      {(truth.imageSupport.note || truth.executionSurface.note || truth.warnings.length > 0) && (
+        <div style={{ marginTop: 8, display: 'grid', gap: 5 }}>
+          {truth.imageSupport.note && (
+            <div style={{ fontSize: 10.5, color: '#8a7e74', lineHeight: 1.5 }}>
+              {truth.imageSupport.note}
+            </div>
+          )}
+          {truth.executionSurface.note && (
+            <div style={{ fontSize: 10.5, color: '#8a7e74', lineHeight: 1.5 }}>
+              {truth.executionSurface.note}
+            </div>
+          )}
+          {truth.warnings.map((warning, idx) => (
+            <div key={idx} style={{
+              fontSize: 10.5, color: 'var(--amber)', lineHeight: 1.5,
+              background: 'rgba(212,145,46,0.07)', borderRadius: 8,
+              border: '1px solid rgba(212,145,46,0.12)', padding: '6px 8px',
+            }}>
+              {warning}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function toneForStatus(status: PlaygroundTraceEvent['status']) {
+  if (status === 'block') {
+    return {
+      fg: 'var(--vermillion)',
+      bg: 'rgba(230,69,57,0.04)',
+      border: '1px solid rgba(230,69,57,0.10)',
+    }
+  }
+  if (status === 'warn') {
+    return {
+      fg: 'var(--amber)',
+      bg: 'rgba(212,145,46,0.06)',
+      border: '1px solid rgba(212,145,46,0.14)',
+    }
+  }
+  if (status === 'info') {
+    return {
+      fg: 'var(--indigo)',
+      bg: 'rgba(91,138,247,0.05)',
+      border: '1px solid rgba(91,138,247,0.12)',
+    }
+  }
+  return {
+    fg: '#5a524b',
+    bg: 'rgba(255,252,249,0.5)',
+    border: '1px solid rgba(0,0,0,0.04)',
+  }
+}
+
 function ToolCallCard({
-  toolKey, actionType, detailText, toolName, isExpanded, onToggle,
+  toolKey, actionType, detailText, toolName, event, isExpanded, onToggle,
 }: {
   toolKey: string; actionType: string; detailText: string; toolName: string
+  event?: PlaygroundTraceEvent
   isExpanded: boolean; onToggle: () => void
 }) {
-  const isError = /"ok"\s*:\s*false|"ok":\s*false|ok:\s*false/i.test(detailText)
+  const isResult = actionType === 'tool_result'
+  const isError = event?.status === 'block' || event?.status === 'warn'
+    ? true
+    : /"ok"\s*:\s*false|"ok":\s*false|ok:\s*false/i.test(detailText)
+  const executionLabel = event?.executionTruth?.label
 
   const lines = detailText.split('\n')
   const inputLines: string[] = []
@@ -178,24 +301,46 @@ function ToolCallCard({
         onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'rgba(0,0,0,0.02)' }}
         onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent' }}
       >
-        {isError ? (
+        {isResult && isError ? (
           <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
-        ) : (
+        ) : isResult ? (
           <CheckCircle2 size={12} style={{ color: 'var(--malachite)', flexShrink: 0 }} />
+        ) : (
+          <Activity size={12} style={{ color: 'var(--indigo)', flexShrink: 0 }} />
         )}
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{
+            fontSize: 12, fontWeight: 500,
+            color: isError ? 'var(--vermillion)' : '#5a524b',
+            fontFamily: 'var(--font-mono)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {toolName}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{
+              fontSize: 9, color: '#b8a99a',
+              fontWeight: 700, letterSpacing: '0.08em',
+              textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
+            }}>
+              {isResult ? 'result' : 'call'}
+            </span>
+            {executionLabel && (
+              <span style={{
+                fontSize: 9, color: isError ? 'var(--vermillion)' : '#8a7e74',
+                fontFamily: 'var(--font-mono)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {executionLabel}
+              </span>
+            )}
+          </div>
+        </div>
         <span style={{
-          fontSize: 12, fontWeight: 500,
-          color: isError ? 'var(--vermillion)' : '#5a524b',
-          fontFamily: 'var(--font-mono)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {toolName}
-        </span>
-        <span style={{
-          fontSize: 10, color: isError ? 'var(--vermillion)' : '#b8a99a',
+          fontSize: 10, color: isError ? 'var(--vermillion)' : isResult ? '#b8a99a' : 'var(--indigo)',
           marginLeft: 'auto', fontFamily: 'var(--font-mono)', flexShrink: 0,
         }}>
-          {isError ? 'failed' : ''}
+          {isResult ? (isError ? 'warn' : 'ok') : ''}
         </span>
       </div>
 
@@ -383,6 +528,51 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
   )
 }
 
+function EvidenceCard({ event }: { event: PlaygroundTraceEvent }) {
+  const tone = toneForStatus(event.status)
+  return (
+    <div style={{ padding: '8px 14px 8px 26px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {event.status === 'block' ? (
+          <XCircle size={12} style={{ color: tone.fg, flexShrink: 0 }} />
+        ) : event.status === 'warn' ? (
+          <Loader2 size={12} style={{ color: tone.fg, flexShrink: 0 }} />
+        ) : (
+          <CheckCircle2 size={12} style={{ color: tone.fg, flexShrink: 0 }} />
+        )}
+        <span style={{
+          fontSize: 12, fontWeight: 500, color: tone.fg,
+          fontFamily: 'var(--font-mono)',
+        }}>
+          {event.label}
+        </span>
+        <span style={{
+          marginLeft: 'auto', fontSize: 10, color: tone.fg,
+          fontFamily: 'var(--font-mono)', textTransform: 'uppercase',
+        }}>
+          {event.status}
+        </span>
+      </div>
+      <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
+        <div style={{
+          padding: '8px 10px',
+          borderRadius: 8,
+          background: tone.bg,
+          border: tone.border,
+          fontSize: 11,
+          fontFamily: 'var(--font-mono)',
+          color: tone.fg,
+          lineHeight: 1.6,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}>
+          {event.detail}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TurnSection({
   turnIdx, steps, turnMs, isExpanded, isLatest, isResponding, liveTools, expandedTools, onToggleTool, onToggleTurn, tb,
 }: {
@@ -403,6 +593,7 @@ function TurnSection({
   const toolCount = toolSteps.reduce((sum, s) => sum + (s.detail?.length || 0), 0)
   const hasLiveTools = isLatest && isResponding && liveTools.length > 0
   const hasTraceData = steps.length > 0
+  const runtimeTruth = steps.find((step) => step.runtimeTruth)?.runtimeTruth
 
   const chevronStyle: React.CSSProperties = {
     transition: 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
@@ -480,11 +671,36 @@ function TurnSection({
             </div>
           )}
 
+          {runtimeTruth && (
+            <RuntimeTruthPanel truth={runtimeTruth} />
+          )}
+
           {steps.filter((s) => s.fired !== false).map((step, i) => {
             const isModelGen = step.stage === 'Model generation'
             const isTool = step.stage === 'Tools' || step.stage === 'Knowledge retrieval'
+            const toolEvents = step.events?.filter((event) => event.kind === 'tool_call' || event.kind === 'tool_result') ?? []
+            const evidenceEvents = step.events?.filter((event) => event.kind === 'hook_decision' || event.kind === 'runtime_guard' || event.kind === 'stale_evidence') ?? []
 
             if (isTool && hasLiveTools) return null
+
+            if (isTool && toolEvents.length > 0) {
+              return toolEvents.map((event, di) => {
+                const toolKey = `${turnIdx}-${i}-${di}`
+                const toolName = event.toolName || event.label || event.actionType.replace('tool_', '')
+                return (
+                  <ToolCallCard
+                    key={toolKey}
+                    toolKey={toolKey}
+                    actionType={event.actionType}
+                    detailText={event.detail}
+                    toolName={toolName}
+                    event={event}
+                    isExpanded={expandedTools.has(toolKey)}
+                    onToggle={() => onToggleTool(toolKey)}
+                  />
+                )
+              })
+            }
 
             if (isTool && step.detail?.length > 0) {
               return step.detail.map(([actionType, detailText], di) => {
@@ -515,36 +731,13 @@ function TurnSection({
               )
             }
 
-            if (step.stage === 'Hooks' && step.detail?.length > 0) {
-              const isBlocked = step.status === 'block'
-              const isWarn = step.status === 'warn'
-              return (
-                <div key={`${turnIdx}-${i}`} style={{ padding: '8px 14px 8px 26px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {isBlocked ? (
-                      <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
-                    ) : (
-                      <CheckCircle2 size={12} style={{ color: isWarn ? 'var(--amber)' : 'var(--malachite)', flexShrink: 0 }} />
-                    )}
-                    <span style={{ fontSize: 12, fontWeight: 500, color: isBlocked ? 'var(--vermillion)' : '#5a524b', fontFamily: 'var(--font-mono)' }}>
-                      Hook decision
-                    </span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10, color: isBlocked ? 'var(--vermillion)' : '#b8a99a', fontFamily: 'var(--font-mono)' }}>
-                      {step.status}
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
-                    <div style={{ fontSize: 11, color: '#5a524b', lineHeight: 1.6 }}>
-                      {step.summary}
-                    </div>
-                    {step.detail.map(([actionType, detailText], detailIdx) => (
-                      <div key={`${actionType}-${detailIdx}`} style={{ padding: '8px 10px', borderRadius: 8, background: isBlocked ? 'rgba(230,69,57,0.04)' : 'rgba(255,252,249,0.5)', border: isBlocked ? '1px solid rgba(230,69,57,0.10)' : '1px solid rgba(0,0,0,0.04)', fontSize: 11, fontFamily: 'var(--font-mono)', color: isBlocked ? 'var(--vermillion)' : '#5a524b', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                        {actionType}: {detailText}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
+            if ((step.stage === 'Hooks' || step.stage === 'Procedure') && evidenceEvents.length > 0) {
+              return evidenceEvents.map((event, eventIdx) => (
+                <EvidenceCard
+                  key={`${turnIdx}-${i}-${event.kind}-${eventIdx}`}
+                  event={event}
+                />
+              ))
             }
 
             return null
