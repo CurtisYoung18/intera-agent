@@ -60,7 +60,7 @@ export default function ToolRenderHintsEditor({ value, onChange, mockFixture }: 
       {hint?.kind === 'card' && (
         <div className="space-y-3">
           <div>
-            <label className={labelCls}>Title (JSONPath in skill output)</label>
+            <label className={labelCls}>Title (JSONPath in Tool output)</label>
             <input className={inputCls} value={hint.titleField} onChange={e => onChange({ ...hint, titleField: e.target.value })} placeholder="$.order.id" />
           </div>
           <div>

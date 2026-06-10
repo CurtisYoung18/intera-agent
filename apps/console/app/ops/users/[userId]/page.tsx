@@ -89,7 +89,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
         <div className="min-w-0">
           <h1 className="truncate text-[14px] font-semibold tracking-tight text-[var(--mist)]">
             <User className="inline h-3.5 w-3.5 mr-1.5 text-indigo/60" />
-            User Profile · {userId}
+            User Context · {userId}
           </h1>
           {profile && (
             <p className="mt-0.5 text-[11px] text-[var(--fog)]/70">
