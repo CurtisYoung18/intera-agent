@@ -19,6 +19,10 @@ vi.mock('@/components/admin/version-context-bar', () => ({
   useSelectedAgentId: vi.fn(() => 'agent-1'),
 }))
 
+vi.mock('next/navigation', () => ({
+  useSearchParams: vi.fn(() => new URLSearchParams()),
+}))
+
 const scenario = {
   id: 'scenario-1',
   agentConfigId: 'agent-1',
@@ -247,6 +251,8 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     await renderPage()
 
     expect(await screen.findByText('U-Pilot Chat Cockpit')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Pilot/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('link', { name: /Playground/ })).toBeTruthy()
     expect(screen.getByLabelText('Message U-Pilot')).toBeTruthy()
     expect(await screen.findAllByText('Current context')).toBeTruthy()
     expect(mockApiClient.mock.calls[0][0]).toBe('/api/admin/config-pilot/context?agentConfigId=agent-1')

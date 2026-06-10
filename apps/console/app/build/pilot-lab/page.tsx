@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   AlertTriangle,
   Bot,
@@ -29,6 +31,7 @@ import type {
   ConfigPilotProposeResponse,
 } from '@/lib/config-pilot/contracts'
 import type { SavedScenario, ScenarioObservedEvidenceInput, ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
+import PlaygroundPage from '@/app/admin/playground/page'
 
 interface ScenarioListResponse {
   scenarios: SavedScenario[]
@@ -59,6 +62,8 @@ function nextMessageId(prefix: string) {
 }
 
 export default function PilotLabPage() {
+  const searchParams = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'playground' ? 'playground' : 'pilot'
   const agentConfigId = useSelectedAgentId()
   const chatEndRef = useRef<HTMLDivElement | null>(null)
   const [context, setContext] = useState<ConfigPilotContextResponse | null>(null)
@@ -300,6 +305,20 @@ export default function PilotLabPage() {
     }
   }, [addMessage, agentConfigId, observedJson, selectedScenario])
 
+  if (activeTab === 'playground') {
+    return (
+      <div className="intera-q2-page flex min-h-screen flex-col overflow-hidden px-4 py-4 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-4">
+          <VersionContextBar />
+          <PilotLabTabs activeTab="playground" />
+          <div className="intera-q2-panel min-h-0 flex-1 overflow-hidden">
+            <PlaygroundPage />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="intera-q2-page min-h-screen overflow-x-hidden px-4 py-4 text-[var(--color-text-primary)] sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
@@ -323,6 +342,8 @@ export default function PilotLabPage() {
             </button>
           </div>
         </header>
+
+        <PilotLabTabs activeTab="pilot" />
 
         {(error || notice) && (
           <div className="grid gap-2">
@@ -431,6 +452,36 @@ export default function PilotLabPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function PilotLabTabs({ activeTab }: { activeTab: 'pilot' | 'playground' }) {
+  const tabs = [
+    { id: 'pilot' as const, href: '/build/pilot-lab', label: 'Pilot', description: 'Draft changes and Scenario receipts' },
+    { id: 'playground' as const, href: '/build/pilot-lab?tab=playground', label: 'Playground', description: 'Manual dry-run and trace debug' },
+  ]
+
+  return (
+    <nav className="flex flex-wrap gap-2 border-b border-[var(--color-border-subtle)] pb-3" aria-label="Pilot Lab tabs">
+      {tabs.map((tab) => {
+        const active = activeTab === tab.id
+        return (
+          <Link
+            key={tab.id}
+            href={tab.href}
+            aria-current={active ? 'page' : undefined}
+            className={`intera-q2-button inline-flex min-h-10 items-center gap-2 border px-3 py-2 text-left text-[13px] font-semibold transition ${
+              active
+                ? 'border-[rgba(53,127,124,0.28)] bg-[rgba(53,127,124,0.09)] text-[var(--color-accent-primary)]'
+                : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface-muted)]'
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span className="hidden text-[11px] font-medium text-[var(--color-text-tertiary)] sm:inline">{tab.description}</span>
+          </Link>
+        )
+      })}
+    </nav>
   )
 }
 

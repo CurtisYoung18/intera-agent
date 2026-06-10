@@ -73,6 +73,21 @@ function detectMemoryTier(ms: any): string {
   return 'Long-term'
 }
 
+function imagesFromContentBlocks(blocks: unknown): AttachedImage[] | undefined {
+  if (!Array.isArray(blocks)) return undefined
+  const images = blocks.flatMap((block) => {
+    const candidate = block as { type?: unknown; source?: { type?: unknown; media_type?: unknown; data?: unknown } }
+    if (candidate.type !== 'image' || candidate.source?.type !== 'base64') return []
+    if (typeof candidate.source.data !== 'string' || typeof candidate.source.media_type !== 'string') return []
+    return [{
+      base64: candidate.source.data,
+      mimeType: candidate.source.media_type,
+      name: 'restored image',
+    }]
+  })
+  return images.length > 0 ? images : undefined
+}
+
 
 /* ── Page ── */
 
@@ -216,6 +231,7 @@ export default function PlaygroundPage() {
       setChatMessages(detailData.messages.map((m) => ({
         role: m.role === 'assistant' ? 'agent' as const : 'user' as const,
         content: m.content,
+        images: imagesFromContentBlocks(m.contentBlocks),
       })))
 
       // Restore traces: group raw traces by turn (each user message starts a new turn)
@@ -489,6 +505,11 @@ export default function PlaygroundPage() {
 
   const runTurn = useCallback(async (msg: string, queuedImages?: AttachedImage[]) => {
     if (runningRef.current) return
+    const currentImages = queuedImages ?? attachedImagesRef.current
+    if (currentImages.length > 0 && !supportsVision) {
+      setError('当前模型不支持图片，请切换 vision-capable model。')
+      return
+    }
     runningRef.current = true
     setReply('')
     thinkingAccRef.current = ''
@@ -501,7 +522,6 @@ export default function PlaygroundPage() {
     setError('')
     setResponding(true)
     setSidebarCollapsed(false)
-    const currentImages = queuedImages ?? attachedImagesRef.current
     setAttachedImages([])
     setChatMessages(prev => [...prev, { role: 'user' as const, content: msg, images: currentImages.length > 0 ? currentImages : undefined }])
 
@@ -624,7 +644,7 @@ export default function PlaygroundPage() {
         return ''
       })
     }
-  }, [selectedAgentId, debugMode])
+  }, [selectedAgentId, debugMode, supportsVision])
 
   // ── Session metrics ──
   const sessionMetrics = useMemo(() => {

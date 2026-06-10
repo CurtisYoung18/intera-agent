@@ -52,12 +52,24 @@ const ALL_SOURCES = [
 ]
 
 function setupMocks(sources: typeof ALL_SOURCES, gptConnected = true) {
-  mockApiClient.mockImplementation(async (url: string, _opts?: any) => {
-    if (url === '/api/admin/knowledge/gptbots') {
+  mockApiClient.mockImplementation(async (url: string, opts?: any) => {
+    if (url.startsWith('/api/admin/knowledge/gptbots')) {
       if (gptConnected) {
         return { data: { knowledge_base: [{ id: 'kb-1', name: 'FAQ', desc: 'Frequently asked', chunk: 100, doc: 10 }] } }
       }
       return { data: { error: 'not configured' } }
+    }
+    if (url === '/api/admin/knowledge/test' && opts?.method === 'POST') {
+      return {
+        data: {
+          query: opts.body.query,
+          topK: opts.body.topK,
+          request: { groupIds: ['kb-1'] },
+          source: { id: opts.body.sourceId, name: 'Deposit FAQ' },
+          list: [{ content: 'Deposit evidence', data_id: 'doc-1', document_name: 'Deposit FAQ', chunk_id: 'c1', score: 0.91 }],
+          total: 1,
+        },
+      }
     }
     if (url.startsWith('/api/admin/knowledge/sources') && !url.includes('test')) {
       return { data: { sources } }
@@ -114,5 +126,30 @@ describe('Knowledge Page', () => {
     fireEvent.click(statusBar)
 
     expect(screen.getByPlaceholderText('app-...')).toBeDefined()
+  })
+
+  it('sends agentConfigId and topK when testing retrieval', async () => {
+    setupMocks(ALL_SOURCES)
+
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Test Retrieval/ }))
+    fireEvent.change(screen.getByPlaceholderText(/Enter a test query/), { target: { value: 'deposit not showing' } })
+    fireEvent.change(screen.getByLabelText(/topK/i), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: /Search/ }))
+
+    await screen.findByText(/Deposit evidence/)
+
+    const testCall = mockApiClient.mock.calls.find(([url]) => url === '/api/admin/knowledge/test')
+    expect(testCall?.[1]).toEqual(expect.objectContaining({
+      method: 'POST',
+      body: expect.objectContaining({
+        agentConfigId: 'agent-1',
+        query: 'deposit not showing',
+        topK: 7,
+      }),
+    }))
+    expect(screen.getByText(/Query:/).textContent).toContain('deposit not showing')
+    expect(screen.getByText(/group_ids:/).textContent).toContain('kb-1')
   })
 })

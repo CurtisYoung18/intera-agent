@@ -27,7 +27,7 @@ export function mapLegacyRoute(pathname: string): string | null {
   if (normalizedPathname === '/ops') return '/operate/conversations'
 
   if (normalizedPathname === '/admin/playground') return '/build/pilot-lab'
-  if (normalizedPathname === '/admin/model') return '/build/components/brain'
+  if (normalizedPathname === '/admin/model') return '/build/components/brain?mode=model'
   if (normalizedPathname === '/admin/memory') return '/build/components/brain?mode=memory'
   if (normalizedPathname === '/admin/case-types') return '/build/components/procedures'
   if (normalizedPathname === '/admin/tools') return '/build/components/tools'

@@ -57,15 +57,39 @@ export function getProviderConfig(model?: string): ProviderConfig {
   }
 }
 
+export function convertAnthropicImagesForOpenRouterBody(body: string): string {
+  try {
+    const parsed = JSON.parse(body)
+    if (!parsed.messages) return body
+    let modified = false
+    for (const msg of parsed.messages) {
+      if (!Array.isArray(msg.content)) continue
+      const newContent = msg.content.map((block: any) => {
+        if (block.type === 'image' && block.source?.type === 'base64') {
+          modified = true
+          return {
+            type: 'image_url',
+            image_url: {
+              url: `data:${block.source.media_type};base64,${block.source.data}`,
+            },
+          }
+        }
+        return block
+      })
+      if (modified) msg.content = newContent
+    }
+    return modified ? JSON.stringify(parsed) : body
+  } catch {
+    return body
+  }
+}
+
 /**
  * Custom fetch for OpenRouter that rewrites Anthropic SDK auth header
  * and converts Anthropic-format image blocks to OpenAI format.
  *
  * OpenRouter's Anthropic-compatible endpoint doesn't reliably handle
  * image content blocks for non-Anthropic models (e.g. GPT-4.1 Mini).
- * This interceptor converts:
- *   { type: "image", source: { type: "base64", media_type, data } }
- * → { type: "image_url", image_url: { url: "data:<media_type>;base64,<data>" } }
  */
 function createOpenRouterFetch(apiKey: string): typeof fetch {
   return async (input, init) => {
@@ -77,32 +101,7 @@ function createOpenRouterFetch(apiKey: string): typeof fetch {
 
     // Convert Anthropic image blocks → OpenAI image_url format
     if (init?.body && typeof init.body === 'string') {
-      try {
-        const parsed = JSON.parse(init.body)
-        if (parsed.messages) {
-          let modified = false
-          for (const msg of parsed.messages) {
-            if (Array.isArray(msg.content)) {
-              const newContent = msg.content.map((block: any) => {
-                if (block.type === 'image' && block.source?.type === 'base64') {
-                  modified = true
-                  return {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:${block.source.media_type};base64,${block.source.data}`,
-                    },
-                  }
-                }
-                return block
-              })
-              if (modified) msg.content = newContent
-            }
-          }
-          if (modified) {
-            init = { ...init, body: JSON.stringify(parsed) }
-          }
-        }
-      } catch { /* not JSON, skip */ }
+      init = { ...init, body: convertAnthropicImagesForOpenRouterBody(init.body) }
     }
 
     return fetch(input, { ...init, headers })

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
-import { apiClient, bustConfigCache } from '@/lib/api/client'
+import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
 
@@ -41,7 +41,15 @@ interface SearchResult {
   content: string
   data_id: string
   document_name: string
+  chunk_id?: string | number | null
   score: number
+}
+
+interface RetrievalMeta {
+  query: string
+  topK: number
+  sourceName?: string | null
+  groupIds?: string[]
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -234,16 +242,19 @@ function SourceCard({ source, toolName, gptKbs, onToggle, onEdit, onDelete }: {
 
 // ── Test Retrieval Tab ──────────────────────────────────────────────────
 
-function TestRetrieval({ sources, testQuery, testSourceId, testResults, testTotal, testing, testError, onQueryChange, onSourceChange, onSearch }: {
+function TestRetrieval({ sources, testQuery, testSourceId, testTopK, retrievalMeta, testResults, testTotal, testing, testError, onQueryChange, onSourceChange, onTopKChange, onSearch }: {
   sources: KnowledgeSource[]
   testQuery: string
   testSourceId: string
+  testTopK: number
+  retrievalMeta: RetrievalMeta | null
   testResults: SearchResult[] | null
   testTotal: number
   testing: boolean
   testError: string | null
   onQueryChange: (q: string) => void
   onSourceChange: (id: string) => void
+  onTopKChange: (topK: number) => void
   onSearch: () => void
 }) {
   return (
@@ -269,6 +280,17 @@ function TestRetrieval({ sources, testQuery, testSourceId, testResults, testTota
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--fog)]">
+            topK
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={testTopK}
+              onChange={(e) => onTopKChange(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+              className="glass-input-console w-20"
+            />
+          </label>
           <button
             onClick={onSearch}
             disabled={testing || !testQuery.trim()}
@@ -290,7 +312,17 @@ function TestRetrieval({ sources, testQuery, testSourceId, testResults, testTota
       {/* Results */}
       {testResults && (
         <div className="space-y-2">
-          <p className="text-[11px] text-[var(--fog)] px-1">{testTotal} results</p>
+          <div className="glass-card px-4 py-3 text-[11px] leading-5 text-[var(--fog)]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>Query: <span className="font-mono text-[var(--mist)]">{retrievalMeta?.query ?? testQuery}</span></span>
+              <span>topK: <span className="font-mono text-[var(--mist)]">{retrievalMeta?.topK ?? testTopK}</span></span>
+              <span>source: <span className="font-mono text-[var(--mist)]">{retrievalMeta?.sourceName || 'all enabled sources'}</span></span>
+              <span>{testTotal} results</span>
+            </div>
+            {retrievalMeta?.groupIds?.length ? (
+              <p className="mt-1">group_ids: <span className="font-mono text-[var(--mist)]">{retrievalMeta.groupIds.join(', ')}</span></p>
+            ) : null}
+          </div>
           {testResults.map((r, i) => (
             <div key={i} className="glass-card px-4 py-3">
               <div className="flex items-start justify-between gap-2 mb-1">
@@ -298,6 +330,10 @@ function TestRetrieval({ sources, testQuery, testSourceId, testResults, testTota
                 <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--indigo)]">
                   {(r.score * 100).toFixed(1)}%
                 </span>
+              </div>
+              <div className="mb-2 flex flex-wrap gap-2 text-[10px] text-[var(--fog)]">
+                {r.data_id ? <span>doc/data: <span className="font-mono">{r.data_id}</span></span> : null}
+                {r.chunk_id != null ? <span>chunk: <span className="font-mono">{String(r.chunk_id)}</span></span> : null}
               </div>
               <p className="text-[12px] text-[var(--mist)] leading-relaxed line-clamp-4 whitespace-pre-wrap">
                 {r.content}
@@ -345,6 +381,8 @@ export default function KnowledgePage() {
   // Test state
   const [testQuery, setTestQuery] = useState('')
   const [testSourceId, setTestSourceId] = useState('')
+  const [testTopK, setTestTopK] = useState(15)
+  const [retrievalMeta, setRetrievalMeta] = useState<RetrievalMeta | null>(null)
   const [testResults, setTestResults] = useState<SearchResult[] | null>(null)
   const [testTotal, setTestTotal] = useState(0)
   const [testing, setTesting] = useState(false)
@@ -380,7 +418,7 @@ export default function KnowledgePage() {
     } finally {
       setGptKbsLoading(false)
     }
-  }, [])
+  }, [agentConfigId])
 
   useEffect(() => {
     fetchSources()
@@ -492,20 +530,29 @@ export default function KnowledgePage() {
     setTesting(true)
     setTestError(null)
     setTestResults(null)
+    setRetrievalMeta(null)
     try {
+      if (!agentConfigId) throw new Error('Select an Agent before testing retrieval.')
       const res = await apiClient('/api/admin/knowledge/test', {
         method: 'POST',
         body: {
+          agentConfigId,
           query: testQuery,
           sourceId: testSourceId || undefined,
-          topK: 15,
+          topK: testTopK,
         },
       })
       const data = res.data as any
       if (data.list) setTestResults(data.list)
-      if (data.total) setTestTotal(data.total)
-    } catch {
-      setTestError('Test request failed')
+      setTestTotal(Number(data.total ?? data.list?.length ?? 0))
+      setRetrievalMeta({
+        query: String(data.query ?? testQuery),
+        topK: Number(data.topK ?? testTopK),
+        sourceName: data.source?.name ?? null,
+        groupIds: Array.isArray(data.request?.groupIds) ? data.request.groupIds : undefined,
+      })
+    } catch (err) {
+      setTestError(err instanceof ApiClientError ? err.envelope.error.message : err instanceof Error ? err.message : 'Test request failed')
     } finally {
       setTesting(false)
     }
@@ -612,12 +659,15 @@ export default function KnowledgePage() {
               sources={sources}
               testQuery={testQuery}
               testSourceId={testSourceId}
+              testTopK={testTopK}
+              retrievalMeta={retrievalMeta}
               testResults={testResults}
               testTotal={testTotal}
               testing={testing}
               testError={testError}
               onQueryChange={setTestQuery}
               onSourceChange={setTestSourceId}
+              onTopKChange={setTestTopK}
               onSearch={runTest}
             />
           )}

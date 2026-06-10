@@ -205,7 +205,7 @@ export async function* runPlaygroundTurn(input: {
     if (!supportsVision) {
       yield {
         type: 'error',
-        data: { code: 'unsupported_media', message: `${resolvedModel} does not support image input` },
+        data: { code: 'unsupported_media', message: '当前模型不支持图片，请切换 vision-capable model。' },
         timestamp: new Date().toISOString(),
       }
       yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: new Date().toISOString() }
@@ -236,7 +236,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Persist messages to DB (AgentLoop does NOT call saveMessages itself) ──
   await persistence.saveMessages([
-    { id: turnId, role: 'user', content: message, caseId },
+    { id: turnId, role: 'user', content: message, contentBlocks: input.contentBlocks, caseId },
     { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
   ])
 

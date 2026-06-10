@@ -7,7 +7,7 @@ describe('mapLegacyRoute', () => {
     ['/admin', '/build/pilot-lab'],
     ['/admin/', '/build/pilot-lab'],
     ['/admin/playground', '/build/pilot-lab'],
-    ['/admin/model', '/build/components/brain'],
+    ['/admin/model', '/build/components/brain?mode=model'],
     ['/admin/memory', '/build/components/brain?mode=memory'],
     ['/admin/guardrails', '/build/components/hooks'],
     ['/admin/case-types', '/build/components/procedures'],

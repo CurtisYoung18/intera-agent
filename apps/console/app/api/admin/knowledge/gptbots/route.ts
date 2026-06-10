@@ -25,6 +25,7 @@ export const GET = defineRoute({
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, repo }) {
+    if (input.agentConfigId) await assertAgentInOrg(repo, input.agentConfigId)
     const apiKey = await getApiKey(repo, input.agentConfigId)
     if (!apiKey) return apiOk({ data: [], total: 0, note: 'GPTBots API key not configured' })
 

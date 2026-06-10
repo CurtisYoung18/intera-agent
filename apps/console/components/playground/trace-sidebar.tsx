@@ -515,6 +515,38 @@ function TurnSection({
               )
             }
 
+            if (step.stage === 'Hooks' && step.detail?.length > 0) {
+              const isBlocked = step.status === 'block'
+              const isWarn = step.status === 'warn'
+              return (
+                <div key={`${turnIdx}-${i}`} style={{ padding: '8px 14px 8px 26px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {isBlocked ? (
+                      <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
+                    ) : (
+                      <CheckCircle2 size={12} style={{ color: isWarn ? 'var(--amber)' : 'var(--malachite)', flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: isBlocked ? 'var(--vermillion)' : '#5a524b', fontFamily: 'var(--font-mono)' }}>
+                      Hook decision
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 10, color: isBlocked ? 'var(--vermillion)' : '#b8a99a', fontFamily: 'var(--font-mono)' }}>
+                      {step.status}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
+                    <div style={{ fontSize: 11, color: '#5a524b', lineHeight: 1.6 }}>
+                      {step.summary}
+                    </div>
+                    {step.detail.map(([actionType, detailText], detailIdx) => (
+                      <div key={`${actionType}-${detailIdx}`} style={{ padding: '8px 10px', borderRadius: 8, background: isBlocked ? 'rgba(230,69,57,0.04)' : 'rgba(255,252,249,0.5)', border: isBlocked ? '1px solid rgba(230,69,57,0.10)' : '1px solid rgba(0,0,0,0.04)', fontSize: 11, fontFamily: 'var(--font-mono)', color: isBlocked ? 'var(--vermillion)' : '#5a524b', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                        {actionType}: {detailText}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+
             return null
           })}
 
