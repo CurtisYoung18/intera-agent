@@ -49,23 +49,41 @@ const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; s
   llm_response: { stage: 'Model generation', source: 'agent' },
 }
 
+function isHookLoopDecision(record: TraceRecord): boolean {
+  if (normalizeTraceActionType(record.actionType) !== 'loop_decision') return false
+  if (record.title?.startsWith('Hook ')) return true
+  if (!record.payload) return false
+  try {
+    const payload = JSON.parse(record.payload)
+    return typeof payload?.checkpoint === 'string'
+      && (Array.isArray(payload?.results) || Array.isArray(payload?.hookNames))
+  } catch {
+    return false
+  }
+}
+
 /** Parse the structured Hook outcome — real hook_hit records carry the
  *  HookEvaluation object in `payload` (objects land in payload, not detail). */
 function hookOutcome(payload?: string | null): 'block' | 'warn' | null {
   if (!payload) return null
   try {
     const p = JSON.parse(payload)
-    const results: Array<{ result?: string }> = Array.isArray(p?.results) ? p.results : []
-    const summary = String(p?.summary ?? p?.result ?? '')
-    if (summary === 'blocked' || results.some(r => r?.result === 'blocked')) return 'block'
-    if (summary === 'escalated' || results.some(r => r?.result === 'escalated')) return 'warn'
+    const results: Array<Record<string, unknown>> = Array.isArray(p?.results) ? p.results : []
+    const outcomes = [
+      p?.summary,
+      p?.result,
+      ...results.flatMap((result) => [result?.action, result?.result]),
+    ].filter((value): value is string => typeof value === 'string')
+
+    if (outcomes.some((value) => value === 'block' || value === 'blocked')) return 'block'
+    if (outcomes.some((value) => value === 'warn' || value === 'escalate' || value === 'escalated')) return 'warn'
   } catch { /* fall through to legacy detail-string check */ }
   return null
 }
 
 function deriveStatus(record: TraceRecord): TraceStatus {
   const { actionType, detail, title } = record
-  if (actionType === 'hook_hit') {
+  if (actionType === 'hook_hit' || isHookLoopDecision(record)) {
     // Structured payload is authoritative (TraceWriter stores the eval object there);
     // legacy/string callers used `detail`. Check payload first.
     const outcome = hookOutcome(record.payload)
@@ -137,14 +155,16 @@ export function aggregateTraces(
   const bookkeeping: TraceRecord[] = []
 
   for (const t of traces) {
-    if (BOOKKEEPING.has(t.actionType)) { bookkeeping.push(t); continue }
+    if (BOOKKEEPING.has(t.actionType) && !isHookLoopDecision(t)) { bookkeeping.push(t); continue }
     const actionType = normalizeTraceActionType(t.actionType)
 
     // kb_search_* → Knowledge retrieval (must run before STAGE_MAP lookup,
     // since tool_call/tool_result have their own mappings)
     let mapping: { stage: TraceStage; source: TraceSource } | undefined
 
-    if (actionType.startsWith('kb_search') || t.title?.startsWith('kb_search')) {
+    if (isHookLoopDecision(t)) {
+      mapping = { stage: 'Hooks', source: 'hooks' }
+    } else if (actionType.startsWith('kb_search') || t.title?.startsWith('kb_search')) {
       mapping = { stage: 'Knowledge retrieval', source: 'knowledge' }
     } else if (actionType === 'tool_call' || actionType === 'tool_result') {
       // Check payload for kb_search tool name

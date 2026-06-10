@@ -44,4 +44,34 @@ describe('aggregateTraces', () => {
     expect(result).toHaveLength(1)
     expect(result[0].usage).toEqual({ inputTokens: 120, outputTokens: 40, totalTokens: 160 })
   })
+
+  it('surfaces hook loop_decision records in the Hooks stage', () => {
+    const traces: TraceRecord[] = [
+      {
+        caseId: 'test',
+        actionType: 'loop_decision',
+        title: 'Hook blocked Tool: create_human_task',
+        payload: JSON.stringify({
+          checkpoint: 'PreToolUse',
+          summary: 'block',
+          results: [{ hookName: 'qa_live_pretool_block_transfer', action: 'block', reason: 'PreTool block regression test' }],
+        }),
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      {
+        caseId: 'test',
+        actionType: 'llm_request_start',
+        title: 'LLM request',
+        createdAt: '2026-01-01T00:00:01Z',
+      },
+    ]
+
+    const result = aggregateTraces(traces, Date.now(), false, ['Hooks', 'Model generation'] as any[])
+
+    const hooks = result.find((step) => step.stage === 'Hooks')
+    expect(hooks).toBeDefined()
+    expect(hooks?.fired).toBe(true)
+    expect(hooks?.status).toBe('block')
+    expect(hooks?.summary).toContain('Hook blocked Tool: create_human_task')
+  })
 })
