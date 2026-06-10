@@ -40,6 +40,7 @@ beforeEach(() => {
     id: 'case-export',
     type: 'deposit_issue',
     status: 'created',
+    source: 'live',
     userId: 'user-1',
     goal: null,
     blocker: null,
@@ -83,5 +84,27 @@ describe('GET /api/cases/[id]/export', () => {
     expect(markdown).not.toContain('__intera_')
     expect(markdown).not.toContain('runtime-secret')
     expect(markdown).not.toContain('currentStepId')
+  })
+
+  it('adds a synthetic runtime truth note for playground exports', async () => {
+    h.repo.case.findUnique.mockResolvedValueOnce({
+      id: 'case-export',
+      type: 'playground',
+      status: 'resolved',
+      source: 'playground',
+      userId: 'playground-test-1',
+      goal: 'Playground test',
+      blocker: null,
+      createdAt: new Date('2026-06-10T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-10T00:01:00.000Z'),
+      resolvedAt: null,
+    })
+
+    const res = await GET(makeRequest(), { params: Promise.resolve({ id: 'case-export' }) })
+    const markdown = await res.text()
+
+    expect(markdown).toContain('## Runtime Truth Note')
+    expect(markdown).toContain('synthetic review export from Playground')
+    expect(markdown).toContain('## Timeline & Evidence')
   })
 })

@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { TranslateFn } from '@/lib/i18n/types'
 import { ACCENTS } from '@/components/chat/status-accents'
+import { classifyOperateTrace } from '@/lib/operate/runtime-truth'
 import {
   ChevronDown,
   MessageSquare,
@@ -33,10 +34,6 @@ function parseTracePayload(trace: TraceRow): Record<string, unknown> | null {
   return parsePayload(trace.payload) ?? parsePayload(trace.detail)
 }
 
-function formatActionLabel(actionType: string): string {
-  return actionType.replace(/_/g, ' ')
-}
-
 function normalizeTraceActionType(actionType: string): string {
   return actionType
 }
@@ -44,6 +41,10 @@ function normalizeTraceActionType(actionType: string): string {
 function formatClock(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function formatStatusLabel(status: string): string {
+  return status === 'block' ? 'blocked' : status === 'warn' ? 'warning' : status
 }
 
 function fmtNum(n: number): string {
@@ -292,6 +293,7 @@ export function CaseTraceTimeline({
 
   // ── Single trace card (shared between flat and grouped views) ──
   const renderTraceCard = (trace: TraceRow) => {
+    const truth = classifyOperateTrace(trace)
     const actionType = normalizeTraceActionType(trace.actionType)
     const accent = ACCENTS[actionType] ?? {
       stroke: '#a09888',
@@ -299,7 +301,7 @@ export function CaseTraceTimeline({
       icon: MessageSquare,
     }
     const Icon = accent.icon
-    const payload = parseTracePayload(trace)
+    const payload = truth.payload ?? parseTracePayload(trace)
     const isUser = actionType === 'user_message'
     const isLlm = actionType === 'llm_response'
     const isToolResult = actionType === 'tool_result'
@@ -316,7 +318,7 @@ export function CaseTraceTimeline({
           : null
 
     const toolLatency =
-      isToolResult && payload && typeof payload.latencyMs === 'number' ? payload.latencyMs : null
+      truth.latencyMs ?? (isToolResult && payload && typeof payload.latencyMs === 'number' ? payload.latencyMs : null)
 
     const showStructuredPayload =
       payload &&
@@ -324,6 +326,15 @@ export function CaseTraceTimeline({
       !(isUser && userBody && Object.keys(payload).length <= 2)
 
     const payloadDefaultOpen = !isNoisy && !isLlm
+    const showDetailText = truth.detailText && (!showStructuredPayload || truth.kind !== 'tool_call')
+    const statusTone =
+      truth.status === 'block'
+        ? 'border-vermillion/20 bg-vermillion/[0.06] text-vermillion'
+        : truth.status === 'warn'
+          ? 'border-amber/20 bg-amber/[0.06] text-amber'
+          : truth.status === 'info'
+            ? 'border-indigo/16 bg-indigo/[0.06] text-indigo'
+            : 'border-black/[0.06] bg-white/60 text-[var(--fog)]'
 
     return (
       <li key={trace.id} className="relative pl-11">
@@ -345,10 +356,25 @@ export function CaseTraceTimeline({
                 <Icon className="h-[18px] w-[18px]" style={{ color: accent.stroke }} strokeWidth={2} aria-hidden />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--fog)]">
-                  {formatActionLabel(actionType)}
-                </p>
-                <p className="truncate text-[13px] font-medium text-[var(--mist)]">{trace.title}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--fog)]">
+                    {truth.semanticLabel}
+                  </p>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] ${statusTone}`}>
+                    {formatStatusLabel(truth.status)}
+                  </span>
+                  {truth.executionLabel ? (
+                    <span className="inline-flex items-center rounded-full border border-indigo/14 bg-indigo/[0.05] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-indigo">
+                      {truth.executionLabel}
+                    </span>
+                  ) : null}
+                  {truth.isExportedReviewStage ? (
+                    <span className="inline-flex items-center rounded-full border border-amber/18 bg-amber/[0.06] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-amber">
+                      Review only
+                    </span>
+                  ) : null}
+                </div>
+                <p className="truncate text-[13px] font-medium text-[var(--mist)]">{truth.title}</p>
               </div>
             </div>
             <time
@@ -369,8 +395,8 @@ export function CaseTraceTimeline({
               </div>
             ) : (
               <>
-                {trace.detail && !showStructuredPayload && (
-                  <p className="text-[13px] leading-relaxed text-[var(--mist)]/75">{trace.detail}</p>
+                {showDetailText && (
+                  <p className="text-[13px] leading-relaxed text-[var(--mist)]/75 whitespace-pre-wrap">{truth.detailText}</p>
                 )}
               </>
             )}
@@ -381,6 +407,10 @@ export function CaseTraceTimeline({
                 {t('caseDetail.ms', { n: toolLatency })}
               </p>
             )}
+
+            {truth.executionNote ? (
+              <p className="mt-2 text-[11px] leading-5 text-[var(--fog)]">{truth.executionNote}</p>
+            ) : null}
 
             {showStructuredPayload && (
               <StructuredDataPanel

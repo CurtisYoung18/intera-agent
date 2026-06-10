@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { stripInternalMemoryKeys } from '@/lib/agent/memory'
+import { getRuntimeSourceTruth } from '@/lib/operate/runtime-truth'
 
 function safeJson(raw: string | null | undefined): unknown {
   if (!raw) return null
@@ -54,6 +55,7 @@ export const GET = defineRoute<void, { id: string }>({
     sections.push(`- **ID**: ${caseData.id}`)
     sections.push(`- **Type**: ${caseData.type}`)
     sections.push(`- **Status**: ${caseData.status}`)
+    sections.push(`- **Source**: ${caseData.source ?? 'live'}`)
     sections.push(`- **User**: ${caseData.userId}`)
     sections.push(`- **Goal**: ${caseData.goal || '—'}`)
     sections.push(`- **Blocker**: ${caseData.blocker || '—'}`)
@@ -61,6 +63,15 @@ export const GET = defineRoute<void, { id: string }>({
     sections.push(`- **Updated**: ${caseData.updatedAt.toISOString()}`)
     if (caseData.resolvedAt) sections.push(`- **Resolved**: ${(caseData.resolvedAt as Date).toISOString()}`)
     sections.push('')
+
+    const sourceTruth = getRuntimeSourceTruth({ source: caseData.source ?? 'live', userId: caseData.userId })
+    if (sourceTruth.isSynthetic) {
+      sections.push('## Runtime Truth Note')
+      sections.push('- This ProcedureRun is a synthetic review export from Playground.')
+      sections.push('- It is review-only and does not represent a live customer chat or live external side effects.')
+      sections.push('- Timeline rows below may be exported stage summaries instead of raw runtime events.')
+      sections.push('')
+    }
 
     if (agentConfig) {
       sections.push('## Agent Config')
@@ -83,8 +94,8 @@ export const GET = defineRoute<void, { id: string }>({
       sections.push('')
     }
 
-    sections.push('## Action Traces')
-    sections.push(`Total traces: ${traces.length}`)
+    sections.push('## Timeline & Evidence')
+    sections.push(`Total timeline events: ${traces.length}`)
     sections.push('')
     for (const trace of traces) {
       const time = new Date(trace.createdAt).toLocaleTimeString('zh-CN', { hour12: false })

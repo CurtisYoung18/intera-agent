@@ -331,7 +331,7 @@ export default function HumanHandoffPage() {
                 <div className="grid gap-3 md:grid-cols-3">
                   <DetailCard label={isZh ? '当前阻塞点' : 'Current blocker'} value={detail.blocker || (isZh ? '未记录' : 'Not recorded')} />
                   <DetailCard label={isZh ? '消息数' : 'Messages'} value={String(detail._count?.messages ?? 0)} />
-                  <DetailCard label={isZh ? 'Trace 数' : 'Traces'} value={String(detail._count?.traces ?? 0)} />
+                  <DetailCard label={isZh ? '时间线事件' : 'Timeline events'} value={String(detail._count?.traces ?? 0)} />
                 </div>
 
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">

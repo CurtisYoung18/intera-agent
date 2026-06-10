@@ -17,7 +17,9 @@ import { ListSkeleton } from '@/components/ui/skeleton'
 import EmptyState from '@/components/ui/empty-state'
 import ExportButton from '@/components/ui/export-button'
 import { ConsoleStatusPill } from '@/components/ui/console-chrome'
+import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { apiClient } from '@/lib/api/client'
+import { summarizeConversationSourceTruth } from '@/lib/operate/runtime-truth'
 import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
 
 interface CaseSummary {
@@ -61,6 +63,10 @@ function ConversationRow({
 }) {
   const latestCase = session.cases[0]
   const waitingCount = session.cases.filter((item) => item.status === 'waiting_human').length
+  const sourceTruth = summarizeConversationSourceTruth(
+    session.cases.map((caseItem) => ({ source: caseItem.source, userId: session.userId })),
+  )
+  const displayUserLabel = sourceTruth.kind === 'synthetic_review' ? 'Playground export' : session.userId
 
   return (
     <div className="group relative min-w-0">
@@ -75,7 +81,8 @@ function ConversationRow({
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-[14px] font-semibold text-[var(--mist)]">{session.userId}</p>
+                <p className="truncate text-[14px] font-semibold text-[var(--mist)]">{displayUserLabel}</p>
+                <SourceTruthPill truth={sourceTruth} />
                 {session.hasHumanTask ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-amber/20 bg-amber/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber">
                     <Handshake className="h-3 w-3" />
@@ -83,7 +90,9 @@ function ConversationRow({
                   </span>
                 ) : null}
               </div>
-              <p className="mt-1 truncate font-mono text-[11px] text-[var(--fog)]">Chat {session.chatId}</p>
+              <p className="mt-1 truncate font-mono text-[11px] text-[var(--fog)]">
+                {sourceTruth.kind === 'synthetic_review' ? 'Review chat' : 'Chat'} {session.chatId}
+              </p>
             </div>
           </div>
 
@@ -100,7 +109,10 @@ function ConversationRow({
               ))}
             </div>
             <p className="mt-3 line-clamp-2 text-[13px] leading-6 text-[var(--fog)]">
-              {latestCase?.goal || 'No explicit goal recorded yet. Open the conversation to inspect the active ProcedureRun and trace context.'}
+              {latestCase?.goal ||
+                (sourceTruth.isSynthetic
+                  ? 'Synthetic review copy from Playground export. Open the conversation to inspect review-oriented runtime evidence.'
+                  : 'No explicit goal recorded yet. Open the conversation to inspect the active ProcedureRun and trace context.')}
             </p>
           </div>
 

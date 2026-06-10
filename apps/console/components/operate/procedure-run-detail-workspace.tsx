@@ -9,10 +9,12 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import ReactMarkdown from 'react-markdown'
 import { apiClient } from '@/lib/api/client'
 import { ConsoleBackButton, ConsoleStatusPill } from '@/components/ui/console-chrome'
+import SourceTruthPill from '@/components/operate/source-truth-pill'
+import { getRuntimeSourceTruth, summarizeToolPairing } from '@/lib/operate/runtime-truth'
 import type { CaseDetailResponse } from '@intera/shared/contracts/cases'
 
 interface CaseData {
-  id: string; type: string; status: string; goal: string | null
+  id: string; userId?: string; type: string; status: string; goal: string | null; source?: string
   createdAt: string; updatedAt: string; chatId?: string | null
   _count?: { messages: number; traces: number }
   memory?: {
@@ -160,6 +162,19 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
       iterMetrics: Array.from(iterMetrics.values()).sort((a, b) => a.iteration - b.iteration),
     }
   }, [traces])
+  const sourceTruth = caseData ? getRuntimeSourceTruth({ source: caseData.source, userId: caseData.userId }) : null
+  const toolPairing = useMemo(
+    () =>
+      summarizeToolPairing(
+        traces.map((trace) => ({
+          actionType: trace.actionType,
+          title: trace.title,
+          detail: trace.detail,
+          payload: trace.payload,
+        })),
+      ),
+    [traces],
+  )
 
   if (loading) {
     return (
@@ -192,6 +207,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
                   {caseData.type.replace(/_/g, ' ')}
                 </h1>
                 <ConsoleStatusPill status={caseData.status}>{caseData.status.replace(/_/g, ' ')}</ConsoleStatusPill>
+                {sourceTruth ? <SourceTruthPill truth={sourceTruth} /> : null}
               </div>
               <p className="mt-1 text-[12px] text-[var(--fog)]/78">
                 {caseData.id} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
@@ -218,6 +234,15 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
           </div>
         </div>
       </header>
+
+      {sourceTruth?.isSynthetic ? (
+        <div className="rounded-2xl border border-amber/18 bg-amber/[0.06] px-4 py-3 text-[13px] leading-6 text-[var(--mist)] shadow-[var(--shadow-card)]">
+          <p className="font-semibold text-amber">Synthetic review export</p>
+          <p className="mt-1 text-[var(--fog)]">
+            This ProcedureRun was exported from Playground for review. It is not a live customer chat, and its timeline can include exported stage summaries rather than raw live runtime events.
+          </p>
+        </div>
+      ) : null}
 
       {/* Metrics cards */}
       {metrics.llmCalls > 0 && (
@@ -302,6 +327,13 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
       {/* Tool calls with I/O */}
       {metrics.toolCalls.length > 0 && (
         <div className="mb-4 rounded-2xl border border-black/[0.06] bg-white/60 p-4">
+          <p className={`mb-3 rounded-xl border px-3 py-2 text-[11px] ${
+            toolPairing.tone === 'warning'
+              ? 'border-amber/18 bg-amber/[0.06] text-amber'
+              : 'border-black/[0.05] bg-white/50 text-[var(--fog)]'
+          }`}>
+            {toolPairing.label}
+          </p>
           <h3 className="text-[13px] font-bold text-[var(--mist)] mb-3">{t('caseDetail.toolCalls', { n: metrics.toolCalls.length })}</h3>
           <div className="space-y-2">
             {metrics.toolCalls.map((tc, i) => (

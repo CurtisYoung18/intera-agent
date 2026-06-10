@@ -12,13 +12,20 @@ import {
   Clock,
   Zap,
   Cpu,
-  ChevronDown,
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
 import MessageContent from '@/components/chat/message-content'
+import { CaseTraceTimeline } from '@/components/ops/case-trace-view'
+import SourceTruthPill from '@/components/operate/source-truth-pill'
+import { useConsoleLocale } from '@/components/locale-provider'
 import { ConsoleBackButton } from '@/components/ui/console-chrome'
 import { apiClient } from '@/lib/api/client'
+import {
+  getRuntimeSourceTruth,
+  summarizeConversationSourceTruth,
+  summarizeToolPairing,
+} from '@/lib/operate/runtime-truth'
 import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
 
 interface MsgItem {
@@ -27,7 +34,7 @@ interface MsgItem {
 }
 
 interface CaseSummary {
-  id: string; type: string; status: string; goal: string | null
+  id: string; type: string; status: string; source: string; goal: string | null
   createdAt: string; updatedAt: string
   _count?: { messages: number }
 }
@@ -135,6 +142,7 @@ function computeMetrics(traces: TraceItem[]): Metrics {
 export default function ConversationDetailWorkspace({ chatId }: { chatId: string }) {
   const decodedChatId = decodeURIComponent(chatId)
   const router = useRouter()
+  const { t } = useConsoleLocale()
 
   const [session, setSession] = useState<ChatSession | null>(null)
   const [messages, setMessages] = useState<MsgItem[]>([])
@@ -185,6 +193,42 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   }
 
   const metrics = useMemo(() => computeMetrics(traces), [traces])
+  const conversationTruth = useMemo(
+    () =>
+      summarizeConversationSourceTruth(
+        (session?.cases ?? []).map((caseItem) => ({ source: caseItem.source, userId: session?.userId })),
+      ),
+    [session],
+  )
+  const toolPairing = useMemo(
+    () =>
+      summarizeToolPairing(
+        traces.map((trace) => ({
+          actionType: trace.actionType,
+          title: trace.title,
+          detail: trace.detail,
+          payload: trace.payload,
+        })),
+      ),
+    [traces],
+  )
+  const { groupedCaseTraces, unassignedTraces } = useMemo(() => {
+    const grouped = new Map<string, TraceItem[]>()
+    const knownCaseIds = new Set(session?.cases.map((caseItem) => caseItem.id) ?? [])
+    const unassigned: TraceItem[] = []
+
+    for (const trace of traces) {
+      if (!trace.caseId || !knownCaseIds.has(trace.caseId)) {
+        unassigned.push(trace)
+        continue
+      }
+      const existing = grouped.get(trace.caseId) ?? []
+      existing.push(trace)
+      grouped.set(trace.caseId, existing)
+    }
+
+    return { groupedCaseTraces: grouped, unassignedTraces: unassigned }
+  }, [session, traces])
 
   useEffect(() => {
     async function load() {
@@ -257,11 +301,15 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">Operate</p>
                 <h1 className="truncate text-[16px] font-semibold tracking-tight text-[var(--mist)]">
-                  Chat · {session?.userId ?? `${decodedChatId.slice(0, 16)}…`}
+                  {conversationTruth.kind === 'synthetic_review'
+                    ? 'Review transcript · Playground export'
+                    : conversationTruth.kind === 'mixed'
+                      ? 'Conversation · Mixed sources'
+                      : `Chat · ${session?.userId ?? `${decodedChatId.slice(0, 16)}…`}`}
                 </h1>
                 {session ? (
                   <p className="mt-1 text-[12px] text-[var(--fog)]/80">
-                    {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} traces
+                    {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} timeline events
                   </p>
                 ) : null}
               </div>
@@ -269,7 +317,8 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
             {!loading && session ? (
               <div className="flex flex-wrap items-center gap-2">
-                {session.userId && (() => {
+                <SourceTruthPill truth={conversationTruth} />
+                {session.userId && conversationTruth.kind !== 'synthetic_review' && (() => {
                   // UserProfile is keyed by a stable profileKey (user:<id> / chat:<chatId>),
                   // matching how the agent loop & compact write it. Link to that key.
                   const userKey = session.userId.trim()
@@ -322,6 +371,19 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         </div>
       </header>
 
+      {conversationTruth.isSynthetic ? (
+        <div className={`rounded-2xl border px-4 py-3 text-[13px] leading-6 shadow-[var(--shadow-card)] ${
+          conversationTruth.kind === 'mixed'
+            ? 'border-vermillion/18 bg-vermillion/[0.06] text-[var(--mist)]'
+            : 'border-amber/18 bg-amber/[0.06] text-[var(--mist)]'
+        }`}>
+          <p className={`font-semibold ${conversationTruth.kind === 'mixed' ? 'text-vermillion' : 'text-amber'}`}>
+            {conversationTruth.label}
+          </p>
+          <p className="mt-1 text-[var(--fog)]">{conversationTruth.description}</p>
+        </div>
+      ) : null}
+
       {/* Metrics bar + Analysis toggle */}
       <div className="space-y-3">
         {metrics.llmCalls > 0 && (
@@ -342,7 +404,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
             <button onClick={() => setShowTraces(!showTraces)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-black/[0.06] bg-white/60 hover:bg-white transition-colors">
               <BarChart3 className="w-3.5 h-3.5" />
-              {showTraces ? 'Hide Trace' : `Traces (${traces.length})`}
+              {showTraces ? 'Hide Timeline' : `Timeline & Evidence (${traces.length})`}
             </button>
           )}
           {metrics.llmCalls > 0 && (
@@ -487,8 +549,79 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
       {/* Trace timeline */}
       {showTraces && traces.length > 0 && (
-        <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 max-h-[400px] overflow-auto shadow-[var(--shadow-card)]">
-          <TraceList traces={traces} />
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 shadow-[var(--shadow-card)]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-[14px] font-semibold text-[var(--mist)]">Timeline & evidence</h2>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
+                  Read call vs result, Hook decisions, Procedure reconcile, and stale evidence with the same runtime language used in Playground.
+                </p>
+              </div>
+              <p className={`rounded-full border px-3 py-1.5 text-[11px] ${
+                toolPairing.tone === 'warning'
+                  ? 'border-amber/18 bg-amber/[0.06] text-amber'
+                  : 'border-black/[0.06] bg-white/70 text-[var(--fog)]'
+              }`}>
+                {toolPairing.label}
+              </p>
+            </div>
+          </div>
+
+          {unassignedTraces.length > 0 ? (
+            <section className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 shadow-[var(--shadow-card)]">
+              <div className="mb-3">
+                <h3 className="text-[13px] font-semibold text-[var(--mist)]">Chat-level runtime events</h3>
+                <p className="mt-1 text-[12px] text-[var(--fog)]">
+                  These events were recorded at the chat level instead of under a single ProcedureRun.
+                </p>
+              </div>
+              <CaseTraceTimeline traces={unassignedTraces} t={t} groupByIteration={false} />
+            </section>
+          ) : null}
+
+          {session?.cases.map((caseItem) => {
+            const caseTraces = groupedCaseTraces.get(caseItem.id) ?? []
+            const caseSourceTruth = getRuntimeSourceTruth({ source: caseItem.source, userId: session.userId })
+
+            return (
+              <section key={caseItem.id} className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 shadow-[var(--shadow-card)]">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CasePill caseItem={caseItem} />
+                      <SourceTruthPill truth={caseSourceTruth} />
+                    </div>
+                    <p className="mt-2 text-[12px] leading-5 text-[var(--fog)]">
+                      {caseSourceTruth.isSynthetic
+                        ? 'This ProcedureRun is a review copy from Playground export. Treat the evidence below as review-oriented runtime history, not a live customer continuation.'
+                        : 'This ProcedureRun carries the recorded runtime evidence for this chat.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--fog)]">
+                    <span className="rounded-full border border-black/[0.06] bg-white/70 px-2.5 py-1">
+                      {caseTraces.length} timeline events
+                    </span>
+                    <Link
+                      href={`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-indigo/18 bg-indigo/[0.06] px-3 py-1.5 font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
+                    >
+                      ProcedureRun detail
+                      <BarChart3 className="h-3.5 w-3.5" />
+                    </Link>
+                  </div>
+                </div>
+
+                {caseTraces.length > 0 ? (
+                  <CaseTraceTimeline traces={caseTraces} t={t} />
+                ) : (
+                  <p className="rounded-2xl border border-dashed border-black/[0.08] bg-white/50 px-4 py-6 text-[12px] text-[var(--fog)]">
+                    No timeline evidence was recorded for this ProcedureRun.
+                  </p>
+                )}
+              </section>
+            )
+          })}
         </div>
       )}
 
@@ -520,213 +653,6 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           </div>
         )}
       </main>
-    </div>
-  )
-}
-
-const ACTION_COLORS: Record<string, string> = {
-  user_message: '#6366f1', case_created: '#2ea04a', tool_call: '#5b8af7',
-  tool_result: '#14b8a6', human_task_created: '#d4912e', final_resolution: '#2ea04a',
-  llm_request_start: '#8b6ff5', llm_response: '#8b6ff5', error: '#e64539',
-  escalated: '#e64539', loop_decision: '#a09888',
-  queue_message_enqueued: '#f0b050', queue_message_consumed: '#f0b050',
-  agent_tree_node: '#7c3aed',
-}
-
-const FILTER_KEYS = ['All', 'LLM', 'Tools', 'Hooks'] as const
-type FilterKey = (typeof FILTER_KEYS)[number]
-
-const STORAGE_KEY = 'trace-viewer-filters'
-
-function matchFilter(actionType: string, activeFilters: Set<string>): boolean {
-  const normalizedActionType = normalizeTraceActionType(actionType)
-  if (activeFilters.size === 0 || activeFilters.has('All')) return true
-  if (activeFilters.has('LLM') && (normalizedActionType.startsWith('llm_') || normalizedActionType === 'stream_event')) return true
-  if (activeFilters.has('Tools') && normalizedActionType.startsWith('tool_')) return true
-  if (activeFilters.has('Hooks') && (normalizedActionType === 'hook_hit' || normalizedActionType === 'loop_decision')) return true
-  return false
-}
-
-function parseIteration(trace: TraceItem): number | null {
-  // Check payload first, then detail as fallback
-  for (const raw of [trace.payload, trace.detail]) {
-    if (!raw) continue
-    try {
-      const p = JSON.parse(raw)
-      if (typeof p.iteration === 'number') return p.iteration as number
-    } catch { /* skip */ }
-  }
-  return null
-}
-
-function TraceList({ traces }: { traces: TraceItem[] }) {
-  const [expandedIterations, setExpandedIterations] = useState<Set<string>>(new Set())
-  const [filters, setFilters] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) return new Set(JSON.parse(stored) as string[])
-    } catch { /* empty */ }
-    return new Set(['All'])
-  })
-
-  // Persist filter selection
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...filters]))
-  }, [filters])
-
-  const toggleFilter = (key: string) => {
-    setFilters((prev) => {
-      const next = new Set(prev)
-      if (key === 'All') {
-        if (prev.has('All')) return new Set()
-        return new Set(['All'])
-      }
-      next.delete('All')
-      if (prev.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
-  // Filter and group by iteration
-  const { groups, unassigned } = useMemo(() => {
-    const filtered = traces.filter((t) => matchFilter(t.actionType, filters))
-
-    const g = new Map<number, TraceItem[]>()
-    const u: TraceItem[] = []
-
-    for (const t of filtered) {
-      const iter = parseIteration(t)
-      if (iter != null) {
-        if (!g.has(iter)) g.set(iter, [])
-        g.get(iter)!.push(t)
-      } else {
-        u.push(t)
-      }
-    }
-
-    return { groups: g, unassigned: u }
-  }, [traces, filters])
-
-  // Initialize expanded state: latest iteration expanded, others collapsed
-  const sortedIterations = useMemo(() => Array.from(groups.keys()).sort((a, b) => a - b), [groups])
-  useEffect(() => {
-    const init = new Set<string>()
-    init.add('Initial')
-    if (sortedIterations.length > 0) init.add(`Iteration ${sortedIterations[sortedIterations.length - 1]}`)
-    setExpandedIterations(init)
-  }, [sortedIterations])
-
-  const toggleExpanded = (key: string) => {
-    setExpandedIterations((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
-  const totalFiltered = unassigned.length + sortedIterations.reduce((s, i) => s + (groups.get(i)?.length ?? 0), 0)
-
-  return (
-    <div className="space-y-3">
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 flex-wrap pb-2 border-b border-black/[0.06]">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--smoke)] mr-1">Filter:</span>
-        {FILTER_KEYS.map((k) => {
-          const active = filters.has(k) || (k === 'All' && filters.size === 0)
-          return (
-            <button
-              key={k}
-              onClick={() => toggleFilter(k)}
-              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-                active
-                  ? 'bg-indigo/[0.08] border-indigo/30 text-indigo font-medium'
-                  : 'border-black/[0.06] text-[var(--fog)]/60 hover:border-black/[0.12]'
-              }`}
-            >
-              {k}
-            </button>
-          )
-        })}
-        <span className="text-[10px] text-[var(--fog)]/40 ml-1">{totalFiltered} traces</span>
-      </div>
-
-      {/* Initial group (traces without iteration) */}
-      {unassigned.length > 0 && (
-        <div className="rounded-lg border border-black/[0.06] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => toggleExpanded('Initial')}
-            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
-          >
-            <ChevronDown
-              className={`h-3 w-3 text-[var(--fog)]/60 transition-transform ${expandedIterations.has('Initial') ? '' : '-rotate-90'}`}
-            />
-            <span className="text-[11px] font-semibold text-[var(--fog)]">Initial</span>
-            <span className="text-[10px] text-[var(--fog)]/40">{unassigned.length} traces</span>
-          </button>
-          {expandedIterations.has('Initial') && (
-            <div className="border-t border-black/[0.04]">
-              {unassigned.map((t) => {
-                const actionType = normalizeTraceActionType(t.actionType)
-                return (
-                  <div key={t.id} className="flex flex-col gap-1.5 border-b border-black/[0.02] px-3 py-2 text-[11px] last:border-b-0 sm:flex-row sm:items-start sm:gap-2">
-                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
-                      style={{ background: ACTION_COLORS[actionType] ?? '#a09888' }} />
-                    <span className="text-[var(--fog)]/50 sm:w-14 sm:flex-shrink-0">{fmtTime(t.createdAt)}</span>
-                    <span className="text-[var(--fog)] sm:w-28 sm:flex-shrink-0">{actionType}</span>
-                    <span className="text-[var(--mist)] break-words">{t.title}</span>
-                    {t.detail && <span className="text-[var(--fog)]/50 break-words sm:ml-1">{t.detail}</span>}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Iteration groups */}
-      {sortedIterations.map((iter) => {
-        const group = groups.get(iter)!
-        const key = `Iteration ${iter}`
-        return (
-          <div key={key} className="rounded-lg border border-indigo/[0.08] overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleExpanded(key)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-indigo/[0.02] transition-colors"
-            >
-              <ChevronDown
-                className={`h-3 w-3 text-indigo/60 transition-transform ${expandedIterations.has(key) ? '' : '-rotate-90'}`}
-              />
-              <span className="text-[11px] font-semibold text-indigo/80">{key}</span>
-              <span className="text-[10px] text-[var(--fog)]/40">{group.length} traces</span>
-            </button>
-            {expandedIterations.has(key) && (
-              <div className="border-t border-indigo/[0.06]">
-                {group.map((t) => {
-                  const actionType = normalizeTraceActionType(t.actionType)
-                  return (
-                    <div key={t.id} className="flex flex-col gap-1.5 border-b border-black/[0.02] px-3 py-2 text-[11px] last:border-b-0 sm:flex-row sm:items-start sm:gap-2">
-                      <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
-                        style={{ background: ACTION_COLORS[actionType] ?? '#a09888' }} />
-                      <span className="text-[var(--fog)]/50 sm:w-14 sm:flex-shrink-0">{fmtTime(t.createdAt)}</span>
-                      <span className="text-[var(--fog)] sm:w-28 sm:flex-shrink-0">{actionType}</span>
-                      <span className="text-[var(--mist)] break-words">{t.title}</span>
-                      {t.detail && <span className="text-[var(--fog)]/50 break-words sm:ml-1">{t.detail}</span>}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-          )
-      })}
-
-      {totalFiltered === 0 && (
-        <p className="text-center text-[12px] text-[var(--fog)]/50 py-6">No traces match the selected filters.</p>
-      )}
     </div>
   )
 }
