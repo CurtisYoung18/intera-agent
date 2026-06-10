@@ -129,7 +129,7 @@ flowchart TD
 | Knowledge and GPTBots | Done | GPTBots source binding and retrieval-test foundation. |
 | LiveChat per-agent config | Done | Channel behavior follows selected Agent config. |
 | Memory and compact foundation | Done | Chat memory, user profile, compact strategy, and later Brain workspace base. |
-| Playground and trace hardening | Done | Dry-run, Trace Sidebar, run evidence, and renderHint cleanup. |
+| Playground and trace hardening | Done | Dry-run now feeds persisted session/trace evidence and Trace Sidebar restore instead of living as a throwaway debug seam. |
 | Safe local DB | Done | Safer verification foundation for coding lanes. |
 | Architecture review | Done | Diagnosed debt and established Foundation Reset. |
 | Procedure additive phases | Done | Earlier Procedure columns and prompt path used as migration input. |
@@ -139,8 +139,8 @@ flowchart TD
 | R2/Q1/Q2 | Done | Physical legacy cleanup, terminology sweep, and light-first polish. |
 | P1 | Done | ConfigPilot backend typed context/propose/apply flow. |
 | R3 | Done | ProcedureRun runtime overlay, real memory tools, stable prompt/tool boundary. |
-| S2 | Done | Runtime-backed Scenario receipts with fixture/runtime truth labels. |
-| U-Pilot | Done | Pilot Lab becomes chat cockpit with Pilot and Playground tabs. |
+| S2 | Done | Runtime-backed Scenario receipts are distinct from fixture-only receipts; current runtime-backed runs still mock operational tool side effects. |
+| U-Pilot | Done | Pilot Lab becomes the chat cockpit with `Pilot` for draft authoring and `Playground` as the runtime/manual-test desk. |
 | PKG1 | Done | Package completeness, import dry-run, refs/requirements, version cap. |
 | BASE1 | Done | Core basics: model/prompt, Knowledge, Playground text/image, trace, package sanity. |
 | Q3-B1 | Done | Route/nav truth: old admin/ops links point to target IA. |

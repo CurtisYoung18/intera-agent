@@ -72,6 +72,7 @@ Current Pilot correction:
 - Pilot Lab has two main tabs: `Pilot` for chat-based agent building, and `Playground` for manual dry-run testing/debug.
 - ConfigPilot is not a global drawer in P0. Older drawer references in shipped U2/U3/Q2 prompts are historical and must not be used for new work.
 - Existing Playground dry-run and Trace Sidebar capability must be preserved under the Pilot Lab `Playground` tab before any old Playground route is removed.
+- Current Playground truth: it is the Runtime Truth Desk + Manual Test Bench for the selected Agent version. The UI is a compatibility reuse, but the runtime path is real; operational tool side effects are still mocked under `dryRun`, and runtime-backed receipts must stay distinct from fixture-only receipts.
 
 Design direction correction:
 - Use a unified light-first visual system across the entire Intera Console.

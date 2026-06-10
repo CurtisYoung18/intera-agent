@@ -143,15 +143,19 @@ Console UI → signed `intera_session` cookie (HMAC-SHA256 JWT, lib/session.ts)
 - **Customer** log in with a per-org bcrypt password (`API_ORG_PASSWORD` for the seeded `api` org). Password-less orgs are rejected.
 - Required env for login: `SESSION_SECRET` (random 32-byte hex), `STAFF_PASSWORD`, `API_ORG_PASSWORD`. See `.env.example`.
 
-### Playground dry-run isolation
+### Playground runtime truth
 ```
-AgentLoop.create({ persistence: MemoryPersistence, dryRun: true })
-  → all prisma writes → memory port (zero DB)
-  → StreamingToolExecutor(…, dryRun) → operational tools mocked at dispatch entry
-  → TraceWriter(…, dryRun) → no-ops actionTrace.create
-  → HookEngine checkpoints run in-memory
+loadAgentConfig(configId) + buildModePrompt(...)
+  → AgentLoop.create({ persistence: PrismaPersistence, dryRun: true })
+  → selected Agent draft runs through the real prompt / Hook / Procedure / memory path
+  → Case / Message / ActionTrace rows persist for Playground sessions and restore
+  → StreamingToolExecutor(…, dryRun) mocks operational side effects at dispatch entry
   → Procedure continuation stays inline in the Case Owner Agent loop
 ```
+
+- `Playground` is no longer a zero-DB toy sandbox. It is the current Runtime Truth Desk + Manual Test Bench for the selected Agent version.
+- `dryRun: true` still matters: runtime logic and trace evidence are real, but operational tool side effects are mocked.
+- `Save to Chat` is a synthetic review/export bridge, not a live customer-channel continuation path.
 
 ## 3. Key files
 

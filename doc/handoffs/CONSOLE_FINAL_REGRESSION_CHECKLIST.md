@@ -93,6 +93,8 @@ Current known internal-only examples that are acceptable until a dedicated contr
   - `Pilot` tab loads
   - `Playground` tab still works
   - ConfigPilot can load context / propose / accept / apply-draft path
+  - runtime-backed vs fixture-only receipts are visibly distinct
+  - `Playground` still restores session/trace evidence and behaves as the runtime/manual-test surface
   - no publish action
 - `/build/release`
   - version timeline

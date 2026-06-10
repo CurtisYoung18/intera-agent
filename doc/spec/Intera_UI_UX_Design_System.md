@@ -64,11 +64,12 @@ ConfigPilot is a first-class product surface:
 - No global right-side assistant drawer in P0. ConfigPilot lives in `Pilot Lab` as the primary workspace.
 - `Pilot Lab` has two main tabs:
   - `Pilot`: the default ChatGPT-like agent-building cockpit.
-  - `Playground`: manual dry-run testing and trace/debug workspace.
+  - `Playground`: the current Runtime Truth Desk + Manual Test Bench for the selected Agent version.
 - Can generate draft Tools, Hooks, Procedures, Test Scenarios, and package changes.
 - Can apply draft configuration only through `proposal -> diff -> confirm -> typed API save`.
 - Cannot publish live versions.
 - Existing Playground dry-run and Trace Sidebar capability must be preserved and embedded under the `Playground` tab before any old standalone Playground route is removed.
+- Pilot owns draft authoring. Playground owns manual runtime truth and trace/evidence inspection. Release owns publish/version/package truth.
 
 ### 0.5 Release and validation
 
@@ -88,9 +89,10 @@ ConfigPilot is a first-class product surface:
 - Component-level tests live on Component pages.
 - Agent-level building and validation live in `Pilot Lab`.
 - `Pilot` is the chat-first Agent-building workflow: ask, propose, diff, accept, apply, and optionally run validation.
-- `Playground` is manual ad hoc testing/debug: the operator sends messages directly, runs dry-run, and inspects Trace/Evidence.
+- `Playground` is manual ad hoc testing/debug: the operator sends messages directly, runs the selected Agent version through the real runtime path under `dryRun` rules, and inspects persisted Trace/Evidence.
 - `Scenarios` are saved repeatable tests.
 - `Receipts` are validation records and commercial proof artifacts.
+- `Runtime-backed` receipts mean real runtime evidence gathered through the Playground path; `fixture-only` receipts mean deterministic harness checks. Keep those labels distinct, and do not confuse either one with live external side effects.
 - `Run timeline` / `Trace` / `Evidence checkpoints` are the product terms for breakpoint-like debugging. Do not call these "breakpoints" in operator UI.
 
 ### 0.7 i18n
@@ -161,13 +163,13 @@ Use this as the UI refactor target after the Foundation Reset contracts and Hook
 | Block | Target route | Purpose |
 |---|---|---|
 | Build | `/build/release` | Version, draft changes, receipts, package actions. |
-| Build | `/build/pilot-lab` | Default landing page. Two-tab cockpit: Pilot chat for building, Playground for manual dry-run testing and trace. |
-| Build | `/build/components/brain` | Model, prompt, memory. |
-| Build | `/build/components/procedures` | Procedure types and ProcedureStep Hook bindings. |
-| Build | `/build/components/tools` | HTTP, Static Fixture, System Managed Tools, test panel, Tool Hook bindings. |
-| Build | `/build/components/hooks` | Hook library, builder, binding manager, Hook simulation. |
-| Build | `/build/components/knowledge` | GPTBots connection, KB binding, read-only documents/status, retrieval test. |
-| Build | `/build/components/integrations` | LiveChat, Web Chat, API Access, channel sample payloads. |
+| Build | `/build/pilot-lab` | Default landing page. Two-tab cockpit: Pilot for draft authoring and Playground as the runtime truth/manual test desk. |
+| Build | `/build/components/brain` | Model, prompt, memory, profile, and compact test. |
+| Build | `/build/components/procedures` | Procedure catalog/detail editing plus ProcedureStep Hook bindings. |
+| Build | `/build/components/tools` | Custom/runtime-managed tools, endpoint and fixture testing, Knowledge tool awareness. |
+| Build | `/build/components/hooks` | Hook library, builder, and binding manager across agent / Procedure / step / Tool scopes. |
+| Build | `/build/components/knowledge` | GPTBots connection, source CRUD, optional Procedure scope, retrieval test. |
+| Build | `/build/components/integrations` | Channels, Web Chat embed setup, API access, and handoff destinations. |
 | Operate | `/operate/conversations` | Inbox, conversation detail, ProcedureRun context, Trace. |
 | Operate | `/operate/handoff` | Human task queue, handoff metrics, handoff detail. |
 | Settings | `/settings/organization` | Organization profile, members, default locale, workspace-level preferences. |
@@ -307,19 +309,19 @@ Pilot Lab is the Agent-level workbench and the logged-in default route.
 Primary tabs:
 
 - `Pilot`: ChatGPT-like configuration cockpit. Delivery staff chat with Pilot to create or modify Brain, Procedures, Tools, Hooks, Knowledge refs, Integrations refs, Scenarios, and package drafts. The center is a conversation stream and composer; the right panel shows proposed changes, diff, accept/reject/apply controls, missing information, and relevant receipts.
-- `Playground`: manual testing/debug cockpit. Preserves the current Playground dry-run AgentLoop path, Trace Sidebar, tool/hook evidence, and transcript-saving behavior where supported. Use it when the operator wants to test the Agent directly instead of asking Pilot to change config.
+- `Playground`: Runtime Truth Desk + Manual Test Bench. It preserves the current Playground dry-run AgentLoop path, shared prompt assembly, persisted session/trace restore, tool/hook evidence, and transcript-saving bridge where supported. Use it when the operator wants to test the Agent directly instead of asking Pilot to change config.
 
 Supporting panels:
 
 - Recent Scenario receipts.
-- Runtime-backed vs fixture-only validation labels.
+- Runtime-backed vs fixture-only validation labels, with mocked operational side effects kept distinct from live channel behavior.
 - Trace / Evidence panel for dry-run and Scenario execution.
 
 Testing/debug model:
 
 - `Pilot` answers "help me build or change the Agent." It can propose config patches and trigger validation, but every write requires explicit accept/apply.
 - `Playground` answers "let me test this Agent manually." It is the place for multi-turn stuck-state debugging, dry-run Tool checks, Hook decision checks, ProcedureRun step inspection, and manual transcript testing.
-- `Scenario` answers "prove this behavior keeps working." It stores repeatable cases and generates receipts.
+- `Scenario` answers "prove this behavior keeps working." It stores repeatable cases and generates receipts. `fixture` runs are harness-only; `agentRuntime` runs go through the Playground runtime path.
 - `Run timeline` answers "what happened in this run?" It should show Procedure, Tools, Hooks, Memory, Response, and Reconcile evidence in chronological or grouped form.
 - A user stuck after multiple turns should be debugged by replaying or continuing the chat in Playground and inspecting the Run timeline. The product should make Tool/Hook/ProcedureRun effects visible without exposing code-level breakpoint language.
 
@@ -329,6 +331,8 @@ Rules:
 - Every applied ConfigPilot change must pass through Diff Viewer.
 - Scenario receipts must show Tool calls, Hook decisions, Knowledge hits, human transfer, and final response expectations where available.
 - Failed receipts should be useful as debugging artifacts, not only pass/fail badges.
+- Do not describe Playground as zero-persistence or in-memory-only in current docs. Its UI is a compatibility reuse, but its runtime evidence path is real.
+- Release owns Live/Draft/Historical, publish, rollback preview, import/export, and release confidence. Pilot and Playground do not.
 - Do not delete `/admin/playground`, `/build/playground`, `/api/admin/playground/run`, or `TraceSidebar` until the Pilot Lab `Playground` tab has proven equivalent dry-run and trace behavior with tests and browser smoke. Hiding old routes from navigation is acceptable; deleting capability is not.
 
 ### 3.3 Build -> Components
@@ -450,15 +454,17 @@ Current audit date: 2026-06-10.
 
 This audit began because several Build > Components routes used to preserve old admin implementations under the new IA. The current target truth is stricter: Build / Operate / Settings primary routes are now native and the only approved P0 compatibility reuse is Playground. Any route that still creates old objects by default, links back into old admin routes, or exposes CaseType/Policy/Skill/Guardrail semantics is not delivery-ready even if the runtime/API beneath it works.
 
+For current `main` implementation truth, prefer the matrix below over older target-language bullets elsewhere in this document.
+
 | Component | Current implementation truth | P0 status | Required correction |
 |---|---|---|---|
-| Brain / Model | `/build/components/brain` is now a native Brain workspace with local sections for Model, Memory, Profile, and Compact Test. Model save, prompt save, assembled prompt preview, and memory/profile/compact sections all live inside the same Build route without importing the old `/admin/model` page. | Mostly usable | Add focused browser verification and consider whether `resumePrompt` needs a visible P0 control or can remain backend-only until a dedicated prompt lane. |
-| Brain / Memory | Memory, Profile, and Compact Test are mostly aligned and already separate ProcedureRun state from memory. Some copy still uses generic "policy" wording for profile promotion. | Mostly usable | Keep the existing strategy-first Memory UI. Clean remaining "policy" copy to "rule" or "promotion rule" where it is user-facing. |
-| Procedures | `/build/components/procedures` and `/build/components/procedures/[name]` are now native Build pages. New creation defaults to `new_procedure_*`, `procedure: { steps: [] }`, and routes directly into `/build/components/procedures/[name]`. The main editor now centers on Procedure steps and step-level Hook binding instead of exposing Legacy runtime authoring by default. | Mostly usable | Add focused browser verification and follow with a native Hook simulation panel so Procedure authors can test step bindings without leaving Build. |
-| Hooks | `/build/components/hooks` is now a native Build route that mounts the Hook Builder directly instead of importing the old `/admin/hooks` page. It can create declarative/code/HTTP Hooks and bind them to agent, Procedure type, ProcedureStep, and Tool scopes with current Hook APIs. | Mostly usable | Add focused browser verification, add an explicit Hook simulation/test panel, and ensure ProcedureStep binding remains reachable from both Hooks and Procedure Step editing. |
-| Tools | `/build/components/tools` is now a native Build page. It supports business Tool CRUD, HTTP endpoint test, static fixture authoring, LiveChat render hints, locked runtime-managed Tool visibility, channel-tool enable toggles, and Knowledge auto-generated tool awareness without importing the old `/admin/tools` page. | Mostly usable | Add focused browser verification and decide whether P0 needs a first-class dedicated Tool simulation tab beyond HTTP endpoint test and fixture preview. |
-| Knowledge | `/build/components/knowledge` is now a native Build page using current GPTBots/source/test endpoints. Source editing is Procedure-scoped with live Procedure type options, and the main route no longer exposes old hardcoded CaseType option labels. | Mostly usable | Add focused browser verification and decide whether Procedure-scoped knowledge needs richer per-step visibility in P0, but keep GPTBots retrieval testing as a first-class delivery check. |
-| Integrations | `/build/components/integrations` is now a native Build workspace. Channels and API keys live in the same route, channel cards no longer push into old `/admin/channels/*`, LiveChat now uses the current `agentConfigId`-scoped config/groups APIs, and the API key tutorial no longer points to `/api/cases`. | Mostly usable | Add focused browser verification for LiveChat and Web Chat detail states, and decide whether P0 needs a richer Web Chat customer-side preview beyond the embed snippet. |
+| Brain / Model | `/build/components/brain` is now a native Brain workspace with local sections for Model, Memory, Profile, and Compact Test. Model save, prompt save, and assembled prompt preview all live inside the same Build route without importing the old `/admin/model` page, and model saves emit the config-updated event that Playground listens to. | Mostly usable | Add focused browser verification and consider whether `resumePrompt` needs a visible P0 control or can remain backend-only until a dedicated prompt lane. |
+| Brain / Memory | Memory, Profile, and Compact Test are mostly aligned and already separate ProcedureRun state from memory. Remaining issues are low-level wording/polish rather than route truth. | Mostly usable | Keep the existing strategy-first Memory UI. Clean remaining "policy" copy to "rule" or "promotion rule" where it is user-facing. |
+| Procedures | `/build/components/procedures` and `/build/components/procedures/[name]` are native Build pages over `/api/admin/case-types`. New creation defaults to `new_procedure_*` and direct step authoring with step-level Hook binding, but the visible UX still says `Procedure Type` and still feels partly like a type catalog rather than a pure Procedure workspace. | Mostly usable with vocabulary debt | Run a narrow Procedure copy/IA polish lane; do not reopen runtime/schema. Add step simulation only if a dedicated lane owns it. |
+| Hooks | `/build/components/hooks` is a native Build route shell, but it still mounts the shared `components/admin/hook-builder.tsx` editor. Current shipped behavior is create/edit/delete plus binding management across agent, Procedure type, ProcedureStep, and Tool scopes. No Hook simulation/test panel ships on `main`. | Mostly usable with feature debt | Add focused browser verification, split HookBuilder into Components-owned primitives, and add an explicit Hook simulation/test panel in a dedicated lane. |
+| Tools | `/build/components/tools` is a native Build page. It supports custom Tool CRUD, HTTP endpoint test, static fixture authoring, LiveChat render hints, locked runtime-managed Tool visibility, channel-tool toggles, and Knowledge auto-generated tool awareness without importing the old `/admin/tools` page. It does not expose Tool-scope Hook binding controls even though Hook bindings support `scopeType = tool`. | Mostly usable with boundary debt | Add focused browser verification and either expose Tool-scope Hook binding truth here or explicitly keep that responsibility on Hooks. |
+| Knowledge | `/build/components/knowledge` is a native Build page using current GPTBots/source/test endpoints. Source editing is Procedure-scoped with live Procedure type options, the route no longer exposes hardcoded CaseType labels, and retrieval testing is real. The remaining gap is that advanced retrieval knobs are still surfaced directly in a contract-first way. | Mostly usable | Add focused browser verification and decide whether Procedure-scoped knowledge needs richer per-step visibility or simplified delivery-facing retrieval controls in P0. |
+| Integrations | `/build/components/integrations` is a native Build workspace, but the shipped top-level truth is narrower than some earlier docs implied: the route is `Channels` plus `API Keys`, LiveChat uses current `agentConfigId`-scoped config/groups APIs, and Web Chat is still an embed-script/coming-soon surface rather than a full widget workspace. | Mostly usable with scope debt | Add focused browser verification for LiveChat and Web Chat detail states, and keep docs/specs constrained to the current embed-first Web Chat truth unless a richer lane is approved. |
 | Operate / Conversations | `/operate/conversations`, `/operate/conversations/[chatId]`, and `/operate/conversations/cases/[caseId]` are now native Operate routes. They mount shared conversation, chat-detail, and ProcedureRun-detail workspaces directly instead of exporting old `ops/chats` or `ops/cases` pages. | Mostly usable | Add focused browser verification for inbox, transcript, Memory, Trace, export, delete, and jump-link states with real data. |
 | Operate / Handoff detail | `/operate/handoff/[userId]` now mounts a native User Profile workspace directly instead of exporting the old `ops/users/[userId]` page. | Mostly usable | Add focused browser verification for profile edit/delete and linked chat history states with real data. |
 | Pilot Lab / Playground | Pilot Lab now owns Pilot and Playground tabs and preserves dry-run plus Trace Sidebar. The embedded Playground still has some legacy field names and labels such as `guardrailCount`, `skillCallId`, and older sample phrasing. | P0 cleanup, not deletion | Do not delete Playground dry-run or Trace Sidebar. Clean remaining visible legacy copy while leaving internal compatibility field names alone unless a focused runtime lane owns them. |
@@ -578,8 +584,10 @@ Playground:
 
 - Lives as the second Pilot Lab tab.
 - Preserves the existing dry-run AgentLoop execution path.
+- Is the current Runtime Truth Desk + Manual Test Bench for the selected Agent version.
 - Preserves Trace Sidebar / evidence visualization.
-- Supports manual test messages, dry-run Tool evidence, Hook decision visibility, and saved test transcript behavior where currently available.
+- Supports manual test messages, dry-run Tool evidence, Hook decision visibility, persisted session/trace restore, and saved test transcript behavior where currently available.
+- Uses real runtime evidence with mocked operational side effects. It must not be described as publish/version truth or as a zero-persistence sandbox.
 
 Rules:
 
@@ -659,12 +667,12 @@ Each Component page may include a local test panel:
 
 | Component | Local test |
 |---|---|
-| Brain | prompt preview / sample response |
-| Procedures | step simulation / Hook binding preview |
-| Tools | request test / fixture result |
-| Hooks | Hook simulation / binding impact |
+| Brain | prompt preview / compact test |
+| Procedures | step authoring / Hook binding preview |
+| Tools | request test / fixture result / runtime-managed visibility |
+| Hooks | handler modes / binding manager |
 | Knowledge | retrieval test |
-| Integrations | connection test / sample payload |
+| Integrations | LiveChat connection test / Web Chat embed |
 
 Local tests do not replace Pilot Lab receipts.
 

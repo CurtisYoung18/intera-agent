@@ -12,12 +12,14 @@ Read first:
 4. [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md) - local browser-smoke/auth timebox rules.
 5. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompts and historical lane prompts for zero-context coding sessions; do not redispatch shipped lanes without an explicit repair ask.
 6. [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md) - current risk map and next-lane split before first commercial deployment.
-7. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
-8. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
-9. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
-10. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
-11. [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) - native page rebuild rule, backend contract matrix, and regression gates for Build / Operate / Settings.
-12. [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md) - copy-paste final invariant, command gates, and route-by-route smoke checklist.
+7. [`COMPONENT_TRUTH_AUDIT_2026-06-10.md`](./COMPONENT_TRUTH_AUDIT_2026-06-10.md) - current implementation-truth audit for Build Components, Pilot Lab compatibility, and legacy entry points.
+8. [`PLAYGROUND_TRUTH_AUDIT_2026-06-10.md`](./PLAYGROUND_TRUTH_AUDIT_2026-06-10.md) - current product/runtime truth for Pilot vs Playground, runtime-backed vs fixture-only validation, and compatibility leftovers.
+9. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
+10. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
+11. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
+12. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
+13. [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) - native page rebuild rule, backend contract matrix, and regression gates for Build / Operate / Settings.
+14. [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md) - copy-paste final invariant, command gates, and route-by-route smoke checklist.
 
 ---
 
@@ -177,6 +179,7 @@ Recommended coding-team shape:
 - Historical/legacy fields may be exported under `legacy`; new top-level package fields must use current names.
 - UI/UX: first screen is Build -> Pilot Lab; top-level nav is Build / Operate / Settings; Components has Brain, Procedures, Tools, Hooks, Knowledge, Integrations; Operate has Conversations and Human Handoff only.
 - Pilot Lab has two main tabs: `Pilot` for ChatGPT-like agent building, and `Playground` for manual dry-run testing/debug with existing Trace Sidebar capability. ConfigPilot is not a global drawer in P0.
+- Playground is the current Runtime Truth Desk + Manual Test Bench. It reuses the compatibility UI, runs the selected Agent version through the real AgentLoop/prompt/runtime path with `dryRun` side-effect mocking, and persists/restores Playground session messages plus traces. Treat it as runtime truth, not config-authoring truth.
 - Brain owns memory and compact configuration. Expose strategy-level controls first: Memory Mode, Compact model, Preserve rules, Fact extraction rules, Profile, and Compact Test. Keep raw token thresholds and circuit-breaker knobs under Advanced.
 - `confirmedFacts` are business facts. `ProcedureRun`/runtime state is not a business fact and must not be stored in confirmedFacts.
 - `ProcedureRun` state is session-lifecycle runtime state. It may be summarized into chat memory when useful, but the canonical active/paused/completed ProcedureRun state belongs to the runtime-managed Procedure Run Tracker.
@@ -231,6 +234,8 @@ Shipped foundations already useful for the reset:
 - Logged-in default is `/build/pilot-lab`; Pilot Lab has `Pilot` and `Playground` tabs in the same workspace.
 - Release owns package actions and version control. ConfigPilot no longer mounts as a global drawer.
 - Q3 cleanup keeps `/admin/*` and `/ops/*` legacy paths as compatibility redirects/wrappers while preserving Playground dry-run, Trace Sidebar, and the playground API/runtime surface.
+- 2026-06-10 Components truth audit: the shipped exceptions are now documented explicitly. Procedures still presents `Procedure Type` vocabulary, Tools still lacks Tool-scope Hook binding controls, Hooks still has no simulation panel and still mounts the shared HookBuilder, Integrations/Web Chat is still embed-script-first, and Playground remains the sole approved compatibility import. See [`COMPONENT_TRUTH_AUDIT_2026-06-10.md`](./COMPONENT_TRUTH_AUDIT_2026-06-10.md).
+- 2026-06-10 Playground truth audit: Pilot owns draft authoring, Playground owns runtime/manual testing, Release owns publish/version truth. Runtime-backed Scenario receipts currently run through the real Playground path while operational tool side effects remain mocked. See [`PLAYGROUND_TRUTH_AUDIT_2026-06-10.md`](./PLAYGROUND_TRUTH_AUDIT_2026-06-10.md).
 - UI2 is complete locally. Final integration gate and deploy can proceed after confirming no newer hotfix commits need backport.
 
 Live landmines to keep in mind:
