@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowRight, Clock3, Handshake, Loader2, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRight, ArrowUpRight, Clock3, Handshake, Loader2, Sparkles } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { apiClient, ApiClientError } from '@/lib/api/client'
 import type { CaseDetailResponse, CasesListResponse } from '@intera/shared/contracts/cases'
@@ -170,18 +170,36 @@ export default function HumanHandoffPage() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-lavender/20 bg-lavender/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-lavender">
             <Handshake className="h-3.5 w-3.5" />
-            Operate
+            Handoff
           </div>
           <h1 className="mt-3 text-[clamp(1.4rem,2vw,1.9rem)] font-semibold tracking-tight text-[var(--mist)]">Human Handoff</h1>
           <p className="mt-1 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
-            Review `waiting_human` ProcedureRuns, inspect the latest handoff request, and jump into the linked conversation or ProcedureRun detail without leaving the Operate lane.
+            Review `waiting_human` ProcedureRuns, inspect the latest HumanTask request, and jump into the linked Chat or ProcedureRun detail without leaving the Operate lane.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <MetricCard label="Queue" value={String(queueCount)} accent="amber" />
-          <MetricCard label="Avg wait" value={avgWaitLabel(cases)} accent="indigo" />
-          <MetricCard label="Procedure types" value={String(procedureTypes)} accent="teal" />
-          <MetricCard label="Longest wait" value={longestWait} accent="vermillion" />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-3">
+            <MetricCard label="Queue" value={String(queueCount)} accent="amber" />
+            <MetricCard label="Avg wait" value={avgWaitLabel(cases)} accent="indigo" />
+            <MetricCard label="Procedure types" value={String(procedureTypes)} accent="teal" />
+            <MetricCard label="Longest wait" value={longestWait} accent="vermillion" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/build/components/procedures"
+              className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] bg-white/84 px-3 py-1.5 text-[11px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/18 hover:text-indigo"
+            >
+              Procedures
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+            <Link
+              href="/build/components/hooks"
+              className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] bg-white/84 px-3 py-1.5 text-[11px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/18 hover:text-indigo"
+            >
+              Hooks
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
       </header>
 

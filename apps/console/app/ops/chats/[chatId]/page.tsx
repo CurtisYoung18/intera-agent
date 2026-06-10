@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft,
   MessageSquare,
   User,
   Bot,
@@ -18,8 +17,7 @@ import {
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
 import MessageContent from '@/components/chat/message-content'
-// Trace timeline rendered inline below
-import { useConsoleLocale } from '@/components/locale-provider'
+import { ConsoleBackButton } from '@/components/ui/console-chrome'
 import { apiClient } from '@/lib/api/client'
 import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
 
@@ -246,65 +244,87 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] max-w-[960px] flex-col px-4 py-4 sm:px-6">
+    <div className="mx-auto flex min-h-[100dvh] max-w-[1320px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
       {/* Toolbar */}
-      <header className="sticky top-0 z-30 mb-4 flex flex-shrink-0 items-center justify-between gap-3 rounded-2xl border border-black/[0.06] bg-white/55 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur-xl">
-        <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={() => router.push('/operate/conversations')}
-            className="console-btn-icon-square" aria-label="Back">
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-[14px] font-semibold tracking-tight text-[var(--mist)]">
-              Chat · {session?.userId ?? decodedChatId.slice(0, 16) + '…'}
-            </h1>
-            {session && (
-              <p className="mt-0.5 text-[11px] text-[var(--fog)]/70">
-                {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} traces
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {session?.cases.map((c) => (
-            <div key={c.id} className="flex items-center gap-1">
-              <CasePill caseItem={c} />
-              <Link href={`/operate/conversations/cases/${encodeURIComponent(c.id)}`}
-                className="console-btn-icon-square h-6 w-6" title="View ProcedureRun details">
-                <BarChart3 className="h-3 w-3" />
-              </Link>
+      <header className="sticky top-0 z-30 rounded-[26px] border border-black/[0.06] bg-white/[0.68] px-4 py-4 shadow-[var(--shadow-card)] backdrop-blur-xl sm:px-5">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <ConsoleBackButton
+                label="Conversations"
+                ariaLabel="Back to conversations"
+                onClick={() => router.push('/operate/conversations')}
+              />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">Operate</p>
+                <h1 className="truncate text-[16px] font-semibold tracking-tight text-[var(--mist)]">
+                  Chat · {session?.userId ?? `${decodedChatId.slice(0, 16)}…`}
+                </h1>
+                {session ? (
+                  <p className="mt-1 text-[12px] text-[var(--fog)]/80">
+                    {session.cases.length} ProcedureRun{session.cases.length !== 1 ? 's' : ''} · {session.messageCount} msgs · {traces.length} traces
+                  </p>
+                ) : null}
+              </div>
             </div>
-          ))}
-          {!loading && session && (
-            <>
-              {session.userId && (() => {
-                // UserProfile is keyed by a stable profileKey (user:<id> / chat:<chatId>),
-                // matching how the agent loop & compact write it. Link to that key.
-                const u = session.userId.trim()
-                const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u)
-                const pkey = (u && u !== 'anonymous' && !isUuid) ? `user:${u}` : `chat:${decodedChatId}`
-                return (
-                <Link href={`/operate/handoff/${encodeURIComponent(pkey)}`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo/20 bg-indigo/[0.06] hover:bg-indigo/[0.12] transition-colors text-indigo"
-                  title="Open this user's profile (cross-chat history & preferences)">
-                  <User className="w-3.5 h-3.5" />
-                  Profile
-                </Link>
-                )
-              })()}
-              <ExportButton filename={`chat-${decodedChatId.slice(0, 8)}`} label="Export"
-                getData={() => ({ session, messages, traces, exportedAt: new Date().toISOString() })} />
-              <button type="button" onClick={handleDelete} disabled={deleting}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--fog)]/50 hover:text-[var(--vermillion)] transition-colors">
-                {deleting ? <OrganicLoader icon="spin" size={14} className="text-[var(--vermillion)]" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </button>
-            </>
-          )}
+
+            {!loading && session ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {session.userId && (() => {
+                  // UserProfile is keyed by a stable profileKey (user:<id> / chat:<chatId>),
+                  // matching how the agent loop & compact write it. Link to that key.
+                  const userKey = session.userId.trim()
+                  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userKey)
+                  const profileKey = (userKey && userKey !== 'anonymous' && !isUuid) ? `user:${userKey}` : `chat:${decodedChatId}`
+                  return (
+                    <Link
+                      href={`/operate/handoff/${encodeURIComponent(profileKey)}`}
+                      className="inline-flex items-center gap-1.5 rounded-[14px] border border-indigo/18 bg-indigo/[0.06] px-3 py-2 text-[12px] font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
+                      title="Open this user's profile (cross-chat history & preferences)"
+                    >
+                      <User className="h-3.5 w-3.5" />
+                      User
+                    </Link>
+                  )
+                })()}
+                <ExportButton
+                  filename={`chat-${decodedChatId.slice(0, 8)}`}
+                  label="Export"
+                  getData={() => ({ session, messages, traces, exportedAt: new Date().toISOString() })}
+                />
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] border border-black/[0.06] bg-white/80 text-[var(--fog)]/60 transition-colors hover:border-[var(--vermillion)]/18 hover:bg-[var(--vermillion)]/[0.08] hover:text-[var(--vermillion)]"
+                >
+                  {deleting ? <OrganicLoader icon="spin" size={14} className="text-[var(--vermillion)]" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          {session?.cases.length ? (
+            <div className="flex flex-wrap gap-2">
+              {session.cases.map((caseItem) => (
+                <div key={caseItem.id} className="flex items-center gap-1.5">
+                  <CasePill caseItem={caseItem} />
+                  <Link
+                    href={`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
+                    className="console-btn-icon-square h-8 w-8"
+                    title="View ProcedureRun details"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
 
       {/* Metrics bar + Analysis toggle */}
-      <div className="mb-4 space-y-3">
+      <div className="space-y-3">
         {metrics.llmCalls > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label="LLM Calls" value={String(metrics.llmCalls)} />
@@ -313,7 +333,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
             <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label="Tool Phase" value={fmtMs(metrics.toolPhaseMs)} />
           </div>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={toggleMemory}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-teal/20 bg-teal/[0.04] hover:bg-teal/[0.08] transition-colors text-teal">
             <MessageSquare className="w-3.5 h-3.5" />
@@ -468,13 +488,13 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
 
       {/* Trace timeline */}
       {showTraces && traces.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-black/[0.06] bg-white/60 p-4 max-h-[400px] overflow-auto">
+        <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.66] p-4 max-h-[400px] overflow-auto shadow-[var(--shadow-card)]">
           <TraceList traces={traces} />
         </div>
       )}
 
       {/* Messages */}
-      <main className="flex-1 overflow-y-auto rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/60 to-white/30 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
+      <main className="flex-1 overflow-y-auto rounded-[26px] border border-black/[0.06] bg-gradient-to-br from-white/[0.72] to-white/[0.42] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
         {loading ? (
           <div className="flex h-48 items-center justify-center">
             <OrganicLoader icon="spin" size={28} className="text-indigo/60" />
@@ -652,13 +672,13 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
               {unassigned.map((t) => {
                 const actionType = normalizeTraceActionType(t.actionType)
                 return (
-                  <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
+                  <div key={t.id} className="flex flex-col gap-1.5 border-b border-black/[0.02] px-3 py-2 text-[11px] last:border-b-0 sm:flex-row sm:items-start sm:gap-2">
                     <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
                       style={{ background: ACTION_COLORS[actionType] ?? '#a09888' }} />
-                    <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
-                    <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{actionType}</span>
-                    <span className="text-[var(--mist)] truncate">{t.title}</span>
-                    {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+                    <span className="text-[var(--fog)]/50 sm:w-14 sm:flex-shrink-0">{fmtTime(t.createdAt)}</span>
+                    <span className="text-[var(--fog)] sm:w-28 sm:flex-shrink-0">{actionType}</span>
+                    <span className="text-[var(--mist)] break-words">{t.title}</span>
+                    {t.detail && <span className="text-[var(--fog)]/50 break-words sm:ml-1">{t.detail}</span>}
                   </div>
                 )
               })}
@@ -689,13 +709,13 @@ function TraceList({ traces }: { traces: TraceItem[] }) {
                 {group.map((t) => {
                   const actionType = normalizeTraceActionType(t.actionType)
                   return (
-                    <div key={t.id} className="flex items-start gap-2 py-1.5 px-3 text-[11px] border-b border-black/[0.02] last:border-b-0">
+                    <div key={t.id} className="flex flex-col gap-1.5 border-b border-black/[0.02] px-3 py-2 text-[11px] last:border-b-0 sm:flex-row sm:items-start sm:gap-2">
                       <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
                         style={{ background: ACTION_COLORS[actionType] ?? '#a09888' }} />
-                      <span className="text-[var(--fog)]/50 w-14 flex-shrink-0">{fmtTime(t.createdAt)}</span>
-                      <span className="text-[var(--fog)] w-28 flex-shrink-0 truncate">{actionType}</span>
-                      <span className="text-[var(--mist)] truncate">{t.title}</span>
-                      {t.detail && <span className="text-[var(--fog)]/50 truncate ml-1">{t.detail}</span>}
+                      <span className="text-[var(--fog)]/50 sm:w-14 sm:flex-shrink-0">{fmtTime(t.createdAt)}</span>
+                      <span className="text-[var(--fog)] sm:w-28 sm:flex-shrink-0">{actionType}</span>
+                      <span className="text-[var(--mist)] break-words">{t.title}</span>
+                      {t.detail && <span className="text-[var(--fog)]/50 break-words sm:ml-1">{t.detail}</span>}
                     </div>
                   )
                 })}

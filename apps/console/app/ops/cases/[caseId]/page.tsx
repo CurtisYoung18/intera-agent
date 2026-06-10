@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Cpu, Zap, Clock, Wrench, BarChart3, ChevronDown } from 'lucide-react'
+import { Cpu, Zap, Clock, Wrench, BarChart3, ChevronDown } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { CaseTraceTimeline, type TraceRow } from '@/components/ops/case-trace-view'
 import { useConsoleLocale } from '@/components/locale-provider'
 import ReactMarkdown from 'react-markdown'
 import { apiClient } from '@/lib/api/client'
+import { ConsoleBackButton, ConsoleStatusPill } from '@/components/ui/console-chrome'
 import type { CaseDetailResponse } from '@intera/shared/contracts/cases'
 
 interface CaseData {
@@ -178,47 +179,44 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     )
   }
 
-  const statusColor: Record<string, string> = {
-    created: '#a09888', collecting: '#5b8af7', investigating: '#6366f1',
-    waiting_human: '#d4912e', resolved: '#2ea04a', escalated: '#e64539',
-  }
-
   return (
-    <div className="mx-auto flex min-h-[100dvh] max-w-[960px] flex-col px-4 py-4 sm:px-6">
+    <div className="mx-auto flex min-h-[100dvh] max-w-[1320px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
       {/* Header */}
-      <header className="sticky top-0 z-30 mb-4 flex flex-shrink-0 items-center justify-between gap-3 rounded-2xl border border-black/[0.06] bg-white/55 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur-xl">
-        <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={() => router.back()}
-            className="console-btn-icon-square" aria-label="Back">
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-[14px] font-semibold tracking-tight text-[var(--mist)]">
-              ProcedureRun · {caseData.type.replace(/_/g, ' ')}
-              <span className="ml-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
-                style={{ borderColor: `${statusColor[caseData.status] || '#a09888'}44`, color: statusColor[caseData.status] || '#a09888' }}>
-                {caseData.status}
-              </span>
-            </h1>
-            <p className="mt-0.5 text-[11px] text-[var(--fog)]/70">
-              {caseData.id} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
-            </p>
+      <header className="sticky top-0 z-30 rounded-[26px] border border-black/[0.06] bg-white/[0.68] px-4 py-4 shadow-[var(--shadow-card)] backdrop-blur-xl sm:px-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <ConsoleBackButton label="Conversation" ariaLabel="Back to conversation" onClick={() => router.back()} />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">ProcedureRun</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-[16px] font-semibold tracking-tight text-[var(--mist)]">
+                  {caseData.type.replace(/_/g, ' ')}
+                </h1>
+                <ConsoleStatusPill status={caseData.status}>{caseData.status.replace(/_/g, ' ')}</ConsoleStatusPill>
+              </div>
+              <p className="mt-1 text-[12px] text-[var(--fog)]/78">
+                {caseData.id} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
+            {caseData.chatId ? (
+              <button
+                onClick={() => router.push(`/operate/conversations/${encodeURIComponent(caseData.chatId!)}`)}
+                className="rounded-[14px] border border-indigo/18 bg-indigo/[0.06] px-3 py-2 text-[12px] font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
+              >
+                {t('caseDetail.viewChat')}
+              </button>
+            ) : null}
           <a
             href={`/api/cases/${encodeURIComponent(caseData.id)}/export`}
-            className="text-[11px] text-[var(--fog)] hover:text-[var(--mist)] whitespace-nowrap px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] hover:bg-black/[0.03] transition-colors"
+            className="whitespace-nowrap rounded-[14px] border border-[var(--border-subtle)] px-3 py-2 text-[12px] text-[var(--fog)] transition-colors hover:bg-black/[0.03] hover:text-[var(--mist)]"
             onClick={(e) => { e.preventDefault(); window.open(`/api/cases/${encodeURIComponent(caseData.id)}/export`, '_blank') }}
           >
             Export .md
           </a>
-          {caseData.chatId && (
-            <button onClick={() => router.push(`/operate/conversations/${encodeURIComponent(caseData.chatId!)}`)}
-              className="text-[11px] text-indigo hover:underline whitespace-nowrap">
-              {t('caseDetail.viewChat')}
-            </button>
-          )}
+          </div>
         </div>
       </header>
 

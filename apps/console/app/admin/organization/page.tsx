@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { usePathname, useSearchParams, useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { Building2, UserPlus, Trash2, Copy, Check, Shield, AlertCircle, X, Link } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -61,7 +61,9 @@ const PERMISSIONS: PermRow[] = [
 
 function GlassCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm ${className}`}>
+    <div
+      className={`rounded-[24px] border border-white/68 bg-white/[0.72] backdrop-blur-xl shadow-[0_18px_38px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.72)] ${className}`}
+    >
       {children}
     </div>
   )
@@ -73,38 +75,52 @@ function OrganizationPageInner() {
   const { t } = useConsoleLocale()
   const searchParams = useSearchParams()
   const router = useRouter()
+  const pathname = usePathname()
   const tab = searchParams.get('tab') || 'general'
 
   return (
-    <div className="px-8 py-8">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-9 h-9 rounded-xl bg-white/60 backdrop-blur-sm border border-white/20 shadow-sm flex items-center justify-center">
-          <Building2 className="w-4.5 h-4.5 text-indigo-500" />
-        </div>
-        <div>
-          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('organization.title')}</h1>
+    <div className="mx-auto flex max-w-[1500px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="rounded-[28px] border border-black/[0.06] bg-white/[0.72] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">
+              <Building2 className="h-3.5 w-3.5" />
+              Settings
+            </div>
+            <h1 className="mt-3 text-[clamp(1.45rem,2vw,1.95rem)] font-semibold tracking-tight text-[var(--mist)]">
+              {t('organization.title')}
+            </h1>
+            <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
+              Manage the workspace name, member access, invitation flow, and the permission matrix without leaving the quiet material language used across the rest of the Console.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px] text-[var(--fog)]">
+            <span className="rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5">Organization profile</span>
+            <span className="rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5">Members and invitations</span>
+            <span className="rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5">Permission matrix</span>
+          </div>
         </div>
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-0 mb-8 border-b border-black/5">
-        {(['general', 'members', 'permissions'] as const).map((tKey) => (
-          <button
-            key={tKey}
-            type="button"
-            onClick={() => router.push(`/admin/organization?tab=${tKey}`)}
-            className={`relative px-5 py-2.5 text-[13px] font-medium transition-colors -mb-px ${
-              tab === tKey
-                ? 'text-[var(--mist)]'
-                : 'text-[var(--fog)]/60 hover:text-[var(--fog)]'
-            }`}
-          >
-            {t(`organization.${tKey}`)}
-            {tab === tKey && (
-              <div className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-indigo" />
-            )}
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-2 rounded-[24px] border border-black/[0.05] bg-white/[0.58] p-2 shadow-[var(--shadow-card)] backdrop-blur-xl">
+        {(['general', 'members', 'permissions'] as const).map((tKey) => {
+          const active = tab === tKey
+          return (
+            <button
+              key={tKey}
+              type="button"
+              onClick={() => router.push(`${pathname}?tab=${tKey}`)}
+              className={`rounded-[18px] px-4 py-2.5 text-[13px] font-medium transition-all ${
+                active
+                  ? 'border border-indigo/18 bg-indigo/[0.08] text-[var(--mist)] shadow-[0_10px_24px_rgba(91,138,247,0.08)]'
+                  : 'border border-transparent text-[var(--fog)] hover:border-black/[0.05] hover:bg-white/75 hover:text-[var(--mist)]'
+              }`}
+            >
+              {t(`organization.${tKey}`)}
+            </button>
+          )
+        })}
       </div>
 
       {/* Tab content */}
@@ -163,25 +179,29 @@ function GeneralTab() {
   if (sessionLoading) return <div className="text-[var(--fog)] text-sm">{t('common.loading')}</div>
 
   return (
-    <div className="max-w-md">
-      <GlassCard className="p-6">
+    <div className="max-w-2xl">
+      <GlassCard className="p-6 sm:p-7">
         <div className="space-y-4">
           <div>
-            <label className="block text-[11px] font-semibold text-[var(--smoke)] mb-1.5 uppercase tracking-wider">{t('organization.nameLabel')}</label>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">General</p>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--smoke)]">{t('organization.nameLabel')}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="glass-input-console text-[14px] w-full"
+              className="glass-input-console w-full rounded-[16px] bg-white/88 text-[14px]"
               onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
             />
+            <p className="mt-2 text-[12px] leading-6 text-[var(--fog)]">
+              This name is shown in the identity menu, org picker, and workspace-level surfaces.
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleSave}
               disabled={saving || !name.trim()}
-              className="px-5 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 disabled:opacity-40 transition-all shadow-sm"
+              className="rounded-[16px] bg-[#357f7c] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[0_16px_28px_rgba(53,127,124,0.16)] transition-all hover:bg-[#2b6c69] disabled:opacity-40"
             >
               {saving ? t('common.saving') : t('common.save')}
             </button>
@@ -335,142 +355,149 @@ function MembersTab() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <p className="text-[13px] text-[var(--fog)]">
-          {t('organization.memberCount', { n: members.length, nPl: members.length !== 1 ? 's' : '', m: invitations.length, mPl: invitations.length !== 1 ? 's' : '' })}
-        </p>
-        <div className="flex items-center gap-2">
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-[13px] text-[var(--fog)]">
+            {t('organization.memberCount', { n: members.length, nPl: members.length !== 1 ? 's' : '', m: invitations.length, mPl: invitations.length !== 1 ? 's' : '' })}
+          </p>
+          <p className="mt-1 text-[12px] text-[var(--smoke)] sm:hidden">Role editing stays available, but the table is easiest to review on desktop.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => { setShowShareLink(true); setShareLinkError(null); setShareLinkToken(null) }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border border-indigo/20 text-indigo hover:bg-indigo/[0.04] transition-all"
+            className="flex items-center gap-2 rounded-[16px] border border-indigo/20 px-4 py-2.5 text-[13px] font-semibold text-indigo transition-all hover:bg-indigo/[0.04]"
           >
-            <Link className="w-4 h-4" /> {t('organization.shareLink')}
+            <Link className="h-4 w-4" /> {t('organization.shareLink')}
           </button>
           <button
             onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(false); setInviteToken(null); setCopiedLink(false) }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold bg-indigo text-white hover:bg-indigo/90 transition-all shadow-sm"
+            className="flex items-center gap-2 rounded-[16px] bg-[#357f7c] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_16px_28px_rgba(53,127,124,0.16)] transition-all hover:bg-[#2b6c69]"
           >
-            <UserPlus className="w-4 h-4" /> {t('organization.inviteMember')}
+            <UserPlus className="h-4 w-4" /> {t('organization.inviteMember')}
           </button>
         </div>
       </div>
 
       {/* Members table */}
-      <GlassCard className="overflow-hidden mb-8">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-black/5 text-[11px] text-[var(--mist)]/60 uppercase tracking-wider">
-              <th className="text-left px-5 py-3 font-semibold">{t('organization.table.member')}</th>
-              <th className="text-left px-5 py-3 font-semibold">{t('organization.table.role')}</th>
-              <th className="text-left px-5 py-3 font-semibold">{t('organization.table.joined')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => (
-              <tr key={m.id} className="border-b border-black/[0.03] last:border-0 hover:bg-black/[0.01] transition-colors">
-                <td className="px-5 py-3.5">
-                  <div className="font-medium text-[var(--mist)]">{m.user.name || m.user.email}</div>
-                  <div className="text-xs text-[var(--fog)] mt-0.5">{m.user.email}</div>
-                </td>
-                <td className="px-5 py-3.5">
-                  {m.role === 'owner' || m.user.id === currentUserId ? (
-                    <span className={`inline-flex items-center gap-1.5 text-[var(--mist)] px-2.5 py-1 rounded-lg border ${m.role === 'owner' ? 'bg-amber-50 border-amber-200/50' : 'bg-slate-50 border-slate-200/50'}`}>
-                      <Shield className={`w-3.5 h-3.5 ${m.role === 'owner' ? 'text-amber-500' : 'text-slate-400'}`} />
-                      <span className="text-[12px] font-medium">{rl(m.role)}</span>
-                    </span>
-                  ) : (
-                    <select
-                      value={m.role}
-                      onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                      className="glass-input-console text-[13px] py-1.5 px-2.5 rounded-lg"
-                    >
-                      {ROLE_OPTIONS.map((r) => (
-                        <option key={r} value={r}>{rl(r)}</option>
-                      ))}
-                    </select>
-                  )}
-                </td>
-                <td className="px-5 py-3.5 text-[var(--fog)] text-xs">
-                  {formatDate(m.invitedAt)}
-                </td>
+      <GlassCard className="mb-8 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-[640px] w-full text-sm">
+            <thead>
+              <tr className="border-b border-black/5 text-[11px] uppercase tracking-wider text-[var(--mist)]/60">
+                <th className="px-5 py-3 text-left font-semibold">{t('organization.table.member')}</th>
+                <th className="px-5 py-3 text-left font-semibold">{t('organization.table.role')}</th>
+                <th className="px-5 py-3 text-left font-semibold">{t('organization.table.joined')}</th>
               </tr>
-            ))}
-            {members.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-5 py-10 text-center text-[var(--fog)] text-sm">
-                  {t('organization.noMembers')}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m.id} className="border-b border-black/[0.03] last:border-0 hover:bg-black/[0.01] transition-colors">
+                  <td className="px-5 py-3.5">
+                    <div className="font-medium text-[var(--mist)]">{m.user.name || m.user.email}</div>
+                    <div className="mt-0.5 text-xs text-[var(--fog)]">{m.user.email}</div>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {m.role === 'owner' || m.user.id === currentUserId ? (
+                      <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[var(--mist)] ${m.role === 'owner' ? 'border-amber-200/50 bg-amber-50' : 'border-slate-200/50 bg-slate-50'}`}>
+                        <Shield className={`h-3.5 w-3.5 ${m.role === 'owner' ? 'text-amber-500' : 'text-slate-400'}`} />
+                        <span className="text-[12px] font-medium">{rl(m.role)}</span>
+                      </span>
+                    ) : (
+                      <select
+                        value={m.role}
+                        onChange={(e) => handleRoleChange(m.id, e.target.value)}
+                        className="glass-input-console rounded-lg bg-white/88 px-2.5 py-1.5 text-[13px]"
+                      >
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r} value={r}>{rl(r)}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5 text-xs text-[var(--fog)]">
+                    {formatDate(m.invitedAt)}
+                  </td>
+                </tr>
+              ))}
+              {members.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-5 py-10 text-center text-sm text-[var(--fog)]">
+                    {t('organization.noMembers')}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </GlassCard>
 
       {/* Pending invitations */}
       {invitations.length > 0 && (
         <>
-          <h2 className="text-[15px] font-semibold text-[var(--mist)] mb-3">{t('organization.pendingInvitations')}</h2>
+          <h2 className="mb-3 text-[15px] font-semibold text-[var(--mist)]">{t('organization.pendingInvitations')}</h2>
           <GlassCard className="overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-black/5 text-[11px] text-[var(--mist)]/60 uppercase tracking-wider">
-                  <th className="text-left px-5 py-3 font-semibold">{t('organization.table.email')}</th>
-                  <th className="text-left px-5 py-3 font-semibold">{t('organization.table.role')}</th>
-                  <th className="text-left px-5 py-3 font-semibold">{t('organization.table.expires')}</th>
-                  <th className="text-right px-5 py-3 font-semibold">{t('organization.table.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invitations.map((inv) => (
-                  <tr key={inv.id} className="border-b border-black/[0.03] last:border-0">
-                    <td className="px-5 py-3.5">
-                      {inv.email ? (
-                        <>
-                          <div className="text-[var(--mist)] font-medium">{inv.email}</div>
-                          {inv.inviter && (
-                            <div className="text-xs text-[var(--fog)] mt-0.5">{t('organization.invitedBy', { name: inv.inviter.name || inv.inviter.email })}</div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <Link className="w-3.5 h-3.5 text-indigo" />
-                          <span className="text-[var(--mist)] font-medium">{t('organization.shareLink')}</span>
-                          <span className="text-[11px] text-[var(--fog)]">({rl(inv.role)})</span>
-                          {inv.maxUses != null && (
-                            <span className="text-[11px] text-[var(--fog)]">{t('organization.shareLink.usedCount', { used: inv.useCount, max: inv.maxUses })}</span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-[13px] text-[var(--fog)] bg-black/[0.03] px-2.5 py-1 rounded-lg">{rl(inv.role)}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-[var(--fog)] text-xs">
-                      {formatDate(inv.expiresAt)}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => copyInviteLink(inv.token)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo/[0.06] text-[var(--fog)] hover:text-indigo transition-colors text-[12px] font-medium"
-                          title={t('organization.copyLink')}
-                        >
-                          {copiedId === inv.token ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                          {copiedId === inv.token ? t('organization.copied') : t('organization.copyLink')}
-                        </button>
-                        <button
-                          onClick={() => handleRevoke(inv.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-500/10 text-[var(--fog)] hover:text-red-500 transition-colors text-[12px]"
-                          title={t('organization.revoke')}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="min-w-[720px] w-full text-sm">
+                <thead>
+                  <tr className="border-b border-black/5 text-[11px] uppercase tracking-wider text-[var(--mist)]/60">
+                    <th className="px-5 py-3 text-left font-semibold">{t('organization.table.email')}</th>
+                    <th className="px-5 py-3 text-left font-semibold">{t('organization.table.role')}</th>
+                    <th className="px-5 py-3 text-left font-semibold">{t('organization.table.expires')}</th>
+                    <th className="px-5 py-3 text-right font-semibold">{t('organization.table.actions')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {invitations.map((inv) => (
+                    <tr key={inv.id} className="border-b border-black/[0.03] last:border-0">
+                      <td className="px-5 py-3.5">
+                        {inv.email ? (
+                          <>
+                            <div className="font-medium text-[var(--mist)]">{inv.email}</div>
+                            {inv.inviter ? (
+                              <div className="mt-0.5 text-xs text-[var(--fog)]">{t('organization.invitedBy', { name: inv.inviter.name || inv.inviter.email })}</div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <Link className="h-3.5 w-3.5 text-indigo" />
+                            <span className="font-medium text-[var(--mist)]">{t('organization.shareLink')}</span>
+                            <span className="text-[11px] text-[var(--fog)]">({rl(inv.role)})</span>
+                            {inv.maxUses != null ? (
+                              <span className="text-[11px] text-[var(--fog)]">{t('organization.shareLink.usedCount', { used: inv.useCount, max: inv.maxUses })}</span>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="rounded-lg bg-black/[0.03] px-2.5 py-1 text-[13px] text-[var(--fog)]">{rl(inv.role)}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-xs text-[var(--fog)]">
+                        {formatDate(inv.expiresAt)}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => copyInviteLink(inv.token)}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-[var(--fog)] transition-colors hover:bg-indigo/[0.06] hover:text-indigo"
+                            title={t('organization.copyLink')}
+                          >
+                            {copiedId === inv.token ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copiedId === inv.token ? t('organization.copied') : t('organization.copyLink')}
+                          </button>
+                          <button
+                            onClick={() => handleRevoke(inv.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] text-[var(--fog)] transition-colors hover:bg-red-500/10 hover:text-red-500"
+                            title={t('organization.revoke')}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </GlassCard>
         </>
       )}
@@ -671,29 +698,31 @@ function PermissionsTab() {
   const { t } = useConsoleLocale()
 
   return (
-    <GlassCard className="overflow-hidden max-w-2xl">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-black/5 text-[11px] text-[var(--smoke)] uppercase tracking-wider">
-            <th className="text-left px-5 py-3 font-semibold">{t('organization.permissions.capability')}</th>
-            <th className="text-center px-5 py-3 font-semibold w-16">{t('organization.role.owner')}</th>
-            <th className="text-center px-5 py-3 font-semibold w-16">{t('organization.role.admin')}</th>
-            <th className="text-center px-5 py-3 font-semibold w-16">{t('organization.role.operator')}</th>
-            <th className="text-center px-5 py-3 font-semibold w-16">{t('organization.role.viewer')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {PERMISSIONS.map((row) => (
-            <tr key={row.capability} className="border-b border-black/[0.03] last:border-0">
-              <td className="px-5 py-3.5 text-[var(--mist)] text-[13px]">{row.capability}</td>
-              <td className="px-5 py-3.5 text-center">{row.owner ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">&mdash;</span>}</td>
-              <td className="px-5 py-3.5 text-center">{row.admin ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">&mdash;</span>}</td>
-              <td className="px-5 py-3.5 text-center">{row.operator ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">&mdash;</span>}</td>
-              <td className="px-5 py-3.5 text-center">{row.viewer ? <Check className="w-4 h-4 text-malachite mx-auto" /> : <span className="text-[var(--fog)]/20 text-xs">&mdash;</span>}</td>
+    <GlassCard className="max-w-4xl overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="min-w-[760px] w-full text-sm">
+          <thead>
+            <tr className="border-b border-black/5 text-[11px] uppercase tracking-wider text-[var(--smoke)]">
+              <th className="px-5 py-3 text-left font-semibold">{t('organization.permissions.capability')}</th>
+              <th className="w-16 px-5 py-3 text-center font-semibold">{t('organization.role.owner')}</th>
+              <th className="w-16 px-5 py-3 text-center font-semibold">{t('organization.role.admin')}</th>
+              <th className="w-16 px-5 py-3 text-center font-semibold">{t('organization.role.operator')}</th>
+              <th className="w-16 px-5 py-3 text-center font-semibold">{t('organization.role.viewer')}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {PERMISSIONS.map((row) => (
+              <tr key={row.capability} className="border-b border-black/[0.03] last:border-0">
+                <td className="px-5 py-3.5 text-[13px] text-[var(--mist)]">{row.capability}</td>
+                <td className="px-5 py-3.5 text-center">{row.owner ? <Check className="mx-auto h-4 w-4 text-malachite" /> : <span className="text-xs text-[var(--fog)]/20">&mdash;</span>}</td>
+                <td className="px-5 py-3.5 text-center">{row.admin ? <Check className="mx-auto h-4 w-4 text-malachite" /> : <span className="text-xs text-[var(--fog)]/20">&mdash;</span>}</td>
+                <td className="px-5 py-3.5 text-center">{row.operator ? <Check className="mx-auto h-4 w-4 text-malachite" /> : <span className="text-xs text-[var(--fog)]/20">&mdash;</span>}</td>
+                <td className="px-5 py-3.5 text-center">{row.viewer ? <Check className="mx-auto h-4 w-4 text-malachite" /> : <span className="text-xs text-[var(--fog)]/20">&mdash;</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </GlassCard>
   )
 }

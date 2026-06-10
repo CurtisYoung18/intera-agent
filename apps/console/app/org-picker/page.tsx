@@ -2,8 +2,9 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ArrowRight, Building2 } from 'lucide-react'
+import { ArrowRight, Building2, Loader2 } from 'lucide-react'
 import { apiClient } from '@/lib/api/client'
+import { ConsoleAuthShell } from '@/components/auth/console-auth-shell'
 
 interface Membership {
   orgId: string
@@ -72,93 +73,90 @@ function OrgPicker() {
     return labels[role] || role
   }
 
-  return (
-    <div className="intera-q2-page min-h-[100dvh] px-4 py-8 text-[var(--color-text-primary)] sm:px-8 lg:px-12">
-      <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-2xl flex-col justify-center">
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[var(--radius-panel)] border border-[rgba(53,127,124,0.18)] bg-white/80 text-[var(--color-accent-primary)] shadow-[0_1px_2px_rgba(21,23,25,0.04)]">
-            <Building2 className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
-              Workspace
-            </p>
-            <h1 className="mt-1 text-[24px] font-semibold leading-8 text-[var(--color-text-primary)]">
-              Select Organization
-            </h1>
-          </div>
-        </div>
-        <p className="mb-6 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">
-          Choose which organization you want to access.
-        </p>
+  const statusLabel = error
+    ? 'Membership lookup needs attention'
+    : loading
+      ? 'Loading organization memberships'
+      : `${orgs.length} organization${orgs.length === 1 ? '' : 's'} available`
 
-        {error && (
-          <div
-            role="alert"
-            className="mb-5 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-          >
-            {error}
+  return (
+    <ConsoleAuthShell
+      headline={
+        <>
+          Pick the organization
+          <br />
+          that should <em className="text-[#357f7c] not-italic">frame this session.</em>
+        </>
+      }
+      description="If your account belongs to more than one workspace, choose the organization that should power the next Build, Operate, and Settings session."
+      statusLabel={statusLabel}
+      statusTone={error ? 'danger' : loading ? 'neutral' : 'success'}
+      statusDetail="You can switch later from the identity menu."
+      panelEyebrow="Workspace Access"
+      panelTitle="Select Organization"
+      panelDescription="Choose which organization you want to access before entering the Console."
+      panelWidthClassName="max-w-[520px]"
+    >
+      {error ? (
+        <div
+          role="alert"
+          className="mb-5 rounded-[18px] border border-vermillion/18 bg-vermillion/[0.07] px-4 py-3 text-[13px] text-vermillion"
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-[24px] border border-white/72 bg-white/[0.74] shadow-[0_18px_36px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.7)]">
+        {loading ? (
+          <div className="space-y-3 px-4 py-4">
+            {[0, 1].map((row) => (
+              <div key={row} className="flex items-center gap-4 rounded-[18px] border border-black/[0.04] bg-white/78 px-4 py-4">
+                <div className="h-11 w-11 animate-pulse rounded-[16px] bg-black/[0.05]" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3.5 w-32 animate-pulse rounded-full bg-black/[0.05]" />
+                  <div className="h-2.5 w-20 animate-pulse rounded-full bg-black/[0.04]" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : orgs.length === 0 ? (
+          <div className="px-6 py-10 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[18px] border border-black/[0.05] bg-white/85 text-[var(--fog)]">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-[15px] font-semibold text-[var(--mist)]">No organization memberships</p>
+            <p className="mt-2 text-[13px] leading-6 text-[var(--fog)]">
+              You do not belong to any organization yet. Contact your administrator for an invitation.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3 p-3">
+            {orgs.map((org) => (
+              <button
+                key={org.orgId}
+                onClick={() => selectOrg(org.orgId)}
+                disabled={switching !== null}
+                className="group flex w-full items-center gap-4 rounded-[20px] border border-black/[0.05] bg-white/[0.82] px-4 py-4 text-left shadow-[0_12px_24px_rgba(21,23,25,0.04)] transition-all hover:border-[#357f7c]/16 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#357f7c]/18 disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[16px] border border-[#357f7c]/16 bg-[#357f7c]/[0.08] text-[#357f7c]">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[14px] font-semibold text-[var(--mist)]">{org.name}</div>
+                  <div className="mt-1 text-[12px] capitalize text-[var(--fog)]">{roleLabel(org.role)}</div>
+                </div>
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-black/[0.05] bg-white/80 text-[var(--fog)] transition-colors group-hover:text-[#357f7c]">
+                  {switching === org.orgId ? (
+                    <Loader2 className="h-4.5 w-4.5 animate-spin text-[#357f7c]" />
+                  ) : (
+                    <ArrowRight className="h-4.5 w-4.5" />
+                  )}
+                </div>
+              </button>
+            ))}
           </div>
         )}
-
-        <div className="overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[0_1px_2px_rgba(21,23,25,0.03)]">
-          {loading ? (
-            <div>
-              {[0, 1].map((row) => (
-                <div
-                  key={row}
-                  className="flex items-center gap-4 border-b border-[var(--color-border-subtle)] px-4 py-4 last:border-b-0"
-                >
-                  <div className="h-10 w-10 flex-shrink-0 animate-pulse rounded-[var(--radius-control)] bg-[var(--color-bg-surface-muted)]" />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-3 w-28 animate-pulse rounded-full bg-[var(--color-bg-surface-muted)]" />
-                    <div className="h-2.5 w-16 animate-pulse rounded-full bg-[var(--color-bg-surface-muted)]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : orgs.length === 0 ? (
-            <div className="px-5 py-8 text-center">
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                You do not belong to any organization.
-              </p>
-              <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
-                Contact your administrator for an invitation.
-              </p>
-            </div>
-          ) : (
-            <div>
-              {orgs.map((org) => (
-                <button
-                  key={org.orgId}
-                  onClick={() => selectOrg(org.orgId)}
-                  disabled={switching !== null}
-                  className="group flex w-full items-center gap-4 border-b border-[var(--color-border-subtle)] px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-[var(--color-bg-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgba(53,127,124,0.28)] disabled:cursor-not-allowed disabled:opacity-55"
-                >
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.14)] bg-[rgba(53,127,124,0.08)]">
-                    <Building2 className="h-5 w-5 text-[var(--color-accent-primary)]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-[var(--color-text-primary)]">
-                      {org.name}
-                    </div>
-                    <div className="mt-0.5 text-xs capitalize text-[var(--color-text-tertiary)]">
-                      {roleLabel(org.role)}
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0">
-                    {switching === org.orgId ? (
-                      <div className="h-5 w-5 rounded-full border-2 border-[var(--color-border-strong)] border-t-[var(--color-accent-primary)] animate-spin" />
-                    ) : (
-                      <ArrowRight className="h-5 w-5 text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-accent-primary)]" />
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
-    </div>
+    </ConsoleAuthShell>
   )
 }
