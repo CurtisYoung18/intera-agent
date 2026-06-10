@@ -3,19 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  Braces,
   CheckCircle2,
-  Code2,
-  Globe2,
   Link2,
   Loader2,
   Plus,
   Save,
+  Sparkles,
   ShieldCheck,
   Trash2,
   Unlink,
 } from 'lucide-react'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import SlashPlaceholderEditor, { type SlashPlaceholderGroup } from '@/components/admin/slash-placeholder-editor'
 import { ApiClientError, apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import type { HookHandler } from '@intera/shared/contracts/hooks'
@@ -24,6 +23,8 @@ type HookCheckpoint = 'PreToolUse' | 'PostToolUse' | 'Stop'
 type HookSeverity = 'low' | 'medium' | 'high' | 'critical'
 type HandlerKind = 'declarative' | 'code' | 'http'
 type ScopeType = 'agent' | 'caseType' | 'procedureStep' | 'tool'
+type EvaluatorMode = 'rule' | 'llm'
+type MatchAction = 'block' | 'warn' | 'escalate'
 
 interface HookBinding {
   id: string
@@ -85,19 +86,16 @@ interface HooksBootstrap {
 
 interface HookDraft {
   name: string
-  displayName: string
   description: string
   checkpoint: HookCheckpoint
-  handlerKind: HandlerKind
+  evaluatorMode: EvaluatorMode
   enabled: boolean
   severity: HookSeverity
-  declarativeCheck: string
-  declarativeEffect: string
-  codeSource: string
-  httpEndpoint: string
-  httpTimeoutMs: number
-  httpHeaders: string
-  httpSecretRefs: string
+  whenMatched: MatchAction
+  guidance: string
+  ruleCheck: string
+  evaluationPrompt: string
+  legacyHandlerKind: Exclude<HandlerKind, 'declarative'> | null
 }
 
 interface BindingDraft {
@@ -109,10 +107,43 @@ interface BindingDraft {
 
 const CHECKPOINTS: HookCheckpoint[] = ['PreToolUse', 'PostToolUse', 'Stop']
 const SEVERITIES: HookSeverity[] = ['low', 'medium', 'high', 'critical']
-const HANDLER_KINDS: { value: HandlerKind; label: string; icon: typeof Braces }[] = [
-  { value: 'declarative', label: 'Declarative', icon: Braces },
-  { value: 'code', label: 'Code', icon: Code2 },
-  { value: 'http', label: 'HTTP', icon: Globe2 },
+const EVALUATOR_MODES: Array<{ value: EvaluatorMode; label: string; icon: typeof ShieldCheck | typeof Sparkles }> = [
+  { value: 'rule', label: 'Rule', icon: ShieldCheck },
+  { value: 'llm', label: 'LLM eval', icon: Sparkles },
+]
+const MATCH_ACTIONS: Array<{ value: MatchAction; label: string }> = [
+  { value: 'block', label: 'Block' },
+  { value: 'warn', label: 'Warn' },
+  { value: 'escalate', label: 'Escalate + task' },
+]
+const PLACEHOLDER_GROUPS: SlashPlaceholderGroup[] = [
+  {
+    id: 'tool',
+    label: 'Tool runtime',
+    description: 'Current tool call data at this checkpoint.',
+    items: [
+      { token: 'tool_name', label: 'Tool name', description: 'Current tool name.', typeLabel: 'string' },
+      { token: 'tool_input', label: 'Tool input', description: 'Current tool input, JSON stringified.', typeLabel: 'json string' },
+      { token: 'tool_output', label: 'Tool output', description: 'Current tool output, JSON stringified.', typeLabel: 'json string' },
+    ],
+  },
+  {
+    id: 'case',
+    label: 'Case memory',
+    description: 'Confirmed facts and prior tool trace from this case.',
+    items: [
+      { token: 'confirmed_facts', label: 'Confirmed facts', description: 'Current confirmed facts map.', typeLabel: 'json string' },
+      { token: 'tools_called', label: 'Tools called', description: 'Names of tools already called.', typeLabel: 'json string' },
+    ],
+  },
+  {
+    id: 'reply',
+    label: 'Reply draft',
+    description: 'Customer-facing reply text before send.',
+    items: [
+      { token: 'reply_draft', label: 'Reply draft', description: 'Current reply draft text.', typeLabel: 'string' },
+    ],
+  },
 ]
 
 function jsonText(value: unknown, fallback = '{}') {
@@ -138,64 +169,105 @@ function parseJsonField(raw: string, field: string): unknown {
 function emptyDraft(): HookDraft {
   return {
     name: '',
-    displayName: '',
     description: '',
     checkpoint: 'PreToolUse',
-    handlerKind: 'declarative',
+    evaluatorMode: 'rule',
     enabled: true,
     severity: 'medium',
-    declarativeCheck: '{}',
-    declarativeEffect: '{\n  "action": "allow"\n}',
-    codeSource: 'async function hook(ctx) {\n  return { action: "allow" }\n}',
-    httpEndpoint: 'https://example.com/intera-hook',
-    httpTimeoutMs: 5000,
-    httpHeaders: '{}',
-    httpSecretRefs: '[]',
+    whenMatched: 'block',
+    guidance: '',
+    ruleCheck: '{\n  "kind": "rule"\n}',
+    evaluationPrompt: '',
+    legacyHandlerKind: null,
   }
+}
+
+function humanizeStableName(name: string): string {
+  const compact = name.trim().replace(/[_.-]+/g, ' ')
+  return compact ? compact.replace(/\b\w/g, (ch) => ch.toUpperCase()) : ''
+}
+
+function isAiHandler(handler: HookHandler): handler is Extract<HookHandler, { kind: 'declarative' }> {
+  return handler.kind === 'declarative'
+    && typeof (handler.check as Record<string, unknown>)?.kind === 'string'
+    && (handler.check as Record<string, unknown>).kind === 'ai'
+    && typeof (handler.check as Record<string, unknown>).evaluationPrompt === 'string'
+}
+
+function parseMatchAction(value: unknown): MatchAction {
+  return value === 'warn' || value === 'escalate' ? value : 'block'
+}
+
+function hookModeLabel(hook: HookItem): string {
+  if (hook.handler.kind === 'declarative') {
+    return isAiHandler(hook.handler) ? 'LLM eval' : 'Rule'
+  }
+  return `Legacy ${hook.handler.kind}`
+}
+
+function matchActionDescription(action: MatchAction, checkpoint: HookCheckpoint): string {
+  if (action === 'block') {
+    if (checkpoint === 'PreToolUse') return 'The Tool will not execute until the Hook issue is fixed.'
+    if (checkpoint === 'Stop') return 'The reply draft will not be sent until the answer is repaired.'
+    return 'The result is treated as unsafe and must be repaired before the flow can continue cleanly.'
+  }
+  if (action === 'warn') {
+    return 'The flow can continue, but Hook feedback is written back into the current turn and trace.'
+  }
+  return 'A human-task escalation is triggered automatically, and channel-level human handoff can follow.'
 }
 
 function draftFromHook(hook: HookItem): HookDraft {
   const draft = emptyDraft()
   draft.name = hook.name
-  draft.displayName = hook.displayName ?? ''
   draft.description = hook.description ?? ''
   draft.checkpoint = hook.checkpoint
-  draft.handlerKind = hook.handlerKind
   draft.enabled = hook.enabled
   draft.severity = hook.severity
+  draft.legacyHandlerKind = hook.handler.kind === 'declarative' ? null : hook.handler.kind
 
   if (hook.handler.kind === 'declarative') {
-    draft.declarativeCheck = jsonText(hook.handler.check)
-    draft.declarativeEffect = jsonText(hook.handler.effect, '{\n  "action": "allow"\n}')
-  } else if (hook.handler.kind === 'code') {
-    draft.codeSource = hook.handler.source
-  } else if (hook.handler.kind === 'http') {
-    draft.httpEndpoint = hook.handler.endpoint
-    draft.httpTimeoutMs = hook.handler.timeoutMs
-    draft.httpHeaders = jsonText(hook.handler.headers ?? {})
-    draft.httpSecretRefs = jsonText(hook.handler.secretRefs ?? [], '[]')
+    draft.evaluatorMode = isAiHandler(hook.handler) ? 'llm' : 'rule'
+    draft.whenMatched = parseMatchAction((hook.handler.effect as Record<string, unknown>)?.decision ?? (hook.handler.effect as Record<string, unknown>)?.action)
+    draft.guidance = String((hook.handler.effect as Record<string, unknown>)?.guidance ?? '')
+    if (draft.evaluatorMode === 'llm') {
+      draft.evaluationPrompt = String((hook.handler.check as Record<string, unknown>).evaluationPrompt ?? '')
+    } else {
+      draft.ruleCheck = jsonText(hook.handler.check)
+    }
   }
   return draft
 }
 
 function handlerFromDraft(draft: HookDraft): HookHandler {
-  if (draft.handlerKind === 'code') {
-    return { kind: 'code', runtime: 'javascript', source: draft.codeSource }
+  const effect: Record<string, unknown> = {
+    decision: draft.whenMatched,
   }
-  if (draft.handlerKind === 'http') {
+  if (draft.guidance.trim()) effect.guidance = draft.guidance.trim()
+  if (draft.whenMatched === 'escalate') effect.tool = 'create_human_task'
+
+  if (draft.evaluatorMode === 'llm') {
+    if (!draft.evaluationPrompt.trim()) throw new Error('Evaluation prompt is required')
     return {
-      kind: 'http',
-      endpoint: draft.httpEndpoint,
-      method: 'POST',
-      timeoutMs: Number(draft.httpTimeoutMs) || 5000,
-      headers: (parseJsonField(draft.httpHeaders, 'Headers JSON') ?? {}) as Record<string, string>,
-      secretRefs: (parseJsonField(draft.httpSecretRefs, 'Secret refs JSON') ?? []) as { name: string; ref: string }[],
+      kind: 'declarative',
+      check: {
+        kind: 'ai',
+        evaluationPrompt: draft.evaluationPrompt.trim(),
+      },
+      effect,
     }
   }
+
+  const parsedCheck = parseJsonField(draft.ruleCheck, 'Rule JSON')
+  if (!parsedCheck || typeof parsedCheck !== 'object' || Array.isArray(parsedCheck)) {
+    throw new Error('Rule JSON must be an object')
+  }
+  const check = { ...(parsedCheck as Record<string, unknown>) }
+  if (typeof check.kind !== 'string') check.kind = 'rule'
   return {
     kind: 'declarative',
-    check: (parseJsonField(draft.declarativeCheck, 'Check JSON') ?? {}) as Record<string, unknown>,
-    effect: (parseJsonField(draft.declarativeEffect, 'Effect JSON') ?? {}) as Record<string, unknown>,
+    check,
+    effect,
   }
 }
 
@@ -242,6 +314,9 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     () => hooks.find((hook) => hook.name === selectedName) ?? null,
     [hooks, selectedName],
   )
+  const saveDisabled = saving
+    || !draft.name.trim()
+    || (draft.evaluatorMode === 'llm' && !draft.evaluationPrompt.trim())
 
   useEffect(() => {
     selectedNameRef.current = selectedName
@@ -304,10 +379,10 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
       const body = {
         agentConfigId,
         name: draft.name,
-        displayName: draft.displayName || null,
+        displayName: humanizeStableName(draft.name) || null,
         description: draft.description || null,
         checkpoint: draft.checkpoint,
-        handlerKind: draft.handlerKind,
+        handlerKind: 'declarative' as const,
         handler,
         enabled: draft.enabled,
         severity: draft.severity,
@@ -460,14 +535,14 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                   className={`w-full rounded-lg border px-4 py-3 text-left transition ${hook.name === selectedName ? 'border-indigo/35 bg-indigo/[0.08]' : 'border-black/[0.06] bg-white/60 hover:border-black/10 hover:bg-white/80'}`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-[13px] font-semibold text-[var(--mist)]">{hook.displayName || hook.name}</span>
+                    <span className="truncate text-[13px] font-semibold text-[var(--mist)]">{hook.displayName || humanizeStableName(hook.name) || hook.name}</span>
                     <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] ${hook.enabled ? 'bg-emerald-500/10 text-emerald-700' : 'bg-black/[0.05] text-[var(--fog)]'}`}>
                       {hook.enabled ? 'On' : 'Off'}
                     </span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-[var(--fog)]">
                     <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.checkpoint}</span>
-                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.handlerKind}</span>
+                    <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hookModeLabel(hook)}</span>
                     <span className="rounded-md bg-black/[0.04] px-2 py-0.5">{hook.bindings.length} bindings</span>
                   </div>
                 </button>
@@ -495,7 +570,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                     <button
                       type="button"
                       onClick={saveHook}
-                      disabled={saving || !draft.name.trim()}
+                      disabled={saveDisabled}
                       className="inline-flex items-center gap-2 rounded-lg bg-[var(--mist)] px-4 py-2 text-[13px] font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -512,150 +587,175 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                 ) : null}
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <label className="space-y-1.5">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Name</span>
+                  <label className="space-y-1.5 lg:col-span-2">
+                    <span className="text-[12px] font-medium text-[var(--fog)]">Hook name</span>
                     <input
                       value={draft.name}
                       onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                       className="glass-input-console text-[13px]"
                       placeholder="investigate_before_transfer"
                     />
-                  </label>
-                  <label className="space-y-1.5">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Display name</span>
-                    <input
-                      value={draft.displayName}
-                      onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}
-                      className="glass-input-console text-[13px]"
-                      placeholder="Investigate before transfer"
-                    />
+                    <p className="text-[11px] text-[var(--fog)]">One stable name is enough. The UI title is derived automatically.</p>
                   </label>
                   <label className="space-y-1.5 lg:col-span-2">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Description</span>
+                    <span className="text-[12px] font-medium text-[var(--fog)]">Optional note</span>
                     <textarea
                       value={draft.description}
                       onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-                      className="glass-input-console min-h-[78px] resize-y text-[13px]"
+                      className="glass-input-console min-h-[88px] resize-y text-[13px]"
                     />
                   </label>
-                  <label className="space-y-1.5">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Checkpoint</span>
-                    <select
-                      value={draft.checkpoint}
-                      onChange={(event) => setDraft({ ...draft, checkpoint: event.target.value as HookCheckpoint })}
-                      className="glass-input-console text-[13px]"
-                    >
-                      {CHECKPOINTS.map((checkpoint) => <option key={checkpoint} value={checkpoint}>{checkpoint}</option>)}
-                    </select>
-                  </label>
-                  <label className="space-y-1.5">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">Severity</span>
-                    <select
-                      value={draft.severity}
-                      onChange={(event) => setDraft({ ...draft, severity: event.target.value as HookSeverity })}
-                      className="glass-input-console text-[13px]"
-                    >
-                      {SEVERITIES.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
-                    </select>
-                  </label>
                 </div>
 
-                <div className="mt-5">
-                  <span className="text-[12px] font-medium text-[var(--fog)]">Handler</span>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {HANDLER_KINDS.map((kind) => {
-                      const Icon = kind.icon
-                      return (
-                        <button
-                          key={kind.value}
-                          type="button"
-                          onClick={() => setDraft({ ...draft, handlerKind: kind.value })}
-                          className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition ${draft.handlerKind === kind.value ? 'border-indigo/35 bg-indigo/[0.08] text-indigo' : 'border-black/[0.06] bg-white/60 text-[var(--fog)] hover:bg-white'}`}
-                        >
-                          <Icon className="h-4 w-4" />
-                          {kind.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {draft.handlerKind === 'declarative' ? (
-                  <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <label className="space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Check JSON</span>
-                      <textarea
-                        value={draft.declarativeCheck}
-                        onChange={(event) => setDraft({ ...draft, declarativeCheck: event.target.value })}
-                        className="glass-input-console min-h-[220px] resize-y font-mono text-[12px]"
-                        spellCheck={false}
-                      />
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Effect JSON</span>
-                      <textarea
-                        value={draft.declarativeEffect}
-                        onChange={(event) => setDraft({ ...draft, declarativeEffect: event.target.value })}
-                        className="glass-input-console min-h-[220px] resize-y font-mono text-[12px]"
-                        spellCheck={false}
-                      />
-                    </label>
+                {draft.legacyHandlerKind ? (
+                  <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-[12px] text-amber-800">
+                    This Hook currently uses legacy engineering mode <strong>{draft.legacyHandlerKind}</strong>. Saving here will convert it into the product declarative flow.
                   </div>
                 ) : null}
 
-                {draft.handlerKind === 'code' ? (
+                <div className="mt-5 rounded-xl border border-black/[0.06] bg-white/55 p-4">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+                    <div className="space-y-4">
+                      <div>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">Checkpoint</span>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {CHECKPOINTS.map((checkpoint) => (
+                            <button
+                              key={checkpoint}
+                              type="button"
+                              onClick={() => setDraft({ ...draft, checkpoint })}
+                              className={`rounded-full border px-3 py-1.5 text-[12px] font-medium transition ${draft.checkpoint === checkpoint ? 'border-indigo/30 bg-indigo/[0.08] text-indigo' : 'border-black/[0.08] bg-white/70 text-[var(--fog)] hover:bg-white'}`}
+                            >
+                              {checkpoint}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">Evaluator</span>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {EVALUATOR_MODES.map((mode) => {
+                            const Icon = mode.icon
+                            return (
+                              <button
+                                key={mode.value}
+                                type="button"
+                                onClick={() => setDraft({ ...draft, evaluatorMode: mode.value })}
+                                className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] transition ${draft.evaluatorMode === mode.value ? 'border-indigo/35 bg-indigo/[0.08] text-indigo' : 'border-black/[0.06] bg-white/60 text-[var(--fog)] hover:bg-white'}`}
+                              >
+                                <Icon className="h-4 w-4" />
+                                {mode.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">When matched</span>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {MATCH_ACTIONS.map((action) => (
+                            <button
+                              key={action.value}
+                              type="button"
+                              onClick={() => setDraft({ ...draft, whenMatched: action.value })}
+                              className={`rounded-full border px-3 py-1.5 text-[12px] font-medium transition ${draft.whenMatched === action.value ? 'border-indigo/30 bg-indigo/[0.08] text-indigo' : 'border-black/[0.08] bg-white/70 text-[var(--fog)] hover:bg-white'}`}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
+                          {MATCH_ACTIONS.map((action) => (
+                            <div
+                              key={action.value}
+                              className={`rounded-lg border px-3 py-3 text-[12px] leading-5 ${draft.whenMatched === action.value ? 'border-indigo/20 bg-indigo/[0.05] text-[var(--mist)]' : 'border-black/[0.06] bg-white/65 text-[var(--fog)]'}`}
+                            >
+                              <div className="font-semibold">{action.label}</div>
+                              <p className="mt-1">{matchActionDescription(action.value, draft.checkpoint)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-xl border border-black/[0.06] bg-white/68 p-4">
+                      <div>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">Severity</span>
+                        <select
+                          value={draft.severity}
+                          onChange={(event) => setDraft({ ...draft, severity: event.target.value as HookSeverity })}
+                          className="glass-input-console mt-2 text-[13px]"
+                        >
+                          {SEVERITIES.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+                        </select>
+                      </div>
+                      <label className="block space-y-1.5">
+                        <span className="text-[12px] font-medium text-[var(--fog)]">Guidance</span>
+                        <textarea
+                          value={draft.guidance}
+                          onChange={(event) => setDraft({ ...draft, guidance: event.target.value })}
+                          className="glass-input-console min-h-[112px] resize-y text-[13px]"
+                          placeholder="Explain what the agent should do next when this Hook matches."
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {draft.evaluatorMode === 'rule' ? (
                   <label className="mt-4 block space-y-1.5">
-                    <span className="text-[12px] font-medium text-[var(--fog)]">JavaScript</span>
+                    <span className="text-[12px] font-medium text-[var(--fog)]">Rule JSON</span>
                     <textarea
-                      value={draft.codeSource}
-                      onChange={(event) => setDraft({ ...draft, codeSource: event.target.value })}
-                      className="glass-input-console min-h-[300px] resize-y font-mono text-[12px]"
+                      value={draft.ruleCheck}
+                      onChange={(event) => setDraft({ ...draft, ruleCheck: event.target.value })}
+                      className="glass-input-console min-h-[260px] w-full resize-y font-mono text-[12px]"
                       spellCheck={false}
                     />
+                    <p className="text-[11px] text-[var(--fog)]">Use declarative rule fields like <code>requireTools</code>, <code>requireFacts</code>, <code>replyContains</code>, or <code>match.tools</code>.</p>
                   </label>
-                ) : null}
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-xl border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[12px] font-semibold text-[var(--mist)]">Global internal default model</div>
+                          <p className="mt-1 text-[11px] text-[var(--fog)]">Hook evaluation uses the Console internal default model when this flow is not user-configurable.</p>
+                        </div>
+                        <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-[var(--mist)]">deepseek-v4-flash</span>
+                      </div>
+                    </div>
 
-                {draft.handlerKind === 'http' ? (
-                  <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_160px]">
-                    <label className="space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Endpoint</span>
-                      <input
-                        value={draft.httpEndpoint}
-                        onChange={(event) => setDraft({ ...draft, httpEndpoint: event.target.value })}
-                        className="glass-input-console text-[13px]"
+                    <label className="block space-y-1.5">
+                      <span className="text-[12px] font-medium text-[var(--fog)]">Evaluation prompt</span>
+                      <SlashPlaceholderEditor
+                        ariaLabel="Evaluation prompt"
+                        value={draft.evaluationPrompt}
+                        onChange={(nextValue) => setDraft({ ...draft, evaluationPrompt: nextValue })}
+                        groups={PLACEHOLDER_GROUPS}
+                        minHeightClassName="min-h-[280px]"
+                        helperText='Type "/" to insert runtime placeholders such as tool output or confirmed facts.'
+                        placeholder="Check whether the customer-visible answer cites evidence gathered during the case."
                       />
                     </label>
-                    <label className="space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Timeout ms</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={30000}
-                        value={draft.httpTimeoutMs}
-                        onChange={(event) => setDraft({ ...draft, httpTimeoutMs: Number(event.target.value) })}
-                        className="glass-input-console text-[13px]"
-                      />
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Headers JSON</span>
-                      <textarea
-                        value={draft.httpHeaders}
-                        onChange={(event) => setDraft({ ...draft, httpHeaders: event.target.value })}
-                        className="glass-input-console min-h-[160px] resize-y font-mono text-[12px]"
-                        spellCheck={false}
-                      />
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="text-[12px] font-medium text-[var(--fog)]">Secret refs JSON</span>
-                      <textarea
-                        value={draft.httpSecretRefs}
-                        onChange={(event) => setDraft({ ...draft, httpSecretRefs: event.target.value })}
-                        className="glass-input-console min-h-[160px] resize-y font-mono text-[12px]"
-                        spellCheck={false}
-                      />
-                    </label>
+
+                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                      {PLACEHOLDER_GROUPS.flatMap((group) => group.items).map((item) => (
+                        <div key={item.token} className="rounded-lg border border-black/[0.06] bg-white/68 px-3 py-2 text-[12px]">
+                          <div className="font-semibold text-[var(--mist)]">{`{{${item.token}}}`}</div>
+                          <div className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
+                            {item.typeLabel} · {item.description}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-lg border border-black/[0.06] bg-white/65 px-3 py-3 text-[11px] leading-5 text-[var(--fog)]">
+                      <strong className="text-[var(--mist)]">{'{{skill_input}}'}</strong> remains a compatibility alias in runtime, but this UI intentionally standardizes on the <code>tool_*</code> vocabulary.
+                    </div>
                   </div>
-                ) : null}
+                )}
 
                 <label className="mt-5 flex items-center gap-3 text-[13px] text-[var(--mist)]">
                   <input

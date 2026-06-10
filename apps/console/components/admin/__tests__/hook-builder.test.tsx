@@ -112,7 +112,6 @@ describe('HookBuilder', () => {
     })
     await act(async () => {
       fireEvent.change(screen.getByPlaceholderText('investigate_before_transfer'), { target: { value: 'stop_unsafe_promise' } })
-      fireEvent.change(screen.getByLabelText('Checkpoint'), { target: { value: 'Stop' } })
     })
 
     await act(async () => {
@@ -128,9 +127,39 @@ describe('HookBuilder', () => {
     expect(createCall[1].body).toMatchObject({
       agentConfigId: 'agent_default_v1',
       name: 'stop_unsafe_promise',
-      checkpoint: 'Stop',
+      checkpoint: 'PreToolUse',
       handlerKind: 'declarative',
+      displayName: 'Stop Unsafe Promise',
     })
     expect(createCall[1].body.handler.kind).toBe('declarative')
+    expect(createCall[1].body.handler.check.kind).toBe('rule')
+    expect(createCall[1].body.handler.effect.decision).toBe('block')
+  })
+
+  it('inserts runtime placeholders into the LLM eval prompt with slash menu', async () => {
+    await renderHookBuilder()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /New Hook/ }))
+    })
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('investigate_before_transfer'), { target: { value: 'trace_customer_reply' } })
+      fireEvent.click(screen.getByRole('button', { name: 'LLM eval' }))
+    })
+
+    const prompt = screen.getByLabelText('Evaluation prompt') as HTMLTextAreaElement
+    await act(async () => {
+      fireEvent.keyUp(prompt, { key: '/' })
+    })
+    expect(screen.getByText('Insert runtime placeholder')).toBeDefined()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Tool runtime/ }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /\{\{tool_output\}\}/ }))
+    })
+
+    expect(prompt.value).toContain('{{tool_output}}')
   })
 })
