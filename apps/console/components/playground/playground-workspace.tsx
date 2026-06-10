@@ -12,12 +12,12 @@ import { useAgentContext } from '@/lib/agent/agent-context'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
 import { apiClient } from '@/lib/api/client'
 import type { LifecycleNotice } from '@intera/shared/types'
-import OrganicLoader from '@intera/shared/ui/organic-loader'
 import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useSession } from '@/lib/hooks/use-session'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 import { detectMemoryMode, normalizeMemoryStrategy } from '@/components/memory/memory-strategy-utils'
+import { OrganicLoader, TokenStreamPreview } from '@/components/config-pilot/ai-motion'
 import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
 import RenderHintCard from '@/components/chat/render-hint-card'
@@ -715,6 +715,13 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [reply, turnTraces])
 
+  const measureSidebarInset = useCallback(() => {
+    if (typeof document === 'undefined') return 0
+    const sidebar = document.querySelector('.console-sidebar')
+    const measured = sidebar?.getBoundingClientRect().right ?? 0
+    return window.innerWidth < 700 ? Math.min(measured, 96) : measured
+  }, [])
+
   useEffect(() => {
     if (!immersiveMode) return
 
@@ -738,8 +745,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     if (!immersiveMode) return
 
     const syncSidebarInset = () => {
-      const sidebar = document.querySelector('.console-sidebar')
-      setImmersiveLeft(sidebar?.getBoundingClientRect().right ?? 0)
+      setImmersiveLeft(measureSidebarInset())
+      if (window.innerWidth < 700) setSidebarCollapsed(true)
     }
 
     syncSidebarInset()
@@ -755,7 +762,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       window.removeEventListener('resize', syncSidebarInset)
       observer?.disconnect()
     }
-  }, [immersiveMode])
+  }, [immersiveMode, measureSidebarInset])
 
   const latestRuntimeTruth = useMemo(() => findLatestRuntimeTruth(turnTraces), [turnTraces])
   const visionSupport = useMemo(() => deriveVisionSupport(snapshot, models, latestRuntimeTruth), [snapshot, models, latestRuntimeTruth])
@@ -764,6 +771,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     () => buildTurnDebugDigest(turnTraces, turnTotalMs, responding, chatMessages, reply),
     [chatMessages, reply, responding, turnTotalMs, turnTraces],
   )
+  const latestUserMessageIndex = useMemo(() => {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      if (chatMessages[index].role === 'user') return index
+    }
+    return -1
+  }, [chatMessages])
   const versionStateLabel = selectedVersion
     ? `${selectedIsActive ? (isZh ? '当前版本' : 'Live') : (isZh ? '草稿版本' : 'Draft')} v${selectedVersion}`
     : selectedIsActive
@@ -1057,7 +1070,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
   return (
     <>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes wc-think-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:.8;transform:scale(1)}}`}</style>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes wc-think-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:.8;transform:scale(1)}}@media(max-width:700px){[data-playground-immersive="true"] .pg-toolbar{padding:12px 10px 8px!important}[data-playground-immersive="true"] .pg-title-group{flex-basis:100%!important}[data-playground-immersive="true"] .pg-picker-wrap{min-width:0!important;max-width:100%!important}[data-playground-immersive="true"] .pg-actions{justify-content:flex-start!important;flex-wrap:nowrap!important;overflow-x:auto!important;max-width:100%;padding-bottom:4px;scrollbar-width:none}[data-playground-immersive="true"] .pg-actions>*{flex:0 0 auto!important;white-space:nowrap!important}[data-playground-immersive="true"] .pg-actions::-webkit-scrollbar{display:none}[data-playground-immersive="true"] .pg-status-row{padding-left:0!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none}[data-playground-immersive="true"] .pg-status-row>*{flex:0 0 auto!important;white-space:nowrap!important}[data-playground-immersive="true"] .pg-status-row::-webkit-scrollbar{display:none}[data-playground-immersive="true"] .pg-chat-scroll{padding-left:10px!important;padding-right:10px!important}}`}</style>
     <div
       style={{
         display: 'flex',
@@ -1093,7 +1106,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       {/* ═══════════════════════════════════════════
           Playground toolbar
           ═══════════════════════════════════════════ */}
-      <header style={{
+      <header className="pg-toolbar" style={{
         position: 'relative', zIndex: 1, flexShrink: 0,
         display: 'flex', flexDirection: 'column', gap: 10,
         padding: '14px 20px 12px',
@@ -1106,7 +1119,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
           gap: 16, flexWrap: 'wrap',
         }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: '1 1 360px', minWidth: 0 }}>
+          <div className="pg-title-group" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: '1 1 360px', minWidth: 0 }}>
             <div style={{
               width: 40, height: 40, borderRadius: 14,
               background: 'linear-gradient(135deg, rgba(212,118,78,0.14), rgba(201,136,74,0.10))',
@@ -1151,8 +1164,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               )}
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flex: '0 1 auto' }}>
-            <div style={{ minWidth: 220, maxWidth: 320 }}>
+          <div className="pg-actions" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flex: '0 1 auto' }}>
+            <div className="pg-picker-wrap" style={{ minWidth: 220, maxWidth: 320 }}>
               <AgentVersionPicker
                 key={pickerRefreshKey}
                 agentId={selectedAgentId}
@@ -1204,7 +1217,14 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             </ActionButton>
             <ActionButton
               active={immersiveMode}
-              onClick={() => setImmersiveMode((value) => !value)}
+              onClick={() => {
+                if (immersiveMode) {
+                  setImmersiveMode(false)
+                  return
+                }
+                setImmersiveLeft(measureSidebarInset())
+                setImmersiveMode(true)
+              }}
               title={immersiveMode
                 ? (isZh ? '退出沉浸模式。也可以按 Esc。' : 'Exit immersive mode. You can also press Esc.')
                 : (isZh ? '进入沉浸模式，专注进行手动调试。' : 'Enter immersive mode for focused manual debugging.')}
@@ -1276,7 +1296,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             </Link>
           </div>
         </div>
-        <div style={{
+        <div className="pg-status-row" style={{
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -1491,17 +1511,37 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                       {m.images && m.images.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
                           {m.images.map((img, idx) => (
-                            <img
-                              key={idx}
-                              src={`data:${img.mimeType};base64,${img.base64}`}
-                              alt={img.name}
-                              title={img.name}
-                              style={{
-                                maxWidth: 120, maxHeight: 80,
-                                borderRadius: 8, objectFit: 'cover',
-                                border: '1px solid rgba(212,118,78,0.12)',
-                              }}
-                            />
+                            <span key={idx} style={{ position: 'relative', display: 'inline-flex' }}>
+                              <img
+                                src={`data:${img.mimeType};base64,${img.base64}`}
+                                alt={img.name}
+                                title={img.name}
+                                style={{
+                                  maxWidth: 120, maxHeight: 80,
+                                  borderRadius: 8, objectFit: 'cover',
+                                  border: '1px solid rgba(212,118,78,0.12)',
+                                }}
+                              />
+                              {responding && i === latestUserMessageIndex && (
+                                <span style={{
+                                  position: 'absolute',
+                                  right: 5,
+                                  bottom: 5,
+                                  display: 'inline-flex',
+                                  width: 20,
+                                  height: 20,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: 999,
+                                  background: 'rgba(255,252,249,0.86)',
+                                  border: '1px solid rgba(212,118,78,0.14)',
+                                  color: '#b87347',
+                                  boxShadow: '0 4px 12px rgba(58,39,24,0.10)',
+                                }}>
+                                  <OrganicLoader variant="17" size={14} title={isZh ? '正在分析图片' : 'Image analysis running'} />
+                                </span>
+                              )}
+                            </span>
                           ))}
                         </div>
                       )}
@@ -1542,10 +1582,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 border: '1px solid var(--border-subtle)',
                 alignSelf: 'flex-start',
                 marginBottom: 16,
+                color: '#b87347',
               }}>
-                <OrganicLoader icon="spin" size={16} className="text-[#b87347]" />
+                <OrganicLoader variant="01" size={18} title={isZh ? '等待首个 token' : 'Waiting for first token'} />
                 <span style={{ fontSize: 12, color: 'var(--fog)' }}>
-                  {isZh ? '思考中…' : 'Thinking…'}
+                  {isZh ? '等待首个 token…' : 'Waiting for first token…'}
                 </span>
               </div>
             )}
@@ -1568,7 +1609,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 }}>
                   {snapshot?.name || 'Agent'}
                 </div>
-                <MessageContent content={reply} />
+                <TokenStreamPreview text={reply} />
               </div>
             )}
 
@@ -1656,6 +1697,23 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                         objectFit: 'cover', border: '1px solid var(--border-subtle)',
                       }}
                     />
+                    <span style={{
+                      position: 'absolute',
+                      left: 4,
+                      bottom: 4,
+                      display: 'inline-flex',
+                      width: 18,
+                      height: 18,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 999,
+                      background: 'rgba(255,252,249,0.86)',
+                      border: '1px solid rgba(212,118,78,0.14)',
+                      color: '#b87347',
+                      boxShadow: '0 4px 12px rgba(58,39,24,0.10)',
+                    }}>
+                      <OrganicLoader variant="17" size={13} title={isZh ? '图片已附加，等待发送' : 'Image attached and ready'} />
+                    </span>
                     <button
                       onClick={() => removeImage(idx)}
                       style={{
@@ -1922,6 +1980,8 @@ function ActionButton({
         color: textColor,
         fontSize: 11,
         fontWeight: 600,
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,
         boxShadow: active ? '0 10px 24px rgba(212,118,78,0.08)' : '0 6px 18px rgba(58,39,24,0.04)',
@@ -1960,6 +2020,8 @@ function InlineTruthPill({
       fontSize: 11,
       lineHeight: 1.2,
       minWidth: 0,
+      flexShrink: 0,
+      whiteSpace: 'nowrap',
     }}>
       <span style={{
         fontSize: 9,

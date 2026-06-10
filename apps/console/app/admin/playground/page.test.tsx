@@ -42,6 +42,15 @@ vi.mock('@intera/shared/ui/organic-loader', () => ({
   default: () => <div data-testid="organic-loader" />,
 }))
 
+vi.mock('@/components/config-pilot/ai-motion', () => ({
+  OrganicLoader: ({ variant, title }: { variant?: string; title?: string }) => (
+    <span data-testid="organic-loader" data-variant={variant} title={title} />
+  ),
+  TokenStreamPreview: ({ text }: { text: string }) => (
+    <span data-testid="token-stream-preview">{text}</span>
+  ),
+}))
+
 vi.mock('@/components/ui/copy-button', () => ({
   default: ({ label }: { label: string }) => <button type="button">{label}</button>,
 }))

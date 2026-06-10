@@ -16,6 +16,7 @@ import { loadAgentConfig } from './config-loader'
 import { buildModelList } from './build-model-list'
 import { resolveEffectiveModel } from './resolve-model'
 import { normalizeSSEEvent } from './stream-handler'
+import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
 
 /** Lightweight overrides for playground runs. Real AgentConfig is loaded from DB. */
@@ -269,6 +270,7 @@ export async function* runPlaygroundTurn(input: {
 }): AsyncGenerator<SSEEvent> {
   const { orgId, message, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId } = input
   const agentConfigId = input.configId || orgId
+  const contentBlocks = normalizeContentBlocks(input.contentBlocks)
   const dryRun = true
   const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -285,7 +287,7 @@ export async function* runPlaygroundTurn(input: {
   const capabilityTruth = buildCapabilityTruth(resolvedModel, toolDefinitions, dryRun)
   const applicableStages = deriveApplicableStages(toolDefinitions)
 
-  const hasImageBlock = input.contentBlocks?.some(
+  const hasImageBlock = contentBlocks?.some(
     (block) => block.type === 'image' || (block as { source?: { type?: string } }).source?.type === 'base64',
   )
   if (hasImageBlock && capabilityTruth.imageSupport.status !== 'supported') {
@@ -461,7 +463,7 @@ export async function* runPlaygroundTurn(input: {
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
-      await agentLoop.run(message, sendEvent, input.contentBlocks)
+      await agentLoop.run(message, sendEvent, contentBlocks)
     } catch (err) {
       pending.push({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Agent loop failed' }, timestamp: new Date().toISOString() })
     } finally {
@@ -481,7 +483,7 @@ export async function* runPlaygroundTurn(input: {
 
   // ── Persist messages to DB (AgentLoop does NOT call saveMessages itself) ──
   await persistence.saveMessages([
-    { id: turnId, role: 'user', content: message, contentBlocks: input.contentBlocks, caseId },
+    { id: turnId, role: 'user', content: message, contentBlocks, caseId },
     { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
   ])
 

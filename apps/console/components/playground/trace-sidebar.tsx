@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import RenderHintCard from '@/components/chat/render-hint-card'
 import CopyButton from '@/components/ui/copy-button'
+import { OrganicLoader } from '@/components/config-pilot/ai-motion'
 import type {
   PlaygroundCapabilityTruth,
   PlaygroundTraceEvent,
@@ -673,10 +674,10 @@ function TurnSection({
         }}>
           Turn {turnIdx + 1}
         </span>
-        {hasLiveTools && (
-          <Loader2 size={12} style={{
-            color: 'var(--indigo)', animation: 'spin 1s linear infinite', flexShrink: 0,
-          }} />
+        {isLatest && isResponding && (
+          <span style={{ color: 'var(--indigo)', display: 'inline-flex', flexShrink: 0 }}>
+            <OrganicLoader variant="20" size={14} title="Trace turn is running" />
+          </span>
         )}
         {cacheRead > 0 && (
           <span style={{
@@ -795,9 +796,9 @@ function TurnSection({
               background: t.status === 'running' ? 'rgba(217,161,36,0.03)' : 'transparent',
             }}>
               {t.status === 'running' ? (
-                <Loader2 size={12} style={{
-                  color: 'var(--amber)', animation: 'spin 1s linear infinite', flexShrink: 0,
-                }} />
+                <span style={{ color: 'var(--amber)', display: 'inline-flex', flexShrink: 0 }}>
+                  <OrganicLoader variant="05" size={14} title="Tool is running" />
+                </span>
               ) : t.status === 'error' ? (
                 <XCircle size={12} style={{ color: 'var(--vermillion)', flexShrink: 0 }} />
               ) : (

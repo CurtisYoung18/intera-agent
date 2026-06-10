@@ -28,6 +28,34 @@ function renderSidebar(steps: PlaygroundTraceStep[]) {
 }
 
 describe('TraceSidebar', () => {
+  it('uses approved motion primitives for the active turn and running tool rows', () => {
+    render(
+      <TraceSidebar
+        collapsed={false}
+        onCollapse={() => {}}
+        onExpand={() => {}}
+        liveTools={[{
+          name: 'kb_search_deposit',
+          status: 'running',
+          startedAt: Date.now(),
+        }]}
+        turnTraces={[[]]}
+        turnTotalMs={[0]}
+        sessionMetrics={{ totalInput: 0, totalOutput: 0, totalTools: 0, llmCalls: 0, totalMs: 0 }}
+        expandedTurns={new Set([0])}
+        expandedTools={new Set()}
+        onToggleTurn={() => {}}
+        onToggleTool={() => {}}
+        responding
+        tb={(key) => key.split('.').pop() ?? key}
+      />,
+    )
+
+    expect(screen.getByTitle('Trace turn is running')).toBeTruthy()
+    expect(screen.getByTitle('Tool is running')).toBeTruthy()
+    expect(screen.getByText('Tool: kb_search_deposit')).toBeTruthy()
+  })
+
   it('renders runtime truth, hook decisions, procedure guards, and tool execution labels', () => {
     renderSidebar([
       {
