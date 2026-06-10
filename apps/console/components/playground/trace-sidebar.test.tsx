@@ -141,8 +141,11 @@ describe('TraceSidebar', () => {
       },
     ])
 
+    expect(screen.getByText('Trace timeline')).toBeTruthy()
     expect(screen.getByText('Runtime truth')).toBeTruthy()
     expect(screen.getByText('Dry-run mixed surface')).toBeTruthy()
+    expect(screen.getByText('Resolved model')).toBeTruthy()
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('Call requests a tool.') ?? false).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Mocked in Playground dry-run').length).toBeGreaterThan(0)
     expect(screen.getByText('Hook blocked Tool: query_order_status')).toBeTruthy()
     expect(screen.getByText('ProcedureRun reconcile gate blocked Tool: finalize_procedure')).toBeTruthy()

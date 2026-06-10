@@ -52,8 +52,9 @@ interface TraceSidebarProps {
 function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '14px 16px',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+      gap: 12,
+      padding: '14px 16px 12px',
       borderBottom: '1px solid rgba(0,0,0,0.04)',
       background: 'rgba(255,252,249,0.4)',
     }}>
@@ -65,10 +66,17 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
         }}>
           <Activity size={13} style={{ color: 'var(--indigo)' }} />
         </div>
-        <span style={{
-          fontSize: 12, fontWeight: 700, color: '#5a524b',
-          textTransform: 'uppercase', letterSpacing: '0.08em',
-        }}>Trace</span>
+        <div>
+          <div style={{
+            fontSize: 12, fontWeight: 700, color: '#5a524b',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>Trace timeline</div>
+          <div style={{
+            fontSize: 10.5, color: '#8a7e74', marginTop: 2, lineHeight: 1.5,
+          }}>
+            Call vs result, Hook decisions, Procedure reconcile, and stale evidence.
+          </div>
+        </div>
       </div>
       <button onClick={onCollapse} style={{
         width: 24, height: 24, borderRadius: 6,
@@ -81,6 +89,56 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
       >
         <ChevronLeft size={13} />
       </button>
+    </div>
+  )
+}
+
+function LegendPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '3px 7px',
+      borderRadius: 999,
+      border: '1px solid rgba(0,0,0,0.05)',
+      background: 'rgba(255,255,255,0.7)',
+      fontSize: 10,
+      fontWeight: 700,
+      color: '#6a615a',
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+    }}>
+      {children}
+    </span>
+  )
+}
+
+function TraceLegend() {
+  return (
+    <div style={{
+      padding: '10px 14px 12px',
+      borderBottom: '1px solid rgba(0,0,0,0.04)',
+      display: 'grid',
+      gap: 8,
+    }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <LegendPill>Call</LegendPill>
+        <LegendPill>Result</LegendPill>
+        <LegendPill>Hook</LegendPill>
+        <LegendPill>Reconcile</LegendPill>
+        <LegendPill>Stale evidence</LegendPill>
+      </div>
+      <p style={{
+        margin: 0,
+        fontSize: 10.5,
+        lineHeight: 1.55,
+        color: '#8a7e74',
+      }}>
+        <strong style={{ color: '#5a524b' }}>Call</strong> requests a tool.
+        {' '}
+        <strong style={{ color: '#5a524b' }}>Result</strong> shows the payload or dry-run stub returned to the agent.
+        Hook and Procedure cards capture runtime decisions, reconcile gates, and stale evidence.
+      </p>
     </div>
   )
 }
@@ -174,11 +232,11 @@ function TruthCell({ label, value }: { label: string; value: string }) {
 function formatToolSurface(truth: PlaygroundCapabilityTruth['toolSummary']): string {
   const parts: string[] = []
   if (truth.mockedDryRun > 0) parts.push(`${truth.mockedDryRun} mocked`)
-  if (truth.runtimeBacked > 0) parts.push(`${truth.runtimeBacked} live`)
-  if (truth.runtimeManaged > 0) parts.push(`${truth.runtimeManaged} runtime`)
-  if (truth.staticFixture > 0) parts.push(`${truth.staticFixture} fixture`)
+  if (truth.runtimeBacked > 0) parts.push(`${truth.runtimeBacked} runtime-backed`)
+  if (truth.runtimeManaged > 0) parts.push(`${truth.runtimeManaged} runtime-managed`)
+  if (truth.staticFixture > 0) parts.push(`${truth.staticFixture} fixture-backed`)
   if (truth.unknown > 0) parts.push(`${truth.unknown} unknown`)
-  return parts.join(' · ') || 'No confirmed tools'
+  return parts.join(' · ') || 'No confirmed tools yet'
 }
 
 function RuntimeTruthPanel({ truth }: { truth: PlaygroundCapabilityTruth }) {
@@ -198,9 +256,10 @@ function RuntimeTruthPanel({ truth }: { truth: PlaygroundCapabilityTruth }) {
       </div>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
         gap: 6,
       }}>
+        <TruthCell label="Resolved model" value={truth.model} />
         <TruthCell label="Image support" value={truth.imageSupport.label} />
         <TruthCell label="Execution mode" value={truth.executionSurface.label} />
         <TruthCell label="Tool surface" value={formatToolSurface(truth.toolSummary)} />
@@ -273,6 +332,7 @@ function ToolCallCard({
     ? true
     : /"ok"\s*:\s*false|"ok":\s*false|ok:\s*false/i.test(detailText)
   const executionLabel = event?.executionTruth?.label
+  const executionNote = event?.executionTruth?.note
 
   const lines = detailText.split('\n')
   const inputLines: string[] = []
@@ -318,12 +378,18 @@ function ToolCallCard({
             {toolName}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <span style={{
-              fontSize: 9, color: '#b8a99a',
-              fontWeight: 700, letterSpacing: '0.08em',
-              textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
-            }}>
-              {isResult ? 'result' : 'call'}
+          <span style={{
+            fontSize: 9,
+            color: isResult ? '#2f7a4b' : 'var(--indigo)',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            fontFamily: 'var(--font-mono)',
+            padding: '2px 6px',
+            borderRadius: 999,
+            background: isResult ? 'rgba(46,160,74,0.08)' : 'rgba(91,138,247,0.08)',
+          }}>
+              {isResult ? 'Result' : 'Call'}
             </span>
             {executionLabel && (
               <span style={{
@@ -403,6 +469,20 @@ function ToolCallCard({
               {detailText}
             </div>
           )}
+          {executionNote ? (
+            <div style={{
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: 'rgba(255,252,249,0.55)',
+              border: '1px solid rgba(0,0,0,0.04)',
+              fontSize: 10.5,
+              color: '#8a7e74',
+              lineHeight: 1.55,
+              marginBottom: 6,
+            }}>
+              {executionNote}
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -528,6 +608,13 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
   )
 }
 
+function evidenceKindLabel(event: PlaygroundTraceEvent): string {
+  if (event.kind === 'hook_decision') return 'Hook'
+  if (event.kind === 'stale_evidence') return 'Stale evidence'
+  if (event.label.toLowerCase().includes('reconcile')) return 'Reconcile gate'
+  return 'Procedure runtime'
+}
+
 function EvidenceCard({ event }: { event: PlaygroundTraceEvent }) {
   const tone = toneForStatus(event.status)
   return (
@@ -545,6 +632,19 @@ function EvidenceCard({ event }: { event: PlaygroundTraceEvent }) {
           fontFamily: 'var(--font-mono)',
         }}>
           {event.label}
+        </span>
+        <span style={{
+          fontSize: 9,
+          fontWeight: 700,
+          color: tone.fg,
+          background: 'rgba(255,255,255,0.6)',
+          border: tone.border,
+          padding: '2px 6px',
+          borderRadius: 999,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}>
+          {evidenceKindLabel(event)}
         </span>
         <span style={{
           marginLeft: 'auto', fontSize: 10, color: tone.fg,
@@ -836,14 +936,18 @@ export default function TraceSidebar({
       overflow: 'hidden',
     }}>
       <TraceHeader onCollapse={onCollapse} />
+      <TraceLegend />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {!hasData ? (
           <div style={{
             padding: '28px 20px', textAlign: 'center',
-            fontSize: 12, color: '#b8a99a', lineHeight: 1.6,
+            fontSize: 12, color: '#8a7e74', lineHeight: 1.7,
           }}>
-            Send a message to see the trace.
+            Run a manual turn to populate the timeline.
+            <br />
+            The sidebar will show model generation, tool calls and results, Hook decisions, Procedure reconcile gates,
+            and stale evidence from the persisted runtime path.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>

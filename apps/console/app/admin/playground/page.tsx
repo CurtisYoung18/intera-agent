@@ -2,11 +2,12 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
-  Shield, Brain, Search, Puzzle, ExternalLink,
-  ChevronDown, ChevronLeft, ChevronRight, ImageIcon,
+  Brain, ExternalLink, RefreshCw,
+  ChevronDown, ChevronLeft, ChevronRight, ImageIcon, LockKeyhole,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
@@ -20,10 +21,12 @@ import { detectMemoryMode, normalizeMemoryStrategy } from '@/components/memory/m
 import CopyButton from '@/components/ui/copy-button'
 import MessageContent from '@/components/chat/message-content'
 import RenderHintCard from '@/components/chat/render-hint-card'
-import { StatusDot, statusColor } from '@/components/chat/status-accents'
 import TraceSidebar from '@/components/playground/trace-sidebar'
 import type { LiveTool } from '@/components/playground/trace-sidebar'
-import { aggregateTraces } from '@/lib/agent/trace-aggregator'
+import {
+  aggregateTraces,
+  type PlaygroundCapabilityTruth,
+} from '@/lib/agent/trace-aggregator'
 
 /* ── Types ── */
 
@@ -55,14 +58,22 @@ interface AgentSnapshot {
   temperature: number
 }
 
+type PlaygroundSurface = 'legacy' | 'pilot-lab'
+
+interface VisionSupportState {
+  status: 'supported' | 'unsupported' | 'unknown'
+  label: string
+  note: string
+}
+
 /** Per-tool status — driven by real `tool_executing` / `tool_result` SSE events. */
 /* ── Constants ── */
 
 const QUICK_STARTS = [
-  { label: 'Where is my order?', hint: 'Order tracking test' },
-  { label: 'I want a refund', hint: 'Refund policy test' },
-  { label: 'How much is the Pro plan?', hint: 'Pricing inquiry' },
-  { label: "This isn't working, I'm furious", hint: 'Escalation test' },
+  { label: 'My deposit still has not arrived. Please check it.', hint: 'Procedure start + evidence lookup' },
+  { label: 'What evidence do you still need before a human handoff?', hint: 'Hook + handoff reasoning' },
+  { label: 'Please reconcile the new payment amount before you continue.', hint: 'Reconcile + stale evidence path' },
+  { label: 'I uploaded the receipt screenshot. What can you confirm from it?', hint: 'Image input capability test' },
 ]
 
 
@@ -119,10 +130,79 @@ function imagesFromContentBlocks(blocks: unknown): AttachedImage[] | undefined {
   return images.length > 0 ? images : undefined
 }
 
+function findLatestRuntimeTruth(turnTraces: Array<Array<{ runtimeTruth?: PlaygroundCapabilityTruth }>>): PlaygroundCapabilityTruth | null {
+  for (let turnIdx = turnTraces.length - 1; turnIdx >= 0; turnIdx -= 1) {
+    const steps = turnTraces[turnIdx]
+    if (!Array.isArray(steps)) continue
+    const match = steps.find((step) => step.runtimeTruth)?.runtimeTruth
+    if (match) return match
+  }
+  return null
+}
+
+function deriveVisionSupport(snapshot: AgentSnapshot | null, models: ModelInfo[], runtimeTruth: PlaygroundCapabilityTruth | null): VisionSupportState {
+  if (runtimeTruth?.imageSupport) {
+    return {
+      status: runtimeTruth.imageSupport.status,
+      label: runtimeTruth.imageSupport.label,
+      note: runtimeTruth.imageSupport.note ?? 'Image input support was derived from the active runtime model registry.',
+    }
+  }
+
+  if (!snapshot) {
+    return {
+      status: 'unknown',
+      label: 'Unknown',
+      note: 'Load the selected agent snapshot to confirm whether image input is available.',
+    }
+  }
+
+  const model = models.find((entry) => entry.id === snapshot.resolvedModelId || entry.name === snapshot.resolvedModelId)
+  if (!model) {
+    return {
+      status: 'unknown',
+      label: 'Unknown',
+      note: `${snapshot.resolvedModelLabel} is not present in the active model registry, so image input support cannot be confirmed yet.`,
+    }
+  }
+
+  if (model.supportsVision) {
+    return {
+      status: 'supported',
+      label: 'Supported',
+      note: `${snapshot.resolvedModelLabel} accepts image input in the active model registry.`,
+    }
+  }
+
+  return {
+    status: 'unsupported',
+    label: 'Not supported',
+    note: `${snapshot.resolvedModelLabel} is currently text-only in the active model registry.`,
+  }
+}
+
+function formatToolSurfaceSummary(truth: PlaygroundCapabilityTruth['toolSummary']): string {
+  const parts: string[] = []
+  if (truth.mockedDryRun > 0) parts.push(`${truth.mockedDryRun} mocked`)
+  if (truth.runtimeBacked > 0) parts.push(`${truth.runtimeBacked} runtime-backed`)
+  if (truth.runtimeManaged > 0) parts.push(`${truth.runtimeManaged} runtime-managed`)
+  if (truth.staticFixture > 0) parts.push(`${truth.staticFixture} fixture-backed`)
+  if (truth.unknown > 0) parts.push(`${truth.unknown} unknown`)
+  return parts.join(' · ') || 'Refreshes after the first run'
+}
+
+function toneForVisionSupport(status: VisionSupportState['status']) {
+  if (status === 'supported') return 'success' as const
+  if (status === 'unsupported') return 'warning' as const
+  return 'neutral' as const
+}
+
 
 /* ── Page ── */
 
 export default function PlaygroundPage() {
+  const pathname = usePathname()
+  const surface: PlaygroundSurface = pathname?.startsWith('/build/pilot-lab') ? 'pilot-lab' : 'legacy'
   const { selectedAgentId, selectAgent } = useAgentContext()
   const { userId, orgId } = useSession()
   const scopeId = userId || orgId || 'default'
@@ -494,19 +574,26 @@ export default function PlaygroundPage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [reply, turnTraces])
 
-  /* ── Vision gate ── */
-
-  const supportsVision = (() => {
-    if (!snapshot) return false
-    const model = models.find(m => m.id === snapshot.resolvedModelId || m.name === snapshot.resolvedModelId)
-    return model?.supportsVision ?? false
-  })()
+  const latestRuntimeTruth = useMemo(() => findLatestRuntimeTruth(turnTraces as Array<Array<{ runtimeTruth?: PlaygroundCapabilityTruth }>>), [turnTraces])
+  const visionSupport = useMemo(() => deriveVisionSupport(snapshot, models, latestRuntimeTruth), [snapshot, models, latestRuntimeTruth])
+  const canAttachImages = visionSupport.status === 'supported'
+  const versionStateLabel = selectedVersion ? `${selectedIsActive ? 'Live' : 'Draft'} v${selectedVersion}` : selectedIsActive ? 'Live version' : 'Draft version'
+  const workspaceEyebrow = surface === 'pilot-lab' ? 'Pilot Lab / Playground' : 'Playground'
+  const workspaceTitle = surface === 'pilot-lab' ? 'Runtime truth desk' : 'Playground runtime desk'
+  const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? 'Dry-run runtime path'
+  const executionSurfaceNote = latestRuntimeTruth?.executionSurface.note
+    ?? 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational side effects remain mocked in Playground.'
+  const toolSurfaceSummary = latestRuntimeTruth ? formatToolSurfaceSummary(latestRuntimeTruth.toolSummary) : 'Refreshes after the first run'
+  const persistedSessionLabel = chatId ? 'Persisted and restorable' : 'Created on first send'
+  const runtimeWarnings = latestRuntimeTruth?.warnings ?? ['Operational side effects remain mocked under dry-run even though the runtime path is real.']
 
   /* ── Image helpers ── */
 
   const handleImageAttach = useCallback(async (files: FileList | File[]) => {
-    if (!supportsVision) {
-      setToastMessage(`${snapshot?.resolvedModelLabel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+    if (!canAttachImages) {
+      setToastMessage(visionSupport.status === 'unknown'
+        ? 'Image input support is unknown for this model. Switch to a confirmed vision-capable model before attaching screenshots.'
+        : `${snapshot?.resolvedModelLabel || 'This model'} does not support image input. Switch to a confirmed vision-capable model before attaching screenshots.`)
       setTimeout(() => setToastMessage(''), 4000)
       return
     }
@@ -524,7 +611,7 @@ export default function PlaygroundPage() {
       newImages.push({ base64, mimeType: file.type, name: file.name })
     }
     setAttachedImages(prev => [...prev, ...newImages])
-  }, [supportsVision, snapshot?.resolvedModelLabel])
+  }, [canAttachImages, snapshot?.resolvedModelLabel, visionSupport.status])
 
   const removeImage = useCallback((idx: number) => {
     setAttachedImages(prev => prev.filter((_, i) => i !== idx))
@@ -552,7 +639,7 @@ export default function PlaygroundPage() {
       if (!res.ok) { setToastMessage(`Save failed: HTTP ${res.status}`); setTimeout(() => setToastMessage(''), 4000); return }
       const data = await res.json(); const p = data.data || data
       setSavedChatId(p.chatId)
-      setToastMessage('Saved to Chat!')
+      setToastMessage('Saved review transcript to Operate.')
       setTimeout(() => setToastMessage(''), 4000)
     } catch (err) {
       setToastMessage('Save failed: network error')
@@ -567,8 +654,10 @@ export default function PlaygroundPage() {
   const runTurn = useCallback(async (msg: string, queuedImages?: AttachedImage[]) => {
     if (runningRef.current) return
     const currentImages = queuedImages ?? attachedImagesRef.current
-    if (currentImages.length > 0 && !supportsVision) {
-      setError('当前模型不支持图片，请切换 vision-capable model。')
+    if (currentImages.length > 0 && !canAttachImages) {
+      setError(visionSupport.status === 'unknown'
+        ? 'Image input support is unknown for this model in the active runtime registry. Switch to a confirmed vision-capable model before running this turn.'
+        : `${snapshot?.resolvedModelLabel || 'This model'} does not support image input. Switch to a confirmed vision-capable model before running this turn.`)
       return
     }
     runningRef.current = true
@@ -705,7 +794,7 @@ export default function PlaygroundPage() {
         return ''
       })
     }
-  }, [selectedAgentId, debugMode, supportsVision])
+  }, [selectedAgentId, debugMode, canAttachImages, visionSupport.status, snapshot?.resolvedModelLabel])
 
   // ── Session metrics ──
   const sessionMetrics = useMemo(() => {
@@ -757,73 +846,75 @@ export default function PlaygroundPage() {
       </div>
 
       {/* ═══════════════════════════════════════════
-          Top bar — agent selector + config pills
+          Runtime desk header
           ═══════════════════════════════════════════ */}
       <header style={{
         position: 'relative', zIndex: 1, flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: '10px 20px',
+        display: 'flex', flexDirection: 'column', gap: 14,
+        padding: '18px 20px 16px',
         borderBottom: '1px solid var(--border-subtle)',
-        background: 'rgba(255,255,255,0.35)',
+        background: 'rgba(255,255,255,0.58)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
       }}>
-        {/* Agent selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 10,
-            background: 'linear-gradient(135deg, rgba(212,118,78,0.1), rgba(201,136,74,0.08))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <FlaskConical size={16} color="#b87347" />
-          </div>
-          <AgentVersionPicker
-            key={pickerRefreshKey}
-            agentId={selectedAgentId}
-            onChange={(id) => selectAgent(id)}
-            onAgentsChanged={() => setPickerRefreshKey(k => k + 1)}
-          />
-          {!selectedIsActive && selectedVersion && (
-            <span style={{
-              fontSize: 10, fontWeight: 600, color: 'var(--amber)',
-              padding: '2px 8px', borderRadius: 6,
-              background: 'rgba(212,145,46,0.10)', border: '1px solid rgba(212,145,46,0.20)',
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+          gap: 16, flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: '1 1 360px', minWidth: 0 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(212,118,78,0.14), rgba(201,136,74,0.10))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 0 0 1px rgba(212,118,78,0.08) inset',
               flexShrink: 0,
             }}>
-              测试草稿 v{selectedVersion}（未上线）
-            </span>
-          )}
-        </div>
-
-        <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />
-
-        {snapshot && (
-          <>
-            <ConfigPill icon={<Sparkles size={11} />} label={snapshot.resolvedModelLabel} />
-            <ConfigPill icon={<span style={{ fontSize: 10, fontWeight: 600 }}>&#123;t&#125;</span>} label={`Temp ${snapshot.temperature}`} />
-            <ConfigPill icon={<Clock size={11} />} label={snapshot.memoryModeLabel} />
-            {snapshot.enabledHookCount !== null ? (
-              <ConfigPill icon={<Shield size={11} />} label={`${snapshot.enabledHookCount} hook${snapshot.enabledHookCount !== 1 ? 's' : ''}`} />
-            ) : null}
-
-            <div style={{ flex: 1 }} />
-
-            <button
-              onClick={() => setShowThinking(v => !v)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 10, fontWeight: 500, color: showThinking ? '#b87347' : 'var(--fog)',
-                background: showThinking ? 'rgba(212,118,78,0.08)' : 'transparent',
-                border: showThinking ? '1px solid rgba(212,118,78,0.15)' : '1px solid transparent',
-                padding: '3px 8px', borderRadius: 8,
-                cursor: 'pointer', transition: 'all 0.15s',
-                flexShrink: 0,
-              }}
+              <FlaskConical size={18} color="#b87347" />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.12em',
+                textTransform: 'uppercase', color: 'var(--fog)', opacity: 0.7, marginBottom: 4,
+              }}>
+                {workspaceEyebrow}
+              </div>
+              <h1 style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 650,
+                color: 'var(--mist)',
+                letterSpacing: '-0.02em',
+              }}>
+                {workspaceTitle}
+              </h1>
+              <p style={{
+                margin: '6px 0 0',
+                maxWidth: 760,
+                fontSize: 12.5,
+                lineHeight: 1.65,
+                color: 'var(--fog)',
+              }}>
+                Manual multi-turn runtime desk for the selected agent version. Prompting, Hooks, Procedure runtime,
+                trace writing, and session restore follow the real AgentLoop path. Operational side effects remain mocked
+                under <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92em' }}>dryRun</code>.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flex: '0 1 auto' }}>
+            <ActionButton onClick={() => setSnapshotReloadKey((value) => value + 1)} title="Refresh the saved agent snapshot and capability summary.">
+              <RefreshCw size={13} />
+              Refresh snapshot
+            </ActionButton>
+            <ActionButton
+              active={showThinking}
+              onClick={() => setShowThinking((value) => !value)}
+              title="Show or hide the model thinking stream captured during Playground runs."
             >
-              <Brain size={11} /> Thinking
-            </button>
-
-            <button
+              <Brain size={13} />
+              Show thinking
+            </ActionButton>
+            <ActionButton
+              tone="danger"
               onClick={async () => {
                 if (!chatId) return
                 try {
@@ -842,66 +933,112 @@ export default function PlaygroundPage() {
                 try { localStorage.removeItem(lsk.chatId); localStorage.removeItem(lsk.formRequest); localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
               }}
               disabled={!chatId}
-              title="Reset session"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 10, fontWeight: 500, color: chatId ? 'var(--coral)' : 'var(--fog)',
-                background: 'transparent',
-                border: '1px solid transparent',
-                padding: '3px 8px', borderRadius: 8,
-                cursor: chatId ? 'pointer' : 'default',
-                transition: 'all 0.15s',
-                flexShrink: 0,
-                opacity: chatId ? 1 : 0.35,
-              }}
+              title="Clear the persisted Playground session and its restored traces for the selected agent version."
             >
-              <XCircle size={11} /> Reset
-            </button>
-
-            <button
+              <XCircle size={13} />
+              Clear session
+            </ActionButton>
+            <ActionButton
               onClick={handleSaveToChat}
               disabled={chatMessages.length === 0 || savingToChat}
-              title={savedChatId ? `Saved — open chat /operate/conversations/${savedChatId}` : chatMessages.length === 0 ? 'Send a message first' : 'Save transcript to Chat'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 10, fontWeight: 500, color: savedChatId ? 'var(--malachite)' : 'var(--fog)',
-                background: savedChatId ? 'rgba(46,160,74,0.08)' : 'transparent',
-                border: savedChatId ? '1px solid rgba(46,160,74,0.15)' : '1px solid transparent',
-                padding: '3px 8px', borderRadius: 8,
-                cursor: chatMessages.length === 0 ? 'not-allowed' : 'pointer',
-                transition: 'all 0.15s',
-                flexShrink: 0,
-                opacity: chatMessages.length === 0 ? 0.35 : 1,
-              }}
+              title={chatMessages.length === 0
+                ? 'Send at least one turn before exporting a review transcript.'
+                : 'Creates a synthetic review transcript in Operate. It does not resume a live customer chat.'}
             >
-              {savingToChat ? 'Saving…' : savedChatId ? (
-                <Link
-                  href={`/operate/conversations/${savedChatId}`}
-                  target="_blank"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <ExternalLink size={10} /> View Chat
-                </Link>
-              ) : 'Save to Chat'}
-            </button>
-
+              <Clock size={13} />
+              {savingToChat ? 'Saving…' : 'Save review transcript'}
+            </ActionButton>
+            {savedChatId ? (
+              <Link
+                href={`/operate/conversations/${savedChatId}`}
+                target="_blank"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontSize: 11, fontWeight: 600, color: '#b87347',
+                  textDecoration: 'none', padding: '8px 12px', borderRadius: 12,
+                  border: '1px solid rgba(212,118,78,0.12)',
+                  background: 'rgba(212,118,78,0.05)',
+                }}
+              >
+                Open in Operate <ExternalLink size={12} />
+              </Link>
+            ) : null}
             <Link
               href={`/build/components/brain?mode=model&agentId=${selectedAgentId}`}
               style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                fontSize: 11, fontWeight: 500, color: '#b87347',
-                textDecoration: 'none', opacity: 0.7,
-                padding: '4px 10px', borderRadius: 8,
-                transition: 'opacity 0.15s, background 0.15s',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 11, fontWeight: 600, color: '#b87347',
+                textDecoration: 'none', padding: '8px 12px', borderRadius: 12,
+                border: '1px solid rgba(212,118,78,0.12)',
+                background: 'rgba(255,255,255,0.6)',
               }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(212,118,78,0.06)' }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.background = 'transparent' }}
             >
-              Edit agent <ExternalLink size={10} />
+              Open Brain <ExternalLink size={12} />
             </Link>
-          </>
-        )}
+          </div>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: 12,
+        }}>
+          <WorkspaceCard
+            title="Under test"
+            icon={<FlaskConical size={14} color="#b87347" />}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <AgentVersionPicker
+                key={pickerRefreshKey}
+                agentId={selectedAgentId}
+                onChange={(id) => selectAgent(id)}
+                onAgentsChanged={() => setPickerRefreshKey((value) => value + 1)}
+              />
+              <ToneBadge tone={selectedIsActive ? 'success' : 'warning'}>
+                {versionStateLabel}
+              </ToneBadge>
+            </div>
+            <WorkspaceMetricRow label="Agent" value={snapshot?.name || 'Loading saved snapshot…'} />
+            <WorkspaceMetricRow label="Config id" value={selectedAgentId || 'No config selected'} mono />
+            <WorkspaceMetricRow label="Session" value={persistedSessionLabel} />
+            <WorkspaceNote label="Saved core prompt preview">
+              {snapshot?.promptPreview || 'The saved core prompt preview appears after the selected agent snapshot loads.'}
+            </WorkspaceNote>
+          </WorkspaceCard>
+
+          <WorkspaceCard
+            title="Capabilities"
+            icon={<Sparkles size={14} color="#8b6ff5" />}
+          >
+            <WorkspaceMetricRow label="Model" value={snapshot?.resolvedModelLabel || 'Loading model metadata…'} />
+            <WorkspaceMetricRow label="Image input" value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
+            <WorkspaceMetricRow label="Memory mode" value={snapshot?.memoryModeLabel || 'Loading memory mode…'} />
+            <WorkspaceMetricRow
+              label="Enabled Hooks"
+              value={snapshot?.enabledHookCount == null ? 'Unknown' : `${snapshot.enabledHookCount} enabled`}
+            />
+            <WorkspaceMetricRow label="Temperature" value={snapshot ? String(snapshot.temperature) : 'Loading…'} />
+            <WorkspaceNote label="Capability note">
+              {visionSupport.note}
+            </WorkspaceNote>
+          </WorkspaceCard>
+
+          <WorkspaceCard
+            title="Runtime truth"
+            icon={<LockKeyhole size={14} color="#5b8af7" />}
+          >
+            <WorkspaceMetricRow label="Execution surface" value={executionSurfaceLabel} />
+            <WorkspaceMetricRow label="Tool surface" value={toolSurfaceSummary} />
+            <WorkspaceMetricRow label="Operational side effects" value="Mocked under dry-run" tone="warning" />
+            <WorkspaceMetricRow label="Operate bridge" value="Synthetic review transcript only" />
+            <WorkspaceNote label="Runtime note">
+              {executionSurfaceNote}
+            </WorkspaceNote>
+            <WorkspaceNote label="Current warning">
+              {runtimeWarnings[0]}
+            </WorkspaceNote>
+          </WorkspaceCard>
+        </div>
       </header>
 
       {/* ═══════════════════════════════════════════
@@ -928,28 +1065,84 @@ export default function PlaygroundPage() {
             {chatMessages.length === 0 && !responding && !error && (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
-                paddingTop: '12vh', gap: 20,
+                paddingTop: '8vh', gap: 20,
               }}>
                 <div style={{
-                  width: 56, height: 56, borderRadius: 16,
-                  background: 'linear-gradient(135deg, rgba(212,118,78,0.08), rgba(201,136,74,0.05))',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 0 0 1px rgba(212,118,78,0.06) inset',
+                  width: '100%', maxWidth: 720,
+                  padding: '20px 22px',
+                  borderRadius: 22,
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,252,249,0.72))',
+                  border: '1px solid rgba(212,118,78,0.08)',
+                  boxShadow: '0 18px 50px rgba(58,39,24,0.06)',
+                  display: 'grid',
+                  gap: 14,
                 }}>
-                  <FlaskConical size={24} color="#b87347" />
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{
+                      width: 42, height: 42, borderRadius: 14,
+                      background: 'linear-gradient(135deg, rgba(212,118,78,0.12), rgba(201,136,74,0.08))',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: '0 0 0 1px rgba(212,118,78,0.08) inset',
+                      flexShrink: 0,
+                    }}>
+                      <FlaskConical size={18} color="#b87347" />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.12em',
+                        textTransform: 'uppercase', color: 'var(--fog)', opacity: 0.7, marginBottom: 4,
+                      }}>
+                        Runtime desk
+                      </div>
+                      <h2 style={{
+                        margin: 0,
+                        fontSize: 20,
+                        fontWeight: 650,
+                        color: 'var(--mist)',
+                        letterSpacing: '-0.02em',
+                      }}>
+                        {snapshot ? `Test ${snapshot.name} on the real runtime path` : 'Select an agent version and run a manual turn'}
+                      </h2>
+                      <p style={{
+                        margin: '8px 0 0',
+                        fontSize: 13,
+                        color: 'var(--fog)',
+                        lineHeight: 1.7,
+                      }}>
+                        Playground preserves multi-turn continuity, restores its latest session and trace for the selected
+                        agent version, and records the same runtime evidence path used by runtime-backed Scenario receipts.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: 10,
+                  }}>
+                    <MiniTruthCard
+                      label="Under test"
+                      value={snapshot ? `${snapshot.resolvedModelLabel} · ${versionStateLabel}` : 'Waiting for snapshot'}
+                    />
+                    <MiniTruthCard
+                      label="Image input"
+                      value={visionSupport.label}
+                      tone={toneForVisionSupport(visionSupport.status)}
+                    />
+                    <MiniTruthCard
+                      label="Runtime boundary"
+                      value="Real runtime path, mocked operational side effects"
+                    />
+                    <MiniTruthCard
+                      label="Trace timeline"
+                      value="Call, result, Hook, reconcile, stale evidence"
+                    />
+                  </div>
                 </div>
-                <p style={{
-                  fontSize: 13, color: 'var(--fog)', margin: 0,
-                  textAlign: 'center', lineHeight: 1.6,
-                }}>
-                  {snapshot
-                    ? `Testing "${snapshot.name}" · ${snapshot.resolvedModelLabel}`
-                    : 'Select an agent and send a message to test its behaviour.'}
-                </p>
 
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
-                  width: '100%', maxWidth: 440,
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8,
+                  width: '100%', maxWidth: 720,
                 }}>
                   {QUICK_STARTS.map(q => (
                     <button
@@ -988,13 +1181,13 @@ export default function PlaygroundPage() {
 
                 {snapshot?.promptPreview && (
                   <div style={{
-                    width: '100%', maxWidth: 440, marginTop: 8,
+                    width: '100%', maxWidth: 720, marginTop: 4,
                     padding: '12px 16px', borderRadius: 12,
                     background: 'rgba(212,118,78,0.03)',
                     border: '1px solid rgba(212,118,78,0.06)',
                   }}>
                     <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--fog)', opacity: 0.5, marginBottom: 6 }}>
-                      Core Prompt
+                      Saved Core Prompt Preview
                     </div>
                     <p style={{ fontSize: 11, color: 'var(--fog)', margin: 0, lineHeight: 1.55, fontStyle: 'italic' }}>
                       {snapshot.promptPreview}
@@ -1331,24 +1524,26 @@ export default function PlaygroundPage() {
             >
               {/* ── Attach button ── */}
               <label
-                title={supportsVision ? 'Attach image' : `${snapshot?.resolvedModelLabel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`}
+                title={canAttachImages
+                  ? 'Attach images to test vision input on the selected runtime path.'
+                  : visionSupport.note}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 36, height: 36, borderRadius: 12,
-                  background: supportsVision ? 'rgba(212,118,78,0.06)' : 'rgba(0,0,0,0.03)',
-                  border: supportsVision ? '1px solid rgba(212,118,78,0.12)' : '1px solid rgba(0,0,0,0.06)',
-                  cursor: supportsVision ? 'pointer' : 'not-allowed',
-                  opacity: supportsVision ? 1 : 0.35,
+                  background: canAttachImages ? 'rgba(212,118,78,0.06)' : 'rgba(0,0,0,0.03)',
+                  border: canAttachImages ? '1px solid rgba(212,118,78,0.12)' : '1px solid rgba(0,0,0,0.06)',
+                  cursor: canAttachImages ? 'pointer' : 'not-allowed',
+                  opacity: canAttachImages ? 1 : 0.35,
                   transition: 'all 0.15s',
                   flexShrink: 0,
                 }}
               >
-                <ImageIcon size={14} color={supportsVision ? '#b87347' : 'var(--fog)'} />
+                <ImageIcon size={14} color={canAttachImages ? '#b87347' : 'var(--fog)'} />
                 <input
                   type="file"
                   accept="image/*"
                   multiple
-                  disabled={!supportsVision}
+                  disabled={!canAttachImages}
                   onChange={e => { if (e.target.files) { handleImageAttach(e.target.files); e.target.value = '' } }}
                   style={{ display: 'none' }}
                 />
@@ -1374,15 +1569,17 @@ export default function PlaygroundPage() {
                   }
                   if (imageFiles.length > 0) {
                     e.preventDefault()
-                    if (!supportsVision) {
-                      setToastMessage(`${snapshot?.resolvedModelLabel || 'This model'} doesn't support images — switch to a vision model, e.g. GPT-4o / Gemini`)
+                    if (!canAttachImages) {
+                      setToastMessage(visionSupport.status === 'unknown'
+                        ? 'Image input support is unknown for this model. Switch to a confirmed vision-capable model before pasting screenshots.'
+                        : `${snapshot?.resolvedModelLabel || 'This model'} does not support image input. Switch to a confirmed vision-capable model before pasting screenshots.`)
                       setTimeout(() => setToastMessage(''), 4000)
                       return
                     }
                     handleImageAttach(imageFiles)
                   }
                 }}
-                placeholder={responding ? 'Type to queue next message…' : 'Type a test message…'}
+                placeholder={responding ? 'Queue the next manual turn…' : 'Type a manual runtime test turn…'}
                 style={{
                   flex: 1, border: 'none', background: 'transparent',
                   fontSize: 13, color: 'var(--mist)',
@@ -1466,9 +1663,9 @@ export default function PlaygroundPage() {
                 marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 {toastMessage}
-                {savedChatId && toastMessage === 'Saved to Chat!' && (
+                {savedChatId && toastMessage === 'Saved review transcript to Operate.' && (
                   <Link href={`/operate/conversations/${savedChatId}`} target="_blank" style={{ color: 'white', fontWeight: 600, textDecoration: 'underline', fontSize: 11 }}>
-                    View Chat
+                    Open in Operate
                   </Link>
                 )}
               </div>
@@ -1510,17 +1707,259 @@ export default function PlaygroundPage() {
 
 /* ── Tiny sub-components ── */
 
-function ConfigPill({ icon, label }: { icon: React.ReactNode; label: string }) {
+function ActionButton({
+  active = false,
+  children,
+  disabled = false,
+  onClick,
+  title,
+  tone = 'neutral',
+}: {
+  active?: boolean
+  children: React.ReactNode
+  disabled?: boolean
+  onClick?: () => void | Promise<void>
+  title?: string
+  tone?: 'neutral' | 'danger'
+}) {
+  const textColor = tone === 'danger'
+    ? (disabled ? 'var(--fog)' : 'var(--vermillion)')
+    : active ? '#b87347' : 'var(--fog)'
+  const borderColor = tone === 'danger'
+    ? 'rgba(230,69,57,0.14)'
+    : active ? 'rgba(212,118,78,0.16)' : 'var(--border-subtle)'
+  const background = tone === 'danger'
+    ? 'rgba(230,69,57,0.04)'
+    : active ? 'rgba(212,118,78,0.07)' : 'rgba(255,255,255,0.72)'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        minHeight: 34,
+        padding: '8px 12px',
+        borderRadius: 12,
+        border: `1px solid ${borderColor}`,
+        background,
+        color: textColor,
+        fontSize: 11,
+        fontWeight: 600,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.45 : 1,
+        boxShadow: active ? '0 10px 24px rgba(212,118,78,0.08)' : '0 6px 18px rgba(58,39,24,0.04)',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function WorkspaceCard({
+  title,
+  icon,
+  children,
+}: {
+  title: string
+  icon: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      padding: '14px 15px',
+      borderRadius: 18,
+      border: '1px solid rgba(212,118,78,0.08)',
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,252,249,0.74))',
+      boxShadow: '0 16px 34px rgba(58,39,24,0.05)',
+      minWidth: 0,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--fog)',
+        opacity: 0.75,
+      }}>
+        {icon}
+        <span>{title}</span>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function WorkspaceMetricRow({
+  label,
+  mono = false,
+  tone = 'neutral',
+  value,
+}: {
+  label: string
+  mono?: boolean
+  tone?: 'neutral' | 'success' | 'warning'
+  value: string
+}) {
+  const valueColor = tone === 'success'
+    ? 'var(--malachite)'
+    : tone === 'warning'
+      ? 'var(--amber)'
+      : 'var(--mist)'
+  return (
+    <div style={{ display: 'grid', gap: 3 }}>
+      <div style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--fog)',
+        opacity: 0.6,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 12,
+        fontWeight: 600,
+        color: valueColor,
+        fontFamily: mono ? 'var(--font-mono)' : 'var(--font-sans)',
+        lineHeight: 1.55,
+        wordBreak: mono ? 'break-all' : 'break-word',
+      }}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceNote({
+  children,
+  label,
+}: {
+  children: React.ReactNode
+  label: string
+}) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 5,
-      padding: '3px 10px', borderRadius: 8,
-      background: 'rgba(0,0,0,0.03)',
-      fontSize: 11, color: 'var(--fog)', fontWeight: 500,
-      flexShrink: 0,
+      padding: '9px 10px',
+      borderRadius: 12,
+      background: 'rgba(255,252,249,0.72)',
+      border: '1px solid rgba(212,118,78,0.08)',
     }}>
-      {icon}
-      {label}
+      <div style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--fog)',
+        opacity: 0.6,
+        marginBottom: 4,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 11,
+        color: 'var(--fog)',
+        lineHeight: 1.6,
+      }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function ToneBadge({
+  children,
+  tone,
+}: {
+  children: React.ReactNode
+  tone: 'neutral' | 'success' | 'warning'
+}) {
+  const colors = tone === 'success'
+    ? {
+        color: 'var(--malachite)',
+        background: 'rgba(46,160,74,0.08)',
+        border: '1px solid rgba(46,160,74,0.14)',
+      }
+    : tone === 'warning'
+      ? {
+          color: 'var(--amber)',
+          background: 'rgba(212,145,46,0.08)',
+          border: '1px solid rgba(212,145,46,0.16)',
+        }
+      : {
+          color: 'var(--fog)',
+          background: 'rgba(0,0,0,0.03)',
+          border: '1px solid rgba(0,0,0,0.06)',
+        }
+
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      padding: '4px 8px',
+      borderRadius: 999,
+      fontSize: 10,
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      ...colors,
+    }}>
+      {children}
+    </span>
+  )
+}
+
+function MiniTruthCard({
+  label,
+  tone = 'neutral',
+  value,
+}: {
+  label: string
+  tone?: 'neutral' | 'success' | 'warning'
+  value: string
+}) {
+  return (
+    <div style={{
+      padding: '10px 12px',
+      borderRadius: 14,
+      background: 'rgba(255,255,255,0.72)',
+      border: tone === 'warning'
+        ? '1px solid rgba(212,145,46,0.16)'
+        : tone === 'success'
+          ? '1px solid rgba(46,160,74,0.14)'
+          : '1px solid rgba(0,0,0,0.05)',
+    }}>
+      <div style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--fog)',
+        opacity: 0.6,
+        marginBottom: 4,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 11.5,
+        fontWeight: 600,
+        lineHeight: 1.5,
+        color: tone === 'warning' ? 'var(--amber)' : tone === 'success' ? 'var(--malachite)' : 'var(--mist)',
+      }}>
+        {value}
+      </div>
     </div>
   )
 }

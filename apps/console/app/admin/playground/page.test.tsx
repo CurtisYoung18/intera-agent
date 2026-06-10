@@ -11,6 +11,10 @@ vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/admin/playground',
+}))
+
 vi.mock('@/lib/api/client', () => ({
   apiClient: (url: string, options?: any) => mockApiClient(url, options),
 }))
@@ -180,10 +184,11 @@ describe('PlaygroundPage snapshot truth', () => {
     await renderPage()
 
     await screen.findByText('DeepSeek V4 Flash')
-    expect(screen.getByText('Temp 0.5')).toBeDefined()
+    expect(screen.getByText('0.5')).toBeDefined()
     expect(screen.getByText('Balanced')).toBeDefined()
-    expect(screen.getByText('1 hook')).toBeDefined()
-    expect(screen.getByText('Initial core prompt')).toBeDefined()
+    expect(screen.getByText('1 enabled')).toBeDefined()
+    expect(screen.getAllByText('Not supported').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Initial core prompt').length).toBeGreaterThan(0)
 
     currentAgentPayload = {
       data: {
@@ -216,10 +221,11 @@ describe('PlaygroundPage snapshot truth', () => {
 
     await waitFor(() => {
       expect(screen.getByText('GPT-4o')).toBeDefined()
-      expect(screen.getByText('Temp 0.2')).toBeDefined()
+      expect(screen.getByText('0.2')).toBeDefined()
       expect(screen.getByText('Short')).toBeDefined()
-      expect(screen.getByText('2 hooks')).toBeDefined()
-      expect(screen.getByText('Updated prompt from Brain and Memory')).toBeDefined()
+      expect(screen.getByText('2 enabled')).toBeDefined()
+      expect(screen.getAllByText('Supported').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Updated prompt from Brain and Memory').length).toBeGreaterThan(0)
     })
   })
 
@@ -241,9 +247,11 @@ describe('PlaygroundPage snapshot truth', () => {
 
     await renderPage()
 
-    await screen.findByText('Real saved core prompt')
+    await waitFor(() => {
+      expect(screen.getAllByText('Real saved core prompt').length).toBeGreaterThan(0)
+    })
     expect(screen.queryByText('Obsolete prompt field')).toBeNull()
-    expect(screen.queryByText(/hook/i)).toBeNull()
+    expect(screen.getByText('Unknown')).toBeDefined()
     expect(screen.queryByText(/rule/i)).toBeNull()
   })
 })
