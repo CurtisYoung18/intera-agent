@@ -166,7 +166,7 @@ export default function DashboardPage() {
         <div className="rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl p-5 transition-all duration-250 hover:-translate-y-0.5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[13px] font-bold text-[var(--mist)]">{l('recentCases')}</h2>
-            <Link href="/ops/chats" className="flex items-center gap-1 text-[11px] text-indigo/60 hover:text-indigo transition-colors">
+            <Link href="/operate/conversations" className="flex items-center gap-1 text-[11px] text-indigo/60 hover:text-indigo transition-colors">
               {l('viewAll')} <ArrowRight className="w-3 h-3" />
             </Link>
           </div>

@@ -1,6 +1,5 @@
-import PlaygroundPage from '@/app/admin/playground/page'
+import { redirect } from 'next/navigation'
 
 export default function BuildPlaygroundPage() {
-  return <PlaygroundPage />
+  redirect('/build/pilot-lab?tab=playground')
 }
-

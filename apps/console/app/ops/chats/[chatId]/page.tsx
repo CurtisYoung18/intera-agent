@@ -241,7 +241,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
     setDeleting(true)
     try {
       await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
-      router.push('/ops/chats')
+      router.push('/operate/conversations')
     } catch { alert('Delete failed'); setDeleting(false) }
   }
 
@@ -250,7 +250,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
       {/* Toolbar */}
       <header className="sticky top-0 z-30 mb-4 flex flex-shrink-0 items-center justify-between gap-3 rounded-2xl border border-black/[0.06] bg-white/55 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={() => router.push('/ops/chats')}
+          <button type="button" onClick={() => router.push('/operate/conversations')}
             className="console-btn-icon-square" aria-label="Back">
             <ArrowLeft className="h-4 w-4" />
           </button>
@@ -269,7 +269,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
           {session?.cases.map((c) => (
             <div key={c.id} className="flex items-center gap-1">
               <CasePill caseItem={c} />
-              <Link href={`/ops/cases/${encodeURIComponent(c.id)}`}
+              <Link href={`/operate/conversations/cases/${encodeURIComponent(c.id)}`}
                 className="console-btn-icon-square h-6 w-6" title="View ProcedureRun details">
                 <BarChart3 className="h-3 w-3" />
               </Link>
@@ -284,7 +284,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
                 const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u)
                 const pkey = (u && u !== 'anonymous' && !isUuid) ? `user:${u}` : `chat:${decodedChatId}`
                 return (
-                <Link href={`/ops/users/${encodeURIComponent(pkey)}`}
+                <Link href={`/operate/handoff/${encodeURIComponent(pkey)}`}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo/20 bg-indigo/[0.06] hover:bg-indigo/[0.12] transition-colors text-indigo"
                   title="Open this user's profile (cross-chat history & preferences)">
                   <User className="w-3.5 h-3.5" />
@@ -396,7 +396,7 @@ export default function ChatDetailPage({ params }: { params: Promise<{ chatId: s
               </button>
               {/* Link to full User Profile page */}
               {memoryData?.profile && (
-                <Link href={`/ops/users/${encodeURIComponent(memoryData.profile.userId)}`}
+                <Link href={`/operate/handoff/${encodeURIComponent(memoryData.profile.userId)}`}
                   className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-black/[0.06] text-[var(--fog)] hover:text-[var(--mist)] hover:border-black/10">
                   <User className="w-3 h-3" /> View Profile →
                 </Link>

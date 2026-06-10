@@ -26,7 +26,7 @@ export function mapLegacyRoute(pathname: string): string | null {
   if (normalizedPathname === '/admin') return '/build/pilot-lab'
   if (normalizedPathname === '/ops') return '/operate/conversations'
 
-  if (normalizedPathname === '/admin/playground') return '/build/pilot-lab'
+  if (normalizedPathname === '/admin/playground') return '/build/pilot-lab?tab=playground'
   if (normalizedPathname === '/admin/model') return '/build/components/brain?mode=model'
   if (normalizedPathname === '/admin/memory') return '/build/components/brain?mode=memory'
   if (normalizedPathname === '/admin/case-types') return '/build/components/procedures'
@@ -37,6 +37,7 @@ export function mapLegacyRoute(pathname: string): string | null {
   if (normalizedPathname === '/admin/integrations') return '/build/components/integrations'
   if (normalizedPathname === '/admin/organization') return '/settings/organization'
   if (normalizedPathname === '/admin/scenarios') return '/build/pilot-lab'
+  if (normalizedPathname === '/build/playground') return '/build/pilot-lab?tab=playground'
   if (normalizedPathname === '/admin/channels') return '/build/components/integrations'
   if (normalizedPathname.startsWith('/admin/channels/')) return '/build/components/integrations'
   if (normalizedPathname.startsWith('/admin/case-types/')) {
@@ -69,12 +70,14 @@ export function mapLegacyRoute(pathname: string): string | null {
   return null
 }
 
-function redirectPreservingQuery(target: string, req: NextRequest): NextResponse {
+export function redirectPreservingQuery(target: string, req: NextRequest): NextResponse {
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
   const proto = req.headers.get('x-forwarded-proto') || 'https'
   const targetUrl = new URL(target, `${proto}://${host}`)
   req.nextUrl.searchParams.forEach((value, key) => {
-    targetUrl.searchParams.set(key, value)
+    if (!targetUrl.searchParams.has(key)) {
+      targetUrl.searchParams.set(key, value)
+    }
   })
   return NextResponse.redirect(targetUrl)
 }

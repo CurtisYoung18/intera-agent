@@ -68,7 +68,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
     setDeleting(true)
     try {
       await apiClient(`/api/users/${encodeURIComponent(userId)}/profile`, { method: 'DELETE' })
-      router.push('/ops/users')
+      router.push('/operate/handoff')
     } catch (e) {
       console.error('Delete failed:', e)
       alert('Delete failed')
@@ -161,7 +161,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ userId: 
               <h3 className="text-[13px] font-bold text-[var(--mist)] mb-3">Chat History ({chats.length})</h3>
               <div className="space-y-2">
                 {chats.map((c) => (
-                  <Link key={c.chatId} href={`/ops/chats/${encodeURIComponent(c.chatId)}`}
+                  <Link key={c.chatId} href={`/operate/conversations/${encodeURIComponent(c.chatId)}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/[0.04] hover:bg-black/[0.02] transition-colors">
                     <MessageSquare className="h-3.5 w-3.5 text-[var(--fog)]/60" />
                     <span className="text-[12px] font-mono text-[var(--mist)]">{c.chatId.slice(0, 16)}...</span>

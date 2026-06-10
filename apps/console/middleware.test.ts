@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { mapLegacyRoute } from './middleware'
+import { NextRequest } from 'next/server'
+import { mapLegacyRoute, redirectPreservingQuery } from './middleware'
 
 describe('mapLegacyRoute', () => {
   const cases: Array<[string, string | null]> = [
     ['/', null],
     ['/admin', '/build/pilot-lab'],
     ['/admin/', '/build/pilot-lab'],
-    ['/admin/playground', '/build/pilot-lab'],
+    ['/admin/playground', '/build/pilot-lab?tab=playground'],
     ['/admin/model', '/build/components/brain?mode=model'],
     ['/admin/memory', '/build/components/brain?mode=memory'],
     ['/admin/guardrails', '/build/components/hooks'],
@@ -25,6 +26,8 @@ describe('mapLegacyRoute', () => {
     ['/admin/organization/', '/settings/organization'],
     ['/admin/scenarios', '/build/pilot-lab'],
     ['/admin/scenarios/', '/build/pilot-lab'],
+    ['/build/playground', '/build/pilot-lab?tab=playground'],
+    ['/build/playground/', '/build/pilot-lab?tab=playground'],
     ['/ops', '/operate/conversations'],
     ['/ops/', '/operate/conversations'],
     ['/ops/chats', '/operate/conversations'],
@@ -48,5 +51,19 @@ describe('mapLegacyRoute', () => {
     for (const [input, expected] of cases) {
       expect(mapLegacyRoute(input)).toBe(expected)
     }
+  })
+
+  it('preserves request query params without overriding target query params', () => {
+    const req = new NextRequest('https://demo.anytrans.ai/admin/model?mode=memory&agentId=agent-1', {
+      headers: {
+        host: 'demo.anytrans.ai',
+        'x-forwarded-proto': 'https',
+      },
+    })
+    const res = redirectPreservingQuery('/build/components/brain?mode=model', req)
+
+    expect(res.headers.get('location')).toBe(
+      'https://demo.anytrans.ai/build/components/brain?mode=model&agentId=agent-1',
+    )
   })
 })

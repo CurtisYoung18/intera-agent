@@ -214,7 +214,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             Export .md
           </a>
           {caseData.chatId && (
-            <button onClick={() => router.push(`/ops/chats/${encodeURIComponent(caseData.chatId!)}`)}
+            <button onClick={() => router.push(`/operate/conversations/${encodeURIComponent(caseData.chatId!)}`)}
               className="text-[11px] text-indigo hover:underline whitespace-nowrap">
               {t('caseDetail.viewChat')}
             </button>

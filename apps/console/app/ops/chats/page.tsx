@@ -84,7 +84,7 @@ function ChatCard({
   return (
     <div className="group/card relative min-w-0">
       <Link
-        href={`/ops/chats/${encodeURIComponent(session.chatId)}`}
+        href={`/operate/conversations/${encodeURIComponent(session.chatId)}`}
         className="block min-w-0 overflow-hidden rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white/70 via-white/45 to-white/25 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl transition-[transform,box-shadow] duration-200 hover:-translate-y-[1px] hover:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.16)]"
       >
         {/* Header */}

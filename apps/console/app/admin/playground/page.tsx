@@ -798,7 +798,7 @@ export default function PlaygroundPage() {
             <button
               onClick={handleSaveToChat}
               disabled={chatMessages.length === 0 || savingToChat}
-              title={savedChatId ? `Saved — open chat /ops/chats/${savedChatId}` : chatMessages.length === 0 ? 'Send a message first' : 'Save transcript to Chat'}
+              title={savedChatId ? `Saved — open chat /operate/conversations/${savedChatId}` : chatMessages.length === 0 ? 'Send a message first' : 'Save transcript to Chat'}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4,
                 fontSize: 10, fontWeight: 500, color: savedChatId ? 'var(--malachite)' : 'var(--fog)',
@@ -813,7 +813,7 @@ export default function PlaygroundPage() {
             >
               {savingToChat ? 'Saving…' : savedChatId ? (
                 <Link
-                  href={`/ops/chats/${savedChatId}`}
+                  href={`/operate/conversations/${savedChatId}`}
                   target="_blank"
                   style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'inherit', textDecoration: 'none' }}
                   onClick={e => e.stopPropagation()}
@@ -824,7 +824,7 @@ export default function PlaygroundPage() {
             </button>
 
             <Link
-              href={`/admin/model?agentId=${selectedAgentId}`}
+              href={`/build/components/brain?mode=model&agentId=${selectedAgentId}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 fontSize: 11, fontWeight: 500, color: '#b87347',
@@ -1404,7 +1404,7 @@ export default function PlaygroundPage() {
               }}>
                 {toastMessage}
                 {savedChatId && toastMessage === 'Saved to Chat!' && (
-                  <Link href={`/ops/chats/${savedChatId}`} target="_blank" style={{ color: 'white', fontWeight: 600, textDecoration: 'underline', fontSize: 11 }}>
+                  <Link href={`/operate/conversations/${savedChatId}`} target="_blank" style={{ color: 'white', fontWeight: 600, textDecoration: 'underline', fontSize: 11 }}>
                     View Chat
                   </Link>
                 )}

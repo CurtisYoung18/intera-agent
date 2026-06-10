@@ -70,7 +70,7 @@ export default function UsersListPage() {
           {users.map((u) => (
             <Link
               key={u.userId}
-              href={`/ops/users/${encodeURIComponent(u.userId)}`}
+              href={`/operate/handoff/${encodeURIComponent(u.userId)}`}
               className="group/card relative rounded-2xl border border-black/[0.06] bg-white/70 p-4 transition-colors hover:border-lavender/30 hover:bg-white"
             >
               <div className="flex items-start justify-between gap-2">
