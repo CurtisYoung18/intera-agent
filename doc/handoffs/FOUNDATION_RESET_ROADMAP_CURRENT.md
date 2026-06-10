@@ -1,7 +1,7 @@
 # Intera Current Roadmap
 
 **Last updated:** 2026-06-10
-**Status:** current checkpoint map after BASE1 and Q3-B1. Q3-B Final, final gate, and first customer delivery remain ahead.
+**Status:** current checkpoint map after Q3-B Final. Version Control UX, final gate, and first customer delivery remain ahead.
 **Audience:** founder, architect, coding-team leads, zero-context coding agents.
 
 This roadmap is the compact visual map from the earliest shipped project foundations through the current Foundation Reset and the remaining commercial-delivery checkpoints.
@@ -79,8 +79,8 @@ flowchart TD
   end
 
   subgraph P6["Current and remaining P0 delivery checkpoints"]
-    Q3BF["Q3-B Final cleanup<br/>Delete confirmed-unused UI, active docs truth, terminology cleanup"]:::active
-    VC1["Version control UX implementation<br/>Release timeline, Live/Draft/Historical, cap guidance, safer actions"]:::next
+    Q3BF["Q3-B Final cleanup<br/>Delete confirmed-unused UI, active docs truth, terminology cleanup"]:::done
+    VC1["Version control UX implementation<br/>Release timeline, Live/Draft/Historical, cap guidance, safer actions"]:::active
     GATE["Final integration gate<br/>typecheck, tests, clean build, browser smoke, no stale active docs"]:::gate
     PUSH["Push main<br/>Sync origin/main after green integration gate"]:::next
     DEPLOY["Deploy or cherry-pick to deploy/main<br/>Run server health and production smoke"]:::next
@@ -140,8 +140,8 @@ flowchart TD
 | PKG1 | Done | Package completeness, import dry-run, refs/requirements, version cap. |
 | BASE1 | Done | Core basics: model/prompt, Knowledge, Playground text/image, trace, package sanity. |
 | Q3-B1 | Done | Route/nav truth: old admin/ops links point to target IA. |
-| Q3-B Final | Active | Remove confirmed-unused UI and align active docs/copy without deleting Playground runtime. |
-| Version control UX | Next | Make Release show Agent family timeline, Live/Draft/Historical states, and cap guidance. |
+| Q3-B Final | Done | Removed proven-dead UI, fixed compatibility case detail route, and aligned active docs/copy without deleting Playground runtime. |
+| Version control UX | Active | Make Release show Agent family timeline, Live/Draft/Historical states, and cap guidance. |
 | Final integration gate | Next | Run full gates and browser smoke before push/deploy. |
 | Push main | Next | Sync local integration branch after clean gates. |
 | Deploy / production smoke | Next | Move validated main to deploy path and verify health plus real browser flows. |
@@ -155,7 +155,6 @@ flowchart TD
 
 ## Current Dispatch Guidance
 
-1. Finish **Q3-B Final** as one cleanup lane, but do not delete Playground dry-run, Trace Sidebar, playground APIs, or Agent runtime files.
-2. Implement **Version Control UX** in Release only after Q3-B Final is stable.
-3. Run the **Final integration gate** before pushing.
-4. Use the hotfix worktree only for live minimal repair; cherry-pick hotfixes back into main before final deployment.
+1. Implement **Version Control UX** in Release without reopening runtime/schema scope.
+2. Run the **Final integration gate** before pushing.
+3. Use the hotfix worktree only for live minimal repair; cherry-pick hotfixes back into main before final deployment.
