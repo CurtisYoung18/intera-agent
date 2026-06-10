@@ -35,11 +35,13 @@ async function issueSession(
   userId: string,
   orgId: string,
   role: string,
+  avatarUrl?: string,
 ): Promise<string | null> {
   return signSession({
     userId,
     orgId,
     role: role as 'owner' | 'admin' | 'operator' | 'viewer',
+    avatarUrl,
   })
 }
 
@@ -152,7 +154,7 @@ export async function GET(req: NextRequest) {
       return errorRedirect(`Token verification failed: ${(err as Error).message}`)
     }
 
-    const { sub: googleSub, email, name } = claims
+    const { sub: googleSub, email, name, picture } = claims
 
     // 5. Login-or-register logic
     // 5a. Look up User by googleSub (durable join key)
@@ -184,14 +186,14 @@ export async function GET(req: NextRequest) {
 
       // Check if user has multiple orgs → redirect to org-picker
       if (freshMemberships.length > 1) {
-        const token = await issueSession(user.id, primary.orgId, primary.role)
+        const token = await issueSession(user.id, primary.orgId, primary.role, picture)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
         }
         return redirectWithSession(token, '/org-picker')
       }
 
-      const token = await issueSession(user.id, primary.orgId, primary.role)
+      const token = await issueSession(user.id, primary.orgId, primary.role, picture)
       if (!token) {
         return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
       }
@@ -231,14 +233,14 @@ export async function GET(req: NextRequest) {
       }
 
       if (freshMemberships.length > 1) {
-        const token = await issueSession(user.id, primary.orgId, primary.role)
+        const token = await issueSession(user.id, primary.orgId, primary.role, picture)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
         }
         return redirectWithSession(token, '/org-picker')
       }
 
-      const token = await issueSession(user.id, primary.orgId, primary.role)
+      const token = await issueSession(user.id, primary.orgId, primary.role, picture)
       if (!token) {
         return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
       }
@@ -271,7 +273,7 @@ export async function GET(req: NextRequest) {
           return newUser
         })
 
-        const token = await issueSession(result.id, shareLink.orgId, shareLink.role)
+        const token = await issueSession(result.id, shareLink.orgId, shareLink.role, picture)
         if (!token) {
           return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
         }
@@ -346,14 +348,14 @@ export async function GET(req: NextRequest) {
 
     // Multi-org → redirect to org-picker
     if (pendingInvites.length > 1) {
-      const token = await issueSession(result.id, primaryInvite.orgId, primaryRole)
+      const token = await issueSession(result.id, primaryInvite.orgId, primaryRole, picture)
       if (!token) {
         return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
       }
       return redirectWithSession(token, '/org-picker')
     }
 
-    const token = await issueSession(result.id, primaryInvite.orgId, primaryRole)
+    const token = await issueSession(result.id, primaryInvite.orgId, primaryRole, picture)
     if (!token) {
       return NextResponse.json({ error: 'Server session secret not configured' }, { status: 500 })
     }

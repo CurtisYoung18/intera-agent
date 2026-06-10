@@ -8,13 +8,14 @@ import type { TranslateFn } from '@/lib/i18n/types'
 import {
   ClipboardList, Puzzle, Shield, Layers,
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
-  Languages, Lock, Unlock,
+  Globe, Lock, Unlock, ArrowRightLeft,
   MessageSquare,
   Search,
   Loader2,
   Plug,
   Users2,
   FlaskConical,
+  TestTubeDiagonal,
   Settings,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -57,7 +58,7 @@ type NavSlug =
   | 'organization'
 
 const BUILD_ITEMS: NavItem[] = [
-  { href: '/build/pilot-lab', slug: 'pilotLab', icon: MessageSquare, color: '#357f7c', matchPattern: '/build/pilot-lab' },
+  { href: '/build/pilot-lab', slug: 'pilotLab', icon: TestTubeDiagonal, color: '#357f7c', matchPattern: '/build/pilot-lab' },
   { href: '/build/release', slug: 'release', icon: FlaskConical, color: '#8b6ff5', matchPattern: '/build/release' },
   { href: '/build/components', slug: 'components', icon: Layers, color: '#5b8af7', matchPattern: '/build/components' },
 ]
@@ -94,6 +95,29 @@ function navLabel(t: (key: string, vars?: Record<string, string | number>) => st
   return fallback[slug]
 }
 
+function CollapsedSidebarMark() {
+  return (
+    <svg viewBox="0 0 64 64" className="h-7 w-7 flex-shrink-0" aria-hidden="true">
+      <defs>
+        <linearGradient id="sidebarCollapsedMark" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#1b2c33" />
+          <stop offset="0.5" stopColor="#2f8f99" />
+          <stop offset="1" stopColor="#7fcdd4" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M39.7 50.7A20.5 20.5 0 1 1 50.2 41.3"
+        stroke="url(#sidebarCollapsedMark)"
+        strokeWidth="5.5"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <rect x="29" y="29" width="6.4" height="14.8" rx="3.2" fill="#1f3138" />
+      <circle cx="32.2" cy="22.2" r="3.8" fill="#14b8a6" />
+    </svg>
+  )
+}
+
 export default function ConsoleSidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
@@ -106,6 +130,8 @@ export default function ConsoleSidebar() {
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
 
   const [customerName, setCustomerName] = useState('Test')
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   const [isStaff, setIsStaff] = useState(false)
   const [customers, setCustomers] = useState<CustomerInfo[]>([])
   const [customersLoading, setCustomersLoading] = useState(false)
@@ -125,6 +151,8 @@ export default function ConsoleSidebar() {
       .then((d) => {
         const p = d.data || d
         if (p.customerName) setCustomerName(p.customerName)
+        setAvatarUrl(typeof p.avatarUrl === 'string' && p.avatarUrl ? p.avatarUrl : null)
+        setAvatarLoadFailed(false)
         setIsStaff(p.isAuthenticated === true)
       })
       .catch(() => {})
@@ -197,37 +225,39 @@ export default function ConsoleSidebar() {
     window.location.reload()
   }
 
+  const showAvatarImage = Boolean(avatarUrl && !avatarLoadFailed)
+
   return (
     <>
       <aside
         className={`relative z-20 flex min-h-0 flex-shrink-0 flex-col overflow-hidden transition-[width] duration-300 ease-out
-          bg-white/50 backdrop-blur-2xl border-r border-black/5
+          border-r border-white/75 bg-[rgba(255,252,246,0.78)] shadow-[0_18px_48px_rgba(21,23,25,0.07),inset_-1px_0_0_rgba(255,255,255,0.58)] backdrop-blur-[24px]
           ${collapsed ? 'w-14' : 'w-56'} h-full`}
       >
-        <div className="relative z-30 flex-shrink-0 border-b border-black/[0.05] pb-3 pt-3">
+        <div className="relative z-30 flex-shrink-0 border-b border-black/[0.045] bg-white/[0.14] pb-3 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
           {collapsed ? (
             <div className="flex flex-col items-center px-2">
               <button
                 type="button"
                 onClick={() => setCollapsed(false)}
-                className="flex w-full flex-col items-center gap-2 rounded-xl p-3 text-[var(--fog)] transition-colors hover:bg-black/[0.04] hover:text-indigo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25 focus-visible:ring-offset-2"
+                className="flex w-full flex-col items-center gap-2 rounded-[18px] border border-white/70 bg-white/80 p-3 text-[var(--fog)] shadow-[0_8px_20px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo/25 focus-visible:ring-offset-2"
                 aria-label={t('sidebar.expandAria')}
               >
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
-                  <InteraLogo size={15} collapsed mode="none" />
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
+                  <CollapsedSidebarMark />
                 </div>
                 <ChevronRight className="h-4 w-4 opacity-75" strokeWidth={2.25} aria-hidden />
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-2">
-              <div className="flex items-center gap-2.5 px-2 pt-1 flex-1 min-w-0">
+            <div className="flex items-center gap-3 px-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[22px] border border-white/60 bg-white/[0.68] px-3 py-2.5 shadow-[0_10px_24px_rgba(21,23,25,0.04),inset_0_1px_0_rgba(255,255,255,0.58)]">
                 <InteraLogo size={26} mode="idle" />
               </div>
               <button
                 type="button"
                 onClick={() => setCollapsed(true)}
-                className="console-sidebar-toggle flex-shrink-0"
+                className="console-sidebar-toggle flex-shrink-0 border border-white/75 bg-white/[0.88] shadow-[0_8px_18px_rgba(21,23,25,0.06),inset_0_1px_0_rgba(255,255,255,0.72)]"
                 aria-expanded
                 aria-label={t('sidebar.collapseAria')}
               >
@@ -239,8 +269,8 @@ export default function ConsoleSidebar() {
 
         {/* Agent switcher — always visible below logo */}
         {!collapsed && (
-          <div className="flex-shrink-0 px-3 py-2 border-b border-black/[0.04]">
-            <div className="flex items-center gap-1.5">
+          <div className="flex-shrink-0 border-b border-black/[0.04] px-3 py-3">
+            <div className="flex items-center gap-2.5 rounded-[24px] border border-white/70 bg-white/[0.76] px-3 py-2.5 shadow-[0_12px_28px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.62)]">
               <div className="flex-1 min-w-0">
                 <AgentVersionPicker
                   agentId={selectedAgentId}
@@ -251,7 +281,7 @@ export default function ConsoleSidebar() {
               <button
                 type="button"
                 onClick={() => setAgentDrawerOpen(true)}
-                className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-black/[0.05] text-[var(--fog)] hover:text-[var(--mist)] transition-colors"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[16px] border border-white/65 bg-white/[0.72] text-[var(--fog)] shadow-[0_4px_10px_rgba(21,23,25,0.04)] transition-colors hover:bg-white hover:text-[var(--mist)]"
                 title={t('sidebar.openAgents')}
               >
                 <Settings className="w-3.5 h-3.5" />
@@ -260,40 +290,42 @@ export default function ConsoleSidebar() {
           </div>
         )}
 
-        <nav className="flex-1 py-2 px-2 space-y-4 overflow-y-auto scroll-thin">
+        <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4 scroll-thin">
           <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
           <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
           <NavGroup label={t('sidebar.settings')} items={SETTINGS_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
         </nav>
 
-        <div className="border-t border-black/5">
+        <div className="border-t border-black/5 bg-white/[0.14] px-3 pb-2 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
           {/* Controls panel — opens upward from bottom */}
           {avatarOpen && !collapsed && (
-            <div className="px-3 pt-2 pb-1 space-y-0.5 border-b border-black/[0.04]">
+            <div className="mb-3 rounded-[22px] border border-white/70 bg-white/[0.92] p-2 shadow-[0_16px_40px_rgba(21,23,25,0.12),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-xl">
               <button
                 type="button"
                 onClick={() => toggleLocale()}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
+                className="flex w-full items-center gap-3 rounded-[16px] px-3.5 py-3 text-[14px] font-medium text-[var(--mist)] transition-colors hover:bg-black/[0.035]"
               >
-                <Languages className="w-3 h-3 flex-shrink-0" />
+                <Globe className="h-4 w-4 flex-shrink-0 text-[var(--fog)]" />
                 <span className="truncate">{langButtonLabel}</span>
               </button>
 
               {isStaff && (
-              <button
-                type="button"
-                onClick={handleSwitchClick}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/5 rounded-lg transition-all"
-              >
-                <Building2 className="w-3 h-3 flex-shrink-0" /> {t('sidebar.switchProject')}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleSwitchClick}
+                  className="flex w-full items-center gap-3 rounded-[16px] px-3.5 py-3 text-[14px] font-medium text-[var(--mist)] transition-colors hover:bg-black/[0.035]"
+                >
+                  <ArrowRightLeft className="h-4 w-4 flex-shrink-0 text-[var(--fog)]" />
+                  <span className="truncate">{t('sidebar.switchProject')}</span>
+                </button>
               )}
 
               {isStaff && switchOpen && (
-                <div className="ml-4 py-1 space-y-0.5 border-l border-black/[0.06] pl-2">
+                <div className="mt-2 rounded-[18px] border border-black/[0.04] bg-[rgba(247,247,243,0.9)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                   {customersLoading ? (
-                    <div className="flex items-center gap-1.5 text-[10px] text-[var(--fog)] py-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+                    <div className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-[12px] text-[var(--fog)]">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Loading...</span>
                     </div>
                   ) : (
                     customers.map((c) => (
@@ -301,12 +333,12 @@ export default function ConsoleSidebar() {
                         key={c.id}
                         type="button"
                         onClick={() => handleCustomerSelect(c)}
-                        className="w-full flex items-center gap-2 px-2 py-1 text-[11px] text-[var(--fog)] hover:text-[var(--mist)] hover:bg-black/[0.03] rounded-md transition-all text-left"
+                        className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] text-[var(--fog)] transition-colors hover:bg-white hover:text-[var(--mist)]"
                       >
                         {c.hasPassword ? (
-                          <Lock className="w-3 h-3 text-amber flex-shrink-0" />
+                          <Lock className="h-3.5 w-3.5 flex-shrink-0 text-amber" />
                         ) : (
-                          <Unlock className="w-3 h-3 text-teal-500/60 flex-shrink-0" />
+                          <Unlock className="h-3.5 w-3.5 flex-shrink-0 text-teal-500/60" />
                         )}
                         <span className="truncate">{c.name}</span>
                       </button>
@@ -318,9 +350,10 @@ export default function ConsoleSidebar() {
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-[var(--fog)] hover:text-vermillion hover:bg-vermillion/5 rounded-lg transition-all"
+                className="mt-1 flex w-full items-center gap-3 rounded-[16px] px-3.5 py-3 text-[14px] font-medium text-[#f05645] transition-colors hover:bg-[#f05645]/[0.07]"
               >
-                <LogOut className="w-3 h-3 flex-shrink-0" /> {t('sidebar.signOut')}
+                <LogOut className="h-4 w-4 flex-shrink-0" />
+                <span className="truncate">{t('sidebar.signOut')}</span>
               </button>
             </div>
           )}
@@ -329,22 +362,38 @@ export default function ConsoleSidebar() {
           <button
             type="button"
             onClick={() => { setAvatarOpen(!avatarOpen); setSwitchOpen(false) }}
-            className={`w-full flex items-center gap-2.5 px-3 transition-all ${collapsed ? 'justify-center py-2.5' : 'py-2 hover:bg-black/[0.02]'}`}
+            className={`flex w-full items-center gap-2.5 rounded-[18px] border bg-white/[0.84] shadow-[0_10px_24px_rgba(21,23,25,0.08),inset_0_1px_0_rgba(255,255,255,0.62)] backdrop-blur-xl transition-all ${
+              avatarOpen
+                ? 'border-[rgba(53,127,124,0.16)] bg-white'
+                : 'border-white/75 hover:bg-white'
+            } ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}`}
             aria-expanded={avatarOpen}
           >
-            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-indigo/20 bg-gradient-to-br from-indigo/20 to-indigo/5">
-              <User className="h-3 w-3 text-indigo" />
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(21,23,25,0.05)]">
+              {showAvatarImage ? (
+                // Google profile images are external and can fail independently, so we keep
+                // the current icon as a graceful fallback.
+                <img
+                  src={avatarUrl!}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  referrerPolicy="no-referrer"
+                  onError={() => setAvatarLoadFailed(true)}
+                />
+              ) : (
+                <User className="h-3.5 w-3.5 text-[var(--color-accent-primary)]" />
+              )}
             </div>
             {!collapsed && (
               <>
-                <span className="flex-1 text-left text-[11px] text-[var(--fog)] truncate">{customerName}</span>
-                <ChevronDown className={`h-3 w-3 flex-shrink-0 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
+                <span className="flex-1 truncate text-left text-[13px] font-medium text-[var(--mist)]">{customerName}</span>
+                <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 text-[var(--fog)] transition-transform ${avatarOpen ? 'rotate-180' : ''}`} />
               </>
             )}
           </button>
 
           {!collapsed && (
-            <p className="text-[9px] text-[var(--fog)]/40 font-mono px-3 pb-2">{t('shell.version')}</p>
+            <p className="px-1.5 pt-1 text-[10px] font-mono text-[var(--fog)]/45">{t('shell.version')}</p>
           )}
         </div>
       </aside>
@@ -376,11 +425,11 @@ function NavGroup({
   return (
     <div>
       {!collapsed && (
-        <p className="px-2.5 mb-1 text-[9px] font-semibold tracking-[0.12em] uppercase text-[var(--fog)]/40">
+        <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mist)]/70">
           {label}
         </p>
       )}
-      <div className="space-y-0.5">
+      <div className="space-y-1.5">
         {items.map(item => {
           const active = isActive(pathname, item)
           const itemLabel = navLabel(t, item.slug)
@@ -389,27 +438,38 @@ function NavGroup({
               key={item.href}
               href={item.href}
               title={collapsed ? itemLabel : undefined}
-              className={`flex items-center rounded-lg transition-all duration-200 group relative ${
-                collapsed ? 'justify-center py-2.5 px-0' : 'gap-2.5 px-2.5 py-2'
+              className={`group relative flex items-center rounded-[18px] border transition-all duration-200 ${
+                collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3.5 py-3'
               } ${
                 active
-                  ? 'bg-black/[0.04]'
-                  : 'hover:bg-black/[0.02]'
+                  ? 'border-white/80 bg-white/[0.88] shadow-[0_10px_24px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.62)]'
+                  : 'border-transparent bg-transparent hover:border-white/60 hover:bg-white/[0.58] hover:shadow-[0_8px_20px_rgba(21,23,25,0.03)]'
               }`}
             >
-              {active && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full"
-                  style={{ background: `linear-gradient(180deg, ${item.color}, transparent)` }} />
+              {active && !collapsed && (
+                <div
+                  className="absolute left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full opacity-85"
+                  style={{ background: `linear-gradient(180deg, ${item.color}, color-mix(in srgb, ${item.color} 48%, white))` }}
+                />
               )}
 
-              <item.icon
-                className="w-5 h-5 flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
-                style={{ color: active ? item.color : 'var(--fog)', opacity: active ? 1 : 0.5 }}
-                strokeWidth={active ? 2 : 1.5}
-              />
+              {active && collapsed && (
+                <div
+                  className="absolute inset-x-1.5 top-1/2 h-11 -translate-y-1/2 rounded-[16px] border border-white/80 bg-white/[0.92] shadow-[0_10px_22px_rgba(21,23,25,0.06),inset_0_1px_0_rgba(255,255,255,0.7)]"
+                  style={{ backgroundColor: `color-mix(in srgb, ${item.color} 8%, white)` }}
+                />
+              )}
+
+              <div className={`relative z-10 flex items-center justify-center ${collapsed ? 'h-9 w-9 rounded-[14px]' : ''}`}>
+                <item.icon
+                  className="h-5 w-5 flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
+                  style={{ color: active ? item.color : 'var(--fog)', opacity: active ? 1 : 0.62 }}
+                  strokeWidth={active ? 2 : 1.5}
+                />
+              </div>
 
               {!collapsed && (
-                <span className={`text-[13px] whitespace-nowrap transition-colors ${
+                <span className={`whitespace-nowrap text-[14px] transition-colors ${
                   active ? 'text-[var(--mist)] font-medium' : 'text-[var(--fog)]'
                 }`}>
                   {itemLabel}
@@ -421,10 +481,6 @@ function NavGroup({
                 </span>
               )}
 
-              {active && collapsed && (
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-3 rounded-full"
-                  style={{ backgroundColor: item.color }} />
-              )}
             </Link>
           )
         })}

@@ -12,6 +12,7 @@ export interface ActiveSession {
   userId: string
   orgId: string
   role: UserRole
+  avatarUrl?: string | null
 }
 
 /** Read + verify the current session. Returns null if no valid session. */
@@ -21,7 +22,12 @@ export async function getSession(): Promise<ActiveSession | null> {
     const token = cookieStore.get(SESSION_COOKIE)?.value
     const payload = await verifySessionToken(token)
     if (!payload) return null
-    return { userId: payload.userId, orgId: payload.orgId, role: payload.role }
+    return {
+      userId: payload.userId,
+      orgId: payload.orgId,
+      role: payload.role,
+      avatarUrl: payload.avatarUrl ?? null,
+    }
   } catch {
     return null
   }

@@ -3,10 +3,11 @@
 // The session is a compact HMAC-SHA256 JWT (no external dep), verifiable in BOTH
 // the Edge middleware and Node route handlers via Web Crypto (`crypto.subtle`).
 //
-// Payload: { userId, orgId, role, iat, exp }
+// Payload: { userId, orgId, role, avatarUrl?, iat, exp }
 //   - userId: the authenticated User.id
 //   - orgId:  the currently-active org (via Membership)
 //   - role:   User.role (single-org) or Membership.role (active org) — owner|admin|operator|viewer
+//   - avatarUrl: optional display-only profile image URL for the current signed-in user
 //
 // SECURITY: the secret MUST be set via SESSION_SECRET env. If unset, signing/
 // verifying fail closed (no valid session can be produced), so a missing secret
@@ -22,6 +23,7 @@ export interface SessionPayload {
   userId: string
   orgId: string
   role: UserRole
+  avatarUrl?: string
   iat: number
   exp: number
 }
@@ -69,7 +71,7 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 }
 
 /** Sign a session token. Returns null if SESSION_SECRET is unset (fail closed). */
-export async function signSession(input: { userId: string; orgId: string; role: UserRole }): Promise<string | null> {
+export async function signSession(input: { userId: string; orgId: string; role: UserRole; avatarUrl?: string | null }): Promise<string | null> {
   const secret = getSecret()
   if (!secret) {
     console.error('[session] SESSION_SECRET is not set — cannot issue sessions') // operational-critical: log to stderr directly
@@ -80,6 +82,7 @@ export async function signSession(input: { userId: string; orgId: string; role: 
     userId: input.userId,
     role: input.role,
     orgId: input.orgId,
+    ...(input.avatarUrl ? { avatarUrl: input.avatarUrl } : {}),
     iat: now,
     exp: now + SESSION_MAX_AGE_S,
   }

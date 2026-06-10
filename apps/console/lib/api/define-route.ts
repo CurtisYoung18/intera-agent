@@ -69,6 +69,7 @@ export interface RouteSession {
   orgId: string
   role?: ActiveSession['role']
   userId?: string
+  avatarUrl?: string | null
   authMode: AuthMode
   agentConfigId?: string // populated for apiKey mode
 }
@@ -213,7 +214,13 @@ async function resolveSession(
     case 'session': {
       const s = await getSession()
       if (!s) throw new UnauthorizedError('No valid session')
-      return { orgId: s.orgId, role: s.role, userId: s.userId, authMode: 'session' }
+      return {
+        orgId: s.orgId,
+        role: s.role,
+        userId: s.userId,
+        avatarUrl: s.avatarUrl ?? null,
+        authMode: 'session',
+      }
     }
     case 'apiKey': {
       // Trusted internal calls (bridge → /api/messages) bypass API key auth.
@@ -283,4 +290,3 @@ function envelopeResponse(envelope: ApiEnvelope<unknown>, statusOverride?: numbe
   const status = statusOverride ?? (envelope.ok ? 200 : errorCodeToStatus[envelope.error.code])
   return NextResponse.json(envelope, { status })
 }
-

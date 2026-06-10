@@ -7,6 +7,7 @@ interface InteraLogoProps {
   mode?: 'idle' | 'none'
   theme?: 'light' | 'dark'
   showTag?: boolean
+  loop?: boolean
 }
 
 type Coord = [number, number]
@@ -200,6 +201,7 @@ export default function InteraLogo({
   mode = 'none',
   theme = 'light',
   showTag = false,
+  loop = false,
 }: InteraLogoProps) {
   const lockupRef = useRef<HTMLDivElement>(null)
   const cycleRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -444,17 +446,19 @@ export default function InteraLogo({
       })
     }
 
-    cycleRef.current = setInterval(() => {
-      animsRef.current.forEach((animation) => {
-        try {
-          animation.cancel()
-          animation.play()
-        } catch {}
-      })
-    }, CYCLE_HOLD_END)
+    if (loop) {
+      cycleRef.current = setInterval(() => {
+        animsRef.current.forEach((animation) => {
+          try {
+            animation.cancel()
+            animation.play()
+          } catch {}
+        })
+      }, CYCLE_HOLD_END)
+    }
 
     return stopPlayback
-  }, [mode, size, theme, showTag, animateElement, stopPlayback])
+  }, [mode, size, theme, showTag, loop, animateElement, stopPlayback])
 
   if (mode === 'none') {
     const color = theme === 'dark' ? '#f8fbfd' : '#1a1814'

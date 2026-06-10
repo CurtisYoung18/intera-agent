@@ -275,22 +275,24 @@ export default function AgentVersionPicker({
         type="button"
         onClick={() => setOpen(o => !o)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '6px 10px 6px 10px',
-          borderRadius: 10,
-          background: open ? 'rgba(91,138,247,0.10)' : 'rgba(255,255,255,0.55)',
-          border: open ? '1px solid rgba(91,138,247,0.25)' : '1px solid var(--border-subtle)',
+          display: 'flex', alignItems: 'center', gap: 10,
+          width: '100%',
+          padding: '7px 12px 7px 11px',
+          borderRadius: 16,
+          background: open ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.72)',
+          border: open ? '1px solid rgba(53,127,124,0.18)' : '1px solid rgba(255,255,255,0.7)',
           cursor: 'pointer',
           fontFamily: 'inherit',
           transition: 'all 0.15s',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
+          boxShadow: open
+            ? '0 12px 24px rgba(21,23,25,0.06), inset 0 1px 0 rgba(255,255,255,0.68)'
+            : '0 6px 16px rgba(21,23,25,0.04), inset 0 1px 0 rgba(255,255,255,0.58)',
         }}
         onMouseEnter={e => {
-          if (!open) e.currentTarget.style.background = 'rgba(91,138,247,0.06)'
+          if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.9)'
         }}
         onMouseLeave={e => {
-          if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.55)'
+          if (!open) e.currentTarget.style.background = 'rgba(255,255,255,0.72)'
         }}
       >
         {hasCurrent ? (
@@ -309,15 +311,15 @@ export default function AgentVersionPicker({
         )}
         <span style={{
           fontSize: 13, fontWeight: 600, color: 'var(--mist)',
-          maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          maxWidth: 152, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {hasCurrent ? currentName : (agentId ? '…' : t('common.loading'))}
         </span>
         {currentVersion !== undefined && (
           <span style={{
-            fontSize: 10, fontWeight: 600, color: 'var(--fog)',
-            padding: '1px 6px', borderRadius: 5,
-            background: 'rgba(0,0,0,0.05)',
+            fontSize: 11, fontWeight: 600, color: 'var(--fog)',
+            padding: '2px 8px', borderRadius: 10,
+            background: 'rgba(17,24,39,0.045)',
             fontVariantNumeric: 'tabular-nums',
             flexShrink: 0,
           }}>
@@ -328,8 +330,8 @@ export default function AgentVersionPicker({
           <span style={{
             fontSize: 9, fontWeight: 700,
             color: currentIsActive ? 'var(--malachite)' : 'var(--fog)',
-            padding: '1px 5px', borderRadius: 4,
-            background: currentIsActive ? 'rgba(46,160,74,0.10)' : 'rgba(0,0,0,0.05)',
+            padding: '2px 7px', borderRadius: 10,
+            background: currentIsActive ? 'rgba(46,160,74,0.10)' : 'rgba(17,24,39,0.05)',
             textTransform: 'uppercase', letterSpacing: '0.04em',
             flexShrink: 0,
           }}>
@@ -342,7 +344,7 @@ export default function AgentVersionPicker({
           style={{
             transform: open ? 'rotate(180deg)' : 'none',
             transition: 'transform 0.15s',
-            opacity: 0.6,
+            opacity: 0.68,
             flexShrink: 0,
           }}
         />

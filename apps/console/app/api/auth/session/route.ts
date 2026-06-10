@@ -15,6 +15,7 @@ export const GET = defineRoute({
       canSwitch: true,
       orgId: session.orgId,
       customerName: org?.name ?? null,
+      avatarUrl: session.avatarUrl ?? null,
     })
   },
 })

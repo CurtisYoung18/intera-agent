@@ -83,7 +83,7 @@ function LoginForm() {
 
         <div className={styles.brandMid}>
           <div className={styles.lockup}>
-            <InteraLogo size={88} mode="idle" theme="light" showTag />
+            <InteraLogo size={88} mode="idle" theme="light" showTag loop />
           </div>
           <h1 className={styles.brandHeadline}>
             Where messy context<br />finds its <em>clarity.</em>

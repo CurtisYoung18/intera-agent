@@ -3,9 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ArrowRight, Building2 } from 'lucide-react'
-import InteraLogo from '@intera/shared/ui/intera-logo'
 import { apiClient } from '@/lib/api/client'
-import { useSession } from '@/lib/hooks/use-session'
 
 interface Membership {
   orgId: string
@@ -29,7 +27,6 @@ function OrgPicker() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(errorParam || '')
   const [switching, setSwitching] = useState<string | null>(null)
-  const { userId } = useSession()
 
   useEffect(() => {
     let cancelled = false
@@ -60,7 +57,7 @@ function OrgPicker() {
       await apiClient('/api/auth/switch-org', { method: 'POST', body: { orgId } })
       window.location.href = '/build/pilot-lab'
     } catch {
-      setError('Network error — try again')
+      setError('Network error. Try again.')
       setSwitching(null)
     }
   }
@@ -76,75 +73,91 @@ function OrgPicker() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex justify-center mb-8">
-          <InteraLogo size={28} mode="idle" theme="dark" />
+    <div className="intera-q2-page min-h-[100dvh] px-4 py-8 text-[var(--color-text-primary)] sm:px-8 lg:px-12">
+      <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-2xl flex-col justify-center">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[var(--radius-panel)] border border-[rgba(53,127,124,0.18)] bg-white/80 text-[var(--color-accent-primary)] shadow-[0_1px_2px_rgba(21,23,25,0.04)]">
+            <Building2 className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+              Workspace
+            </p>
+            <h1 className="mt-1 text-[24px] font-semibold leading-8 text-[var(--color-text-primary)]">
+              Select Organization
+            </h1>
+          </div>
         </div>
-
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold text-zinc-100 mb-2">
-            Select Organization
-          </h1>
-          <p className="text-zinc-400 text-sm">
-            Choose which organization you want to access.
-          </p>
-        </div>
+        <p className="mb-6 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">
+          Choose which organization you want to access.
+        </p>
 
         {error && (
           <div
             role="alert"
-            className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm text-center"
+            className="mb-5 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
           >
             {error}
           </div>
         )}
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-          </div>
-        ) : orgs.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-zinc-500 text-sm">
-              You do not belong to any organization.
-            </p>
-            <p className="text-zinc-600 text-xs mt-2">
-              Contact your administrator for an invitation.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {orgs.map((org) => (
-              <button
-                key={org.orgId}
-                onClick={() => selectOrg(org.orgId)}
-                disabled={switching !== null}
-                className="w-full flex items-center gap-4 p-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 transition-colors text-left group disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                  <Building2 className="w-5 h-5 text-zinc-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-zinc-100 font-medium truncate">
-                    {org.name}
-                  </div>
-                  <div className="text-zinc-500 text-xs capitalize">
-                    {roleLabel(org.role)}
+        <div className="overflow-hidden rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[0_1px_2px_rgba(21,23,25,0.03)]">
+          {loading ? (
+            <div>
+              {[0, 1].map((row) => (
+                <div
+                  key={row}
+                  className="flex items-center gap-4 border-b border-[var(--color-border-subtle)] px-4 py-4 last:border-b-0"
+                >
+                  <div className="h-10 w-10 flex-shrink-0 animate-pulse rounded-[var(--radius-control)] bg-[var(--color-bg-surface-muted)]" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-3 w-28 animate-pulse rounded-full bg-[var(--color-bg-surface-muted)]" />
+                    <div className="h-2.5 w-16 animate-pulse rounded-full bg-[var(--color-bg-surface-muted)]" />
                   </div>
                 </div>
-                <div className="flex-shrink-0">
-                  {switching === org.orgId ? (
-                    <div className="w-5 h-5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
-                  ) : (
-                    <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          ) : orgs.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                You do not belong to any organization.
+              </p>
+              <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
+                Contact your administrator for an invitation.
+              </p>
+            </div>
+          ) : (
+            <div>
+              {orgs.map((org) => (
+                <button
+                  key={org.orgId}
+                  onClick={() => selectOrg(org.orgId)}
+                  disabled={switching !== null}
+                  className="group flex w-full items-center gap-4 border-b border-[var(--color-border-subtle)] px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-[var(--color-bg-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgba(53,127,124,0.28)] disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.14)] bg-[rgba(53,127,124,0.08)]">
+                    <Building2 className="h-5 w-5 text-[var(--color-accent-primary)]" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium text-[var(--color-text-primary)]">
+                      {org.name}
+                    </div>
+                    <div className="mt-0.5 text-xs capitalize text-[var(--color-text-tertiary)]">
+                      {roleLabel(org.role)}
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0">
+                    {switching === org.orgId ? (
+                      <div className="h-5 w-5 rounded-full border-2 border-[var(--color-border-strong)] border-t-[var(--color-accent-primary)] animate-spin" />
+                    ) : (
+                      <ArrowRight className="h-5 w-5 text-[var(--color-text-tertiary)] transition-colors group-hover:text-[var(--color-accent-primary)]" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

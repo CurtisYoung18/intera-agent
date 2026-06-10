@@ -22,6 +22,7 @@ export const POST = defineRoute<SwitchInput>({
       userId: session.userId!,
       orgId: membership.orgId,
       role: membership.role as 'owner' | 'admin' | 'operator' | 'viewer',
+      avatarUrl: session.avatarUrl ?? null,
     })
     if (!token) throw new RouteError('internal', 'Server session secret not configured')
 
