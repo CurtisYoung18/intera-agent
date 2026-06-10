@@ -75,11 +75,12 @@ ConfigPilot is a first-class product surface:
 `Release` is the Build command center:
 
 - Shows current live version.
+- Shows Agent version family and version timeline.
 - Shows draft changes grouped by component.
 - Shows recent Scenario receipts.
 - Owns Package actions: Publish, Rollback, Import, Export, Duplicate Version.
 - Supports explicit `Publish`; autosave/save draft never affects live.
-- Supports at most five historical Agent versions per Agent.
+- Supports at most five Agent versions per Agent family in P0.
 - Uses a soft publish gate: if no passing receipt exists, show warning and require an override reason, but do not hard-block first launch.
 
 ### 0.6 Testing model
@@ -212,6 +213,7 @@ Required sections:
 
 | Section | Required content |
 |---|---|
+| Version Timeline | Agent family, Live/Draft/Historical states, version cap usage, source/parent, validation freshness |
 | Live Version | version id/name, published at, publisher, status, rollback action |
 | Draft Changes | grouped by Brain, Procedures, Tools, Hooks, Knowledge, Integrations |
 | Validation Receipts | latest passing/failing Scenario receipts and changed-since-validation badge |
@@ -219,6 +221,69 @@ Required sections:
 | Pilot Entry | link into Pilot Lab with current release/package context and contextual prompt suggestions |
 
 Do not show broad operational KPIs here. ProcedureRun count, handoff rate, and queue metrics belong in Operate.
+
+#### Version control model
+
+Version control is a Release-owned workflow. Its mental model is:
+
+```text
+Build freely in Draft.
+Validate with Receipts.
+Publish explicitly to Live.
+Import creates Draft, never overwrites Live.
+Keep at most five versions per Agent family.
+```
+
+Key concepts:
+
+- `Agent family`: all versions of the same delivery Agent. P0 may group by current Agent name; future schema should prefer a stable `agentFamilyId` so renames and customer forks do not blur lineage.
+- `Live`: the single version serving customer channels.
+- `Draft`: editable candidate version. ConfigPilot Apply, component saves, package import, and duplicate/fork actions write to Draft only.
+- `Historical`: older non-editing reference versions. They can be viewed, exported, selected as rollback candidates, or forked into a new Draft.
+- `Version cap`: P0 supports at most five total versions per Agent family, including Live and Draft. If creating the sixth version would exceed the cap, block the action and explain which old draft/history must be deleted or archived first. Never auto-delete the Live version.
+
+Required UX:
+
+- Show a compact version timeline near the top of Release:
+
+```text
+v1 Historical
+v2 Historical
+v3 Live
+v4 Draft - stale validation
+5/5 versions used
+```
+
+- The current editing target must always be obvious: `Editing Draft v4`, `Viewing Live v3`, or `Viewing Historical v2`.
+- Rename `Duplicate Version` in visible UI where possible toward action-specific language:
+  - `Create draft from live`
+  - `Fork selected version`
+  - `Create customer copy`
+- Import dry-run must state the version effect before apply:
+  - `Will create SupportAgent v4 Draft`
+  - `Parent: SupportAgent v3 Live` or selected source version
+  - conflicts, missing secrets, unsupported integrations, and version-cap impact
+- Publish flow must state exactly what changes:
+  - `Publish Draft v4 to Live`
+  - previous Live becomes Historical
+  - validation freshness and override reason if required
+- Rollback is not a one-click destructive action. It is:
+  - preview historical vs live diff
+  - select historical version as rollback candidate
+  - create or select a Draft candidate where needed
+  - publish explicitly
+- Delete/archive controls must protect:
+  - the only remaining version
+  - the current Live version
+  - versions with child lineage unless the UI explains the consequence
+
+Anti-patterns:
+
+- Do not make Import overwrite Live.
+- Do not let Pilot or component saves mutate Live directly.
+- Do not call every version action `Duplicate`; use the user's intent.
+- Do not hide version-cap failure behind a generic error toast.
+- Do not imply rollback has happened from a preview alone.
 
 ### 3.2 Build -> Pilot Lab
 
