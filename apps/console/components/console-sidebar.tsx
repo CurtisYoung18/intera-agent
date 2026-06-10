@@ -118,6 +118,8 @@ function CollapsedSidebarMark() {
   )
 }
 
+type NavDensity = 'default' | 'compact' | 'tight'
+
 export default function ConsoleSidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
@@ -226,6 +228,7 @@ export default function ConsoleSidebar() {
   }
 
   const showAvatarImage = Boolean(avatarUrl && !avatarLoadFailed)
+  const navDensity: NavDensity = avatarOpen ? (switchOpen ? 'tight' : 'compact') : 'default'
 
   return (
     <>
@@ -292,16 +295,24 @@ export default function ConsoleSidebar() {
           </div>
         )}
 
-        <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4 scroll-thin">
-          <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
-          <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
-          <NavGroup label={t('sidebar.settings')} items={SETTINGS_ITEMS} pathname={pathname} collapsed={collapsed} t={t} />
+        <nav
+          className={`flex-1 overflow-y-auto px-3 scroll-thin transition-[padding] duration-200 ${
+            navDensity === 'tight'
+              ? 'space-y-2 py-2'
+              : navDensity === 'compact'
+                ? 'space-y-3 py-2.5'
+                : 'space-y-4 py-4'
+          }`}
+        >
+          <NavGroup label={t('sidebar.build')} items={BUILD_ITEMS} pathname={pathname} collapsed={collapsed} density={navDensity} t={t} />
+          <NavGroup label={t('sidebar.operate')} items={OPERATE_ITEMS} pathname={pathname} collapsed={collapsed} density={navDensity} t={t} />
+          <NavGroup label={t('sidebar.settings')} items={SETTINGS_ITEMS} pathname={pathname} collapsed={collapsed} density={navDensity} t={t} />
         </nav>
 
         <div className="mt-auto flex-shrink-0 border-t border-black/5 bg-white/[0.14] px-3 pb-3 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
           {/* Controls panel — opens upward from bottom */}
           {avatarOpen && !collapsed && (
-            <ConsoleSurface tone="floating" padding="sm" className="mb-3 rounded-[22px]">
+            <ConsoleSurface tone="floating" padding="sm" className="mb-3 max-h-[min(56vh,28rem)] overflow-y-auto rounded-[22px]">
               <button
                 type="button"
                 onClick={() => toggleLocale()}
@@ -414,22 +425,24 @@ function NavGroup({
   items,
   pathname,
   collapsed,
+  density,
   t,
 }: {
   label: string
   items: NavItem[]
   pathname: string
   collapsed: boolean
+  density: NavDensity
   t: TranslateFn
 }) {
   return (
     <div>
       {!collapsed && (
-        <p className="console-sidebar-section-label">
+        <p className="console-sidebar-section-label" data-density={density}>
           {label}
         </p>
       )}
-      <div className="console-sidebar-nav">
+      <div className="console-sidebar-nav" data-density={density}>
         {items.map(item => {
           const active = isActive(pathname, item)
           const itemLabel = navLabel(t, item.slug)
@@ -442,6 +455,7 @@ function NavGroup({
               className="console-sidebar-link group"
               data-active={active}
               data-collapsed={collapsed}
+              data-density={density}
               style={{ '--console-nav-accent': item.color } as CSSProperties}
             >
               <div className="console-sidebar-link-icon">

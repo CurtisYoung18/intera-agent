@@ -868,10 +868,26 @@ body {
     text-transform: uppercase;
   }
 
+  .console-sidebar-section-label[data-density='compact'] {
+    margin-bottom: 6px;
+  }
+
+  .console-sidebar-section-label[data-density='tight'] {
+    margin-bottom: 4px;
+  }
+
   .console-sidebar-nav {
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .console-sidebar-nav[data-density='compact'] {
+    gap: 4px;
+  }
+
+  .console-sidebar-nav[data-density='tight'] {
+    gap: 2px;
   }
 
   .console-sidebar-link {
@@ -898,6 +914,16 @@ body {
   .console-sidebar-link[data-collapsed='false'] {
     gap: 12px;
     padding: 12px 14px;
+  }
+
+  .console-sidebar-link[data-density='compact'][data-collapsed='false'] {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .console-sidebar-link[data-density='tight'][data-collapsed='false'] {
+    gap: 10px;
+    padding: 8px 12px;
   }
 
   .console-sidebar-link::before {
