@@ -382,6 +382,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [toastMessage, setToastMessage] = useState('')
   const [savingToChat, setSavingToChat] = useState(false)
   const [savedChatId, setSavedChatId] = useState<string | null>(null)
+  const [isRestoringSession, setIsRestoringSession] = useState(true)
   const [chatId, setChatId] = useState<string | null>(() => {
     try { return localStorage.getItem('pg_chatId') } catch { return null }
   })
@@ -432,6 +433,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
     // Skip if restore is already in-flight (context loaded while fetch is running)
     if (!isSwitch && isRestoringRef.current) return
+
+    isRestoringRef.current = true
+    setIsRestoringSession(true)
 
     if (isSwitch) {
       setChatId(null)
@@ -576,7 +580,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
         await loadSession(latestSession.chatId)
       } catch { /* session restore is best-effort */ }
     }
-    restore().finally(() => { isRestoringRef.current = false })
+    restore().finally(() => {
+      if (!cancelled) {
+        setIsRestoringSession(false)
+      }
+      isRestoringRef.current = false
+    })
     // Cancel in-flight fetch when switching agent or org
     return () => { if (isSwitch) cancelled = true }
   }, [selectedAgentId, orgId, lsk.chatId, lsk.formRequest])
@@ -1238,7 +1247,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             display: 'flex', flexDirection: 'column',
           }}>
             {/* ── Empty state ── */}
-            {chatMessages.length === 0 && !responding && !error && (
+            {chatMessages.length === 0 && !responding && !error && !isRestoringSession && (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                 paddingTop: '8vh', gap: 20,

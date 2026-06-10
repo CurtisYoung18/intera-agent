@@ -106,6 +106,16 @@ function jsonResponse(body: unknown) {
   } as Response
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 let currentAgentPayload: any
 let currentHooksPayload: any
 let failHooksRequest = false
@@ -262,5 +272,47 @@ describe('PlaygroundPage snapshot truth', () => {
     expect(screen.queryByText('Real saved core prompt')).toBeNull()
     expect(screen.getByText('Unknown')).toBeDefined()
     expect(screen.queryByText(/rule/i)).toBeNull()
+  })
+
+  it('does not flash the empty-state summary cards while restoring a persisted session', async () => {
+    const sessionsResponse = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url === '/api/admin/agent-configs') {
+        return jsonResponse({
+          data: {
+            configs: [{ id: 'agent-1', name: 'Gaming Support Draft', version: 3, isActive: false }],
+          },
+        })
+      }
+      if (url === '/api/admin/models') {
+        return jsonResponse({
+          data: {
+            models,
+          },
+        })
+      }
+      if (url === '/api/admin/playground/sessions?configId=agent-1') {
+        return sessionsResponse.promise
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }))
+
+    await renderPage()
+
+    expect(screen.getByPlaceholderText('Type a manual runtime test turn…')).toBeDefined()
+    expect(screen.queryByText('Runtime desk')).toBeNull()
+
+    await act(async () => {
+      sessionsResponse.resolve(jsonResponse({
+        data: {
+          sessions: [],
+        },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Runtime desk')).toBeDefined()
+    })
   })
 })
