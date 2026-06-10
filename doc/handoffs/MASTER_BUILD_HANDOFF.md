@@ -112,6 +112,7 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 - `9041049e`: BASE1 core console regression stabilization.
 - `f27570b1`: Release/version-control docs truth refresh.
 - `ed9430bb`: Q3-B1 legacy route + navigation truth alignment.
+- `6615ae7d`: live console polish hotfix backport adapted to current main IA.
 
 | Lane | Scope | Parallel? | Notes |
 |---|---|---|---|
@@ -131,11 +132,18 @@ Post-foundation lanes shipped on `main` after the first foundation wave:
 | PKG1 | Package completeness + version cap | Shipped locally | Completes package surfaces and enforces the five-version history cap. |
 | BASE1 | Core console regression stabilization | Shipped locally | Locks in post-PKG1/U-Pilot regression fixes on the active Build surfaces. |
 | Q3 | Legacy route/component/doc truth cleanup | Shipped locally | Q3-B1 aligned route/nav truth; Q3-B final removes dead UI remnants and refreshes current docs to real status. |
+| UI2-A | Shared material system and shell chrome | Current active | Converges approved sidebar/org-picker/identity material language into shared primitives, Console shell, sidebar, toolbar, and page chrome. Must land before UI2-B/C. |
+| UI2-B | Build surface visual convergence | Next, after UI2-A | Applies UI2 material language to Release, Pilot Lab, Components, and Playground compatibility surfaces without IA/runtime changes. |
+| UI2-C | Operate, Settings, Auth visual convergence | Next, after UI2-A | Applies UI2 material language to Conversations, Handoff, Organization, Login, and Org Picker without API/runtime changes. |
+| UI2-D | Visual QA consistency sweep | Last UI2 lane | Checks spacing, icons, hover/active/selected/collapsed/empty/loading/mobile/reduced-motion states and screenshots. |
 
 Recommended coding-team shape:
 
 - R1, C1, U1, U2, U3, B1, R2, Q1, Q2, `/ops/guide` cleanup, P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`.
 - Q3-B final completes the remaining dead-component cleanup and docs truth pass on the current branch; future work should be focused repair only unless the owner reopens product scope.
+- UI2 is now reopened product scope on `main`: visual-system convergence only. Do not run it on `hotfix/live-testing`.
+- Run UI2-A first. After it lands, UI2-B and UI2-C may run in parallel if file ownership is explicit. UI2-D runs last.
+- Hotfix worktree remains for online minimal repair and small UI bug fixes only. Backport hotfix commits into main with adaptation; do not merge old deploy/main wholesale into main.
 - Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) only for repair-oriented zero-context sessions. Do not redispatch from the shipped F1-F7 prompts or from already-shipped post-foundation lane blocks.
 
 ---
@@ -185,6 +193,7 @@ Recommended coding-team shape:
 - Agent-callable immutable system Tools should be visible as locked Tools. P0 examples: `start_procedure`, `finalize_procedure`, `ask_user_questions`, `create_human_task`, `read_chat_memory`, `read_user_profile`, and `remember`.
 - `Case` is no longer a product-level concept. Code may keep durable Case shells temporarily for Message/ActionTrace persistence, but UI/copy/future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory.
 - Visual direction: Quiet Agent Studio, unified light-first across the Console. Pilot Lab, Diff Viewer, Trace detail, ConfigPilot, Scenario receipts, and publish/rollback moments use focused light workspaces with slightly cooler or denser light surfaces, not dark mode.
+- UI2 visual convergence direction: the sidebar / org picker / identity menu material language is now the source for the whole Console. Use milky warm-light translucent surfaces, subtle blur, white fine borders, shallow inner highlights, soft shadows, generous controlled radii, and full soft active states instead of hard stripes or dark blocks.
 - Approved brand/motion assets: logo source is `/Users/curtis/Desktop/design/Globe loader`; Playground and Pilot Lab AI-generation loaders use `/Users/curtis/Desktop/design/Organic Loaders (standalone).html` variants `01`, `02`, `05`, `06`, `10`, `11`, `12`, `17`, `20`; AI-generation text streaming uses `/Users/curtis/Desktop/design/Text streaming (standalone).html` variant `07 token stream`.
 - Config Diff Viewer and Command Bar are first-class UI primitives.
 - Product UI supports `en-US` and `zh-CN`; business configuration content is not auto-translated.
@@ -204,6 +213,7 @@ Shipped foundations already useful for the reset:
 - Logged-in default is `/build/pilot-lab`; Pilot Lab has `Pilot` and `Playground` tabs in the same workspace.
 - Release owns package actions and version control. ConfigPilot no longer mounts as a global drawer.
 - Q3 cleanup keeps `/admin/*` and `/ops/*` legacy paths as compatibility redirects/wrappers while preserving Playground dry-run, Trace Sidebar, and the playground API/runtime surface.
+- UI2 now precedes final deployment. Final integration gate and deploy should wait until UI2-D visual QA is done.
 
 Live landmines to keep in mind:
 

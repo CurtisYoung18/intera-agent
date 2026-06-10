@@ -1,6 +1,6 @@
 # Intera UI/UX Design System
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-10
 **Status:** CURRENT companion source of truth for the Console UI/UX reset
 **Audience:** founder, architect, UI/UX lead, frontend lanes, AI coding teams
 **Related architecture:** [`Intera_Harness_架构梳理.md`](./Intera_Harness_架构梳理.md)
@@ -702,6 +702,53 @@ Avoid:
 - visible in-app text explaining keyboard shortcuts or feature philosophy
 - marketing hero composition inside the app shell
 
+### 5.5 UI2 visual system convergence
+
+UI2 is a `main`-branch visual-system convergence lane, not a hotfix and not a page-by-page decoration pass.
+
+Goal:
+
+```text
+Make the approved sidebar / org picker / identity menu material language become the whole Console language.
+```
+
+Use the same family of surfaces across the product:
+
+- milky warm-light translucent canvas
+- subtle blur, never heavy glassmorphism
+- white fine borders
+- very shallow inner highlights
+- soft shadows
+- rounded corners that feel generous but controlled
+- active / selected state as a full soft material change, not a hard icon stripe
+- graphite text, muted cyan accent, restrained amber/green/red signals
+- dark surfaces only for small functional code, JSON, and raw payload viewers
+
+Principles:
+
+1. The page should feel like one light operating space, not many unrelated white cards stacked together.
+2. Highlight with material, tint, spacing, and state chips; avoid hard dark blocks and thick side stripes.
+3. Icons, text, borders, status chips, toolbar controls, panels, and drawers must feel like one family.
+4. Review collapsed, expanded, hover, active, selected, empty, loading, reduced-motion, and mobile states separately.
+5. Preserve the current `main` IA. Do not restore old global routes, old `/admin` storytelling, or the old standalone Playground nav entry.
+
+Recommended sequence:
+
+| Step | Scope | Notes |
+|---|---|---|
+| UI2-A | Shared material system, shell, sidebar, page chrome | Must land first. Owns primitives and shared shell files. |
+| UI2-B | Build pages | Release, Pilot Lab, Components, and compatibility Playground route surfaces. |
+| UI2-C | Operate, Settings, Auth | Conversations, Handoff, Organization, Login, Org Picker. |
+| UI2-D | Visual QA sweep | Spacing, icon pressure, state consistency, mobile, screenshots, reduced motion. |
+
+Hard boundaries:
+
+- Do not touch runtime, schema, prompts, Agent loop, ProcedureRun protocol, or `/api/messages`.
+- Do not change IA.
+- Do not restore the old global `/build/playground` nav entry.
+- Do not reintroduce global ConfigPilot drawer.
+- Do not do this on `hotfix/live-testing`; hotfix stays for online minimal repair only.
+
 ---
 
 ## 6. Token direction
@@ -860,6 +907,10 @@ These UI lanes are designed to be parallelizable without file conflicts. They sh
 | UX4 | Pilot Lab and ConfigPilot surfaces | Parallel after scenario + typed APIs | `/build/pilot-lab`, Pilot Chat Cockpit, Playground tab, receipt views |
 | UX5 | Operate Conversations and Human Handoff | Parallel after trace/handoff contracts | `/operate/conversations`, `/operate/handoff`, Trace Panel |
 | UX6 | i18n, responsive, browser QA sweep | Last | `dictionaries.ts`, mobile/read-only states, Playwright/browser verification |
+| UI2-A | Shared material system and shell chrome | Current active | `components/console-shell.tsx`, `components/console-sidebar.tsx`, `components/ui/console-chrome.tsx`, shared UI primitives only |
+| UI2-B | Build surface convergence | After UI2-A | `/build/release`, `/build/pilot-lab`, `/build/components/**`, `/build/playground` compatibility surface |
+| UI2-C | Operate, Settings, Auth convergence | After UI2-A, parallel with UI2-B | `/operate/**`, `/settings/organization`, `/login`, `/org-picker` |
+| UI2-D | Final visual QA consistency sweep | Last | browser screenshots, responsive checks, reduced motion, copy/state consistency |
 
 Coordination rules:
 
@@ -868,6 +919,7 @@ Coordination rules:
 - Diff Viewer should be built once and reused by ConfigPilot, Release, Import, and Rollback.
 - ConfigPilot should not be globally mounted as a drawer in P0. Use a single main Pilot Lab workspace and link into it with context.
 - Visual primitives should not depend on business logic.
+- UI2-A and UI2-D are serial coordination lanes. UI2-B and UI2-C may run in parallel only after UI2-A lands.
 
 ---
 
