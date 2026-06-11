@@ -1096,6 +1096,7 @@ export class AgentLoop {
           data: { taskId, queue, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
+        await this.traceWriter.writeEscalated('human_task_created', { taskId, queue })
         sendEvent({
           type: 'escalated',
           data: { reason: 'human_task_created', taskId, queue },
@@ -1633,6 +1634,7 @@ export class AgentLoop {
       data: { stage: this.currentStage, reason: 'stop_hook_fallback' },
       timestamp: new Date().toISOString(),
     })
+    await this.traceWriter.writeEscalated('stop_hook_fallback', { stage: this.currentStage })
 
     return {
       kind: 'terminal',

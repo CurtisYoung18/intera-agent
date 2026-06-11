@@ -389,6 +389,10 @@ export async function processPendingHookToolCalls(
     data: { stage: ctx.getCurrentStage(), reason: escalatedReasons },
     timestamp: new Date().toISOString(),
   })
+  await ctx.traceWriter.writeEscalated(
+    Array.isArray(escalatedReasons) ? escalatedReasons.join('; ') : String(escalatedReasons),
+    { stage: ctx.getCurrentStage() },
+  )
 
   ctx.setPendingEscalation(true)
 }

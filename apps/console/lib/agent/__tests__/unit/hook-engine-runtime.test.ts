@@ -277,6 +277,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(events.some((e) => e.type === 'tool_executing' && (e.data as { name?: string }).name === 'test_lookup')).toBe(true)
     expect(events.some((e) => e.type === 'human_task_created')).toBe(true)
     expect(events.some((e) => e.type === 'escalated')).toBe(true)
+    expect(memory.traces.some((trace) => trace.actionType === 'escalated')).toBe(true)
   })
 
   it('explicit create_human_task in general mode creates a durable waiting_human handoff', async () => {
@@ -303,6 +304,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.memories[0].humanTaskStatus).toBe('pending')
     expect(events.some((e) => e.type === 'human_task_created')).toBe(true)
     expect(events.some((e) => e.type === 'escalated' && (e.data as { reason?: string }).reason === 'human_task_created')).toBe(true)
+    expect(memory.traces.some((trace) => trace.actionType === 'escalated')).toBe(true)
     const streamedText = events
       .filter((event) => event.type === 'text_delta')
       .map((event) => String(event.data))
@@ -367,6 +369,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.humanTasks[0].status).toBe('pending')
     expect(events.some((event) => event.type === 'human_task_created')).toBe(true)
     expect(memory.traces.some((trace) => trace.actionType === 'loop_decision' && trace.title === 'Stop Hook fallback')).toBe(true)
+    expect(memory.traces.some((trace) => trace.actionType === 'escalated')).toBe(true)
     expect(events.some((event) => event.type === 'message_stop' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)
     expect(events.some((event) => event.type === 'escalated' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)
     const streamedText = events

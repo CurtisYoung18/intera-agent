@@ -245,6 +245,7 @@ export class CaseAgentLoop {
           data: { taskId: task.id, queue, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
+        await this.services.traceWriter.writeEscalated('human_task_created', { taskId: task.id, queue })
         sendEvent({
           type: 'escalated',
           data: { reason: 'human_task_created', taskId: task.id, queue },
