@@ -8,9 +8,9 @@ import { hasPersistableMessageContent, persistableMessageText } from '@/lib/agen
 import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type CaseSession, type RuntimeEventSource } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
-import { normalizeSSEEvent } from '@/lib/agent/stream-handler'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
+import { createSafeSseWriter } from '@/lib/api/safe-sse'
 import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
@@ -139,11 +139,12 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
+      const streamWriter = createSafeSseWriter(controller, encoder)
       const sendEvent = (event: SSEEvent) => {
-        const normalizedEvent = normalizeSSEEvent(event)
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(normalizedEvent)}\n\n`),
-        )
+        streamWriter.sendEvent(event)
+      }
+      const closeStream = () => {
+        streamWriter.close()
       }
 
       let registeredSession: CaseSession | null = null
@@ -153,7 +154,7 @@ export async function POST(request: NextRequest) {
         const contentLength = Number(request.headers.get('content-length') || 0)
         if (contentLength > 100_000) {
           sendEvent({ type: 'error', data: 'Request body too large (max 100KB)', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
@@ -183,42 +184,42 @@ export async function POST(request: NextRequest) {
         // orgId mismatch check: if body sends a different orgId than the credential
         if (authOrgId && orgId && orgId !== authOrgId) {
           sendEvent({ type: 'error', data: 'orgId mismatch — body orgId must match API key org', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
         // Validate orgId format
         if (orgId && (typeof orgId !== 'string' || orgId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(orgId))) {
           sendEvent({ type: 'error', data: 'Invalid orgId format', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
         // Validate userId format
         if (userId && (typeof userId !== 'string' || userId.length > 64 || !/^[a-zA-Z0-9_@.-]+$/.test(userId))) {
           sendEvent({ type: 'error', data: 'Invalid userId format', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
         // Validate caseId format
         if (caseId && (typeof caseId !== 'string' || caseId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(caseId))) {
           sendEvent({ type: 'error', data: 'Invalid caseId format', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
         // Validate resumeTrigger format
         if (resumeTrigger && (typeof resumeTrigger !== 'string' || resumeTrigger.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(resumeTrigger))) {
           sendEvent({ type: 'error', data: 'Invalid resumeTrigger format', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
         // Validate message length
         if (message && typeof message === 'string' && message.length > 50000) {
           sendEvent({ type: 'error', data: 'Message too long (max 50000 characters)', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
 
@@ -230,7 +231,7 @@ export async function POST(request: NextRequest) {
         let resolvedOrgId = authOrgId || orgId
         if (!resolvedOrgId) {
           sendEvent({ type: 'error', data: 'Unable to resolve organization', timestamp: new Date().toISOString() })
-          controller.close()
+          closeStream()
           return
         }
         let resolvedUserId = userId || 'anonymous'
@@ -259,7 +260,7 @@ export async function POST(request: NextRequest) {
           const answersJson = JSON.stringify(answers)
           if (answersJson.length > 50_000) {
             sendEvent({ type: 'error', data: 'Form answers too large (max 50KB)', timestamp: new Date().toISOString() })
-            controller.close()
+            closeStream()
             return
           }
           formAnswers = answers
@@ -277,12 +278,12 @@ export async function POST(request: NextRequest) {
           // Validate optionId and input size
           if (!optionId || typeof optionId !== 'string' || optionId.length > 256) {
             sendEvent({ type: 'error', data: 'Invalid interaction option', timestamp: new Date().toISOString() })
-            controller.close()
+            closeStream()
             return
           }
           if (input && typeof input === 'string' && input.length > 10_000) {
             sendEvent({ type: 'error', data: 'Interaction input too large (max 10KB)', timestamp: new Date().toISOString() })
-            controller.close()
+            closeStream()
             return
           }
           const payload: Record<string, unknown> = { optionId }
@@ -306,7 +307,7 @@ export async function POST(request: NextRequest) {
                 data: 'Task not found or not resolved',
                 timestamp: new Date().toISOString(),
               })
-              controller.close()
+              closeStream()
               return
             }
 
@@ -331,7 +332,7 @@ export async function POST(request: NextRequest) {
               data: 'Task not found or not resolved',
               timestamp: new Date().toISOString(),
             })
-            controller.close()
+            closeStream()
             return
           }
         }
@@ -342,7 +343,7 @@ export async function POST(request: NextRequest) {
             data: 'Message is required',
             timestamp: new Date().toISOString(),
           })
-          controller.close()
+          closeStream()
           return
         }
 
@@ -453,7 +454,7 @@ export async function POST(request: NextRequest) {
               data: err instanceof Error ? err.message : 'Failed to create case',
               timestamp: new Date().toISOString(),
             })
-            controller.close()
+            closeStream()
             return
           }
         }
@@ -683,7 +684,7 @@ export async function POST(request: NextRequest) {
             data: { reason: 'queued' },
             timestamp: new Date().toISOString(),
           })
-          controller.close()
+          closeStream()
           return
         }
 
@@ -941,7 +942,7 @@ export async function POST(request: NextRequest) {
         } catch { /* stream already closed */ }
       } finally {
         if (registeredSession) registeredSession.resolved = true
-        controller.close()
+        closeStream()
       }
     },
   })
