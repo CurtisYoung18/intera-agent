@@ -53,12 +53,11 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('tool_result', () => {
-    it('returns send_text for done tool', () => {
+    it('returns noop for done tool without explicit render hint', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('tool_result', { name: 'query_order', status: 'completed', result: {} }), makeCtx())
       const a = actions[0]!
-      expect(a.type).toBe('send_text')
-      expect((a as { type: 'send_text'; text: string }).text).toContain('query order')
+      expect(a.type).toBe('noop')
     })
 
     it('returns send_card when renderHints.livechat has card hint', () => {
@@ -95,7 +94,7 @@ describe('LiveChatRenderer', () => {
       expect(actions[0]!.type).toBe('send_carousel')
     })
 
-    it('falls back to send_text for unknown hint kind', () => {
+    it('falls back to noop for unknown hint kind', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('tool_result', {
         name: 'query_order',
@@ -105,7 +104,7 @@ describe('LiveChatRenderer', () => {
           livechat: { kind: 'iframe', template: 'order_timeline' },
         },
       }), makeCtx())
-      expect(actions[0]!.type).toBe('send_text')
+      expect(actions[0]!.type).toBe('noop')
     })
 
     it('returns noop for tool_result without renderHints when showSkillStatus=false', () => {
