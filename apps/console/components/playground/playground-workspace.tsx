@@ -6,13 +6,12 @@ import {
   FlaskConical, Send,
   Sparkles, AlertCircle, CheckCircle2, Clock, XCircle,
   Brain, ExternalLink, RefreshCw,
-  ChevronDown, ChevronLeft, ChevronRight, ImageIcon, LockKeyhole, Maximize2, Minimize2,
+  ChevronDown, ChevronLeft, ChevronRight, ImageIcon, LockKeyhole, Maximize2, Minimize2, MoreHorizontal,
 } from 'lucide-react'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
 import { apiClient } from '@/lib/api/client'
 import type { LifecycleNotice } from '@intera/shared/types'
-import AgentVersionPicker from '@/components/admin/agent-version-picker'
 import { useSession } from '@/lib/hooks/use-session'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
@@ -322,11 +321,31 @@ function toneForDigestStatus(status: TurnDebugDigest['status']) {
   return 'neutral' as const
 }
 
+function readStoredTraceCollapsed(scopeId: string) {
+  try {
+    const scoped = localStorage.getItem(`pg_trace_collapsed_${scopeId}`)
+    if (scoped != null) return scoped === 'true'
+    const legacy = localStorage.getItem('pg_trace_collapsed')
+    if (legacy != null) return legacy === 'true'
+  } catch {}
+  return null
+}
+
+function hasPersistedPlaygroundSession(scopeId: string, selectedAgentId: string | null) {
+  try {
+    return Boolean(
+      localStorage.getItem(`pg_chatId_${scopeId}_${selectedAgentId ?? ''}`)
+      || localStorage.getItem('pg_chatId'),
+    )
+  } catch {}
+  return false
+}
+
 
 /* ── Page ── */
 
 export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: PlaygroundSurface }) {
-  const { selectedAgentId, selectAgent } = useAgentContext()
+  const { selectedAgentId } = useAgentContext()
   const { userId, orgId } = useSession()
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
@@ -342,7 +361,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [agentList, setAgentList] = useState<AgentListItem[]>([])
   const [selectedIsActive, setSelectedIsActive] = useState(true)
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
-  const [pickerRefreshKey, setPickerRefreshKey] = useState(0)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
   const [snapshotReloadKey, setSnapshotReloadKey] = useState(0)
@@ -367,13 +385,10 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set())
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      const scoped = localStorage.getItem(`pg_trace_collapsed_${scopeId}`)
-      if (scoped != null) return scoped === 'true'
-      const legacy = localStorage.getItem('pg_trace_collapsed')
-      if (legacy != null) return legacy === 'true'
-    } catch {}
-    return surface === 'legacy'
+    const hasPersistedSession = hasPersistedPlaygroundSession(scopeId, selectedAgentId)
+    const stored = readStoredTraceCollapsed(scopeId)
+    if (stored != null && hasPersistedSession) return stored
+    return true
   })
   useEffect(() => {
     try { localStorage.setItem(lsk.traceCollapsed, String(sidebarCollapsed)) } catch {}
@@ -386,12 +401,15 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [isRestoringSession, setIsRestoringSession] = useState(true)
   const [immersiveMode, setImmersiveMode] = useState(false)
   const [immersiveLeft, setImmersiveLeft] = useState(0)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [chatId, setChatId] = useState<string | null>(() => {
     try { return localStorage.getItem('pg_chatId') } catch { return null }
   })
 
   const composerRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const moreMenuRef = useRef<HTMLDivElement>(null)
+  const emptyTraceAutocollapseRef = useRef(false)
 
   // Refs that mirror mutable values read inside runTurn (stale-closure fix)
   const attachedImagesRef = useRef<AttachedImage[]>([])
@@ -631,6 +649,44 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   }, [selectedAgentId])
 
   useEffect(() => {
+    if (!moreMenuOpen) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) {
+        setMoreMenuOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [moreMenuOpen])
+
+  useEffect(() => {
+    const shouldAutocollapse =
+      !isRestoringSession
+      && !responding
+      && chatMessages.length === 0
+      && turnTraces.length === 0
+
+    if (!shouldAutocollapse) {
+      emptyTraceAutocollapseRef.current = false
+      return
+    }
+    if (emptyTraceAutocollapseRef.current) return
+
+    setSidebarCollapsed(true)
+    emptyTraceAutocollapseRef.current = true
+  }, [chatMessages.length, isRestoringSession, responding, turnTraces.length])
+
+  useEffect(() => {
     if (!selectedAgentId) return
     // Track draft/active state
     const selected = agentList.find(a => a.id === selectedAgentId)
@@ -762,8 +818,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     }
     return -1
   }, [chatMessages])
-  const versionStateLabel = selectedVersion
-    ? `${selectedIsActive ? (isZh ? '当前版本' : 'Live') : (isZh ? '草稿版本' : 'Draft')} v${selectedVersion}`
+  const selectedAgentName = useMemo(
+    () => snapshot?.name || agentList.find((agent) => agent.id === selectedAgentId)?.name || 'Default',
+    [agentList, selectedAgentId, snapshot?.name],
+  )
+  const versionContextLabel = selectedVersion
+    ? `v${selectedVersion} ${selectedIsActive ? (isZh ? '当前' : 'Live') : (isZh ? '草稿' : 'Draft')}`
     : selectedIsActive
       ? (isZh ? '当前版本' : 'Live version')
       : (isZh ? '草稿版本' : 'Draft version')
@@ -779,12 +839,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       ? 'Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；只有业务副作用仍会在 Playground 中以 dry-run 方式模拟。'
       : 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational side effects remain mocked in Playground.')
   const toolSurfaceSummary = latestRuntimeTruth ? formatToolSurfaceSummary(latestRuntimeTruth.toolSummary) : (isZh ? '首轮运行后刷新' : 'Refreshes after the first run')
-  const persistedSessionLabel = chatId ? (isZh ? '已持久化，可恢复' : 'Persisted and restorable') : (isZh ? '首次发送后创建' : 'Created on first send')
   const runtimeWarnings = latestRuntimeTruth?.warnings ?? [isZh ? '虽然运行路径是真实的，但业务副作用仍会在 dry-run 下被模拟。' : 'Operational side effects remain mocked under dry-run even though the runtime path is real.']
   const toolPairingLabel = latestTurnDigest ? summarizeToolPairing(latestTurnDigest.toolCalls, latestTurnDigest.toolResults, responding) : (isZh ? '暂无工具事件' : 'No tool events yet')
-  const sessionTraceLabel = turnTraces.length > 0
-    ? (isZh ? `已持久化 ${turnTraces.length} 轮` : `${turnTraces.length} persisted turn${turnTraces.length === 1 ? '' : 's'}`)
-    : (isZh ? '还没有持久化轮次' : 'No persisted turns yet')
   const operateBridgeLabel = isZh ? '仅导出评审副本' : 'Synthetic export only'
   const quickStarts = isZh
     ? [
@@ -1036,6 +1092,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)
     return { totalInput, totalOutput, totalTools, llmCalls, totalMs }
   }, [turnTraces, turnTotalMs])
+  const shouldRenderTraceSidebar = !sidebarCollapsed
+    || responding
+    || chatMessages.length > 0
+    || turnTraces.length > 0
+    || liveTools.length > 0
 
   const tb = (key: string) => {
     const labels: Record<string, string> = {
@@ -1092,39 +1153,39 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           Playground toolbar
           ═══════════════════════════════════════════ */}
       <header className="pg-toolbar" style={{
-        position: 'relative', zIndex: 1, flexShrink: 0,
-        display: 'flex', flexDirection: 'column', gap: 10,
-        padding: '14px 20px 12px',
+        position: 'relative', zIndex: 3, flexShrink: 0,
+        display: 'flex', flexDirection: 'column', gap: 4,
+        padding: '8px 16px 6px',
         borderBottom: '1px solid var(--border-subtle)',
         background: 'rgba(255,255,255,0.58)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
       }}>
         <div style={{
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          gap: 16, flexWrap: 'wrap',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 10, flexWrap: 'wrap',
         }}>
-          <div className="pg-title-group" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: '1 1 360px', minWidth: 0 }}>
+          <div className="pg-title-group" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 360px', minWidth: 0 }}>
             <div style={{
-              width: 40, height: 40, borderRadius: 14,
+              width: 30, height: 30, borderRadius: 10,
               background: 'linear-gradient(135deg, rgba(212,118,78,0.14), rgba(201,136,74,0.10))',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               boxShadow: '0 0 0 1px rgba(212,118,78,0.08) inset',
               flexShrink: 0,
             }}>
-              <FlaskConical size={18} color="#b87347" />
+              <FlaskConical size={14} color="#b87347" />
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '0.12em',
-                textTransform: 'uppercase', color: 'var(--fog)', opacity: 0.7, marginBottom: 4,
+                fontSize: 8, fontWeight: 700, letterSpacing: '0.12em',
+                textTransform: 'uppercase', color: 'var(--fog)', opacity: 0.66, marginBottom: 1,
               }}>
                 {workspaceEyebrow}
               </div>
               <h1 style={{
                 margin: 0,
-                fontSize: 18,
-                fontWeight: 650,
+                fontSize: 14,
+                fontWeight: 640,
                 color: 'var(--mist)',
                 letterSpacing: '-0.02em',
               }}>
@@ -1132,7 +1193,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               </h1>
               {surface === 'legacy' && (
                 <div style={{
-                  marginTop: 8,
+                  marginTop: 6,
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
@@ -1149,47 +1210,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               )}
             </div>
           </div>
-          <div className="pg-actions" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flex: '0 1 auto' }}>
-            <div className="pg-picker-wrap" style={{ minWidth: 220, maxWidth: 320 }}>
-              <AgentVersionPicker
-                key={pickerRefreshKey}
-                agentId={selectedAgentId}
-                onChange={(id) => selectAgent(id)}
-                onAgentsChanged={() => setPickerRefreshKey((value) => value + 1)}
-              />
-            </div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              minHeight: 34,
-              padding: '8px 12px',
-              borderRadius: 12,
-              border: '1px solid rgba(212,118,78,0.10)',
-              background: 'rgba(255,255,255,0.72)',
-              color: 'var(--fog)',
-              fontSize: 11,
-              fontWeight: 600,
-            }}>
-              <ToneBadge tone={selectedIsActive ? 'success' : 'warning'}>
-                {versionStateLabel}
-              </ToneBadge>
-              <span style={{ opacity: 0.75 }}>
-                {snapshot?.resolvedModelLabel || (isZh ? '加载模型中' : 'Loading model')}
-              </span>
-            </div>
-            <ActionButton onClick={() => setSnapshotReloadKey((value) => value + 1)} title={isZh ? '刷新已保存的 Agent 快照和能力摘要。' : 'Refresh the saved agent snapshot and capability summary.'}>
-              <RefreshCw size={13} />
-              {isZh ? '刷新快照' : 'Refresh snapshot'}
-            </ActionButton>
-            <ActionButton
-              active={showThinking}
-              onClick={() => setShowThinking((value) => !value)}
-              title={isZh ? '显示或隐藏 Playground 运行时捕获的模型思考流。' : 'Show or hide the model thinking stream captured during Playground runs.'}
-            >
-              <Brain size={13} />
-              {isZh ? '显示思考' : 'Show thinking'}
-            </ActionButton>
+          <div className="pg-actions" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 5, flex: '0 1 auto' }}>
             <ActionButton
               active={!sidebarCollapsed}
               onClick={() => setSidebarCollapsed((value) => !value)}
@@ -1218,31 +1239,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               {immersiveMode ? (isZh ? '退出沉浸' : 'Exit immersion') : (isZh ? '沉浸模式' : 'Immersive mode')}
             </ActionButton>
             <ActionButton
-              tone="danger"
-              onClick={async () => {
-                if (!chatId) return
-                try {
-                  await fetch(`/api/admin/playground/sessions/${chatId}`, { method: 'DELETE' })
-                } catch { /* best-effort */ }
-                setChatId(null)
-                setChatMessages([])
-                setTurnTraces([])
-                setTurnTotalMs([])
-                prevTurnCountRef.current = 0
-                setReply('')
-                setError('')
-                setLiveTools([])
-                setSavedChatId(null)
-                setFormRequest(null)
-                try { localStorage.removeItem(lsk.chatId); localStorage.removeItem(lsk.formRequest); localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
-              }}
-              disabled={!chatId}
-              title={isZh ? '清空当前 Agent 版本已持久化的 Playground 会话和恢复 trace。' : 'Clear the persisted Playground session and its restored traces for the selected agent version.'}
-            >
-              <XCircle size={13} />
-              {isZh ? '清空会话' : 'Clear session'}
-            </ActionButton>
-            <ActionButton
               onClick={handleSaveToChat}
               disabled={chatMessages.length === 0 || savingToChat}
               title={chatMessages.length === 0
@@ -1252,51 +1248,143 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               <Clock size={13} />
               {savingToChat ? (isZh ? '导出中…' : 'Exporting…') : (isZh ? '导出试跑评审副本' : 'Export synthetic review transcript')}
             </ActionButton>
-            {savedChatId ? (
-              <Link
-                href={`/operate/conversations/${savedChatId}`}
-                target="_blank"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  fontSize: 11, fontWeight: 600, color: '#b87347',
-                  textDecoration: 'none', padding: '8px 12px', borderRadius: 12,
-                  border: '1px solid rgba(212,118,78,0.12)',
-                  background: 'rgba(212,118,78,0.05)',
-                }}
+            <div ref={moreMenuRef} style={{ position: 'relative' }}>
+              <ActionButton
+                active={moreMenuOpen}
+                onClick={() => setMoreMenuOpen((value) => !value)}
+                title={isZh ? '打开更多工作台动作。' : 'Open more workspace actions.'}
               >
-                {isZh ? '在 Operate 打开' : 'Open in Operate'} <ExternalLink size={12} />
-              </Link>
-            ) : null}
-            <Link
-              href={`/build/components/brain?mode=model&agentId=${selectedAgentId}`}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                fontSize: 11, fontWeight: 600, color: '#b87347',
-                textDecoration: 'none', padding: '8px 12px', borderRadius: 12,
-                border: '1px solid rgba(212,118,78,0.12)',
-                background: 'rgba(255,255,255,0.6)',
-              }}
-            >
-              {isZh ? '打开 Brain' : 'Open Brain'} <ExternalLink size={12} />
-            </Link>
+                <MoreHorizontal size={13} />
+                {isZh ? '更多' : 'More'}
+                <ChevronDown size={12} style={{ opacity: 0.7 }} />
+              </ActionButton>
+              {moreMenuOpen ? (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: 220,
+                  padding: 8,
+                  borderRadius: 16,
+                  border: '1px solid rgba(212,118,78,0.10)',
+                  background: 'rgba(255,252,249,0.96)',
+                  boxShadow: '0 20px 40px rgba(58,39,24,0.12)',
+                  backdropFilter: 'blur(18px)',
+                  WebkitBackdropFilter: 'blur(18px)',
+                  zIndex: 24,
+                }}>
+                  <ToolbarMenuItem
+                    active={showThinking}
+                    icon={<Brain size={13} />}
+                    label={showThinking ? (isZh ? '隐藏思考' : 'Hide thinking') : (isZh ? '显示思考' : 'Show thinking')}
+                    onClick={() => {
+                      setShowThinking((value) => !value)
+                      setMoreMenuOpen(false)
+                    }}
+                  />
+                  <ToolbarMenuItem
+                    icon={<RefreshCw size={13} />}
+                    label={isZh ? '刷新快照' : 'Refresh snapshot'}
+                    onClick={() => {
+                      setSnapshotReloadKey((value) => value + 1)
+                      setMoreMenuOpen(false)
+                    }}
+                  />
+                  <Link
+                    href={`/build/components/brain?mode=model&agentId=${selectedAgentId}`}
+                    onClick={() => setMoreMenuOpen(false)}
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <ToolbarMenuItem
+                      interactive={false}
+                      icon={<ExternalLink size={13} />}
+                      label={isZh ? '打开 Brain' : 'Open Brain'}
+                    />
+                  </Link>
+                  {savedChatId ? (
+                    <Link
+                      href={`/operate/conversations/${savedChatId}`}
+                      target="_blank"
+                      onClick={() => setMoreMenuOpen(false)}
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <ToolbarMenuItem
+                        interactive={false}
+                        icon={<ExternalLink size={13} />}
+                        label={isZh ? '在 Operate 打开' : 'Open in Operate'}
+                      />
+                    </Link>
+                  ) : null}
+                  <div style={{
+                    height: 1,
+                    margin: '6px 4px',
+                    background: 'rgba(212,118,78,0.10)',
+                  }} />
+                  <ToolbarMenuItem
+                    danger
+                    disabled={!chatId}
+                    icon={<XCircle size={13} />}
+                    label={isZh ? '清空会话' : 'Clear session'}
+                    onClick={async () => {
+                      if (!chatId) return
+                      try {
+                        await fetch(`/api/admin/playground/sessions/${chatId}`, { method: 'DELETE' })
+                      } catch { /* best-effort */ }
+                      setChatId(null)
+                      setChatMessages([])
+                      setTurnTraces([])
+                      setTurnTotalMs([])
+                      prevTurnCountRef.current = 0
+                      setReply('')
+                      setError('')
+                      setLiveTools([])
+                      setSavedChatId(null)
+                      setFormRequest(null)
+                      setSidebarCollapsed(true)
+                      setMoreMenuOpen(false)
+                      try { localStorage.removeItem(lsk.chatId); localStorage.removeItem(lsk.formRequest); localStorage.removeItem('pg_chatId'); localStorage.removeItem('pg_formRequest') } catch {}
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
         <div className="pg-status-row" style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
+          gap: 5,
           flexWrap: 'wrap',
-          paddingLeft: 52,
+          paddingLeft: 38,
+          paddingTop: 0,
         }}>
-          <InlineTruthPill label={isZh ? '图片输入' : 'Image'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
-          <InlineTruthPill label="Memory" value={snapshot?.memoryModeLabel || (isZh ? '加载中' : 'Loading')} />
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 20,
+            paddingRight: 4,
+            fontSize: 10.5,
+            color: 'var(--mist)',
+            minWidth: 0,
+            whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontWeight: 650 }}>{selectedAgentName}</span>
+            <span style={{ opacity: 0.28 }}>·</span>
+            <span style={{ color: 'var(--fog)', fontWeight: 600 }}>{versionContextLabel}</span>
+            <span style={{ opacity: 0.28 }}>·</span>
+            <span style={{ color: 'var(--fog)' }}>
+              {snapshot?.resolvedModelLabel || (isZh ? '加载模型中' : 'Loading model')}
+            </span>
+          </div>
+          <InlineTruthPill compact label={isZh ? '图片' : 'Image'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
+          <InlineTruthPill compact label="Memory" value={snapshot?.memoryModeLabel || (isZh ? '加载中' : 'Loading')} />
           <InlineTruthPill
-            label={isZh ? '自定义 Hooks' : 'Custom Hooks'}
+            compact
+            label="Hooks"
             value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} active`}
           />
-          <InlineTruthPill label="Temp" value={snapshot ? String(snapshot.temperature) : '...'} />
-          <InlineTruthPill label={isZh ? '会话' : 'Session'} value={persistedSessionLabel} />
-          <InlineTruthPill label="Trace" value={sessionTraceLabel} />
+          <InlineTruthPill compact label="Temp" value={snapshot ? String(snapshot.temperature) : '...'} />
         </div>
       </header>
 
@@ -1322,34 +1410,13 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
           }}>
             {/* ── Empty state ── */}
             {chatMessages.length === 0 && !responding && !error && !isRestoringSession && (
-              <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: '100%',
-                padding: 'clamp(28px, 13vh, 108px) 0',
-                gap: 12,
-              }}>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: 10,
-                  width: '100%',
-                  maxWidth: 820,
-                }}>
+              <div className="pg-empty-state">
+                <div className="pg-quickstarts-grid">
                   {quickStarts.map(q => (
                     <button
+                      className="pg-quickstart-card"
                       key={q.label}
                       onClick={() => { runTurn(q.label); setMessage('') }}
-                      style={{
-                        textAlign: 'left', padding: '12px 16px',
-                        borderRadius: 14,
-                        border: '1px solid var(--border-subtle)',
-                        background: 'rgba(255,255,255,0.55)',
-                        backdropFilter: 'blur(12px)',
-                        WebkitBackdropFilter: 'blur(12px)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
                       onMouseEnter={e => {
                         e.currentTarget.style.borderColor = 'var(--border-hover)'
                         e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
@@ -1361,10 +1428,10 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                         e.currentTarget.style.transform = 'translateY(0)'
                       }}
                     >
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--mist)', marginBottom: 2 }}>
+                      <div className="pg-quickstart-title">
                         {q.label}
                       </div>
-                      <div style={{ fontSize: 10, color: 'var(--smoke)' }}>
+                      <div className="pg-quickstart-hint">
                         {q.hint}
                       </div>
                     </button>
@@ -1890,30 +1957,32 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
         </div>
 
         {/* ── Sidebar (right) ── */}
-        <TraceSidebar
-          collapsed={sidebarCollapsed}
-          onCollapse={() => setSidebarCollapsed(true)}
-          onExpand={() => setSidebarCollapsed(false)}
-          liveTools={liveTools}
-          turnTraces={turnTraces}
-          turnTotalMs={turnTotalMs}
-          sessionMetrics={sessionMetrics}
-          expandedTurns={expandedTurns}
-          expandedTools={expandedTools}
-          onToggleTurn={(idx) => setExpandedTurns(prev => {
-            const next = new Set(prev)
-            if (next.has(idx)) next.delete(idx); else next.add(idx)
-            return next
-          })}
-          onToggleTool={(key) => setExpandedTools(prev => {
-            const next = new Set(prev)
-            if (next.has(key)) next.delete(key); else next.add(key)
-            return next
-          })}
-          responding={responding}
-          onRerunWithMessage={runTurn}
-          tb={tb}
-        />
+        {shouldRenderTraceSidebar ? (
+          <TraceSidebar
+            collapsed={sidebarCollapsed}
+            onCollapse={() => setSidebarCollapsed(true)}
+            onExpand={() => setSidebarCollapsed(false)}
+            liveTools={liveTools}
+            turnTraces={turnTraces}
+            turnTotalMs={turnTotalMs}
+            sessionMetrics={sessionMetrics}
+            expandedTurns={expandedTurns}
+            expandedTools={expandedTools}
+            onToggleTurn={(idx) => setExpandedTurns(prev => {
+              const next = new Set(prev)
+              if (next.has(idx)) next.delete(idx); else next.add(idx)
+              return next
+            })}
+            onToggleTool={(key) => setExpandedTools(prev => {
+              const next = new Set(prev)
+              if (next.has(key)) next.delete(key); else next.add(key)
+              return next
+            })}
+            responding={responding}
+            onRerunWithMessage={runTurn}
+            tb={tb}
+          />
+        ) : null}
       </div>
     </div>
     </>
@@ -1957,19 +2026,19 @@ function ActionButton({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        minHeight: 34,
-        padding: '8px 12px',
-        borderRadius: 12,
+        minHeight: 28,
+        padding: '5px 9px',
+        borderRadius: 10,
         border: `1px solid ${borderColor}`,
         background,
         color: textColor,
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 600,
         whiteSpace: 'nowrap',
         flexShrink: 0,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,
-        boxShadow: active ? '0 10px 24px rgba(212,118,78,0.08)' : '0 6px 18px rgba(58,39,24,0.04)',
+        boxShadow: active ? '0 8px 20px rgba(212,118,78,0.07)' : '0 4px 14px rgba(58,39,24,0.035)',
       }}
     >
       {children}
@@ -1977,11 +2046,86 @@ function ActionButton({
   )
 }
 
+function ToolbarMenuItem({
+  active = false,
+  danger = false,
+  disabled = false,
+  icon,
+  interactive = true,
+  label,
+  onClick,
+}: {
+  active?: boolean
+  danger?: boolean
+  disabled?: boolean
+  icon: React.ReactNode
+  interactive?: boolean
+  label: string
+  onClick?: () => void | Promise<void>
+}) {
+  const textColor = danger
+    ? (disabled ? 'var(--fog)' : 'var(--vermillion)')
+    : active
+      ? '#b87347'
+      : 'var(--mist)'
+  const background = active ? 'rgba(212,118,78,0.07)' : 'transparent'
+  const cursor = interactive ? (disabled ? 'not-allowed' : 'pointer') : 'default'
+
+  const sharedStyle = {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 34,
+    padding: '7px 9px',
+    borderRadius: 12,
+    border: 'none',
+    background,
+    color: textColor,
+    fontSize: 10.5,
+    fontWeight: 600,
+    textAlign: 'left' as const,
+    cursor,
+    opacity: disabled ? 0.45 : 1,
+  }
+
+  const content = (
+    <>
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'currentColor',
+      }}>
+        {icon}
+      </span>
+      <span>{label}</span>
+    </>
+  )
+
+  if (!interactive) {
+    return <div style={sharedStyle}>{content}</div>
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={sharedStyle}
+    >
+      {content}
+    </button>
+  )
+}
+
 function InlineTruthPill({
+  compact = false,
   label,
   value,
   tone = 'neutral',
 }: {
+  compact?: boolean
   label: string
   value: string
   tone?: 'neutral' | 'success' | 'warning'
@@ -1996,20 +2140,20 @@ function InlineTruthPill({
     <div style={{
       display: 'inline-flex',
       alignItems: 'center',
-      gap: 8,
-      minHeight: 30,
-      padding: '6px 10px',
+      gap: compact ? 4 : 8,
+      minHeight: compact ? 20 : 30,
+      padding: compact ? '2px 6px' : '6px 10px',
       borderRadius: 999,
       border: '1px solid rgba(212,118,78,0.08)',
       background: 'rgba(255,255,255,0.72)',
-      fontSize: 11,
+      fontSize: compact ? 9.5 : 11,
       lineHeight: 1.2,
       minWidth: 0,
       flexShrink: 0,
       whiteSpace: 'nowrap',
     }}>
       <span style={{
-        fontSize: 9,
+        fontSize: compact ? 6.5 : 9,
         fontWeight: 700,
         letterSpacing: '0.1em',
         textTransform: 'uppercase',
@@ -2019,7 +2163,7 @@ function InlineTruthPill({
         {label}
       </span>
       <span style={{
-        fontSize: 11,
+        fontSize: compact ? 9.5 : 11,
         fontWeight: 600,
         color: textColor,
         minWidth: 0,
