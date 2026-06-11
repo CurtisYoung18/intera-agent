@@ -63,21 +63,59 @@ Use this format for each new item:
 ### 2026-06-11 - Production Authenticated Smoke Credentials Invalid
 
 - Area: Production auth / Pilot acceptance
-- Status: open
+- Status: fixed
 - Severity: P0
-- Uncertainty: Gate A-D is deployed to production test, but the available local smoke credentials cannot log into `https://demo.anytrans.ai`, so authenticated production screenshots, workflow proof, and DB/API persistence readback are still missing.
-- Default action taken: Treat deployment as complete but Gate A-D production acceptance as unproven. Do not reuse older production-smoke screenshots or local receipts as acceptance for commit `8e8c43e20a83d3d567f79d5b90e39de80553b946`.
-- Why this default: The dispatch requires current production proof from `https://demo.anytrans.ai`; a healthy deploy and unauthenticated route probes cannot prove staff-only Pilot workflows.
-- Evidence: `.artifacts/delivery-audit/2026-06-11/production-post-deploy/summary.md`
-- Production URL / screenshot / receipt: `GET https://demo.anytrans.ai/api/health` returned HTTP 200 with DB connected after deploy. `SMOKE_BASE_URL=https://demo.anytrans.ai SMOKE_OUTPUT_DIR=.artifacts/production-smoke/2026-06-11-post-deploy npm run smoke:console` failed before screenshots with `Login failed: status=401 ... Invalid email or password`.
+- Uncertainty: The local smoke harness credentials were invalid, so production proof initially stalled. During the 2026-06-11 Playground KB hotfix audit, the owner-approved authenticated Chrome session path became available and production UI/runtime verification could proceed.
+- Default action taken: Kept the broken smoke credentials out of the acceptance path and used the explicitly approved authenticated browser session instead. Did not guess credentials or bypass auth.
+- Why this default: The dispatch required real authenticated production proof, and the approved live session was narrower and safer than inventing a new login path.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/production-post-deploy/summary.md`; `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/summary.md`
+- Production URL / screenshot / receipt: `GET https://demo.anytrans.ai/api/health` returned HTTP 200 with DB connected after deploy. The approved authenticated session on `https://demo.anytrans.ai/build/pilot-lab?tab=playground` then produced the KB hotfix production proof recorded in `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/summary.md`.
 - Exact blocker reproduction:
   - Run `SMOKE_BASE_URL=https://demo.anytrans.ai SMOKE_OUTPUT_DIR=.artifacts/production-smoke/2026-06-11-post-deploy npm run smoke:console`.
   - The harness loads local configured credentials, calls `/api/health` successfully, then receives HTTP 401 from `/api/auth/login`.
-- Attempted fixes / checks: Confirmed production deploy, migration, build, restart, public health, `/build/pilot-lab` login redirect, and protected Gate D endpoint 401. Confirmed the timestamped post-deploy smoke output directory has no screenshots because login failed before route capture.
-- Why no workaround is safe: Guessing credentials, bypassing auth, seeding a production user, or using a browser session without owner approval would violate the production proof and access boundary. Older screenshots are not proof for the deployed commit.
-- Owner decision needed: Provide valid production `SMOKE_EMAIL` / `SMOKE_PASSWORD`, approve use of an already logged-in browser session, or create/approve a temporary production test staff account.
-- Next recommended step: Rerun production smoke and complete Gate A-D Pilot Lab workflow receipts after authenticated access is available.
+- Attempted fixes / checks: Confirmed production deploy, migration, build, restart, public health, `/build/pilot-lab` login redirect, and protected Gate D endpoint 401. Later reused the owner-approved authenticated Chrome session and completed live Playground KB hotfix verification there.
+- Why no workaround is safe: Resolved for this audit. The remaining open product blocker is not authentication; it is the direct Tools route render regression logged below.
+- Owner decision needed: None for authentication on this audit path.
+- Next recommended step: Keep the local smoke credentials issue separate from product verification and fix it only if the automated production smoke path is still desired.
 - Follow-up owner: owner / delivery lead
+
+### 2026-06-11 - Production Tools Route Blank During KB Hotfix Audit
+
+- Area: Build / Components / production acceptance
+- Status: open
+- Severity: P0
+- Uncertainty: During the authenticated production KB hotfix audit, direct hard-load to `https://demo.anytrans.ai/build/components/tools` rendered a blank page. The Knowledge page rendered correctly and the Playground runtime hotfix itself passed, but the Tools UI portion of the acceptance could not be fully proven.
+- Default action taken: Marked the runtime/tool-name hotfix as production-passing while keeping the full acceptance failed. Captured the blank Tools route as blocker evidence instead of claiming the Tools UI was verified.
+- Why this default: The hotfix goal was to verify both runtime behavior and the Knowledge/Tools UI surfaces. The runtime proof is real, but silently ignoring the blank Tools route would overstate acceptance.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/summary.md`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/components/tools`; screenshot `[tools-route-blank.png]` recorded under `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/`.
+- Exact blocker reproduction:
+  - From an approved authenticated Chrome session on `https://demo.anytrans.ai/build/pilot-lab?tab=playground`, navigate directly to `https://demo.anytrans.ai/build/components/tools`.
+  - The route settles on a blank page instead of rendering the Tools workspace.
+- Attempted fixes / checks: Hard-loaded the route multiple times, captured the blank state, and separately confirmed that `https://demo.anytrans.ai/build/components/knowledge` and `https://demo.anytrans.ai/build/pilot-lab?tab=playground` could still render and that Playground successfully executed `kb_search_promotion` and `kb_search_deposit`.
+- Why no workaround is safe: A different navigation path might still render the page, but this audit needed truthful direct production evidence. Claiming the Tools UI passed without a stable render would be misleading.
+- Owner decision needed: Repair the production Tools route render path, then rerun the KB hotfix acceptance to capture the missing Tools UI proof.
+- Follow-up owner: architect / coding-team lead
+
+### 2026-06-11 - Scenario Receipts Lost After Standalone Redeploy
+
+- Area: Pilot Lab / Scenario receipts / production persistence
+- Status: open
+- Severity: P0
+- Uncertainty: The first authenticated production Gate A-D receipt run created a durable Pilot session, proposals, receipt-linked fix proposal, and release handoff, but after the later mobile-header redeploy the same agent showed `Not validated` and `/api/admin/scenarios?agentConfigId=...` returned empty `scenarios` and `receipts`. Pilot session state survived while Scenario receipt state did not.
+- Default action taken: Treated the empty Scenario readback as a production-blocking durability bug, traced the default store path to `process.cwd()` under Next standalone, changed `apps/console/lib/scenarios/store.ts` to resolve the repo root before defaulting `.intera-agent-runtime/scenarios.json`, added focused regression tests, and deployed `d136258f96dabe47b25554dccb9b00f87229766c`.
+- Why this default: Gate C/D receipts are supposed to be durable commercial evidence. If redeploy wipes them, Pilot validation truth, release readiness, and rerun proof all become misleading.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-summary.md`; `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-baseline/playwright-production-acceptance-summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab`; authenticated baseline created Scenario `pilot_acceptance_probe_20260611024311_runtime_fail`, runtime-backed receipt `scn_ef18349f-691d-48d7-81a4-7188c2069dde`, fix proposal `cmq8w8g2f0011qjtoz2o81ngv`, and release handoff `cmq8w8g4w001bqjtot7wa0baw`, all recorded in the baseline receipt above.
+- Exact blocker reproduction:
+  - Before the fix, authenticated production readback after redeploy showed `GET /api/admin/pilot/sessions/current?agentConfigId=cmq4q82mx0001qj32gt8htfiq` still referencing receipt `scn_fdc23441-1b71-444a-9957-84c92ccdb036`.
+  - The matching `GET /api/admin/scenarios?agentConfigId=cmq4q82mx0001qj32gt8htfiq` returned `scenarios: []`, `receipts: []`, and `validation.state: "Not validated"`.
+  - Local inspection showed `apps/console/lib/scenarios/store.ts` defaulted to `path.join(process.cwd(), '.intera-agent-runtime', 'scenarios.json')`, while `apps/console/.next/standalone/apps/console/server.js` runs `process.chdir(__dirname)`, so standalone writes landed under `.next/standalone/apps/console/.intera-agent-runtime/` and were lost on rebuild.
+- Attempted fixes / checks: Added `apps/console/lib/scenarios/store.test.ts`; reran `scenarios`, `config-pilot`, `pilot-gate-a`, and `agent-template` vitest suites; reran `git diff --check`, `npx tsc --noEmit -p apps/console/tsconfig.json`, and `rm -rf apps/console/.next && npm run build:console`; pushed/deployed `d136258f`; reran authenticated production acceptance and confirmed the new receipt is present in `/api/admin/scenarios` readback before the next deploy.
+- Why no workaround is safe: Relying on Pilot session pointers alone would hide missing Scenario truth. Manual DB edits or older screenshots would not prove durable receipt storage.
+- Owner decision needed: None unless the post-redeploy recheck still loses the new receipt.
+- Next recommended step: Trigger one more production deploy, then re-read the same Scenario and receipt IDs from `/api/admin/scenarios` and `/api/admin/pilot/sessions/current`. Only mark this fixed after the post-deploy recheck passes.
+- Follow-up owner: coding-team lead / delivery lead
 
 ### 2026-06-10 - LiveChat Console Joint Configuration Timing
 
