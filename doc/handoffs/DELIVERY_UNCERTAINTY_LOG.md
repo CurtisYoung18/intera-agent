@@ -42,22 +42,41 @@ Use this format for each new item:
 ### 2026-06-10 - Production Deploy Commit And Hotfix Parity
 
 - Area: Deploy / production acceptance
-- Status: open
+- Status: fixed
 - Severity: P0
-- Uncertainty: Production health is green, but `https://demo.anytrans.ai` is not proven to run the local Gate A-D implementation. As of 2026-06-11 00:30 CST, after `git fetch --all --prune`, `HEAD`, `origin/main`, and `deploy/main` all point to `e07445f355ab3bd131f7a3dabe06b69109c4a34e`, while the Gate A-D implementation remains 24 dirty/untracked worktree entries. The hotfix worktree is on `codex/profile-menu-adaptive-spacing` at `43f3eb2c`, behind current `deploy/main` by 5, with untracked `.artifacts/` and `doc/strategy/hooks-layout-preview.html`.
-- Default action taken: Treat production health as availability proof only, not acceptance proof. Do not mark production flows accepted until the deployed commit/path is proven and screenshots/interactions are captured from `https://demo.anytrans.ai`.
+- Uncertainty: Production health was green, but `https://demo.anytrans.ai` was not proven to run the local Gate A-D implementation. As of 2026-06-11 00:30 CST, after `git fetch --all --prune`, `HEAD`, `origin/main`, and `deploy/main` all pointed to `e07445f355ab3bd131f7a3dabe06b69109c4a34e`, while the Gate A-D implementation remained 24 dirty/untracked worktree entries. The hotfix worktree was on `codex/profile-menu-adaptive-spacing` at `43f3eb2c`, behind current `deploy/main` by 5, with untracked `.artifacts/` and `doc/strategy/hooks-layout-preview.html`.
+- Default action taken: Treated production health as availability proof only, not acceptance proof. After owner approval on 2026-06-11, staged the exact Gate A-D allowlist, committed `8e8c43e20a83d3d567f79d5b90e39de80553b946`, and deployed with `git push deploy main`.
 - Why this default: The dispatch requires production proof, and accepting prior screenshots or a healthy endpoint without commit parity could hide drift between local, deploy, and production.
-- Evidence: `.artifacts/delivery-audit/2026-06-10/phase-0/baseline.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-a/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-b/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-c/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-d/summary.md`; `.artifacts/delivery-audit/2026-06-11/production-parity-audit/summary.md`
-- Production URL / screenshot / receipt: `https://demo.anytrans.ai/api/health` healthy at 2026-06-10 22:22 CST and again at 2026-06-11 00:22/00:25/00:29 CST. Unauthenticated probes returned HTTP 307 for `/build/pilot-lab` to login and HTTP 401 for `POST /api/admin/pilot/release-handoffs/generate`, proving availability/auth boundary only. A prior fake protected admin route also returned HTTP 401 before route resolution, so the 401 response is not route-existence proof. Gate A-D authenticated production route proof is still pending because commit parity, migration state, and logged-in interactions are not proven.
+- Evidence: `.artifacts/delivery-audit/2026-06-10/phase-0/baseline.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-a/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-b/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-c/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-d/summary.md`; `.artifacts/delivery-audit/2026-06-11/production-parity-audit/summary.md`; `.artifacts/delivery-audit/2026-06-11/production-post-deploy/summary.md`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/api/health` healthy at 2026-06-10 22:22 CST, 2026-06-11 00:22/00:25/00:29 CST, and post-deploy at 2026-06-11 10:02 CST. Deploy hook applied migration `20260610000000_add_pilot_persistence`, built, restarted, and returned healthy local server status. Post-deploy unauthenticated probes still return HTTP 307 for `/build/pilot-lab` and HTTP 401 for `POST /api/admin/pilot/release-handoffs/generate`, proving auth protection only.
 - Exact blocker reproduction:
   - `git fetch --all --prune && git rev-parse HEAD && git rev-parse origin/main && git rev-parse deploy/main && git status --short | wc -l` in `/Users/curtis/Desktop/intera-agent` returns the same `e07445f355ab3bd131f7a3dabe06b69109c4a34e` for all three refs and `24` dirty/untracked entries.
   - `curl -sS -D - https://demo.anytrans.ai/api/health` returns HTTP 200 with `"db":"connected"`.
   - `curl -sS -D - https://demo.anytrans.ai/build/pilot-lab` returns HTTP 307 to login, so authenticated UI proof is still required.
   - `curl -sS -D - -X POST https://demo.anytrans.ai/api/admin/pilot/release-handoffs/generate ...` returns HTTP 401 without a session, which is auth proof only.
-- Attempted fixes / checks: Completed local Gate A-D build and preflight receipts; fixed the local smoke readiness timeout; refreshed all remotes; checked the hotfix worktree; probed production health and protected routes without credentials; documented an exact commit-boundary allowlist in the production parity audit.
-- Why no workaround is safe: The dispatch forbids accepting local success as final proof, and unauthenticated production probes cannot prove the new Pilot persistence routes, migration state, UI workflows, screenshots, or durable DB readback. Deploying, seeding production data, or using authenticated production credentials would mutate or access production without an explicit owner/deploy decision.
-- Owner decision needed: Confirm whether this goal is approved to deploy from `/Users/curtis/Desktop/intera-agent` after local gates pass, and whether any hotfix worktree changes must be merged/cherry-picked first.
-- Next recommended step: Owner/deploy lead should choose commit/deploy, staged review/PR, or explicit defer/block. If deploy is approved, stage only the allowlisted Gate A-D files from `.artifacts/delivery-audit/2026-06-11/production-parity-audit/summary.md`, commit, push through the approved production path, verify migration application, then run authenticated production Pilot Lab acceptance on `https://demo.anytrans.ai`.
+- Attempted fixes / checks: Completed local Gate A-D build and preflight receipts; fixed the local smoke readiness timeout; refreshed all remotes; checked the hotfix worktree; probed production health and protected routes without credentials; documented an exact commit-boundary allowlist in the production parity audit; deployed after owner approval; verified production health after deploy.
+- Why no workaround is safe: This specific deploy parity uncertainty is resolved. Final Gate A-D acceptance remains blocked by the separate authenticated production login item below.
+- Owner decision needed: None for deploy parity. Production authentication is now the active blocker.
+- Next recommended step: Resolve the authenticated production testing path below, then run production Pilot Lab acceptance on `https://demo.anytrans.ai`.
+- Follow-up owner: owner / delivery lead
+
+### 2026-06-11 - Production Authenticated Smoke Credentials Invalid
+
+- Area: Production auth / Pilot acceptance
+- Status: open
+- Severity: P0
+- Uncertainty: Gate A-D is deployed to production test, but the available local smoke credentials cannot log into `https://demo.anytrans.ai`, so authenticated production screenshots, workflow proof, and DB/API persistence readback are still missing.
+- Default action taken: Treat deployment as complete but Gate A-D production acceptance as unproven. Do not reuse older production-smoke screenshots or local receipts as acceptance for commit `8e8c43e20a83d3d567f79d5b90e39de80553b946`.
+- Why this default: The dispatch requires current production proof from `https://demo.anytrans.ai`; a healthy deploy and unauthenticated route probes cannot prove staff-only Pilot workflows.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/production-post-deploy/summary.md`
+- Production URL / screenshot / receipt: `GET https://demo.anytrans.ai/api/health` returned HTTP 200 with DB connected after deploy. `SMOKE_BASE_URL=https://demo.anytrans.ai SMOKE_OUTPUT_DIR=.artifacts/production-smoke/2026-06-11-post-deploy npm run smoke:console` failed before screenshots with `Login failed: status=401 ... Invalid email or password`.
+- Exact blocker reproduction:
+  - Run `SMOKE_BASE_URL=https://demo.anytrans.ai SMOKE_OUTPUT_DIR=.artifacts/production-smoke/2026-06-11-post-deploy npm run smoke:console`.
+  - The harness loads local configured credentials, calls `/api/health` successfully, then receives HTTP 401 from `/api/auth/login`.
+- Attempted fixes / checks: Confirmed production deploy, migration, build, restart, public health, `/build/pilot-lab` login redirect, and protected Gate D endpoint 401. Confirmed the timestamped post-deploy smoke output directory has no screenshots because login failed before route capture.
+- Why no workaround is safe: Guessing credentials, bypassing auth, seeding a production user, or using a browser session without owner approval would violate the production proof and access boundary. Older screenshots are not proof for the deployed commit.
+- Owner decision needed: Provide valid production `SMOKE_EMAIL` / `SMOKE_PASSWORD`, approve use of an already logged-in browser session, or create/approve a temporary production test staff account.
+- Next recommended step: Rerun production smoke and complete Gate A-D Pilot Lab workflow receipts after authenticated access is available.
 - Follow-up owner: owner / delivery lead
 
 ### 2026-06-10 - LiveChat Console Joint Configuration Timing

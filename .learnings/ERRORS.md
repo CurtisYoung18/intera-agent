@@ -31,6 +31,37 @@ Do not parallelize `tsc` with commands that delete or regenerate `apps/console/.
 
 ---
 
+## [ERR-20260611-003] production_smoke_invalid_credentials
+
+**Logged**: 2026-06-11T10:03:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: production-smoke
+
+### Summary
+Post-deploy production smoke against `https://demo.anytrans.ai` failed at login because the local smoke credentials are not valid for production.
+
+### Error
+```text
+SMOKE_BASE_URL=https://demo.anytrans.ai SMOKE_OUTPUT_DIR=.artifacts/production-smoke/2026-06-11-post-deploy npm run smoke:console
+
+Error: Login failed: status=401 body={"ok":false,"error":{"code":"unauthorized","message":"Invalid email or password"}}
+```
+
+### Context
+- The deploy itself succeeded and the production health endpoint returned DB connected.
+- The smoke harness reached `/api/auth/login` after a successful health check.
+- No screenshots or summary were produced in the timestamped output directory because authentication failed before route capture.
+
+### Suggested Fix
+Use valid production `SMOKE_EMAIL` / `SMOKE_PASSWORD`, an approved logged-in browser session, or an approved temporary production staff account before claiming production UI acceptance.
+
+### Metadata
+- Reproducible: yes
+- Related Files: `scripts/smoke-console-auth.mjs`, `.artifacts/delivery-audit/2026-06-11/production-post-deploy/summary.md`
+
+---
+
 ## [ERR-20260611-002] staged_untracked_markdown_whitespace
 
 **Logged**: 2026-06-11T10:00:00+08:00
