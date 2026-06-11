@@ -1,6 +1,6 @@
 # Delivery Uncertainty And Defaults Log
 
-**Last updated:** 2026-06-10
+**Last updated:** 2026-06-11
 **Audience:** founder, architect, delivery lead, coding-team leads, QA lead
 **Purpose:** record uncertain decisions, temporary defaults, blockers, and owner-review items discovered during the commercial delivery push.
 
@@ -82,40 +82,53 @@ Use this format for each new item:
 ### 2026-06-11 - Production Tools Route Blank During KB Hotfix Audit
 
 - Area: Build / Components / production acceptance
-- Status: open
+- Status: fixed
 - Severity: P0
-- Uncertainty: During the authenticated production KB hotfix audit, direct hard-load to `https://demo.anytrans.ai/build/components/tools` rendered a blank page. The Knowledge page rendered correctly and the Playground runtime hotfix itself passed, but the Tools UI portion of the acceptance could not be fully proven.
-- Default action taken: Marked the runtime/tool-name hotfix as production-passing while keeping the full acceptance failed. Captured the blank Tools route as blocker evidence instead of claiming the Tools UI was verified.
-- Why this default: The hotfix goal was to verify both runtime behavior and the Knowledge/Tools UI surfaces. The runtime proof is real, but silently ignoring the blank Tools route would overstate acceptance.
-- Evidence: `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/summary.md`
-- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/components/tools`; screenshot `[tools-route-blank.png]` recorded under `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/`.
+- Uncertainty: The original blocker came from invalid evidence rather than a stable production Tools-route failure. The first manual screenshot captured the wrong window, and an early Playwright nav probe briefly caught the client-side `Loading…` transition before the route had settled.
+- Default action taken: Re-ran the KB hotfix production proof with Playwright against `https://demo.anytrans.ai`, captured corrected Knowledge and Tools screenshots, and required direct-load, refresh, reopen, and settled in-app navigation proof before closing the blocker.
+- Why this default: The acceptance required truthful Tools UI evidence. Deterministic browser proof was safer than assuming the route was either broken or healthy from a bad PNG.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/summary.md`; `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/playwright-kb-tools-evidence.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/components/tools`; corrected screenshots `[tools-page-direct-playwright.png]`, `[tools-knowledge-search-tools-playwright.png]`, and `[tools-page-via-navigation-playwright.png]` are recorded under `.artifacts/delivery-audit/2026-06-11/playground-kb-hotfix-production/`.
 - Exact blocker reproduction:
-  - From an approved authenticated Chrome session on `https://demo.anytrans.ai/build/pilot-lab?tab=playground`, navigate directly to `https://demo.anytrans.ai/build/components/tools`.
-  - The route settles on a blank page instead of rendering the Tools workspace.
-- Attempted fixes / checks: Hard-loaded the route multiple times, captured the blank state, and separately confirmed that `https://demo.anytrans.ai/build/components/knowledge` and `https://demo.anytrans.ai/build/pilot-lab?tab=playground` could still render and that Playground successfully executed `kb_search_promotion` and `kb_search_deposit`.
-- Why no workaround is safe: A different navigation path might still render the page, but this audit needed truthful direct production evidence. Claiming the Tools UI passed without a stable render would be misleading.
-- Owner decision needed: Repair the production Tools route render path, then rerun the KB hotfix acceptance to capture the missing Tools UI proof.
-- Follow-up owner: architect / coding-team lead
+  - Historical only: `[tools-route-blank.png]` is invalid and does not prove a truthful Intera Tools render.
+  - Corrected Playwright proof on 2026-06-11 10:57 CST showed direct load, refresh, reopen, and settled in-app nav all rendering the Tools workspace for `J1B v3 draft`.
+- Attempted fixes / checks: Re-ran production proof with the provided test account, selected `J1B v3 draft`, captured Knowledge/Tools screenshots, verified `kb_search_*` entries on both pages, and recorded route diagnostics showing no console errors, page errors, failed requests, or `>=400` responses on the settled Tools route. No product code change or deploy was required because the route rendered correctly once the capture path was fixed.
+- Why no workaround is safe: Resolved. The corrected production proof removes the need for any speculative route fix or alternate acceptance path.
+- Owner decision needed: None.
+- Follow-up owner: coding-team lead
 
 ### 2026-06-11 - Scenario Receipts Lost After Standalone Redeploy
 
 - Area: Pilot Lab / Scenario receipts / production persistence
-- Status: open
+- Status: fixed
 - Severity: P0
 - Uncertainty: The first authenticated production Gate A-D receipt run created a durable Pilot session, proposals, receipt-linked fix proposal, and release handoff, but after the later mobile-header redeploy the same agent showed `Not validated` and `/api/admin/scenarios?agentConfigId=...` returned empty `scenarios` and `receipts`. Pilot session state survived while Scenario receipt state did not.
 - Default action taken: Treated the empty Scenario readback as a production-blocking durability bug, traced the default store path to `process.cwd()` under Next standalone, changed `apps/console/lib/scenarios/store.ts` to resolve the repo root before defaulting `.intera-agent-runtime/scenarios.json`, added focused regression tests, and deployed `d136258f96dabe47b25554dccb9b00f87229766c`.
 - Why this default: Gate C/D receipts are supposed to be durable commercial evidence. If redeploy wipes them, Pilot validation truth, release readiness, and rerun proof all become misleading.
-- Evidence: `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-summary.md`; `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-baseline/playwright-production-acceptance-summary.json`
-- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab`; authenticated baseline created Scenario `pilot_acceptance_probe_20260611024311_runtime_fail`, runtime-backed receipt `scn_ef18349f-691d-48d7-81a4-7188c2069dde`, fix proposal `cmq8w8g2f0011qjtoz2o81ngv`, and release handoff `cmq8w8g4w001bqjtot7wa0baw`, all recorded in the baseline receipt above.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-summary.md`; `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-baseline/playwright-production-acceptance-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-receipt-durability-gate-post-deploy/playwright-j1b-post-deploy-recheck-summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab`; authenticated baseline created Scenario `pilot_acceptance_probe_20260611024311_runtime_fail`, runtime-backed receipt `scn_ef18349f-691d-48d7-81a4-7188c2069dde`, fix proposal `cmq8w8g2f0011qjtoz2o81ngv`, and release handoff `cmq8w8g4w001bqjtot7wa0baw`, all recorded in the baseline receipt above. After the case-type evidence deploy `3a20d0a5`, the post-deploy recheck also confirmed the earlier J1B receipt `scn_9e1aadf8-eb9a-4740-a98f-d1dcbf0568cd` still existed in `/api/admin/scenarios` and remained visible after refresh and reopen.
 - Exact blocker reproduction:
   - Before the fix, authenticated production readback after redeploy showed `GET /api/admin/pilot/sessions/current?agentConfigId=cmq4q82mx0001qj32gt8htfiq` still referencing receipt `scn_fdc23441-1b71-444a-9957-84c92ccdb036`.
   - The matching `GET /api/admin/scenarios?agentConfigId=cmq4q82mx0001qj32gt8htfiq` returned `scenarios: []`, `receipts: []`, and `validation.state: "Not validated"`.
   - Local inspection showed `apps/console/lib/scenarios/store.ts` defaulted to `path.join(process.cwd(), '.intera-agent-runtime', 'scenarios.json')`, while `apps/console/.next/standalone/apps/console/server.js` runs `process.chdir(__dirname)`, so standalone writes landed under `.next/standalone/apps/console/.intera-agent-runtime/` and were lost on rebuild.
-- Attempted fixes / checks: Added `apps/console/lib/scenarios/store.test.ts`; reran `scenarios`, `config-pilot`, `pilot-gate-a`, and `agent-template` vitest suites; reran `git diff --check`, `npx tsc --noEmit -p apps/console/tsconfig.json`, and `rm -rf apps/console/.next && npm run build:console`; pushed/deployed `d136258f`; reran authenticated production acceptance and confirmed the new receipt is present in `/api/admin/scenarios` readback before the next deploy.
+- Attempted fixes / checks: Added `apps/console/lib/scenarios/store.test.ts`; reran `scenarios`, `config-pilot`, `pilot-gate-a`, and `agent-template` vitest suites; reran `git diff --check`, `npx tsc --noEmit -p apps/console/tsconfig.json`, and `rm -rf apps/console/.next && npm run build:console`; pushed/deployed `d136258f`; reran authenticated production acceptance and confirmed the new receipt was present in `/api/admin/scenarios` readback before the next deploy; later deployed `3a20d0a5` and reran a post-deploy persistence check proving the prior J1B receipt still survived refresh and reopen.
 - Why no workaround is safe: Relying on Pilot session pointers alone would hide missing Scenario truth. Manual DB edits or older screenshots would not prove durable receipt storage.
-- Owner decision needed: None unless the post-redeploy recheck still loses the new receipt.
-- Next recommended step: Trigger one more production deploy, then re-read the same Scenario and receipt IDs from `/api/admin/scenarios` and `/api/admin/pilot/sessions/current`. Only mark this fixed after the post-deploy recheck passes.
+- Owner decision needed: None.
+- Next recommended step: Keep treating receipt durability as an embedded gate for every J1B production scenario family; if any receipt disappears after a later deploy or restart, reopen this blocker immediately.
 - Follow-up owner: coding-team lead / delivery lead
+
+### 2026-06-11 - Scenario Authoring Has No Manual Console UI
+
+- Area: Production config UX / Pilot Lab / Scenario setup
+- Status: open
+- Severity: P1
+- Uncertainty: The production console has runtime Scenario execution and receipt review in Pilot Lab, but no separate manual Scenario authoring surface for a config operator. Navigating to `/admin/scenarios` redirects straight to `/build/pilot-lab`, and the resulting UI exposes Scenario selection and validation controls but no `New Scenario` / `Create Scenario` / save editor workflow.
+- Default action taken: Used the available typed admin API to create and update J1B production scenarios while preserving UI-based manual validation for Procedure authoring and Scenario execution. Logged the gap instead of pretending the manual authoring path exists.
+- Why this default: The owner explicitly asked for step-by-step console-UI validation that simulates a real config person. Scenario runtime proof can continue through the typed API, but the missing authoring surface is a real product gap that should stay visible.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/summary.json`; screenshot `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/admin-scenarios-redirected.png`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/admin/scenarios` redirects to `https://demo.anytrans.ai/build/pilot-lab`; the captured page shows Scenario picker, runtime execution, fixture validation, and receipt controls only.
+- Owner decision needed: Decide whether Scenario authoring must exist in the console before pilot signoff, or whether typed-admin/API authoring is acceptable for the first pilot window.
+- Follow-up owner: owner / product / coding-team lead
 
 ### 2026-06-10 - LiveChat Console Joint Configuration Timing
 
@@ -159,12 +172,12 @@ Use this format for each new item:
 ### 2026-06-10 - J1B Production Test Data And Tool Seeding
 
 - Area: Playground / Tools / Procedure / LiveChat readiness
-- Status: default-applied
+- Status: fixed
 - Severity: P0
 - Uncertainty: Production J1B Agent must have the previously working J1B business Tools and valid test member ids before realistic Playground validation.
 - Default action taken: Seed or import Tools from `doc/tools-real/business-tools-backup.ts` into the production J1B Agent before J1B Playground acceptance. Use `doc/测试用户ID.md` for test member ids. Do not paste sensitive values into receipts.
 - Why this default: The J1B Playground tests are only meaningful if the Agent can ask for member id, call the matching HTTP Tools, and answer from real tool evidence.
-- Evidence: To be filled by the J1B seed/setup receipt.
-- Production URL / screenshot / receipt: Pending.
-- Owner decision needed: Confirm target production J1B Agent/version and whether seeding should create a Draft only or update the current test Draft.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/production-j1b-member-id-routing/summary.md`; `.artifacts/delivery-audit/2026-06-11/j1b-production-ui/create-procedure-ui-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-production-ui/withdrawal-not-credited/create-procedure-ui-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-production-seed/seed-summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq` (`J1B v3 draft`) now has the required business tools, manually created Procedure types, and the 12-scenario J1B seed baseline available for runtime validation.
+- Owner decision needed: None for tool/procedure seeding. The remaining J1B work is the full 12-scenario matrix, not production setup.
 - Follow-up owner: delivery lead / coding-team lead
