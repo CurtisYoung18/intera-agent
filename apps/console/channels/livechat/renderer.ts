@@ -11,12 +11,6 @@ import type { BridgeAction, FormField } from '@/lib/livechat/types'
 import { renderToolByHint, readPath } from './render-tool-by-hint'
 import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
-function toolLabel(name: string, displayVerb?: { text: string; icon: string }): string {
-  // Prefer the displayVerb text from the tool definition (already i18n-friendly).
-  if (displayVerb?.text) return displayVerb.text
-  return name.replace(/_/g, ' ')
-}
-
 export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
   readonly channel: Channel = 'livechat'
   readonly capabilities = CHANNEL_CAPS.livechat
@@ -55,12 +49,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           return renderToolByHint(d.result, livechatHint)
         }
 
-        // Fallback: compact done text
-        if (!this.showSkillStatus) return { type: 'noop' }
-        return {
-          type: 'send_text',
-          text: `✅ ${toolLabel(d.name)}`,
-        }
+        // Internal Tool names and status are runtime noise in the customer widget.
+        // Only explicit LiveChat render hints may surface Tool-derived output.
+        return { type: 'noop' }
       }
 
       // ── form_request: { caseId, title, description, fields } ──
