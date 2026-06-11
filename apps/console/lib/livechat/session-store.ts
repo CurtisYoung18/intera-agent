@@ -6,6 +6,7 @@
 import { prisma } from '@intera/shared/prisma'
 import { Prisma } from '@prisma/client'
 import type { BridgeState } from './types'
+import { decodeLivechatTextBuffer, encodeLivechatTextBuffer } from './text-buffer-codec'
 
 export interface BridgeSessionRow {
   chatId: string
@@ -34,7 +35,7 @@ export async function getSession(chatId: string): Promise<BridgeSessionRow | nul
       (row.metadata as Record<string, unknown> | null)?.userId as string ?? 'anonymous',
       row.internalCaseId ?? '',
       (row.bridgeState as BridgeState) ?? 'idle',
-      row.textBuffer,
+      decodeLivechatTextBuffer(row.textBuffer),
     )
   } catch (err) {
     console.error('[LiveChat] getSession failed:', err)
@@ -49,7 +50,7 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
       orgId: session.orgId,
       internalCaseId: session.caseId,
       bridgeState: session.state,
-      textBuffer: session.textBuffer,
+      textBuffer: encodeLivechatTextBuffer(session.textBuffer),
       metadata: { userId: session.userId },
     },
     create: {
@@ -58,7 +59,7 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
       orgId: session.orgId,
       internalCaseId: session.caseId,
       bridgeState: session.state,
-      textBuffer: session.textBuffer,
+      textBuffer: encodeLivechatTextBuffer(session.textBuffer),
       status: 'active',
       metadata: { userId: session.userId },
     },
@@ -80,11 +81,18 @@ export async function updateSessionState(chatId: string, state: BridgeState): Pr
 }
 
 export async function appendTextBuffer(chatId: string, delta: string): Promise<void> {
-  await prisma.$executeRaw`
-    UPDATE external_conversations
-    SET "textBuffer" = "textBuffer" || ${delta}
-    WHERE "platform" = ${PLATFORM} AND "externalChatId" = ${chatId}
-  `
+  await prisma.$transaction(async (tx) => {
+    const row = await tx.externalConversation.findUnique({
+      where: { platform_externalChatId: { platform: PLATFORM, externalChatId: chatId } },
+      select: { textBuffer: true },
+    })
+    if (!row) return
+    const nextBuffer = decodeLivechatTextBuffer(row.textBuffer) + delta
+    await tx.externalConversation.update({
+      where: { platform_externalChatId: { platform: PLATFORM, externalChatId: chatId } },
+      data: { textBuffer: encodeLivechatTextBuffer(nextBuffer) },
+    })
+  })
 }
 
 export async function closeSession(chatId: string, reason: string): Promise<void> {
@@ -104,17 +112,16 @@ export async function closeSession(chatId: string, reason: string): Promise<void
 /** Returns the buffered text and resets the buffer to empty. */
 export async function flushTextBuffer(chatId: string): Promise<string> {
   return prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<Array<{ textBuffer: string }>>`
-      SELECT "textBuffer" FROM external_conversations
-      WHERE "platform" = ${PLATFORM} AND "externalChatId" = ${chatId}
-      FOR UPDATE
-    `
-    const text = rows[0]?.textBuffer ?? ''
-    if (text) {
-      await tx.$executeRaw`
-        UPDATE external_conversations SET "textBuffer" = ''
-        WHERE "platform" = ${PLATFORM} AND "externalChatId" = ${chatId}
-      `
+    const row = await tx.externalConversation.findUnique({
+      where: { platform_externalChatId: { platform: PLATFORM, externalChatId: chatId } },
+      select: { textBuffer: true },
+    })
+    const text = decodeLivechatTextBuffer(row?.textBuffer ?? '')
+    if (row?.textBuffer) {
+      await tx.externalConversation.update({
+        where: { platform_externalChatId: { platform: PLATFORM, externalChatId: chatId } },
+        data: { textBuffer: '' },
+      })
     }
     return text
   })
