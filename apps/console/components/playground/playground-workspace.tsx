@@ -23,6 +23,7 @@ import MessageContent from '@/components/chat/message-content'
 import RenderHintCard from '@/components/chat/render-hint-card'
 import TraceSidebar from '@/components/playground/trace-sidebar'
 import type { LiveTool } from '@/components/playground/trace-sidebar'
+import { groupRestoredTracesByTurn } from '@/components/playground/session-restore'
 import {
   aggregateTraces,
   type PlaygroundCapabilityTruth,
@@ -482,28 +483,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
         images: imagesFromContentBlocks(m.contentBlocks),
       })))
 
-      // Restore traces: group raw traces by turn (each user message starts a new turn)
+      // Restore traces: group raw traces by runtime turn markers instead of
+      // persisted message timestamps. Production message rows can be written
+      // after trace rows and sometimes share the same millisecond across turns,
+      // which can collapse one restored turn on refresh/reopen.
       if (detailData.traces?.length > 0) {
-        const userMsgTimes = detailData.messages
-          .filter(m => m.role === 'user')
-          .map(m => new Date(m.createdAt).getTime())
-
-        // Split traces into per-turn groups based on user message boundaries
-        const turnGroups: typeof detailData.traces[] = []
-        let currentGroup: typeof detailData.traces = []
-        let turnIdx = 0
-
-        for (const trace of detailData.traces) {
-          const traceTime = new Date(trace.createdAt).getTime()
-          // Advance turn boundary if this trace is after the next user message
-          while (turnIdx < userMsgTimes.length - 1 && traceTime >= userMsgTimes[turnIdx + 1]) {
-            turnGroups.push(currentGroup)
-            currentGroup = []
-            turnIdx++
-          }
-          currentGroup.push(trace)
-        }
-        if (currentGroup.length > 0) turnGroups.push(currentGroup)
+        const turnGroups = groupRestoredTracesByTurn(detailData.traces)
 
         // Rebuild liveTools from the last turn's tool_result traces so
         // RenderHintCard components survive page refresh. During live use
