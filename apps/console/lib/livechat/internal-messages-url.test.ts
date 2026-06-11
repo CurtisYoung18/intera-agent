@@ -6,7 +6,7 @@ describe('internal LiveChat messages URL', () => {
   it('uses INTERNAL_CHAT_API_URL when explicitly configured', () => {
     const env = {
       INTERNAL_CHAT_API_URL: 'http://localhost:3999',
-      PORT: '3000',
+      PORT: '3999',
       NODE_ENV: 'production',
     } as NodeJS.ProcessEnv
 
@@ -38,5 +38,16 @@ describe('internal LiveChat messages URL', () => {
     } as NodeJS.ProcessEnv
 
     expect(resolveInternalMessagesBaseUrl(env)).toBe('http://127.0.0.1:3000')
+  })
+
+  it('ignores stale loopback overrides that point at the wrong production port', () => {
+    const env = {
+      INTERNAL_CHAT_API_URL: 'http://localhost:3001',
+      PORT: '3000',
+      NODE_ENV: 'production',
+    } as NodeJS.ProcessEnv
+
+    expect(resolveInternalMessagesBaseUrl(env)).toBe('http://127.0.0.1:3000')
+    expect(getInternalMessagesUrl(env)).toBe('http://127.0.0.1:3000/api/messages')
   })
 })
