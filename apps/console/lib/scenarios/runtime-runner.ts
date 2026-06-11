@@ -115,6 +115,7 @@ export async function executeScenarioThroughPlayground(input: RuntimeExecutorInp
     finalResponse,
     chatId,
     caseId,
+    caseType: latestTrace?.caseType,
     traceId: latestTrace?.turnId,
   })
   const errors = events.filter((event) => event.type === 'error')
@@ -138,6 +139,7 @@ export function buildRuntimeEvidence(input: {
   finalResponse?: string
   chatId?: string
   caseId?: string
+  caseType?: string
   traceId?: string
 }): ScenarioObservedEvidenceInput {
   const rawTrace = input.rawTrace ?? []
@@ -159,6 +161,7 @@ export function buildRuntimeEvidence(input: {
         : latestMessageStopReason(input.events) ?? 'next_turn'
 
   return {
+    caseType: input.caseType || undefined,
     toolsCalled,
     toolCalls,
     toolResults,

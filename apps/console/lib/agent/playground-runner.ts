@@ -15,6 +15,7 @@ import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
 import { buildModelList } from './build-model-list'
 import { resolveEffectiveModel } from './resolve-model'
+import { getProcedureRuntime } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
@@ -247,6 +248,17 @@ function deriveApplicableStages(toolDefinitions: ToolDefinition[]): string[] {
   }
   return ['Hooks', 'Knowledge retrieval', 'Tools', 'Procedure', 'Model generation']
     .filter((stage) => applicable.has(stage))
+}
+
+function latestProcedureCaseType(caseId: string | undefined): string {
+  if (!caseId) return ''
+  const runtime = getProcedureRuntime(caseId)
+  const completed = runtime.completedProcedureRuns[runtime.completedProcedureRuns.length - 1]
+  const paused = runtime.pausedProcedureRuns[runtime.pausedProcedureRuns.length - 1]
+  return runtime.activeProcedureRun?.caseType
+    ?? completed?.caseType
+    ?? paused?.caseType
+    ?? ''
 }
 
 export interface PlaygroundResult {
@@ -490,7 +502,7 @@ export async function* runPlaygroundTurn(input: {
   // ── Aggregate traces ──
   const totalMs = Math.max(1, Date.now() - startTime)
   const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages, capabilityTruth)
-  const caseType = ''
+  const caseType = latestProcedureCaseType(caseId)
 
   const result: PlaygroundResult = {
     turnId,

@@ -79,9 +79,11 @@ describe('runtime-backed Scenario evidence', () => {
       finalResponse: 'I will ask a human specialist to review this safely.',
       chatId: 'chat-1',
       caseId: 'case-1',
+      caseType: 'deposit_not_credited',
       traceId: 'trace-1',
     })
 
+    expect(evidence.caseType).toBe('deposit_not_credited')
     expect(evidence.toolsCalled).toEqual(['get_latest_deposit'])
     expect(evidence.toolResults?.some((result) => result.name === 'get_latest_deposit' && result.executionMode === 'mocked')).toBe(true)
     expect(evidence.hookDecisions?.[0]).toMatchObject({ hookName: 'review_lookup_result', checkpoint: 'PostToolUse', decision: 'escalate' })
@@ -97,6 +99,7 @@ describe('runtime-backed Scenario evidence', () => {
       execute: async () => ({
         toolExecutionMode: 'mocked',
         evidence: {
+          caseType: 'deposit_not_credited',
           toolsCalled: ['get_latest_deposit'],
           toolCalls: [{ name: 'get_latest_deposit', executionMode: 'mocked' }],
           toolResults: [{ name: 'get_latest_deposit', output: { _dryRun: true }, executionMode: 'mocked' }],
@@ -111,6 +114,7 @@ describe('runtime-backed Scenario evidence', () => {
 
     expect(receipt.executionMode).toBe('agentRuntime')
     expect(receipt.status).toBe('pass')
+    expect(receipt.evidence.caseType).toBe('deposit_not_credited')
     expect(receipt.failureReasons).toEqual([])
   })
 })
