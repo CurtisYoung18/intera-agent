@@ -14,6 +14,7 @@ import {
 import { enqueueRetry } from './retry-queue'
 
 import { downloadAndEncode, isSupportedImageType } from './image-utils'
+import { getInternalMessagesUrl } from './internal-messages-url'
 import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
 import type { SSEEvent } from '@intera/shared/types'
@@ -27,11 +28,6 @@ function lcParams(config: LiveChatConfig): {
     authType: config.authType,
     accountId: config.accountId,
   }
-}
-
-function getInternalMessagesUrl(): string {
-  const base = process.env.INTERNAL_CHAT_API_URL ?? 'http://localhost:3001'
-  return `${base}/api/messages`
 }
 
 async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator<SSEEvent> {
