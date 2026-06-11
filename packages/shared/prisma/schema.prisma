@@ -120,9 +120,9 @@ model CaseType {
   description String?
   icon        String
 
-  requiredFacts       String  // JSON: string[]
+  requiredFacts       String // JSON: string[]
   defaultGoal         String
-  escalateOn          String  // JSON: string[]
+  escalateOn          String // JSON: string[]
   autoCloseConditions String? // JSON
 
   enabled Boolean @default(true) // false = excluded from routing / intent classification UI
@@ -269,15 +269,15 @@ model ChatMemory {
   caseId String @unique
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  confirmedFacts    String    @default("{}") // JSON
-  missingFacts      String    @default("[]") // JSON
-  toolsCalled       String    @default("[]") // JSON
-  toolResults       String    @default("{}") // JSON
-  keyEvents         String    @default("[]") // JSON
-  humanTaskStatus   String    @default("none")
-  summary           String?
+  confirmedFacts  String  @default("{}") // JSON
+  missingFacts    String  @default("[]") // JSON
+  toolsCalled     String  @default("[]") // JSON
+  toolResults     String  @default("{}") // JSON
+  keyEvents       String  @default("[]") // JSON
+  humanTaskStatus String  @default("none")
+  summary         String?
   /// JSON: TodoItem[] — Procedure todo list for the Case Owner Agent
-  todos             String?
+  todos           String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -506,6 +506,312 @@ model ChannelBinding {
 
   @@unique([agentConfigId, channel])
   @@map("channel_bindings")
+}
+
+// ============================================
+// Pilot — durable operator cockpit state
+// ============================================
+model PilotSession {
+  id             String  @id @default(cuid())
+  orgId          String  @map("org_id")
+  agentConfigId  String? @map("agent_config_id")
+  agentFamilyKey String? @map("agent_family_key")
+  bindingScope   String  @default("draft_agent") @map("binding_scope")
+
+  createdByUserId         String    @map("created_by_user_id")
+  activeEditorUserId      String?   @map("active_editor_user_id")
+  status                  String    @default("in_progress")
+  title                   String    @default("Pilot session")
+  currentMode             String    @default("critique_existing_agent") @map("current_mode")
+  summary                 Json?
+  pinnedState             Json?     @map("pinned_state")
+  currentBuildBriefId     String?   @map("current_build_brief_id")
+  currentTodoPlanId       String?   @map("current_todo_plan_id")
+  currentActiveTodoItemId String?   @map("current_active_todo_item_id")
+  latestProposalId        String?   @map("latest_proposal_id")
+  latestReceiptRunId      String?   @map("latest_receipt_run_id")
+  latestHandoffId         String?   @map("latest_handoff_id")
+  memoryDegraded          Boolean   @default(false) @map("memory_degraded")
+  compactedAt             DateTime? @map("compacted_at")
+  archivedAt              DateTime? @map("archived_at")
+  isCurrent               Boolean   @default(true) @map("is_current")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages         PilotMessage[]
+  proposals        PilotProposal[]
+  todoPlans        PilotTodoPlan[]
+  todoItems        PilotTodoItem[]
+  handoffs         PilotHandoff[]
+  buildBriefs      AgentBuildBrief[]
+  inspectionTraces PilotInspectionTrace[]
+
+  @@index([orgId, agentConfigId, isCurrent])
+  @@index([orgId, agentFamilyKey, bindingScope, isCurrent])
+  @@index([createdByUserId])
+  @@map("pilot_sessions")
+}
+
+model PilotMessage {
+  id        String @id @default(cuid())
+  orgId     String @map("org_id")
+  sessionId String @map("session_id")
+
+  role              String
+  kind              String   @default("message")
+  content           String
+  structuredPayload Json?    @map("structured_payload")
+  createdByUserId   String?  @map("created_by_user_id")
+  createdAt         DateTime @default(now())
+
+  session PilotSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, sessionId, createdAt])
+  @@map("pilot_messages")
+}
+
+model PilotProposal {
+  id               String  @id @default(cuid())
+  orgId            String  @map("org_id")
+  sessionId        String  @map("session_id")
+  todoItemId       String? @map("todo_item_id")
+  parentProposalId String? @map("parent_proposal_id")
+
+  status         String  @default("drafted")
+  primarySurface String  @map("primary_surface")
+  title          String
+  summary        String
+  intentSummary  String? @map("intent_summary")
+  batchRationale String? @map("batch_rationale")
+  blastRadius    String? @map("blast_radius")
+  validationPlan Json?   @map("validation_plan")
+  proposal       Json
+  diffGroups     Json?   @map("diff_groups")
+  patchCount     Int     @default(0) @map("patch_count")
+
+  baseAgentConfigId         String    @map("base_agent_config_id")
+  baseDraftFingerprint      String    @map("base_draft_fingerprint")
+  acceptedByUserId          String?   @map("accepted_by_user_id")
+  acceptedAt                DateTime? @map("accepted_at")
+  appliedByUserId           String?   @map("applied_by_user_id")
+  appliedAt                 DateTime? @map("applied_at")
+  appliedDraftAgentConfigId String?   @map("applied_draft_agent_config_id")
+  createdByUserId           String?   @map("created_by_user_id")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session  PilotSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  todoItem PilotTodoItem? @relation(fields: [todoItemId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, sessionId, createdAt])
+  @@index([orgId, status])
+  @@index([baseAgentConfigId])
+  @@map("pilot_proposals")
+}
+
+model PilotTodoPlan {
+  id        String @id @default(cuid())
+  orgId     String @map("org_id")
+  sessionId String @map("session_id")
+
+  title           String?
+  isCurrent       Boolean  @default(true) @map("is_current")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  session PilotSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  items   PilotTodoItem[]
+
+  @@index([orgId, sessionId, isCurrent])
+  @@map("pilot_todo_plans")
+}
+
+model PilotTodoItem {
+  id        String @id @default(cuid())
+  orgId     String @map("org_id")
+  sessionId String @map("session_id")
+  planId    String @map("plan_id")
+
+  type               String
+  status             String   @default("pending")
+  title              String
+  description        String?
+  isRequired         Boolean  @default(true) @map("is_required")
+  visibleReason      String?  @map("visible_reason")
+  latestProposalId   String?  @map("latest_proposal_id")
+  latestReceiptRunId String?  @map("latest_receipt_run_id")
+  latestHandoffId    String?  @map("latest_handoff_id")
+  targetScenarioName String?  @map("target_scenario_name")
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  session   PilotSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  plan      PilotTodoPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  proposals PilotProposal[]
+
+  @@index([orgId, sessionId, status])
+  @@index([orgId, planId, status])
+  @@map("pilot_todo_items")
+}
+
+model PilotHandoff {
+  id        String @id @default(cuid())
+  orgId     String @map("org_id")
+  sessionId String @map("session_id")
+
+  draftAgentConfigId    String   @map("draft_agent_config_id")
+  draftFingerprint      String   @map("draft_fingerprint")
+  handoffSummary        String   @map("handoff_summary")
+  readinessVerdict      String   @default("not_ready") @map("readiness_verdict")
+  blockers              Json?
+  risks                 Json?
+  referencedProposalIds Json?    @map("referenced_proposal_ids")
+  referencedReceiptIds  Json?    @map("referenced_receipt_ids")
+  coveredTodoItemIds    Json?    @map("covered_todo_item_ids")
+  isCurrent             Boolean  @default(true) @map("is_current")
+  createdByUserId       String?  @map("created_by_user_id")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  session PilotSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, sessionId, isCurrent])
+  @@index([draftAgentConfigId])
+  @@map("pilot_handoffs")
+}
+
+model AgentBuildBrief {
+  id             String  @id @default(cuid())
+  orgId          String  @map("org_id")
+  agentFamilyKey String  @map("agent_family_key")
+  sessionId      String? @map("session_id")
+
+  revision                     Int       @default(1)
+  status                       String    @default("draft")
+  businessGoal                 String?   @map("business_goal")
+  targetChannels               Json      @map("target_channels")
+  supportedUseCases            Json      @map("supported_use_cases")
+  outOfScopeUseCases           Json      @map("out_of_scope_use_cases")
+  escalationPolicy             String?   @map("escalation_policy")
+  requiredToolsAndIntegrations Json      @map("required_tools_and_integrations")
+  toneAndResponseConstraints   Json      @map("tone_and_response_constraints")
+  validationExpectations       Json      @map("validation_expectations")
+  openQuestions                Json      @map("open_questions")
+  isCurrent                    Boolean   @default(true) @map("is_current")
+  confirmedAt                  DateTime? @map("confirmed_at")
+  confirmedByUserId            String?   @map("confirmed_by_user_id")
+  supersededAt                 DateTime? @map("superseded_at")
+  supersededById               String?   @map("superseded_by_id")
+  createdByUserId              String?   @map("created_by_user_id")
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+
+  session         PilotSession?            @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  recommendations TemplateRecommendation[]
+  tailoringPlans  TemplateTailoringPlan[]
+  scratchPlans    ScratchBuildPlan[]
+
+  @@index([orgId, agentFamilyKey, isCurrent])
+  @@index([orgId, status])
+  @@map("agent_build_briefs")
+}
+
+model TemplateRecommendation {
+  id      String @id @default(cuid())
+  orgId   String @map("org_id")
+  briefId String @map("brief_id")
+
+  candidateTemplates    Json      @map("candidate_templates")
+  recommendedTemplateId String?   @map("recommended_template_id")
+  fitSummary            String    @map("fit_summary")
+  mismatchSummary       String?   @map("mismatch_summary")
+  whyNotScratch         String?   @map("why_not_scratch")
+  whyScratch            String?   @map("why_scratch")
+  isCurrent             Boolean   @default(true) @map("is_current")
+  supersededAt          DateTime? @map("superseded_at")
+  supersededById        String?   @map("superseded_by_id")
+  createdByUserId       String?   @map("created_by_user_id")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  brief          AgentBuildBrief         @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  tailoringPlans TemplateTailoringPlan[]
+
+  @@index([orgId, briefId, isCurrent])
+  @@map("template_recommendations")
+}
+
+model TemplateTailoringPlan {
+  id               String  @id @default(cuid())
+  orgId            String  @map("org_id")
+  briefId          String  @map("brief_id")
+  recommendationId String? @map("recommendation_id")
+
+  selectedTemplateId         String    @map("selected_template_id")
+  fitAreas                   Json      @map("fit_areas")
+  mismatchAreas              Json      @map("mismatch_areas")
+  requiredTailoringGroups    Json      @map("required_tailoring_groups")
+  recommendedTailoringGroups Json      @map("recommended_tailoring_groups")
+  firstValidationTargets     Json      @map("first_validation_targets")
+  isCurrent                  Boolean   @default(true) @map("is_current")
+  supersededAt               DateTime? @map("superseded_at")
+  supersededById             String?   @map("superseded_by_id")
+  createdByUserId            String?   @map("created_by_user_id")
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  brief          AgentBuildBrief         @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  recommendation TemplateRecommendation? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, briefId, selectedTemplateId, isCurrent])
+  @@map("template_tailoring_plans")
+}
+
+model ScratchBuildPlan {
+  id      String @id @default(cuid())
+  orgId   String @map("org_id")
+  briefId String @map("brief_id")
+
+  scratchScope               String    @default("default") @map("scratch_scope")
+  proposedFoundationSurfaces Json      @map("proposed_foundation_surfaces")
+  requiredBuildGroups        Json      @map("required_build_groups")
+  recommendedBuildGroups     Json      @map("recommended_build_groups")
+  initialToolingPlan         Json      @map("initial_tooling_plan")
+  initialValidationTargets   Json      @map("initial_validation_targets")
+  isCurrent                  Boolean   @default(true) @map("is_current")
+  supersededAt               DateTime? @map("superseded_at")
+  supersededById             String?   @map("superseded_by_id")
+  createdByUserId            String?   @map("created_by_user_id")
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  brief AgentBuildBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, briefId, scratchScope, isCurrent])
+  @@map("scratch_build_plans")
+}
+
+model PilotInspectionTrace {
+  id        String @id @default(cuid())
+  orgId     String @map("org_id")
+  sessionId String @map("session_id")
+
+  actionClass        String   @map("action_class")
+  targetObjectRef    Json?    @map("target_object_ref")
+  steps              Json
+  evidenceSufficient Boolean  @default(false) @map("evidence_sufficient")
+  stopReason         String?  @map("stop_reason")
+  createdByUserId    String?  @map("created_by_user_id")
+  createdAt          DateTime @default(now())
+
+  session PilotSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, sessionId, createdAt])
+  @@map("pilot_inspection_traces")
 }
 
 // ============================================

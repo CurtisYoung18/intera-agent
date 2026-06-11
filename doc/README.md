@@ -8,12 +8,16 @@
 1. [`handoffs/GENERIC_HANDOFF.md`](./handoffs/GENERIC_HANDOFF.md) - stable repo context and collaboration rules.
 2. [`handoffs/MASTER_BUILD_HANDOFF.md`](./handoffs/MASTER_BUILD_HANDOFF.md) - current macro priority, active lanes, and dispatch order.
 3. [`handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md`](./handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md) - Mermaid roadmap from project start through remaining P0 delivery checkpoints.
-4. [`handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md`](./handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompt history after the shipped baseline; do not redispatch shipped lanes from it without an explicit repair ask.
-5. [`to-do/2026-06-08-foundation-reset-domain-model.md`](./to-do/2026-06-08-foundation-reset-domain-model.md) - the owner-approved reset plan and historical migration record.
-6. [`spec/Intera_Harness_架构梳理.md`](./spec/Intera_Harness_架构梳理.md) - current product and architecture source of truth.
-7. [`spec/Intera_UI_UX_Design_System.md`](./spec/Intera_UI_UX_Design_System.md) - current Console IA, visual system, and UI refactor lanes.
-8. [`strategy/2026-06-08-long-term-architecture-review.md`](./strategy/2026-06-08-long-term-architecture-review.md) - strategic diagnosis that led to the reset.
-9. [`handoffs/HARD_BUGS.md`](./handoffs/HARD_BUGS.md) - live landmines that still matter while the reset is underway.
+4. [`handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](./handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) - strict first-customer delivery goals, screenshot/receipt requirements, and high-quality acceptance bar.
+5. [`handoffs/CODEX_GOAL_DISPATCH.md`](./handoffs/CODEX_GOAL_DISPATCH.md) - short Goal-mode prompt plus strict long-run execution contract and stop conditions.
+6. [`handoffs/DELIVERY_UNCERTAINTY_LOG.md`](./handoffs/DELIVERY_UNCERTAINTY_LOG.md) - running review queue for uncertain points, defaults, blockers, and owner decisions.
+7. [`strategy/2026-06-10-pilot-commercial-readiness-proposal.md`](./strategy/2026-06-10-pilot-commercial-readiness-proposal.md) - executable Gate A-D implementation guide and acceptance contract for the commercial Pilot cockpit.
+8. [`handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md`](./handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompt history after the shipped baseline; do not redispatch shipped lanes from it without an explicit repair ask.
+9. [`to-do/2026-06-08-foundation-reset-domain-model.md`](./to-do/2026-06-08-foundation-reset-domain-model.md) - the owner-approved reset plan and historical migration record.
+10. [`spec/Intera_Harness_架构梳理.md`](./spec/Intera_Harness_架构梳理.md) - current product and architecture source of truth.
+11. [`spec/Intera_UI_UX_Design_System.md`](./spec/Intera_UI_UX_Design_System.md) - current Console IA, visual system, and UI refactor lanes.
+12. [`strategy/2026-06-08-long-term-architecture-review.md`](./strategy/2026-06-08-long-term-architecture-review.md) - strategic diagnosis that led to the reset.
+13. [`handoffs/HARD_BUGS.md`](./handoffs/HARD_BUGS.md) - live landmines that still matter while the reset is underway.
 
 ## Current vocabulary
 

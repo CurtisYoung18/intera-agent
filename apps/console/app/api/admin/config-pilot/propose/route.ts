@@ -8,6 +8,7 @@ import {
 } from '@/lib/config-pilot/contracts'
 import { getConfigPilotContext } from '@/lib/config-pilot/context'
 import { proposeConfigPilotChange } from '@/lib/config-pilot/model'
+import { persistConfigPilotProposal } from '@/lib/pilot/persistence'
 
 export const POST = defineRoute<ConfigPilotProposeRequest>({
   method: 'POST',
@@ -16,11 +17,15 @@ export const POST = defineRoute<ConfigPilotProposeRequest>({
   async handler({ input, repo, session, audit }) {
     const context = await getConfigPilotContext(repo, session, input.agentConfigId)
     const result = await proposeConfigPilotChange(input, context)
+    const stored = await persistConfigPilotProposal(repo, session, input, result.proposal, context.draftFingerprint)
+    result.proposal.pilotProposalId = stored.id
+    result.proposal.baseDraftFingerprint = stored.baseDraftFingerprint
     await audit({
       action: 'configpilot.propose',
       target: `agent_config:${input.agentConfigId}`,
       after: {
         proposalId: result.proposal.id,
+        pilotProposalId: stored.id,
         modelUsed: result.modelUsed,
         promptVersion: result.promptVersion,
         targetSurface: result.proposal.targetSurface,

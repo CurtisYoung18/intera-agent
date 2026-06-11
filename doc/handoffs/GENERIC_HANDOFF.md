@@ -30,7 +30,7 @@
    - Take screenshots of key interactions as evidence
    - Paste the verification log: pages visited, actions taken, results observed, screenshots captured
 
-   **Why two phases:** Phase 1 catches compile/logic errors. Phase 2 catches the bugs static checks miss — UI state bugs, interaction failures, cross-page consistency breaks, and runtime crashes in production. If a coding agent claims "done" without Phase 2, it's not done.
+   **Why two phases:** Phase 1 catches compile/logic errors. Phase 2 catches the bugs static checks miss — UI state bugs, interaction failures, cross-page consistency breaks, and runtime crashes in production. Local verification is preflight only; final acceptance must happen on `https://demo.anytrans.ai`. If a coding agent claims "done" without Phase 2, it's not done.
 
 4. **Every safety/isolation change ships an e2e guard test with red→green proof.** Tests that exercise mocks/constructors ("seam tests") don't count — drive the real entry point.
 5. **Deploy freely during internal-test phase.** The app serves zero real customers — deploy per-task and verify immediately. The old "minimize deployments" rule is suspended until launch. However: never deploy a broken build (Phase 1 must pass first), and never leave the site broken (if production verification fails, fix it immediately).
@@ -206,7 +206,7 @@ curl -s https://demo.anytrans.ai/api/health   # expect {"status":"ok","db":"conn
 
 **Test note:** local Postgres is now the expected dev DB. Bring it up with `docker compose up -d postgres` before DB integration tests.
 
-**Local browser-smoke note:** before spending time on authenticated local browser flows, read [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md). Console auth uses a `secure: true` session cookie, so HTTP localhost smoke can redirect to login or return `401` even when login succeeds. Timebox local auth debugging to 10 minutes; do not hand-roll JWT/cookie/HTTPS harnesses inside feature lanes.
+**Local browser-smoke note:** before spending time on authenticated local browser flows, read [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md). Console auth uses a `secure: true` session cookie, so HTTP localhost smoke can redirect to login or return `401` even when login succeeds. Timebox local auth debugging to 10 minutes; do not hand-roll JWT/cookie/HTTPS harnesses inside feature lanes. Local browser smoke helps catch problems early, but it never replaces production acceptance on `https://demo.anytrans.ai`.
 
 ### Phase 2 — Production verification procedure
 

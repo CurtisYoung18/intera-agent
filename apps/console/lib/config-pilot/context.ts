@@ -13,6 +13,7 @@ import {
   type ConfigPilotContextResponse,
   type LockedCapability,
 } from './contracts'
+import { buildPilotDraftFingerprint } from '@/lib/pilot/fingerprint'
 
 const RUNTIME_LOCKED_CAPABILITIES: LockedCapability[] = [
   {
@@ -224,7 +225,7 @@ export async function getConfigPilotContext(
     throw new Error('Agent config not found after ownership check')
   }
 
-  const [active, latestDraft, caseTypes, tools, hooks, hookBindings, knowledgeSources, channelBindings, scenarioResult, validation] = await Promise.all([
+  const [active, latestDraft, caseTypes, tools, hooks, hookBindings, knowledgeSources, channelBindings, scenarioResult, validation, draftFingerprint] = await Promise.all([
     repo.agentConfig.findFirst({ where: { name: selected.name, isActive: true } }) as Promise<AnyRecord | null>,
     repo.agentConfig.findFirst({ where: { name: selected.name, isActive: false }, orderBy: { version: 'desc' } }) as Promise<AnyRecord | null>,
     repo.raw.caseType.findMany({ where: { agentConfigId }, orderBy: { type: 'asc' } }) as Promise<AnyRecord[]>,
@@ -235,6 +236,7 @@ export async function getConfigPilotContext(
     repo.raw.channelBinding.findMany({ where: { agentConfigId }, orderBy: { channel: 'asc' } }) as Promise<AnyRecord[]>,
     listScenarios(agentConfigId),
     getScenarioValidationSummary(agentConfigId),
+    buildPilotDraftFingerprint(repo, agentConfigId),
   ])
 
   const selectedSummary = summarizeVersion(selected)
@@ -248,6 +250,7 @@ export async function getConfigPilotContext(
     selected: selectedSummary,
     active: summarizeVersion(active),
     draft: summarizeVersion(selected.isActive ? latestDraft : selected),
+    draftFingerprint,
     permissions: {
       role: session.role,
       canRead: true,

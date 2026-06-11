@@ -9,17 +9,21 @@ Read first:
 1. [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) - collaboration protocol, verification gates, repo context.
 2. [`../README.md`](../README.md) - doc map and current vocabulary.
 3. [`FOUNDATION_RESET_ROADMAP_CURRENT.md`](./FOUNDATION_RESET_ROADMAP_CURRENT.md) - current Mermaid roadmap from project start through remaining delivery checkpoints.
-4. [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md) - local browser-smoke/auth timebox rules.
-5. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompts and historical lane prompts for zero-context coding sessions; do not redispatch shipped lanes without an explicit repair ask.
-6. [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md) - current risk map and next-lane split before first commercial deployment.
-7. [`COMPONENT_TRUTH_AUDIT_2026-06-10.md`](./COMPONENT_TRUTH_AUDIT_2026-06-10.md) - current implementation-truth audit for Build Components, Pilot Lab compatibility, and legacy entry points.
-8. [`PLAYGROUND_TRUTH_AUDIT_2026-06-10.md`](./PLAYGROUND_TRUTH_AUDIT_2026-06-10.md) - current product/runtime truth for Pilot vs Playground, runtime-backed vs fixture-only validation, and compatibility leftovers.
-9. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
-10. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
-11. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
-12. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
-13. [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) - native page rebuild rule, backend contract matrix, and regression gates for Build / Operate / Settings.
-14. [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md) - copy-paste final invariant, command gates, and route-by-route smoke checklist.
+4. [`PLATFORM_DELIVERY_AUDIT_GOALS.md`](./PLATFORM_DELIVERY_AUDIT_GOALS.md) - strict phase-by-phase delivery goals, proof requirements, screenshot receipts, and the high-quality acceptance bar for first customer deployment.
+5. [`CODEX_GOAL_DISPATCH.md`](./CODEX_GOAL_DISPATCH.md) - short Goal-mode prompt plus the long-running execution contract, strict stop conditions, and production proof requirements.
+6. [`DELIVERY_UNCERTAINTY_LOG.md`](./DELIVERY_UNCERTAINTY_LOG.md) - running review queue for uncertain points, defaults, blockers, and owner decisions.
+7. [`../strategy/2026-06-10-pilot-commercial-readiness-proposal.md`](../strategy/2026-06-10-pilot-commercial-readiness-proposal.md) - executable Gate A-D implementation guide and acceptance contract for commercial Pilot readiness.
+8. [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md) - local browser-smoke/auth timebox rules.
+9. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompts and historical lane prompts for zero-context coding sessions; do not redispatch shipped lanes without an explicit repair ask.
+10. [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md) - current risk map and next-lane split before first commercial deployment.
+11. [`COMPONENT_TRUTH_AUDIT_2026-06-10.md`](./COMPONENT_TRUTH_AUDIT_2026-06-10.md) - current implementation-truth audit for Build Components, Pilot Lab compatibility, and legacy entry points.
+12. [`PLAYGROUND_TRUTH_AUDIT_2026-06-10.md`](./PLAYGROUND_TRUTH_AUDIT_2026-06-10.md) - current product/runtime truth for Pilot vs Playground, runtime-backed vs fixture-only validation, and compatibility leftovers.
+13. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
+14. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
+15. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
+16. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
+17. [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) - native page rebuild rule, backend contract matrix, and regression gates for Build / Operate / Settings.
+18. [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md) - copy-paste final invariant, command gates, and route-by-route smoke checklist.
 
 ---
 
@@ -43,6 +47,18 @@ The owner-approved UI/UX direction is frozen in [`../spec/Intera_UI_UX_Design_Sy
 
 Current delivery constraint after UI2/Q3:
 
+- every implementation or fix must meet the high-quality bar in [`PLATFORM_DELIVERY_AUDIT_GOALS.md`](./PLATFORM_DELIVERY_AUDIT_GOALS.md): functional, user-friendly, visually polished, operationally truthful, regression-safe, and backed by receipts/screenshots
+- for Codex Goal-mode runs, keep the Goal input short and point to [`CODEX_GOAL_DISPATCH.md`](./CODEX_GOAL_DISPATCH.md); the detailed standards live in docs and must be followed exactly
+- local tests and local browser smoke are preflight only; final acceptance must be repeated and proven on `https://demo.anytrans.ai`
+- production acceptance is whole-platform responsibility: if validating one function exposes another broken function, stale UI, misleading state, or adjacent regression, fix and retest it instead of treating it as out of scope
+- every subpage, tab, panel, modal, detail route, action menu, empty/loading/error state, and CRUD/test action must be production-tested; route-load screenshots alone are not acceptance
+- every page's meaningful CRUD/test action needs screenshot or receipt proof; do not accept text-only claims for UI-facing CRUD
+- uncertain points and default decisions must be recorded in [`DELIVERY_UNCERTAINTY_LOG.md`](./DELIVERY_UNCERTAINTY_LOG.md) as they are discovered, so the owner can review them in one pass
+- current manual testing only gives partial confidence for Playground, Knowledge, and Hooks; all other surfaces remain unaccepted until production receipts prove full function coverage
+- Procedure and LiveChat/Integrations are first-customer critical. LiveChat console joint configuration may wait until after this optimization pass, but Intera must already prove config readiness, webhook ingress toward `/api/messages`, response mapping, and Tool rich-message/render-hint output. Use `/Users/curtis/Desktop/live chat config backup.md` as the redacted test-config source when needed.
+- Pilot commercial readiness is in scope for the same delivery push. Execute Gate A-D from [`../strategy/2026-06-10-pilot-commercial-readiness-proposal.md`](../strategy/2026-06-10-pilot-commercial-readiness-proposal.md) under the acceptance standards in [`PLATFORM_DELIVERY_AUDIT_GOALS.md`](./PLATFORM_DELIVERY_AUDIT_GOALS.md).
+- Pilot construction comes before Pilot acceptance: do not spend final acceptance effort on an unfinished Pilot cockpit before its Gate A-D implementation exists.
+- J1B Playground acceptance requires production setup first: seed/import `doc/tools-real/business-tools-backup.ts` into the production J1B Agent Draft, use `doc/测试用户ID.md` member ids, then run the 12 P0 scenarios with 3 accepted flows each plus one long-memory/30-customer-message stability run.
 - treat Build / Operate / Settings target pages as needing native implementations, not wrapper routes around old `admin` or `ops` pages
 - `/admin/*` and `/ops/*` may remain only as compatibility redirects or thin wrappers; product ownership must stay on the native Build / Operate / Settings surfaces
 - the route rebuild is now locally complete; before broader production smoke, hold the line with the regression plan in [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) and the checklist in [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md)
@@ -57,7 +73,7 @@ Before any coding session edits files, its owned files must be declared either h
 
 | Lane | Owner/session | Status | Owned files | Notes |
 |---|---|---|---|---|
-| _none_ | - | - | - | Add a row before starting implementation work. |
+| GOAL-P0-PILOT-GATE-A-D | Codex Goal thread `019eb1e6-12c0-7842-b98f-172cfb988f2b` | Active | `packages/shared/prisma/schema.prisma`, `packages/shared/prisma/migrations/20260610000000_add_pilot_persistence/**`, `packages/shared/contracts/pilot.ts`, `apps/console/lib/pilot/**`, `apps/console/app/api/admin/pilot/**`, `apps/console/app/api/admin/config-pilot/**`, `apps/console/lib/config-pilot/**`, `apps/console/app/build/pilot-lab/**`, `scripts/smoke-console-auth.mjs`, `doc/handoffs/DELIVERY_UNCERTAINTY_LOG.md`, `.artifacts/delivery-audit/2026-06-10/**`, `.artifacts/delivery-audit/2026-06-11/production-parity-audit/**`, `.artifacts/final-smoke/**`, `.learnings/ERRORS.md` | Gate A-D locally constructed and preflighted, including durable release handoff generation and green local smoke after harness readiness tuning. 2026-06-11 parity audit: `HEAD`/`origin/main`/`deploy/main` are all `e07445f3`; Gate A-D is still local dirty/untracked work, so production acceptance is pending approved commit/deploy, migration proof, and `https://demo.anytrans.ai` receipts. |
 
 Rules:
 

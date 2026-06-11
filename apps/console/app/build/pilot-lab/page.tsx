@@ -1,14 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
   AlertTriangle,
+  Activity,
   Bot,
   CheckCircle2,
   ClipboardList,
+  Database,
   FileDiff,
+  FileText,
+  ListChecks,
   Loader2,
   LockKeyhole,
   Play,
@@ -33,6 +37,7 @@ import type {
   ConfigPilotProposeResponse,
 } from '@/lib/config-pilot/contracts'
 import type { SavedScenario, ScenarioObservedEvidenceInput, ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
+import type { AgentBuildBrief, PilotHandoff, PilotInspectionTrace, PilotProposeReceiptFixResponse, PilotRunScenarioResponse, PilotSessionSnapshot, PilotTodoPlan } from '@intera/shared/contracts/pilot'
 
 interface ScenarioListResponse {
   scenarios: SavedScenario[]
@@ -84,10 +89,16 @@ export default function PilotLabPage() {
         appliedMessage: (state: string) => `草稿已通过 typed API 保存。当前验证状态为 ${state}；发布前请再跑一次 runtime-backed Scenario。`,
         applyFailed: '应用已接受的草稿失败',
         applyFailedMessage: 'Apply 失败。已接受的 proposal 仍然保留，但没有触发发布或激活动作。',
+        compactedNotice: 'Pilot session memory 已压缩。',
+        compactFailed: 'Pilot session memory 压缩失败',
         runtimeRunDone: (status: string) => `运行时 Scenario 已完成：${status}。`,
         fixtureRunDone: (status: string) => `静态样例 Scenario 已完成：${status}。`,
         invalidObservedJson: (message: string) => `observed evidence JSON 无效：${message}`,
         failedToRunScenario: '运行 Scenario 失败',
+        failedToDraftFix: '根据回执生成修复 proposal 失败',
+        draftFixFromReceipt: '根据所选回执生成修复 proposal',
+        handoffGenerated: 'Release handoff 已生成。',
+        handoffFailed: '生成 Release handoff 失败',
         currentAgent: '当前 Agent',
         loadingDraftContext: '正在读取 draft 上下文',
         loadingPilotContext: '正在加载 Pilot 上下文',
@@ -111,10 +122,16 @@ export default function PilotLabPage() {
         appliedMessage: (state: string) => `Draft saved through typed APIs. Validation is now ${state}; run a runtime-backed Scenario before publishing.`,
         applyFailed: 'Failed to apply accepted draft',
         applyFailedMessage: 'Apply failed. The accepted proposal remains available, but no publish or activation action was called.',
+        compactedNotice: 'Pilot session memory compacted.',
+        compactFailed: 'Failed to compact Pilot session memory',
         runtimeRunDone: (status: string) => `Runtime-backed Scenario run finished: ${status}.`,
         fixtureRunDone: (status: string) => `Fixture-only Scenario run finished: ${status}.`,
         invalidObservedJson: (message: string) => `Invalid observed evidence JSON: ${message}`,
         failedToRunScenario: 'Failed to run Scenario',
+        failedToDraftFix: 'Failed to draft a fix from the selected receipt',
+        draftFixFromReceipt: 'Draft fix from selected receipt',
+        handoffGenerated: 'Release handoff generated.',
+        handoffFailed: 'Failed to generate Release handoff',
         currentAgent: 'Current agent',
         loadingDraftContext: 'Loading draft context',
         loadingPilotContext: 'Loading Pilot context',
@@ -131,6 +148,7 @@ export default function PilotLabPage() {
   const agentConfigId = useSelectedAgentId()
   const chatEndRef = useRef<HTMLDivElement | null>(null)
   const [context, setContext] = useState<ConfigPilotContextResponse | null>(null)
+  const [pilotSnapshot, setPilotSnapshot] = useState<PilotSessionSnapshot | null>(null)
   const [scenarios, setScenarios] = useState<SavedScenario[]>([])
   const [receipts, setReceipts] = useState<ScenarioReceipt[]>([])
   const [validation, setValidation] = useState<ScenarioValidationSummary | null>(null)
@@ -145,7 +163,10 @@ export default function PilotLabPage() {
   const [promptVersion, setPromptVersion] = useState<string | null>(null)
   const [observedJson, setObservedJson] = useState(DEFAULT_OBSERVED)
   const [loading, setLoading] = useState(true)
+  const [pilotSnapshotLoading, setPilotSnapshotLoading] = useState(false)
   const [running, setRunning] = useState(false)
+  const [fixingReceipt, setFixingReceipt] = useState(false)
+  const [generatingHandoff, setGeneratingHandoff] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -159,6 +180,12 @@ export default function PilotLabPage() {
   )
   const latestRuntimeReceipt = receipts.find((receipt) => receipt.executionMode === 'agentRuntime') ?? null
   const latestFixtureReceipt = receipts.find((receipt) => receipt.executionMode === 'fixture') ?? null
+  const activeValidationTodo = useMemo(() => {
+    const items = pilotSnapshot?.todoPlans.flatMap((plan) => plan.items) ?? []
+    return items.find((item) => item.targetScenarioName === selectedScenario?.name && item.status !== 'completed')
+      ?? items.find((item) => item.type === 'validation_run' && item.status !== 'completed')
+      ?? null
+  }, [pilotSnapshot, selectedScenario?.name])
   const canApply = Boolean(context?.permissions.canApply && proposal && accepted && proposalPhase === 'accepted')
   const diffGroups = proposal?.diffGroups ?? []
 
@@ -182,6 +209,17 @@ export default function PilotLabPage() {
     })
   }, [])
 
+  const loadPilotSnapshot = useCallback(async (id: string) => {
+    setPilotSnapshotLoading(true)
+    try {
+      const result = await apiClient<PilotSessionSnapshot>(`/api/admin/pilot/sessions/current?agentConfigId=${encodeURIComponent(id)}`)
+      setPilotSnapshot(result.data)
+      return result.data
+    } finally {
+      setPilotSnapshotLoading(false)
+    }
+  }, [])
+
   const loadCockpit = useCallback(async () => {
     if (!agentConfigId) return
     setLoading(true)
@@ -190,6 +228,7 @@ export default function PilotLabPage() {
       const contextResult = await apiClient<ConfigPilotContextResponse>(`/api/admin/config-pilot/context?agentConfigId=${encodeURIComponent(agentConfigId)}`)
       setContext(contextResult.data)
       setValidation(contextResult.data.validation)
+      const snapshot = await loadPilotSnapshot(agentConfigId)
       setMessages([
         {
           id: 'pilot-greeting',
@@ -197,6 +236,15 @@ export default function PilotLabPage() {
           content: PILOT_GREETING[locale],
           streaming: true,
         },
+        ...snapshot.messages
+          .filter((message) => message.kind !== 'message')
+          .slice(-6)
+          .map((message) => ({
+            id: `timeline-${message.id}`,
+            role: message.role,
+            content: message.content,
+            tone: message.kind === 'compact' || message.kind === 'apply' || message.kind === 'accept' ? 'success' as const : 'normal' as const,
+          })),
       ])
       await loadScenarios(agentConfigId)
     } catch (err) {
@@ -212,7 +260,7 @@ export default function PilotLabPage() {
     } finally {
       setLoading(false)
     }
-  }, [agentConfigId, copy.failedToLoad, copy.loadContextMessage, loadScenarios, locale])
+  }, [agentConfigId, copy.failedToLoad, copy.loadContextMessage, loadPilotSnapshot, loadScenarios, locale])
 
   useEffect(() => { loadCockpit() }, [loadCockpit])
 
@@ -293,18 +341,35 @@ export default function PilotLabPage() {
     })
   }, [addMessage, copy.rejected, copy.rejectedMessage])
 
-  const acceptProposal = useCallback((checked: boolean) => {
-    setAccepted(checked)
-    if (checked && proposalPhase === 'diff') {
+  const acceptProposal = useCallback(async (checked: boolean) => {
+    if (!checked) {
+      if (proposal?.pilotProposalId && proposalPhase === 'accepted') return
+      setAccepted(false)
+      if (proposalPhase === 'accepted') setProposalPhase('diff')
+      return
+    }
+    if (!proposal || proposalPhase !== 'diff') return
+    setError(null)
+    try {
+      if (proposal.pilotProposalId) {
+        await apiClient(`/api/admin/pilot/proposals/${encodeURIComponent(proposal.pilotProposalId)}/accept`, {
+          method: 'POST',
+          body: { reason: 'Operator reviewed the Pilot diff and accepted the draft proposal.' },
+        })
+      }
+      setAccepted(true)
       setProposalPhase('accepted')
+      if (agentConfigId) await loadPilotSnapshot(agentConfigId)
       addMessage({
         role: 'system',
         tone: 'success',
         content: copy.acceptRecorded,
       })
+    } catch (err) {
+      setAccepted(false)
+      setError(err instanceof ApiClientError ? err.envelope.error.message : copy.applyFailed)
     }
-    if (!checked && proposalPhase === 'accepted') setProposalPhase('diff')
-  }, [addMessage, copy.acceptRecorded, proposalPhase])
+  }, [addMessage, agentConfigId, copy.acceptRecorded, copy.applyFailed, loadPilotSnapshot, proposal, proposalPhase])
 
   const applyProposal = useCallback(async () => {
     if (!agentConfigId || !proposal || !accepted || proposalPhase !== 'accepted') return
@@ -328,6 +393,7 @@ export default function PilotLabPage() {
       await loadScenarios(result.data.draftAgentConfigId)
       const contextResult = await apiClient<ConfigPilotContextResponse>(`/api/admin/config-pilot/context?agentConfigId=${encodeURIComponent(result.data.draftAgentConfigId)}`)
       setContext(contextResult.data)
+      await loadPilotSnapshot(result.data.draftAgentConfigId)
     } catch (err) {
       setProposalPhase('accepted')
       setError(err instanceof ApiClientError ? err.envelope.error.message : copy.applyFailed)
@@ -337,10 +403,26 @@ export default function PilotLabPage() {
         content: copy.applyFailedMessage,
       })
     }
-  }, [accepted, addMessage, agentConfigId, copy.appliedMessage, copy.appliedNotice, copy.applyFailed, copy.applyFailedMessage, loadScenarios, proposal, proposalPhase])
+  }, [accepted, addMessage, agentConfigId, copy.appliedMessage, copy.appliedNotice, copy.applyFailed, copy.applyFailedMessage, loadPilotSnapshot, loadScenarios, proposal, proposalPhase])
+
+  const compactPilotMemory = useCallback(async () => {
+    if (!agentConfigId || !pilotSnapshot) return
+    setError(null)
+    setNotice(null)
+    try {
+      await apiClient('/api/admin/pilot/sessions/manual-compact', {
+        method: 'POST',
+        body: { sessionId: pilotSnapshot.session.id },
+      })
+      await loadPilotSnapshot(agentConfigId)
+      setNotice(copy.compactedNotice)
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.envelope.error.message : copy.compactFailed)
+    }
+  }, [agentConfigId, copy.compactFailed, copy.compactedNotice, loadPilotSnapshot, pilotSnapshot])
 
   const runSelectedScenario = useCallback(async (executionMode: 'fixture' | 'agentRuntime') => {
-    if (!agentConfigId || !selectedScenario) return
+    if (!agentConfigId || !selectedScenario || !pilotSnapshot) return
     setRunning(true)
     setError(null)
     setNotice(null)
@@ -349,9 +431,19 @@ export default function PilotLabPage() {
       if (executionMode === 'fixture' && observedJson.trim()) {
         observed = JSON.parse(observedJson) as ScenarioObservedEvidenceInput
       }
-      const result = await apiClient<{ receipt: ScenarioReceipt; validation: ScenarioValidationSummary }>(
-        `/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}/run`,
-        { method: 'POST', body: { agentConfigId, executionMode, observed } },
+      const result = await apiClient<PilotRunScenarioResponse>(
+        '/api/admin/pilot/validation/run-scenario',
+        {
+          method: 'POST',
+          body: {
+            sessionId: pilotSnapshot.session.id,
+            agentConfigId,
+            scenarioName: selectedScenario.name,
+            executionMode,
+            observed,
+            todoItemId: activeValidationTodo?.id,
+          },
+        },
       )
       setReceipts((prev) => [result.data.receipt, ...prev.filter((receipt) => receipt.runId !== result.data.receipt.runId)])
       setSelectedReceiptRunId(result.data.receipt.runId)
@@ -359,15 +451,84 @@ export default function PilotLabPage() {
       addMessage({
         role: 'pilot',
         tone: result.data.receipt.status === 'pass' ? 'success' : 'warning',
-        content: executionMode === 'agentRuntime' ? copy.runtimeRunDone(result.data.receipt.status) : copy.fixtureRunDone(result.data.receipt.status),
+        content: `${executionMode === 'agentRuntime' ? copy.runtimeRunDone(result.data.receipt.status) : copy.fixtureRunDone(result.data.receipt.status)} ${result.data.triage.nextRecommendedStep}`,
         streaming: true,
       })
+      await loadPilotSnapshot(agentConfigId)
     } catch (err) {
       setError(err instanceof SyntaxError ? copy.invalidObservedJson(err.message) : err instanceof ApiClientError ? err.envelope.error.message : copy.failedToRunScenario)
     } finally {
       setRunning(false)
     }
-  }, [addMessage, agentConfigId, copy.failedToRunScenario, copy.fixtureRunDone, copy.invalidObservedJson, copy.runtimeRunDone, observedJson, selectedScenario])
+  }, [activeValidationTodo?.id, addMessage, agentConfigId, copy.failedToRunScenario, copy.fixtureRunDone, copy.invalidObservedJson, copy.runtimeRunDone, loadPilotSnapshot, observedJson, pilotSnapshot, selectedScenario])
+
+  const draftFixFromSelectedReceipt = useCallback(async () => {
+    if (!agentConfigId || !pilotSnapshot || !selectedReceipt || selectedReceipt.status === 'pass') return
+    setFixingReceipt(true)
+    setError(null)
+    setNotice(null)
+    setProposal(null)
+    setAccepted(false)
+    setProposalPhase('proposing')
+    try {
+      const result = await apiClient<PilotProposeReceiptFixResponse>('/api/admin/pilot/validation/propose-fix', {
+        method: 'POST',
+        body: {
+          sessionId: pilotSnapshot.session.id,
+          agentConfigId,
+          receiptRunId: selectedReceipt.runId,
+        },
+      })
+      const nextProposal = result.data.proposal as unknown as ConfigPilotProposal
+      setProposal(nextProposal)
+      setModelUsed(result.data.modelUsed)
+      setPromptVersion(result.data.promptVersion)
+      setProposalPhase('proposal')
+      await loadPilotSnapshot(agentConfigId)
+      addMessage({
+        role: 'pilot',
+        content: copy.draftedProposalMessage(nextProposal.title),
+        streaming: true,
+      })
+    } catch (err) {
+      setProposalPhase('idle')
+      setError(err instanceof ApiClientError ? err.envelope.error.message : copy.failedToDraftFix)
+      addMessage({
+        role: 'pilot',
+        tone: 'danger',
+        content: copy.failedToDraftFix,
+      })
+    } finally {
+      setFixingReceipt(false)
+    }
+  }, [addMessage, agentConfigId, copy.draftedProposalMessage, copy.failedToDraftFix, loadPilotSnapshot, pilotSnapshot, selectedReceipt])
+
+  const generateReleaseHandoff = useCallback(async () => {
+    if (!agentConfigId || !pilotSnapshot) return
+    setGeneratingHandoff(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await apiClient('/api/admin/pilot/release-handoffs/generate', {
+        method: 'POST',
+        body: {
+          sessionId: pilotSnapshot.session.id,
+          draftAgentConfigId: pilotSnapshot.session.agentConfigId ?? agentConfigId,
+        },
+      })
+      await loadPilotSnapshot(agentConfigId)
+      setNotice(copy.handoffGenerated)
+      addMessage({
+        role: 'pilot',
+        tone: 'success',
+        content: copy.handoffGenerated,
+      })
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.envelope.error.message : copy.handoffFailed)
+    } finally {
+      setGeneratingHandoff(false)
+    }
+  }, [addMessage, agentConfigId, copy.handoffFailed, copy.handoffGenerated, loadPilotSnapshot, pilotSnapshot])
 
   if (activeTab === 'playground') {
     return (
@@ -469,6 +630,8 @@ export default function PilotLabPage() {
 
           <ControlPanel
             context={context}
+            pilotSnapshot={pilotSnapshot}
+            pilotSnapshotLoading={pilotSnapshotLoading}
             scenarios={scenarios}
             selectedScenario={selectedScenario}
             setSelectedScenarioName={setSelectedScenarioName}
@@ -489,11 +652,16 @@ export default function PilotLabPage() {
             observedJson={observedJson}
             setObservedJson={setObservedJson}
             running={running}
+            fixingReceipt={fixingReceipt}
+            generatingHandoff={generatingHandoff}
             onReviewDiff={reviewDiff}
             onReject={rejectProposal}
-            onAccept={acceptProposal}
+            onAccept={(checked) => { void acceptProposal(checked) }}
             onApply={applyProposal}
             onRunScenario={runSelectedScenario}
+            onDraftFixFromReceipt={draftFixFromSelectedReceipt}
+            onManualCompact={compactPilotMemory}
+            onGenerateHandoff={generateReleaseHandoff}
             onUseDefaultPrompt={() => {
               setComposer(DEFAULT_PROMPT[locale])
               void proposeFromPrompt(DEFAULT_PROMPT[locale])
@@ -594,6 +762,8 @@ function QuickPromptRow({ disabled, onSelect }: { disabled: boolean; onSelect: (
 
 function ControlPanel({
   context,
+  pilotSnapshot,
+  pilotSnapshotLoading,
   scenarios,
   selectedScenario,
   setSelectedScenarioName,
@@ -614,14 +784,21 @@ function ControlPanel({
   observedJson,
   setObservedJson,
   running,
+  fixingReceipt,
+  generatingHandoff,
   onReviewDiff,
   onReject,
   onAccept,
   onApply,
   onRunScenario,
+  onDraftFixFromReceipt,
+  onManualCompact,
+  onGenerateHandoff,
   onUseDefaultPrompt,
 }: {
   context: ConfigPilotContextResponse | null
+  pilotSnapshot: PilotSessionSnapshot | null
+  pilotSnapshotLoading: boolean
   scenarios: SavedScenario[]
   selectedScenario: SavedScenario | null
   setSelectedScenarioName: (name: string) => void
@@ -642,11 +819,16 @@ function ControlPanel({
   observedJson: string
   setObservedJson: (value: string) => void
   running: boolean
+  fixingReceipt: boolean
+  generatingHandoff: boolean
   onReviewDiff: () => void
   onReject: () => void
   onAccept: (checked: boolean) => void
   onApply: () => void
   onRunScenario: (executionMode: 'fixture' | 'agentRuntime') => void
+  onDraftFixFromReceipt: () => void
+  onManualCompact: () => void
+  onGenerateHandoff: () => void
   onUseDefaultPrompt: () => void
 }) {
   const { locale } = useConsoleLocale()
@@ -668,6 +850,14 @@ function ControlPanel({
           <p className="mt-4 text-[13px] text-[var(--color-text-tertiary)]">{isZh ? '正在加载 ConfigPilot 上下文。' : 'Loading ConfigPilot context.'}</p>
         )}
       </section>
+
+      <PilotStatePanel
+        snapshot={pilotSnapshot}
+        loading={pilotSnapshotLoading}
+        onManualCompact={onManualCompact}
+        onGenerateHandoff={onGenerateHandoff}
+        generatingHandoff={generatingHandoff}
+      />
 
       <section className="intera-q2-panel overflow-hidden">
         <div className="border-b border-[var(--color-border-subtle)] px-4 py-3">
@@ -753,11 +943,187 @@ function ControlPanel({
             <textarea value={observedJson} onChange={(event) => setObservedJson(event.target.value)} rows={5} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 py-2 font-mono text-[11px] leading-4 text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
           </label>
           <ValidationTruthBlock validation={validation} latestRuntimeReceipt={latestRuntimeReceipt} latestFixtureReceipt={latestFixtureReceipt} />
+          {selectedReceipt && selectedReceipt.status !== 'pass' ? (
+            <button
+              type="button"
+              onClick={onDraftFixFromReceipt}
+              disabled={fixingReceipt || !context?.permissions.canPropose}
+              className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-amber-200 bg-amber-50 px-3 text-[13px] font-medium text-amber-800 disabled:opacity-50"
+            >
+              {fixingReceipt ? <Loader2 size={15} className="animate-spin" /> : <FileDiff size={15} />} {isZh ? '根据回执生成修复' : 'Draft fix from receipt'}
+            </button>
+          ) : null}
         </div>
       </section>
 
       <ScenarioReceiptPanel compact receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceiptRunId} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
     </aside>
+  )
+}
+
+function PilotStatePanel({
+  snapshot,
+  loading,
+  onManualCompact,
+  onGenerateHandoff,
+  generatingHandoff,
+}: {
+  snapshot: PilotSessionSnapshot | null
+  loading: boolean
+  onManualCompact: () => void
+  onGenerateHandoff: () => void
+  generatingHandoff: boolean
+}) {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
+  const currentBrief = snapshot?.buildBriefs.find((brief) => brief.isCurrent) ?? snapshot?.buildBriefs[0] ?? null
+  const currentPlan = snapshot?.todoPlans.find((plan) => plan.isCurrent) ?? snapshot?.todoPlans[0] ?? null
+  const latestTrace = snapshot?.inspectionTraces[0] ?? null
+  const currentHandoff = snapshot?.handoffs.find((handoff) => handoff.isCurrent) ?? snapshot?.handoffs[0] ?? null
+  return (
+    <section className="intera-q2-panel overflow-hidden">
+      <div className="border-b border-[var(--color-border-subtle)] px-4 py-3">
+        <PanelHeader icon={Database} title={isZh ? 'Pilot 状态' : 'Pilot state'} eyebrow={isZh ? '持久化事实' : 'Durable truth'} />
+      </div>
+      <div className="grid gap-4 p-4">
+        {snapshot ? (
+          <>
+            <div className="grid gap-2 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+              <ContextRow label={isZh ? '模式' : 'Current mode'} value={modeLabel(snapshot.session.currentMode, locale)} />
+              <ContextRow label={isZh ? '绑定' : 'Binding'} value={snapshot.session.bindingScope === 'draft_agent' ? (snapshot.session.agentConfigId ?? 'draft') : (snapshot.session.agentFamilyKey ?? 'pre-build')} />
+              <ContextRow label={isZh ? '记忆' : 'Memory'} value={snapshot.session.memoryDegraded ? (isZh ? '已降级' : 'degraded') : (isZh ? '健康' : 'healthy')} />
+              <ContextRow label={isZh ? '最新 Pilot 回执' : 'Latest Pilot receipt'} value={snapshot.session.latestReceiptRunId ?? (isZh ? '暂无' : 'none')} />
+              <ContextRow label={isZh ? 'Handoff' : 'Handoff'} value={currentHandoff ? currentHandoff.readinessVerdict : (isZh ? '暂无' : 'none')} />
+            </div>
+            <button
+              type="button"
+              onClick={onManualCompact}
+              disabled={!snapshot.session.memoryDegraded || !snapshot.permissions.canApply}
+              className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium text-[var(--color-text-primary)] disabled:opacity-50"
+              data-testid="pilot-manual-compact"
+            >
+              <RefreshCw size={15} /> {isZh ? '手动 compact' : 'Manual compact'}
+            </button>
+            <button
+              type="button"
+              onClick={onGenerateHandoff}
+              disabled={!snapshot.permissions.canGenerateHandoff || !snapshot.session.agentConfigId || generatingHandoff}
+              className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 border border-[rgba(53,127,124,0.22)] bg-[rgba(53,127,124,0.08)] px-3 text-[13px] font-medium text-[var(--color-accent-primary)] disabled:opacity-50"
+              data-testid="pilot-generate-handoff"
+            >
+              {generatingHandoff ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} {isZh ? '生成 release handoff' : 'Generate release handoff'}
+            </button>
+            <PilotBriefSummary brief={currentBrief} />
+            <PilotTodoPlanSummary plan={currentPlan} />
+            <PilotTraceSummary trace={latestTrace} />
+            <PilotHandoffSummary handoff={currentHandoff} />
+          </>
+        ) : (
+          <div className="rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-5 text-center text-[13px] text-[var(--color-text-tertiary)]">
+            {loading ? (isZh ? '正在加载 Pilot 状态。' : 'Loading Pilot state.') : (isZh ? '暂无 Pilot 状态。' : 'No Pilot state loaded.')}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function PilotBriefSummary({ brief }: { brief: AgentBuildBrief | null }) {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
+  return (
+    <PilotArtifactBlock icon={FileText} title={isZh ? '当前 brief' : 'Current brief'} empty={isZh ? '暂无 brief artifact' : 'No brief artifact'} hasContent={Boolean(brief)}>
+      {brief ? (
+        <>
+          <p className="font-medium text-[var(--color-text-primary)]">{brief.businessGoal || (isZh ? '目标未填写' : 'Goal not set')}</p>
+          <p>{isZh ? '状态' : 'Status'}: {brief.status} · {isZh ? '版本' : 'rev'} {brief.revision}</p>
+          {brief.openQuestions.length > 0 ? <p>{isZh ? '未决问题' : 'Open questions'}: {brief.openQuestions.join(', ')}</p> : null}
+        </>
+      ) : null}
+    </PilotArtifactBlock>
+  )
+}
+
+function PilotTodoPlanSummary({ plan }: { plan: PilotTodoPlan | null }) {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
+  return (
+    <PilotArtifactBlock icon={ListChecks} title={isZh ? '当前 TodoPlan' : 'Current TodoPlan'} empty={isZh ? '暂无 TodoPlan' : 'No TodoPlan'} hasContent={Boolean(plan)}>
+      {plan ? (
+        <div className="grid gap-1">
+          <p className="font-medium text-[var(--color-text-primary)]">{plan.title || (isZh ? '未命名计划' : 'Untitled plan')}</p>
+          {plan.items.length === 0 ? <p>{isZh ? '暂无条目' : 'No items'}</p> : null}
+          {plan.items.slice(0, 4).map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate">{item.title}</span>
+              <span className={`shrink-0 rounded-[var(--radius-control)] border px-1.5 py-0.5 text-[10px] font-semibold ${item.isRequired ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-tertiary)]'}`}>{item.status}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </PilotArtifactBlock>
+  )
+}
+
+function PilotTraceSummary({ trace }: { trace: PilotInspectionTrace | null }) {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
+  return (
+    <PilotArtifactBlock icon={Activity} title={isZh ? '最新 inspection trace' : 'Latest inspection trace'} empty={isZh ? '暂无 trace' : 'No trace'} hasContent={Boolean(trace)}>
+      {trace ? (
+        <>
+          <p className="font-medium text-[var(--color-text-primary)]">{trace.actionClass}</p>
+          <p>{trace.evidenceSufficient ? (isZh ? '证据充足' : 'Evidence sufficient') : (isZh ? '证据不足' : 'Evidence pending')} · {trace.steps.length} {isZh ? '步' : 'steps'}</p>
+          {trace.stopReason ? <p>{trace.stopReason}</p> : null}
+        </>
+      ) : null}
+    </PilotArtifactBlock>
+  )
+}
+
+function PilotHandoffSummary({ handoff }: { handoff: PilotHandoff | null }) {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
+  return (
+    <PilotArtifactBlock icon={ClipboardList} title={isZh ? 'Handoff' : 'Handoff'} empty={isZh ? '暂无 handoff' : 'No handoff'} hasContent={Boolean(handoff)}>
+      {handoff ? (
+        <>
+          <p className="font-medium text-[var(--color-text-primary)]">{handoff.readinessVerdict}</p>
+          <p>{handoff.handoffSummary}</p>
+          {handoff.blockers.length > 0 ? <p>{isZh ? '阻塞' : 'Blockers'}: {handoff.blockers.map((blocker) => blocker.code).join(', ')}</p> : null}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Link href="/build/release" className="intera-q2-button inline-flex h-8 items-center border border-[var(--color-border-subtle)] bg-white px-2 text-[11px] font-semibold text-[var(--color-accent-primary)]">
+              {isZh ? '打开 Release' : 'Open Release'}
+            </Link>
+            {handoff.referencedReceiptIds[0] ? <span className="inline-flex h-8 items-center rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 text-[11px] font-medium text-[var(--color-text-tertiary)]">{isZh ? '回执' : 'Receipt'} {handoff.referencedReceiptIds[0]}</span> : null}
+          </div>
+        </>
+      ) : null}
+    </PilotArtifactBlock>
+  )
+}
+
+function PilotArtifactBlock({
+  icon: Icon,
+  title,
+  empty,
+  hasContent,
+  children,
+}: {
+  icon: typeof ClipboardList
+  title: string
+  empty: string
+  hasContent: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-3 text-[12px] leading-5 text-[var(--color-text-secondary)]">
+      <div className="mb-2 flex items-center gap-2 text-[var(--color-text-primary)]">
+        <Icon size={14} className="text-[var(--color-accent-primary)]" />
+        <span className="font-semibold">{title}</span>
+      </div>
+      {hasContent ? children : <p className="text-[var(--color-text-tertiary)]">{empty}</p>}
+    </div>
   )
 }
 
@@ -855,6 +1221,17 @@ function proposalPhaseLabel(phase: ProposalPhase, locale: 'en' | 'zh') {
   if (phase === 'applying') return locale === 'zh' ? '正在应用草稿' : 'Applying draft'
   if (phase === 'applied') return locale === 'zh' ? '草稿已保存' : 'Draft saved'
   return locale === 'zh' ? '就绪' : 'Ready'
+}
+
+function modeLabel(mode: string, locale: 'en' | 'zh') {
+  const labels: Record<string, { en: string; zh: string }> = {
+    build_from_brief: { en: 'Build from brief', zh: '从 brief 构建' },
+    template_tailoring: { en: 'Template tailoring', zh: '模板适配' },
+    critique_existing_agent: { en: 'Critique existing agent', zh: '审查现有 Agent' },
+    validation_triage: { en: 'Validation triage', zh: '验证分诊' },
+    release_review: { en: 'Release review', zh: '发布审查' },
+  }
+  return labels[mode]?.[locale] ?? mode
 }
 
 function patchLabel(patch: ConfigPilotPatch): string {

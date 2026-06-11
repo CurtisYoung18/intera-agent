@@ -2,6 +2,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PilotSessionSnapshot, PilotTodoItemStatus } from '@intera/shared/contracts/pilot'
 
 const mockApiClient = vi.fn()
 let searchParams = new URLSearchParams()
@@ -113,6 +114,23 @@ const fixtureReceipt = {
   summary: 'Fixture expectations passed.',
 }
 
+const failedReceipt = {
+  ...runtimeReceipt,
+  runId: 'failed-run-1',
+  status: 'fail',
+  executionMode: 'agentRuntime',
+  summary: '1 of 6 expectations failed.',
+  checks: [
+    { name: 'tool:get_latest_deposit', passed: true },
+    { name: 'hook:conflict_requires_human', passed: false, code: 'hook_decision_missing', detail: 'Expected Hook decision for conflict_requires_human' },
+  ],
+  failureReasons: [{
+    code: 'hook_decision_missing',
+    message: 'Expected Hook decision for conflict_requires_human',
+    checkName: 'hook:conflict_requires_human',
+  }],
+}
+
 const runtimeValidation = {
   state: 'Validated',
   lastValidatedAt: runtimeReceipt.finishedAt,
@@ -135,8 +153,20 @@ const fixtureValidation = {
   overrideRequired: true,
 }
 
+const failedValidation = {
+  state: 'Validation failed',
+  lastReceiptId: failedReceipt.runId,
+  lastReceiptStatus: failedReceipt.status,
+  lastReceiptExecutionMode: failedReceipt.executionMode,
+  runtimeValidated: false,
+  runtimeValidatedAt: null,
+  overrideRequired: true,
+}
+
 const configPilotProposal = {
   id: 'proposal-1',
+  pilotProposalId: 'pilot-proposal-1',
+  baseDraftFingerprint: 'fingerprint-1',
   targetSurface: 'scenarios',
   title: 'Deposit handoff Scenario',
   summary: 'Creates a draft Scenario for provider evidence and human transfer.',
@@ -185,12 +215,173 @@ function contextResponse(validation: any = runtimeValidation) {
   }
 }
 
-function setupApi(mode: 'runtime' | 'fixture' = 'runtime') {
-  const receipt = mode === 'runtime' ? runtimeReceipt : fixtureReceipt
-  const validation = mode === 'runtime' ? runtimeValidation : fixtureValidation
+function pilotSnapshotResponse(memoryDegraded = true, latestReceiptRunId = 'run-1', todoStatus: PilotTodoItemStatus = 'active'): PilotSessionSnapshot {
+  return {
+    session: {
+      id: 'pilot-session-1',
+      orgId: 'default',
+      agentConfigId: 'agent-1',
+      agentFamilyKey: 'Gaming Support',
+      bindingScope: 'draft_agent',
+      createdByUserId: 'user-1',
+      activeEditorUserId: 'user-1',
+      status: 'in_progress',
+      title: 'Gaming Support v2 Pilot',
+      currentMode: 'critique_existing_agent',
+      summary: {
+        confirmedGoals: ['Support deposit and withdrawal escalations.'],
+        openQuestions: [],
+        nextRecommendedStep: 'Continue the current visible TodoPlan item by item.',
+      },
+      pinnedState: null,
+      currentBuildBriefId: 'brief-1',
+      currentTodoPlanId: 'plan-1',
+      currentActiveTodoItemId: 'todo-1',
+      latestProposalId: 'pilot-proposal-1',
+      latestReceiptRunId,
+      latestHandoffId: 'handoff-1',
+      memoryDegraded,
+      compactedAt: memoryDegraded ? null : '2026-06-09T00:05:00.000Z',
+      archivedAt: null,
+      isCurrent: true,
+      createdAt: '2026-06-09T00:00:00.000Z',
+      updatedAt: '2026-06-09T00:04:00.000Z',
+    },
+    permissions: { role: 'admin', canRead: true, canPropose: true, canAccept: true, canApply: true, canTakeOver: true, canGenerateHandoff: true, canPublish: false },
+    draftFingerprint: 'fingerprint-1',
+    messages: [{
+      id: 'msg-accept',
+      sessionId: 'pilot-session-1',
+      role: 'system',
+      kind: 'accept',
+      content: 'Proposal accepted.',
+      structuredPayload: { proposalId: 'pilot-proposal-1' },
+      createdByUserId: 'user-1',
+      createdAt: '2026-06-09T00:02:00.000Z',
+    }],
+    proposals: [],
+    todoPlans: [{
+      id: 'plan-1',
+      sessionId: 'pilot-session-1',
+      title: 'Template tailoring build plan',
+      isCurrent: true,
+      createdByUserId: 'user-1',
+      createdAt: '2026-06-09T00:01:00.000Z',
+      updatedAt: '2026-06-09T00:01:00.000Z',
+      items: [{
+        id: 'todo-1',
+        sessionId: 'pilot-session-1',
+        planId: 'plan-1',
+        type: 'config_change',
+        status: todoStatus,
+        title: 'Escalate provider conflicts',
+        description: 'Create Hook and Scenario coverage.',
+        isRequired: true,
+        visibleReason: 'Conflicting evidence reaches human support.',
+        latestProposalId: null,
+        latestReceiptRunId: todoStatus === 'completed' || todoStatus === 'blocked' ? latestReceiptRunId : null,
+        latestHandoffId: null,
+        targetScenarioName: 'deposit_missing_evidence',
+        metadata: null,
+        createdAt: '2026-06-09T00:01:00.000Z',
+        updatedAt: '2026-06-09T00:01:00.000Z',
+      }],
+    }],
+    handoffs: [{
+      id: 'handoff-1',
+      sessionId: 'pilot-session-1',
+      draftAgentConfigId: 'agent-1',
+      draftFingerprint: 'fingerprint-1',
+      handoffSummary: 'Runtime receipt still required.',
+      readinessVerdict: 'not_ready',
+      blockers: [{ code: 'runtime_receipt_missing', message: 'Run runtime validation before release review.' }],
+      risks: [],
+      referencedProposalIds: ['pilot-proposal-1'],
+      referencedReceiptIds: [],
+      coveredTodoItemIds: ['todo-1'],
+      isCurrent: true,
+      createdByUserId: 'user-1',
+      createdAt: '2026-06-09T00:04:00.000Z',
+      updatedAt: '2026-06-09T00:04:00.000Z',
+    }],
+    buildBriefs: [{
+      id: 'brief-1',
+      orgId: 'default',
+      agentFamilyKey: 'Gaming Support',
+      sessionId: 'pilot-session-1',
+      revision: 1,
+      status: 'confirmed',
+      businessGoal: 'Support deposit and withdrawal escalations.',
+      targetChannels: ['web-chat'],
+      supportedUseCases: ['deposit_status'],
+      outOfScopeUseCases: ['bonus_abuse'],
+      escalationPolicy: 'Escalate provider conflicts.',
+      requiredToolsAndIntegrations: ['order_status'],
+      toneAndResponseConstraints: ['evidence-first'],
+      validationExpectations: ['runtime receipt required'],
+      openQuestions: [],
+      isCurrent: true,
+      confirmedAt: '2026-06-09T00:01:00.000Z',
+      confirmedByUserId: 'user-1',
+      supersededAt: null,
+      supersededById: null,
+      createdByUserId: 'user-1',
+      createdAt: '2026-06-09T00:01:00.000Z',
+      updatedAt: '2026-06-09T00:01:00.000Z',
+    }],
+    templateRecommendations: [],
+    templateTailoringPlans: [],
+    scratchBuildPlans: [],
+    inspectionTraces: [{
+      id: 'trace-1',
+      orgId: 'default',
+      sessionId: 'pilot-session-1',
+      actionClass: 'proposal',
+      targetObjectRef: { type: 'template_tailoring_plan', id: 'tailoring-1' },
+      steps: [{
+        toolFamily: 'inspect_config_surface',
+        target: 'hooks',
+        visibility: 'metadata_only',
+        summary: 'Hook surface needs provider-conflict tailoring.',
+        evidenceSufficientAfterStep: true,
+      }],
+      evidenceSufficient: true,
+      stopReason: 'Target surface and validation need are known.',
+      createdByUserId: 'user-1',
+      createdAt: '2026-06-09T00:03:00.000Z',
+    }],
+  }
+}
+
+function setupApi(mode: 'runtime' | 'fixture' | 'failed' = 'runtime') {
+  const receipt = mode === 'runtime' ? runtimeReceipt : mode === 'fixture' ? fixtureReceipt : failedReceipt
+  const validation = mode === 'runtime' ? runtimeValidation : mode === 'fixture' ? fixtureValidation : failedValidation
+  let snapshot = pilotSnapshotResponse(true)
   mockApiClient.mockImplementation(async (url: string, options?: any) => {
     if (url === '/api/admin/config-pilot/context?agentConfigId=agent-1') {
       return { data: contextResponse(validation) }
+    }
+    if (url === '/api/admin/pilot/sessions/current?agentConfigId=agent-1') {
+      return { data: snapshot }
+    }
+    if (url === '/api/admin/pilot/sessions/manual-compact' && options?.method === 'POST') {
+      snapshot = pilotSnapshotResponse(false)
+      return { data: { session: snapshot.session } }
+    }
+    if (url === '/api/admin/pilot/release-handoffs/generate' && options?.method === 'POST') {
+      snapshot = {
+        ...snapshot,
+        session: { ...snapshot.session, latestHandoffId: 'handoff-ready', status: 'handoff_ready' },
+        handoffs: [{
+          ...snapshot.handoffs[0],
+          id: 'handoff-ready',
+          handoffSummary: 'Pilot release handoff for Gaming Support v2. Changed surfaces: hooks. Validation: Validated with runtime-backed receipt.',
+          readinessVerdict: 'ready_for_release_review',
+          blockers: [],
+          referencedReceiptIds: ['run-1'],
+        }],
+      }
+      return { data: { handoff: snapshot.handoffs[0] } }
     }
     if (url === '/api/admin/scenarios?agentConfigId=agent-1') {
       return { data: { scenarios: [scenario], receipts: [receipt], validation } }
@@ -201,6 +392,16 @@ function setupApi(mode: 'runtime' | 'fixture' = 'runtime') {
           proposal: configPilotProposal,
           modelUsed: 'config-pilot-test-model',
           promptVersion: 'config-pilot.p1.v1',
+        },
+      }
+    }
+    if (url === '/api/admin/pilot/proposals/pilot-proposal-1/accept' && options?.method === 'POST') {
+      return {
+        data: {
+          proposal: {
+            id: 'pilot-proposal-1',
+            status: 'accepted',
+          },
         },
       }
     }
@@ -223,14 +424,53 @@ function setupApi(mode: 'runtime' | 'fixture' = 'runtime') {
         },
       }
     }
-    if (url === '/api/admin/scenarios/deposit_missing_evidence/run' && options?.method === 'POST') {
+    if (url === '/api/admin/pilot/validation/run-scenario' && options?.method === 'POST') {
       const nextReceipt = options.body.executionMode === 'fixture' ? { ...fixtureReceipt, runId: 'fixture-run-2' } : { ...runtimeReceipt, runId: 'run-2' }
+      const nextValidation = nextReceipt.executionMode === 'agentRuntime'
+        ? { ...runtimeValidation, lastReceiptId: nextReceipt.runId, lastRuntimeReceiptId: nextReceipt.runId, runtimeValidatedAt: nextReceipt.completedAt }
+        : { ...fixtureValidation, lastReceiptId: nextReceipt.runId }
+      snapshot = pilotSnapshotResponse(true, nextReceipt.runId, nextReceipt.executionMode === 'agentRuntime' ? 'completed' : 'active')
       return {
         data: {
           receipt: nextReceipt,
-          validation: nextReceipt.executionMode === 'agentRuntime'
-            ? { ...runtimeValidation, lastReceiptId: nextReceipt.runId, runtimeValidatedAt: nextReceipt.completedAt }
-            : { ...fixtureValidation, lastReceiptId: nextReceipt.runId },
+          validation: nextValidation,
+          triage: {
+            scenarioName: nextReceipt.scenarioName,
+            receiptRunId: nextReceipt.runId,
+            status: nextReceipt.status,
+            executionMode: nextReceipt.executionMode,
+            validationState: nextValidation.state,
+            runtimeBacked: nextReceipt.executionMode === 'agentRuntime',
+            releaseReadinessEffect: nextReceipt.executionMode === 'agentRuntime' ? 'restores_runtime_validation' : 'debug_only_fixture',
+            summary: `${nextReceipt.executionMode} receipt ${nextReceipt.status}.`,
+            nextRecommendedStep: nextReceipt.executionMode === 'agentRuntime'
+              ? 'Use this runtime-backed receipt in the release handoff after closing any remaining required Pilot todos.'
+              : 'Treat this as debugging evidence only; run the same named Scenario in runtime-backed mode before release review.',
+            failureReasons: [],
+          },
+          todoItem: snapshot.todoPlans[0].items[0],
+          inspectionTrace: snapshot.inspectionTraces[0],
+        },
+      }
+    }
+    if (url === '/api/admin/pilot/validation/propose-fix' && options?.method === 'POST') {
+      snapshot = {
+        ...snapshot,
+        session: { ...snapshot.session, latestProposalId: 'pilot-proposal-fix', currentMode: 'validation_triage' },
+      }
+      return {
+        data: {
+          proposal: {
+            ...configPilotProposal,
+            id: 'proposal-fix',
+            pilotProposalId: 'pilot-proposal-fix',
+            title: 'Fix failed receipt',
+            summary: 'Drafts a minimal fix from the failed receipt.',
+          },
+          modelUsed: 'config-pilot-test-model',
+          promptVersion: 'config-pilot.p1.v1',
+          sourceReceiptRunId: options.body.receiptRunId,
+          inspectionTrace: snapshot.inspectionTraces[0],
         },
       }
     }
@@ -277,6 +517,42 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     expect(screen.getByLabelText('Message U-Pilot')).toBeTruthy()
     expect(await screen.findAllByText('Current context')).toBeTruthy()
     expect(mockApiClient.mock.calls[0][0]).toBe('/api/admin/config-pilot/context?agentConfigId=agent-1')
+  }, 10000)
+
+  it('shows durable Pilot session artifacts and manual compact state', async () => {
+    await renderPage()
+
+    expect(await screen.findByText('Pilot state')).toBeTruthy()
+    expect(await screen.findByText('Critique existing agent')).toBeTruthy()
+    expect(await screen.findByText('Support deposit and withdrawal escalations.')).toBeTruthy()
+    expect(await screen.findByText('Template tailoring build plan')).toBeTruthy()
+    expect(await screen.findByText('Escalate provider conflicts')).toBeTruthy()
+    expect(await screen.findByText('proposal')).toBeTruthy()
+    expect((await screen.findAllByText(textIncludes('runtime_receipt_missing'))).length).toBeGreaterThan(0)
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('pilot-manual-compact'))
+    })
+    await waitFor(() => {
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/pilot/sessions/manual-compact' && options?.method === 'POST')).toBe(true)
+    })
+    expect(await screen.findByText('Pilot session memory compacted.')).toBeTruthy()
+  }, 10000)
+
+  it('generates a Release handoff from durable Pilot state', async () => {
+    await renderPage()
+    await screen.findByText('Pilot state')
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('pilot-generate-handoff'))
+    })
+
+    await waitFor(() => {
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/pilot/release-handoffs/generate' && options?.method === 'POST')).toBe(true)
+    })
+    expect((await screen.findAllByText('Release handoff generated.')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('ready_for_release_review')).length).toBeGreaterThan(0)
+    expect(await screen.findByRole('link', { name: 'Open Release' })).toBeTruthy()
   }, 10000)
 
   it('renders playground as a compact workspace without compatibility chrome', async () => {
@@ -328,6 +604,9 @@ describe('PilotLabPage U-Pilot cockpit', () => {
       fireEvent.click(screen.getByLabelText(/I reviewed the diff/))
     })
 
+    await waitFor(() => {
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/pilot/proposals/pilot-proposal-1/accept' && options?.method === 'POST')).toBe(true)
+    })
     await waitFor(() => expect(applyButton).toHaveProperty('disabled', false))
   }, 10000)
 
@@ -341,6 +620,9 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     })
     await act(async () => {
       fireEvent.click(screen.getByLabelText(/I reviewed the diff/))
+    })
+    await waitFor(() => {
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/pilot/proposals/pilot-proposal-1/accept' && options?.method === 'POST')).toBe(true)
     })
     await act(async () => {
       fireEvent.click(screen.getByTestId('config-pilot-apply-draft'))
@@ -366,5 +648,50 @@ describe('PilotLabPage U-Pilot cockpit', () => {
 
     expect(await screen.findAllByText('Runtime validated')).toBeTruthy()
     expect(await screen.findByText('Agent runtime')).toBeTruthy()
+  }, 10000)
+
+  it('runs Scenario validation through the durable Pilot workflow route', async () => {
+    await renderPage()
+    await screen.findByText('Scenario controls')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Run runtime/ }))
+    })
+
+    await waitFor(() => {
+      const call = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/pilot/validation/run-scenario' && options?.method === 'POST')
+      expect(call).toBeTruthy()
+      expect(call?.[1].body).toMatchObject({
+        sessionId: 'pilot-session-1',
+        agentConfigId: 'agent-1',
+        scenarioName: 'deposit_missing_evidence',
+        executionMode: 'agentRuntime',
+        todoItemId: 'todo-1',
+      })
+    })
+    expect((await screen.findAllByText(textIncludes('Use this runtime-backed receipt'))).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('run-2')).length).toBeGreaterThan(0)
+  }, 10000)
+
+  it('drafts a follow-up proposal from a failed selected receipt', async () => {
+    setupApi('failed')
+    await renderPage()
+    await screen.findByText('Scenario controls')
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Draft fix from receipt/ }))
+    })
+
+    await waitFor(() => {
+      const call = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/pilot/validation/propose-fix' && options?.method === 'POST')
+      expect(call).toBeTruthy()
+      expect(call?.[1].body).toMatchObject({
+        sessionId: 'pilot-session-1',
+        agentConfigId: 'agent-1',
+        receiptRunId: 'failed-run-1',
+      })
+    })
+    expect(await screen.findByText('Fix failed receipt')).toBeTruthy()
+    expect(await screen.findByText('Drafts a minimal fix from the failed receipt.')).toBeTruthy()
   }, 10000)
 })

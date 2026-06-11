@@ -90,6 +90,30 @@ function buildContextCookies(cookie) {
   }))
 }
 
+function waitUntilForRoute(route) {
+  return 'domcontentloaded'
+}
+
+async function waitForRouteReady(page, route) {
+  if (route === '/build/pilot-lab') {
+    await page.getByRole('heading', { name: 'Pilot state' }).waitFor({ timeout: 15000 })
+    return
+  }
+  if (route === '/build/pilot-lab?tab=playground') {
+    await page.getByRole('heading', { name: 'Runtime test desk' }).waitFor({ timeout: 15000 })
+    return
+  }
+  if (route.startsWith('/operate/conversations/cases/')) {
+    await page.getByRole('heading', { name: /Timeline & evidence/ }).waitFor({ timeout: 15000 })
+    return
+  }
+  if (route.startsWith('/operate/handoff/') && route !== '/operate/handoff') {
+    await page.getByRole('heading', { name: /User profile/ }).waitFor({ timeout: 15000 })
+    return
+  }
+  await page.locator('main').waitFor({ state: 'attached', timeout: 15000 }).catch(() => undefined)
+}
+
 async function discoverDetailRoutes(cookie) {
   const headers = { cookie: buildCookieHeader(cookie) }
   const detailRoutes = []
@@ -126,7 +150,8 @@ async function smokeRoute(page, route, width, height) {
     pageErrors.push(String(err))
   })
 
-  const response = await page.goto(`${BASE_URL}${route}`, { waitUntil: 'networkidle' })
+  const response = await page.goto(`${BASE_URL}${route}`, { timeout: 60000, waitUntil: waitUntilForRoute(route) })
+  await waitForRouteReady(page, route)
   const status = response?.status() ?? null
   const finalUrl = page.url()
   const redirectedToLogin = finalUrl.includes('/login')
@@ -164,7 +189,7 @@ async function smokeLegacyRedirect(page, route, expectedPathname) {
     pageErrors.push(String(err))
   })
 
-  const response = await page.goto(`${BASE_URL}${route}`, { waitUntil: 'networkidle' })
+  const response = await page.goto(`${BASE_URL}${route}`, { timeout: 60000, waitUntil: 'domcontentloaded' })
   const status = response?.status() ?? null
   const finalUrl = page.url()
   const finalPathname = new URL(finalUrl).pathname

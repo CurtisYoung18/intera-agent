@@ -91,6 +91,7 @@ export const configPilotContextResponseSchema = z.object({
   selected: configPilotAgentVersionSummarySchema,
   active: configPilotAgentVersionSummarySchema.nullable(),
   draft: configPilotAgentVersionSummarySchema.nullable(),
+  draftFingerprint: z.string(),
   permissions: configPilotPermissionsSchema,
   lockedCapabilities: z.array(lockedCapabilitySchema),
   configuration: z.record(z.unknown()),
@@ -242,6 +243,8 @@ export type ConfigPilotPatch = z.infer<typeof configPilotPatchSchema>
 
 export const configPilotProposalSchema = z.object({
   id: z.string().optional(),
+  pilotProposalId: z.string().optional(),
+  baseDraftFingerprint: z.string().optional(),
   targetSurface: configPilotSurfaceSchema,
   title: z.string().min(1),
   summary: z.string().min(1),

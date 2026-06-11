@@ -210,6 +210,7 @@ export async function proposeConfigPilotChange(
   const proposal: ConfigPilotProposal = {
     ...parsed.data,
     id: parsed.data.id ?? `configpilot_${Date.now()}`,
+    baseDraftFingerprint: context.draftFingerprint,
     diffGroups: buildProposalDiffGroups(context, parsed.data),
   }
 
