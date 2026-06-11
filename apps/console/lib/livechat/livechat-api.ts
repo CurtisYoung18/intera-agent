@@ -252,15 +252,3 @@ export async function listGroups(
   if (Array.isArray(res)) return res as Array<{ id: number; name: string; agents_count: number }>
   return (res as { groups?: Array<{ id: number; name: string; agents_count: number }> }).groups ?? []
 }
-
-export async function updateChatProperties(
-  chatId: string, props: Record<string, string>, botAccessToken: string, licenseId: string,
-  region?: string, authType?: string, accountId?: string,
-): Promise<void> {
-  // LiveChat namespaced properties: { intera: { case_id: "xxx", ... } }
-  const interaProps: Record<string, string> = {}
-  for (const [k, v] of Object.entries(props)) {
-    interaProps[k] = v
-  }
-  await lcPost('update_chat_properties', { id: chatId, properties: { intera: interaProps } }, botAccessToken, licenseId, region, authType, accountId)
-}

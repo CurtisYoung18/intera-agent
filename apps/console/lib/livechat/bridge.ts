@@ -8,7 +8,7 @@ import type { RenderContext } from '@intera/shared/channels/renderer'
 import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 import {
   sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
-  sendImage, sendSystemMessage, setTypingIndicator, transferChat, updateChatProperties,
+  sendImage, sendSystemMessage, setTypingIndicator, transferChat,
   deactivateChat,
 } from './livechat-api'
 import { enqueueRetry } from './retry-queue'
@@ -144,8 +144,6 @@ export async function handleIncomingEvent(
   if (!session) {
     session = { chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
     await upsertSession(session)
-    // Claim ownership on first touch (§2.2)
-    updateChatProperties(chatId, { owner: 'intera' }, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
   }
 
   if (event.type === 'form_submit' && event.form?.caseId) {
@@ -250,11 +248,14 @@ export async function handleIncomingEvent(
   }
 
   let streamTruncated = true
+  let transferredToHuman = false
   try {
     for await (const sseEvent of parseSSEStream(response.body)) {
       const actions = livechatRenderer.render(sseEvent, renderCtx)
 
       for (const action of actions) {
+        if (transferredToHuman) continue
+
         try {
           switch (action.type) {
             case 'send_widget_payload':
@@ -282,19 +283,20 @@ export async function handleIncomingEvent(
               await setTypingIndicator(chatId, action.isTyping, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'transfer_chat': {
+              const pendingText = (await flushTextBuffer(chatId)).trimStart()
+              if (pendingText.trim()) {
+                await sendTextMessage(chatId, pendingText, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              }
               const target = action.group
                 ? { type: 'group' as const, ids: [action.group] }
                 : config.transferGroupId != null
                   ? { type: 'group' as const, ids: [config.transferGroupId] }
                   : { type: 'queue' as const }
               await transferChat(chatId, target, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
-              await updateChatProperties(chatId, { case_id: action.caseId }, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              transferredToHuman = true
               await updateSessionState(chatId, 'transferred')
               break
             }
-            case 'update_chat_properties':
-              await updateChatProperties(chatId, action.props, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
-              break
             case 'buffer_text':
               await appendTextBuffer(chatId, action.delta)
               break
@@ -343,8 +345,10 @@ export async function handleIncomingEvent(
     }
   } finally {
     // Ensure typing indicator is off
-    setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
-    await updateSessionState(chatId, 'idle')
+    if (!transferredToHuman) {
+      setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
+      await updateSessionState(chatId, 'idle')
+    }
   }
 
   // channel health tracking removed (markChannelHealthy)

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MockLiveChatServer } from '../mocks/livechat-api-mock'
 import {
   sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
-  sendImage, sendSystemMessage, setTypingIndicator, transferChat, updateChatProperties,
+  sendImage, sendSystemMessage, setTypingIndicator, transferChat,
 } from '../../livechat-api'
 
 describe('livechat-api', () => {
@@ -141,14 +141,6 @@ describe('livechat-api', () => {
     it('transfers to specific group', async () => {
       await transferChat('chat1', { type: 'group', ids: [5] }, token, license)
       expect(server.calls[0]!.body).toMatchObject({ target: { type: 'group', ids: [5] } })
-    })
-  })
-
-  describe('updateChatProperties', () => {
-    it('prefixes keys with intera.', async () => {
-      await updateChatProperties('chat1', { case_id: 'c1' }, token, license)
-      const props = (server.calls[0]!.body as Record<string, unknown>).properties as Record<string, unknown>
-      expect(props).toHaveProperty('intera.case_id')
     })
   })
 })
