@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { createMemoryPersistence } from '../../persistence-port'
-import { isSafeInDryRun, dryRunMockResult, dispatchCaseAgentMockResult } from '../../dry-run-executor'
+import { isSafeInDryRun, dryRunMockResult } from '../../dry-run-executor'
 import { StreamingToolExecutor } from '../../streaming-tool-executor'
 import type { ToolDefinition } from '@intera/shared/types'
 
@@ -72,14 +72,6 @@ describe('Playground safety invariants', () => {
     expect(result.output).toContain('intercepted')
     expect(result.latencyMs).toBe(1)
     expect(result.name).toBe('create_human_task')
-  })
-
-  it('dispatch_case_agent mock result describes inline Procedure start', () => {
-    const result = dispatchCaseAgentMockResult('deposit_issue')
-    expect(result.output).toContain('_dryRun')
-    expect(result.output).toContain('durableCaseCreated')
-    expect(result.output).toContain('Procedure')
-    expect(result.output).toContain('deposit_issue')
   })
 
   // ── Dispatch order — operational before unknown ──

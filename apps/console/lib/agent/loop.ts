@@ -342,7 +342,6 @@ export class AgentLoop {
       const toolExecutor = new StreamingToolExecutor(
         this.toolRouter.getToolDefinitions(),
         (toolUse, status, renderHints) => {
-          if (toolUse.name === 'dispatch_case_agent') return
           const skillDef = this.toolRouter.getTool(toolUse.name)
           sendEvent({
             type: status === 'executing' ? 'tool_executing' : 'tool_result',
@@ -1053,7 +1052,7 @@ export class AgentLoop {
       }
 
       // ── Phase 2: Delegate case terminal tools to CaseAgentLoop ─────────────
-      // Handles: create_human_task, finalize_procedure/finalize_case compatibility, finalize_consultation.
+      // Handles: create_human_task, finalize_procedure, finalize_consultation.
       if (this.caseLoop) {
         const nudgeBox = { value: this.nudgeCount }
         const caseToolResult = await this.caseLoop.handleCaseTerminalTools(
@@ -1454,10 +1453,8 @@ export class AgentLoop {
   private shouldPersistToolResultToChatMemory(toolName: string): boolean {
     return ![
       'start_procedure',
-      'dispatch_case_agent',
       'reconcile_procedure_input',
       'finalize_procedure',
-      'finalize_case',
       'remember',
       'read_chat_memory',
       'read_user_profile',
@@ -1467,7 +1464,6 @@ export class AgentLoop {
   private shouldRecordProcedureEvidence(toolName: string): boolean {
     return ![
       'start_procedure',
-      'dispatch_case_agent',
       'reconcile_procedure_input',
       'remember',
       'read_chat_memory',

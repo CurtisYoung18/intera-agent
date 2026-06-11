@@ -4,6 +4,7 @@ import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { getScenarioValidationSummary, listScenarios } from '@/lib/scenarios/store'
 import {
   CHANNEL_TOOL_NAMES,
+  RETIRED_TOOL_NAMES,
   SPECIAL_TOOL_NAMES,
   SYSTEM_TOOL_NAMES,
 } from '@/lib/tool-classifications'
@@ -243,7 +244,8 @@ export async function getConfigPilotContext(
   if (!selectedSummary) throw new Error('Agent config summary could not be built')
 
   const canApply = session.role === 'admin' || session.role === 'owner'
-  const serializedTools = tools.map(serializeTool)
+  const visibleTools = tools.filter((tool) => !RETIRED_TOOL_NAMES.has(String(tool.name)))
+  const serializedTools = visibleTools.map(serializeTool)
 
   return configPilotContextResponseSchema.parse({
     agentConfigId,
@@ -260,7 +262,7 @@ export async function getConfigPilotContext(
     },
     lockedCapabilities: [
       ...RUNTIME_LOCKED_CAPABILITIES,
-      ...lockedCapabilitiesFromTools(tools),
+      ...lockedCapabilitiesFromTools(visibleTools),
     ],
     configuration: {
       brain: {

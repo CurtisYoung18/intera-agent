@@ -8,8 +8,6 @@ export const SYSTEM_TOOL_NAMES = new Set([
   'reconcile_procedure_input',
   'finalize_procedure',
   'remember',
-  'dispatch_case_agent',
-  'finalize_case',
   'read_chat_memory',
   'read_user_profile',
 ])
@@ -23,4 +21,10 @@ export const CHANNEL_TOOL_NAMES = new Set([
 /** Special tools — configured in dedicated pages (not Tools page). */
 export const SPECIAL_TOOL_NAMES = new Set<string>([
   // kb_hybrid_retrieve removed — replaced by dynamic kb_search_* tools
+])
+
+/** Retired tool names kept only for filtering old DB rows / historical data. */
+export const RETIRED_TOOL_NAMES = new Set([
+  'dispatch_case_agent',
+  'finalize_case',
 ])

@@ -58,7 +58,7 @@ const h = vi.hoisted(() => {
   }
   const toolsByAgent: Record<string, any[]> = {
     agent_1: [
-      { id: 'tool_1', agentConfigId: 'agent_1', name: 'dispatch_case_agent', description: 'System route', mode: 'system_managed', inputSchema: '{}', outputSchema: '{}', headers: null, enabled: true, timeoutMs: 8000 },
+      { id: 'tool_1', agentConfigId: 'agent_1', name: 'start_procedure', description: 'System route', mode: 'system_managed', inputSchema: '{}', outputSchema: '{}', headers: null, enabled: true, timeoutMs: 8000 },
       { id: 'tool_2', agentConfigId: 'agent_1', name: 'get_latest_deposit', description: 'Deposit lookup', mode: 'http', inputSchema: '{}', outputSchema: '{}', headers: '{"Authorization":"Bearer raw"}', enabled: true, timeoutMs: 8000 },
     ],
   }
@@ -300,7 +300,7 @@ describe('ConfigPilot APIs', () => {
     expect(body.ok).toBe(true)
     expect(body.data.permissions).toMatchObject({ canRead: true, canApply: true, canPublish: false })
     expect(body.data.configuration.brain.gptbotsApiKey).toBe('{{secretRef:agent.gptbotsApiKey}}')
-    expect(body.data.configuration.tools.find((tool: any) => tool.name === 'dispatch_case_agent')).toMatchObject({ locked: true })
+    expect(body.data.configuration.tools.find((tool: any) => tool.name === 'start_procedure')).toMatchObject({ locked: true })
     expect(body.data.lockedCapabilities.some((capability: any) => capability.id === 'hook_engine')).toBe(true)
   })
 
@@ -364,7 +364,7 @@ describe('ConfigPilot APIs', () => {
       agentConfigId: 'agent_1',
       accepted: true,
       proposal: {
-        ...proposal([{ surface: 'tools', operation: 'update', target: { name: 'dispatch_case_agent' }, fields: { description: 'change protected tool' } }]),
+        ...proposal([{ surface: 'tools', operation: 'update', target: { name: 'start_procedure' }, fields: { description: 'change protected tool' } }]),
         targetSurface: 'tools',
       },
     }))
