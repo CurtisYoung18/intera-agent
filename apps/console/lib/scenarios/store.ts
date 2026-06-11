@@ -39,6 +39,7 @@ const REPO_ROOT_SEARCH_LIMIT = 8
 
 function isRepoRoot(dir: string): boolean {
   return existsSync(path.join(dir, 'package.json'))
+    && existsSync(path.join(dir, 'package-lock.json'))
     && existsSync(path.join(dir, 'apps/console/tsconfig.json'))
 }
 

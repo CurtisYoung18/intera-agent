@@ -16,6 +16,7 @@ function makeTempDir(prefix: string): string {
 function makeRepoRoot(root: string): void {
   mkdirSync(path.join(root, 'apps/console'), { recursive: true })
   writeFileSync(path.join(root, 'package.json'), '{}\n')
+  writeFileSync(path.join(root, 'package-lock.json'), '{}\n')
   writeFileSync(path.join(root, 'apps/console/tsconfig.json'), '{}\n')
 }
 
@@ -51,5 +52,19 @@ describe('scenario store path resolution', () => {
 
     expect(resolveScenarioStoreBaseDir(dir)).toBe(dir)
     expect(defaultScenarioStorePath(dir)).toBe(path.join(dir, '.intera-agent-runtime', 'scenarios.json'))
+  })
+
+  it('does not mistake a standalone bundle root for the repo root', () => {
+    const root = makeTempDir('intera-scenario-store-standalone-false-positive-')
+    makeRepoRoot(root)
+    const standaloneRoot = path.join(root, 'apps/console/.next/standalone')
+    mkdirSync(path.join(standaloneRoot, 'apps/console'), { recursive: true })
+    writeFileSync(path.join(standaloneRoot, 'package.json'), '{}\n')
+    writeFileSync(path.join(standaloneRoot, 'apps/console/tsconfig.json'), '{}\n')
+
+    expect(resolveScenarioStoreBaseDir(path.join(standaloneRoot, 'apps/console'))).toBe(root)
+    expect(defaultScenarioStorePath(path.join(standaloneRoot, 'apps/console'))).toBe(
+      path.join(root, '.intera-agent-runtime', 'scenarios.json'),
+    )
   })
 })
