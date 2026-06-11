@@ -113,6 +113,7 @@ export class AgentLoop {
   private iterationCount = 0
   private nudgeCount = 0
   private pendingEscalation = false
+  private pendingHumanTaskEscalation: { taskId: string; queue: string } | null = null
   /** Counter for cadence-driven compaction (compactEveryNMessages). Reset after each compaction. */
   private userMessagesSinceLastCompact = 0
   private abortController: AbortController
@@ -1070,6 +1071,54 @@ export class AgentLoop {
         if (caseToolResult.type === 'continue') continue
       }
 
+      if (this.pendingHumanTaskEscalation) {
+        const { taskId, queue } = this.pendingHumanTaskEscalation
+        this.pendingHumanTaskEscalation = null
+
+        if (!fullText.trim()) {
+          const safeMessage = escalationMessageFor(latestUserText(this.messages))
+          const fallbackMessage: AssistantMessage = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: safeMessage,
+            createdAt: new Date(),
+            isStreaming: false,
+          }
+          this.messages.push(fallbackMessage)
+          sendEvent({
+            type: 'text_delta',
+            data: safeMessage,
+            timestamp: new Date().toISOString(),
+          })
+        }
+
+        sendEvent({
+          type: 'human_task_created',
+          data: { taskId, queue, status: 'pending' },
+          timestamp: new Date().toISOString(),
+        })
+        sendEvent({
+          type: 'escalated',
+          data: { reason: 'human_task_created', taskId, queue },
+          timestamp: new Date().toISOString(),
+        })
+        sendEvent({
+          type: 'message_stop',
+          data: { reason: 'waiting_human', stage: 'waiting_human' },
+          timestamp: new Date().toISOString(),
+        })
+
+        this.compactUserProfile().catch(() => {})
+        this.persistChatSession().catch(() => {})
+        return {
+          messages: this.messages,
+          caseStatus: 'waiting_human',
+          transition: 'waiting_human',
+          currentStage: 'waiting_human',
+          reason: 'human_task_created',
+        }
+      }
+
       sendEvent({
         type: 'message_stop',
         data: { reason: 'next_turn', stage: this.currentStage },
@@ -1210,6 +1259,46 @@ export class AgentLoop {
             },
           !final.ok,
         )
+      }
+
+      if (result.name === 'create_human_task' && !this.caseLoop) {
+        const queue = String(input.queue || 'general')
+        const question = String(input.question || 'Human task requested')
+        const taskFields = Array.isArray(input.fields) ? input.fields : undefined
+        const resolvedCaseType = this.deps.caseSchema?.type || 'general'
+
+        try {
+          await this.persistence.ensureCase({
+            id: this.deps.caseId,
+            orgId: this.deps.orgId,
+            userId: this.deps.userId,
+            type: resolvedCaseType,
+            status: 'waiting_human',
+            blocker: `Waiting for ${queue}`,
+            chatId: this.deps.chatId ?? this.deps.caseId,
+          })
+          this.chatMemory.setCaseStatus('waiting_human')
+          await this.persistence.saveMemory(this.deps.caseId, {
+            caseId: this.deps.caseId,
+            ...this.chatMemory.getDbFields(),
+            humanTaskStatus: 'pending',
+          })
+          const task = await this.persistence.createHumanTask({
+            caseId: this.deps.caseId,
+            queue,
+            question,
+            fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
+            status: 'pending',
+          })
+          await this.traceWriter.writeHumanTaskCreated(task.id, queue)
+          this.pendingHumanTaskEscalation = { taskId: task.id, queue }
+          this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending' })
+        } catch (error) {
+          console.error('[AgentLoop] Failed to persist create_human_task in general mode:', error)
+          this.replaceToolOutput(result, {
+            error: 'Unable to create the human task. Please retry or contact support.',
+          }, true)
+        }
       }
     }
   }
@@ -1503,11 +1592,22 @@ export class AgentLoop {
         blocker: `Stop Hook fallback: ${stopEval.results.map((r) => r.hookName).join(', ')}`,
         chatId: this.deps.chatId ?? this.deps.caseId,
       })
-      await this.persistence.createHumanTask({
+      await this.persistence.saveMemory(this.deps.caseId, {
+        caseId: this.deps.caseId,
+        ...this.chatMemory.getDbFields(),
+        humanTaskStatus: 'pending',
+      })
+      const task = await this.persistence.createHumanTask({
         caseId: this.deps.caseId,
         queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
         question: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
         status: 'pending',
+      })
+      await this.traceWriter.writeHumanTaskCreated(task.id, this.deps.caseSchema?.escalateOn?.[0] || 'general')
+      sendEvent({
+        type: 'human_task_created',
+        data: { taskId: task.id, queue: this.deps.caseSchema?.escalateOn?.[0] || 'general', status: 'pending' },
+        timestamp: new Date().toISOString(),
       })
     } catch (err) {
       console.error('[AgentLoop] Failed to create Stop Hook fallback human task:', err)

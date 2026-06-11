@@ -320,11 +320,22 @@ export async function processPendingHookToolCalls(
           blocker: `Hook escalation (${ptc.hookName}): ${ptc.reason}`,
           chatId: ctx.chatId ?? ctx.caseId,
         })
-        await ctx.persistence.createHumanTask({
+        await ctx.persistence.saveMemory(ctx.caseId, {
+          caseId: ctx.caseId,
+          ...ctx.chatMemory.getDbFields(),
+          humanTaskStatus: 'pending',
+        })
+        const task = await ctx.persistence.createHumanTask({
           caseId: ctx.caseId,
           queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
           question: `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
           status: 'pending',
+        })
+        await ctx.traceWriter.writeHumanTaskCreated(task.id, ctx.caseSchema?.escalateOn?.[0] || 'general')
+        sendEvent({
+          type: 'human_task_created',
+          data: { taskId: task.id, queue: ctx.caseSchema?.escalateOn?.[0] || 'general', status: 'pending' },
+          timestamp: new Date().toISOString(),
         })
       } catch (err) {
         console.error('[ToolInterceptor] Failed to auto-create human task from Hook:', err)
@@ -345,11 +356,22 @@ export async function processPendingHookToolCalls(
         blocker: `Hook escalation: ${escalatedReasons}`,
         chatId: ctx.chatId ?? ctx.caseId,
       })
-      await ctx.persistence.createHumanTask({
+      await ctx.persistence.saveMemory(ctx.caseId, {
+        caseId: ctx.caseId,
+        ...ctx.chatMemory.getDbFields(),
+        humanTaskStatus: 'pending',
+      })
+      const task = await ctx.persistence.createHumanTask({
         caseId: ctx.caseId,
         queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
         question: `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
         status: 'pending',
+      })
+      await ctx.traceWriter.writeHumanTaskCreated(task.id, ctx.caseSchema?.escalateOn?.[0] || 'general')
+      sendEvent({
+        type: 'human_task_created',
+        data: { taskId: task.id, queue: ctx.caseSchema?.escalateOn?.[0] || 'general', status: 'pending' },
+        timestamp: new Date().toISOString(),
       })
     } catch (err) {
       console.error('[ToolInterceptor] Failed to auto-create human task from Hook escalation:', err)

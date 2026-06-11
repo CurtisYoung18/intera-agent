@@ -275,7 +275,39 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.humanTasks).toHaveLength(1)
     expect(memory.humanTasks[0].question).toContain('review_lookup_result')
     expect(events.some((e) => e.type === 'tool_executing' && (e.data as { name?: string }).name === 'test_lookup')).toBe(true)
+    expect(events.some((e) => e.type === 'human_task_created')).toBe(true)
     expect(events.some((e) => e.type === 'escalated')).toBe(true)
+  })
+
+  it('explicit create_human_task in general mode creates a durable waiting_human handoff', async () => {
+    const engine = new HookEngine('agent_1')
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockToolUseStream('create_human_task', {
+        queue: 'general',
+        question: 'Customer requested a human specialist.',
+      }, 'tool_handoff'),
+    ])
+
+    const result = await loop.run('human agent please', sendEvent)
+
+    expect(result.transition).toBe('waiting_human')
+    expect(result.caseStatus).toBe('waiting_human')
+    expect(result.currentStage).toBe('waiting_human')
+    expect(memory.cases).toHaveLength(1)
+    expect(memory.cases[0].status).toBe('waiting_human')
+    expect(memory.cases[0].blocker).toBe('Waiting for general')
+    expect(memory.humanTasks).toHaveLength(1)
+    expect(memory.humanTasks[0].queue).toBe('general')
+    expect(memory.humanTasks[0].question).toContain('Customer requested a human specialist')
+    expect(memory.memories).toHaveLength(1)
+    expect(memory.memories[0].humanTaskStatus).toBe('pending')
+    expect(events.some((e) => e.type === 'human_task_created')).toBe(true)
+    expect(events.some((e) => e.type === 'escalated' && (e.data as { reason?: string }).reason === 'human_task_created')).toBe(true)
+    const streamedText = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).toContain('human specialist')
   })
 
   it('Stop block prevents the final answer and retries safely', async () => {
@@ -333,6 +365,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.humanTasks).toHaveLength(1)
     expect(memory.humanTasks[0].question).toContain('stop_requires_human:escalate')
     expect(memory.humanTasks[0].status).toBe('pending')
+    expect(events.some((event) => event.type === 'human_task_created')).toBe(true)
     expect(memory.traces.some((trace) => trace.actionType === 'loop_decision' && trace.title === 'Stop Hook fallback')).toBe(true)
     expect(events.some((event) => event.type === 'message_stop' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)
     expect(events.some((event) => event.type === 'escalated' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)
