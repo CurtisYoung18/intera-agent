@@ -85,7 +85,11 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
       }
 
       if (action === 'incoming_event') {
-        if (eventType === 'message' || eventType === 'system_message') {
+        if (eventType === 'system_message') {
+          return NextResponse.json({ ok: true, skipped: 'system_message' })
+        }
+
+        if (eventType === 'message') {
           const text = (event.text as string) || (event.system_message_text as string) || ''
           if (!text.trim()) return NextResponse.json({ ok: true, skipped: 'empty' })
 
