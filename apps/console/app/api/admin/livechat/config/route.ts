@@ -6,7 +6,11 @@ import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { getLiveChatConfig, upsertLiveChatConfig } from '@/lib/livechat/config-store'
+import {
+  getLiveChatConfigForFamily,
+  resolveLiveChatFamilyAnchorId,
+  upsertLiveChatConfigForFamily,
+} from '@/lib/livechat/config-store'
 import { z } from 'zod'
 
 const livechatConfigSchema = z.object({
@@ -33,6 +37,7 @@ export async function GET(request: NextRequest) {
         return apiOk({
           config: {
             agentConfigId: '',
+            webhookAgentConfigId: '',
             botAccessToken: '',
             licenseId: '',
             showSkillStatus: true,
@@ -42,13 +47,15 @@ export async function GET(request: NextRequest) {
       }
 
       await assertAgentInOrg(repo, agentConfigId)
+      const webhookAgentConfigId = await resolveLiveChatFamilyAnchorId(agentConfigId)
 
-      const config = await getLiveChatConfig(agentConfigId)
+      const config = await getLiveChatConfigForFamily(agentConfigId)
 
       if (!config) {
         return apiOk({
           config: {
             agentConfigId,
+            webhookAgentConfigId,
             botAccessToken: '',
             licenseId: '',
             showSkillStatus: true,
@@ -60,6 +67,7 @@ export async function GET(request: NextRequest) {
         config: {
           ...config,
           agentConfigId,
+          webhookAgentConfigId,
           botAccessToken: config.botAccessToken ? '••••••••' : '',
           webhookSecret: config.webhookSecret ? '••••••••' : '',
         },
@@ -84,17 +92,18 @@ export async function PUT(request: NextRequest) {
 
       // Preserve existing secrets when masked value is sent
       if (input.botAccessToken === '••••••••' || input.webhookSecret === '••••••••') {
-        const existing = await getLiveChatConfig(agentConfigId)
+        const existing = await getLiveChatConfigForFamily(agentConfigId)
         if (existing) {
           if (input.botAccessToken === '••••••••') input.botAccessToken = existing.botAccessToken
           if (input.webhookSecret === '••••••••') input.webhookSecret = existing.webhookSecret ?? ''
         }
       }
 
-      await upsertLiveChatConfig(agentConfigId, input)
+      const webhookAgentConfigId = await upsertLiveChatConfigForFamily(agentConfigId, input)
       await audit({
         action: 'livechat.config.update',
-        target: `agent_config:${agentConfigId}`,
+        target: `agent_config:${webhookAgentConfigId}`,
+        after: { selectedAgentConfigId: agentConfigId, webhookAgentConfigId },
       })
 
       return apiOk({ ok: true })

@@ -12,6 +12,7 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>()
 const TTL_MS = 30_000
+const FAMILY_LINEAGE_DEPTH_LIMIT = 16
 
 function cacheKey(agentConfigId: string): string {
   return agentConfigId
@@ -19,6 +20,11 @@ function cacheKey(agentConfigId: string): string {
 
 export function invalidateLiveChatConfig(agentConfigId: string): void {
   cache.delete(cacheKey(agentConfigId))
+}
+
+type AgentConfigLineageRow = {
+  id: string
+  parentId: string | null
 }
 
 function hydrateFromChannelBinding(row: {
@@ -79,6 +85,51 @@ export async function getLiveChatConfig(
   }
 }
 
+export async function resolveLiveChatFamilyAnchorId(agentConfigId: string): Promise<string> {
+  try {
+    let current = await prisma.agentConfig.findUnique({
+      where: { id: agentConfigId },
+      select: { id: true, parentId: true },
+    }) as AgentConfigLineageRow | null
+    if (!current) return agentConfigId
+
+    const seen = new Set<string>([current.id])
+    let depth = 0
+
+    while (current.parentId && depth < FAMILY_LINEAGE_DEPTH_LIMIT) {
+      const parent = await prisma.agentConfig.findUnique({
+        where: { id: current.parentId },
+        select: { id: true, parentId: true },
+      }) as AgentConfigLineageRow | null
+      if (!parent || seen.has(parent.id)) break
+      current = parent
+      seen.add(parent.id)
+      depth += 1
+    }
+
+    return current.id
+  } catch (err) {
+    console.error('[LiveChat] Failed to resolve family anchor:', err)
+    return agentConfigId
+  }
+}
+
+export async function getLiveChatConfigForFamily(
+  agentConfigId: string,
+): Promise<LiveChatConfig | null> {
+  const familyAnchorId = await resolveLiveChatFamilyAnchorId(agentConfigId)
+  const candidateIds = familyAnchorId === agentConfigId
+    ? [familyAnchorId]
+    : [familyAnchorId, agentConfigId]
+
+  for (const candidateId of candidateIds) {
+    const config = await getLiveChatConfig(candidateId)
+    if (config) return config
+  }
+
+  return null
+}
+
 export async function upsertLiveChatConfig(
   agentConfigId: string,
   data: Omit<LiveChatConfig, 'orgId'>,
@@ -123,4 +174,14 @@ export async function upsertLiveChatConfig(
   }
 
   invalidateLiveChatConfig(agentConfigId)
+}
+
+export async function upsertLiveChatConfigForFamily(
+  agentConfigId: string,
+  data: Omit<LiveChatConfig, 'orgId'>,
+): Promise<string> {
+  const familyAnchorId = await resolveLiveChatFamilyAnchorId(agentConfigId)
+  await upsertLiveChatConfig(familyAnchorId, data)
+  if (familyAnchorId !== agentConfigId) invalidateLiveChatConfig(agentConfigId)
+  return familyAnchorId
 }

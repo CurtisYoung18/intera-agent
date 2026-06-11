@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server'
 import { defineRoute } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { getLiveChatConfig } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForFamily } from '@/lib/livechat/config-store'
 import { listGroups } from '@/lib/livechat/livechat-api'
 
 export async function GET(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       await assertAgentInOrg(repo, agentConfigId)
 
       try {
-        const config = await getLiveChatConfig(agentConfigId)
+        const config = await getLiveChatConfigForFamily(agentConfigId)
         if (!config) {
           return apiOk({ groups: [] })
         }

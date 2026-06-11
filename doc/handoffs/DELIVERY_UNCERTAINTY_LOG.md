@@ -56,7 +56,40 @@ Use this format for each new item:
   - Production logs show `Agent config "cmq4mvv5o0001qj5yfl84kfl0" not found or not active`, and no reply reaches the customer.
 - Attempted fixes / checks: Verified publish state via production API and Postgres; confirmed `v3` was active and the old webhook path was receiving traffic; added route-level fallback logic plus regression coverage; ran focused vitest, `git diff --check`, and `npx tsc --noEmit -p apps/console/tsconfig.json`; deployed `1354facf`; verified the old URL returns HTTP `200` after publish and resolves into active `v3` behavior in production traces.
 - Why no workaround is safe: Telling operators to manually rotate the external webhook URL on every publish keeps the integration brittle and makes publish a customer-facing outage risk. The acceptance bar now explicitly forbids that boundary leak.
+- Current operator action: Keep the existing external J1B webhook URL fixed. The current production J1B endpoint already uses `cmq4mvv5o0001qj5yfl84kfl0` (`J1B v1`, the family root anchor used in the stability proof), so J1B does **not** need another webhook rewrite tomorrow.
+- Residual implementation note: Production ingress already honors the stability contract, and a local hardening patch now makes the Console/admin path use the Agent-family anchor for LiveChat config reads/writes plus webhook display instead of echoing whichever version is currently selected. That patch is validated locally (`vitest`, `tsc`, `build:console`) but not yet deployed at the time of this log entry. Until the next deploy, production UI copy can still look version-scoped even though the current J1B webhook should stay unchanged.
+- Regression rule: If J1B ever requires another manual webhook rewrite after publish/version switching, reopen this item as a P0 production regression immediately.
 - Owner decision needed: None for the stability fix itself. Future LiveChat product work should preserve this invariant.
+- Follow-up owner: coding-team lead / delivery lead
+
+### 2026-06-11 - LiveChat Explicit Human Request Paused Before Real Handoff
+
+- Area: LiveChat / human handoff / Procedure / traceability
+- Status: fixed
+- Severity: P0
+- Uncertainty: Production explicit-human requests could still fail acceptance in two ways: the `human_support_requested` procedure could pause at `ask_user_questions` before creating a real HumanTask, and even successful human-task creation did not persist a standalone `escalated` trace action. That left the customer-visible transfer copy ahead of the durable audit evidence.
+- Default action taken: Treated this as a production blocker, updated the active J1B production `human_support_requested` case type to an immediate one-step handoff path, patched runtime trace persistence to write `escalated` alongside `human_task_created`, and redeployed.
+- Why this default: A human-transfer promise without `waiting_human`, a visible HumanTask, and a persisted `escalated` trace would make LiveChat handoff acceptance untrustworthy and strand operators without a clean audit trail.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/livechat-chain/handoff-trace-closure/summary.md`; historical failure receipt `.artifacts/delivery-audit/2026-06-11/livechat-chain/handoff-audit-final/summary.md`
+- Production URL / screenshot / receipt: After deploy `964979bb`, a synthetic explicit-human probe through the stable old J1B webhook path produced `case_20260611_112310_d9e5a730` with `status=waiting_human`, `1` HumanTask, and traces containing both `human_task_created` and `escalated`. The pre-fix probe `case_20260611_111615_9db93108` reached `waiting_human` but still lacked persisted `escalated`, and the earlier widget audit stalled at `collect_handoff_summary`.
+- Attempted fixes / checks: Confirmed the production gap from case readback and traces; changed the active production case-type data for `human_support_requested`; added `writeEscalated(...)` persistence in `apps/console/lib/agent/trace.ts`, `apps/console/lib/agent/loop.ts`, `apps/console/lib/agent/case-agent-loop.ts`, and `apps/console/lib/agent/tool-interceptor.ts`; expanded `apps/console/lib/agent/__tests__/unit/hook-engine-runtime.test.ts`; ran focused vitest, `git diff --check`, and `npx tsc --noEmit -p apps/console/tsconfig.json`; pushed local main commit `0088de5f`; deployed as `964979bb`; rechecked the stable old webhook path and post-deploy synthetic handoff traces on production.
+- Why no workaround is safe: Asking customers for more details before honoring an explicit human request, or telling operators to ignore missing `escalated` traces, would break the stated handoff contract and make the queue state harder to trust.
+- Owner decision needed: None. Keep explicit human requests on the immediate-handoff path unless product policy intentionally changes later.
+- Follow-up owner: coding-team lead / delivery lead
+
+### 2026-06-11 - Playground Export Lost Operate Timing Metrics
+
+- Area: Operate / traceability / Playground export
+- Status: fixed
+- Severity: P0
+- Uncertainty: Historical only. Playground export initially preserved the conversation/case copy and token totals, but it could still lose or under-report the timing evidence required by the customer-ready dispatch: Conversation detail showed `Tool Phase 0ms`, and exported ProcedureRun detail could miss per-iteration `LLM Time` because `Iteration Snapshot` `loop_decision` rows were not preserved into the canonical export trace.
+- Default action taken: Treated this as a production traceability blocker, preserved `Iteration Snapshot` timing rows in the export pipeline, updated Conversation metric computation to prefer structured iteration timing over collapsed timestamps, redeployed, and re-ran the full Playground-to-Operate production proof.
+- Why this default: The dispatch explicitly requires Playground export to preserve token, latency, and trace metrics end to end. Copy-only export without truthful timing evidence would make Operate misleading during incident review.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/traceability-production/summary.md`; `.artifacts/delivery-audit/2026-06-11/traceability-production/playwright-operate-export-traceability-summary.json`
+- Production URL / screenshot / receipt: Production main commit `09ed4459` and deploy commit `00e798b0` now export the same Playground run into Operate with linked chat id `pg_saved_1781180385221_kdqcj4`, case id `cmq9gt96t0000qj4qemh7vvbw`, `34` traces, `7` LLM responses, `9` tool results, `25,841` total tokens, `wallTimeMs=21565`, and visible Operate timing proof in screenshots `.artifacts/delivery-audit/2026-06-11/traceability-production/operate-conversation-export.png` (`Wall Time 21.0s`, `Tool Phase 2.9s`) and `.artifacts/delivery-audit/2026-06-11/traceability-production/operate-case-export.png` (per-iteration `LLM Time` plus tool timings).
+- Attempted fixes / checks: Added export coverage in `apps/console/lib/agent/__tests__/unit/trace-aggregator.test.ts`, `apps/console/app/api/admin/playground/__tests__/save-to-chat.test.ts`, and `apps/console/components/operate/__tests__/conversation-metrics.test.ts`; ran focused vitest, `git diff --check`, `npx tsc --noEmit -p apps/console/tsconfig.json`, `env -u ANTHROPIC_API_KEY -u MINIMAX_API_KEY -u DEEPSEEK_API_KEY npm test`, and `rm -rf apps/console/.next && npm run build:console`; then re-ran the production Playwright export receipt on `https://demo.anytrans.ai`.
+- Why no workaround is safe: Manually reading raw traces or relying on token totals alone would not prove that Operate preserved the timing metrics operators use during incident review.
+- Owner decision needed: None.
 - Follow-up owner: coding-team lead / delivery lead
 
 ### 2026-06-10 - Production Deploy Commit And Hotfix Parity
@@ -206,14 +239,14 @@ Use this format for each new item:
 ### 2026-06-11 - J1B Scenario Matrix Uses Mocked Playground Operational Tool Execution
 
 - Area: J1B production acceptance / tool execution scope
-- Status: default-applied
+- Status: fixed
 - Severity: P1
-- Uncertainty: The final counted J1B scenario matrix on `https://demo.anytrans.ai/build/pilot-lab` is production `agentRuntime` validation, but every accepted Playground receipt in the final index recorded `toolExecutionMode=mocked`. This proves production Procedure routing, trace/sidebar behavior, and receipt durability, but it does not separately prove live HTTP execution of operational business tools.
-- Default action taken: Reported the 12-family matrix as `agentRuntime` production validation only and kept the mocked-vs-real tool boundary explicit in the final acceptance index and long-session receipt.
-- Why this default: The architect required mocked-vs-real truth to stay separate. Treating dry-run Playground tool events as live external side-effect proof would overstate production acceptance.
-- Evidence: `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/deposit_not_credited_basic-flow1-receipt/playwright-j1b-receipt-durability-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_basic/summary.json`
-- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq`. The final J1B acceptance index aggregates all 36 counted accepted flows and records `toolExecutionMode=mocked` for every accepted Playground receipt.
-- Owner decision needed: None for scenario-matrix reporting. Separate real-tool execution proof is still required if release claims must include live HTTP side effects from operational business tools.
+- Uncertainty: Historical only. The final counted J1B scenario matrix on `https://demo.anytrans.ai/build/pilot-lab` is production `agentRuntime` validation, and every accepted Playground receipt in the final index recorded `toolExecutionMode=mocked`. That matrix alone therefore could not prove live HTTP execution.
+- Default action taken: Kept the counted J1B matrix explicitly mocked, then closed the remaining gap with a separate production tool-boundary receipt that proves safe read-only live HTTP execution while preserving truthful dry-run labeling for Playground.
+- Why this default: The architect required mocked-vs-real truth to stay separate. The safe closure is to prove live read-only execution in production and keep unsafe side effects gated, rather than pretending the mocked Playground matrix was live.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/tool-execution-boundary/summary.md`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md`; `.artifacts/delivery-audit/2026-06-11/production-j1b-member-id-routing/summary.md`; `.artifacts/delivery-audit/2026-06-11/livechat-chain/webhook-stability-after-publish/summary.md`
+- Production URL / screenshot / receipt: The tool-boundary receipt records production live `get_latest_deposit` output through the stable external J1B webhook, additional live read-only outputs (`get_latest_withdrawal`, `get_withdraw_conditions`, `get_transaction_history`, `get_account_status`) from the matched production LiveChat case, and the still-mocked `toolExecutionMode=mocked` Playground boundary for counted J1B receipts.
+- Owner decision needed: None. The boundary is now explicit: safe read-only live execution works, and unsafe side effects remain honestly gated.
 - Follow-up owner: owner / delivery lead / coding-team lead
 
 ### 2026-06-11 - J1B Long-Session Refresh/Reopen Restore Drops One Persisted Turn
@@ -233,27 +266,27 @@ Use this format for each new item:
 ### 2026-06-10 - LiveChat Console Joint Configuration Timing
 
 - Area: LiveChat / Integrations
-- Status: default-applied
+- Status: fixed
 - Severity: P1
-- Uncertainty: Full LiveChat console-side configuration may need a separate joint session after the current optimization pass.
-- Default action taken: Treat Intera-side LiveChat readiness as mandatory now: config load/save, webhook ingress toward `/api/messages`, response mapping, incomplete-config recovery states, and Tool rich-message/render-hint output must be proven before first customer delivery.
-- Why this default: It lets Intera harden its side of the chain without waiting for external console setup, while keeping the real joint integration visible as a follow-up.
-- Evidence: To be filled by the LiveChat chain receipt.
-- Production URL / screenshot / receipt: Pending.
-- Owner decision needed: Confirm when to schedule full LiveChat console joint configuration.
+- Uncertainty: Historical only. Full LiveChat console-side configuration originally risked slipping to a later joint session, which would have left the production webhook/app boundary under-proven.
+- Default action taken: Kept Intera-side LiveChat readiness mandatory and then used the joint production setup window to prove the external LiveChat app was pointed at the stable J1B webhook URL while ingress, `/api/messages` routing, response mapping, and handoff traceability were exercised on production.
+- Why this default: It closed the channel boundary with real production traffic instead of leaving the console-side configuration as a future assumption.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/livechat-chain/webhook-stability-after-publish/summary.md`; `.artifacts/delivery-audit/2026-06-11/livechat-chain/handoff-trace-closure/summary.md`
+- Production URL / screenshot / receipt: The externally configured J1B webhook path remained `https://demo.anytrans.ai/api/livechat/webhook/default/cmq4mvv5o0001qj5yfl84kfl0` across publish and subsequent deploys; the stability receipt and handoff-trace closure receipt record the production proof with secrets redacted.
+- Owner decision needed: None for timing. Future transfer-group or channel-copy tuning can be handled as ordinary LiveChat product work without reopening webhook identity.
 - Follow-up owner: delivery lead / owner
 
 ### 2026-06-10 - Pilot Must Be Built Before Full Pilot Acceptance
 
 - Area: Pilot Lab / ConfigPilot
-- Status: default-applied
+- Status: fixed
 - Severity: P0
-- Uncertainty: Pilot Lab cannot be fully accepted while the commercial Pilot cockpit is still under construction.
-- Default action taken: Move Pilot Commercial Readiness Gate A-D ahead of full Pilot acceptance and broader Pilot Lab signoff. Local and production acceptance for Pilot begins only after the relevant Gate implementation exists.
-- Why this default: Testing a not-yet-built Pilot cockpit would produce false confidence and noisy failures.
-- Evidence: `doc/strategy/2026-06-10-pilot-commercial-readiness-proposal.md`
-- Production URL / screenshot / receipt: Pending Gate A-D receipts.
-- Owner decision needed: Confirm any scope cuts if Gate A-D exceeds the first delivery window.
+- Uncertainty: Historical only. On 2026-06-10 the Pilot cockpit was still under construction, so broader Pilot acceptance would have been premature.
+- Default action taken: Moved Pilot Commercial Readiness Gate A-D ahead of signoff, then closed that lane with authenticated production proof plus a post-redeploy receipt-persistence recheck.
+- Why this default: It prevented false acceptance before the cockpit existed, while still allowing Pilot to become fully evidenced once the production Gate A-D flow and persistence repair were complete.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-summary.md`; `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/playwright-production-acceptance-summary.json`; `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-baseline-v2/playwright-production-acceptance-summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` now has authenticated Gate A-D production proof with desktop/mobile screenshots, proposal apply proof, validation/propose-fix proof, release handoff generation proof, and post-redeploy scenario receipt persistence proof.
+- Owner decision needed: None for Pilot construction gating. Future scope changes can be handled as ordinary Pilot product work.
 - Follow-up owner: architect / coding-team lead
 
 ### 2026-06-10 - Local Smoke `networkidle` Timeout On Pilot Lab

@@ -62,8 +62,14 @@ vi.mock('@/lib/auth', () => ({ getSession: h.mockGetSession }))
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('@/lib/livechat/config-store', () => ({
   getLiveChatConfig: vi.fn(async (agentConfigId: string) => h.configs[agentConfigId] ?? null),
+  getLiveChatConfigForFamily: vi.fn(async (agentConfigId: string) => h.configs[agentConfigId] ?? null),
+  resolveLiveChatFamilyAnchorId: vi.fn(async (agentConfigId: string) => agentConfigId),
   upsertLiveChatConfig: vi.fn(async (agentConfigId: string, data: Record<string, unknown>) => {
     h.configs[agentConfigId] = { ...h.configs[agentConfigId], ...data }
+  }),
+  upsertLiveChatConfigForFamily: vi.fn(async (agentConfigId: string, data: Record<string, unknown>) => {
+    h.configs[agentConfigId] = { ...h.configs[agentConfigId], ...data }
+    return agentConfigId
   }),
   invalidateLiveChatConfig: vi.fn(),
 }))

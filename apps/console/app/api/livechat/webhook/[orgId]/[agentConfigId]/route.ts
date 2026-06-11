@@ -1,6 +1,8 @@
-// POST /api/livechat/webhook/[orgId]/[agentConfigId] — Per-agent LiveChat webhook
+// POST /api/livechat/webhook/[orgId]/[agentConfigId] — Stable per-agent-family LiveChat webhook
 // Migrated to defineRoute (G1 contract seam).
-// Loads per-agent channel binding and passes agentConfigId to the bridge for per-agent brain routing.
+// Keeps the externally configured webhook URL stable across version publish changes:
+// an inactive requested version falls forward to the current active version in the same Agent family.
+// Loads the resolved per-agent channel binding and passes the active agentConfigId to the bridge.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { defineRoute, UnauthorizedError, NotFoundError } from '@/lib/api/define-route'
@@ -8,7 +10,7 @@ import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { sendTextMessage } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { getLiveChatConfig } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForFamily } from '@/lib/livechat/config-store'
 import type { InteraInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
 
 function getChatPresence(body: Record<string, unknown>): string[] {
@@ -48,8 +50,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
 
       const orgId = agentConfig.orgId
 
-      // Load per-agent channel binding by agentConfigId
-      const config = await getLiveChatConfig(agentConfig.id)
+      // Load the family-scoped integration binding from the stable URL anchor first,
+      // with exact-version fallback kept inside the config store for backward compatibility.
+      const config = await getLiveChatConfigForFamily(params.agentConfigId)
       if (!config?.enabled) return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
 
       if (config.webhookSecret) {

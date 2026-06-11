@@ -21,6 +21,7 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import { useSession } from '@/lib/hooks/use-session'
 
 type LiveChatConfig = {
+  webhookAgentConfigId?: string
   botAccessToken: string
   licenseId: string
   showSkillStatus: boolean
@@ -157,10 +158,10 @@ export default function LiveChatChannelWorkspace({
   const labelCls = 'mb-1 block text-[12px] font-semibold text-[var(--mist)]'
 
   const webhookUrl =
-    typeof window !== 'undefined' && orgId && agentConfigId
-      ? `${window.location.origin}/api/livechat/webhook/${orgId}/${agentConfigId}`
-      : orgId && agentConfigId
-        ? `/api/livechat/webhook/${orgId}/${agentConfigId}`
+    typeof window !== 'undefined' && orgId && (config.webhookAgentConfigId || agentConfigId)
+      ? `${window.location.origin}/api/livechat/webhook/${orgId}/${config.webhookAgentConfigId || agentConfigId}`
+      : orgId && (config.webhookAgentConfigId || agentConfigId)
+        ? `/api/livechat/webhook/${orgId}/${config.webhookAgentConfigId || agentConfigId}`
         : ''
 
   const fetchConfig = useCallback(async () => {
@@ -332,11 +333,18 @@ export default function LiveChatChannelWorkspace({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-black/[0.06] bg-white/50 px-4 py-3">
-        <code className="flex-1 truncate rounded-lg border border-black/[0.04] bg-black/[0.02] px-3 py-1.5 text-[11px] text-[var(--fog)]">{webhookUrl}</code>
-        <button onClick={() => handleCopy(webhookUrl)} className="rounded-lg p-1.5 text-[var(--fog)] transition-colors hover:bg-indigo/[0.06] hover:text-indigo" title="Copy">
-          {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-malachite" /> : <Copy className="h-3.5 w-3.5" />}
-        </button>
+      <div className="rounded-xl border border-black/[0.06] bg-white/50 px-4 py-3">
+        <div className="mb-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.perAgentWebhooks')}</p>
+          <p className="mt-1 text-[12px] text-[var(--fog)]">{t('livechat.perAgentWebhooksHint')}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="flex-1 truncate rounded-lg border border-black/[0.04] bg-black/[0.02] px-3 py-1.5 text-[11px] text-[var(--fog)]">{webhookUrl}</code>
+          <button onClick={() => handleCopy(webhookUrl)} className="rounded-lg p-1.5 text-[var(--fog)] transition-colors hover:bg-indigo/[0.06] hover:text-indigo" title="Copy">
+            {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-malachite" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-[var(--fog)]/75">{t('livechat.webhookRouteNotePerAgent')}</p>
       </div>
 
       <div className="mb-2 flex gap-1 border-b border-black/[0.06]">

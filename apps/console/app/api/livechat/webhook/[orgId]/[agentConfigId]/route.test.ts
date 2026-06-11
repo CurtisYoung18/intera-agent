@@ -4,7 +4,7 @@ const h = vi.hoisted(() => {
   const mockHandleIncomingEvent = vi.fn()
   const mockSendTextMessage = vi.fn()
   const mockIsDuplicateWebhook = vi.fn()
-  const mockGetLiveChatConfig = vi.fn()
+  const mockGetLiveChatConfigForFamily = vi.fn()
   const mockCheckRateLimit = vi.fn()
   const agentConfigs: Record<string, { id: string; name: string; orgId: string; isActive: boolean }> = {
     'active-agent': { id: 'active-agent', name: 'J1B', orgId: 'default', isActive: true },
@@ -16,7 +16,7 @@ const h = vi.hoisted(() => {
     mockHandleIncomingEvent,
     mockSendTextMessage,
     mockIsDuplicateWebhook,
-    mockGetLiveChatConfig,
+    mockGetLiveChatConfigForFamily,
     mockCheckRateLimit,
   }
 })
@@ -82,7 +82,7 @@ vi.mock('@/lib/rate-limit', () => ({
 }))
 
 vi.mock('@/lib/livechat/config-store', () => ({
-  getLiveChatConfig: h.mockGetLiveChatConfig,
+  getLiveChatConfigForFamily: h.mockGetLiveChatConfigForFamily,
 }))
 
 import { POST } from '@/app/api/livechat/webhook/[orgId]/[agentConfigId]/route'
@@ -107,7 +107,7 @@ beforeEach(() => {
   h.mockIsDuplicateWebhook.mockResolvedValue(false)
   h.mockSendTextMessage.mockResolvedValue(undefined)
   h.mockHandleIncomingEvent.mockResolvedValue(undefined)
-  h.mockGetLiveChatConfig.mockResolvedValue({
+  h.mockGetLiveChatConfigForFamily.mockResolvedValue({
     enabled: true,
     webhookSecret: 'sec_livechat',
     agentAccountId: 'agent-1',
@@ -253,7 +253,7 @@ describe('per-agent LiveChat webhook route', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(h.mockGetLiveChatConfig).toHaveBeenCalledWith('active-agent')
+    expect(h.mockGetLiveChatConfigForFamily).toHaveBeenCalledWith('inactive-agent')
     expect(h.mockHandleIncomingEvent).toHaveBeenCalledWith(
       'chat-family',
       'default',
