@@ -1487,8 +1487,8 @@ export const en: Record<string, string> = {
 
   // ── LiveChat webhook sections ──────────────────────────────────
   'livechat.perAgentWebhooks': 'Per-Agent Webhooks',
-  'livechat.perAgentWebhooksHint': 'Each agent gets its own webhook URL. Events route to that specific agent regardless of which is active.',
-  'livechat.webhookRouteNotePerAgent': 'This webhook URL routes events to this specific agent.',
+  'livechat.perAgentWebhooksHint': 'Each agent keeps one stable webhook URL. Events use that fixed URL and route into the current active version in the same agent family.',
+  'livechat.webhookRouteNotePerAgent': 'Keep this webhook URL fixed in LiveChat. Publish/version changes should continue routing through this same URL.',
   'livechat.agentSelect': 'Agent',
   'livechat.momentPreview': 'Moment Preview',
   'livechat.momentPreviewHint': 'Form fields via URL params — same as webview button opens',
@@ -3114,8 +3114,8 @@ export const zh: Record<string, string> = {
 
   // ── LiveChat webhook sections ──────────────────────────────────
   'livechat.perAgentWebhooks': 'Per-Agent Webhooks',
-  'livechat.perAgentWebhooksHint': '每个 Agent 有独立的 Webhook 地址。事件将路由到对应 Agent，与当前 active 状态无关。',
-  'livechat.webhookRouteNotePerAgent': '此 Webhook 地址将事件路由到对应 Agent。',
+  'livechat.perAgentWebhooksHint': '每个 Agent 保持一个固定的 Webhook 地址。事件始终走这条固定地址，并路由到同一 Agent 系列里当前 active 的版本。',
+  'livechat.webhookRouteNotePerAgent': '请在 LiveChat 侧保持这条 Webhook 地址不变；发布或切版本后也应继续复用同一地址。',
   'livechat.agentSelect': 'Agent',
   'livechat.momentPreview': 'Moment 预览',
   'livechat.momentPreviewHint': '表单字段通过 URL 参数传入 — 与 webview 按钮一致',
