@@ -3,6 +3,7 @@
 // from DB/config, so the prompt always reflects Console configuration.
 
 import { stripInternalMemoryKeys } from './memory'
+import { isOpaqueInternalUserId, isVerifiedMemberId } from './identity'
 
 export interface ToolSummary {
   name: string
@@ -101,8 +102,7 @@ function renderSessionBinding(binding: PromptContext['session_binding']): string
   // System Prompt (`## member_id` section), so it can be hot-updated in Console.
   // BUG-G: LiveChat's author_id is a random UUID, not a business member_id —
   // surface that distinction as a fact, not a hardcoded instruction.
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u)
-  if (isUuid) {
+  if (isOpaqueInternalUserId(u) || !isVerifiedMemberId(u)) {
     lines.push(`- Session ID: \`${u}\``)
     lines.push('- member_id: 未知 / unknown (not yet provided by the customer)')
   } else {
