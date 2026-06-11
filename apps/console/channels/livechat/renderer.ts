@@ -8,8 +8,6 @@ import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
 import type { BridgeAction, FormField } from '@/lib/livechat/types'
-import { renderToolByHint, readPath } from './render-tool-by-hint'
-import type { LivechatRenderHint } from '@intera/shared/channels/render-hints'
 
 export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
   readonly channel: Channel = 'livechat'
@@ -34,23 +32,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
 
       // ── tool_result: { name, status: 'completed', result, renderHints? } ──
       case 'tool_result': {
-        const d = event.data as {
-          name: string; status: string; result?: unknown
-          renderHints?: Record<string, unknown>
-        }
-        const rawHint = d.renderHints?.livechat as Record<string, unknown> | undefined
-        const validKinds = new Set(['card', 'carousel', 'quick_replies', 'plain'])
-        const livechatHint = rawHint && validKinds.has(rawHint.kind as string)
-          ? rawHint as unknown as LivechatRenderHint
-          : undefined
-
-        // If renderHints.livechat is configured, use it for rich message rendering
-        if (livechatHint && d.result !== undefined) {
-          return renderToolByHint(d.result, livechatHint)
-        }
-
-        // Internal Tool names and status are runtime noise in the customer widget.
-        // Only explicit LiveChat render hints may surface Tool-derived output.
+        // Tool execution details stay out of the customer widget. The agent's
+        // natural-language answer may summarize what matters, but raw tool
+        // output and tool-shaped cards should never be shown to the customer.
         return { type: 'noop' }
       }
 
@@ -92,20 +76,15 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
 
       // ── escalated: { stage, reason } ──
       case 'escalated': {
-        return { type: 'transfer_chat', caseId }
+        return { type: 'transfer_chat' }
       }
 
       // ── case_created: { caseId, caseType, displayName, icon } ──
       case 'case_created': {
-        const d = event.data as { caseId?: string; caseType?: string; displayName?: string; icon?: string }
-        return {
-          type: 'update_chat_properties',
-          props: {
-            case_id: d.caseId ?? caseId,
-            case_type: d.caseType ?? 'general',
-            case_name: d.displayName ?? '',
-          },
-        }
+        // The bridge/session store already persists case identity. Avoid relying on
+        // ad hoc LiveChat custom properties unless the target namespace is
+        // explicitly registered in the external app.
+        return { type: 'noop' }
       }
 
       // ── text_delta: data is a raw string (not an object) ──

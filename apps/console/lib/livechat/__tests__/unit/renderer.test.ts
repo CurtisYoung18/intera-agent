@@ -60,7 +60,7 @@ describe('LiveChatRenderer', () => {
       expect(a.type).toBe('noop')
     })
 
-    it('returns send_card when renderHints.livechat has card hint', () => {
+    it('returns noop even when renderHints.livechat asks for a card', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('tool_result', {
         name: 'query_order',
@@ -74,10 +74,10 @@ describe('LiveChatRenderer', () => {
           },
         },
       }), makeCtx())
-      expect(actions[0]!.type).toBe('send_card')
+      expect(actions[0]!.type).toBe('noop')
     })
 
-    it('returns send_carousel when renderHints.livechat has carousel hint', () => {
+    it('returns noop even when renderHints.livechat asks for a carousel', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('tool_result', {
         name: 'kb_search',
@@ -91,10 +91,10 @@ describe('LiveChatRenderer', () => {
           },
         },
       }), makeCtx())
-      expect(actions[0]!.type).toBe('send_carousel')
+      expect(actions[0]!.type).toBe('noop')
     })
 
-    it('falls back to noop for unknown hint kind', () => {
+    it('returns noop for unknown hint kind too', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('tool_result', {
         name: 'query_order',
@@ -136,12 +136,11 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('case_created', () => {
-    it('returns update_chat_properties', () => {
+    it('returns noop because case identity lives in Intera state', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('case_created', { caseId: 'c1', caseType: 'deposit' }), makeCtx())
       const a = actions[0]!
-      expect(a.type).toBe('update_chat_properties')
-      expect((a as { props: Record<string, string> }).props).toMatchObject({ case_id: 'c1' })
+      expect(a.type).toBe('noop')
     })
   })
 

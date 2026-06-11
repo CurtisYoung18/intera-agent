@@ -128,8 +128,7 @@ export type BridgeAction =
   | { type: 'send_image'; url: string; caption?: string }
   | { type: 'send_system_message'; text: string }
   | { type: 'set_typing'; isTyping: boolean }
-  | { type: 'transfer_chat'; caseId: string; group?: number }
-  | { type: 'update_chat_properties'; props: Record<string, string> }
+  | { type: 'transfer_chat'; group?: number }
   | { type: 'buffer_text'; delta: string }
   | { type: 'flush_text' }
   | { type: 'noop' }
