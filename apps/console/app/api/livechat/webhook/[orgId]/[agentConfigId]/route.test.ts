@@ -134,6 +134,29 @@ describe('per-agent LiveChat webhook route', () => {
     expect(h.mockSendTextMessage).not.toHaveBeenCalled()
   })
 
+  it('skips self-authored incoming_event messages when LiveChat sends author_id', async () => {
+    const res = await POST(
+      makeRequest({
+        action: 'incoming_event',
+        chat_id: 'chat-self',
+        secret_key: 'sec_livechat',
+        payload: {
+          event: {
+            id: 'evt-self',
+            type: 'message',
+            text: 'Bot echo',
+            author_id: 'agent-1',
+          },
+        },
+      }),
+      makeCtx(),
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ ok: true, skipped: 'self_authored' })
+    expect(h.mockHandleIncomingEvent).not.toHaveBeenCalled()
+  })
+
   it('processes the first incoming_chat thread message instead of short-circuiting to chat_started', async () => {
     const res = await POST(
       makeRequest({
