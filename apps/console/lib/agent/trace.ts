@@ -10,6 +10,7 @@ import type { PersistencePort } from './persistence-port'
 export type ActionType =
   | 'user_message'
   | 'case_created'
+  | 'escalated'
   | 'fact_extracted'
   | 'hook_hit'
   | 'tool_call'
@@ -26,6 +27,7 @@ export type ActionType =
   // ── LiveChat / multi-agent trace ──
   | 'incoming_chat'
   | 'chat_deactivated'
+  | 'channel_transfer'
   | 'queue_message_enqueued'
   | 'queue_message_consumed'
   | 'agent_tree_node'
@@ -127,6 +129,16 @@ export class TraceWriter {
     await this.write('human_task_created', 'Human task created', {
       taskId,
       queue,
+    })
+  }
+
+  async writeEscalated(
+    reason: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.write('escalated', 'Case escalated', {
+      reason,
+      ...payload,
     })
   }
 
