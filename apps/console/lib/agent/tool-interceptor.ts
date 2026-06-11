@@ -75,8 +75,8 @@ export async function interceptToolResults(
   toolResults: ToolExecutionResult[],
   sendEvent: (event: SSEEvent) => void,
 ): Promise<{ action: InterceptAction; toolResults: ToolExecutionResult[] }> {
-  // 1. Runtime tool: start_procedure (dispatch_case_agent remains compatibility-only)
-  const startProcedureResult = toolResults.find((r) => r.name === 'start_procedure' || r.name === 'dispatch_case_agent')
+  // 1. Runtime tool: start_procedure
+  const startProcedureResult = toolResults.find((r) => r.name === 'start_procedure')
   if (startProcedureResult) {
     const action = await handleStartProcedure(ctx, startProcedureResult, sendEvent)
     if (action.kind !== 'pass') return { action, toolResults }

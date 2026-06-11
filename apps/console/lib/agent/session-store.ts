@@ -846,7 +846,7 @@ function stepMatchesTool(step: ProcedureRunStepState, toolName: string): boolean
   if (step.target && step.target === toolName) return true
   if (step.action === 'ask' && toolName === 'ask_user_questions') return true
   if (step.action === 'escalate' && toolName === 'create_human_task') return true
-  if (step.action === 'finalize' && (toolName === 'finalize_procedure' || toolName === 'finalize_case')) return true
+  if (step.action === 'finalize' && toolName === 'finalize_procedure') return true
   return false
 }
 

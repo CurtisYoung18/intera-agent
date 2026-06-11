@@ -100,6 +100,7 @@ vi.mock('@/lib/tool-classifications', () => ({
   SYSTEM_TOOL_NAMES: new Set(['system_info']),
   SPECIAL_TOOL_NAMES: new Set<string>(),
   CHANNEL_TOOL_NAMES: new Set<string>(),
+  RETIRED_TOOL_NAMES: new Set(['dispatch_case_agent', 'finalize_case']),
 }))
 
 import { GET, POST } from '@/app/api/admin/tools/route'
@@ -159,16 +160,48 @@ describe('G1 — Uniform envelope', () => {
     expect(body.data.tool.name).toBe('new_tool')
     expect(res.status).toBe(201)
   })
+
+  it('POST rejects creating retired tool names', async () => {
+    const res = await POST(makeRequest({ agentConfigId: 'agent_default_v1', name: 'dispatch_case_agent', description: 'Old alias' }))
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+  })
 })
 
 describe('G2 — Tenant isolation via agentConfigId', () => {
   it('agent_default_v1 only sees its own tools', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin' })
+    h.toolsByAgent.agent_default_v1.push({
+      id: 't_legacy',
+      agentConfigId: 'agent_default_v1',
+      name: 'dispatch_case_agent',
+      description: 'Legacy alias',
+      mode: 'system_managed',
+      inputSchema: '{}',
+      outputSchema: '{}',
+      isConcurrencySafe: true,
+      enabled: true,
+      guardPhase: 'post',
+      endpoint: null,
+      httpMethod: 'POST',
+      headers: null,
+      timeoutMs: 8000,
+      mockFixture: null,
+      displayVerb: null,
+      renderHints: null,
+      toolCategory: 'system_info',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
     const res = await GET(makeRequestForAgent('agent_default_v1'))
     const body = await res.json()
 
     expect(body.data.tools.length).toBeGreaterThanOrEqual(1)
     expect(body.data.tools.every((t: any) => t.agentConfigId === 'agent_default_v1')).toBe(true)
+    expect(body.data.tools.find((t: any) => t.name === 'dispatch_case_agent')).toBeUndefined()
   })
 
   it('test-agent only sees its own tools', async () => {
@@ -192,6 +225,16 @@ describe('G2 — Tenant isolation via agentConfigId', () => {
   it('agent_default_v1 CANNOT see test-agent tools by name lookup', async () => {
     h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin' })
     const res = await GetByName(makeRequestForAgent('agent_default_v1'), routeCtx('orgb_tool'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('not_found')
+    expect(res.status).toBe(404)
+  })
+
+  it('retired tools return not_found by name lookup', async () => {
+    h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin' })
+    const res = await GetByName(makeRequestForAgent('agent_default_v1'), routeCtx('dispatch_case_agent'))
     const body = await res.json()
 
     expect(body.ok).toBe(false)

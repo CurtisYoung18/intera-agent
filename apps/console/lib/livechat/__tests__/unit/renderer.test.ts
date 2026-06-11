@@ -145,10 +145,15 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('human_task_created', () => {
-    it('returns noop — agent tells customer in its own words', () => {
+    it('returns a handoff confirmation card', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('human_task_created', {}), makeCtx())
-      expect(actions[0]!.type).toBe('noop')
+      const a = actions[0]!
+      expect(a.type).toBe('send_card')
+      const card = (a as { type: 'send_card'; card: { title: string; subtitle?: string; buttons: unknown[] } }).card
+      expect(card.title).toBe('Human support requested')
+      expect(card.subtitle).toContain('specialist')
+      expect(card.buttons).toEqual([])
     })
   })
 

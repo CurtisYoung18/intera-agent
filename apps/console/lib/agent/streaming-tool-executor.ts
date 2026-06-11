@@ -330,10 +330,6 @@ export class StreamingToolExecutor {
         taskId: crypto.randomUUID(),
         status: 'pending',
       },
-      finalize_case: {
-        status: 'resolved',
-        resolvedAt: new Date().toISOString(),
-      },
       finalize_procedure: {
         status: 'completed',
         resolvedAt: new Date().toISOString(),

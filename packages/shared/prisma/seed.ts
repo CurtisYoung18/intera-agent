@@ -232,7 +232,7 @@ const SEED_CASE_TYPES = [
           id: 'finalize',
           title: 'Finalize customer answer',
           instructions: 'Give a clear customer-facing answer grounded in collected evidence.',
-          allowedTools: ['finalize_case', 'create_human_task', 'read_chat_memory'],
+          allowedTools: ['finalize_procedure', 'create_human_task', 'read_chat_memory'],
           next: [],
         },
       ],

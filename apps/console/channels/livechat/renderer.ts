@@ -99,9 +99,16 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       }
 
       // ── human_task_created: { taskId, caseId, question? } ──
-      // Agent already tells the customer about escalation in its own words.
+      // Show a compact handoff confirmation card before the actual transfer.
       case 'human_task_created': {
-        return { type: 'noop' }
+        return {
+          type: 'send_card',
+          card: {
+            title: 'Human support requested',
+            subtitle: 'A specialist will continue this conversation shortly.',
+            buttons: [],
+          },
+        }
       }
 
       // ── error: { message?, reason? } ──

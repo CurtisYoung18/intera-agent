@@ -27,18 +27,3 @@ export function dryRunMockResult(skill: ToolDefinition): ToolExecutionResult {
     }),
   }
 }
-
-/** MOCK result for dispatch_case_agent — compatibility wrapper for inline Procedure start. */
-export function dispatchCaseAgentMockResult(caseType: string): ToolExecutionResult {
-  return {
-    name: 'dispatch_case_agent',
-    latencyMs: 1,
-    output: JSON.stringify({
-      _dryRun: true,
-      _note: `Playground: dispatch_case_agent(${caseType}) intercepted. Production starts/selects an inline Procedure; it does not spawn a background agent.`,
-      procedureId: caseType,
-      caseType,
-      durableCaseCreated: false,
-    }),
-  }
-}

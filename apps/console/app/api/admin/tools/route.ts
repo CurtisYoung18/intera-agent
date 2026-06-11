@@ -3,6 +3,7 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
+import { ValidationError } from '@/lib/api/define-route'
 import { defineRoute } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
@@ -10,7 +11,7 @@ import {
   toolCreateRequestSchema,
   type ToolCreateRequest,
 } from '@intera/shared/contracts/tools'
-import { SYSTEM_TOOL_NAMES, SPECIAL_TOOL_NAMES, CHANNEL_TOOL_NAMES } from '@/lib/tool-classifications'
+import { SYSTEM_TOOL_NAMES, SPECIAL_TOOL_NAMES, CHANNEL_TOOL_NAMES, RETIRED_TOOL_NAMES } from '@/lib/tool-classifications'
 import { BUILT_IN_TOOLS } from '@/lib/agent/tools'
 
 const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigId is required') })
@@ -28,6 +29,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
       where: { agentConfigId },
       orderBy: { name: 'asc' },
     })
+    tools = tools.filter((tool: { name: string }) => !RETIRED_TOOL_NAMES.has(tool.name))
 
     // Auto-gift built-in tools if missing (first load for any agent)
     const existingNames = new Set(tools.map((t: { name: string }) => t.name))
@@ -53,6 +55,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
         where: { agentConfigId },
         orderBy: { name: 'asc' },
       })
+      tools = tools.filter((tool: { name: string }) => !RETIRED_TOOL_NAMES.has(tool.name))
     }
 
     const enriched = tools.map((t: { name: string; [k: string]: unknown }) => ({
@@ -79,6 +82,9 @@ export const POST = defineRoute<PostInput>({
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
     await assertAgentInOrg(repo, agentConfigId)
+    if (RETIRED_TOOL_NAMES.has(fields.name)) {
+      throw new ValidationError(`Tool "${fields.name}" is retired and can no longer be created.`)
+    }
 
     const stringifyField = (val: unknown): string | null => {
       if (val === null || val === undefined) return null

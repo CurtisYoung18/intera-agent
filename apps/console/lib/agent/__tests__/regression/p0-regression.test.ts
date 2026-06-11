@@ -158,14 +158,9 @@ describe('A4 — start_procedure', () => {
     expect(startDef!.inputSchema.properties).toHaveProperty('procedureId')
   })
 
-  it('keeps dispatch_case_agent as disabled compatibility alias', () => {
+  it('does not register the retired dispatch_case_agent alias', () => {
     const router = new ToolRouter()
     const def = router.getTool('dispatch_case_agent')
-    expect(def).toBeDefined()
-    expect(def!.enabled).toBe(false)
-    expect(def!.inputSchema.required).toEqual(['procedureId'])
-    expect(def!.inputSchema.properties).toHaveProperty('procedureId')
-    expect(def!.inputSchema.properties).toHaveProperty('caseType')
-    expect(def!.inputSchema.properties).toHaveProperty('currentProcedureAction')
+    expect(def).toBeUndefined()
   })
 })

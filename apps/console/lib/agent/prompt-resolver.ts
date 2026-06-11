@@ -80,7 +80,7 @@ function renderTools(tools: PromptContext['available_tools']): string {
     for (const t of kbTools) lines.push(`- ${t.name}: ${t.description}`)
   }
   if (lookupTools.length) {
-    lines.push('\n**Account Lookups** (all require member_id — call ask_user_questions first):')
+    lines.push('\n**Account Lookups** (all require member_id — if member_id is missing, ask_user_questions is mandatory and plain-text collection is not allowed):')
     for (const t of lookupTools) lines.push(`- ${t.name}: ${t.description}`)
   }
   if (otherTools.length) {

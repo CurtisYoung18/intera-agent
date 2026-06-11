@@ -11,6 +11,7 @@ import type { ToolDefinition, ToolUse } from '@intera/shared/types'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { z } from 'zod'
 import { knowledgeSourceToolName, stableToolNameSegment } from './tool-names'
+import { RETIRED_TOOL_NAMES } from '@/lib/tool-classifications'
 
 /**
  * System Tools — always-available core tools registered directly in the constructor.
@@ -201,67 +202,14 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     zodSchema: z.object({}),
   },
   ...SYSTEM_TOOLS.filter((tool) => !['read_chat_memory', 'read_user_profile'].includes(tool.name)),
-  {
-    name: 'dispatch_case_agent',
-    description:
-      'Internal compatibility alias for start_procedure. Do not advertise to the model.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        procedureId: { type: 'string', description: 'Procedure id / CaseType slug, e.g. deposit_issue, account_issue' },
-        caseType: { type: 'string', description: 'Compatibility alias for procedureId.' },
-        reason: { type: 'string', description: 'Why this Procedure matches the customer message.' },
-        confidence: { type: 'number', description: 'Optional confidence from 0 to 1.' },
-        collectedFacts: { type: 'object', description: 'Facts already collected from the customer message.' },
-        currentProcedureAction: {
-          type: 'string',
-          enum: ['pause', 'complete', 'abandon'],
-          description: 'What to do with the currently active Procedure when starting a different one. Defaults to pause.',
-        },
-      },
-      required: ['procedureId'],
-    },
-    isConcurrencySafe: false,
-    mode: 'system_managed',
-    enabled: false,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Starting procedure', icon: 'dots' },
-    zodSchema: z.object({
-      procedureId: z.string().optional(),
-      caseType: z.string().optional(),
-      reason: z.string().optional(),
-      confidence: z.number().optional(),
-      collectedFacts: z.record(z.string(), z.unknown()).optional(),
-      currentProcedureAction: z.enum(['pause', 'complete', 'abandon']).optional(),
-    }).refine((input) => Boolean(input.procedureId || input.caseType), {
-      message: 'procedureId is required (caseType is accepted as a compatibility alias).',
-    }),
-  },
-  {
-    name: 'finalize_case',
-    description: 'Internal compatibility alias for finalize_procedure. Do not advertise to the model.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        status: { type: 'string', enum: ['resolved', 'escalated'], description: 'Final status' },
-        conclusion: { type: 'string', description: 'Conclusion summary' },
-        basis: { type: 'array', items: { type: 'string' }, description: 'Evidence basis for the conclusion' },
-      },
-      required: ['status', 'conclusion'],
-    },
-    isConcurrencySafe: false,
-    mode: 'system_managed',
-    enabled: false,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Wrapping up your case', icon: 'spin' },
-    zodSchema: z.object({ status: z.enum(['resolved', 'escalated']), conclusion: z.string(), basis: z.array(z.string()).optional() }),
-  },
   // ── Channel tools ──
   {
     name: 'create_human_task',
     description:
       'Create a human task for manual confirmation or processing. ' +
+      'Call this when a human must take over — do not only say you will transfer. ' +
       'This will pause the agent loop until a human responds. ' +
+      'It creates the durable handoff record and triggers channel-specific handoff UI/transfer behavior. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
       'their answers will be automatically ingested as confirmedFacts when they resolve the task.',
     inputSchema: {
@@ -313,7 +261,8 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     description:
       'Display a structured form to the customer to collect required information. ' +
       'Use this when you need the customer to provide specific details (amount, payment method, ' +
-      'screenshots, etc.). The form will appear as a floating card in the chat UI. ' +
+      'screenshots, etc.). Do not ask for those details in plain text when this tool can collect them. ' +
+      'The form will appear as a floating card in the chat UI. ' +
       'Once the customer submits, you will receive their answers and can continue.',
     inputSchema: {
       type: 'object',
@@ -362,7 +311,6 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
 /** Set of built-in tool names for fast lookup. */
 export const BUILT_IN_TOOL_NAMES: Set<string> = new Set(BUILT_IN_TOOLS.map((tool) => tool.name))
 export const LOCKED_SYSTEM_TOOL_NAMES: Set<string> = new Set(SYSTEM_TOOLS.map((tool) => tool.name))
-export const COMPATIBILITY_ALIAS_TOOL_NAMES: Set<string> = new Set(['dispatch_case_agent', 'finalize_case'])
 
 /**
  * Returns true if the given tool name is a built-in (system) tool.
@@ -426,7 +374,7 @@ export class ToolRouter {
         }
       }
       for (const t of dbTools) {
-        if (LOCKED_SYSTEM_TOOL_NAMES.has(t.name) || COMPATIBILITY_ALIAS_TOOL_NAMES.has(t.name)) {
+        if (LOCKED_SYSTEM_TOOL_NAMES.has(t.name) || RETIRED_TOOL_NAMES.has(t.name)) {
           continue
         }
         const dbMode = t.mode || 'static_fixture'

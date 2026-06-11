@@ -111,14 +111,6 @@ function mockFixtureChips(raw?: string | null): string[] | null {
 }
 
 const TOOL_DISPLAY_ALIASES: Record<string, { name?: string; description?: string }> = {
-  dispatch_case_agent: {
-    name: 'start_procedure',
-    description: 'Start or select an inline ProcedureRun for a single clear customer issue.',
-  },
-  finalize_case: {
-    name: 'finalize_procedure',
-    description: 'Mark the Procedure as resolved with a conclusion.',
-  },
   read_chat_memory: {
     description:
       'Read the ProcedureRun working Memory for the current investigation. Returns confirmed facts, tools called so far, key events, and any compaction summary from earlier turns.',

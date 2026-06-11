@@ -3,14 +3,14 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
-import { defineRoute, ForbiddenError, NotFoundError } from '@/lib/api/define-route'
+import { defineRoute, ForbiddenError, NotFoundError, ValidationError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
   toolUpdateRequestSchema,
   type ToolUpdateRequest,
 } from '@intera/shared/contracts/tools'
-import { SYSTEM_TOOL_NAMES, SPECIAL_TOOL_NAMES, CHANNEL_TOOL_NAMES } from '@/lib/tool-classifications'
+import { SYSTEM_TOOL_NAMES, SPECIAL_TOOL_NAMES, CHANNEL_TOOL_NAMES, RETIRED_TOOL_NAMES } from '@/lib/tool-classifications'
 
 // ── Route params ──
 interface ToolParams {
@@ -19,6 +19,10 @@ interface ToolParams {
 
 function isProtected(name: string): boolean {
   return SYSTEM_TOOL_NAMES.has(name) || SPECIAL_TOOL_NAMES.has(name) || CHANNEL_TOOL_NAMES.has(name)
+}
+
+function isRetired(name: string): boolean {
+  return RETIRED_TOOL_NAMES.has(name)
 }
 
 function isMutationAllowed(name: string, body: Record<string, unknown>): boolean {
@@ -37,6 +41,7 @@ export const GET = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
     await assertAgentInOrg(repo, agentConfigId)
+    if (isRetired(params.name)) throw new NotFoundError(`Tool "${params.name}" not found`)
     const tool = await repo.raw.tool.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
     })
@@ -58,6 +63,7 @@ export const PUT = defineRoute<PutInput, ToolParams>({
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
     await assertAgentInOrg(repo, agentConfigId)
+    if (isRetired(params.name)) throw new NotFoundError(`Tool "${params.name}" not found`)
 
     const existing = await repo.raw.tool.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
@@ -68,6 +74,9 @@ export const PUT = defineRoute<PutInput, ToolParams>({
       throw new ForbiddenError(
         `Tool "${params.name}" is protected. Only the 'enabled' field can be changed.`,
       )
+    }
+    if (typeof fields.name === 'string' && isRetired(fields.name)) {
+      throw new ValidationError(`Tool "${fields.name}" is retired and can no longer be used.`)
     }
 
     const stringifyField = (val: unknown): string | undefined | null => {
@@ -110,6 +119,7 @@ export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
     await assertAgentInOrg(repo, agentConfigId)
+    if (isRetired(params.name)) throw new NotFoundError(`Tool "${params.name}" not found`)
     if (isProtected(params.name)) {
       throw new ForbiddenError(`Cannot delete protected tool "${params.name}"`)
     }

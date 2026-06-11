@@ -106,8 +106,7 @@ export class CaseAgentLoop {
   }
 
   filterProcedureTools(allTools: Tool[]): Tool[] {
-    const excluded = new Set(['dispatch_case_agent'])
-    return allTools.filter((tool) => !excluded.has(tool.name))
+    return allTools
   }
 
   emitProgressEvent(iterationCount: number, sendEvent: (event: SSEEvent) => void): void {
@@ -133,7 +132,7 @@ export class CaseAgentLoop {
       return this.handleCreateHumanTask(humanTaskResult, iterationCount, sendEvent)
     }
 
-    const finalizeResult = toolResults.find((result) => result.name === 'finalize_procedure' || result.name === 'finalize_case')
+    const finalizeResult = toolResults.find((result) => result.name === 'finalize_procedure')
     if (finalizeResult) {
       return this.handleFinalizeCase(finalizeResult, sendEvent)
     }
