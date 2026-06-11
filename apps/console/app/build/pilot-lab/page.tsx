@@ -560,19 +560,19 @@ export default function PilotLabPage() {
 
         <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
           <main className="intera-q2-panel flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <section className="flex items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-4 py-3 sm:px-5">
+            <section className="flex flex-col gap-3 border-b border-[var(--color-border-subtle)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <div className="min-w-0">
                 <p className="text-[12px] font-medium text-[var(--color-text-tertiary)]">{copy.currentAgent}</p>
                 <h2 className="truncate text-[16px] font-semibold text-[var(--color-text-primary)]">
                   {context ? `${context.selected.name} v${context.selected.version}` : copy.loadingDraftContext}
                 </h2>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
                 {loading ? <OrganicLoader variant="02" size={22} title={copy.loadingPilotContext} /> : <OrganicLoader variant={proposalPhase === 'proposing' ? '05' : '11'} size={22} title={copy.pilotStatusLoader} />}
                 <ContextBadge context={context} />
                 <ValidationBadge validation={validation} />
                 <button type="button" onClick={loadCockpit} className="intera-q2-button inline-flex h-8 items-center gap-2 border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium hover:bg-[var(--color-bg-surface-muted)]">
-                  <RefreshCw size={13} /> {copy.refresh}
+                  <RefreshCw size={13} /> <span className="hidden sm:inline">{copy.refresh}</span>
                 </button>
                 <span className="hidden text-[12px] text-[var(--color-text-tertiary)] sm:inline">{proposalPhaseLabel(proposalPhase, locale)}</span>
               </div>
@@ -1193,9 +1193,9 @@ function ValidationTruthBlock({
 function ContextBadge({ context }: { context: ConfigPilotContextResponse | null }) {
   const { locale } = useConsoleLocale()
   return (
-    <span className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium text-[var(--color-text-secondary)]">
-      <Bot size={15} className="text-[var(--color-accent-primary)]" />
-      {context ? `${context.selected.name} v${context.selected.version}` : locale === 'zh' ? '正在读取 draft' : 'Reading draft'}
+    <span className="inline-flex h-9 min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] font-medium text-[var(--color-text-secondary)]">
+      <Bot size={15} className="shrink-0 text-[var(--color-accent-primary)]" />
+      <span className="truncate">{context ? `${context.selected.name} v${context.selected.version}` : locale === 'zh' ? '正在读取 draft' : 'Reading draft'}</span>
     </span>
   )
 }
@@ -1207,8 +1207,8 @@ function ValidationBadge({ validation }: { validation: ScenarioValidationSummary
   const color = runtimeValidated ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : state === 'Validation failed' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'
   const Icon = runtimeValidated ? CheckCircle2 : state === 'Validation failed' ? XCircle : AlertTriangle
   return (
-    <span className={`inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] border px-3 text-[13px] font-medium ${color}`}>
-      <Icon size={15} /> {runtimeValidated ? (locale === 'zh' ? '运行时已验证' : 'Runtime validated') : state === 'Validated' ? (locale === 'zh' ? '仅 fixture 验证' : 'Fixture-only validation') : locale === 'zh' && state === 'Not validated' ? '尚未验证' : locale === 'zh' && state === 'Validation failed' ? '验证失败' : locale === 'zh' && state === 'Changed since last validation' ? '自上次验证后已变更' : state}
+    <span className={`inline-flex h-9 max-w-full items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] border px-3 text-[13px] font-medium ${color}`}>
+      <Icon size={15} className="shrink-0" /> <span className="truncate">{runtimeValidated ? (locale === 'zh' ? '运行时已验证' : 'Runtime validated') : state === 'Validated' ? (locale === 'zh' ? '仅 fixture 验证' : 'Fixture-only validation') : locale === 'zh' && state === 'Not validated' ? '尚未验证' : locale === 'zh' && state === 'Validation failed' ? '验证失败' : locale === 'zh' && state === 'Changed since last validation' ? '自上次验证后已变更' : state}</span>
     </span>
   )
 }
