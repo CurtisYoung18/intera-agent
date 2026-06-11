@@ -32,10 +32,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
     method: 'POST',
     auth: 'webhook',
     async handler({ params, repo }) {
-      const agentConfig = await repo.agentConfig.findFirst({
-        where: { id: params.agentConfigId, isActive: true },
-        select: { id: true, name: true, orgId: true },
+      const requestedAgentConfig = await repo.agentConfig.findUnique({
+        where: { id: params.agentConfigId },
+        select: { id: true, name: true, orgId: true, isActive: true },
       })
+      if (!requestedAgentConfig) throw new NotFoundError(`Agent config "${params.agentConfigId}" not found`)
+
+      const agentConfig = requestedAgentConfig.isActive
+        ? requestedAgentConfig
+        : await repo.agentConfig.findFirst({
+            where: { name: requestedAgentConfig.name, isActive: true },
+            select: { id: true, name: true, orgId: true, isActive: true },
+          })
       if (!agentConfig) throw new NotFoundError(`Agent config "${params.agentConfigId}" not found or not active`)
 
       const orgId = agentConfig.orgId

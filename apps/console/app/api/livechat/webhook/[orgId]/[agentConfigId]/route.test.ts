@@ -8,6 +8,7 @@ const h = vi.hoisted(() => {
   const mockCheckRateLimit = vi.fn()
   const agentConfigs: Record<string, { id: string; name: string; orgId: string; isActive: boolean }> = {
     'active-agent': { id: 'active-agent', name: 'J1B', orgId: 'default', isActive: true },
+    'inactive-agent': { id: 'inactive-agent', name: 'J1B', orgId: 'default', isActive: false },
   }
 
   return {
@@ -33,10 +34,22 @@ vi.mock('@/lib/api/define-route', () => {
         const params = await ctx.params
         const repo = {
           agentConfig: {
-            findFirst: vi.fn(async ({ where }: { where: { id: string; isActive: boolean } }) => {
+            findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
               const config = h.agentConfigs[where.id]
-              if (!config || !config.isActive) return null
-              return { id: config.id, name: config.name, orgId: config.orgId }
+              if (!config) return null
+              return { id: config.id, name: config.name, orgId: config.orgId, isActive: config.isActive }
+            }),
+            findFirst: vi.fn(async ({ where }: { where: { id?: string; name?: string; isActive: boolean } }) => {
+              if (where.id) {
+                const config = h.agentConfigs[where.id]
+                if (!config || !config.isActive) return null
+                return { id: config.id, name: config.name, orgId: config.orgId, isActive: config.isActive }
+              }
+              const config = Object.values(h.agentConfigs).find((candidate) => {
+                return candidate.name === where.name && candidate.isActive === where.isActive
+              })
+              if (!config) return null
+              return { id: config.id, name: config.name, orgId: config.orgId, isActive: config.isActive }
             }),
           },
         }
@@ -82,6 +95,10 @@ function makeRequest(body: Record<string, unknown>) {
 
 function makeCtx() {
   return { params: Promise.resolve({ orgId: 'default', agentConfigId: 'active-agent' }) }
+}
+
+function makeCtxFor(agentConfigId: string) {
+  return { params: Promise.resolve({ orgId: 'default', agentConfigId }) }
 }
 
 beforeEach(() => {
@@ -215,5 +232,35 @@ describe('per-agent LiveChat webhook route', () => {
       'active-agent',
     )
     expect(h.mockSendTextMessage).not.toHaveBeenCalled()
+  })
+
+  it('falls back from an inactive version URL to the current active version in the same Agent family', async () => {
+    const res = await POST(
+      makeRequest({
+        action: 'incoming_event',
+        chat_id: 'chat-family',
+        secret_key: 'sec_livechat',
+        payload: {
+          event: {
+            id: 'evt-family',
+            type: 'message',
+            text: 'Check my latest deposit',
+            author: { id: 'customer-family' },
+          },
+        },
+      }),
+      makeCtxFor('inactive-agent'),
+    )
+
+    expect(res.status).toBe(200)
+    expect(h.mockGetLiveChatConfig).toHaveBeenCalledWith('active-agent')
+    expect(h.mockHandleIncomingEvent).toHaveBeenCalledWith(
+      'chat-family',
+      'default',
+      'customer-family',
+      { type: 'message', text: 'Check my latest deposit' },
+      expect.objectContaining({ enabled: true }),
+      'active-agent',
+    )
   })
 })
