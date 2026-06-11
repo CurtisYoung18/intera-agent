@@ -61,11 +61,13 @@ export interface PersistencePort {
 
   /** Create a human task escalation record. Memory port no-ops this. */
   createHumanTask(record: {
+    id?: string
     caseId: string
     queue: string
     question: string
+    fields?: string | null
     status?: string
-  }): Promise<void>
+  }): Promise<{ id: string }>
 
   /** Flush any buffered writes (no-op for Prisma, meaningful for batched memory). */
   flush(): Promise<void>
@@ -77,7 +79,13 @@ export function createPrismaPersistence(): PersistencePort {
     async ensureCase(record: CaseRecord) {
       await prisma.case.upsert({
         where: { id: record.id },
-        update: { status: record.status, type: record.type },
+        update: {
+          status: record.status,
+          type: record.type,
+          goal: record.goal ?? undefined,
+          blocker: record.blocker ?? undefined,
+          chatId: record.chatId,
+        },
         create: record,
       })
     },
@@ -91,6 +99,7 @@ export function createPrismaPersistence(): PersistencePort {
           toolsCalled: record.toolsCalled,
           toolResults: record.toolResults,
           keyEvents: record.keyEvents,
+          humanTaskStatus: record.humanTaskStatus,
           summary: record.summary ?? undefined,
           todos: record.todos ?? null,
         },
@@ -136,14 +145,17 @@ export function createPrismaPersistence(): PersistencePort {
     },
 
     async createHumanTask(record) {
-      await prisma.humanTask.create({
+      const task = await prisma.humanTask.create({
         data: {
+          id: record.id,
           caseId: record.caseId,
           queue: record.queue,
           question: record.question,
+          fields: record.fields ?? null,
           status: record.status ?? 'pending',
         },
       })
+      return { id: task.id }
     },
 
     async flush() {
@@ -159,13 +171,13 @@ export function createMemoryPersistence(): {
   memories: MemoryRecord[]
   messages: MessageRecord[]
   traces: TraceRecord[]
-  humanTasks: { caseId: string; queue: string; question: string; status?: string }[]
+  humanTasks: { id: string; caseId: string; queue: string; question: string; fields?: string | null; status?: string }[]
 } {
   const cases: CaseRecord[] = []
   const memories: MemoryRecord[] = []
   const messages: MessageRecord[] = []
   const traces: TraceRecord[] = []
-  const humanTasks: { caseId: string; queue: string; question: string; status?: string }[] = []
+  const humanTasks: { id: string; caseId: string; queue: string; question: string; fields?: string | null; status?: string }[] = []
 
   const port: PersistencePort = {
     async ensureCase(record: CaseRecord) {
@@ -193,7 +205,9 @@ export function createMemoryPersistence(): {
     },
 
     async createHumanTask(record) {
-      humanTasks.push(record) // accumulate in memory, no real DB write
+      const id = record.id ?? crypto.randomUUID()
+      humanTasks.push({ ...record, id }) // accumulate in memory, no real DB write
+      return { id }
     },
 
     async flush() {
