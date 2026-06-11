@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -32,9 +33,33 @@ interface ScenarioStoreFile {
 
 let writeQueue = Promise.resolve()
 
+const SCENARIO_STORE_DIR = '.intera-agent-runtime'
+const SCENARIO_STORE_FILE = 'scenarios.json'
+const REPO_ROOT_SEARCH_LIMIT = 8
+
+function isRepoRoot(dir: string): boolean {
+  return existsSync(path.join(dir, 'package.json'))
+    && existsSync(path.join(dir, 'apps/console/tsconfig.json'))
+}
+
+export function resolveScenarioStoreBaseDir(startDir = process.cwd()): string {
+  let dir = path.resolve(startDir)
+  for (let depth = 0; depth < REPO_ROOT_SEARCH_LIMIT; depth += 1) {
+    if (isRepoRoot(dir)) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return path.resolve(startDir)
+}
+
+export function defaultScenarioStorePath(startDir = process.cwd()): string {
+  return path.join(resolveScenarioStoreBaseDir(startDir), SCENARIO_STORE_DIR, SCENARIO_STORE_FILE)
+}
+
 export function scenarioStorePath(): string {
   return process.env.INTERA_SCENARIO_STORE_PATH
-    || path.join(process.cwd(), '.intera-agent-runtime', 'scenarios.json')
+    || defaultScenarioStorePath()
 }
 
 function emptyBucket(): AgentScenarioBucket {
