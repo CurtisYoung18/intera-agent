@@ -39,6 +39,26 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-11 - LiveChat Webhook URL Broke Across Agent Publish
+
+- Area: LiveChat / Agent publish / integration boundary
+- Status: fixed
+- Severity: P0
+- Uncertainty: Publishing `J1B v3` activated `cmq4q82mx0001qj32gt8htfiq` and deactivated `cmq4mvv5o0001qj5yfl84kfl0`, but the external LiveChat app was still calling the old per-agent webhook URL under the `v1` id. Production logs then showed repeated `Agent config "cmq4mvv5o0001qj5yfl84kfl0" not found or not active`, and user-visible chats received no reply after publish.
+- Default action taken: Treated webhook URL stability as a production blocker and fixed the per-agent LiveChat webhook route so an inactive requested Agent id resolves to the current active config in the same Agent family instead of returning `not active`.
+- Why this default: The updated goal/spec now define the webhook URL as part of the channel/workspace integration boundary, not the runtime version boundary. Requiring a manual external webhook URL rewrite after every publish would violate the acceptance contract and make publish unsafe for customer-facing LiveChat.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/livechat-chain/webhook-stability-after-publish/summary.md`
+- Production URL / screenshot / receipt: Production deploy `1354facf` now accepts the old webhook URL `https://demo.anytrans.ai/api/livechat/webhook/default/cmq4mvv5o0001qj5yfl84kfl0` after `v3` publish and routes it into active `J1B v3`. Probe A (`最近一次存款`) through the old URL produced `ask_user_questions`; Probe B (`最近一次存款，我的会员ID是 JAYA11C5184`) through the old URL produced `get_latest_deposit`. The secret remains redacted in the receipt.
+- Exact blocker reproduction:
+  - Publish `cmq4q82mx0001qj32gt8htfiq` so `cmq4mvv5o0001qj5yfl84kfl0` becomes inactive.
+  - Keep the external LiveChat app on the old `v1` webhook URL.
+  - Send a new LiveChat message.
+  - Production logs show `Agent config "cmq4mvv5o0001qj5yfl84kfl0" not found or not active`, and no reply reaches the customer.
+- Attempted fixes / checks: Verified publish state via production API and Postgres; confirmed `v3` was active and the old webhook path was receiving traffic; added route-level fallback logic plus regression coverage; ran focused vitest, `git diff --check`, and `npx tsc --noEmit -p apps/console/tsconfig.json`; deployed `1354facf`; verified the old URL returns HTTP `200` after publish and resolves into active `v3` behavior in production traces.
+- Why no workaround is safe: Telling operators to manually rotate the external webhook URL on every publish keeps the integration brittle and makes publish a customer-facing outage risk. The acceptance bar now explicitly forbids that boundary leak.
+- Owner decision needed: None for the stability fix itself. Future LiveChat product work should preserve this invariant.
+- Follow-up owner: coding-team lead / delivery lead
+
 ### 2026-06-10 - Production Deploy Commit And Hotfix Parity
 
 - Area: Deploy / production acceptance
@@ -131,6 +151,85 @@ Use this format for each new item:
 - Next recommended step: Reuse the Pilot Lab authoring controls for the remaining `duplicate_deposit` flows and the other incomplete J1B P0 scenario families, keeping receipt durability embedded in every accepted run.
 - Follow-up owner: owner / product / coding-team lead
 
+### 2026-06-11 - J1B Production Reply Language Drift On Withdrawal-Blocked Scenario
+
+- Area: J1B production Playground / prompt quality / runtime UX
+- Status: fixed
+- Severity: P0
+- Uncertainty: During production J1B scenario validation, `withdrawal_blocked_basic` initially returned Bengali customer-facing text and Bengali `ask_user_questions` labels even though the user message was Simplified Chinese. The runtime receipt still passed because the Scenario expected only `caseType`, `ask_user_questions`, and `finalStatus`, so language drift was not yet encoded as a receipt assertion.
+- Default action taken: Treated the language drift as a same-area production quality defect, applied the prepared core-system-prompt language-lock block to the production J1B draft, and reran the same Scenario until the customer-facing reply plus `ask_user_questions` titles/descriptions/labels/placeholders were back in Simplified Chinese.
+- Why this default: The dispatch requires the agent to answer in the customer's language, and adjacent defects discovered during J1B validation must be fixed or logged as blockers before continuing acceptance.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/j1b-language-lock-prompt/update-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-language-lock-prompt/before-core-system-prompt.txt`; `.artifacts/delivery-audit/2026-06-11/j1b-language-lock-prompt/after-core-system-prompt.txt`; `.artifacts/delivery-audit/2026-06-11/j1b-language-lock-prompt/withdrawal_blocked_basic-rerun-accepted/summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq`. Pre-fix runtime receipt `scn_9df271bd-958b-4234-bbde-6152ae9f0387` / trace `pg_1781153819139_mc0ay1` showed Bengali final reply and Bengali form labels in `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/withdrawal_blocked_basic/summary.json`. After the prompt tune, accepted rerun receipt `scn_323d4fd0-f152-4dd6-b229-0b38835dd9f4` / trace `pg_1781154000913_olpp3s` showed Chinese final reply plus Chinese `ask_user_questions` content and survived refresh/reopen.
+- Exact blocker reproduction:
+  - Run production `withdrawal_blocked_basic` before the prompt tune using the J1B draft.
+  - Receipt `scn_9df271bd-958b-4234-bbde-6152ae9f0387` passes the existing Scenario checks, but the receipt evidence shows:
+    - final response: `আপনার সমস্যা বুঝতে পেরেছি...`
+    - `ask_user_questions` title/description/labels/placeholders also in Bengali
+  - This contradicts the Chinese customer input and the prompt requirement to respond in the customer's language.
+- Attempted fixes / checks: Applied the `## Output language lock` block to `coreSystemPrompt` through the authenticated production admin API; ran two phrase-assertion exploratory reruns (`scn_02f894a6-9bba-4f52-a08d-fc3363e9bd8b`, `scn_a39ac258-11d0-42d5-b32e-af6f2bdf78ca`) that already showed Chinese output but failed only because the ad hoc receipt phrases were too strict; then accepted rerun `scn_323d4fd0-f152-4dd6-b229-0b38835dd9f4` with Chinese runtime output and durability proof.
+- Why no workaround is safe: Accepting the original receipt would hide a user-visible language defect in production. Manual interpretation without a rerun would not prove the production prompt had actually been corrected.
+- Owner decision needed: None.
+- Next recommended step: Reuse the language-lock prompt block for the remaining J1B production families and capture this rerun as the required targeted system-prompt-tuning proof in the final J1B receipt set.
+- Follow-up owner: coding-team lead / delivery lead
+
+### 2026-06-11 - J1B `security review` Wording Is Not Stable Enough For Counted Scenario Acceptance
+
+- Area: J1B production Playground / scenario taxonomy / procedure routing
+- Status: monitoring
+- Severity: P1
+- Uncertainty: During production validation, the exploratory wording `账户正在安全审核，不能提现` was not stable enough to use as a counted acceptance flow. Seeded under `withdrawal_blocked`, it routed to `account_wallet_frozen`; seeded under `account_wallet_frozen`, the same wording later routed back to `withdrawal_blocked`.
+- Default action taken: Did not retune runtime or collapse the two Procedure families. Marked `security review` wording as ambiguous, excluded it from counted acceptance in both families, and replaced it with clearer flows:
+  - `withdrawal_blocked_completed_conditions_escalation` for the unmet-conditions contradiction path
+  - explicit `账号受限 / 钱包冻结 / 登录锁定` wording for the `account_wallet_frozen` family
+- Why this default: Phase 4 separates `无法取款` from `账号/钱包被冻结`. Ambiguous wording is poor acceptance evidence. Clearer seed phrasing is safer than forcing the runtime to merge the taxonomies.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/withdrawal_blocked_security_hold/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/withdrawal_blocked_security_hold-rerun/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/account_wallet_frozen_security_review/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/withdrawal_blocked_completed_conditions_escalation/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/account_wallet_frozen_followup_member/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/account_wallet_frozen_login_locked/summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq`. Exploratory receipt `scn_fbe953a4-0885-46f8-8b3c-dbb797048d07` / trace `pg_1781154218937_e5u7kp` and rerun `scn_bd19630c-9418-4ff3-9f81-9ecedfceb263` / trace `pg_1781154817205_ld246p` did not stay on a stable family boundary. When re-seeded under `account_wallet_frozen`, exploratory receipt `scn_8807817d-14f5-41ba-be00-3d8f54499562` / trace `pg_1781155066232_r220zf` still routed to `withdrawal_blocked`. Accepted replacements were `scn_0268c441-d473-4ad1-9a5d-3750f61ea7aa` for `withdrawal_blocked`, plus `scn_fe0c8a18-a1bc-4f24-a6a3-64cff2ad9d11` and `scn_ce252e5e-bdfc-4edb-9561-eb18787309f1` for explicit `account_wallet_frozen` wording, all with refresh/reopen durability proof.
+- Owner decision needed: None for continuing acceptance. If product later wants a single canonical home for `security review` wording, confirm whether it belongs under `withdrawal_blocked`, `account_wallet_frozen`, or an explicit split rule.
+- Next recommended step: Avoid `security review` as a counted acceptance phrase. Keep using explicit `未满足提款条件` wording for `withdrawal_blocked` and explicit `账号受限 / 钱包冻结 / 登录锁定` wording for `account_wallet_frozen`.
+- Follow-up owner: owner / product / delivery lead
+
+### 2026-06-11 - J1B Promotion `Condition Conflict` Wording Is Narrower Than `Claim Failed`
+
+- Area: J1B production Playground / scenario taxonomy / procedure routing
+- Status: monitoring
+- Severity: P1
+- Uncertainty: During production validation, `promotion_condition_conflict` stayed stable only when the customer wording explicitly kept the contradiction form `满足条件了 / 达到要求了 / 条件都满足了` plus `还是参加不了`. Closely related wording such as `系统提示条件不满足` or `不能领取` repeatedly routed back to `promotion_claim_failed`, even when the customer also said the deposit and turnover requirements had already been completed.
+- Default action taken: Did not retune runtime or merge the two Procedure families. Counted `promotion_condition_conflict` acceptance only with stable contradiction wording, and excluded the two drifted receipts from family completion.
+- Why this default: Phase 4 separates `Promotion 领取不了` from `Promotion 条件咨询后仍无法参加`. Ambiguous wording is weak acceptance evidence. Stable contradiction phrasing is safer than forcing a family boundary the runtime does not currently hold.
+- Evidence: Accepted counted flows: `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_basic/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_cashback_qualified/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_reward_center_stuck/summary.json`. Excluded exploratory drifts: `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_cashback_turnover/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_threshold_message/summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq`. Accepted receipts were `scn_f5a86f66-b384-42bd-a99f-eafb230f3cb9`, `scn_f36263dd-d4b0-4ce8-aa89-7d879fd110b5`, and `scn_719e1f35-f34a-49a2-a442-f1368d34c67a`, all durable after refresh and reopen. Excluded exploratory receipts `scn_0bc5dd6e-6f97-4c09-99d5-d221f9bd2cbd` and `scn_bb9064d9-341e-4de4-a485-5432122c3783` routed to `promotion_claim_failed`.
+- Owner decision needed: None for continuing acceptance. If product later wants phrases like `系统提示条件不满足` to live under `promotion_condition_conflict`, confirm whether to retune routing or keep those phrases under `promotion_claim_failed`.
+- Next recommended step: For counted `promotion_condition_conflict` evidence, keep using direct contradiction phrasing around already-met conditions plus `还是参加不了`. Treat `不能领取 / 条件不满足` wording as `promotion_claim_failed` unless runtime routing is intentionally retuned.
+- Follow-up owner: owner / product / delivery lead
+
+### 2026-06-11 - J1B Scenario Matrix Uses Mocked Playground Operational Tool Execution
+
+- Area: J1B production acceptance / tool execution scope
+- Status: default-applied
+- Severity: P1
+- Uncertainty: The final counted J1B scenario matrix on `https://demo.anytrans.ai/build/pilot-lab` is production `agentRuntime` validation, but every accepted Playground receipt in the final index recorded `toolExecutionMode=mocked`. This proves production Procedure routing, trace/sidebar behavior, and receipt durability, but it does not separately prove live HTTP execution of operational business tools.
+- Default action taken: Reported the 12-family matrix as `agentRuntime` production validation only and kept the mocked-vs-real tool boundary explicit in the final acceptance index and long-session receipt.
+- Why this default: The architect required mocked-vs-real truth to stay separate. Treating dry-run Playground tool events as live external side-effect proof would overstate production acceptance.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/deposit_not_credited_basic-flow1-receipt/playwright-j1b-receipt-durability-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/promotion_condition_conflict_basic/summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq`. The final J1B acceptance index aggregates all 36 counted accepted flows and records `toolExecutionMode=mocked` for every accepted Playground receipt.
+- Owner decision needed: None for scenario-matrix reporting. Separate real-tool execution proof is still required if release claims must include live HTTP side effects from operational business tools.
+- Follow-up owner: owner / delivery lead / coding-team lead
+
+### 2026-06-11 - J1B Long-Session Refresh/Reopen Restore Drops One Persisted Turn
+
+- Area: Playground / long-session stability / trace restore
+- Status: fixed
+- Severity: P0
+- Uncertainty: Historical only. The qualifying J1B long-session fallback run reached `30` customer messages, `30` assistant responses, and `331` backend traces, but the first refreshed/reopened Playground UI restore only showed `TRACE 29 persisted turns`.
+- Default action taken: Treated the gap as a production blocker, replaced timestamp-based restore grouping with trace turn-start grouping, added focused regression coverage, deployed the fix, and reran only the long-session restore gate against the same persisted production chat.
+- Why this default: The dispatch stop condition requires the long session to survive refresh/reopen without context loss or state loss. Backend persistence alone was not enough until the restored production UI also matched the persisted timeline.
+- Evidence: Historical fail artifacts remain: `.artifacts/delivery-audit/2026-06-11/j1b-long-session/receipt.md`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session/session-readback-final.json`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session/playground-long-session-final-desktop.png`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session/playground-long-session-reopen-desktop.png`. Current pass artifacts: `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/summary.md`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/session-readback-detail.json`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/playground-long-session-post-fix-initial.png`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/playground-long-session-post-fix-refresh.png`; `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/playground-long-session-post-fix-reopen.png`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab?tab=playground` on chat `pg_cmq4q82mx0001qj32gt8htfiq_1781158785107_4tvosv`. Historical screenshots showed `TRACE 29 persisted turns`. After local main commit `d76e812fef715fe5a4cf5298378c98705386a95c` was deployed on `deploy/main` as `68e7579c`, the post-fix production recheck showed `TRACE 30 persisted turns` on initial restore, refresh, and reopen while the same chat still read back as `30 / 30` messages and `331` traces.
+- Owner decision needed: None.
+- Next recommended step: Keep the long-session restore helper regression-covered and re-open this blocker immediately if a later deploy/restart causes persisted-turn loss again.
+- Follow-up owner: coding-team lead / delivery lead
+
 ### 2026-06-10 - LiveChat Console Joint Configuration Timing
 
 - Area: LiveChat / Integrations
@@ -180,5 +279,6 @@ Use this format for each new item:
 - Why this default: The J1B Playground tests are only meaningful if the Agent can ask for member id, call the matching HTTP Tools, and answer from real tool evidence.
 - Evidence: `.artifacts/delivery-audit/2026-06-11/production-j1b-member-id-routing/summary.md`; `.artifacts/delivery-audit/2026-06-11/j1b-production-ui/create-procedure-ui-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-production-ui/withdrawal-not-credited/create-procedure-ui-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-production-seed/seed-summary.json`
 - Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq` (`J1B v3 draft`) now has the required business tools, manually created Procedure types, and the 12-scenario J1B seed baseline available for runtime validation.
+- Historical note: This item records production setup readiness only. The final counted J1B Playground receipts on 2026-06-11 still reported `toolExecutionMode=mocked`; see the separate scope-gap item above for the current acceptance boundary.
 - Owner decision needed: None for tool/procedure seeding. The remaining J1B work is the full 12-scenario matrix, not production setup.
 - Follow-up owner: delivery lead / coding-team lead
