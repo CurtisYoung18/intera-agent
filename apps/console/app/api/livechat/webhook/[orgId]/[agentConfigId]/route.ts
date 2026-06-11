@@ -72,9 +72,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
       const event = (payload.event ?? payload) as Record<string, unknown>
       const eventType = event.type as string
       const msgAuthor = (event.author ?? {}) as Record<string, unknown>
-      const userId = (msgAuthor.id as string | undefined) ?? `livechat-${chatId}`
+      const authorId = (msgAuthor.id as string | undefined) ?? (event.author_id as string | undefined)
+      const userId = authorId ?? `livechat-${chatId}`
 
-      if (config.agentAccountId && userId === config.agentAccountId) {
+      if (config.agentAccountId && authorId === config.agentAccountId) {
         return NextResponse.json({ ok: true, skipped: 'self_authored' })
       }
 
