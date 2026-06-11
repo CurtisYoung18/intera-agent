@@ -102,6 +102,39 @@ describe('aggregateTraces', () => {
     expect(model?.ms).toBe(1200) // from llmWallMs, NOT from createdAt span
   })
 
+  it('includes Iteration Snapshot rows in debug export json for Model generation', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'loop_decision',
+        title: 'Iteration Snapshot',
+        payload: JSON.stringify({ iteration: 1, llmWallMs: 1200, toolsWallMs: 80 }),
+        detail: '',
+        createdAt: new Date(t0 + 5).toISOString(),
+      },
+      {
+        caseId: 'c',
+        actionType: 'llm_request_start',
+        title: 'LLM request',
+        payload: JSON.stringify({ model: 'demo-model' }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+      {
+        caseId: 'c',
+        actionType: 'llm_response',
+        title: 'LLM response',
+        payload: JSON.stringify({ usage: { input_tokens: 100, output_tokens: 20 }, iteration: 1 }),
+        createdAt: new Date(t0 + 200).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, true, ['Model generation'])
+    const model = result.find((step) => step.stage === 'Model generation')
+    expect(model?.json).toBeDefined()
+    expect(model?.json?.some((row) => row.title === 'Iteration Snapshot')).toBe(true)
+    expect(model?.json?.every((row) => typeof row.createdAt === 'string')).toBe(true)
+  })
+
   it('surfaces hook loop decisions and procedure runtime guards instead of hiding them as bookkeeping', () => {
     const traces = [
       {

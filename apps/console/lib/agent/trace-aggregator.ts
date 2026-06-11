@@ -84,7 +84,7 @@ export interface PlaygroundTraceStep {
   detail: [string, string][]
   events?: PlaygroundTraceEvent[]
   runtimeTruth?: PlaygroundCapabilityTruth
-  json?: object
+  json?: Array<Record<string, unknown>>
   /** Full prompt data captured from llm_request_start (available for Model generation stage). */
   promptData?: { systemPrompt: string; messages: unknown[] }
 }
@@ -601,14 +601,33 @@ export function aggregateTraces(
     }
 
     if (debug) {
-      step.json = records.map((record) => ({
+      const exportRecords = records.map((record) => ({
         actionType: record.actionType,
         title: record.title,
         detail: record.detail,
+        createdAt: record.createdAt,
         payload: record.payload ? (() => {
           try { return JSON.parse(record.payload) } catch { return record.payload }
         })() : undefined,
       }))
+
+      if (stage === 'Model generation') {
+        const iterationSnapshotRows = bookkeeping
+          .filter((record) => record.actionType === 'loop_decision' && record.title === 'Iteration Snapshot')
+          .map((record) => ({
+            actionType: record.actionType,
+            title: record.title,
+            detail: record.detail,
+            createdAt: record.createdAt,
+            payload: record.payload ? (() => {
+              try { return JSON.parse(record.payload) } catch { return record.payload }
+            })() : undefined,
+          }))
+
+        step.json = [...exportRecords, ...iterationSnapshotRows]
+      } else {
+        step.json = exportRecords
+      }
     }
 
     return step

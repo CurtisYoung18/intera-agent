@@ -204,6 +204,7 @@ describe('POST /api/admin/playground/save-to-chat', () => {
               actionType: 'llm_response',
               title: 'LLM response: tool_use',
               detail: 'stopReason: tool_use',
+              createdAt: '2026-06-11T12:00:00.000Z',
               payload: {
                 usage: {
                   input_tokens: 23,
@@ -214,6 +215,18 @@ describe('POST /api/admin/playground/save-to-chat', () => {
                 toolCalls: ['ask_user_questions'],
               },
             },
+            {
+              actionType: 'loop_decision',
+              title: 'Iteration Snapshot',
+              detail: null,
+              createdAt: '2026-06-11T12:00:01.000Z',
+              payload: {
+                iteration: 1,
+                llmWallMs: 2150,
+                toolsWallMs: 1,
+                iterationWallMs: 2151,
+              },
+            },
           ],
         },
       ]],
@@ -221,7 +234,7 @@ describe('POST /api/admin/playground/save-to-chat', () => {
 
     await POST(makeRequest(input))
 
-    expect(h.mockActionTraceCreate).toHaveBeenCalledTimes(2)
+    expect(h.mockActionTraceCreate).toHaveBeenCalledTimes(3)
 
     const firstCall = h.mockActionTraceCreate.mock.calls[0][0]
     expect(firstCall.data.actionType).toBe('tool_result')
@@ -234,6 +247,13 @@ describe('POST /api/admin/playground/save-to-chat', () => {
     expect(secondCall.data.detail).toBe('stopReason: tool_use')
     expect(secondCall.data.payload).toContain('"input_tokens":23')
     expect(secondCall.data.payload).toContain('"cache_read_input_tokens":3840')
+    expect(secondCall.data.createdAt).toEqual(new Date('2026-06-11T12:00:00.000Z'))
+
+    const thirdCall = h.mockActionTraceCreate.mock.calls[2][0]
+    expect(thirdCall.data.actionType).toBe('loop_decision')
+    expect(thirdCall.data.title).toBe('Iteration Snapshot')
+    expect(thirdCall.data.payload).toContain('"llmWallMs":2150')
+    expect(thirdCall.data.createdAt).toEqual(new Date('2026-06-11T12:00:01.000Z'))
   })
 
   it('returns 200 with correct response shape', async () => {

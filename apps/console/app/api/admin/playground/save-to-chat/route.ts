@@ -20,6 +20,7 @@ interface CanonicalTraceRow {
   title?: string | null
   detail?: string | null
   payload?: unknown
+  createdAt?: string | null
 }
 
 function serializeTracePayload(payload: unknown): string | null {
@@ -30,6 +31,12 @@ function serializeTracePayload(payload: unknown): string | null {
   } catch {
     return null
   }
+}
+
+function parseTraceCreatedAt(value: string | null | undefined): Date | undefined {
+  if (!value) return undefined
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed
 }
 
 function normalizeSavedTraceRows(turnTraces: unknown[]): CanonicalTraceRow[] {
@@ -110,6 +117,7 @@ export const POST = defineRoute({
               title: traceRow.title || traceRow.actionType,
               detail: traceRow.detail ?? null,
               payload: serializeTracePayload(traceRow.payload),
+              createdAt: parseTraceCreatedAt(traceRow.createdAt),
             },
           })
         }
