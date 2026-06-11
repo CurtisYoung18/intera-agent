@@ -157,6 +157,29 @@ describe('per-agent LiveChat webhook route', () => {
     expect(h.mockHandleIncomingEvent).not.toHaveBeenCalled()
   })
 
+  it('ignores incoming_event system messages so close-copy does not reset the bridge session', async () => {
+    const res = await POST(
+      makeRequest({
+        action: 'incoming_event',
+        chat_id: 'chat-system',
+        secret_key: 'sec_livechat',
+        payload: {
+          event: {
+            id: 'evt-system',
+            type: 'system_message',
+            system_message_text: 'You have closed the chat.',
+            author_id: 'customer-1',
+          },
+        },
+      }),
+      makeCtx(),
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ ok: true, skipped: 'system_message' })
+    expect(h.mockHandleIncomingEvent).not.toHaveBeenCalled()
+  })
+
   it('processes the first incoming_chat thread message instead of short-circuiting to chat_started', async () => {
     const res = await POST(
       makeRequest({
