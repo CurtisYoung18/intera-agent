@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { defineRoute, UnauthorizedError, NotFoundError } from '@/lib/api/define-route'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
-import { sendTextMessage, deactivateChat } from '@/lib/livechat/livechat-api'
+import { sendTextMessage } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getLiveChatConfig } from '@/lib/livechat/config-store'
@@ -64,38 +64,168 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
         if (await isDuplicateWebhook(dedupId)) return NextResponse.json({ ok: true, dedup: true })
       }
 
-      if (action === 'incoming_chat' || action === 'incoming_event') {
-        (handleIncomingEvent as any)(chatId, orgId, `livechat-${chatId}`, { type: 'chat_started', presence: getChatPresence(body) }, config, agentConfig.id).catch(() => {})
-        return NextResponse.json({ ok: true })
-      }
-
-      if (action === 'chat_deactivated') {
-        await (deactivateChat as any)(chatId, config as any).catch(() => {})
+      if (action === 'chat_archived' || action === 'chat_deactivated') {
+        ;(handleIncomingEvent as any)(chatId, orgId, `livechat-${chatId}`, { type: 'chat_archived' }, config, agentConfig.id).catch(() => {})
         return NextResponse.json({ ok: true })
       }
 
       const event = (payload.event ?? payload) as Record<string, unknown>
       const eventType = event.type as string
       const msgAuthor = (event.author ?? {}) as Record<string, unknown>
+      const userId = (msgAuthor.id as string | undefined) ?? `livechat-${chatId}`
+
+      if (config.agentAccountId && userId === config.agentAccountId) {
+        return NextResponse.json({ ok: true, skipped: 'self_authored' })
+      }
+
+      const presentIds = getChatPresence(body)
+      if (config.agentAccountId && presentIds.length > 0 && !presentIds.includes(config.agentAccountId)) {
+        return NextResponse.json({ ok: true, skipped: 'not_my_chat' })
+      }
+
+      if (action === 'incoming_event') {
+        if (eventType === 'message' || eventType === 'system_message') {
+          const text = (event.text as string) || (event.system_message_text as string) || ''
+          if (!text.trim()) return NextResponse.json({ ok: true, skipped: 'empty' })
+
+          ;(handleIncomingEvent as any)(
+            chatId,
+            orgId,
+            userId,
+            { type: 'message', text },
+            config,
+            agentConfig.id,
+          ).catch(() => {})
+
+          return NextResponse.json({ ok: true })
+        }
+
+        if (eventType === 'file') {
+          ;(handleIncomingEvent as any)(
+            chatId,
+            orgId,
+            userId,
+            {
+              type: 'attachment',
+              attachment: {
+                url: event.url as string,
+                contentType: (event.content_type ?? 'application/octet-stream') as string,
+                filename: (event.name ?? 'file') as string,
+              },
+            },
+            config,
+            agentConfig.id,
+          ).catch(() => {})
+
+          return NextResponse.json({ ok: true })
+        }
+      }
 
       if (eventType === 'filled_form') {
         const form = (event.form ?? event.properties ?? {}) as Record<string, unknown>
-        (handleIncomingEvent as any)(chatId, orgId, msgAuthor.id as string ?? `livechat-${chatId}`, { type: 'form_submit', form }, config, agentConfig.id).catch(() => {})
+        ;(handleIncomingEvent as any)(
+          chatId,
+          orgId,
+          userId,
+          { type: 'form_submit', form },
+          config,
+          agentConfig.id,
+        ).catch(() => {})
         return NextResponse.json({ ok: true })
       }
 
-      const userMessage = event.text as string | undefined
-      if (!userMessage || typeof userMessage !== 'string' || userMessage.trim().length === 0) {
-        if (action === 'incoming_chat') (handleIncomingEvent as any)(chatId, orgId, `livechat-${chatId}`, { type: 'chat_started', presence: getChatPresence(body) }, config, agentConfig.id).catch(() => {})
-        else await (sendTextMessage as any)(chatId, 'Sorry, I can only process text messages.', config as any)
+      if (eventType === 'custom') {
+        const content = (event.content ?? {}) as Record<string, unknown>
+        const contentType = content.type as string
+
+        if (contentType === 'intera_form_submit') {
+          const form = content as unknown as InteraFormSubmit
+          ;(handleIncomingEvent as any)(
+            chatId,
+            orgId,
+            userId,
+            { type: 'form_submit', form },
+            config,
+            agentConfig.id,
+          ).catch(() => {})
+          return NextResponse.json({ ok: true })
+        }
+
+        if (contentType === 'intera_interaction_submit') {
+          const interaction = content as unknown as InteraInteractionSubmit
+          ;(handleIncomingEvent as any)(
+            chatId,
+            orgId,
+            userId,
+            { type: 'interaction_submit', interaction },
+            config,
+            agentConfig.id,
+          ).catch(() => {})
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      if (eventType === 'rich_message_postback') {
+        const postbackId = (event.postback as Record<string, unknown> | undefined)?.id as string | undefined
+        if (postbackId) {
+          ;(handleIncomingEvent as any)(
+            chatId,
+            orgId,
+            userId,
+            { type: 'postback', postbackId },
+            config,
+            agentConfig.id,
+          ).catch(() => {})
+        }
         return NextResponse.json({ ok: true })
       }
 
-      (handleIncomingEvent as any)(chatId, orgId, msgAuthor.id as string ?? `livechat-${chatId}`, {
-        type: 'user_message', message: userMessage, conversationId: chatId,
-      }, config, agentConfig.id).catch(() => {})
+      if (action === 'incoming_chat') {
+        const p = { region: config.region, authType: config.authType, accountId: config.accountId }
+        const chat = (payload.chat ?? {}) as Record<string, unknown>
+        const thread = (chat.thread ?? {}) as Record<string, unknown>
+        const threadEvents = (thread.events ?? []) as Array<Record<string, unknown>>
 
-      return NextResponse.json({ ok: true })
+        const customerMessages = threadEvents.filter((threadEvent) => {
+          if (threadEvent.type !== 'message') return false
+          const text = ((threadEvent.text as string | undefined) ?? '').trim()
+          if (!text) return false
+          if (config.agentAccountId && threadEvent.author_id === config.agentAccountId) return false
+          return true
+        })
+
+        if (customerMessages.length === 0) {
+          await sendTextMessage(
+            chatId,
+            "Hello! I'm an AI assistant. How can I help you today?",
+            config.botAccessToken,
+            config.licenseId,
+            p.region,
+            p.authType,
+            p.accountId,
+          ).catch(() => {})
+          return NextResponse.json({ ok: true })
+        }
+
+        for (const threadEvent of customerMessages) {
+          const eventId = `livechat:${threadEvent.id as string}`
+          const duplicate = await isDuplicateWebhook(eventId).catch(() => true)
+          if (duplicate) continue
+
+          ;(handleIncomingEvent as any)(
+            chatId,
+            orgId,
+            (threadEvent.author_id as string | undefined) ?? userId,
+            { type: 'message', text: threadEvent.text as string },
+            config,
+            agentConfig.id,
+          ).catch(() => {})
+        }
+
+        return NextResponse.json({ ok: true })
+      }
+
+      return NextResponse.json({ ok: true, skipped: 'unhandled_event' })
     },
   })(request, ctx)
 }
