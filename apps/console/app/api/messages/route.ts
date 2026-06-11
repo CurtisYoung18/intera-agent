@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
+import { hasPersistableMessageContent, persistableMessageText } from '@/lib/agent/persistable-message'
 import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type CaseSession, type RuntimeEventSource } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
@@ -818,10 +819,10 @@ export async function POST(request: NextRequest) {
                 },
               })
               const msgsToPersist = result.messages
-                .filter((m) => m.content?.trim() || m.role === 'user' || m.contentBlocks?.length)
+                .filter((m) => hasPersistableMessageContent(m))
                 .map((m) => ({
                   id: m.id, caseId: resolvedCaseId, role: m.role,
-                  content: m.content || '', contentBlocks: m.contentBlocks ?? undefined, isStreaming: false,
+                  content: persistableMessageText(m.content), contentBlocks: m.contentBlocks ?? undefined, isStreaming: false,
                 }))
               if (msgsToPersist.length > 0) {
                 await prisma.$transaction(
@@ -899,12 +900,12 @@ export async function POST(request: NextRequest) {
         // ── Persist messages to DB (always, even for casual chat) ──
         try {
           const messagesToPersist = result.messages
-            .filter((m) => m.content?.trim() || m.role === 'user' || m.contentBlocks?.length)
+            .filter((m) => hasPersistableMessageContent(m))
             .map((m) => ({
               id: m.id,
               caseId: resolvedCaseId,
               role: m.role,
-              content: m.content || '',
+              content: persistableMessageText(m.content),
               contentBlocks: m.contentBlocks ?? undefined,
               isStreaming: false,
             }))

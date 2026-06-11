@@ -4,6 +4,17 @@ const mockFindUnique = vi.fn()
 const mockUpsert = vi.fn()
 const mockUpdate = vi.fn()
 const mockTx = vi.fn()
+const txFindUnique = vi.fn()
+const txUpdate = vi.fn()
+
+const rowStore = new Map<string, {
+  externalChatId: string
+  orgId: string
+  internalCaseId: string
+  bridgeState: string
+  textBuffer: string
+  metadata: { userId: string }
+}>()
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
@@ -18,11 +29,37 @@ vi.mock('@intera/shared/prisma', () => ({
   },
 }))
 
-import { getSession, upsertSession, updateSessionState, closeSession } from '../../session-store'
+import { getSession, upsertSession, updateSessionState, closeSession, appendTextBuffer, flushTextBuffer } from '../../session-store'
+import { encodeLivechatTextBuffer } from '../../text-buffer-codec'
 
 describe('session-store', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    rowStore.clear()
+    mockTx.mockImplementation(async (callback: (tx: {
+      externalConversation: {
+        findUnique: typeof txFindUnique
+        update: typeof txUpdate
+      }
+    }) => unknown) => callback({
+      externalConversation: {
+        findUnique: txFindUnique,
+        update: txUpdate,
+      },
+    }))
+    txFindUnique.mockImplementation(async ({ where }: { where: { platform_externalChatId: { externalChatId: string } } }) => {
+      const key = where.platform_externalChatId.externalChatId
+      const row = rowStore.get(key)
+      return row ? { textBuffer: row.textBuffer } : null
+    })
+    txUpdate.mockImplementation(async ({ where, data }: { where: { platform_externalChatId: { externalChatId: string } }, data: { textBuffer: string } }) => {
+      const key = where.platform_externalChatId.externalChatId
+      const row = rowStore.get(key)
+      if (!row) throw new Error(`Missing row for ${key}`)
+      const next = { ...row, textBuffer: data.textBuffer }
+      rowStore.set(key, next)
+      return next
+    })
   })
 
   describe('getSession', () => {
@@ -88,6 +125,27 @@ describe('session-store', () => {
         where: { platform_externalChatId: { platform: 'livechat', externalChatId: 'chat-1' } },
         data: { status: 'archived', bridgeState: 'idle' },
       })
+    })
+  })
+
+  describe('text buffer persistence', () => {
+    it('preserves split surrogate pairs across append + flush', async () => {
+      const chatId = 'chat-emoji'
+      rowStore.set(chatId, {
+        externalChatId: chatId,
+        orgId: 'cust-1',
+        internalCaseId: 'case-emoji',
+        bridgeState: 'idle',
+        textBuffer: '',
+        metadata: { userId: 'user-1' },
+      })
+
+      await appendTextBuffer(chatId, '\ud83d')
+      await appendTextBuffer(chatId, '\udcb8 bonus')
+
+      expect(rowStore.get(chatId)?.textBuffer).toBe(encodeLivechatTextBuffer('💸 bonus'))
+      await expect(flushTextBuffer(chatId)).resolves.toBe('💸 bonus')
+      expect(rowStore.get(chatId)?.textBuffer).toBe('')
     })
   })
 })
