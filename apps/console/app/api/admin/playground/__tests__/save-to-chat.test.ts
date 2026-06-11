@@ -170,6 +170,72 @@ describe('POST /api/admin/playground/save-to-chat', () => {
     expect(firstCall.data.payload).toContain('"inputTokens":120')
   })
 
+  it('prefers canonical runtime trace rows when provided by Playground export', async () => {
+    const input = {
+      agentId: 'agent-1',
+      messages: [{ role: 'user', content: 'Hello' }],
+      traces: [[
+        {
+          stage: 'Tools',
+          summary: 'Tool: ask_user_questions',
+          ms: 1,
+          fired: true,
+          json: [
+            {
+              actionType: 'tool_result',
+              title: 'Tool: ask_user_questions',
+              detail: null,
+              payload: {
+                toolName: 'ask_user_questions',
+                latencyMs: 1,
+                input: { title: 'Need member id' },
+                output: { _dryRun: true },
+              },
+            },
+          ],
+        },
+        {
+          stage: 'Model generation',
+          summary: 'LLM response: tool_use',
+          ms: 2659,
+          fired: true,
+          json: [
+            {
+              actionType: 'llm_response',
+              title: 'LLM response: tool_use',
+              detail: 'stopReason: tool_use',
+              payload: {
+                usage: {
+                  input_tokens: 23,
+                  output_tokens: 221,
+                  cache_read_input_tokens: 3840,
+                },
+                model: 'deepseek-v4-flash',
+                toolCalls: ['ask_user_questions'],
+              },
+            },
+          ],
+        },
+      ]],
+    }
+
+    await POST(makeRequest(input))
+
+    expect(h.mockActionTraceCreate).toHaveBeenCalledTimes(2)
+
+    const firstCall = h.mockActionTraceCreate.mock.calls[0][0]
+    expect(firstCall.data.actionType).toBe('tool_result')
+    expect(firstCall.data.title).toBe('Tool: ask_user_questions')
+    expect(firstCall.data.payload).toContain('"toolName":"ask_user_questions"')
+
+    const secondCall = h.mockActionTraceCreate.mock.calls[1][0]
+    expect(secondCall.data.actionType).toBe('llm_response')
+    expect(secondCall.data.title).toBe('LLM response: tool_use')
+    expect(secondCall.data.detail).toBe('stopReason: tool_use')
+    expect(secondCall.data.payload).toContain('"input_tokens":23')
+    expect(secondCall.data.payload).toContain('"cache_read_input_tokens":3840')
+  })
+
   it('returns 200 with correct response shape', async () => {
     const input = {
       agentId: 'agent-1',

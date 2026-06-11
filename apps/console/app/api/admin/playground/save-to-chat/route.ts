@@ -15,6 +15,60 @@ const saveSchema = z.object({
   traces: z.array(z.any()).optional(),
 })
 
+interface CanonicalTraceRow {
+  actionType: string
+  title?: string | null
+  detail?: string | null
+  payload?: unknown
+}
+
+function serializeTracePayload(payload: unknown): string | null {
+  if (payload == null) return null
+  if (typeof payload === 'string') return payload
+  try {
+    return JSON.stringify(payload)
+  } catch {
+    return null
+  }
+}
+
+function normalizeSavedTraceRows(turnTraces: unknown[]): CanonicalTraceRow[] {
+  const rows: CanonicalTraceRow[] = []
+
+  for (const step of turnTraces) {
+    if (!step || typeof step !== 'object') continue
+
+    const canonicalRows = Array.isArray((step as { json?: unknown[] }).json)
+      ? ((step as { json?: unknown[] }).json ?? []).filter((candidate): candidate is CanonicalTraceRow => {
+          return !!candidate && typeof candidate === 'object' && typeof (candidate as CanonicalTraceRow).actionType === 'string'
+        })
+      : []
+
+    if (canonicalRows.length > 0) {
+      rows.push(...canonicalRows)
+      continue
+    }
+
+    const stage = typeof (step as { stage?: unknown }).stage === 'string' ? (step as { stage: string }).stage : null
+    if (!stage) continue
+
+    const usage = (step as { usage?: { inputTokens?: number; outputTokens?: number } }).usage
+    const ms = typeof (step as { ms?: unknown }).ms === 'number' ? (step as { ms: number }).ms : 0
+    const fired = (step as { fired?: unknown }).fired
+    rows.push({
+      actionType: stage,
+      title: typeof (step as { summary?: unknown }).summary === 'string' ? (step as { summary: string }).summary : stage,
+      detail:
+        fired === false
+          ? 'skipped'
+          : `${ms}ms${usage ? ` · ↑${usage.inputTokens ?? 0}↓${usage.outputTokens ?? 0}` : ''}`,
+      payload: usage ? { usage, ms, fired } : null,
+    })
+  }
+
+  return rows
+}
+
 export const POST = defineRoute({
   method: 'POST',
   inputSchema: saveSchema,
@@ -47,16 +101,15 @@ export const POST = defineRoute({
     // Persist ActionTrace rows from the dry-run traces so the chat detail page shows stats
     if (input.traces) {
       for (const turnTraces of input.traces) {
-        for (const step of turnTraces) {
-          if (!step || !step.stage) continue
+        for (const traceRow of normalizeSavedTraceRows(Array.isArray(turnTraces) ? turnTraces : [])) {
           await repo.raw.actionTrace.create({
             data: {
               caseId: newCase.id,
               chatId,
-              actionType: step.stage,
-              title: step.summary || step.stage,
-              detail: step.fired === false ? 'skipped' : `${step.ms}ms${step.usage ? ` · ↑${step.usage.inputTokens}↓${step.usage.outputTokens}` : ''}`,
-              payload: step.usage ? JSON.stringify({ usage: step.usage, ms: step.ms, fired: step.fired }) : null,
+              actionType: traceRow.actionType,
+              title: traceRow.title || traceRow.actionType,
+              detail: traceRow.detail ?? null,
+              payload: serializeTracePayload(traceRow.payload),
             },
           })
         }
