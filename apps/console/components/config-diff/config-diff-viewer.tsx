@@ -119,6 +119,36 @@ function groupStatus(group: ConfigDiffGroup): ConfigDiffStatus {
   return 'unchanged'
 }
 
+function looksStructured(value: string | undefined) {
+  if (!value) return false
+  return value.length > 110 || value.includes('\n') || /^[\[{]/.test(value.trim())
+}
+
+function DiffValue({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'accent' }) {
+  const structured = looksStructured(value)
+  if (!structured) {
+    return (
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] lg:hidden">{label}</p>
+        <p className={`${tone === 'accent' ? 'rounded-[12px] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_5%,white)] px-3 py-2' : ''} whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--color-text-secondary)]`}>
+          {value}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] lg:hidden">{label}</p>
+      <div className={`${tone === 'accent' ? 'border-[color:color-mix(in_srgb,var(--color-accent-primary)_16%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_4%,white)]' : 'border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.58)]'} overflow-auto rounded-[14px] border px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]`}>
+        <pre className="max-h-[180px] whitespace-pre-wrap break-words font-mono text-[11px] leading-6 text-[var(--color-text-secondary)]">
+          {value}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
 export default function ConfigDiffViewer({
   title,
   subtitle,
@@ -193,12 +223,10 @@ export default function ConfigDiffViewer({
                             {item.detail ? <p className="mt-1 text-[11px] leading-4 text-[var(--color-text-tertiary)]">{item.detail}</p> : null}
                           </div>
                           <div className="min-w-0 lg:border-l lg:border-[var(--color-border-subtle)] lg:pl-4">
-                            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] lg:hidden">{copy.live}</p>
-                            <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--color-text-secondary)]">{item.before ?? copy.notPresent}</p>
+                            <DiffValue label={copy.live} value={item.before ?? copy.notPresent} />
                           </div>
-                          <div className="min-w-0 rounded-[var(--radius-control)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_5%,white)] px-3 py-2 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0">
-                            <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] lg:hidden">{copy.draft}</p>
-                            <p className="whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--color-text-secondary)]">{item.after ?? copy.notPresent}</p>
+                          <div className="min-w-0 lg:pl-1">
+                            <DiffValue label={copy.draft} value={item.after ?? copy.notPresent} tone="accent" />
                           </div>
                         </div>
                       ))}

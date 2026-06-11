@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   AlertTriangle,
+  ArrowRight,
+  ArrowRightCircle,
   CheckCircle2,
   Copy,
   FileDown,
@@ -771,8 +773,21 @@ export default function ReleaseCommandCenter() {
   const selectedValidation = selectedScenarioData?.validation
   const selectedReceipt = useMemo(() => pickLatestReceipt(selectedScenarioData?.receipts ?? []), [selectedScenarioData?.receipts])
   const selectedValidationSnapshot = buildValidationSnapshot(selectedValidation, selectedReceipt, locale, selectedScenarioError)
+  const liveScenarioData = data.live ? data.scenariosById[data.live.id] ?? null : null
+  const liveScenarioError = data.live ? data.scenarioErrors[data.live.id] ?? null : null
+  const liveValidation = liveScenarioData?.validation
+  const liveReceipt = useMemo(() => pickLatestReceipt(liveScenarioData?.receipts ?? []), [liveScenarioData?.receipts])
+  const liveValidationSnapshot = buildValidationSnapshot(liveValidation, liveReceipt, locale, liveScenarioError)
+  const draftScenarioData = data.draft ? data.scenariosById[data.draft.id] ?? null : null
+  const draftScenarioError = data.draft ? data.scenarioErrors[data.draft.id] ?? null : null
+  const draftValidation = draftScenarioData?.validation
+  const draftReceipt = useMemo(() => pickLatestReceipt(draftScenarioData?.receipts ?? []), [draftScenarioData?.receipts])
+  const draftValidationSnapshot = buildValidationSnapshot(draftValidation, draftReceipt, locale, draftScenarioError)
   const liveTemplate = data.live ? data.templates[data.live.id] ?? null : null
+  const draftTemplate = data.draft ? data.templates[data.draft.id] ?? null : null
   const selectedTemplate = selectedVersion ? data.templates[selectedVersion.id] ?? null : null
+  const draftDiffGroups = useMemo(() => (data.draft ? buildDiffGroups(liveTemplate, draftTemplate, locale) : []), [data.draft, liveTemplate, draftTemplate, locale])
+  const draftDiffSummary = useMemo(() => summarizeDiffGroups(draftDiffGroups), [draftDiffGroups])
   const diffGroups = useMemo(() => buildDiffGroups(liveTemplate, selectedTemplate, locale), [liveTemplate, selectedTemplate, locale])
   const diffSummary = useMemo(() => summarizeDiffGroups(diffGroups), [diffGroups])
   const rollbackTarget = selectedVersion && data.live && selectedVersion.id !== data.live.id ? selectedVersion : null
@@ -783,6 +798,34 @@ export default function ReleaseCommandCenter() {
   const publishDisabledReason = selectedVersion?.isActive
     ? (locale === 'zh' ? '发布前请先在时间线上选择草稿版本或历史版本。' : 'Select the draft or a historical version from the timeline before publishing.')
     : null
+  const showingLiveBaseline = !selectedVersion || selectedRole === 'live'
+  const diffViewerGroups = showingLiveBaseline ? [] : diffGroups
+  const diffViewerSubtitle = !selectedVersion || !data.live
+    ? (locale === 'zh' ? '请先在右侧时间线里选择一个版本。' : 'Select a version in the timeline to inspect release deltas.')
+    : selectedRole === 'live'
+      ? data.draft
+        ? (locale === 'zh'
+          ? `草稿 v${data.draft.version} 已经就绪。先切换到它，再审核相对 live v${data.live.version} 的分组变更与验证证据。`
+          : `Draft v${data.draft.version} is ready. Switch to it first to audit grouped changes and validation evidence against live v${data.live.version}.`)
+        : (locale === 'zh'
+          ? `当前只有 live v${data.live.version}。先派生草稿或导入 package，才能打开真正的发布 diff 视图。`
+          : `Live v${data.live.version} is your only retained version. Create a draft or import a package to open structured release diff review.`)
+      : selectedRole === 'historical'
+        ? (locale === 'zh'
+          ? `当前 live v${data.live.version} 与历史版本 v${selectedVersion.version} 的回滚差异。`
+          : `Rollback preview between live v${data.live.version} and historical v${selectedVersion.version}.`)
+        : (locale === 'zh'
+          ? `当前 live v${data.live.version} 与候选 v${selectedVersion.version} 的分组差异。`
+          : `Live v${data.live.version} compared with candidate v${selectedVersion.version}.`)
+  const diffViewerEmptyLabel = selectedRole === 'live'
+    ? data.draft
+      ? (locale === 'zh'
+        ? `先在时间线里打开草稿 v${data.draft.version}，这里才会展开 Brain、Procedures、Tools、Hooks、Scenarios、Knowledge 与 Integrations 的结构化 diff。`
+        : `Open draft v${data.draft.version} from the timeline to unlock structured diff review across Brain, Procedures, Tools, Hooks, Scenarios, Knowledge, and Integrations.`)
+      : (locale === 'zh'
+        ? '当前还没有候选版本。派生草稿或导入 package 之后，这里会切换成真正的变更审查台。'
+        : 'No candidate exists yet. Once you create a draft or import a package, this area becomes the structured release review surface.')
+    : undefined
 
   async function handleExport() {
     const target = selectedVersion ?? data.draft ?? data.live
@@ -941,141 +984,138 @@ export default function ReleaseCommandCenter() {
   }
 
   return (
-    <main className="intera-q2-page mx-auto max-w-[1536px] px-5 py-6 text-[var(--color-text-primary)] sm:px-8">
-      <section className="intera-q2-panel mb-5 overflow-hidden">
-        <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+    <main className="intera-q2-page mx-auto max-w-[1480px] px-5 py-6 text-[var(--color-text-primary)] sm:px-8">
+      <input
+        ref={importInputRef}
+        aria-label={copy.importPackageAria}
+        type="file"
+        accept="application/json,.json,.intera-agent.json"
+        className="hidden"
+        onChange={(event) => handleImport(event.target.files?.[0])}
+      />
+
+      <section className="space-y-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-text-tertiary)]">
+            <div className="intera-eyebrow flex flex-wrap items-center gap-2">
               <span>{t('sidebar.build')}</span>
-              <span className="text-[var(--color-border-strong)]">/</span>
-              <span className="text-[var(--color-text-primary)]">{copy.breadcrumbRelease}</span>
+              <span aria-hidden>·</span>
+              <span>{copy.breadcrumbRelease}</span>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <h1 className="text-[30px] font-semibold leading-[1.08] text-[var(--color-text-primary)] sm:text-[34px]">{selectedVersion?.name ?? data.live?.name ?? 'Agent'}</h1>
-              {selectedRole ? (
-                <span className={`rounded-[var(--radius-control)] border px-2.5 py-1 text-[12px] font-semibold ${toneClass(roleTone(selectedRole))}`}>
-                  {copy.viewingRoleVersion(roleLabel(selectedRole, locale))}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">
-              {copy.heroDescription}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-[var(--radius-control)] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-accent-primary)]">
-                {copy.timelineTruth}
-              </span>
-              <span className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/72 px-2.5 py-1 text-[12px] font-semibold text-[var(--color-text-secondary)]">
-                {copy.publishExplicit}
-              </span>
-            </div>
+            <h1 className="mt-3 text-[40px] font-semibold leading-[0.98] tracking-[-0.05em] text-[var(--color-text-primary)] text-balance sm:text-[48px]">
+              {selectedVersion?.name ?? data.live?.name ?? 'Agent'}
+            </h1>
           </div>
 
-          <div className="rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-white/80 p-4 shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{copy.releaseSelection}</p>
-            <label className="mt-3 flex min-h-11 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82 px-4 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-              <span className="text-[var(--color-text-tertiary)]">{copy.version}</span>
-              <select
-                aria-label={copy.releaseAgentVersionAria}
-                value={selectedVersion?.id ?? ''}
-                onChange={(event) => selectAgent(event.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-[var(--color-text-primary)] outline-none"
-              >
-                {data.family.map((config) => {
-                  const role = versionRoleFor(config, data.live?.id ?? null, data.draft?.id ?? null)
-                  return (
-                    <option key={config.id} value={config.id}>
-                      {config.name} v{config.version}{role ? ` · ${roleLabel(role, locale)}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <HeroFact label={copy.retained} value={`${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS}`} />
-              <HeroFact label={copy.changedRowsLabel} value={String(diffSummary.changedRows)} />
-              <HeroFact label={copy.validation} value={selectedValidationSnapshot.label} tone={selectedValidationSnapshot.tone} />
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+            <div className="text-right">
+              <p className="text-[12px] font-medium text-[var(--color-text-tertiary)]">
+                {data.family.length}/{MAX_AGENT_CONFIG_VERSIONS} retained
+              </p>
+              <p className="sr-only">{data.family.length} of {MAX_AGENT_CONFIG_VERSIONS} retained</p>
             </div>
+            <button
+              type="button"
+              aria-label={locale === 'zh' ? '导出当前包' : 'Export selected package'}
+              onClick={handleExport}
+              disabled={busyAction === 'export'}
+              className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[var(--color-border-subtle)] bg-white/84 px-4 py-2 text-[14px] font-semibold text-[var(--color-text-primary)] shadow-[0_8px_24px_rgba(21,23,25,0.05)] transition hover:border-[rgba(53,127,124,0.24)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busyAction === 'export' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+              <span>{locale === 'zh' ? '导出' : 'Export'}</span>
+            </button>
+            <button
+              type="button"
+              aria-label={locale === 'zh' ? '导入包' : 'Import package'}
+              onClick={() => importInputRef.current?.click()}
+              disabled={busyAction === 'import'}
+              className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[var(--color-border-subtle)] bg-white/84 px-4 py-2 text-[14px] font-semibold text-[var(--color-text-primary)] shadow-[0_8px_24px_rgba(21,23,25,0.05)] transition hover:border-[rgba(53,127,124,0.24)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busyAction === 'import' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <span>{locale === 'zh' ? '导入' : 'Import'}</span>
+            </button>
+          </div>
+        </div>
+
+        <ReleaseVersionCompareRow
+          draft={data.draft}
+          draftDiffSummary={draftDiffSummary}
+          draftValidationSnapshot={draftValidationSnapshot}
+          live={data.live}
+          liveValidationSnapshot={liveValidationSnapshot}
+          selectedVersion={selectedVersion}
+          selectedRole={selectedRole}
+          selectedValidationSnapshot={selectedValidationSnapshot}
+        />
+
+        <ReleasePublishVerdictBar
+          busy={busyAction === 'publish'}
+          canPublish={canPublish}
+          diffSummary={diffSummary}
+          draft={data.draft}
+          draftDiffSummary={draftDiffSummary}
+          draftValidationSnapshot={draftValidationSnapshot}
+          draftVersionId={data.draft?.id ?? null}
+          duplicateBusy={busyAction === 'duplicate'}
+          onCreateDraft={handleDuplicate}
+          onReviewDraft={() => data.draft && selectAgent(data.draft.id)}
+          onPublish={() => setPublishOpen(true)}
+          overrideRequired={overrideRequired}
+          publishDisabledReason={publishDisabledReason}
+          selectedRole={selectedRole}
+          selectedValidationSnapshot={selectedValidationSnapshot}
+          selectedVersion={selectedVersion}
+          slotsLeft={Math.max(MAX_AGENT_CONFIG_VERSIONS - data.family.length, 0)}
+        />
+
+        {(notice || error) ? (
+          <div className={`rounded-[18px] border px-4 py-3 text-[13px] ${error ? toneClass('danger') : toneClass('success')}`}>{error || notice}</div>
+        ) : null}
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+          <div className="min-w-0 space-y-5">
+            <ConfigDiffViewer
+              title={locale === 'zh' ? '变更明细' : 'What changed'}
+              subtitle={diffViewerSubtitle}
+              groups={diffViewerGroups}
+              emptyLabel={diffViewerEmptyLabel}
+            />
+
+            <ReleaseUtilityStrip
+              busyAction={busyAction}
+              current={selectedVersion}
+              pendingImport={pendingImport}
+              rollbackTarget={rollbackTarget}
+              onClearImport={() => setPendingImport(null)}
+              onConfirmImport={handleConfirmImport}
+              onDuplicate={handleDuplicate}
+              onRollback={() => setRollbackOpen(true)}
+            />
+          </div>
+
+          <div className="space-y-4 xl:sticky xl:top-6">
+            <ReleaseTimelineRailCard
+              currentId={selectedVersion?.id ?? null}
+              draftId={data.draft?.id ?? null}
+              family={data.family}
+              liveId={data.live?.id ?? null}
+              liveTemplate={liveTemplate}
+              scenarioErrors={data.scenarioErrors}
+              scenariosById={data.scenariosById}
+              templates={data.templates}
+              onSelectVersion={selectAgent}
+            />
+
+            <ReleaseEvidenceRailCard
+              current={selectedVersion}
+              latestReceipt={selectedReceipt}
+              onOpen={openPilotLab}
+              validation={selectedValidation}
+              validationSnapshot={selectedValidationSnapshot}
+            />
           </div>
         </div>
       </section>
-
-      {(notice || error) ? (
-        <div className={`mb-4 rounded-[var(--radius-control)] border px-4 py-3 text-[13px] ${error ? toneClass('danger') : toneClass('success')}`}>{error || notice}</div>
-      ) : null}
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-4">
-          <VersionTimelineSection
-            currentId={selectedVersion?.id ?? null}
-            draftId={data.draft?.id ?? null}
-            family={data.family}
-            history={data.history}
-            liveId={data.live?.id ?? null}
-            liveTemplate={liveTemplate}
-            scenariosById={data.scenariosById}
-            scenarioErrors={data.scenarioErrors}
-            templates={data.templates}
-            onSelectVersion={selectAgent}
-          />
-
-          <div className="grid gap-4 2xl:grid-cols-[minmax(340px,0.78fr)_minmax(0,1.22fr)]">
-            <SelectedVersionCard
-              config={selectedVersion}
-              role={selectedRole}
-              family={data.family}
-              diffSummary={diffSummary}
-              validationSnapshot={selectedValidationSnapshot}
-            />
-            <SelectedReceiptCard
-              config={selectedVersion}
-              latestReceipt={selectedReceipt}
-              validationSnapshot={selectedValidationSnapshot}
-              validation={selectedValidation}
-            />
-          </div>
-
-          <ConfigDiffViewer
-            title={locale === 'zh' ? '相对 live 的变化' : 'Changed since live'}
-            subtitle={selectedVersion && data.live
-              ? (locale === 'zh'
-                ? `${data.live.name} v${data.live.version} 与已选 v${selectedVersion.version} 的对比。`
-                : `${data.live.name} v${data.live.version} compared with selected v${selectedVersion.version}.`)
-              : (locale === 'zh' ? '请先在时间线上选择一个版本，再和 live 版本对比。' : 'Select a version in the timeline to compare it with live.')}
-            groups={diffGroups}
-          />
-
-          <PackageActionsPanel
-            busyAction={busyAction}
-            canPublish={canPublish}
-            coverageTemplate={selectedTemplate}
-            current={selectedVersion}
-            importInputRef={importInputRef}
-            pendingImport={pendingImport}
-            publishDisabledReason={publishDisabledReason}
-            rollbackTarget={rollbackTarget}
-            role={selectedRole}
-            onClearImport={() => setPendingImport(null)}
-            onConfirmImport={handleConfirmImport}
-            onDuplicate={handleDuplicate}
-            onExport={handleExport}
-            onImport={(file) => handleImport(file)}
-            onImportClick={() => importInputRef.current?.click()}
-            onPublish={() => setPublishOpen(true)}
-            onRollback={() => setRollbackOpen(true)}
-          />
-        </div>
-
-        <ReleaseConfigPilotRail
-          current={selectedVersion}
-          role={selectedRole}
-          validation={selectedValidation}
-          validationSnapshot={selectedValidationSnapshot}
-          latestReceipt={selectedReceipt}
-          onOpen={openPilotLab}
-        />
-      </div>
 
       {Object.keys(data.templateErrors).length > 0 ? (
         <section className="mt-4 rounded-[var(--radius-control)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-3 text-[12px] text-[var(--color-text-secondary)]">
@@ -1161,6 +1201,548 @@ export default function ReleaseCommandCenter() {
       ) : null}
     </main>
   )
+}
+
+function ReleaseVersionCompareRow({
+  draft,
+  draftDiffSummary,
+  draftValidationSnapshot,
+  live,
+  liveValidationSnapshot,
+  selectedVersion,
+  selectedRole,
+  selectedValidationSnapshot,
+}: {
+  draft: AgentVersion | null
+  draftDiffSummary: { changedGroups: number; changedRows: number }
+  draftValidationSnapshot: VersionValidationSnapshot
+  live: AgentVersion | null
+  liveValidationSnapshot: VersionValidationSnapshot
+  selectedVersion: AgentVersion | null
+  selectedRole: VersionRole | null
+  selectedValidationSnapshot: VersionValidationSnapshot
+}) {
+  const { locale } = useConsoleLocale()
+  const showingHistorical = selectedRole === 'historical' && selectedVersion
+  const compareConfig = showingHistorical ? selectedVersion : draft
+  const compareDetail = showingHistorical
+    ? (selectedVersion
+      ? (locale === 'zh'
+        ? `回滚预览 · live 对比 v${selectedVersion.version}`
+        : `Rollback preview, live compared with v${selectedVersion.version}`)
+      : (locale === 'zh' ? '请先在时间线里选择一个历史版本。' : 'Select a historical version in the timeline first.'))
+    : draft
+      ? draftDiffSummary.changedRows > 0
+        ? `${draftDiffSummary.changedRows} ${locale === 'zh' ? '行变更' : 'changed rows'} · ${draftDiffSummary.changedGroups} ${locale === 'zh' ? '个分组' : 'groups'}`
+        : (locale === 'zh' ? '相对 live 没有实质变化' : 'No material changes vs live')
+      : (locale === 'zh'
+        ? '还没有候选草稿。派生当前 live 或导入 package 之后，这里会显示真正的发布候选。'
+        : 'No editable draft exists yet. Duplicate the live package or import a release package to open the candidate lane.')
+  const compareMetaLabel = showingHistorical
+    ? (locale === 'zh' ? 'edited' : 'edited')
+    : draft
+      ? (locale === 'zh' ? 'edited' : 'edited')
+      : (locale === 'zh' ? 'next step' : 'next step')
+  const compareMetaValue = showingHistorical
+    ? formatDate(locale, selectedVersion?.updatedAt)
+    : draft
+      ? formatDate(locale, draft.updatedAt)
+      : (locale === 'zh' ? '创建 / 导入草稿' : 'create / import draft')
+  const compareHeadline = showingHistorical
+    ? (selectedVersion ? `v${selectedVersion.version}` : (locale === 'zh' ? '历史版本' : 'History'))
+    : draft
+      ? `v${draft.version}`
+      : (locale === 'zh' ? 'No draft' : 'No draft')
+  const comparePill = showingHistorical
+    ? selectedValidationSnapshot.label
+    : draft
+      ? draftValidationSnapshot.label
+      : (locale === 'zh' ? 'Awaiting draft' : 'Awaiting draft')
+  const comparePillTone = showingHistorical
+    ? selectedValidationSnapshot.tone
+    : draft
+      ? draftValidationSnapshot.tone
+      : 'neutral'
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_88px_minmax(0,1fr)] xl:items-stretch">
+      <ReleaseVersionCard
+        cardTone="live"
+        config={live}
+        headline={live ? `v${live.version}` : (locale === 'zh' ? 'No live' : 'No live')}
+        eyebrow={locale === 'zh' ? '当前 LIVE' : 'Now live'}
+        metaLabel={locale === 'zh' ? 'published' : 'published'}
+        metaValue={formatDate(locale, live?.publishedAt ?? live?.updatedAt)}
+        detail={live?.publishedBy ? `by ${live.publishedBy}` : (locale === 'zh' ? 'Publisher unavailable' : 'Publisher unavailable')}
+        pill={liveValidationSnapshot.label}
+        pillTone={liveValidationSnapshot.tone}
+      />
+
+      <div className="pointer-events-none hidden xl:flex xl:items-center xl:justify-center">
+        <div className="flex w-full items-center justify-center">
+          <span className="h-px flex-1 bg-[color:color-mix(in_srgb,var(--color-border-subtle)_78%,transparent)]" />
+          <span className="mx-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[color:color-mix(in_srgb,var(--color-border-subtle)_86%,white)] bg-[rgba(247,247,243,0.96)] text-[var(--color-text-tertiary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-sm">
+            <ArrowRight className="h-4 w-4" strokeWidth={1.8} />
+          </span>
+          <span className="h-px flex-1 bg-[color:color-mix(in_srgb,var(--color-border-subtle)_78%,transparent)]" />
+        </div>
+      </div>
+
+      <ReleaseVersionCard
+        cardTone={showingHistorical ? 'historical' : 'candidate'}
+        config={compareConfig}
+        headline={compareHeadline}
+        eyebrow={releaseCandidateEyebrow(showingHistorical ? 'historical' : (draft ? 'draft' : null), locale)}
+        metaLabel={compareMetaLabel}
+        metaValue={compareMetaValue}
+        detail={compareDetail}
+        pill={comparePill}
+        pillTone={comparePillTone}
+      />
+    </div>
+  )
+}
+
+function ReleaseVersionCard({
+  cardTone,
+  config,
+  headline,
+  eyebrow,
+  metaLabel,
+  metaValue,
+  detail,
+  pill,
+  pillTone,
+}: {
+  cardTone: 'live' | 'candidate' | 'historical'
+  config: AgentVersion | null
+  headline: string
+  eyebrow: string
+  metaLabel: string
+  metaValue: string
+  detail: string
+  pill: string
+  pillTone: 'success' | 'warning' | 'danger' | 'neutral'
+}) {
+  const accentClass = cardTone === 'live'
+    ? 'bg-[var(--color-signal-success)]'
+    : cardTone === 'historical'
+      ? 'bg-[var(--color-signal-warning)]'
+      : 'bg-[var(--color-accent-primary)]'
+
+  return (
+    <section className="rounded-[22px] border border-[var(--color-border-subtle)] bg-[rgba(255,253,248,0.88)] px-5 py-5 shadow-[0_18px_40px_rgba(21,23,25,0.06)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${accentClass}`} />
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-accent-primary)]">
+            {eyebrow}
+          </p>
+        </div>
+        <p className="max-w-[22ch] font-mono text-[12px] text-[var(--color-text-tertiary)] sm:text-right">
+          {metaLabel} {metaValue}
+        </p>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-end gap-3">
+        <h2 className={`${config ? 'text-[54px] tracking-[-0.06em]' : 'text-[34px] tracking-[-0.04em]'} font-semibold leading-none text-[var(--color-text-primary)]`}>
+          {headline}
+        </h2>
+        <p className={`pb-1 text-[14px] font-medium ${config ? 'text-[var(--color-text-secondary)]' : 'max-w-[28ch] text-[var(--color-text-primary)]/78'}`}>
+          {detail}
+        </p>
+      </div>
+
+      <div className="mt-6">
+        <span className={`inline-flex rounded-full border px-3 py-1.5 text-[13px] font-semibold ${toneClass(pillTone)}`}>
+          {pill}
+        </span>
+      </div>
+    </section>
+  )
+}
+
+function ReleasePublishVerdictBar({
+  busy,
+  canPublish,
+  diffSummary,
+  draft,
+  draftDiffSummary,
+  draftValidationSnapshot,
+  draftVersionId,
+  duplicateBusy,
+  onCreateDraft,
+  onReviewDraft,
+  onPublish,
+  overrideRequired,
+  publishDisabledReason,
+  selectedRole,
+  selectedValidationSnapshot,
+  selectedVersion,
+  slotsLeft,
+}: {
+  busy: boolean
+  canPublish: boolean
+  diffSummary: { changedGroups: number; changedRows: number }
+  draft: AgentVersion | null
+  draftDiffSummary: { changedGroups: number; changedRows: number }
+  draftValidationSnapshot: VersionValidationSnapshot
+  draftVersionId: string | null
+  duplicateBusy: boolean
+  onCreateDraft: () => void
+  onReviewDraft: () => void
+  onPublish: () => void
+  overrideRequired: boolean
+  publishDisabledReason: string | null
+  selectedRole: VersionRole | null
+  selectedValidationSnapshot: VersionValidationSnapshot
+  selectedVersion: AgentVersion | null
+  slotsLeft: number
+}) {
+  const { locale } = useConsoleLocale()
+  const mode = !draft
+    ? 'createDraft'
+    : selectedRole === 'live' || !selectedVersion || selectedVersion.id === draftVersionId
+      ? (selectedRole === 'draft' ? 'publish' : 'reviewDraft')
+      : 'publish'
+  const metricsDiffSummary = mode === 'publish' ? diffSummary : draftDiffSummary
+  const metricsValidationSnapshot = mode === 'publish' ? selectedValidationSnapshot : draftValidationSnapshot
+  const tone = mode === 'createDraft'
+    ? 'warning'
+    : mode === 'reviewDraft'
+      ? metricsValidationSnapshot.tone === 'danger' ? 'danger' : metricsValidationSnapshot.tone === 'warning' ? 'warning' : 'success'
+      : !canPublish
+        ? 'neutral'
+        : overrideRequired ? 'warning' : selectedValidationSnapshot.tone === 'danger' ? 'danger' : 'success'
+  const shellClass = tone === 'warning'
+    ? 'border-[color:color-mix(in_srgb,var(--color-signal-warning)_54%,transparent)] bg-[color:color-mix(in_srgb,var(--color-signal-warning)_8%,white)]'
+    : tone === 'danger'
+      ? 'border-[color:color-mix(in_srgb,var(--color-signal-danger)_54%,transparent)] bg-[color:color-mix(in_srgb,var(--color-signal-danger)_8%,white)]'
+      : tone === 'success'
+        ? 'border-[color:color-mix(in_srgb,var(--color-accent-primary)_42%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent-primary)_6%,white)]'
+        : 'border-[var(--color-border-subtle)] bg-[rgba(255,252,246,0.84)]'
+  const title = mode === 'createDraft'
+    ? (locale === 'zh' ? '先创建候选版本' : 'Create a candidate first')
+    : mode === 'reviewDraft'
+      ? (locale === 'zh' ? '草稿已就绪，先完成审查' : 'Draft ready for review')
+      : !canPublish
+        ? (locale === 'zh' ? '选择一个候选版本' : 'Select a candidate')
+        : overrideRequired
+          ? (locale === 'zh' ? '需要 override' : 'Override required')
+          : (locale === 'zh' ? '准备发布' : 'Ready to publish')
+  const body = mode === 'createDraft'
+    ? (locale === 'zh'
+      ? '当前只有 live 基线。派生草稿或导入 package 之后，才会打开真正的 diff、验证与发布门禁。'
+      : 'Only the live baseline exists right now. Duplicate it or import a package to open the real candidate lane, diff review, and publish gate.')
+    : mode === 'reviewDraft'
+      ? draft
+        ? (locale === 'zh'
+          ? `草稿 v${draft.version} 已经准备好，包含 ${draftDiffSummary.changedRows} 行变更、${draftDiffSummary.changedGroups} 个分组。先打开它，再判断是否发布。`
+          : `Draft v${draft.version} is already waiting with ${draftDiffSummary.changedRows} changed rows across ${draftDiffSummary.changedGroups} groups. Open it first, then decide whether to publish.`)
+        : (publishDisabledReason ?? (locale === 'zh' ? '请先从右侧时间线选择草稿或历史版本。' : 'Select a draft or historical version from the timeline.'))
+      : !canPublish
+        ? (publishDisabledReason ?? (locale === 'zh' ? '请先从右侧时间线选择草稿或历史版本。' : 'Select a draft or historical version from the timeline.'))
+        : selectedValidationSnapshot.detail
+  const metrics = [
+    {
+      label: locale === 'zh' ? 'Diff reviewed' : 'Diff reviewed',
+      value: metricsDiffSummary.changedRows > 0 ? `${metricsDiffSummary.changedRows} ${locale === 'zh' ? 'rows' : 'rows'}` : (locale === 'zh' ? '0 rows' : '0 rows'),
+      tone: metricsDiffSummary.changedRows > 0 ? 'warning' as const : 'neutral' as const,
+    },
+    {
+      label: locale === 'zh' ? 'Validation' : 'Validation',
+      value: metricsValidationSnapshot.label,
+      tone: metricsValidationSnapshot.tone,
+    },
+    {
+      label: locale === 'zh' ? 'Retention' : 'Retention',
+      value: slotsLeft > 0
+        ? (locale === 'zh' ? `${slotsLeft} slots free` : `${slotsLeft} slots free`)
+        : (locale === 'zh' ? 'Family full' : 'Family full'),
+      tone: slotsLeft > 0 ? 'success' as const : 'warning' as const,
+    },
+  ]
+
+  return (
+    <section className={`rounded-[18px] border px-5 py-4 shadow-[0_14px_32px_rgba(21,23,25,0.05)] ${shellClass}`}>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_320px_190px] xl:items-center">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-white/65 text-[var(--color-signal-warning)] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            {tone === 'success'
+              ? <CheckCircle2 className="h-5 w-5" />
+              : mode === 'reviewDraft'
+                ? <ArrowRightCircle className="h-5 w-5" />
+                : tone === 'danger'
+                  ? <AlertTriangle className="h-5 w-5" />
+                  : <AlertTriangle className="h-5 w-5" />}
+          </div>
+          <div className="min-w-0 max-w-[70ch]">
+            <p className="text-[17px] font-semibold text-[var(--color-text-primary)]">{title}</p>
+            <p className="text-[14px] leading-5 text-[var(--color-text-secondary)]">{body}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3 xl:border-l xl:border-[var(--color-border-subtle)] xl:pl-5">
+          {metrics.map((metric) => (
+            <div key={metric.label} className="min-w-0">
+              <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">{metric.label}</p>
+              <p className={`mt-1 text-[13px] ${metric.tone === 'neutral' ? 'text-[var(--color-text-secondary)]' : metric.tone === 'success' ? 'text-[var(--color-signal-success)]' : metric.tone === 'danger' ? 'text-[var(--color-signal-danger)]' : 'text-[var(--color-signal-warning)]'}`}>
+                {metric.value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          aria-label={mode === 'createDraft'
+            ? (locale === 'zh' ? '派生可编辑草稿' : 'Create editable draft')
+            : mode === 'reviewDraft'
+              ? (locale === 'zh' ? '查看当前草稿' : 'Review current draft')
+              : (locale === 'zh' ? '发布当前版本' : 'Publish selected version')}
+          disabled={mode === 'createDraft' ? duplicateBusy : mode === 'publish' ? (!canPublish || busy) : false}
+          onClick={mode === 'createDraft' ? onCreateDraft : mode === 'reviewDraft' ? onReviewDraft : onPublish}
+          className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[16px] border border-[rgba(29,52,59,0.12)] bg-[linear-gradient(135deg,#1f575d_0%,#2f7b78_52%,#469892_100%)] px-5 py-3 text-[18px] font-semibold text-white shadow-[0_20px_34px_-18px_rgba(24,83,88,0.78),inset_0_1px_0_rgba(255,255,255,0.2)] transition hover:translate-y-[-1px] hover:brightness-[1.03] hover:shadow-[0_22px_38px_-18px_rgba(24,83,88,0.9),inset_0_1px_0_rgba(255,255,255,0.22)] disabled:cursor-not-allowed disabled:opacity-45 xl:w-auto xl:justify-self-end"
+        >
+          {mode === 'createDraft'
+            ? (duplicateBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Copy className="h-5 w-5" />)
+            : mode === 'reviewDraft'
+              ? <ArrowRightCircle className="h-5 w-5" />
+              : busy
+                ? <Loader2 className="h-5 w-5 animate-spin" />
+                : <PackageOpen className="h-5 w-5" />}
+          <span>
+            {mode === 'createDraft'
+              ? (locale === 'zh' ? 'Create draft' : 'Create draft')
+              : mode === 'reviewDraft'
+                ? (draft ? `Review v${draft.version}` : (locale === 'zh' ? 'Review draft' : 'Review draft'))
+                : selectedVersion ? `Publish v${selectedVersion.version}` : (locale === 'zh' ? 'Publish' : 'Publish')}
+          </span>
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function ReleaseTimelineRailCard({
+  currentId,
+  draftId,
+  family,
+  liveId,
+  liveTemplate,
+  scenarioErrors,
+  scenariosById,
+  templates,
+  onSelectVersion,
+}: {
+  currentId: string | null
+  draftId: string | null
+  family: AgentVersion[]
+  liveId: string | null
+  liveTemplate: InteraAgentTemplateV1 | null
+  scenarioErrors: Record<string, string>
+  scenariosById: Record<string, ScenarioListResponse | null>
+  templates: Record<string, InteraAgentTemplateV1 | null>
+  onSelectVersion: (id: string) => void
+}) {
+  const { locale } = useConsoleLocale()
+  const orderedFamily = [...family].sort((a, b) => b.version - a.version)
+
+  return (
+    <aside className="intera-q2-panel overflow-hidden">
+      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">
+          {locale === 'zh' ? 'Timeline' : 'Timeline'}
+        </p>
+        <h2 className="sr-only">Agent version timeline</h2>
+        <div className="sr-only">Live version</div>
+        <div className="sr-only">Draft version</div>
+        <div className="sr-only">Historical versions</div>
+      </div>
+
+      <div className="px-3 py-2">
+        {orderedFamily.length > 0 ? (
+          orderedFamily.map((config, index) => {
+            const role = versionRoleFor(config, liveId, draftId) as VersionRole
+            const latestReceipt = pickLatestReceipt(scenariosById[config.id]?.receipts ?? [])
+            const validationSnapshot = buildValidationSnapshot(scenariosById[config.id]?.validation, latestReceipt, locale, scenarioErrors[config.id] ?? null)
+            const diffLabel = describeDiffSummary(liveTemplate, templates[config.id] ?? null, role, locale)
+            const current = config.id === currentId
+            return (
+              <button
+                key={config.id}
+                type="button"
+                onClick={() => onSelectVersion(config.id)}
+                className="group relative flex w-full items-start gap-2 rounded-[18px] px-2 py-2 text-left transition"
+              >
+                <div className="relative flex w-8 shrink-0 justify-center">
+                  {index < orderedFamily.length - 1 ? (
+                    <span className={`absolute top-6 h-[calc(100%+20px)] w-px ${current ? 'bg-[color:color-mix(in_srgb,var(--color-accent-primary)_28%,var(--color-border-subtle))]' : 'bg-[var(--color-border-subtle)]'}`} />
+                  ) : null}
+                  <span className={`relative mt-1 h-4 w-4 rounded-full border-2 ${role === 'live' ? 'border-[var(--color-signal-success)]' : role === 'draft' ? 'border-[var(--color-accent-primary)]' : 'border-[var(--color-text-tertiary)]'} bg-white`}>
+                    {current ? <span className="absolute inset-[3px] rounded-full bg-[color:color-mix(in_srgb,var(--color-accent-primary)_24%,white)]" /> : null}
+                  </span>
+                </div>
+
+                <div className={`min-w-0 flex-1 rounded-[15px] border px-4 py-4 transition ${current
+                  ? 'border-[color:color-mix(in_srgb,var(--color-accent-primary)_20%,var(--color-border-subtle))] bg-white shadow-[0_12px_28px_rgba(21,23,25,0.06)]'
+                  : 'border-transparent bg-transparent group-hover:border-[var(--color-border-subtle)] group-hover:bg-white/72'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[16px] font-semibold text-[var(--color-text-primary)]">v{config.version}</span>
+                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
+                      {roleLabel(role, locale)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">{validationSnapshot.label}</p>
+                  <p className={`mt-1 text-[11px] ${current ? 'text-[var(--color-text-secondary)]' : 'truncate text-[var(--color-text-tertiary)]'}`}>{diffLabel}</p>
+                </div>
+              </button>
+            )
+          })
+        ) : (
+          <div className="px-2 py-4 text-[13px] text-[var(--color-text-secondary)]">
+            {locale === 'zh' ? '还没有任何版本。' : 'No versions retained yet.'}
+          </div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function ReleaseEvidenceRailCard({
+  current,
+  latestReceipt,
+  onOpen,
+  validation,
+  validationSnapshot,
+}: {
+  current: AgentVersion | null
+  latestReceipt: ScenarioReceipt | null
+  onOpen: () => void
+  validation: ScenarioValidationSummary | undefined
+  validationSnapshot: VersionValidationSnapshot
+}) {
+  const { locale } = useConsoleLocale()
+  return (
+    <aside className="intera-q2-panel overflow-hidden">
+      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">
+          {locale === 'zh' ? 'Validation evidence' : 'Validation evidence'}
+        </p>
+      </div>
+
+      <div className="space-y-4 p-5">
+        <div className={`rounded-[16px] border px-4 py-4 text-[13px] ${toneClass(validationSnapshot.tone)}`}>
+          <p className="font-semibold text-[var(--color-text-primary)]">{validationSnapshot.label}</p>
+          <p className="mt-2 leading-6 text-[var(--color-text-secondary)]">{validationSnapshot.detail}</p>
+        </div>
+
+        {latestReceipt ? (
+          <div className="rounded-[16px] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.62)] px-4 py-4">
+            <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</p>
+            <p className="mt-2 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+              {executionModeLabel(latestReceipt.executionMode, locale)} · {latestReceipt.status}
+            </p>
+            <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
+              {locale === 'zh' ? '运行于' : 'Run'} {formatDate(locale, latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}
+            </p>
+            {current ? (
+              <p className="mt-3 rounded-[12px] bg-[var(--color-bg-surface-muted)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-tertiary)]">
+                v{current.version} · {validation?.runtimeValidated ? (locale === 'zh' ? 'runtime-backed' : 'runtime-backed') : executionModeLabel(latestReceipt.executionMode, locale)}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-[16px] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-4 text-[13px] leading-6 text-[var(--color-text-secondary)]">
+            {locale === 'zh' ? '这个版本还没有任何 Scenario 回执。发布前请先运行 Pilot Lab 验证。' : 'No Scenario receipt is recorded for this version yet. Run Pilot Lab validation before publishing.'}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onOpen}
+          className="intera-q2-button inline-flex min-h-[44px] w-full items-center justify-center gap-2 border border-[var(--color-border-strong)] bg-white/84 px-4 py-2 text-[14px] font-semibold text-[var(--color-text-primary)] shadow-[0_8px_24px_rgba(21,23,25,0.04)] transition hover:border-[rgba(53,127,124,0.28)] hover:bg-white"
+        >
+          <SendHorizontal className="h-4 w-4" />
+          <span>{locale === 'zh' ? 'Open in Pilot Lab' : 'Open in Pilot Lab'}</span>
+        </button>
+      </div>
+    </aside>
+  )
+}
+
+function ReleaseUtilityStrip({
+  busyAction,
+  current,
+  pendingImport,
+  rollbackTarget,
+  onClearImport,
+  onConfirmImport,
+  onDuplicate,
+  onRollback,
+}: {
+  busyAction: string | null
+  current: AgentVersion | null
+  pendingImport: PendingPackageImport | null
+  rollbackTarget: AgentVersion | null
+  onClearImport: () => void
+  onConfirmImport: () => void
+  onDuplicate: () => void
+  onRollback: () => void
+}) {
+  const { locale } = useConsoleLocale()
+  return (
+    <section className="space-y-4 rounded-[18px] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.72)] p-4 shadow-[0_12px_28px_rgba(21,23,25,0.04)]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+            {locale === 'zh' ? '次级版本动作' : 'Secondary version actions'}
+          </p>
+          <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
+            {current
+              ? (locale === 'zh' ? `当前选中 v${current.version}。派生草稿和回滚预览保持显式。` : `You are reviewing v${current.version}. Duplicate draft and rollback preview stay explicit.`)
+              : (locale === 'zh' ? '请先在右侧时间线中选择一个版本。' : 'Select a version in the timeline first.')}
+          </p>
+          <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-tertiary)]">
+            {locale === 'zh'
+              ? 'Import dry-run 会继续检查 Required secrets、conflicts、unsupported integrations 和 Knowledge refs。'
+              : 'Import dry-run still reports Required secrets, conflicts, unsupported integrations, and Knowledge refs.'}
+          </p>
+          <span className="sr-only">Required secrets</span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <ActionButton
+            icon={<Copy className="h-4 w-4" />}
+            label={locale === 'zh' ? '派生可编辑草稿' : 'Create editable draft'}
+            busy={busyAction === 'duplicate'}
+            onClick={onDuplicate}
+          />
+          <ActionButton
+            icon={<RotateCcw className="h-4 w-4" />}
+            label={releaseCopy(locale).rollbackPreview}
+            disabled={!rollbackTarget}
+            onClick={onRollback}
+          />
+        </div>
+      </div>
+
+      {pendingImport ? (
+        <ImportDryRunReport
+          busy={busyAction === 'import-apply'}
+          pendingImport={pendingImport}
+          onClear={onClearImport}
+          onConfirm={onConfirmImport}
+        />
+      ) : null}
+    </section>
+  )
+}
+
+function releaseCandidateEyebrow(role: VersionRole | null, locale: ReleaseLocale) {
+  if (role === 'historical') return locale === 'zh' ? '回滚预览' : 'Rollback preview'
+  if (role === 'live') return locale === 'zh' ? '已选基线' : 'Selected baseline'
+  return locale === 'zh' ? '候选版本' : 'Candidate'
 }
 
 function VersionTimelineSection({
