@@ -120,14 +120,15 @@ Use this format for each new item:
 ### 2026-06-11 - Scenario Authoring Has No Manual Console UI
 
 - Area: Production config UX / Pilot Lab / Scenario setup
-- Status: open
+- Status: fixed
 - Severity: P1
-- Uncertainty: The production console has runtime Scenario execution and receipt review in Pilot Lab, but no separate manual Scenario authoring surface for a config operator. Navigating to `/admin/scenarios` redirects straight to `/build/pilot-lab`, and the resulting UI exposes Scenario selection and validation controls but no `New Scenario` / `Create Scenario` / save editor workflow.
-- Default action taken: Used the available typed admin API to create and update J1B production scenarios while preserving UI-based manual validation for Procedure authoring and Scenario execution. Logged the gap instead of pretending the manual authoring path exists.
-- Why this default: The owner explicitly asked for step-by-step console-UI validation that simulates a real config person. Scenario runtime proof can continue through the typed API, but the missing authoring surface is a real product gap that should stay visible.
-- Evidence: `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/summary.json`; screenshot `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/admin-scenarios-redirected.png`
-- Production URL / screenshot / receipt: `https://demo.anytrans.ai/admin/scenarios` redirects to `https://demo.anytrans.ai/build/pilot-lab`; the captured page shows Scenario picker, runtime execution, fixture validation, and receipt controls only.
-- Owner decision needed: Decide whether Scenario authoring must exist in the console before pilot signoff, or whether typed-admin/API authoring is acceptable for the first pilot window.
+- Uncertainty: Historical only. Before the fix, `/admin/scenarios` redirected into Pilot Lab but the resulting production UI exposed only Scenario selection, validation, and receipt review. It did not expose a manual `New` / `Delete` / `Save scenario` authoring workflow for a config operator.
+- Default action taken: First kept the gap visible and used the typed admin API for early J1B seed work. Then implemented manual Scenario authoring controls in Pilot Lab, deployed them on 2026-06-11, and reran production proof with Playwright against `https://demo.anytrans.ai`.
+- Why this default: The owner explicitly asked for step-by-step console-UI validation that simulates a real config person. Once the gap was proven real, the console needed a truthful create/update/delete authoring path before this uncertainty could close.
+- Evidence: Historical pre-fix gap proof: `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/summary.json`; screenshot `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/admin-scenarios-redirected.png`. Current fixed-state proof: `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/summary.md`; `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/manual-authoring-production/summary.json`; `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/manual-authoring-production-rerun/summary.json`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq` now shows `New`, `Reset`, `Delete`, and `Save scenario` controls plus editable Scenario fields. Production Playwright proof created and deleted `manual_ui_delete_probe_20260611042820`, created and updated `duplicate_deposit_amount_first`, confirmed the earlier receipt `scn_9e1aadf8-eb9a-4740-a98f-d1dcbf0568cd` still survived the post-deploy window, then reran the manual-ui-authored duplicate-deposit Scenario to accepted receipt `scn_44bb0b6b-0c5a-4f4b-9d10-4a0e37fbcfb6`, which remained visible after immediate readback, refresh, and reopen.
+- Owner decision needed: None for the UI gap itself. Remaining J1B work is finishing the other two duplicate-deposit flows plus the rest of the 12-scenario matrix.
+- Next recommended step: Reuse the Pilot Lab authoring controls for the remaining `duplicate_deposit` flows and the other incomplete J1B P0 scenario families, keeping receipt durability embedded in every accepted run.
 - Follow-up owner: owner / product / coding-team lead
 
 ### 2026-06-10 - LiveChat Console Joint Configuration Timing
