@@ -36,7 +36,16 @@ import type {
   ConfigPilotProposal,
   ConfigPilotProposeResponse,
 } from '@/lib/config-pilot/contracts'
-import type { SavedScenario, ScenarioObservedEvidenceInput, ScenarioReceipt, ScenarioValidationSummary } from '@intera/shared/contracts/scenarios'
+import type {
+  SavedScenario,
+  ScenarioCreateRequest,
+  ScenarioExpectedHookDecision,
+  ScenarioExpectedToolCall,
+  ScenarioObservedEvidenceInput,
+  ScenarioReceipt,
+  ScenarioTurn,
+  ScenarioValidationSummary,
+} from '@intera/shared/contracts/scenarios'
 import type { AgentBuildBrief, PilotHandoff, PilotInspectionTrace, PilotProposeReceiptFixResponse, PilotRunScenarioResponse, PilotSessionSnapshot, PilotTodoPlan } from '@intera/shared/contracts/pilot'
 
 interface ScenarioListResponse {
@@ -51,6 +60,30 @@ interface ChatMessage {
   content: string
   streaming?: boolean
   tone?: 'normal' | 'success' | 'warning' | 'danger'
+}
+
+interface ScenarioEditorTurn {
+  id: string
+  role: ScenarioTurn['role']
+  content: string
+}
+
+interface ScenarioEditorState {
+  name: string
+  displayName: string
+  description: string
+  locale: string
+  tagsText: string
+  enabled: boolean
+  turns: ScenarioEditorTurn[]
+  expectedCaseType: string
+  expectedToolsCalledText: string
+  expectedFinalStatus: string
+  expectedHumanTransfer: boolean
+  expectedRequiredPhrasesText: string
+  expectedForbiddenPhrasesText: string
+  expectedToolCallsJson: string
+  expectedHooksJson: string
 }
 
 type ProposalPhase = 'idle' | 'proposing' | 'proposal' | 'diff' | 'accepted' | 'applying' | 'applied'
@@ -71,6 +104,122 @@ let messageCounter = 0
 function nextMessageId(prefix: string) {
   messageCounter += 1
   return `${prefix}-${messageCounter}`
+}
+
+function nextScenarioTurnId() {
+  messageCounter += 1
+  return `scenario-turn-${messageCounter}`
+}
+
+function splitListInput(value: string) {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function formatJsonList(value: unknown[] | undefined) {
+  return value && value.length > 0 ? JSON.stringify(value, null, 2) : ''
+}
+
+function createBlankScenarioEditorState(): ScenarioEditorState {
+  return {
+    name: '',
+    displayName: '',
+    description: '',
+    locale: 'zh-CN',
+    tagsText: '',
+    enabled: true,
+    turns: [{ id: nextScenarioTurnId(), role: 'user', content: '' }],
+    expectedCaseType: '',
+    expectedToolsCalledText: '',
+    expectedFinalStatus: '',
+    expectedHumanTransfer: false,
+    expectedRequiredPhrasesText: '',
+    expectedForbiddenPhrasesText: '',
+    expectedToolCallsJson: '',
+    expectedHooksJson: '',
+  }
+}
+
+function scenarioEditorFromScenario(scenario: SavedScenario | null): ScenarioEditorState {
+  if (!scenario) return createBlankScenarioEditorState()
+  return {
+    name: scenario.name,
+    displayName: scenario.displayName ?? '',
+    description: scenario.description ?? '',
+    locale: scenario.locale ?? 'zh-CN',
+    tagsText: (scenario.tags ?? []).join(', '),
+    enabled: scenario.enabled,
+    turns: scenario.turns.length > 0
+      ? scenario.turns.map((turn) => ({
+        id: nextScenarioTurnId(),
+        role: turn.role,
+        content: turn.content,
+      }))
+      : [{ id: nextScenarioTurnId(), role: 'user', content: '' }],
+    expectedCaseType: scenario.expected.caseType ?? '',
+    expectedToolsCalledText: (scenario.expected.toolsCalled ?? []).join(', '),
+    expectedFinalStatus: scenario.expected.finalStatus ?? '',
+    expectedHumanTransfer: scenario.expected.humanTransfer ?? false,
+    expectedRequiredPhrasesText: (scenario.expected.requiredPhrases ?? []).join('\n'),
+    expectedForbiddenPhrasesText: (scenario.expected.forbiddenPhrases ?? []).join('\n'),
+    expectedToolCallsJson: formatJsonList(scenario.expected.toolCalls),
+    expectedHooksJson: formatJsonList(scenario.expected.hooks),
+  }
+}
+
+function parseJsonList<T>(value: string, label: string): T[] | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = JSON.parse(trimmed)
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON array.`)
+  }
+  return parsed as T[]
+}
+
+function scenarioPayloadFromEditor(editor: ScenarioEditorState): ScenarioCreateRequest {
+  const name = editor.name.trim()
+  if (!name) throw new Error('Scenario name is required.')
+
+  const turns = editor.turns
+    .map((turn) => ({
+      role: turn.role,
+      content: turn.content.trim(),
+    }))
+    .filter((turn) => turn.content.length > 0)
+
+  if (turns.length === 0) {
+    throw new Error('At least one non-empty turn is required.')
+  }
+
+  const tags = splitListInput(editor.tagsText)
+  const toolsCalled = splitListInput(editor.expectedToolsCalledText)
+  const requiredPhrases = splitListInput(editor.expectedRequiredPhrasesText)
+  const forbiddenPhrases = splitListInput(editor.expectedForbiddenPhrasesText)
+  const toolCalls = parseJsonList<ScenarioExpectedToolCall>(editor.expectedToolCallsJson, 'Expected tool-call rules')
+  const hooks = parseJsonList<ScenarioExpectedHookDecision>(editor.expectedHooksJson, 'Expected Hook decisions')
+
+  return {
+    name,
+    displayName: editor.displayName.trim() || undefined,
+    description: editor.description.trim() || undefined,
+    locale: editor.locale.trim() || undefined,
+    tags,
+    enabled: editor.enabled,
+    turns,
+    expected: {
+      caseType: editor.expectedCaseType.trim() || undefined,
+      toolsCalled,
+      toolCalls,
+      hooks,
+      humanTransfer: editor.expectedHumanTransfer || undefined,
+      finalStatus: editor.expectedFinalStatus.trim() || undefined,
+      requiredPhrases,
+      forbiddenPhrases,
+    },
+  }
 }
 
 export default function PilotLabPage() {
@@ -154,6 +303,8 @@ export default function PilotLabPage() {
   const [validation, setValidation] = useState<ScenarioValidationSummary | null>(null)
   const [selectedScenarioName, setSelectedScenarioName] = useState<string | null>(null)
   const [selectedReceiptRunId, setSelectedReceiptRunId] = useState<string | null>(null)
+  const [scenarioEditorMode, setScenarioEditorMode] = useState<'existing' | 'new'>('existing')
+  const [scenarioEditor, setScenarioEditor] = useState<ScenarioEditorState>(() => createBlankScenarioEditorState())
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [composer, setComposer] = useState('')
   const [proposal, setProposal] = useState<ConfigPilotProposal | null>(null)
@@ -165,6 +316,8 @@ export default function PilotLabPage() {
   const [loading, setLoading] = useState(true)
   const [pilotSnapshotLoading, setPilotSnapshotLoading] = useState(false)
   const [running, setRunning] = useState(false)
+  const [savingScenario, setSavingScenario] = useState(false)
+  const [deletingScenario, setDeletingScenario] = useState(false)
   const [fixingReceipt, setFixingReceipt] = useState(false)
   const [generatingHandoff, setGeneratingHandoff] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -188,6 +341,11 @@ export default function PilotLabPage() {
   }, [pilotSnapshot, selectedScenario?.name])
   const canApply = Boolean(context?.permissions.canApply && proposal && accepted && proposalPhase === 'accepted')
   const diffGroups = proposal?.diffGroups ?? []
+
+  useEffect(() => {
+    if (scenarioEditorMode === 'new') return
+    setScenarioEditor(scenarioEditorFromScenario(selectedScenario))
+  }, [scenarioEditorMode, selectedScenario])
 
   const addMessage = useCallback((message: Omit<ChatMessage, 'id'> & { id?: string }) => {
     setMessages((prev) => [...prev, { ...message, id: message.id ?? nextMessageId(message.role) }])
@@ -421,6 +579,73 @@ export default function PilotLabPage() {
     }
   }, [agentConfigId, copy.compactFailed, copy.compactedNotice, loadPilotSnapshot, pilotSnapshot])
 
+  const startNewScenario = useCallback(() => {
+    setError(null)
+    setNotice(null)
+    setScenarioEditorMode('new')
+    setScenarioEditor(createBlankScenarioEditorState())
+  }, [])
+
+  const resetScenarioEditor = useCallback(() => {
+    setError(null)
+    setNotice(null)
+    setScenarioEditorMode('existing')
+    setScenarioEditor(scenarioEditorFromScenario(selectedScenario))
+  }, [selectedScenario])
+
+  const saveScenario = useCallback(async () => {
+    if (!agentConfigId) return
+    setSavingScenario(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const payload = scenarioPayloadFromEditor(scenarioEditor)
+      const result = scenarioEditorMode === 'new'
+        ? await apiClient<{ scenario: SavedScenario }>('/api/admin/scenarios', {
+          method: 'POST',
+          body: { agentConfigId, ...payload },
+        })
+        : await apiClient<{ scenario: SavedScenario }>(`/api/admin/scenarios/${encodeURIComponent(selectedScenario?.name ?? payload.name)}`, {
+          method: 'PUT',
+          body: { agentConfigId, ...payload },
+        })
+      await loadScenarios(agentConfigId)
+      setScenarioEditorMode('existing')
+      setSelectedScenarioName(result.data.scenario.name)
+      setScenarioEditor(scenarioEditorFromScenario(result.data.scenario))
+      setNotice(scenarioEditorMode === 'new'
+        ? (isZh ? 'Scenario 已创建。' : 'Scenario created.')
+        : (isZh ? 'Scenario 已保存。' : 'Scenario saved.'))
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.envelope.error.message : err instanceof Error ? err.message : (isZh ? '保存 Scenario 失败' : 'Failed to save Scenario'))
+    } finally {
+      setSavingScenario(false)
+    }
+  }, [agentConfigId, isZh, loadScenarios, scenarioEditor, scenarioEditorMode, selectedScenario?.name])
+
+  const deleteScenarioDraft = useCallback(async () => {
+    if (!agentConfigId || !selectedScenario) return
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm(isZh ? `删除 Scenario “${selectedScenario.displayName || selectedScenario.name}”？` : `Delete Scenario "${selectedScenario.displayName || selectedScenario.name}"?`)
+    if (!confirmed) return
+    setDeletingScenario(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await apiClient(`/api/admin/scenarios/${encodeURIComponent(selectedScenario.name)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
+        method: 'DELETE',
+      })
+      await loadScenarios(agentConfigId)
+      setScenarioEditorMode('existing')
+      setNotice(isZh ? 'Scenario 已删除。' : 'Scenario deleted.')
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.envelope.error.message : (isZh ? '删除 Scenario 失败' : 'Failed to delete Scenario'))
+    } finally {
+      setDeletingScenario(false)
+    }
+  }, [agentConfigId, isZh, loadScenarios, selectedScenario])
+
   const runSelectedScenario = useCallback(async (executionMode: 'fixture' | 'agentRuntime') => {
     if (!agentConfigId || !selectedScenario || !pilotSnapshot) return
     setRunning(true)
@@ -639,6 +864,11 @@ export default function PilotLabPage() {
             selectedReceipt={selectedReceipt}
             selectedReceiptRunId={selectedReceiptRunId}
             setSelectedReceiptRunId={setSelectedReceiptRunId}
+            scenarioEditorMode={scenarioEditorMode}
+            scenarioEditor={scenarioEditor}
+            setScenarioEditor={setScenarioEditor}
+            savingScenario={savingScenario}
+            deletingScenario={deletingScenario}
             latestRuntimeReceipt={latestRuntimeReceipt}
             latestFixtureReceipt={latestFixtureReceipt}
             validation={validation}
@@ -658,6 +888,10 @@ export default function PilotLabPage() {
             onReject={rejectProposal}
             onAccept={(checked) => { void acceptProposal(checked) }}
             onApply={applyProposal}
+            onStartNewScenario={startNewScenario}
+            onResetScenarioEditor={resetScenarioEditor}
+            onSaveScenario={saveScenario}
+            onDeleteScenario={deleteScenarioDraft}
             onRunScenario={runSelectedScenario}
             onDraftFixFromReceipt={draftFixFromSelectedReceipt}
             onManualCompact={compactPilotMemory}
@@ -771,6 +1005,11 @@ function ControlPanel({
   selectedReceipt,
   selectedReceiptRunId,
   setSelectedReceiptRunId,
+  scenarioEditorMode,
+  scenarioEditor,
+  setScenarioEditor,
+  savingScenario,
+  deletingScenario,
   latestRuntimeReceipt,
   latestFixtureReceipt,
   validation,
@@ -790,6 +1029,10 @@ function ControlPanel({
   onReject,
   onAccept,
   onApply,
+  onStartNewScenario,
+  onResetScenarioEditor,
+  onSaveScenario,
+  onDeleteScenario,
   onRunScenario,
   onDraftFixFromReceipt,
   onManualCompact,
@@ -806,6 +1049,11 @@ function ControlPanel({
   selectedReceipt: ScenarioReceipt | null
   selectedReceiptRunId: string | null
   setSelectedReceiptRunId: (runId: string) => void
+  scenarioEditorMode: 'existing' | 'new'
+  scenarioEditor: ScenarioEditorState
+  setScenarioEditor: React.Dispatch<React.SetStateAction<ScenarioEditorState>>
+  savingScenario: boolean
+  deletingScenario: boolean
   latestRuntimeReceipt: ScenarioReceipt | null
   latestFixtureReceipt: ScenarioReceipt | null
   validation: ScenarioValidationSummary | null
@@ -825,6 +1073,10 @@ function ControlPanel({
   onReject: () => void
   onAccept: (checked: boolean) => void
   onApply: () => void
+  onStartNewScenario: () => void
+  onResetScenarioEditor: () => void
+  onSaveScenario: () => void
+  onDeleteScenario: () => void
   onRunScenario: (executionMode: 'fixture' | 'agentRuntime') => void
   onDraftFixFromReceipt: () => void
   onManualCompact: () => void
@@ -923,6 +1175,18 @@ function ControlPanel({
           <PanelHeader icon={Play} title={isZh ? 'Scenario 控制' : 'Scenario controls'} eyebrow={isZh ? '回执事实' : 'Receipt truth'} />
         </div>
         <div className="grid gap-3 p-4">
+          <ScenarioAuthoringPanel
+            mode={scenarioEditorMode}
+            editor={scenarioEditor}
+            setEditor={setScenarioEditor}
+            selectedScenario={selectedScenario}
+            saving={savingScenario}
+            deleting={deletingScenario}
+            onStartNew={onStartNewScenario}
+            onReset={onResetScenarioEditor}
+            onSave={onSaveScenario}
+            onDelete={onDeleteScenario}
+          />
           <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
             {isZh ? 'Scenario' : 'Scenario'}
             <select value={selectedScenario?.name ?? ''} onChange={(event) => setSelectedScenarioName(event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 text-[13px] text-[var(--color-text-primary)]">
@@ -958,6 +1222,194 @@ function ControlPanel({
 
       <ScenarioReceiptPanel compact receipt={selectedReceipt} receipts={receipts} selectedRunId={selectedReceiptRunId} onSelectReceipt={(receipt) => setSelectedReceiptRunId(receipt.runId)} />
     </aside>
+  )
+}
+
+function ScenarioAuthoringPanel({
+  mode,
+  editor,
+  setEditor,
+  selectedScenario,
+  saving,
+  deleting,
+  onStartNew,
+  onReset,
+  onSave,
+  onDelete,
+}: {
+  mode: 'existing' | 'new'
+  editor: ScenarioEditorState
+  setEditor: React.Dispatch<React.SetStateAction<ScenarioEditorState>>
+  selectedScenario: SavedScenario | null
+  saving: boolean
+  deleting: boolean
+  onStartNew: () => void
+  onReset: () => void
+  onSave: () => void
+  onDelete: () => void
+}) {
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
+
+  const updateField = <K extends keyof ScenarioEditorState>(key: K, value: ScenarioEditorState[K]) => {
+    setEditor((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const updateTurn = (turnId: string, patch: Partial<ScenarioEditorTurn>) => {
+    setEditor((prev) => ({
+      ...prev,
+      turns: prev.turns.map((turn) => (turn.id === turnId ? { ...turn, ...patch } : turn)),
+    }))
+  }
+
+  const addTurn = () => {
+    setEditor((prev) => ({
+      ...prev,
+      turns: [...prev.turns, { id: nextScenarioTurnId(), role: 'user', content: '' }],
+    }))
+  }
+
+  const removeTurn = (turnId: string) => {
+    setEditor((prev) => {
+      if (prev.turns.length <= 1) {
+        return {
+          ...prev,
+          turns: [{ id: nextScenarioTurnId(), role: 'user', content: '' }],
+        }
+      }
+      return {
+        ...prev,
+        turns: prev.turns.filter((turn) => turn.id !== turnId),
+      }
+    })
+  }
+
+  return (
+    <div className="grid gap-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">{isZh ? 'Scenario authoring' : 'Scenario authoring'}</p>
+          <p className="text-[11px] text-[var(--color-text-tertiary)]">
+            {mode === 'new'
+              ? (isZh ? '创建新的验证资产' : 'Create a new validation asset')
+              : selectedScenario
+                ? (isZh ? `正在编辑 ${selectedScenario.displayName || selectedScenario.name}` : `Editing ${selectedScenario.displayName || selectedScenario.name}`)
+                : (isZh ? '选择一个 Scenario 或新建一个。' : 'Select a scenario or create a new one.')}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onStartNew} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]" data-testid="pilot-scenario-new">
+            {isZh ? 'New' : 'New'}
+          </button>
+          <button type="button" onClick={onReset} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]">
+            {isZh ? 'Reset' : 'Reset'}
+          </button>
+          <button type="button" onClick={onDelete} disabled={!selectedScenario || mode === 'new' || deleting} className="intera-q2-button inline-flex h-8 items-center justify-center border border-red-200 bg-white px-2.5 text-[12px] font-medium text-red-700 disabled:opacity-50" data-testid="pilot-scenario-delete">
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : (isZh ? 'Delete' : 'Delete')}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Scenario name' : 'Scenario name'}
+          <input value={editor.name} onChange={(event) => updateField('name', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Display name' : 'Display name'}
+          <input value={editor.displayName} onChange={(event) => updateField('displayName', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
+          {isZh ? 'Description' : 'Description'}
+          <textarea value={editor.description} onChange={(event) => updateField('description', event.target.value)} rows={2} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Locale' : 'Locale'}
+          <input value={editor.locale} onChange={(event) => updateField('locale', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Tags (comma or new line)' : 'Tags (comma or new line)'}
+          <input value={editor.tagsText} onChange={(event) => updateField('tagsText', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+      </div>
+
+      <label className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-secondary)]">
+        <input type="checkbox" checked={editor.enabled} onChange={(event) => updateField('enabled', event.target.checked)} />
+        <span>{isZh ? 'Enabled' : 'Enabled'}</span>
+      </label>
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[12px] font-medium text-[var(--color-text-secondary)]">{isZh ? 'Turns' : 'Turns'}</p>
+          <button type="button" onClick={addTurn} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]">
+            {isZh ? 'Add turn' : 'Add turn'}
+          </button>
+        </div>
+        {editor.turns.map((turn, index) => (
+          <div key={turn.id} className="grid gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-3">
+            <div className="flex items-center justify-between gap-2">
+              <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+                {isZh ? `Turn ${index + 1} role` : `Turn ${index + 1} role`}
+                <select value={turn.role} onChange={(event) => updateTurn(turn.id, { role: event.target.value as ScenarioTurn['role'] })} className="h-8 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]">
+                  <option value="user">user</option>
+                  <option value="assistant">assistant</option>
+                  <option value="system">system</option>
+                </select>
+              </label>
+              <button type="button" onClick={() => removeTurn(turn.id)} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]">
+                {isZh ? 'Remove' : 'Remove'}
+              </button>
+            </div>
+            <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+              {isZh ? `Turn ${index + 1} content` : `Turn ${index + 1} content`}
+              <textarea value={turn.content} onChange={(event) => updateTurn(turn.id, { content: event.target.value })} rows={3} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+            </label>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Expected Procedure' : 'Expected Procedure'}
+          <input value={editor.expectedCaseType} onChange={(event) => updateField('expectedCaseType', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Expected tools' : 'Expected tools'}
+          <input value={editor.expectedToolsCalledText} onChange={(event) => updateField('expectedToolsCalledText', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Expected final status' : 'Expected final status'}
+          <input value={editor.expectedFinalStatus} onChange={(event) => updateField('expectedFinalStatus', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-secondary)] md:self-end">
+          <input type="checkbox" checked={editor.expectedHumanTransfer} onChange={(event) => updateField('expectedHumanTransfer', event.target.checked)} />
+          <span>{isZh ? 'Expect human transfer' : 'Expect human transfer'}</span>
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Required phrases' : 'Required phrases'}
+          <textarea value={editor.expectedRequiredPhrasesText} onChange={(event) => updateField('expectedRequiredPhrasesText', event.target.value)} rows={3} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {isZh ? 'Forbidden phrases' : 'Forbidden phrases'}
+          <textarea value={editor.expectedForbiddenPhrasesText} onChange={(event) => updateField('expectedForbiddenPhrasesText', event.target.value)} rows={3} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
+          {isZh ? 'Expected tool-call rules JSON' : 'Expected tool-call rules JSON'}
+          <textarea value={editor.expectedToolCallsJson} onChange={(event) => updateField('expectedToolCallsJson', event.target.value)} rows={4} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-[12px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
+          {isZh ? 'Expected Hook decisions JSON' : 'Expected Hook decisions JSON'}
+          <textarea value={editor.expectedHooksJson} onChange={(event) => updateField('expectedHooksJson', event.target.value)} rows={4} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-[12px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+      </div>
+
+      <button type="button" onClick={onSave} disabled={saving} className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 bg-[var(--color-accent-primary)] px-3 text-[13px] font-medium text-white disabled:opacity-50" data-testid="pilot-scenario-save">
+        {saving ? <Loader2 size={15} className="animate-spin" /> : null}
+        {mode === 'new'
+          ? (isZh ? 'Save scenario' : 'Save scenario')
+          : (isZh ? 'Save scenario' : 'Save scenario')}
+      </button>
+    </div>
   )
 }
 

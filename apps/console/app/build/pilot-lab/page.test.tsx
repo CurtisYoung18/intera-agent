@@ -3,6 +3,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PilotSessionSnapshot, PilotTodoItemStatus } from '@intera/shared/contracts/pilot'
+import type { ScenarioReceipt, ScenarioValidationSummary, SavedScenario } from '@intera/shared/contracts/scenarios'
 
 const mockApiClient = vi.fn()
 let searchParams = new URLSearchParams()
@@ -45,7 +46,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: vi.fn(() => searchParams),
 }))
 
-const scenario = {
+const scenario: SavedScenario = {
   id: 'scenario-1',
   agentConfigId: 'agent-1',
   name: 'deposit_missing_evidence',
@@ -73,7 +74,7 @@ const scenario = {
   },
 }
 
-const runtimeReceipt = {
+const runtimeReceipt: ScenarioReceipt = {
   scenarioName: 'deposit_missing_evidence',
   runId: 'run-1',
   status: 'pass',
@@ -105,16 +106,17 @@ const runtimeReceipt = {
     { name: 'forbidden_phrase:guaranteed compensation', passed: true },
     { name: 'required_phrase:human specialist', passed: true },
   ],
+  failureReasons: [],
 }
 
-const fixtureReceipt = {
+const fixtureReceipt: ScenarioReceipt = {
   ...runtimeReceipt,
   runId: 'fixture-run-1',
   executionMode: 'fixture',
   summary: 'Fixture expectations passed.',
 }
 
-const failedReceipt = {
+const failedReceipt: ScenarioReceipt = {
   ...runtimeReceipt,
   runId: 'failed-run-1',
   status: 'fail',
@@ -131,7 +133,7 @@ const failedReceipt = {
   }],
 }
 
-const runtimeValidation = {
+const runtimeValidation: ScenarioValidationSummary = {
   state: 'Validated',
   lastValidatedAt: runtimeReceipt.finishedAt,
   lastReceiptId: runtimeReceipt.runId,
@@ -142,24 +144,24 @@ const runtimeValidation = {
   overrideRequired: false,
 }
 
-const fixtureValidation = {
+const fixtureValidation: ScenarioValidationSummary = {
   state: 'Validated',
   lastValidatedAt: fixtureReceipt.finishedAt,
   lastReceiptId: fixtureReceipt.runId,
   lastReceiptStatus: fixtureReceipt.status,
   lastReceiptExecutionMode: fixtureReceipt.executionMode,
   runtimeValidated: false,
-  runtimeValidatedAt: null,
+  runtimeValidatedAt: undefined,
   overrideRequired: true,
 }
 
-const failedValidation = {
+const failedValidation: ScenarioValidationSummary = {
   state: 'Validation failed',
   lastReceiptId: failedReceipt.runId,
   lastReceiptStatus: failedReceipt.status,
   lastReceiptExecutionMode: failedReceipt.executionMode,
   runtimeValidated: false,
-  runtimeValidatedAt: null,
+  runtimeValidatedAt: undefined,
   overrideRequired: true,
 }
 
@@ -357,9 +359,12 @@ function setupApi(mode: 'runtime' | 'fixture' | 'failed' = 'runtime') {
   const receipt = mode === 'runtime' ? runtimeReceipt : mode === 'fixture' ? fixtureReceipt : failedReceipt
   const validation = mode === 'runtime' ? runtimeValidation : mode === 'fixture' ? fixtureValidation : failedValidation
   let snapshot = pilotSnapshotResponse(true)
+  let scenarioState: SavedScenario[] = [{ ...scenario }]
+  let receiptState: ScenarioReceipt[] = [receipt]
+  let validationState: ScenarioValidationSummary = { ...validation }
   mockApiClient.mockImplementation(async (url: string, options?: any) => {
     if (url === '/api/admin/config-pilot/context?agentConfigId=agent-1') {
-      return { data: contextResponse(validation) }
+      return { data: contextResponse(validationState) }
     }
     if (url === '/api/admin/pilot/sessions/current?agentConfigId=agent-1') {
       return { data: snapshot }
@@ -384,7 +389,39 @@ function setupApi(mode: 'runtime' | 'fixture' | 'failed' = 'runtime') {
       return { data: { handoff: snapshot.handoffs[0] } }
     }
     if (url === '/api/admin/scenarios?agentConfigId=agent-1') {
-      return { data: { scenarios: [scenario], receipts: [receipt], validation } }
+      return { data: { scenarios: scenarioState, receipts: receiptState, validation: validationState } }
+    }
+    if (url === '/api/admin/scenarios' && options?.method === 'POST') {
+      const created: SavedScenario = {
+        id: `scenario-${scenarioState.length + 1}`,
+        agentConfigId: 'agent-1',
+        createdAt: '2026-06-09T00:06:00.000Z',
+        updatedAt: '2026-06-09T00:06:00.000Z',
+        ...options.body,
+      }
+      scenarioState = [...scenarioState, created]
+      validationState = { ...validationState, state: 'Changed since last validation', overrideRequired: true }
+      return { data: { scenario: created } }
+    }
+    if (url.startsWith('/api/admin/scenarios/') && options?.method === 'PUT') {
+      const currentName = decodeURIComponent(url.split('/api/admin/scenarios/')[1] ?? '')
+      const updated: SavedScenario = {
+        ...(scenarioState.find((item) => item.name === currentName) ?? scenarioState[0]),
+        ...options.body,
+        agentConfigId: 'agent-1',
+        updatedAt: '2026-06-09T00:07:00.000Z',
+      }
+      scenarioState = scenarioState
+        .filter((item) => item.name !== currentName)
+        .concat(updated)
+      validationState = { ...validationState, state: 'Changed since last validation', overrideRequired: true }
+      return { data: { scenario: updated } }
+    }
+    if (url.startsWith('/api/admin/scenarios/') && options?.method === 'DELETE') {
+      const currentName = decodeURIComponent(url.split('/api/admin/scenarios/')[1]?.split('?')[0] ?? '')
+      scenarioState = scenarioState.filter((item) => item.name !== currentName)
+      validationState = { ...validationState, state: 'Changed since last validation', overrideRequired: true }
+      return { data: { success: true } }
     }
     if (url === '/api/admin/config-pilot/propose' && options?.method === 'POST') {
       return {
@@ -406,29 +443,41 @@ function setupApi(mode: 'runtime' | 'fixture' | 'failed' = 'runtime') {
       }
     }
     if (url === '/api/admin/config-pilot/apply' && options?.method === 'POST') {
+      const createdScenario: SavedScenario = {
+        ...scenario,
+        ...configPilotProposal.patches[0].value,
+        id: 'scenario-configpilot',
+        createdAt: '2026-06-09T00:03:00.000Z',
+        updatedAt: '2026-06-09T00:03:00.000Z',
+      }
+      scenarioState = scenarioState.concat(createdScenario)
+      validationState = {
+        state: 'Changed since last validation',
+        changedAt: '2026-06-09T00:03:00.000Z',
+        overrideRequired: true,
+        runtimeValidated: false,
+      }
       return {
         data: {
           appliedPatches: [{ surface: 'scenarios', operation: 'create', target: 'configpilot_deposit_handoff' }],
           draftAgentConfigId: 'agent-1',
           createdDraft: false,
-          validation: { state: 'Changed since last validation', changedAt: '2026-06-09T00:03:00.000Z', overrideRequired: true },
+          validation: validationState,
           artifacts: {
-            scenarios: [{
-              ...scenario,
-              ...configPilotProposal.patches[0].value,
-              id: 'scenario-configpilot',
-              createdAt: '2026-06-09T00:03:00.000Z',
-              updatedAt: '2026-06-09T00:03:00.000Z',
-            }],
+            scenarios: [createdScenario],
           },
         },
       }
     }
     if (url === '/api/admin/pilot/validation/run-scenario' && options?.method === 'POST') {
-      const nextReceipt = options.body.executionMode === 'fixture' ? { ...fixtureReceipt, runId: 'fixture-run-2' } : { ...runtimeReceipt, runId: 'run-2' }
-      const nextValidation = nextReceipt.executionMode === 'agentRuntime'
+      const nextReceipt: ScenarioReceipt = options.body.executionMode === 'fixture'
+        ? { ...fixtureReceipt, runId: 'fixture-run-2' }
+        : { ...runtimeReceipt, runId: 'run-2' }
+      const nextValidation: ScenarioValidationSummary = nextReceipt.executionMode === 'agentRuntime'
         ? { ...runtimeValidation, lastReceiptId: nextReceipt.runId, lastRuntimeReceiptId: nextReceipt.runId, runtimeValidatedAt: nextReceipt.completedAt }
         : { ...fixtureValidation, lastReceiptId: nextReceipt.runId }
+      receiptState = [nextReceipt, ...receiptState]
+      validationState = nextValidation
       snapshot = pilotSnapshotResponse(true, nextReceipt.runId, nextReceipt.executionMode === 'agentRuntime' ? 'completed' : 'active')
       return {
         data: {
@@ -501,11 +550,13 @@ async function submitChatPrompt(text = 'Create a deposit handoff Scenario') {
 beforeEach(() => {
   searchParams = new URLSearchParams()
   mockApiClient.mockReset()
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
   setupApi()
 })
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 describe('PilotLabPage U-Pilot cockpit', () => {
@@ -671,6 +722,77 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     })
     expect((await screen.findAllByText(textIncludes('Use this runtime-backed receipt'))).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('run-2')).length).toBeGreaterThan(0)
+  }, 10000)
+
+  it('creates a new Scenario through manual authoring controls', async () => {
+    await renderPage()
+    await screen.findByText('Scenario controls')
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('pilot-scenario-new'))
+    })
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Scenario name'), { target: { value: 'duplicate_deposit_manual' } })
+      fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Duplicate deposit manual' } })
+      fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Manual production scenario created from the Pilot UI.' } })
+      fireEvent.change(screen.getByLabelText('Expected Procedure'), { target: { value: 'duplicate_deposit' } })
+      fireEvent.change(screen.getByLabelText('Expected tools'), { target: { value: 'ask_user_questions, get_latest_deposit' } })
+      fireEvent.change(screen.getByLabelText('Turn 1 content'), { target: { value: '我重复存款了，请帮我查一下。' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('pilot-scenario-save'))
+    })
+
+    await waitFor(() => {
+      const call = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/scenarios' && options?.method === 'POST')
+      expect(call).toBeTruthy()
+      expect(call?.[1].body).toMatchObject({
+        agentConfigId: 'agent-1',
+        name: 'duplicate_deposit_manual',
+        displayName: 'Duplicate deposit manual',
+        expected: {
+          caseType: 'duplicate_deposit',
+          toolsCalled: ['ask_user_questions', 'get_latest_deposit'],
+        },
+      })
+    })
+    expect(await screen.findByText('Scenario created.')).toBeTruthy()
+  }, 10000)
+
+  it('updates and deletes the selected Scenario through manual authoring controls', async () => {
+    await renderPage()
+    await screen.findByText('Scenario controls')
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Deposit missing evidence v2' } })
+      fireEvent.change(screen.getByLabelText('Required phrases'), { target: { value: 'human specialist\nprovider evidence' } })
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('pilot-scenario-save'))
+    })
+
+    await waitFor(() => {
+      const call = mockApiClient.mock.calls.find(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence' && options?.method === 'PUT')
+      expect(call).toBeTruthy()
+      expect(call?.[1].body).toMatchObject({
+        agentConfigId: 'agent-1',
+        displayName: 'Deposit missing evidence v2',
+        expected: {
+          requiredPhrases: ['human specialist', 'provider evidence'],
+        },
+      })
+    })
+    expect(await screen.findByText('Scenario saved.')).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('pilot-scenario-delete'))
+    })
+
+    await waitFor(() => {
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/scenarios/deposit_missing_evidence?agentConfigId=agent-1' && options?.method === 'DELETE')).toBe(true)
+    })
+    expect(await screen.findByText('Scenario deleted.')).toBeTruthy()
   }, 10000)
 
   it('drafts a follow-up proposal from a failed selected receipt', async () => {
