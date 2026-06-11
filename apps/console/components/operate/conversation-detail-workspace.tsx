@@ -21,6 +21,7 @@ import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { ConsoleBackButton } from '@/components/ui/console-chrome'
 import { apiClient } from '@/lib/api/client'
+import { computeConversationMetrics } from '@/components/operate/conversation-metrics'
 import {
   getRuntimeSourceTruth,
   summarizeConversationSourceTruth,
@@ -51,12 +52,6 @@ interface ChatSession {
 interface TraceItem {
   id: string; actionType: string; title: string; detail: string | null
   payload: string | null; createdAt: string; caseId: string
-}
-
-interface Metrics {
-  totalTokens: number; inputTokens: number; outputTokens: number
-  cacheReadTokens: number; cacheWriteTokens: number; compactTokens: number
-  turnWallMs: number; toolPhaseMs: number; llmCalls: number
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -105,38 +100,6 @@ function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
       </div>
     </div>
   )
-}
-
-function computeMetrics(traces: TraceItem[]): Metrics {
-  const m: Metrics = {
-    totalTokens: 0, inputTokens: 0, outputTokens: 0,
-    cacheReadTokens: 0, cacheWriteTokens: 0, compactTokens: 0,
-    turnWallMs: 0, toolPhaseMs: 0, llmCalls: 0,
-  }
-  let firstTs: number | null = null
-  let lastTs: number | null = null
-
-  for (const t of traces) {
-    const ts = new Date(t.createdAt).getTime()
-    if (firstTs == null || ts < firstTs) firstTs = ts
-    if (lastTs == null || ts > lastTs) lastTs = ts
-
-    if (t.actionType === 'llm_response' && t.payload) {
-      try {
-        const p = JSON.parse(t.payload) as Record<string, unknown>
-        const usage = (p.usage ?? {}) as Record<string, number>
-        m.inputTokens += usage.input_tokens ?? usage.inputTokens ?? 0
-        m.outputTokens += usage.output_tokens ?? usage.outputTokens ?? 0
-        m.cacheReadTokens += usage.cache_read_input_tokens ?? 0
-        m.cacheWriteTokens += usage.cache_creation_input_tokens ?? 0
-        m.compactTokens += (p as Record<string, number>).compactTokens ?? 0
-        m.totalTokens += (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
-        m.llmCalls++
-      } catch { /* skip malformed */ }
-    }
-  }
-  if (firstTs && lastTs && m.turnWallMs === 0) m.turnWallMs = lastTs - firstTs
-  return m
 }
 
 export default function ConversationDetailWorkspace({ chatId }: { chatId: string }) {
@@ -193,7 +156,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     finally { setUpdatingProfile(false) }
   }
 
-  const metrics = useMemo(() => computeMetrics(traces), [traces])
+  const metrics = useMemo(() => computeConversationMetrics(traces), [traces])
   const conversationTruth = useMemo(
     () =>
       summarizeConversationSourceTruth(
