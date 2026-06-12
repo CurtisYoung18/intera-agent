@@ -526,10 +526,38 @@ describe('POST /api/messages runtime session guards', () => {
       id: 'case-resume',
       type: 'general',
       status: 'created',
-      memory: null,
+      memory: {
+        confirmedFacts: JSON.stringify({ member_id: 'JAYA113C88F' }),
+        missingFacts: JSON.stringify([]),
+        toolsCalled: JSON.stringify(['create_human_task']),
+        toolResults: JSON.stringify({}),
+        keyEvents: JSON.stringify([]),
+        summary: 'Paused for payment ops review.',
+      },
+    })
+    h.prisma.procedureRun.findFirst.mockResolvedValue({
+      procedureId: 'deposit_not_credited',
+      status: 'paused',
+    })
+    h.prisma.caseType.findUnique.mockResolvedValue({
+      type: 'deposit_not_credited',
+      displayName: 'Deposit not credited',
+      description: 'Investigate a missing deposit.',
+      icon: 'D',
+      requiredFacts: '["member_id"]',
+      defaultGoal: 'Resolve the deposit issue.',
+      escalateOn: '[]',
+      autoCloseConditions: null,
+      maxAutoTurns: 3,
+      procedure: JSON.stringify({
+        version: 'v2',
+        whenToUse: 'Use for deposit-not-credited cases',
+        steps: [],
+      }),
     })
 
     const loop = mockLoop({
+      loadMemory: vi.fn(),
       run: vi.fn(async () => ({
         messages: [],
         caseStatus: 'investigating',
@@ -561,6 +589,16 @@ describe('POST /api/messages runtime session guards', () => {
       where: { id: 'case-resume' },
       data: { status: 'investigating', blocker: null },
     })
+    expect(loop.loadMemory).toHaveBeenCalledWith(expect.objectContaining({
+      caseStatus: 'investigating',
+    }))
+    expect(h.prisma.case.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'case-resume' },
+      update: expect.objectContaining({
+        type: 'deposit_not_credited',
+        status: 'investigating',
+      }),
+    }))
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
       caseId: 'case-resume',
       userId: 'user-1',
