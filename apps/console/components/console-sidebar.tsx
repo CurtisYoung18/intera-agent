@@ -15,7 +15,8 @@ import {
   Users2,
   FlaskConical,
   TestTubeDiagonal,
-  Settings,
+  Bot,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
 import InteraLogo from '@intera/shared/ui/intera-logo'
@@ -118,6 +119,15 @@ function CollapsedSidebarMark() {
 }
 
 type NavDensity = 'default' | 'compact' | 'tight'
+
+function formatSidebarModel(model?: string | null) {
+  if (!model) return 'model unavailable'
+  if (model.includes('deepseek-v4-flash')) return 'deepseek/v4-flash'
+  if (model.includes('deepseek-v4-pro')) return 'deepseek/v4-pro'
+  if (model.includes('gemini-3.5-flash')) return 'google/gemini-3.5-flash'
+  if (model.includes('MiniMax-M2.7-highspeed')) return 'minimax/m2.7'
+  return model.replace(/^models\//, '').replace(/-/g, '/')
+}
 
 export default function ConsoleSidebar() {
   const pathname = usePathname()
@@ -278,54 +288,57 @@ export default function ConsoleSidebar() {
         {/* Agent switcher — always visible below logo */}
         {!collapsed && (
           <div className="flex-shrink-0 border-b border-black/[0.04] px-3 py-3">
-            <ConsoleSurface tone="toolbar" padding="sm" className="flex items-center gap-2.5 rounded-[24px]">
-              <div className="flex-1 min-w-0">
-                <Link
-                  href="/build/release"
-                  className="flex items-center gap-2.5 rounded-[18px] border border-white/70 bg-white/[0.72] px-3 py-2.5 shadow-[0_6px_16px_rgba(21,23,25,0.04),inset_0_1px_0_rgba(255,255,255,0.58)] transition-all hover:bg-white/[0.92]"
-                  aria-label={t('sidebar.release')}
-                  title={t('sidebar.release')}
-                >
-                  <span
-                    aria-hidden
-                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                      selectedAgent?.isActive
-                        ? 'bg-[var(--color-signal-success)] shadow-[0_0_0_3px_rgba(46,160,74,0.18)]'
-                        : 'bg-[var(--color-text-tertiary)] opacity-55'
-                    }`}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-semibold text-[var(--mist)]">
-                      {selectedAgent?.name ?? t('common.loading')}
-                    </span>
-                  </span>
-                  {selectedAgent ? (
-                    <span className="rounded-[10px] bg-black/[0.045] px-2 py-1 text-[11px] font-semibold text-[var(--fog)]">
-                      v{selectedAgent.version}
-                    </span>
-                  ) : null}
-                  {selectedAgent ? (
-                    <span
-                      className={`rounded-[10px] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.04em] ${
-                        selectedAgent.isActive
-                          ? 'bg-[rgba(46,160,74,0.1)] text-[var(--color-signal-success)]'
-                          : 'bg-black/[0.05] text-[var(--fog)]'
-                      }`}
-                    >
-                      {selectedAgent.isActive ? t('agentVersion.active') : t('agentVersion.draft')}
-                    </span>
-                  ) : null}
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--fog)] opacity-70" />
-                </Link>
-              </div>
+            <div className="mb-2 flex items-center gap-2 px-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">
+                {t('sidebar.currentAgent')}
+              </span>
+              <span className="h-px flex-1 bg-black/[0.04]" />
+            </div>
+            <ConsoleSurface tone="toolbar" padding="sm" className="flex items-stretch gap-2 rounded-[22px]">
               <button
                 type="button"
                 onClick={() => setAgentDrawerOpen(true)}
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[16px] border border-white/70 bg-white/[0.68] text-[var(--color-text-secondary)] shadow-[0_8px_16px_rgba(21,23,25,0.04)] transition-colors hover:bg-white hover:text-[var(--color-text-primary)]"
+                className="group flex min-w-0 flex-1 items-center gap-3 rounded-[18px] border border-white/75 bg-white/[0.74] px-3 py-3 text-left shadow-[0_10px_22px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.68)] transition hover:border-[rgba(53,127,124,0.22)] hover:bg-white/[0.94]"
+                aria-label={t('sidebar.openAgents')}
+              >
+                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] text-[var(--color-accent-primary)]">
+                  <Bot className="h-5 w-5" strokeWidth={1.8} />
+                  <span
+                    aria-hidden
+                    className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white ${
+                      selectedAgent?.isActive ? 'bg-[var(--color-signal-success)]' : 'bg-[var(--color-signal-warning)]'
+                    }`}
+                  />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[16px] font-semibold leading-5 text-[var(--color-text-primary)]">
+                      {selectedAgent?.name ?? t('common.loading')}
+                    </span>
+                    {selectedAgent ? (
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                        selectedAgent.isActive
+                          ? 'border-[rgba(111,158,114,0.26)] bg-[rgba(111,158,114,0.12)] text-[var(--color-signal-success)]'
+                          : 'border-[rgba(213,150,61,0.28)] bg-[rgba(213,150,61,0.13)] text-[var(--color-signal-warning)]'
+                      }`}>
+                        v{selectedAgent.version}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-1 block truncate font-mono text-[12px] text-[var(--color-text-tertiary)]">
+                    {formatSidebarModel(selectedAgent?.model)}
+                  </span>
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-[var(--color-text-tertiary)] transition group-hover:text-[var(--color-accent-primary)]" strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentDrawerOpen(true)}
+                className="flex w-12 flex-shrink-0 items-center justify-center rounded-[18px] border border-white/75 bg-white/[0.7] text-[var(--color-text-secondary)] shadow-[0_8px_16px_rgba(21,23,25,0.04)] transition-colors hover:bg-white hover:text-[var(--color-accent-primary)]"
                 title={t('sidebar.openAgents')}
                 aria-label={t('sidebar.openAgents')}
               >
-                <Settings className="w-3.5 h-3.5" />
+                <SlidersHorizontal className="h-4 w-4" />
               </button>
             </ConsoleSurface>
           </div>

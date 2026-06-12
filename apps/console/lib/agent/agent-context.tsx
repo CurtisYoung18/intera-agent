@@ -13,6 +13,7 @@ interface AgentInfo {
   name: string
   version: number
   isActive: boolean
+  model?: string | null
 }
 
 interface AgentContextValue {

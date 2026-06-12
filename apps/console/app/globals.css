@@ -1037,6 +1037,11 @@ body {
     flex-direction: column;
   }
 
+  .console-sheet[data-size='wide'] {
+    width: min(calc(100vw - 24px), 620px);
+    max-width: 44rem;
+  }
+
   .console-sheet-header {
     display: flex;
     align-items: flex-start;

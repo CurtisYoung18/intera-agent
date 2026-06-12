@@ -9,9 +9,10 @@ interface SlidePanelProps {
   onClose: () => void
   title: string
   children: ReactNode
+  size?: 'default' | 'wide'
 }
 
-export default function SlidePanel({ open, onClose, title, children }: SlidePanelProps) {
+export default function SlidePanel({ open, onClose, title, children, size = 'default' }: SlidePanelProps) {
   const titleId = useId()
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function SlidePanel({ open, onClose, title, children }: SlidePane
     <>
       <div className="console-overlay animate-[fadeIn_150ms_ease-out]" onClick={onClose} />
 
-      <div className="console-sheet animate-[slideIn_250ms_cubic-bezier(0.22,1,0.36,1)]">
+      <div className="console-sheet animate-[slideIn_250ms_cubic-bezier(0.22,1,0.36,1)]" data-size={size}>
         <ConsoleSurface
           tone="floating"
           padding="none"

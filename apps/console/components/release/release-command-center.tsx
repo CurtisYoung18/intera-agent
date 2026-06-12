@@ -1239,10 +1239,10 @@ function ReleaseVersionCompareRow({
         ? '还没有候选草稿。派生当前 live 或导入 package 之后，这里会显示真正的发布候选。'
         : 'No editable draft exists yet. Duplicate the live package or import a release package to open the candidate lane.')
   const compareMetaLabel = showingHistorical
-    ? (locale === 'zh' ? 'edited' : 'edited')
+    ? (locale === 'zh' ? '编辑于' : 'edited')
     : draft
-      ? (locale === 'zh' ? 'edited' : 'edited')
-      : (locale === 'zh' ? 'next step' : 'next step')
+      ? (locale === 'zh' ? '编辑于' : 'edited')
+      : (locale === 'zh' ? '下一步' : 'next step')
   const compareMetaValue = showingHistorical
     ? formatDate(locale, selectedVersion?.updatedAt)
     : draft
@@ -1269,11 +1269,11 @@ function ReleaseVersionCompareRow({
       <ReleaseVersionCard
         cardTone="live"
         config={live}
-        headline={live ? `v${live.version}` : (locale === 'zh' ? 'No live' : 'No live')}
+        headline={live ? `v${live.version}` : (locale === 'zh' ? '无 live' : 'No live')}
         eyebrow={locale === 'zh' ? '当前 LIVE' : 'Now live'}
-        metaLabel={locale === 'zh' ? 'published' : 'published'}
+        metaLabel={locale === 'zh' ? '发布于' : 'published'}
         metaValue={formatDate(locale, live?.publishedAt ?? live?.updatedAt)}
-        detail={live?.publishedBy ? `by ${live.publishedBy}` : (locale === 'zh' ? 'Publisher unavailable' : 'Publisher unavailable')}
+        detail={live?.publishedBy ? (locale === 'zh' ? `发布人 ${live.publishedBy}` : `by ${live.publishedBy}`) : (locale === 'zh' ? '发布人不可用' : 'Publisher unavailable')}
         pill={liveValidationSnapshot.label}
         pillTone={liveValidationSnapshot.tone}
       />
@@ -1445,20 +1445,20 @@ function ReleasePublishVerdictBar({
         : selectedValidationSnapshot.detail
   const metrics = [
     {
-      label: locale === 'zh' ? 'Diff reviewed' : 'Diff reviewed',
-      value: metricsDiffSummary.changedRows > 0 ? `${metricsDiffSummary.changedRows} ${locale === 'zh' ? 'rows' : 'rows'}` : (locale === 'zh' ? '0 rows' : '0 rows'),
+      label: locale === 'zh' ? 'Diff 审核' : 'Diff reviewed',
+      value: metricsDiffSummary.changedRows > 0 ? `${metricsDiffSummary.changedRows} ${locale === 'zh' ? '行' : 'rows'}` : (locale === 'zh' ? '0 行' : '0 rows'),
       tone: metricsDiffSummary.changedRows > 0 ? 'warning' as const : 'neutral' as const,
     },
     {
-      label: locale === 'zh' ? 'Validation' : 'Validation',
+      label: locale === 'zh' ? '验证' : 'Validation',
       value: metricsValidationSnapshot.label,
       tone: metricsValidationSnapshot.tone,
     },
     {
-      label: locale === 'zh' ? 'Retention' : 'Retention',
+      label: locale === 'zh' ? '保留槽位' : 'Retention',
       value: slotsLeft > 0
-        ? (locale === 'zh' ? `${slotsLeft} slots free` : `${slotsLeft} slots free`)
-        : (locale === 'zh' ? 'Family full' : 'Family full'),
+        ? (locale === 'zh' ? `剩余 ${slotsLeft} 个` : `${slotsLeft} slots free`)
+        : (locale === 'zh' ? '家族已满' : 'Family full'),
       tone: slotsLeft > 0 ? 'success' as const : 'warning' as const,
     },
   ]
@@ -1513,10 +1513,10 @@ function ReleasePublishVerdictBar({
                 : <PackageOpen className="h-5 w-5" />}
           <span>
             {mode === 'createDraft'
-              ? (locale === 'zh' ? 'Create draft' : 'Create draft')
+              ? (locale === 'zh' ? '创建草稿' : 'Create draft')
               : mode === 'reviewDraft'
-                ? (draft ? `Review v${draft.version}` : (locale === 'zh' ? 'Review draft' : 'Review draft'))
-                : selectedVersion ? `Publish v${selectedVersion.version}` : (locale === 'zh' ? 'Publish' : 'Publish')}
+                ? (draft ? (locale === 'zh' ? `查看 v${draft.version}` : `Review v${draft.version}`) : (locale === 'zh' ? '查看草稿' : 'Review draft'))
+                : selectedVersion ? (locale === 'zh' ? `发布 v${selectedVersion.version}` : `Publish v${selectedVersion.version}`) : (locale === 'zh' ? '发布' : 'Publish')}
           </span>
         </button>
       </div>
@@ -1552,12 +1552,12 @@ function ReleaseTimelineRailCard({
     <aside className="intera-q2-panel overflow-hidden">
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">
-          {locale === 'zh' ? 'Timeline' : 'Timeline'}
+          {locale === 'zh' ? '时间线' : 'Timeline'}
         </p>
-        <h2 className="sr-only">Agent version timeline</h2>
-        <div className="sr-only">Live version</div>
-        <div className="sr-only">Draft version</div>
-        <div className="sr-only">Historical versions</div>
+        <h2 className="sr-only">{locale === 'zh' ? 'Agent 版本时间线' : 'Agent version timeline'}</h2>
+        <div className="sr-only">{locale === 'zh' ? '当前 live 版本' : 'Live version'}</div>
+        <div className="sr-only">{locale === 'zh' ? '草稿版本' : 'Draft version'}</div>
+        <div className="sr-only">{locale === 'zh' ? '历史版本' : 'Historical versions'}</div>
       </div>
 
       <div className="px-3 py-2">
@@ -1627,7 +1627,7 @@ function ReleaseEvidenceRailCard({
     <aside className="intera-q2-panel overflow-hidden">
       <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">
-          {locale === 'zh' ? 'Validation evidence' : 'Validation evidence'}
+          {locale === 'zh' ? '验证证据' : 'Validation evidence'}
         </p>
       </div>
 
@@ -1664,7 +1664,7 @@ function ReleaseEvidenceRailCard({
           className="intera-q2-button inline-flex min-h-[44px] w-full items-center justify-center gap-2 border border-[var(--color-border-strong)] bg-white/84 px-4 py-2 text-[14px] font-semibold text-[var(--color-text-primary)] shadow-[0_8px_24px_rgba(21,23,25,0.04)] transition hover:border-[rgba(53,127,124,0.28)] hover:bg-white"
         >
           <SendHorizontal className="h-4 w-4" />
-          <span>{locale === 'zh' ? 'Open in Pilot Lab' : 'Open in Pilot Lab'}</span>
+          <span>{locale === 'zh' ? '在 Pilot Lab 打开' : 'Open in Pilot Lab'}</span>
         </button>
       </div>
     </aside>

@@ -1250,6 +1250,65 @@ function ScenarioAuthoringPanel({
 }) {
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
+  const labels = isZh
+    ? {
+        title: 'Scenario 编写',
+        newAsset: '创建新的验证资产',
+        selectOrCreate: '请选择一个 Scenario，或新建一个。',
+        new: '新建',
+        reset: '重置',
+        delete: '删除',
+        scenarioName: 'Scenario 名称',
+        displayName: '显示名称',
+        description: '描述',
+        locale: '语言',
+        tags: '标签（逗号或换行）',
+        enabled: '已启用',
+        turns: '对话轮次',
+        addTurn: '添加轮次',
+        turnRole: (index: number) => `第 ${index + 1} 轮角色`,
+        turnContent: (index: number) => `第 ${index + 1} 轮内容`,
+        remove: '移除',
+        expectedProcedure: '期望 Procedure',
+        expectedTools: '期望 Tools',
+        expectedFinalStatus: '期望最终状态',
+        expectHumanTransfer: '期望人工转接',
+        requiredPhrases: '必须出现的短语',
+        forbiddenPhrases: '禁止出现的短语',
+        expectedToolRules: '期望 Tool-call 规则 JSON',
+        expectedHookDecisions: '期望 Hook 决策 JSON',
+        saveScenario: '保存 Scenario',
+        editing: (name: string) => `正在编辑 ${name}`,
+      }
+    : {
+        title: 'Scenario authoring',
+        newAsset: 'Create a new validation asset',
+        selectOrCreate: 'Select a scenario or create a new one.',
+        new: 'New',
+        reset: 'Reset',
+        delete: 'Delete',
+        scenarioName: 'Scenario name',
+        displayName: 'Display name',
+        description: 'Description',
+        locale: 'Locale',
+        tags: 'Tags (comma or new line)',
+        enabled: 'Enabled',
+        turns: 'Turns',
+        addTurn: 'Add turn',
+        turnRole: (index: number) => `Turn ${index + 1} role`,
+        turnContent: (index: number) => `Turn ${index + 1} content`,
+        remove: 'Remove',
+        expectedProcedure: 'Expected Procedure',
+        expectedTools: 'Expected tools',
+        expectedFinalStatus: 'Expected final status',
+        expectHumanTransfer: 'Expect human transfer',
+        requiredPhrases: 'Required phrases',
+        forbiddenPhrases: 'Forbidden phrases',
+        expectedToolRules: 'Expected tool-call rules JSON',
+        expectedHookDecisions: 'Expected Hook decisions JSON',
+        saveScenario: 'Save scenario',
+        editing: (name: string) => `Editing ${name}`,
+      }
 
   const updateField = <K extends keyof ScenarioEditorState>(key: K, value: ScenarioEditorState[K]) => {
     setEditor((prev) => ({ ...prev, [key]: value }))
@@ -1288,68 +1347,68 @@ function ScenarioAuthoringPanel({
     <div className="grid gap-3 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">{isZh ? 'Scenario authoring' : 'Scenario authoring'}</p>
+          <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">{labels.title}</p>
           <p className="text-[11px] text-[var(--color-text-tertiary)]">
             {mode === 'new'
-              ? (isZh ? '创建新的验证资产' : 'Create a new validation asset')
+              ? labels.newAsset
               : selectedScenario
-                ? (isZh ? `正在编辑 ${selectedScenario.displayName || selectedScenario.name}` : `Editing ${selectedScenario.displayName || selectedScenario.name}`)
-                : (isZh ? '选择一个 Scenario 或新建一个。' : 'Select a scenario or create a new one.')}
+                ? labels.editing(selectedScenario.displayName || selectedScenario.name)
+                : labels.selectOrCreate}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={onStartNew} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]" data-testid="pilot-scenario-new">
-            {isZh ? 'New' : 'New'}
+            {labels.new}
           </button>
           <button type="button" onClick={onReset} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]">
-            {isZh ? 'Reset' : 'Reset'}
+            {labels.reset}
           </button>
           <button type="button" onClick={onDelete} disabled={!selectedScenario || mode === 'new' || deleting} className="intera-q2-button inline-flex h-8 items-center justify-center border border-red-200 bg-white px-2.5 text-[12px] font-medium text-red-700 disabled:opacity-50" data-testid="pilot-scenario-delete">
-            {deleting ? <Loader2 size={14} className="animate-spin" /> : (isZh ? 'Delete' : 'Delete')}
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : labels.delete}
           </button>
         </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Scenario name' : 'Scenario name'}
+          {labels.scenarioName}
           <input value={editor.name} onChange={(event) => updateField('name', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Display name' : 'Display name'}
+          {labels.displayName}
           <input value={editor.displayName} onChange={(event) => updateField('displayName', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
-          {isZh ? 'Description' : 'Description'}
+          {labels.description}
           <textarea value={editor.description} onChange={(event) => updateField('description', event.target.value)} rows={2} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Locale' : 'Locale'}
+          {labels.locale}
           <input value={editor.locale} onChange={(event) => updateField('locale', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Tags (comma or new line)' : 'Tags (comma or new line)'}
+          {labels.tags}
           <input value={editor.tagsText} onChange={(event) => updateField('tagsText', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
       </div>
 
       <label className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-secondary)]">
         <input type="checkbox" checked={editor.enabled} onChange={(event) => updateField('enabled', event.target.checked)} />
-        <span>{isZh ? 'Enabled' : 'Enabled'}</span>
+        <span>{labels.enabled}</span>
       </label>
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[12px] font-medium text-[var(--color-text-secondary)]">{isZh ? 'Turns' : 'Turns'}</p>
+          <p className="text-[12px] font-medium text-[var(--color-text-secondary)]">{labels.turns}</p>
           <button type="button" onClick={addTurn} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]">
-            {isZh ? 'Add turn' : 'Add turn'}
+            {labels.addTurn}
           </button>
         </div>
         {editor.turns.map((turn, index) => (
           <div key={turn.id} className="grid gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white p-3">
             <div className="flex items-center justify-between gap-2">
               <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-                {isZh ? `Turn ${index + 1} role` : `Turn ${index + 1} role`}
+                {labels.turnRole(index)}
                 <select value={turn.role} onChange={(event) => updateTurn(turn.id, { role: event.target.value as ScenarioTurn['role'] })} className="h-8 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]">
                   <option value="user">user</option>
                   <option value="assistant">assistant</option>
@@ -1357,11 +1416,11 @@ function ScenarioAuthoringPanel({
                 </select>
               </label>
               <button type="button" onClick={() => removeTurn(turn.id)} className="intera-q2-button inline-flex h-8 items-center justify-center border border-[var(--color-border-subtle)] bg-white px-2.5 text-[12px] font-medium text-[var(--color-text-primary)]">
-                {isZh ? 'Remove' : 'Remove'}
+                {labels.remove}
               </button>
             </div>
             <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-              {isZh ? `Turn ${index + 1} content` : `Turn ${index + 1} content`}
+              {labels.turnContent(index)}
               <textarea value={turn.content} onChange={(event) => updateTurn(turn.id, { content: event.target.value })} rows={3} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
             </label>
           </div>
@@ -1370,44 +1429,42 @@ function ScenarioAuthoringPanel({
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Expected Procedure' : 'Expected Procedure'}
+          {labels.expectedProcedure}
           <input value={editor.expectedCaseType} onChange={(event) => updateField('expectedCaseType', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Expected tools' : 'Expected tools'}
+          {labels.expectedTools}
           <input value={editor.expectedToolsCalledText} onChange={(event) => updateField('expectedToolsCalledText', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Expected final status' : 'Expected final status'}
+          {labels.expectedFinalStatus}
           <input value={editor.expectedFinalStatus} onChange={(event) => updateField('expectedFinalStatus', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-secondary)] md:self-end">
           <input type="checkbox" checked={editor.expectedHumanTransfer} onChange={(event) => updateField('expectedHumanTransfer', event.target.checked)} />
-          <span>{isZh ? 'Expect human transfer' : 'Expect human transfer'}</span>
+          <span>{labels.expectHumanTransfer}</span>
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Required phrases' : 'Required phrases'}
+          {labels.requiredPhrases}
           <textarea value={editor.expectedRequiredPhrasesText} onChange={(event) => updateField('expectedRequiredPhrasesText', event.target.value)} rows={3} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
-          {isZh ? 'Forbidden phrases' : 'Forbidden phrases'}
+          {labels.forbiddenPhrases}
           <textarea value={editor.expectedForbiddenPhrasesText} onChange={(event) => updateField('expectedForbiddenPhrasesText', event.target.value)} rows={3} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
-          {isZh ? 'Expected tool-call rules JSON' : 'Expected tool-call rules JSON'}
+          {labels.expectedToolRules}
           <textarea value={editor.expectedToolCallsJson} onChange={(event) => updateField('expectedToolCallsJson', event.target.value)} rows={4} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-[12px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
-          {isZh ? 'Expected Hook decisions JSON' : 'Expected Hook decisions JSON'}
+          {labels.expectedHookDecisions}
           <textarea value={editor.expectedHooksJson} onChange={(event) => updateField('expectedHooksJson', event.target.value)} rows={4} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 font-mono text-[12px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
       </div>
 
       <button type="button" onClick={onSave} disabled={saving} className="intera-q2-button inline-flex h-9 items-center justify-center gap-2 bg-[var(--color-accent-primary)] px-3 text-[13px] font-medium text-white disabled:opacity-50" data-testid="pilot-scenario-save">
         {saving ? <Loader2 size={15} className="animate-spin" /> : null}
-        {mode === 'new'
-          ? (isZh ? 'Save scenario' : 'Save scenario')
-          : (isZh ? 'Save scenario' : 'Save scenario')}
+        {labels.saveScenario}
       </button>
     </div>
   )
