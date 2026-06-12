@@ -15,21 +15,28 @@ const h = vi.hoisted(() => ({
   mockLoadMessages: vi.fn(),
   mockLoadMemory: vi.fn(),
   mockAgentLoopCreate: vi.fn(),
+  mockCaseFindFirst: vi.fn(),
+  mockCaseCount: vi.fn(),
+  mockCaseFindMany: vi.fn(),
+  mockCaseDeleteMany: vi.fn(),
+  mockCaseUpsert: vi.fn(),
+  mockMessageFindMany: vi.fn(),
+  mockMessageUpsert: vi.fn(),
   mockTransaction: vi.fn(),
 }))
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
     case: {
-      findFirst: vi.fn(async () => null),
-      count: vi.fn(async () => 0),
-      findMany: vi.fn(async () => []),
-      deleteMany: vi.fn(async () => ({ count: 0 })),
-      upsert: vi.fn(async () => ({})),
+      findFirst: h.mockCaseFindFirst,
+      count: h.mockCaseCount,
+      findMany: h.mockCaseFindMany,
+      deleteMany: h.mockCaseDeleteMany,
+      upsert: h.mockCaseUpsert,
     },
     message: {
-      findMany: vi.fn(async () => []),
-      upsert: vi.fn(async () => ({})),
+      findMany: h.mockMessageFindMany,
+      upsert: h.mockMessageUpsert,
     },
     actionTrace: {
       create: vi.fn(async () => ({})),
@@ -127,6 +134,13 @@ beforeEach(() => {
     loadMessages: h.mockLoadMessages,
     run: h.mockAgentRun,
   })
+  h.mockCaseFindFirst.mockResolvedValue(null)
+  h.mockCaseCount.mockResolvedValue(0)
+  h.mockCaseFindMany.mockResolvedValue([])
+  h.mockCaseDeleteMany.mockResolvedValue({ count: 0 })
+  h.mockCaseUpsert.mockResolvedValue({})
+  h.mockMessageFindMany.mockResolvedValue([])
+  h.mockMessageUpsert.mockResolvedValue({})
   h.mockTransaction.mockImplementation(async (calls: Promise<unknown>[]) => Promise.all(calls))
 })
 
@@ -217,5 +231,76 @@ describe('runPlaygroundTurn vision handling', () => {
     }))
     const traceEvent = events.find((event) => event.type === 'trace')
     expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('dry_run_mixed')
+  })
+
+  it('restores a provided chatId only inside the current org and user boundary', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
+    h.config = { ...h.config, model: 'openai/gpt-4o' }
+    h.mockCaseFindFirst.mockResolvedValue({ id: 'case-existing' })
+
+    await collect({
+      orgId: 'org-1',
+      message: 'continue',
+      playgroundConfig: { debug: false },
+      configId: 'agent-1',
+      userId: 'user-1',
+      chatId: 'pg_agent-1_1_a',
+    })
+
+    expect(h.mockCaseFindFirst).toHaveBeenCalledWith({
+      where: {
+        orgId: 'org-1',
+        chatId: 'pg_agent-1_1_a',
+        type: 'playground',
+        userId: 'user-1',
+      },
+      select: { id: true },
+    })
+    expect(h.mockAgentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-existing',
+      chatId: 'pg_agent-1_1_a',
+      bootstrapNewCase: false,
+    }))
+  })
+
+  it('mints a new chatId instead of reusing a provided chatId outside the current boundary', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
+    h.config = { ...h.config, model: 'openai/gpt-4o' }
+    h.mockCaseFindFirst.mockResolvedValue(null)
+
+    const events = await collect({
+      orgId: 'org-1',
+      message: 'continue',
+      playgroundConfig: { debug: false },
+      configId: 'agent-1',
+      userId: 'user-1',
+      chatId: 'pg_agent-1_foreign_x',
+    })
+    const sessionInit = events.find((event) => event.type === 'session_init')
+
+    expect(sessionInit?.data?.chatId).toMatch(/^pg_agent-1_\d+_[a-z0-9]+$/)
+    expect(sessionInit?.data?.chatId).not.toBe('pg_agent-1_foreign_x')
+    expect(h.mockAgentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: sessionInit?.data?.chatId,
+      chatId: sessionInit?.data?.chatId,
+      bootstrapNewCase: true,
+    }))
+  })
+
+  it('applies the playground session cap only within the current org and user', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
+    h.config = { ...h.config, model: 'openai/gpt-4o' }
+
+    await collect({
+      orgId: 'org-1',
+      message: 'start',
+      playgroundConfig: { debug: false },
+      configId: 'agent-1',
+      userId: 'user-1',
+    })
+
+    expect(h.mockCaseCount).toHaveBeenCalledWith({
+      where: { orgId: 'org-1', userId: 'user-1', type: 'playground' },
+    })
   })
 })

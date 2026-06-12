@@ -362,8 +362,7 @@ function readStoredTraceCollapsed(scopeId: string) {
 function hasPersistedPlaygroundSession(scopeId: string, selectedAgentId: string | null) {
   try {
     return Boolean(
-      localStorage.getItem(`pg_chatId_${scopeId}_${selectedAgentId ?? ''}`)
-      || localStorage.getItem('pg_chatId'),
+      localStorage.getItem(`pg_chatId_${scopeId}_${selectedAgentId ?? ''}`),
     )
   } catch {}
   return false
@@ -377,9 +376,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const { userId, orgId } = useSession()
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
-  const scopeId = userId || orgId || 'default'
+  const userBoundaryId = userId || 'anonymous'
+  const orgBoundaryId = orgId || 'default'
+  const scopeId = `${orgBoundaryId}_${userBoundaryId}`
 
-  // Scoped localStorage keys — prevents chat history from leaking across orgs/agents
+  // Scoped localStorage keys — prevents chat history from leaking across orgs/users/agents
   const lsk = useMemo(() => ({
     chatId: `pg_chatId_${scopeId}_${selectedAgentId ?? ''}`,
     formRequest: `pg_formRequest_${scopeId}_${selectedAgentId ?? ''}`,
@@ -392,9 +393,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
   const [snapshotReloadKey, setSnapshotReloadKey] = useState(0)
-  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(() => {
-    try { const s = localStorage.getItem('pg_formRequest'); return s ? JSON.parse(s) : null } catch { return null }
-  })
+  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(null)
   const [debugMode, setDebugMode] = useState(false)
   const [toolExecutionMode, setToolExecutionMode] = useState<ToolExecutionMode>(() => {
     try { return localStorage.getItem('pg_toolExecutionMode') === 'dry_run' ? 'dry_run' : 'runtime' } catch { return 'runtime' }
@@ -424,6 +423,16 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   useEffect(() => {
     try { localStorage.setItem(lsk.traceCollapsed, String(sidebarCollapsed)) } catch {}
   }, [sidebarCollapsed, lsk.traceCollapsed])
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(lsk.formRequest)
+      setFormRequest(scoped ? JSON.parse(scoped) : null)
+      localStorage.removeItem('pg_formRequest')
+      localStorage.removeItem('pg_chatId')
+    } catch {
+      setFormRequest(null)
+    }
+  }, [lsk.formRequest])
   const [error, setError] = useState('')
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const [toastMessage, setToastMessage] = useState('')
@@ -433,9 +442,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [immersiveMode, setImmersiveMode] = useState(false)
   const [immersiveLeft, setImmersiveLeft] = useState(0)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-  const [chatId, setChatId] = useState<string | null>(() => {
-    try { return localStorage.getItem('pg_chatId') } catch { return null }
-  })
+  const [chatId, setChatId] = useState<string | null>(null)
 
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -458,6 +465,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   useEffect(() => { lskRef.current = lsk }, [lsk])
   const prevAgentIdRef = useRef<string | null>(null)
   const prevOrgIdRef = useRef<string | null>(null)
+  const prevUserIdRef = useRef<string | null>(null)
   const hasRestoredRef = useRef(false)
   const isRestoringRef = useRef(false)
   const prevAgentConfigIdRef = useRef<string | null>(null)
@@ -497,10 +505,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     const isAgentSwitch = hasRestoredRef.current && prevAgentIdRef.current != null && prevAgentIdRef.current !== selectedAgentId
     // Only treat as org switch when moving between two real org ids (skip initial 'default' → real transition)
     const isOrgSwitch = hasRestoredRef.current && prevOrgIdRef.current != null && prevOrgIdRef.current !== orgId && prevOrgIdRef.current !== 'default'
-    const isSwitch = isAgentSwitch || isOrgSwitch
+    const isUserSwitch = hasRestoredRef.current && prevUserIdRef.current != null && prevUserIdRef.current !== userBoundaryId && prevUserIdRef.current !== 'anonymous'
+    const isSwitch = isAgentSwitch || isOrgSwitch || isUserSwitch
     hasRestoredRef.current = true
     prevAgentIdRef.current = selectedAgentId
     prevOrgIdRef.current = orgId
+    prevUserIdRef.current = userBoundaryId
 
     // Skip if restore is already in-flight (context loaded while fetch is running)
     if (!isSwitch && isRestoringRef.current) return
@@ -529,7 +539,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     }
 
     const configId = selectedAgentId
-    const initialChatId = isSwitch ? null : chatId
+    const initialChatId = isSwitch ? null : (() => {
+      try { return localStorage.getItem(lsk.chatId) } catch { return null }
+    })()
     let cancelled = false
 
     async function loadSession(sessionChatId: string) {
@@ -641,9 +653,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       }
       isRestoringRef.current = false
     })
-    // Cancel in-flight fetch when switching agent or org
-    return () => { if (isSwitch) cancelled = true }
-  }, [selectedAgentId, orgId, lsk.chatId, lsk.formRequest])
+    // Cancel in-flight fetch when switching agent/org/user or scoped storage keys.
+    return () => { cancelled = true }
+  }, [selectedAgentId, orgId, userBoundaryId, lsk.chatId, lsk.formRequest])
 
   // Auto-expand latest turn; collapse older turns when a NEW turn starts; error tools default expanded
   const prevTurnCountRef = useRef(0)

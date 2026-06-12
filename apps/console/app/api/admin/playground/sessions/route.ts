@@ -24,6 +24,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
 
     const cases = await repo.raw.case.findMany({
       where: {
+        orgId: repo.orgId,
         userId: vendor.userId,
         type: 'playground',
         chatId: { startsWith: `pg_${configId}_` },

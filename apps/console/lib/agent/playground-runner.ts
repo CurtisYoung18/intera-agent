@@ -295,6 +295,9 @@ export async function* runPlaygroundTurn(input: {
   const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
+  const createPlaygroundChatId = () => (
+    `pg_${input.configId || 'default'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  )
 
   // ── Load real config from DB ──
   const agentConfig = await loadAgentConfig(input.configId)
@@ -371,11 +374,11 @@ export async function* runPlaygroundTurn(input: {
 
   if (inputChatId) {
     const existingCase = await prisma.case.findFirst({
-      where: { chatId: inputChatId, type: 'playground', userId },
+      where: { orgId, chatId: inputChatId, type: 'playground', userId },
       select: { id: true },
     })
     if (!existingCase) {
-      effectiveChatId = inputChatId
+      effectiveChatId = createPlaygroundChatId()
       bootstrapNewCase = true
       caseId = effectiveChatId
     } else {
@@ -386,11 +389,11 @@ export async function* runPlaygroundTurn(input: {
   } else {
     // First turn — check per-account cap
     const sessionCount = await prisma.case.count({
-      where: { userId, type: 'playground' },
+      where: { orgId, userId, type: 'playground' },
     })
     if (sessionCount >= MAX_PLAYGROUND_SESSIONS) {
       const oldestCases = await prisma.case.findMany({
-        where: { userId, type: 'playground' },
+        where: { orgId, userId, type: 'playground' },
         orderBy: { createdAt: 'asc' },
         take: sessionCount - MAX_PLAYGROUND_SESSIONS + 1,
         select: { id: true },
@@ -399,7 +402,7 @@ export async function* runPlaygroundTurn(input: {
         where: { id: { in: oldestCases.map((c: { id: string }) => c.id) } },
       })
     }
-    effectiveChatId = `pg_${input.configId || 'default'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    effectiveChatId = createPlaygroundChatId()
     bootstrapNewCase = true
     caseId = effectiveChatId
   }

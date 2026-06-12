@@ -33,7 +33,12 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     }
 
     const c = await repo.raw.case.findFirst({
-      where: { chatId: params.chatId, type: 'playground', userId: vendor.userId },
+      where: {
+        orgId: repo.orgId,
+        chatId: params.chatId,
+        type: 'playground',
+        userId: vendor.userId,
+      },
       select: { id: true },
     })
     if (!c) throw new NotFoundError('Session not found')
@@ -57,13 +62,19 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     let renderHintsMap: Record<string, unknown> = {}
     if (configId) {
       try {
-        const tools = await repo.raw.tool.findMany({
-          where: {
-            agentConfigId: configId,
-            renderHints: { not: null },
-          },
-          select: { name: true, renderHints: true },
+        const config = await repo.raw.agentConfig.findFirst({
+          where: { id: configId, orgId: repo.orgId },
+          select: { id: true },
         })
+        const tools = config
+          ? await repo.raw.tool.findMany({
+              where: {
+                agentConfigId: config.id,
+                renderHints: { not: null },
+              },
+              select: { name: true, renderHints: true },
+            })
+          : []
         for (const tool of tools) {
           try {
             if (tool.renderHints) {
@@ -106,7 +117,12 @@ export const DELETE = defineRoute<void, { chatId: string }>({
     }
 
     const c = await repo.raw.case.findFirst({
-      where: { chatId: params.chatId, type: 'playground', userId: vendor.userId },
+      where: {
+        orgId: repo.orgId,
+        chatId: params.chatId,
+        type: 'playground',
+        userId: vendor.userId,
+      },
       select: { id: true },
     })
     if (!c) throw new NotFoundError('Session not found')

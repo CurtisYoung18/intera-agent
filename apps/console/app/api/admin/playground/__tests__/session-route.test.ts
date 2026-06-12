@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   mockCaseFindFirst: vi.fn(),
   mockMessageFindMany: vi.fn(),
   mockActionTraceFindMany: vi.fn(),
+  mockAgentConfigFindFirst: vi.fn(),
   mockToolFindMany: vi.fn(),
 }))
 
@@ -20,8 +21,10 @@ vi.mock('@/lib/db/repo-for-org', () => ({
       case: { findFirst: h.mockCaseFindFirst },
       message: { findMany: h.mockMessageFindMany },
       actionTrace: { findMany: h.mockActionTraceFindMany },
+      agentConfig: { findFirst: h.mockAgentConfigFindFirst },
       tool: { findMany: h.mockToolFindMany },
     },
+    orgId: 'org-1',
   }),
 }))
 
@@ -45,6 +48,7 @@ beforeEach(() => {
   h.mockGetActiveVendor.mockResolvedValue({ isAuthed: true, userId: 'user-1' })
   h.mockCaseFindFirst.mockResolvedValue({ id: 'case-1' })
   h.mockActionTraceFindMany.mockResolvedValue([])
+  h.mockAgentConfigFindFirst.mockResolvedValue({ id: 'agent-1' })
   h.mockToolFindMany.mockResolvedValue([])
 })
 
@@ -94,6 +98,14 @@ describe('GET /api/admin/playground/sessions/[chatId]', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
+    expect(h.mockCaseFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        orgId: 'org-1',
+        chatId: 'pg_agent-1_1_a',
+        type: 'playground',
+        userId: 'user-1',
+      },
+    }))
     expect(body.ok).toBe(true)
     expect(body.data.messages).toEqual([
       {
@@ -109,5 +121,41 @@ describe('GET /api/admin/playground/sessions/[chatId]', () => {
         createdAt: createdAt.toISOString(),
       },
     ])
+  })
+
+  it('loads render hints only from an agent config owned by the current org', async () => {
+    h.mockMessageFindMany.mockResolvedValue([])
+    h.mockAgentConfigFindFirst.mockResolvedValue({ id: 'agent-1' })
+    h.mockToolFindMany.mockResolvedValue([
+      { name: 'lookup_deposit', renderHints: '{"type":"card"}' },
+    ])
+
+    const res = await GET(makeRequest(), { params: Promise.resolve({ chatId: 'pg_agent-1_1_a' }) })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(h.mockAgentConfigFindFirst).toHaveBeenCalledWith({
+      where: { id: 'agent-1', orgId: 'org-1' },
+      select: { id: true },
+    })
+    expect(h.mockToolFindMany).toHaveBeenCalledWith({
+      where: { agentConfigId: 'agent-1', renderHints: { not: null } },
+      select: { name: true, renderHints: true },
+    })
+    expect(body.data.renderHintsMap).toEqual({
+      lookup_deposit: { type: 'card' },
+    })
+  })
+
+  it('does not load render hints when the requested agent config is outside the current org', async () => {
+    h.mockMessageFindMany.mockResolvedValue([])
+    h.mockAgentConfigFindFirst.mockResolvedValue(null)
+
+    const res = await GET(makeRequest(), { params: Promise.resolve({ chatId: 'pg_agent-1_1_a' }) })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(h.mockToolFindMany).not.toHaveBeenCalled()
+    expect(body.data.renderHintsMap).toEqual({})
   })
 })
