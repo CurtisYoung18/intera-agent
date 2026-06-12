@@ -4,9 +4,10 @@ import { NextRequest } from 'next/server'
 const h = vi.hoisted(() => {
   const prisma = {
     $transaction: vi.fn(async (ops) => ops),
-    humanTask: { findUnique: vi.fn(), findFirst: vi.fn() },
-    case: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), upsert: vi.fn() },
+    humanTask: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+    case: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), upsert: vi.fn(), update: vi.fn() },
     caseType: { findUnique: vi.fn() },
+    procedureRun: { findFirst: vi.fn() },
     tool: { findMany: vi.fn() },
     knowledgeSource: { findMany: vi.fn() },
     message: { findMany: vi.fn(), upsert: vi.fn() },
@@ -116,11 +117,14 @@ beforeEach(() => {
 
   h.prisma.humanTask.findUnique.mockResolvedValue(null)
   h.prisma.humanTask.findFirst.mockResolvedValue(null)
+  h.prisma.humanTask.update.mockResolvedValue({})
   h.prisma.case.findUnique.mockResolvedValue(null)
   h.prisma.case.findMany.mockResolvedValue([])
   h.prisma.case.create.mockResolvedValue({ id: 'case-created' })
   h.prisma.case.upsert.mockResolvedValue({})
+  h.prisma.case.update.mockResolvedValue({})
   h.prisma.caseType.findUnique.mockResolvedValue(null)
+  h.prisma.procedureRun.findFirst.mockResolvedValue(null)
   h.prisma.tool.findMany.mockResolvedValue([])
   h.prisma.knowledgeSource.findMany.mockResolvedValue([])
   h.prisma.message.findMany.mockResolvedValue([])
@@ -377,7 +381,7 @@ describe('POST /api/messages runtime session guards', () => {
     expect(followupLoop.run).toHaveBeenCalledWith('queued follow-up', expect.any(Function), undefined)
     expect(h.prisma.case.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'case-drain' },
-      update: { status: 'open' },
+      update: expect.objectContaining({ status: 'open' }),
     }))
     expect(h.prisma.chatMemory.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { caseId: 'case-drain' },
@@ -502,5 +506,153 @@ describe('POST /api/messages runtime session guards', () => {
       ]),
     )
     closeSession('case-v2-form')
+  })
+
+  it('aligns case truth when a resolved human task explicitly resumes a case', async () => {
+    h.prisma.humanTask.findUnique.mockResolvedValue({
+      id: 'task-resume',
+      caseId: 'case-resume',
+      status: 'resolved',
+      verdict: 'need_more_evidence',
+      expectedEta: '2h',
+      notes: 'Ask for TXID and screenshot',
+      case: {
+        id: 'case-resume',
+        orgId: 'org-a',
+        userId: 'user-1',
+      },
+    })
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-resume',
+      type: 'general',
+      status: 'created',
+      memory: null,
+    })
+
+    const loop = mockLoop({
+      run: vi.fn(async () => ({
+        messages: [],
+        caseStatus: 'investigating',
+        transition: 'next_turn',
+        reason: 'resumed',
+      })),
+      getMemorySummary: vi.fn(() => ({
+        confirmedFacts: {},
+        missingFacts: [],
+        toolsCalled: ['resume_case'],
+        toolResults: {},
+        keyEvents: [],
+        summary: 'resumed',
+        todos: null,
+        caseStatus: 'investigating',
+      })),
+      getCaseType: vi.fn(() => 'general'),
+    })
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      resumeTrigger: 'task-resume',
+      orgId: 'org-a',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.prisma.case.update).toHaveBeenCalledWith({
+      where: { id: 'case-resume' },
+      data: { status: 'investigating', blocker: null },
+    })
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-resume',
+      userId: 'user-1',
+    }))
+  })
+
+  it('prefers active ProcedureRun truth over stale general case rows when hydrating an existing case', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-runtime-truth',
+      type: 'general',
+      status: 'created',
+      memory: {
+        confirmedFacts: JSON.stringify({ memberId: 'M123' }),
+        missingFacts: JSON.stringify(['txid']),
+        toolsCalled: JSON.stringify([]),
+        toolResults: JSON.stringify({}),
+        keyEvents: JSON.stringify([]),
+        summary: 'Need transaction proof.',
+      },
+    })
+    h.prisma.procedureRun.findFirst.mockResolvedValue({
+      procedureId: 'deposit_not_credited',
+      status: 'active',
+    })
+    h.prisma.caseType.findUnique.mockResolvedValue({
+      type: 'deposit_not_credited',
+      displayName: 'Deposit not credited',
+      description: 'Investigate a missing deposit.',
+      icon: 'D',
+      requiredFacts: '["memberId","txid"]',
+      defaultGoal: 'Resolve the deposit issue.',
+      escalateOn: '[]',
+      autoCloseConditions: null,
+      maxAutoTurns: 3,
+      procedure: JSON.stringify({
+        version: 'v2',
+        whenToUse: 'Use for deposit-not-credited cases',
+        steps: [{
+          id: 'collect_txid',
+          title: 'Collect TXID',
+          guidance: 'Ask for transaction proof.',
+          actions: [{ id: 'ask_txid', kind: 'ask', label: 'Ask for TXID', fields: ['txid'] }],
+          branches: [],
+        }],
+      }),
+    })
+
+    const loop = mockLoop({
+      run: vi.fn(async () => ({
+        messages: [],
+        caseStatus: 'investigating',
+        transition: 'next_turn',
+        reason: 'hydrated',
+      })),
+      getMemorySummary: vi.fn(() => ({
+        confirmedFacts: { memberId: 'M123' },
+        missingFacts: ['txid'],
+        toolsCalled: ['resume_case'],
+        toolResults: {},
+        keyEvents: [],
+        summary: 'Need transaction proof.',
+        todos: null,
+        caseStatus: 'investigating',
+      })),
+      getCaseType: vi.fn(() => 'deposit_not_credited'),
+    })
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      message: '我补充一下，刚刚已经转给人工了',
+      caseId: 'case-runtime-truth',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.buildModePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      hasActiveCase: true,
+      caseSchema: expect.objectContaining({ type: 'deposit_not_credited' }),
+    }))
+    expect(loop.loadMemory).toHaveBeenCalledWith(expect.objectContaining({
+      caseStatus: 'investigating',
+      confirmedFacts: JSON.stringify({ memberId: 'M123' }),
+    }))
+
+    const truthWrites = h.prisma.case.upsert.mock.calls
+      .map(([arg]) => arg)
+      .filter((arg) => arg.where?.id === 'case-runtime-truth')
+    expect(truthWrites.some((arg) =>
+      arg.update?.type === 'deposit_not_credited' &&
+      arg.update?.status === 'investigating'
+    )).toBe(true)
   })
 })

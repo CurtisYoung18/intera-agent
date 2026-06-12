@@ -93,6 +93,19 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
   try { return JSON.parse(raw) } catch { return {} }
 }
 
+function deriveCaseStatusFromRuntimeProcedure(
+  runtimeProcedure: { status?: string } | null | undefined,
+  currentCaseStatus: string | null | undefined,
+): string | undefined {
+  if (runtimeProcedure?.status === 'paused') return 'waiting_human'
+  if (runtimeProcedure?.status === 'active') {
+    return currentCaseStatus === 'resolved' || currentCaseStatus === 'escalated'
+      ? currentCaseStatus
+      : 'investigating'
+  }
+  return currentCaseStatus ?? undefined
+}
+
 async function writeProviderTranscriptPersistedTrace(
   caseId: string,
   chatId: string | undefined,
@@ -365,6 +378,10 @@ export async function POST(request: NextRequest) {
             parts.push(resumeTmpl)
             userMessage = parts.join('\n')
             runtimeInputSource = 'human_task_result'
+            await prisma.case.update({
+              where: { id: resolvedCaseId },
+              data: { status: 'investigating', blocker: null },
+            }).catch((err: unknown) => { console.error('[Intera] Failed to align case truth on resumeTrigger:', err) })
 
             console.log(`[Intera] Resuming case ${resolvedCaseId} after human resolution`)
           } else {
@@ -539,16 +556,36 @@ export async function POST(request: NextRequest) {
         // ── Load case memory + schema from DB (CC-style session memory pattern) ──
         let existingMemory: unknown = null
         let caseSchema: CaseSchemaConfig | null = null
+        let existingCaseStatus: string | null = null
+        let runtimeProcedure: { procedureId: string; status: string } | null = null
         try {
           const existingCase = await prisma.case.findUnique({
             where: { id: resolvedCaseId },
             include: { memory: true },
           })
           if (existingCase) {
+            existingCaseStatus = existingCase.status
+            try {
+              const activeOrPausedRun = await prisma.procedureRun.findFirst({
+                where: {
+                  caseId: resolvedCaseId,
+                  status: { in: ['active', 'paused'] },
+                },
+                orderBy: { updatedAt: 'desc' },
+                select: { procedureId: true, status: true },
+              })
+              if (activeOrPausedRun) {
+                runtimeProcedure = activeOrPausedRun
+              }
+            } catch (err) {
+              console.error('[Intera] Failed to load runtime procedure truth:', err)
+            }
+
             // Load case type schema if available
             try {
+              const caseTypeSlug = runtimeProcedure?.procedureId || existingCase.type
               const caseType = await prisma.caseType.findUnique({
-                where: { agentConfigId_type: { agentConfigId: resolvedAgentConfigId ?? '', type: existingCase.type } },
+                where: { agentConfigId_type: { agentConfigId: resolvedAgentConfigId ?? '', type: caseTypeSlug } },
               })
               if (caseType) {
                 caseSchema = schemaFromCaseTypeRow(caseType)
@@ -556,7 +593,8 @@ export async function POST(request: NextRequest) {
             } catch (err) { console.error('[Intera] Failed to load caseType schema:', err) }
 
             // Auto-resume: if case is waiting for human and task was resolved, inject verdict
-            if (existingCase.status === 'waiting_human' && !resumeTrigger && !formResult && message) {
+            const effectiveExistingCaseStatus = deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCase.status) ?? existingCase.status
+            if (effectiveExistingCaseStatus === 'waiting_human' && !resumeTrigger && !formResult && message) {
               try {
                 const resolvedTask = await prisma.humanTask.findFirst({
                   where: { caseId: resolvedCaseId, status: 'resolved', notifiedAt: null },
@@ -570,12 +608,17 @@ export async function POST(request: NextRequest) {
                   parts.push(resumeTmpl)
                   userMessage = parts.join('\n') + '\n\nCustomer also said: ' + message
                   runtimeInputSource = 'human_task_result'
+                  existingCaseStatus = 'investigating'
 
                   // Mark task as notified so it doesn't replay on every message
                   await prisma.humanTask.update({
                     where: { id: resolvedTask.id },
                     data: { notifiedAt: new Date() },
                   }).catch((err: unknown) => { console.error('[Intera] Failed to mark humanTask notifiedAt:', err) })
+                  await prisma.case.update({
+                    where: { id: resolvedCaseId },
+                    data: { status: 'investigating', blocker: null },
+                  }).catch((err: unknown) => { console.error('[Intera] Failed to align case truth on auto-resume:', err) })
                 }
               } catch (err) { console.error('[Intera] Auto-resume humanTask lookup failed:', err) }
             }
@@ -595,20 +638,29 @@ export async function POST(request: NextRequest) {
         // FK: traces/messages reference Case.caseId — rows must exist before AgentLoop writes ActionTrace/Message.
         const inferredCaseTypeForRecord =
           caseSchema?.type ??
+          runtimeProcedure?.procedureId ??
           bodyCaseType ??
           'general'
+        const inferredCaseStatusForRecord =
+          deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus) ??
+          'created'
 
         try {
           await prisma.case.upsert({
             where: { id: resolvedCaseId },
-            update: {},
+            update: {
+              ...(inferredCaseTypeForRecord !== 'general' ? { type: inferredCaseTypeForRecord } : {}),
+              status: inferredCaseStatusForRecord,
+              ...(inferredCaseStatusForRecord === 'investigating' ? { blocker: null } : {}),
+            },
             create: {
               id: resolvedCaseId,
               orgId: resolvedOrgId,
               userId: resolvedUserId,
               type: inferredCaseTypeForRecord,
-              status: 'created',
+              status: inferredCaseStatusForRecord,
               chatId,
+              ...(inferredCaseStatusForRecord === 'investigating' ? { blocker: null } : {}),
             },
           })
         } catch (err) {
@@ -770,11 +822,12 @@ export async function POST(request: NextRequest) {
         // Restore memory from DB into the in-memory manager
         if (existingMemory) {
           const memData = { ...(existingMemory as Record<string, unknown>) }
-          // Inject caseStatus from the Case table so the case loop resumes the current status.
-          try {
-            const c = await prisma.case.findUnique({ where: { id: resolvedCaseId } })
-            if (c?.status) memData.caseStatus = c.status
-          } catch (err) { console.error('[Intera] Failed to read case status:', err) }
+          const runtimeBackedCaseStatus =
+            deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus) ??
+            inferredCaseStatusForRecord
+          if (runtimeBackedCaseStatus) {
+            memData.caseStatus = runtimeBackedCaseStatus
+          }
           agentLoop.loadMemory(memData)
         }
 
@@ -830,12 +883,21 @@ export async function POST(request: NextRequest) {
           if (result.messages.length > 0) {
             try {
               const caseTypeForUpsert = followup.getCaseType()
+              const shouldClearFollowupBlocker =
+                next.source === 'human_task_result' && result.caseStatus !== 'waiting_human'
               await prisma.case.upsert({
                 where: { id: resolvedCaseId },
-                update: { status: result.caseStatus },
+                update: {
+                  ...(caseTypeForUpsert !== 'general' ? { type: caseTypeForUpsert } : {}),
+                  status: result.caseStatus,
+                  ...(shouldClearFollowupBlocker ? { blocker: null } : {}),
+                },
                 create: {
                   id: resolvedCaseId, orgId: resolvedOrgId, userId: resolvedUserId,
-                  type: caseTypeForUpsert, status: result.caseStatus, chatId,
+                  type: caseTypeForUpsert,
+                  status: result.caseStatus,
+                  chatId,
+                  ...(shouldClearFollowupBlocker ? { blocker: null } : {}),
                 },
               })
               const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : followupMem.confirmedFacts
@@ -908,9 +970,15 @@ export async function POST(request: NextRequest) {
           try {
             // Read type from AgentLoop (may have been set by start_procedure mid-loop)
             const caseTypeForUpsert = agentLoop.getCaseType()
+            const shouldClearCaseBlocker =
+              runtimeInputSource === 'human_task_result' && result.caseStatus !== 'waiting_human'
             await prisma.case.upsert({
               where: { id: resolvedCaseId },
-              update: { status: result.caseStatus },
+              update: {
+                ...(caseTypeForUpsert !== 'general' ? { type: caseTypeForUpsert } : {}),
+                status: result.caseStatus,
+                ...(shouldClearCaseBlocker ? { blocker: null } : {}),
+              },
               create: {
                 id: resolvedCaseId,
                 orgId: resolvedOrgId,
@@ -918,6 +986,7 @@ export async function POST(request: NextRequest) {
                 type: caseTypeForUpsert,
                 status: result.caseStatus,
                 chatId,
+                ...(shouldClearCaseBlocker ? { blocker: null } : {}),
               },
             })
             const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : mem.confirmedFacts
