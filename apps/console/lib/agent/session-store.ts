@@ -1934,11 +1934,15 @@ function evaluateBranchCondition(
     }
     case 'runtime_signal': {
       const signal = run.signals.find((entry) => entry.signal === condition.signal && entry.active)
+      if (signal) {
+        return {
+          status: 'matched',
+          reason: `Runtime signal "${condition.signal}" is active: ${signal.reason}`,
+        }
+      }
       return {
-        status: 'pending',
-        reason: signal
-          ? `Safety hint only: ${condition.signal} is active, but runtime_signal cannot complete a branch without structured evidence.`
-          : `Safety hint only: runtime_signal "${condition.signal}" is not structured branch truth.`,
+        status: 'skipped',
+        reason: `Runtime signal "${condition.signal}" was not active when this branch was evaluated.`,
       }
     }
     case 'form_field': {
@@ -2066,7 +2070,18 @@ function maybeCompleteStep(run: ProcedureRunState, step: ProcedureRunStepState, 
 
   const matchedBranchId = step.branches?.find((branch) => branch.status === 'matched')?.id
   const relevantActions = (step.actions ?? []).filter((action) => !action.branchId || action.branchId === matchedBranchId)
-  if (relevantActions.length === 0) return
+  if (relevantActions.length === 0) {
+    // Branch-only step where no branch matched: once every branch is resolved
+    // (none pending), there is nothing left to execute — complete the step so
+    // the run cannot deadlock on a never-matching branch.
+    const branches = step.branches ?? []
+    if (branches.length > 0 && branches.every((branch) => branch.status !== 'pending')) {
+      step.status = 'completed'
+      step.completedAt = step.completedAt ?? now
+      step.completionReason = step.completionReason ?? 'All branches resolved with no applicable actions.'
+    }
+    return
+  }
 
   const pendingRequired = relevantActions.filter((action) =>
     action.required !== false &&

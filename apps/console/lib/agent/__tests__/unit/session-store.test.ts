@@ -259,7 +259,7 @@ describe('R3 runtime event protocol', () => {
         expect.objectContaining({ signal: 'explicit_human_request', active: true }),
       ]),
     )
-    expect(getActiveProcedureRun(caseId)?.steps[0]?.branches?.[0]?.status).toBe('pending')
+    expect(getActiveProcedureRun(caseId)?.steps[0]?.branches?.[0]?.status).toBe('matched')
 
     const handoff = recordProcedureToolResult(caseId, {
       toolName: 'create_human_task',
@@ -269,6 +269,157 @@ describe('R3 runtime event protocol', () => {
     })
     expect(handoff.stale).toBe(false)
     expect(handoff.run?.signals.find((signal) => signal.signal === 'explicit_human_request')?.active).toBe(false)
+    closeSession(caseId)
+  })
+
+  it('resolves an inactive runtime_signal branch as skipped so the else path can match', () => {
+    const caseId = 'r3-runtime-signal-else'
+    recordInitialInputEvent(caseId, { content: 'My deposit has not arrived yet.' })
+    const started = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'triage',
+            title: 'Triage the request',
+            guidance: 'Hand off right away when the customer asks for a person.',
+            actions: [],
+            branches: [
+              {
+                id: 'wants_human',
+                kind: 'if',
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                actions: [
+                  {
+                    id: 'handoff_now',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+              {
+                id: 'continue_self_serve',
+                kind: 'else',
+                actions: [
+                  {
+                    id: 'end_step',
+                    kind: 'end',
+                    label: 'Close out the request',
+                    status: 'completed',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, { content: 'It was 500 USD sent yesterday evening.' })
+
+    const triage = getActiveProcedureRun(caseId)?.steps[0]
+    expect(triage?.branches?.find((branch) => branch.id === 'wants_human')).toMatchObject({
+      status: 'skipped',
+    })
+    expect(triage?.branches?.find((branch) => branch.id === 'continue_self_serve')).toMatchObject({
+      status: 'matched',
+    })
+
+    reconcileProcedureInput(caseId, {
+      runId: started.run.runId,
+      upToInputEpoch: 2,
+      decision: 'continue',
+      summary: 'Reviewed the latest deposit details.',
+    })
+    const ended = recordProcedureToolResult(caseId, {
+      toolName: 'finalize_procedure',
+      toolUseId: 'end-1',
+      basedOnInputEpoch: 2,
+      toolOutput: { ok: true, status: 'completed' },
+    })
+    expect(ended.run?.steps[0]?.status).toBe('completed')
+    expect(finalizeProcedureRun(caseId, { runId: started.run.runId, basedOnInputEpoch: 2 })).toMatchObject({
+      ok: true,
+    })
+    closeSession(caseId)
+  })
+
+  it('completes a branch-only step once every branch is resolved with no applicable action', () => {
+    const caseId = 'r3-runtime-signal-no-else'
+    recordInitialInputEvent(caseId, { content: 'My deposit has not arrived yet.' })
+    const started = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'triage',
+            title: 'Triage the request',
+            guidance: 'Hand off when the customer asks for a person; otherwise continue.',
+            actions: [],
+            branches: [
+              {
+                id: 'wants_human',
+                kind: 'if',
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                actions: [
+                  {
+                    id: 'handoff_now',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            id: 'close',
+            title: 'Close out',
+            guidance: 'Finish up once triage is done.',
+            actions: [
+              {
+                id: 'end_step',
+                kind: 'end',
+                label: 'Close out the request',
+                status: 'completed',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, { content: 'It was 500 USD sent yesterday evening.' })
+
+    const run = getActiveProcedureRun(caseId)
+    expect(run?.steps.find((step) => step.id === 'triage')).toMatchObject({
+      status: 'completed',
+    })
+    expect(run?.currentStepId).toBe('close')
+
+    reconcileProcedureInput(caseId, {
+      runId: started.run.runId,
+      upToInputEpoch: 2,
+      decision: 'continue',
+      summary: 'Reviewed the latest deposit details.',
+    })
+    recordProcedureToolResult(caseId, {
+      toolName: 'finalize_procedure',
+      toolUseId: 'end-1',
+      basedOnInputEpoch: 2,
+      toolOutput: { ok: true, status: 'completed' },
+    })
+    expect(finalizeProcedureRun(caseId, { runId: started.run.runId, basedOnInputEpoch: 2 })).toMatchObject({
+      ok: true,
+    })
     closeSession(caseId)
   })
 
