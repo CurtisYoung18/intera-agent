@@ -481,20 +481,32 @@ export function recordProcedureToolResult(caseId: string, input: {
     run.needsReconcile = true
     run.blockers = [...new Set([...run.blockers, 'New customer input arrived after this tool/action began.'])]
   } else {
-    maybeAdvanceCurrentStep(run, input.toolName)
+    const usableForProgress = isUsableProcedureEvidence(input.toolOutput, input.toolError)
+    if (usableForProgress) {
+      run.blockers = run.blockers.filter((blocker) => blocker !== blockingEvidenceMessage(input.toolName))
+      maybeAdvanceCurrentStep(run, input.toolName)
+    } else {
+      run.blockers = [...new Set([...run.blockers, blockingEvidenceMessage(input.toolName)])]
+    }
   }
 
+  const usableForProgress = !stale && isUsableProcedureEvidence(input.toolOutput, input.toolError)
   appendProcedureTimeline(session, run, {
     origin: 'system',
     source: 'tool_result',
     basedOnInputEpoch: basedOn,
-    summary: `Tool result ${stale ? 'stored as stale evidence' : 'accepted'}: ${input.toolName}`,
+    summary: stale
+      ? `Tool result stored as stale evidence: ${input.toolName}`
+      : usableForProgress
+        ? `Tool result accepted: ${input.toolName}`
+        : `Tool result kept as blocking evidence: ${input.toolName}`,
     metadata: {
       toolName: input.toolName,
       toolUseId: input.toolUseId,
       output: input.toolOutput,
       error: input.toolError,
       evidenceState: stale ? 'stale' : 'canonical',
+      usableForProgress,
     },
   })
   return { stale, run: cloneRun(run) }
@@ -840,6 +852,46 @@ function maybeAdvanceCurrentStep(run: ProcedureRunState, toolName: string): void
       run.currentStepId = current.id
     }
   }
+}
+
+function blockingEvidenceMessage(toolName: string): string {
+  return `Tool ${toolName} returned unusable evidence. Resolve the failure before advancing the ProcedureRun.`
+}
+
+function isUsableProcedureEvidence(toolOutput: unknown, toolError?: string): boolean {
+  if (typeof toolError === 'string' && toolError.trim().length > 0) return false
+  if (toolOutput == null) return false
+  if (typeof toolOutput === 'string') return toolOutput.trim().length > 0
+  if (Array.isArray(toolOutput)) return toolOutput.length > 0
+  if (typeof toolOutput !== 'object') return true
+
+  const record = toolOutput as Record<string, unknown>
+  if ('ok' in record && record.ok === false) return false
+  if ('success' in record && record.success === false) return false
+  if (typeof record.error === 'string' && record.error.trim().length > 0) return false
+  if (Array.isArray(record.errors) && record.errors.length > 0) return false
+  if (isPlainRecord(record.errors) && Object.keys(record.errors).length > 0) return false
+  if (Object.keys(record).length === 0) return false
+
+  return Object.entries(record).some(([key, value]) => hasSubstantiveProcedureField(key, value))
+}
+
+function hasSubstantiveProcedureField(key: string, value: unknown): boolean {
+  if (['ok', 'success', 'is_v3', 'ver', 'error', 'errors'].includes(key)) return false
+  return hasSubstantiveToolValue(value)
+}
+
+function hasSubstantiveToolValue(value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'number' || typeof value === 'boolean') return true
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+  return true
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function stepMatchesTool(step: ProcedureRunStepState, toolName: string): boolean {

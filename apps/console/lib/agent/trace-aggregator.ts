@@ -138,6 +138,78 @@ function stringifyCompact(value: unknown): string {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseNestedJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+function hasOwn(obj: Record<string, unknown> | null | undefined, key: string): boolean {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+function hasMeaningfulError(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (isRecord(value)) return Object.keys(value).length > 0
+  return value != null
+}
+
+function extractEvidenceArray(value: Record<string, unknown>): unknown[] | undefined {
+  if (Array.isArray(value.list)) return value.list
+  if (Array.isArray(value.data)) return value.data
+  if (isRecord(value.data) && Array.isArray(value.data.list)) return value.data.list
+  return undefined
+}
+
+function deriveToolResultStatus(record: TraceRecord, parsedPayload: Record<string, unknown> | null): TraceStatus {
+  const name = (toolNameFromTrace(record, parsedPayload) || record.title || '').toLowerCase()
+  if (name.includes('read_chat_memory') || name.includes('read_user_profile')) {
+    return 'info'
+  }
+
+  if (typeof parsedPayload?.error === 'string' && parsedPayload.error.trim()) return 'block'
+
+  const hasRawOutput = hasOwn(parsedPayload, 'output')
+  const rawOutput = hasRawOutput ? parsedPayload?.output : undefined
+  const output = parseNestedJson(rawOutput)
+
+  if (hasRawOutput && (output == null || (typeof output === 'string' && output.trim().length === 0))) {
+    return 'block'
+  }
+
+  const candidate = isRecord(output)
+    ? output
+    : isRecord(parsedPayload)
+      ? parsedPayload
+      : null
+
+  if (candidate) {
+    if (candidate.success === false) return 'block'
+    if (candidate.ok === false) return 'block'
+    if (hasMeaningfulError(candidate.error)) return 'block'
+    if (hasMeaningfulError(candidate.errors)) return 'block'
+
+    if (candidate.success === true) {
+      const evidence = extractEvidenceArray(candidate)
+      if (evidence && evidence.length === 0) return 'info'
+    }
+  }
+
+  const blob = `${record.detail ?? ''} ${record.payload ?? ''}`
+  if (/"ok"\s*:\s*false/i.test(blob)) return 'block'
+  if (/\berror\b/i.test(blob)) return 'block'
+  if (/\bfailed\b/i.test(blob)) return 'warn'
+  return 'ok'
+}
+
 function toolNameFromTrace(record: TraceRecord, parsedPayload?: Record<string, unknown> | null): string | undefined {
   const toolName = parsedPayload?.toolName
   if (typeof toolName === 'string' && toolName.trim()) return toolName
@@ -253,14 +325,7 @@ function deriveStatus(record: TraceRecord): TraceStatus {
   }
 
   if (canonicalActionType === 'tool_result') {
-    const name = (toolNameFromTrace(record, parsedPayload) || title || '').toLowerCase()
-    if (name.includes('read_chat_memory') || name.includes('read_user_profile')) {
-      return 'info'
-    }
-    const blob = `${detail ?? ''} ${record.payload ?? ''}`
-    if (/"ok"\s*:\s*false/i.test(blob)) return 'warn'
-    if (/error|failed/i.test(blob)) return 'warn'
-    return 'ok'
+    return deriveToolResultStatus(record, parsedPayload)
   }
 
   if (canonicalActionType === 'tool_call') {

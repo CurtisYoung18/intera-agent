@@ -51,6 +51,83 @@ describe('renderToolByHint', () => {
       expect(cards[1]!.title).toBe('B')
     })
 
+    it('renders production-shaped kb_search hits from document_name/data_id/content fields', () => {
+      const output = {
+        list: [
+          { document_name: 'Deposit FAQ', data_id: 'doc-1', content: 'Deposit evidence', score: 0.92 },
+          { document_name: 'Promotion Rules', data_id: 'doc-2', content: 'Bonus turnover details', score: 0.83 },
+        ],
+      }
+      const hint: LivechatRenderHint = {
+        kind: 'carousel',
+        itemsField: '$.list',
+        idField: '$.data_id',
+        itemTemplate: {
+          titleField: '$.document_name',
+          subtitleField: '$.content',
+          buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open' }],
+        },
+      }
+
+      const actions = renderToolByHint(output, hint)
+      const cards = (actions[0] as { cards: Array<{ title: string; subtitle?: string; buttons: Array<{ id: string }> }> }).cards
+
+      expect(actions[0]!.type).toBe('send_carousel')
+      expect(cards[0]!.title).toBe('Deposit FAQ')
+      expect(cards[0]!.subtitle).toBe('Deposit evidence')
+      expect(cards[0]!.buttons[0]!.id).toBe('open_doc:doc-1')
+      expect(cards[1]!.title).toBe('Promotion Rules')
+    })
+
+    it('keeps rendering legacy title/id/snippet hits even when knowledge hints use production fields', () => {
+      const output = {
+        list: [
+          { id: 'legacy-1', title: 'Legacy FAQ', snippet: 'Legacy snippet' },
+        ],
+      }
+      const hint: LivechatRenderHint = {
+        kind: 'carousel',
+        itemsField: '$.list',
+        idField: '$.data_id',
+        itemTemplate: {
+          titleField: '$.document_name',
+          subtitleField: '$.content',
+          buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open' }],
+        },
+      }
+
+      const actions = renderToolByHint(output, hint)
+      const cards = (actions[0] as { cards: Array<{ title: string; subtitle?: string; buttons: Array<{ id: string }> }> }).cards
+
+      expect(actions[0]!.type).toBe('send_carousel')
+      expect(cards[0]!.title).toBe('Legacy FAQ')
+      expect(cards[0]!.subtitle).toBe('Legacy snippet')
+      expect(cards[0]!.buttons[0]!.id).toBe('open_doc:legacy-1')
+    })
+
+    it('falls back to score when a production KB hit has no content/snippet text', () => {
+      const output = {
+        list: [
+          { document_name: 'Similarity only', data_id: 'doc-3', score: 0.91 },
+        ],
+      }
+      const hint: LivechatRenderHint = {
+        kind: 'carousel',
+        itemsField: '$.list',
+        idField: '$.data_id',
+        itemTemplate: {
+          titleField: '$.document_name',
+          subtitleField: '$.content',
+          buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open' }],
+        },
+      }
+
+      const actions = renderToolByHint(output, hint)
+      const cards = (actions[0] as { cards: Array<{ subtitle?: string }> }).cards
+
+      expect(cards[0]!.subtitle).toBe('Score: 0.91')
+    })
+
     it('renders nothing (noop) when array is empty — the agent reply covers it', () => {
       const hint: LivechatRenderHint = { kind: 'carousel', itemsField: '$.empty', itemTemplate: { titleField: '$.title' } }
       const actions = renderToolByHint({ empty: [] }, hint)

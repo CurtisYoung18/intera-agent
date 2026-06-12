@@ -127,9 +127,71 @@ describe('R3 runtime event protocol', () => {
     const cleared = reconcileProcedureInput(caseId, { runId: started.run.runId, upToInputEpoch: 2, decision: 'continue', summary: 'Latest amount included.' })
     expect(cleared.cleared).toBe(true)
 
-    const fresh = recordProcedureToolResult(caseId, { toolName: 'get_latest_deposit', toolUseId: 'tool-2', basedOnInputEpoch: 2, toolOutput: { ok: true } })
+    const fresh = recordProcedureToolResult(caseId, { toolName: 'get_latest_deposit', toolUseId: 'tool-2', basedOnInputEpoch: 2, toolOutput: { ok: true, status: 'needs_review' } })
     expect(fresh.stale).toBe(false)
     expect(fresh.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('completed')
+    closeSession(caseId)
+  })
+
+  it('does not advance a required step on an empty success shell', () => {
+    const caseId = 'r3-empty-tool-result'
+    recordInitialInputEvent(caseId, { content: 'deposit missing' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        steps: [
+          { id: 'lookup', action: 'use' as const, target: 'get_latest_deposit', required: true },
+          { id: 'close', action: 'finalize' as const, target: 'resolved' },
+        ],
+      },
+      requestId: 'req-empty',
+    })
+
+    const empty = recordProcedureToolResult(caseId, {
+      toolName: 'get_latest_deposit',
+      toolUseId: 'tool-empty',
+      basedOnInputEpoch: 1,
+      toolOutput: { success: true, list: [] },
+    })
+
+    expect(empty.stale).toBe(false)
+    expect(empty.run?.currentStepId).toBe('lookup')
+    expect(empty.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('active')
+    expect(empty.run?.blockers).toContain('Tool get_latest_deposit returned unusable evidence. Resolve the failure before advancing the ProcedureRun.')
+    closeSession(caseId)
+  })
+
+  it('does not advance a required step when the tool returned a J1B business failure payload', () => {
+    const caseId = 'r3-blocking-tool-result'
+    recordInitialInputEvent(caseId, { content: 'withdrawal missing' })
+    const procedure = {
+      steps: [
+        { id: 'lookup', action: 'use' as const, target: 'get_latest_withdrawal', required: true },
+        { id: 'close', action: 'finalize' as const, target: 'resolved' },
+      ],
+    }
+    startProcedureRun(caseId, { procedureId: 'withdrawal_issue', displayName: 'Withdrawal', procedure, requestId: 'req-1' })
+
+    const failed = recordProcedureToolResult(caseId, {
+      toolName: 'get_latest_withdrawal',
+      toolUseId: 'tool-1',
+      basedOnInputEpoch: 1,
+      toolOutput: {
+        is_v3: true,
+        ver: '1.0.0',
+        success: false,
+        message: 'The selected member id is invalid.',
+        errors: {
+          member_id: ['The selected member id is invalid.'],
+        },
+      },
+    })
+
+    expect(failed.stale).toBe(false)
+    expect(failed.run?.currentStepId).toBe('lookup')
+    expect(failed.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('active')
+    expect(failed.run?.blockers).toContain('Tool get_latest_withdrawal returned unusable evidence. Resolve the failure before advancing the ProcedureRun.')
     closeSession(caseId)
   })
 

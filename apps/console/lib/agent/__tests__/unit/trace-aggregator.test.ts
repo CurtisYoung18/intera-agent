@@ -4,6 +4,22 @@ import { aggregateTraces } from '../../trace-aggregator'
 describe('aggregateTraces', () => {
   const t0 = Date.now()
 
+  function aggregateToolResult(output: unknown, overrides: Partial<Record<string, unknown>> = {}) {
+    return aggregateTraces([
+      {
+        caseId: 'c',
+        actionType: 'tool_result',
+        title: 'Tool result: kb_search_deposit',
+        payload: JSON.stringify({
+          toolName: 'kb_search_deposit',
+          output,
+          ...overrides,
+        }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+    ] as any, t0, false, ['Knowledge retrieval'])
+  }
+
   it('never hides a stage that fired, even if not in applicableStages', () => {
     const recs = [
       { caseId: 'c', actionType: 'tool_result', title: 'Tool: kb_search', detail: 'ok', createdAt: new Date(t0 + 10).toISOString() },
@@ -236,5 +252,58 @@ describe('aggregateTraces', () => {
     expect(result[0].runtimeTruth?.imageSupport.status).toBe('unknown')
     expect(result[0].runtimeTruth?.executionSurface.label).toBe('Dry-run mixed surface')
     expect(result[0].runtimeTruth?.toolSummary.mockedDryRun).toBe(2)
+  })
+
+  it('treats production-shaped kb_search hits as successful evidence', () => {
+    const result = aggregateToolResult({
+      success: true,
+      list: [
+        { document_name: 'Deposit FAQ', data_id: 'doc-1', content: 'Deposit evidence', score: 0.92 },
+      ],
+    })
+
+    const knowledge = result.find((step) => step.stage === 'Knowledge retrieval')
+    expect(knowledge?.status).toBe('ok')
+    expect(knowledge?.events?.[0]?.status).toBe('ok')
+  })
+
+  it('treats success:false with errors as blocking tool evidence', () => {
+    const result = aggregateToolResult({
+      success: false,
+      errors: { member_id: ['The selected member id is invalid.'] },
+    })
+
+    const knowledge = result.find((step) => step.stage === 'Knowledge retrieval')
+    expect(knowledge?.status).toBe('block')
+    expect(knowledge?.events?.[0]?.status).toBe('block')
+  })
+
+  it('treats ok:false and explicit error payloads as blocking tool evidence', () => {
+    const result = aggregateToolResult({
+      ok: false,
+      error: 'HTTP 500',
+    })
+
+    const knowledge = result.find((step) => step.stage === 'Knowledge retrieval')
+    expect(knowledge?.status).toBe('block')
+    expect(knowledge?.events?.[0]?.status).toBe('block')
+  })
+
+  it('treats null or empty raw tool output as blocking', () => {
+    const nullResult = aggregateToolResult(null)
+    const emptyResult = aggregateToolResult('')
+
+    expect(nullResult.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]?.status).toBe('block')
+    expect(emptyResult.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]?.status).toBe('block')
+  })
+
+  it('treats success:true with empty list/data as usable negative evidence, not a runtime blocker', () => {
+    const emptyList = aggregateToolResult({ success: true, list: [] })
+    const emptyData = aggregateToolResult({ success: true, data: [] })
+
+    expect(emptyList.find((step) => step.stage === 'Knowledge retrieval')?.status).toBe('info')
+    expect(emptyList.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]?.status).toBe('info')
+    expect(emptyData.find((step) => step.stage === 'Knowledge retrieval')?.status).toBe('info')
+    expect(emptyData.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]?.status).toBe('info')
   })
 })

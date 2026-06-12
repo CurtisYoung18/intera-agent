@@ -11,6 +11,43 @@ function parseIfString(v: unknown): unknown {
   return v
 }
 
+function readRecordValue(obj: unknown, key: string): unknown {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined
+  return (obj as Record<string, unknown>)[key]
+}
+
+function firstPresentValue(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined && value !== null && value !== '')
+}
+
+function firstPresentRecordValue(obj: unknown, keys: string[]): unknown {
+  return firstPresentValue(...keys.map((key) => readRecordValue(obj, key)))
+}
+
+function looksLikeKnowledgeHit(item: unknown): boolean {
+  return firstPresentRecordValue(item, [
+    'document_name',
+    'documentName',
+    'data_id',
+    'dataId',
+    'content',
+    'score',
+    'title',
+    'snippet',
+  ]) !== undefined
+}
+
+function readKnowledgeAwareValue(
+  item: unknown,
+  primaryPath: string | undefined,
+  fallbacks: string[],
+): unknown {
+  const primary = primaryPath ? readPath(item, primaryPath) : undefined
+  if (primary !== undefined && primary !== null && primary !== '') return primary
+  if (!looksLikeKnowledgeHit(item)) return primary
+  return firstPresentRecordValue(item, fallbacks)
+}
+
 export function renderToolByHint(
   output: unknown,
   hint: LivechatRenderHint,
@@ -40,11 +77,17 @@ export function renderToolByHint(
       }
       const tpl = hint.itemTemplate!
       const cards: CardSpec[] = (items as unknown[]).slice(0, 10).map((item, i) => ({
-        title: String(readPath(item, tpl.titleField) ?? `Item ${i + 1}`),
-        subtitle: tpl.subtitleField ? String(readPath(item, tpl.subtitleField) ?? '') : undefined,
+        title: String(readKnowledgeAwareValue(item, tpl.titleField, ['document_name', 'documentName', 'title']) ?? `Item ${i + 1}`),
+        subtitle: (() => {
+          if (!tpl.subtitleField) return undefined
+          const subtitle = readKnowledgeAwareValue(item, tpl.subtitleField, ['content', 'snippet'])
+          if (subtitle !== undefined && subtitle !== null && subtitle !== '') return String(subtitle)
+          const score = readRecordValue(item, 'score')
+          return typeof score === 'number' ? `Score: ${score.toFixed(2)}` : ''
+        })(),
         imageUrl: tpl.imageUrlField ? String(readPath(item, tpl.imageUrlField) ?? '') : undefined,
         buttons: (tpl.buttons ?? []).map(b => ({
-          id: `${b.postback}:${String(readPath(item, hint.idField ?? '$.id') ?? i)}`,
+          id: `${b.postback}:${String(readKnowledgeAwareValue(item, hint.idField ?? '$.id', ['data_id', 'dataId', 'id']) ?? i)}`,
           label: String(b.labelField ? (readPath(item, b.labelField) ?? '') : (b.labelStatic ?? b.id)),
           type: b.type as 'message' | 'url' | 'webview' | undefined,
           url: b.url,

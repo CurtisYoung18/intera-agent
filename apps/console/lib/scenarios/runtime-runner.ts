@@ -145,6 +145,7 @@ export function buildRuntimeEvidence(input: {
   const rawTrace = input.rawTrace ?? []
   const toolCalls = collectToolCalls(input.events)
   const toolResults = collectToolResults(input.events, rawTrace)
+  const knowledgeHits = collectKnowledgeHits(toolResults)
   const hookDecisions = collectHookDecisions(input.events, rawTrace)
   const toolsCalled = toolCalls.length > 0
     ? toolCalls.map((call) => call.name)
@@ -165,6 +166,7 @@ export function buildRuntimeEvidence(input: {
     toolsCalled,
     toolCalls,
     toolResults,
+    knowledgeHits,
     hookDecisions,
     humanTransfer: humanEvidence.humanTransfer,
     handoff: humanEvidence.handoff,
@@ -237,6 +239,64 @@ function collectToolResults(
     })
   }
   return dedupeBy(results, (result) => `${result.name}:${result.toolUseId ?? ''}:${result.at ?? ''}:${JSON.stringify(result.output ?? null)}`)
+}
+
+function collectKnowledgeHits(
+  toolResults: NonNullable<ScenarioObservedEvidenceInput['toolResults']>,
+): NonNullable<ScenarioObservedEvidenceInput['knowledgeHits']> {
+  const hits: NonNullable<ScenarioObservedEvidenceInput['knowledgeHits']> = []
+
+  for (const result of toolResults) {
+    if (!result.name.startsWith('kb_search_')) continue
+    const query = isRecord(result.input) && typeof result.input.query === 'string'
+      ? result.input.query
+      : undefined
+    const source = knowledgeSourceFromToolName(result.name)
+    const docs = extractKnowledgeDocuments(result.output)
+
+    for (const doc of docs) {
+      hits.push({
+        source,
+        toolName: result.name,
+        query,
+        title: firstNonEmptyString(doc, ['title', 'document_name', 'documentName', 'name', 'question', 'heading']) ?? 'Knowledge result',
+        snippet: firstNonEmptyString(doc, ['snippet', 'content', 'text', 'answer', 'body', 'summary']),
+        documentId: firstNonEmptyString(doc, ['id', 'data_id', 'dataId', 'docId', 'documentId']),
+        score: typeof doc.score === 'number' ? doc.score : undefined,
+        executionMode: result.executionMode,
+        at: result.at,
+      })
+    }
+  }
+
+  return dedupeBy(
+    hits,
+    (hit) => `${String(hit.source ?? '')}:${String(hit.toolName ?? '')}:${String(hit.documentId ?? '')}:${String(hit.title ?? '')}:${String(hit.at ?? '')}`,
+  )
+}
+
+function extractKnowledgeDocuments(output: unknown): Array<Record<string, unknown>> {
+  if (!isRecord(output)) return []
+  for (const field of ['results', 'list', 'matches', 'items']) {
+    const value = output[field]
+    if (Array.isArray(value)) return value.filter(isRecord)
+  }
+  return []
+}
+
+function knowledgeSourceFromToolName(toolName: string): string {
+  return toolName.replace(/^kb_search_/, '') || toolName
+}
+
+function firstNonEmptyString(
+  record: Record<string, unknown>,
+  fields: string[],
+): string | undefined {
+  for (const field of fields) {
+    const value = record[field]
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim()
+  }
+  return undefined
 }
 
 function collectHookDecisions(

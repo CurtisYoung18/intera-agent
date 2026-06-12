@@ -72,6 +72,40 @@ describe('tool-rendering end-to-end', () => {
     })
   })
 
+  describe('kb_search production output → carousel', () => {
+    const kbOutput = {
+      success: true,
+      list: [
+        { document_name: 'Deposit FAQ', data_id: 'doc-1', content: 'Deposit evidence', score: 0.92 },
+        { document_name: 'Promotion Rules', data_id: 'doc-2', content: 'Turnover requirement details', score: 0.81 },
+      ],
+    }
+
+    const hint: LivechatRenderHint = {
+      kind: 'carousel',
+      itemsField: '$.list',
+      idField: '$.data_id',
+      itemTemplate: {
+        titleField: '$.document_name',
+        subtitleField: '$.content',
+        buttons: [{ id: 'open', postback: 'open_kb', labelStatic: 'Read More' }],
+      },
+    }
+
+    it('renders production kb_search hits with stable card titles and ids', () => {
+      const actions = renderToolByHint(kbOutput, hint)
+      expect(actions).toHaveLength(1)
+      expect(actions[0]!.type).toBe('send_carousel')
+
+      const cards = (actions[0] as { cards: Array<{ title: string; subtitle?: string; buttons: Array<{ id: string }> }> }).cards
+      expect(cards).toHaveLength(2)
+      expect(cards[0]!.title).toBe('Deposit FAQ')
+      expect(cards[0]!.subtitle).toBe('Deposit evidence')
+      expect(cards[0]!.buttons[0]!.id).toBe('open_kb:doc-1')
+      expect(cards[1]!.title).toBe('Promotion Rules')
+    })
+  })
+
   describe('status_track fallback when no hint', () => {
     it('renderer uses status_track for tool_result without renderHints (tested in renderer.test.ts)', () => {
       // This is verified by renderer.test.ts tool_result case

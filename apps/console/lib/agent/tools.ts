@@ -506,10 +506,10 @@ export class ToolRouter {
             livechat: {
               kind: 'carousel',
               itemsField: '$.list',
-              idField: '$.id',
+              idField: '$.data_id',
               itemTemplate: {
-                titleField: '$.title',
-                subtitleField: '$.snippet',
+                titleField: '$.document_name',
+                subtitleField: '$.content',
                 buttons: [{ id: 'open', postback: 'open_doc', labelStatic: 'Open', type: 'url', url: '$.url' }],
               },
             },
