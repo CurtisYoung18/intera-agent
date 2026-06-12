@@ -1,6 +1,6 @@
 # Delivery Uncertainty And Defaults Log
 
-**Last updated:** 2026-06-11
+**Last updated:** 2026-06-12
 **Audience:** founder, architect, delivery lead, coding-team leads, QA lead
 **Purpose:** record uncertain decisions, temporary defaults, blockers, and owner-review items discovered during the commercial delivery push.
 
@@ -47,8 +47,8 @@ Use this format for each new item:
 - Uncertainty: Publishing `J1B v3` activated `cmq4q82mx0001qj32gt8htfiq` and deactivated `cmq4mvv5o0001qj5yfl84kfl0`, but the external LiveChat app was still calling the old per-agent webhook URL under the `v1` id. Production logs then showed repeated `Agent config "cmq4mvv5o0001qj5yfl84kfl0" not found or not active`, and user-visible chats received no reply after publish.
 - Default action taken: Treated webhook URL stability as a production blocker and fixed the per-agent LiveChat webhook route so an inactive requested Agent id resolves to the current active config in the same Agent family instead of returning `not active`.
 - Why this default: The updated goal/spec now define the webhook URL as part of the channel/workspace integration boundary, not the runtime version boundary. Requiring a manual external webhook URL rewrite after every publish would violate the acceptance contract and make publish unsafe for customer-facing LiveChat.
-- Evidence: `.artifacts/delivery-audit/2026-06-11/livechat-chain/webhook-stability-after-publish/summary.md`
-- Production URL / screenshot / receipt: Production deploy `1354facf` now accepts the old webhook URL `https://demo.anytrans.ai/api/livechat/webhook/default/cmq4mvv5o0001qj5yfl84kfl0` after `v3` publish and routes it into active `J1B v3`. Probe A (`最近一次存款`) through the old URL produced `ask_user_questions`; Probe B (`最近一次存款，我的会员ID是 JAYA11C5184`) through the old URL produced `get_latest_deposit`. The secret remains redacted in the receipt.
+- Evidence: `.artifacts/delivery-audit/2026-06-11/livechat-chain/webhook-stability-after-publish/summary.md`; `.artifacts/delivery-audit/2026-06-11/livechat-chain/webhook-family-anchor-post-deploy/summary.md`
+- Production URL / screenshot / receipt: Production deploy `1354facf` first proved the old webhook URL `https://demo.anytrans.ai/api/livechat/webhook/default/cmq4mvv5o0001qj5yfl84kfl0` still routed into active `J1B v3` after publish. Follow-up deploy `995310a1` then proved the Console/admin surface now exposes that same family-root webhook identity consistently: active `v3`, inactive/root `v1`, and the admin config API all report `webhookAgentConfigId=cmq4mvv5o0001qj5yfl84kfl0`, the screenshots show the same fixed URL in each version view, and a post-deploy no-op webhook probe still returns HTTP `200`. Secrets remain redacted in the receipts.
 - Exact blocker reproduction:
   - Publish `cmq4q82mx0001qj32gt8htfiq` so `cmq4mvv5o0001qj5yfl84kfl0` becomes inactive.
   - Keep the external LiveChat app on the old `v1` webhook URL.
@@ -56,8 +56,8 @@ Use this format for each new item:
   - Production logs show `Agent config "cmq4mvv5o0001qj5yfl84kfl0" not found or not active`, and no reply reaches the customer.
 - Attempted fixes / checks: Verified publish state via production API and Postgres; confirmed `v3` was active and the old webhook path was receiving traffic; added route-level fallback logic plus regression coverage; ran focused vitest, `git diff --check`, and `npx tsc --noEmit -p apps/console/tsconfig.json`; deployed `1354facf`; verified the old URL returns HTTP `200` after publish and resolves into active `v3` behavior in production traces.
 - Why no workaround is safe: Telling operators to manually rotate the external webhook URL on every publish keeps the integration brittle and makes publish a customer-facing outage risk. The acceptance bar now explicitly forbids that boundary leak.
-- Current operator action: Keep the existing external J1B webhook URL fixed. The current production J1B endpoint already uses `cmq4mvv5o0001qj5yfl84kfl0` (`J1B v1`, the family root anchor used in the stability proof), so J1B does **not** need another webhook rewrite tomorrow.
-- Residual implementation note: Production ingress already honors the stability contract, and a local hardening patch now makes the Console/admin path use the Agent-family anchor for LiveChat config reads/writes plus webhook display instead of echoing whichever version is currently selected. That patch is validated locally (`vitest`, `tsc`, `build:console`) but not yet deployed at the time of this log entry. Until the next deploy, production UI copy can still look version-scoped even though the current J1B webhook should stay unchanged.
+- Current operator action: Keep the existing external J1B webhook URL fixed. The current production J1B endpoint already uses `cmq4mvv5o0001qj5yfl84kfl0` (`J1B v1`, the family root anchor used in the stability proof), and J1B does **not** need another webhook rewrite tomorrow.
+- Residual implementation note: Closed for the current delivery lane. Production ingress, admin API, and Console copy now all agree on the same family-stable webhook identity after deploy `995310a1`. If future work ever reintroduces version-scoped webhook display or requires a manual external webhook rewrite, reopen this item immediately as a P0 regression.
 - Regression rule: If J1B ever requires another manual webhook rewrite after publish/version switching, reopen this item as a P0 production regression immediately.
 - Owner decision needed: None for the stability fix itself. Future LiveChat product work should preserve this invariant.
 - Follow-up owner: coding-team lead / delivery lead
@@ -180,8 +180,8 @@ Use this format for each new item:
 - Why this default: The owner explicitly asked for step-by-step console-UI validation that simulates a real config person. Once the gap was proven real, the console needed a truthful create/update/delete authoring path before this uncertainty could close.
 - Evidence: Historical pre-fix gap proof: `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/summary.json`; screenshot `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/admin-scenarios-redirected.png`. Current fixed-state proof: `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/summary.md`; `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/manual-authoring-production/summary.json`; `.artifacts/delivery-audit/2026-06-11/scenario-ui-gap/manual-authoring-production-rerun/summary.json`
 - Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq` now shows `New`, `Reset`, `Delete`, and `Save scenario` controls plus editable Scenario fields. Production Playwright proof created and deleted `manual_ui_delete_probe_20260611042820`, created and updated `duplicate_deposit_amount_first`, confirmed the earlier receipt `scn_9e1aadf8-eb9a-4740-a98f-d1dcbf0568cd` still survived the post-deploy window, then reran the manual-ui-authored duplicate-deposit Scenario to accepted receipt `scn_44bb0b6b-0c5a-4f4b-9d10-4a0e37fbcfb6`, which remained visible after immediate readback, refresh, and reopen.
-- Owner decision needed: None for the UI gap itself. Remaining J1B work is finishing the other two duplicate-deposit flows plus the rest of the 12-scenario matrix.
-- Next recommended step: Reuse the Pilot Lab authoring controls for the remaining `duplicate_deposit` flows and the other incomplete J1B P0 scenario families, keeping receipt durability embedded in every accepted run.
+- Owner decision needed: None for the UI gap itself. Historical follow-up complete: the final J1B 12-family / 36-flow matrix and long-session evidence are now recorded in `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md` and `.artifacts/delivery-audit/2026-06-11/j1b-long-session-post-fix/summary.md`.
+- Next recommended step: Keep using the Pilot Lab authoring controls for future Scenario maintenance; keep receipt durability embedded in any newly accepted Scenario run.
 - Follow-up owner: owner / product / coding-team lead
 
 ### 2026-06-11 - J1B Production Reply Language Drift On Withdrawal-Blocked Scenario
@@ -298,8 +298,8 @@ Use this format for each new item:
 - Default action taken: Tuned `scripts/smoke-console-auth.mjs` to use `domcontentloaded` plus route-specific visible readiness markers for hydrated Next dev pages and detail routes; increased navigation timeout to 60s for cold local compile.
 - Why this default: Dev-mode `networkidle` was an unreliable readiness signal for Pilot Lab and Release/Operate hydrated pages. Visible route markers provide more truthful UI readiness while still preserving screenshot, redirect, console-error, page-error, and overflow checks.
 - Evidence: `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-c/summary.md`; `.artifacts/delivery-audit/2026-06-10/phase-1-pilot-gate-d/summary.md`; `.artifacts/final-smoke/summary.json`; screenshots `browser-pilot-gate-c-desktop.png`, `browser-pilot-gate-c-mobile.png`, `browser-pilot-gate-d-desktop.png`, and `browser-pilot-gate-d-mobile.png`.
-- Production URL / screenshot / receipt: Local smoke fixed; production proof still pending on `https://demo.anytrans.ai`.
-- Owner decision needed: None for local smoke harness. Production acceptance still requires repeating relevant workflows on `https://demo.anytrans.ai`.
+- Production URL / screenshot / receipt: Historical local smoke fixed. Production route-shell proof is now closed in `.artifacts/delivery-audit/2026-06-11/customer-ready-unified/platform-smoke-rerun/summary.md`, and the UI/reference rework production proof is recorded in `.artifacts/delivery-audit/2026-06-11/customer-ready-unified/ui-reference-rework/summary.md`.
+- Owner decision needed: None for local smoke harness. Future production acceptance should continue using settled route markers instead of raw `networkidle`.
 - Follow-up owner: coding-team lead
 
 ### 2026-06-10 - J1B Production Test Data And Tool Seeding
@@ -313,5 +313,5 @@ Use this format for each new item:
 - Evidence: `.artifacts/delivery-audit/2026-06-11/production-j1b-member-id-routing/summary.md`; `.artifacts/delivery-audit/2026-06-11/j1b-production-ui/create-procedure-ui-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-production-ui/withdrawal-not-credited/create-procedure-ui-summary.json`; `.artifacts/delivery-audit/2026-06-11/j1b-production-seed/seed-summary.json`
 - Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/pilot-lab` on draft `cmq4q82mx0001qj32gt8htfiq` (`J1B v3 draft`) now has the required business tools, manually created Procedure types, and the 12-scenario J1B seed baseline available for runtime validation.
 - Historical note: This item records production setup readiness only. The final counted J1B Playground receipts on 2026-06-11 still reported `toolExecutionMode=mocked`; see the separate scope-gap item above for the current acceptance boundary.
-- Owner decision needed: None for tool/procedure seeding. The remaining J1B work is the full 12-scenario matrix, not production setup.
+- Owner decision needed: None for tool/procedure seeding. Historical follow-up complete: the full J1B 12-scenario matrix is now indexed in `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md`.
 - Follow-up owner: delivery lead / coding-team lead
