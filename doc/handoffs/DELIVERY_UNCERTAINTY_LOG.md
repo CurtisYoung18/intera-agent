@@ -397,11 +397,25 @@ Use this format for each new item:
 ### 2026-06-12 - CONS-R1 Release Lifecycle Uses Integer Auto-Increment Versions
 
 - Area: Release / agent version lifecycle
-- Status: open
+- Status: fixed
 - Severity: P2
 - Uncertainty: R1a needs a stable candidate-vs-historical rule before any broader lifecycle redesign. Current product/runtime semantics still use integer `version` rows per `(orgId, name)` family and `parentId` lineage. There is no separate release token, timestamp rank, or schema-side candidate marker.
 - Default action taken: Keep the existing integer auto-increment version scheme for R1a. Classify a non-live row as the editable candidate only when it is directly forked from the current live row (`parentId === live.id`) or its integer `version` is newer than the live row. Treat all other non-live rows as historical. Do not add schema fields or Phase R1b semantics in this lane.
 - Why this default: It fixes the concrete Release misclassification bug on the current production schema without widening into a migration lane or introducing ambiguous mixed version semantics mid-goal.
-- Evidence: Lane contract `doc/handoffs/LANE_CONS_R1_RELEASE_VERSION_LIFECYCLE.md` Phase R1a; forthcoming local/prod receipts under `.artifacts/delivery-audit/2026-06-12/cons-r1a/**`.
-- Owner decision needed: Tomorrow review can still choose a richer lifecycle marker in a later lane, but R1a proceeds on integer auto-increment as the binding default.
+- Evidence: Lane contract `doc/handoffs/LANE_CONS_R1_RELEASE_VERSION_LIFECYCLE.md` Phase R1a; local gates and production proof recorded under `.artifacts/delivery-audit/2026-06-12/cons-r1a/**`.
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/release` on deployed commit `33eb4a99`. Proof: `production-release-r1a-initial.png`, `production-release-r1a-historical-selected.png`, `production-release-r1a-summary.json`, and `summary.md` under `.artifacts/delivery-audit/2026-06-12/cons-r1a/`.
+- Owner decision needed: Tomorrow review can still choose a richer lifecycle marker in a later lane, but R1a is accepted on the current integer auto-increment default.
+- Follow-up owner: architect / release lane owner
+
+### 2026-06-12 - Deploy Build Emits Next Traced-Files Copy Warning But Health And Release Proof Stay Green
+
+- Area: Deploy pipeline / Next standalone tracing
+- Status: open
+- Severity: P2
+- Uncertainty: The `git push deploy HEAD:main` run for commit `33eb4a99` completed successfully and health returned `{"status":"ok","db":"connected"}`, but the host build emitted one warning while copying traced files for `/api/admin/agent-configs/[id]/activate`: `ENOENT ... login.html` under `.next/standalone/.../login.html`.
+- Default action taken: Accepted the deploy because build, restart, health check, and the full `CONS-R1` production Release proof all passed afterward on `https://demo.anytrans.ai/build/release`. Logged the warning for follow-up instead of widening the lane into a deploy-pipeline investigation.
+- Why this default: The warning did not block the deployed app or this lane's acceptance, but it touches host build hygiene and could hide a future standalone packaging regression if ignored.
+- Evidence: deploy push log for `33eb4a99`; `.artifacts/delivery-audit/2026-06-12/cons-r1a/production-release-r1a-summary.json`; `.artifacts/delivery-audit/2026-06-12/cons-r1a/summary.md`.
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/release` remained healthy and accepted immediately after the warning. Lane proof is recorded in `.artifacts/delivery-audit/2026-06-12/cons-r1a/`.
+- Owner decision needed: Decide whether to open a dedicated deploy/standalone tracing repair lane, or leave this as monitor-only unless the warning becomes user-visible or blocks a future deploy.
 - Follow-up owner: architect / release lane owner
