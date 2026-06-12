@@ -82,6 +82,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
       'remember',
       'read_chat_memory',
       'read_user_profile',
+      'get_current_time',
       'ask_user_questions',
       'create_human_task',
     ]))
@@ -91,6 +92,18 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(router.getTool('finalize_case')).toBeUndefined()
     expect(router.getTool('read_chat_memory')?.description).toContain('not ProcedureRun authority')
     expect(router.getTool('read_user_profile')?.description).toContain('never returns active ProcedureRun runtime state')
+  })
+
+  it('handles get_current_time as a runtime-managed system tool', () => {
+    const router = new ToolRouter('agent_1')
+    const loop = makeLoop('r3-current-time')
+    const output = (loop as unknown as { currentTimeToolOutput: Function }).currentTimeToolOutput()
+
+    expect(router.getTool('get_current_time')?.mode).toBe('system_managed')
+    expect(router.getTool('get_current_time')?.toolCategory).toBe('system_info')
+    expect(output.timeZone).toBe('Asia/Shanghai')
+    expect(output.utcTime).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/))
+    expect(output.localDateTime).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
   })
 
   it('keeps tool schema stable and appends ProcedureRun state only at the prompt tail', () => {

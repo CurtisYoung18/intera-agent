@@ -61,6 +61,7 @@ interface AgentSnapshot {
 }
 
 type PlaygroundSurface = 'legacy' | 'pilot-lab'
+type ToolExecutionMode = 'runtime' | 'dry_run'
 
 interface VisionSupportState {
   status: 'supported' | 'unsupported' | 'unknown'
@@ -245,6 +246,12 @@ function latestMessageByRole(
   return null
 }
 
+function traceValueCharCount(value: unknown): number {
+  if (typeof value === 'string') return value.length
+  if (value == null) return 0
+  try { return JSON.stringify(value).length } catch { return String(value).length }
+}
+
 function buildTurnDebugDigest(
   turnTraces: PlaygroundTraceStep[][],
   turnTotalMs: number[],
@@ -287,8 +294,9 @@ function buildTurnDebugDigest(
   const runtimeTruth = steps.find((step) => step.runtimeTruth)?.runtimeTruth
   const hasBlock = steps.some((step) => step.status === 'block')
   const hasWarn = !hasBlock && steps.some((step) => step.status === 'warn')
-  const promptChars = (modelStep?.promptData?.systemPrompt?.length ?? 0)
-    + (modelStep?.promptData?.messages ? JSON.stringify(modelStep.promptData.messages).length : 0)
+  const promptChars = traceValueCharCount(modelStep?.promptData?.systemPrompt)
+    + traceValueCharCount(modelStep?.promptData?.messages)
+    + traceValueCharCount(modelStep?.promptData?.tools)
 
   return {
     turnNumber: latestIndex + 1,
@@ -307,7 +315,11 @@ function buildTurnDebugDigest(
     procedureEvents,
     staleEvents,
     warnings: runtimeTruth?.warnings ?? [],
-    promptCaptured: Boolean(modelStep?.promptData && (modelStep.promptData.systemPrompt || modelStep.promptData.messages?.length)),
+    promptCaptured: Boolean(modelStep?.promptData && (
+      modelStep.promptData.systemPrompt ||
+      modelStep.promptData.messages?.length ||
+      modelStep.promptData.tools?.length
+    )),
     promptChars,
     latestInput: latestMessageByRole(chatMessages, 'user'),
     latestReply: reply.trim() || latestMessageByRole(chatMessages, 'agent'),
@@ -368,6 +380,9 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     try { const s = localStorage.getItem('pg_formRequest'); return s ? JSON.parse(s) : null } catch { return null }
   })
   const [debugMode, setDebugMode] = useState(false)
+  const [toolExecutionMode, setToolExecutionMode] = useState<ToolExecutionMode>(() => {
+    try { return localStorage.getItem('pg_toolExecutionMode') === 'dry_run' ? 'dry_run' : 'runtime' } catch { return 'runtime' }
+  })
 
   const [message, setMessage] = useState('')
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'agent' | 'system'; content: string; thinking?: string; images?: AttachedImage[]; notice?: LifecycleNotice }>>([])
@@ -416,6 +431,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   useEffect(() => { attachedImagesRef.current = attachedImages }, [attachedImages])
   const showThinkingRef = useRef(showThinking)
   useEffect(() => { showThinkingRef.current = showThinking }, [showThinking])
+  const toolExecutionModeRef = useRef<ToolExecutionMode>(toolExecutionMode)
+  useEffect(() => {
+    toolExecutionModeRef.current = toolExecutionMode
+    try { localStorage.setItem('pg_toolExecutionMode', toolExecutionMode) } catch {}
+  }, [toolExecutionMode])
   const chatIdRef = useRef<string | null>(null)
   useEffect(() => { chatIdRef.current = chatId }, [chatId])
   const lskRef = useRef(lsk)
@@ -833,13 +853,25 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const workspaceTitle = surface === 'pilot-lab'
     ? (isZh ? '运行调试工作台' : 'Runtime test desk')
     : (isZh ? 'Playground 兼容工作台' : 'Playground compatibility desk')
-  const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? (isZh ? 'dry-run 运行路径' : 'Dry-run runtime path')
+  const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? (
+    toolExecutionMode === 'dry_run'
+      ? (isZh ? 'Dry-run 工具模式' : 'Dry-run tool mode')
+      : (isZh ? 'Runtime 工具模式' : 'Runtime tool mode')
+  )
   const executionSurfaceNote = latestRuntimeTruth?.executionSurface.note
     ?? (isZh
-      ? 'Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；只有业务副作用仍会在 Playground 中以 dry-run 方式模拟。'
-      : 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational side effects remain mocked in Playground.')
+      ? (toolExecutionMode === 'dry_run'
+          ? 'Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；业务工具会被 dry-run 拦截。'
+          : 'Prompt、Hook、Procedure runtime、trace 写入、会话恢复和配置工具都走真实 AgentLoop 路径。')
+      : (toolExecutionMode === 'dry_run'
+          ? 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational tools are intercepted.'
+          : 'Prompting, Hooks, Procedure runtime, trace writing, session restore, and configured tools use the real AgentLoop path.'))
   const toolSurfaceSummary = latestRuntimeTruth ? formatToolSurfaceSummary(latestRuntimeTruth.toolSummary) : (isZh ? '首轮运行后刷新' : 'Refreshes after the first run')
-  const runtimeWarnings = latestRuntimeTruth?.warnings ?? [isZh ? '虽然运行路径是真实的，但业务副作用仍会在 dry-run 下被模拟。' : 'Operational side effects remain mocked under dry-run even though the runtime path is real.']
+  const runtimeWarnings = latestRuntimeTruth?.warnings ?? (
+    toolExecutionMode === 'dry_run'
+      ? [isZh ? '业务工具会在 dry-run 下被模拟。' : 'Operational tools are mocked in dry-run mode.']
+      : []
+  )
   const toolPairingLabel = latestTurnDigest ? summarizeToolPairing(latestTurnDigest.toolCalls, latestTurnDigest.toolResults, responding) : (isZh ? '暂无工具事件' : 'No tool events yet')
   const operateBridgeLabel = isZh ? '仅导出评审副本' : 'Synthetic export only'
   const quickStarts = isZh
@@ -942,7 +974,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     try {
       const body: Record<string, unknown> = { message: msg }
       if (selectedAgentId) body.configId = selectedAgentId
-      body.config = { debug: debugMode, emitThinking: showThinkingRef.current }
+      body.config = { debug: debugMode, emitThinking: showThinkingRef.current, toolExecutionMode: toolExecutionModeRef.current }
       if (chatIdRef.current) body.chatId = chatIdRef.current
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({
@@ -1211,6 +1243,55 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             </div>
           </div>
           <div className="pg-actions" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 5, flex: '0 1 auto' }}>
+            <div
+              role="group"
+              aria-label={isZh ? '工具执行模式' : 'Tool execution mode'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 2,
+                padding: 3,
+                borderRadius: 10,
+                border: '1px solid rgba(45,127,131,0.14)',
+                background: 'rgba(255,255,255,0.72)',
+              }}
+            >
+              {([
+                { mode: 'runtime' as const, label: 'Runtime', icon: <CheckCircle2 size={12} /> },
+                { mode: 'dry_run' as const, label: 'Dry-run', icon: <FlaskConical size={12} /> },
+              ]).map((item) => {
+                const active = toolExecutionMode === item.mode
+                return (
+                  <button
+                    key={item.mode}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setToolExecutionMode(item.mode)}
+                    title={item.mode === 'runtime'
+                      ? (isZh ? '使用真实配置工具执行。' : 'Run configured tools through the real runtime path.')
+                      : (isZh ? '拦截业务工具，仅保留安全调试。' : 'Intercept operational tools for side-effect-safe debugging.')}
+                    style={{
+                      height: 30,
+                      border: 'none',
+                      borderRadius: 7,
+                      padding: '0 9px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      cursor: 'pointer',
+                      background: active ? 'rgba(45,127,131,0.10)' : 'transparent',
+                      color: active ? 'var(--teal)' : 'var(--fog)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
             <ActionButton
               active={!sidebarCollapsed}
               onClick={() => setSidebarCollapsed((value) => !value)}

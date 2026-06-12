@@ -6,7 +6,7 @@ import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
 import { runPlaygroundTurn, type PlaygroundConfig } from '@/lib/agent/playground-runner'
 import type { SSEEvent, ContentBlock } from '@intera/shared/types'
 
-const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = { debug: false }
+const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = { debug: false, toolExecutionMode: 'runtime' }
 
 export async function POST(request: NextRequest) {
   const orgId = await getActiveOrgId()
@@ -28,7 +28,12 @@ export async function POST(request: NextRequest) {
       status: 400, headers: { 'Content-Type': 'application/json' },
     })
   }
-  const playgroundConfig: PlaygroundConfig = { ...DEFAULT_PLAYGROUND_CONFIG, ...(body.config || {}) }
+  const requestedConfig = body.config || {}
+  const playgroundConfig: PlaygroundConfig = {
+    ...DEFAULT_PLAYGROUND_CONFIG,
+    ...requestedConfig,
+    toolExecutionMode: requestedConfig.toolExecutionMode === 'dry_run' ? 'dry_run' : 'runtime',
+  }
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {

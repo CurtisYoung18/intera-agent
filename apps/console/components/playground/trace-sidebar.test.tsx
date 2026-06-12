@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import TraceSidebar from './trace-sidebar'
 import type { PlaygroundTraceStep } from '@/lib/agent/trace-aggregator'
@@ -179,5 +179,37 @@ describe('TraceSidebar', () => {
     expect(screen.getByText('ProcedureRun reconcile gate blocked Tool: finalize_procedure')).toBeTruthy()
     expect(screen.getAllByText(/get_latest_deposit/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/result/i).length).toBeGreaterThan(0)
+  })
+
+  it('shows captured request tools in the model prompt drawer', () => {
+    renderSidebar([
+      {
+        stage: 'Model generation',
+        source: 'agent',
+        status: 'ok',
+        fired: true,
+        ms: 20,
+        summary: 'LLM request: demo-model',
+        detail: [],
+        promptData: {
+          systemPrompt: 'CORE',
+          messages: [{ role: 'user', content: 'hello' }],
+          tools: [
+            { name: 'remember', description: 'Write a scoped memory item.' },
+            { name: 'get_current_time', description: 'Return the current server time.' },
+          ],
+          toolChoice: { type: 'auto', disable_parallel_tool_use: false },
+          requestPayloadCaptured: true,
+        },
+      },
+    ])
+
+    fireEvent.click(screen.getByText('Show prompt data'))
+
+    expect(screen.getByText('System Prompt')).toBeTruthy()
+    expect(screen.getByText('Messages (IN)')).toBeTruthy()
+    expect(screen.getByText('Tools (IN)')).toBeTruthy()
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('"name": "remember"') ?? false).length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('"name": "get_current_time"') ?? false).length).toBeGreaterThan(0)
   })
 })

@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   },
   mockAgentRun: vi.fn(),
   mockLoadMessages: vi.fn(),
+  mockLoadMemory: vi.fn(),
   mockAgentLoopCreate: vi.fn(),
   mockTransaction: vi.fn(),
 }))
@@ -34,7 +35,11 @@ vi.mock('@intera/shared/prisma', () => ({
       create: vi.fn(async () => ({})),
     },
     chatMemory: {
+      findUnique: vi.fn(async () => null),
       upsert: vi.fn(async () => ({})),
+    },
+    chatSession: {
+      findUnique: vi.fn(async () => null),
     },
     humanTask: {
       create: vi.fn(async () => ({})),
@@ -118,6 +123,7 @@ beforeEach(() => {
     sendEvent({ type: 'text_delta', data: 'ok', timestamp: '2026-06-10T00:00:00.000Z' })
   })
   h.mockAgentLoopCreate.mockResolvedValue({
+    loadMemory: h.mockLoadMemory,
     loadMessages: h.mockLoadMessages,
     run: h.mockAgentRun,
   })
@@ -185,6 +191,31 @@ describe('runPlaygroundTurn vision handling', () => {
     const traceEvent = events.find((event) => event.type === 'trace')
     expect(traceEvent).toBeTruthy()
     expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.imageSupport.status).toBe('supported')
+    expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('runtime_only')
+    expect(h.mockAgentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      dryRun: false,
+      persistRuntimeMemory: true,
+    }))
+  })
+
+  it('only switches operational tools to dry-run when requested', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
+    h.config = { ...h.config, model: 'openai/gpt-4o' }
+
+    const events = await collect({
+      orgId: 'org-1',
+      message: 'inspect this',
+      playgroundConfig: { debug: false, toolExecutionMode: 'dry_run' },
+      configId: 'agent-1',
+      userId: 'user-1',
+    })
+
+    expect(h.mockAgentRun).toHaveBeenCalled()
+    expect(h.mockAgentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      dryRun: true,
+      persistRuntimeMemory: true,
+    }))
+    const traceEvent = events.find((event) => event.type === 'trace')
     expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('dry_run_mixed')
   })
 })

@@ -306,4 +306,41 @@ describe('aggregateTraces', () => {
     expect(emptyData.find((step) => step.stage === 'Knowledge retrieval')?.status).toBe('info')
     expect(emptyData.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]?.status).toBe('info')
   })
+
+  it('exposes the captured model request payload including tools and tool_choice', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'llm_request_start',
+        title: 'LLM request',
+        payload: JSON.stringify({
+          model: 'custom-model',
+          requestPayloadCaptured: true,
+          systemPrompt: 'CORE\n<procedure_run_runtime>active</procedure_run_runtime>',
+          messages: [{ role: 'user', content: 'hello' }],
+          tools: [
+            { name: 'remember', description: 'Write a scoped memory item.' },
+            { name: 'get_current_time', description: 'Return the current server time.' },
+          ],
+          toolChoice: { type: 'auto', disable_parallel_tool_use: false },
+        }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+      {
+        caseId: 'c',
+        actionType: 'llm_response',
+        title: 'LLM response',
+        detail: JSON.stringify({ usage: { input_tokens: 10, output_tokens: 4 } }),
+        createdAt: new Date(t0 + 30).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, false, ['Model generation'])
+    const model = result.find((step) => step.stage === 'Model generation')
+    expect(model?.promptData?.systemPrompt).toContain('<procedure_run_runtime>')
+    expect(model?.promptData?.messages).toEqual([{ role: 'user', content: 'hello' }])
+    expect(model?.promptData?.tools?.map((tool: any) => tool.name)).toEqual(['remember', 'get_current_time'])
+    expect(model?.promptData?.toolChoice).toEqual({ type: 'auto', disable_parallel_tool_use: false })
+    expect(model?.promptData?.requestPayloadCaptured).toBe(true)
+  })
 })

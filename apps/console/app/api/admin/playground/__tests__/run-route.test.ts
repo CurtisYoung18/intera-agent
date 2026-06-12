@@ -67,8 +67,21 @@ describe('POST /api/admin/playground/run', () => {
       message: 'What is in this image?',
       configId: 'agent-1',
       chatId: 'pg_agent-1_1_x',
-      playgroundConfig: { debug: true },
+      playgroundConfig: { debug: true, toolExecutionMode: 'runtime' },
       contentBlocks,
+    }))
+  })
+
+  it('allows explicit dry-run mode for side-effect-safe debugging', async () => {
+    const res = await POST(makeRequest({
+      message: 'hello',
+      configId: 'agent-1',
+      config: { debug: false, toolExecutionMode: 'dry_run' },
+    }))
+
+    expect(res.status).toBe(200)
+    expect(h.mockRunPlaygroundTurn).toHaveBeenCalledWith(expect.objectContaining({
+      playgroundConfig: { debug: false, toolExecutionMode: 'dry_run' },
     }))
   })
 

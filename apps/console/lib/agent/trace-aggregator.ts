@@ -85,8 +85,8 @@ export interface PlaygroundTraceStep {
   events?: PlaygroundTraceEvent[]
   runtimeTruth?: PlaygroundCapabilityTruth
   json?: Array<Record<string, unknown>>
-  /** Full prompt data captured from llm_request_start (available for Model generation stage). */
-  promptData?: { systemPrompt: string; messages: unknown[] }
+  /** Model request data captured from llm_request_start (available for Model generation stage). */
+  promptData?: { systemPrompt: unknown; messages: unknown[]; tools?: unknown[]; toolChoice?: unknown; requestPayloadCaptured?: boolean }
 }
 
 /** Bookkeeping actionTypes — excluded from stage bucketing, kept aside for timing + debug JSON. */
@@ -617,14 +617,17 @@ export function aggregateTraces(
     if (stage === 'Model generation') {
       const llmReqRecord = records.find(r => r.actionType === 'llm_request_start')
       const parsedRequest = parseJson(llmReqRecord?.payload)
-      if (parsedRequest?.systemPrompt || parsedRequest?.messages || parsedRequest?.lastMessages) {
+      if (parsedRequest?.systemPrompt || parsedRequest?.messages || parsedRequest?.lastMessages || parsedRequest?.tools) {
         step.promptData = {
-          systemPrompt: typeof parsedRequest?.systemPrompt === 'string' ? parsedRequest.systemPrompt : '',
-          messages: Array.isArray(parsedRequest?.lastMessages)
-            ? parsedRequest.lastMessages
-            : Array.isArray(parsedRequest?.messages)
-              ? parsedRequest.messages
+          systemPrompt: parsedRequest?.systemPrompt ?? '',
+          messages: Array.isArray(parsedRequest?.messages)
+            ? parsedRequest.messages
+            : Array.isArray(parsedRequest?.lastMessages)
+              ? parsedRequest.lastMessages
               : [],
+          tools: Array.isArray(parsedRequest?.tools) ? parsedRequest.tools : undefined,
+          toolChoice: parsedRequest?.toolChoice,
+          requestPayloadCaptured: parsedRequest?.requestPayloadCaptured === true,
         }
       }
 

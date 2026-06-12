@@ -79,6 +79,22 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
     }),
   },
   {
+    name: 'get_current_time',
+    description:
+      'Return the current server time and calendar date. Use this whenever the customer asks about today, current time, dates, deadlines, or time-sensitive business rules.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    isConcurrencySafe: true,
+    mode: 'system_managed',
+    enabled: true,
+    toolCategory: 'system_info',
+    displayVerb: { text: 'Checking current time', icon: 'scan' },
+    zodSchema: z.object({}),
+  },
+  {
     name: 'start_procedure',
     description:
       'Start or select a runtime ProcedureRun for a clear customer issue. The stable Core Agent prompt remains active; ProcedureRun state is appended by runtime as a dynamic tail. If another ProcedureRun is active, pause it by default.',
@@ -404,7 +420,7 @@ export class ToolRouter {
       }
 
       // ── Dynamic tool descriptions: inject agent config's case types into tool descriptions ──
-      const hasDbOverride = (name: string) => !LOCKED_SYSTEM_TOOL_NAMES.has(name) && dbTools.some((t) => t.name === name)
+      const hasDbOverride = (name: string) => !LOCKED_SYSTEM_TOOL_NAMES.has(name) && dbTools.some((t: { name: string }) => t.name === name)
 
       if (!hasDbOverride('start_procedure')) {
         try {
@@ -415,7 +431,7 @@ export class ToolRouter {
 
           if (caseTypes.length > 0) {
             const caseTypeList = caseTypes
-              .map((ct) => `- **${ct.type}** (${ct.icon} ${ct.displayName}): ${ct.description || 'No description'}`)
+              .map((ct: { type: string; icon?: string | null; displayName: string; description?: string | null }) => `- **${ct.type}** (${ct.icon} ${ct.displayName}): ${ct.description || 'No description'}`)
               .join('\n')
 
             if (!hasDbOverride('start_procedure')) {

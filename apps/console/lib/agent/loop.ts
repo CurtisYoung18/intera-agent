@@ -83,6 +83,8 @@ export interface AgentLoopDeps {
   persistence?: import('./persistence-port').PersistencePort
   /** Dry-run mode — operational tools mocked, system_info allowed. Playground only. */
   dryRun?: boolean
+  /** Allow runtime-managed memory tools to persist during dry-run style Playground sessions. */
+  persistRuntimeMemory?: boolean
   /** Emit thinking_delta SSE to frontend. Default false (prod never emits). Playground sets per-turn. */
   emitThinking?: boolean
 }
@@ -486,13 +488,13 @@ export class AgentLoop {
         })
       }
 
-      const apiMessagesForTrace = this.buildApiMessages()
-
       await this.traceWriter.writeLlmRequestStart(
         this.deps.config.model,
         this.messages.length,
         stagePrompt,
-        apiMessagesForTrace,
+        apiMessages,
+        stageTools,
+        { type: 'auto' as const, disable_parallel_tool_use: false },
       )
 
       sendEvent({
@@ -500,7 +502,9 @@ export class AgentLoop {
         data: {
           model: this.deps.config.model,
           systemPrompt: stagePrompt,
-          messages: apiMessagesForTrace,
+          messages: apiMessages,
+          tools: stageTools,
+          toolChoice: { type: 'auto' as const, disable_parallel_tool_use: false },
         },
         timestamp: new Date().toISOString(),
       })
@@ -1211,6 +1215,10 @@ export class AgentLoop {
         this.replaceToolOutput(result, await this.rememberToolOutput(input))
       }
 
+      if (result.name === 'get_current_time') {
+        this.replaceToolOutput(result, this.currentTimeToolOutput())
+      }
+
       if (result.name === 'reconcile_procedure_input') {
         const runId = String(input.runId || '')
         const upToInputEpoch = Number(input.upToInputEpoch)
@@ -1337,7 +1345,7 @@ export class AgentLoop {
 
   private async readUserProfileToolOutput(): Promise<Record<string, unknown>> {
     const key = profileKey(this.deps.userId, this.deps.chatId)
-    if (!key || this.dryRun) {
+    if (!key || !this.shouldPersistRuntimeMemory()) {
       return {
         scope: 'user',
         authority: 'long_term_profile_not_procedure_run_state',
@@ -1399,6 +1407,10 @@ export class AgentLoop {
         summary: `remember(scope="chat"): ${reason}`,
         metadata: { writtenKeys: Object.keys(filteredFacts), rejectedKeys, memoryScope: 'chat' },
       })
+      if (this.shouldPersistRuntimeMemory()) {
+        await this.persistChatMemory()
+        await this.persistChatSession()
+      }
       return {
         ok: true,
         scope: 'chat',
@@ -1419,7 +1431,7 @@ export class AgentLoop {
       bullets.push(`- ${value}`)
     }
     const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
-    if (!this.dryRun) {
+    if (this.shouldPersistRuntimeMemory()) {
       const existing = await prisma.userProfile.findUnique({
         where: { userId: profileKeyValue },
         select: { profile: true },
@@ -1431,7 +1443,7 @@ export class AgentLoop {
         where: { userId: profileKeyValue },
         create: { userId: profileKeyValue, orgId: this.deps.orgId, profile: merged.profile, sections: merged.sections, ...stats },
         update: { profile: merged.profile, sections: merged.sections, ...stats },
-      }).catch((err) => {
+      }).catch((err: unknown) => {
         console.warn('[AgentLoop] remember(scope="user") failed:', err)
       })
     }
@@ -1451,6 +1463,33 @@ export class AgentLoop {
     }
   }
 
+  private currentTimeToolOutput(): Record<string, unknown> {
+    const now = new Date()
+    const timeZone = 'Asia/Shanghai'
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      weekday: 'long',
+    }).formatToParts(now)
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+    const localDate = `${get('year')}-${get('month')}-${get('day')}`
+    const localTime = `${get('hour')}:${get('minute')}:${get('second')}`
+    return {
+      utcTime: now.toISOString(),
+      timeZone,
+      localDate,
+      localTime,
+      localDateTime: `${localDate} ${localTime}`,
+      dayOfWeek: get('weekday'),
+    }
+  }
+
   private shouldPersistToolResultToChatMemory(toolName: string): boolean {
     return ![
       'start_procedure',
@@ -1459,6 +1498,7 @@ export class AgentLoop {
       'remember',
       'read_chat_memory',
       'read_user_profile',
+      'get_current_time',
     ].includes(toolName)
   }
 
@@ -1469,6 +1509,7 @@ export class AgentLoop {
       'remember',
       'read_chat_memory',
       'read_user_profile',
+      'get_current_time',
     ].includes(toolName)
   }
 
@@ -1810,7 +1851,7 @@ export class AgentLoop {
   /** Persist chat-level memory to ChatSession table. */
   private async persistChatSession(): Promise<void> {
     if (!this.deps.chatId) return
-    if (this.dryRun) return
+    if (!this.shouldPersistRuntimeMemory()) return
     try {
       await prisma.chatSession.upsert({
         where: { chatId: this.deps.chatId },
@@ -1835,6 +1876,7 @@ export class AgentLoop {
   /** Standalone compact for UserProfile — takes recent messages, produces a user portrait. */
   private async compactUserProfile(): Promise<void> {
     if (!this.deps.config.memoryStrategy.enableChatMemory) return
+    if (!this.shouldPersistRuntimeMemory()) return
     const key = profileKey(this.deps.userId, this.deps.chatId)
     if (!key) return
     try {
@@ -1851,13 +1893,11 @@ export class AgentLoop {
       const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', summary, maxTokens)
       const stats = await recomputeProfileStats(prisma, key)
 
-      if (!this.dryRun) {
-        await prisma.userProfile.upsert({
-          where: { userId: key },
-          create: { userId: key, profile: merged, sections, ...stats },
-          update: { profile: merged, sections, ...stats },
-        })
-      }
+      await prisma.userProfile.upsert({
+        where: { userId: key },
+        create: { userId: key, profile: merged, sections, ...stats },
+        update: { profile: merged, sections, ...stats },
+      })
     } catch (err) {
       console.warn('[AgentLoop] compactUserProfile failed:', err)
     }
@@ -1890,6 +1930,22 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   getCaseType(): string {
     return this.deps.caseSchema?.type || 'general'
+  }
+
+  private shouldPersistRuntimeMemory(): boolean {
+    return !this.dryRun || this.deps.persistRuntimeMemory === true
+  }
+
+  private async persistChatMemory(): Promise<void> {
+    if (!this.shouldPersistRuntimeMemory()) return
+    try {
+      await this.persistence.saveMemory(this.deps.caseId, {
+        caseId: this.deps.caseId,
+        ...this.chatMemory.getDbFields(),
+      })
+    } catch (err) {
+      console.warn('[AgentLoop] persistChatMemory failed:', err)
+    }
   }
 
   abort() {

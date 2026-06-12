@@ -389,14 +389,20 @@ function PromptSection({ label, data, color }: { label: string; data: string; co
 }
 
 function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceStep; isExpanded: boolean; tb: (k: string) => string }) {
-  const hasPromptData = !!step.promptData && (!!step.promptData.systemPrompt || (step.promptData.messages?.length ?? 0) > 0)
+  const hasPromptData = !!step.promptData && (
+    !!step.promptData.systemPrompt ||
+    (step.promptData.messages?.length ?? 0) > 0 ||
+    (step.promptData.tools?.length ?? 0) > 0 ||
+    step.promptData.toolChoice != null
+  )
   const [showPromptData, setShowPromptData] = useState(false)
 
-  const formatMessages = (msgs: unknown[]): string => {
+  const formatPromptValue = (value: unknown): string => {
+    if (typeof value === 'string') return value
     try {
-      return JSON.stringify(msgs, null, 2)
+      return JSON.stringify(value, null, 2)
     } catch {
-      return String(msgs)
+      return String(value)
     }
   }
 
@@ -451,11 +457,17 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
               </button>
               {showPromptData && (
                 <div style={{ marginTop: 6 }}>
-                  {step.promptData!.systemPrompt && (
-                    <PromptSection label="System Prompt" data={step.promptData!.systemPrompt} color="var(--indigo)" />
+                  {Boolean(step.promptData!.systemPrompt) && (
+                    <PromptSection label="System Prompt" data={formatPromptValue(step.promptData!.systemPrompt)} color="var(--indigo)" />
                   )}
                   {(step.promptData!.messages?.length ?? 0) > 0 && (
-                    <PromptSection label="Messages (IN)" data={formatMessages(step.promptData!.messages)} color="var(--indigo)" />
+                    <PromptSection label="Messages (IN)" data={formatPromptValue(step.promptData!.messages)} color="var(--indigo)" />
+                  )}
+                  {(step.promptData!.tools?.length ?? 0) > 0 && (
+                    <PromptSection label="Tools (IN)" data={formatPromptValue(step.promptData!.tools)} color="var(--indigo)" />
+                  )}
+                  {step.promptData!.toolChoice != null && (
+                    <PromptSection label="Tool Choice" data={formatPromptValue(step.promptData!.toolChoice)} color="var(--indigo)" />
                   )}
                 </div>
               )}

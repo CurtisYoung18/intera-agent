@@ -47,6 +47,30 @@ export interface TraceEntry {
   createdAt: Date
 }
 
+function capTraceValue(value: unknown, maxChars: number): unknown {
+  if (typeof value === 'string') {
+    return value.length > maxChars
+      ? {
+          __trace_truncated: true,
+          originalChars: value.length,
+          preview: value.slice(0, maxChars),
+        }
+      : value
+  }
+
+  try {
+    const json = JSON.stringify(value)
+    if (json.length <= maxChars) return value
+    return {
+      __trace_truncated: true,
+      originalChars: json.length,
+      preview: json.slice(0, maxChars),
+    }
+  } catch {
+    return String(value)
+  }
+}
+
 export class TraceWriter {
   private chatId: string | null = null
 
@@ -157,21 +181,26 @@ export class TraceWriter {
     messageCount: number,
     systemPrompt?: string,
     messages?: unknown[],
+    tools?: unknown[],
+    toolChoice?: unknown,
   ): Promise<void> {
-    const payload: Record<string, unknown> = { model, messageCount }
+    const payload: Record<string, unknown> = {
+      model,
+      messageCount,
+      requestPayloadCaptured: true,
+    }
     if (systemPrompt) {
-      payload.systemPrompt = systemPrompt.length > 8000
-        ? systemPrompt.slice(0, 8000) + `\n\n... [truncated ${systemPrompt.length - 8000} chars]`
-        : systemPrompt
+      payload.systemPrompt = capTraceValue(systemPrompt, 60000)
     }
     if (messages) {
-      const lastMsgs = messages.slice(-6)
-      payload.lastMessages = lastMsgs.map((m: any) => ({
-        role: m.role,
-        content: typeof m.content === 'string'
-          ? (m.content.length > 2000 ? m.content.slice(0, 2000) + '...' : m.content)
-          : '[non-text]',
-      }))
+      payload.messages = capTraceValue(messages, 90000)
+      payload.lastMessages = capTraceValue(messages.slice(-6), 30000)
+    }
+    if (tools) {
+      payload.tools = capTraceValue(tools, 90000)
+    }
+    if (toolChoice) {
+      payload.toolChoice = toolChoice
     }
     await this.write('llm_request_start', `LLM request: ${model}`, payload)
   }

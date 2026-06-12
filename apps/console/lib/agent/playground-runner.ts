@@ -15,7 +15,7 @@ import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
 import { buildModelList } from './build-model-list'
 import { resolveEffectiveModel } from './resolve-model'
-import { getProcedureRuntime } from './session-store'
+import { getProcedureRuntime, recordInitialInputEvent } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
@@ -26,6 +26,8 @@ export interface PlaygroundConfig {
   debug?: boolean
   /** Force thinking output (both request + emit) for this turn. */
   emitThinking?: boolean
+  /** Runtime executes configured tools; dry_run intercepts operational tools for side-effect-safe testing. */
+  toolExecutionMode?: 'runtime' | 'dry_run'
 }
 
 const MAX_PLAYGROUND_SESSIONS = 5
@@ -283,7 +285,7 @@ export async function* runPlaygroundTurn(input: {
   const { orgId, message, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId } = input
   const agentConfigId = input.configId || orgId
   const contentBlocks = normalizeContentBlocks(input.contentBlocks)
-  const dryRun = true
+  const dryRun = pc.toolExecutionMode === 'dry_run'
   const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
@@ -388,7 +390,7 @@ export async function* runPlaygroundTurn(input: {
         select: { id: true },
       })
       await prisma.case.deleteMany({
-        where: { id: { in: oldestCases.map(c => c.id) } },
+        where: { id: { in: oldestCases.map((c: { id: string }) => c.id) } },
       })
     }
     effectiveChatId = `pg_${input.configId || 'default'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -407,6 +409,13 @@ export async function* runPlaygroundTurn(input: {
     chatId: effectiveChatId,
   })
 
+  recordInitialInputEvent(caseId, {
+    content: message,
+    contentBlocks,
+    origin: 'customer',
+    source: 'customer_message',
+  })
+
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
     configId: agentConfigId,
@@ -419,9 +428,25 @@ export async function* runPlaygroundTurn(input: {
     chatId: effectiveChatId,
     bootstrapNewCase,
     persistence,     // ← Prisma port
-    dryRun,          // ← operational tools mocked, system_info allowed
+    dryRun,
+    persistRuntimeMemory: true,
     emitThinking: pc.emitThinking ?? false,
   })
+
+  // ── Load persisted runtime memory for this Playground chat/case ──
+  const persistedCaseMemory = await prisma.chatMemory.findUnique({ where: { caseId } }).catch(() => null)
+  if (persistedCaseMemory) {
+    agentLoop.loadMemory(persistedCaseMemory)
+  } else {
+    const persistedChatSession = await prisma.chatSession.findUnique({ where: { chatId: effectiveChatId } }).catch(() => null)
+    if (persistedChatSession) {
+      agentLoop.loadMemory({
+        confirmedFacts: persistedChatSession.confirmedFacts,
+        keyEvents: persistedChatSession.keyEvents,
+        summary: persistedChatSession.summary,
+      })
+    }
+  }
 
   // ── Load conversation history from DB ──
   const priorMessages = await prisma.message.findMany({
@@ -431,7 +456,7 @@ export async function* runPlaygroundTurn(input: {
   })
   if (priorMessages.length > 0) {
     agentLoop.loadMessages(
-      priorMessages.map((m) => ({
+      priorMessages.map((m: any) => ({
         id: m.id,
         role: m.role as 'user' | 'assistant',
         content: m.content,
