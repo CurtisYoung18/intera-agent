@@ -167,6 +167,28 @@ async function handleStartProcedure(
       requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
       currentProcedureAction: requestedCurrentAction,
     })
+    ctx.chatMemory.setCaseStatus('investigating')
+    try {
+      await prisma.case.upsert({
+        where: { id: ctx.caseId },
+        update: {
+          type: ctRow.type,
+          status: 'investigating',
+          blocker: null,
+        },
+        create: {
+          id: ctx.caseId,
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          type: ctRow.type,
+          status: 'investigating',
+          chatId: ctx.chatId ?? ctx.caseId,
+          blocker: null,
+        },
+      })
+    } catch (err) {
+      console.error('[ToolInterceptor] Failed to align case truth after start_procedure:', err)
+    }
     await ctx.activateProcedureContext?.(schema)
 
     const procedureSummary = summarizeProcedure(schema)
