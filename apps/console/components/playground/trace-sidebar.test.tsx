@@ -16,7 +16,7 @@ function renderSidebar(steps: PlaygroundTraceStep[]) {
       liveTools={[]}
       turnTraces={[steps]}
       turnTotalMs={[120]}
-      sessionMetrics={{ totalInput: 10, totalOutput: 5, totalTools: 2, llmCalls: 1, totalMs: 120 }}
+      sessionMetrics={{ totalInput: 10, totalCacheRead: 0, totalCacheWrite: 0, totalOutput: 5, totalTools: 2, llmCalls: 1, totalMs: 120 }}
       expandedTurns={new Set([0])}
       expandedTools={new Set(['0-1-0', '0-1-1', '0-3-0', '0-3-1'])}
       onToggleTurn={() => {}}
@@ -41,7 +41,7 @@ describe('TraceSidebar', () => {
         }]}
         turnTraces={[[]]}
         turnTotalMs={[0]}
-        sessionMetrics={{ totalInput: 0, totalOutput: 0, totalTools: 0, llmCalls: 0, totalMs: 0 }}
+        sessionMetrics={{ totalInput: 0, totalCacheRead: 0, totalCacheWrite: 0, totalOutput: 0, totalTools: 0, llmCalls: 0, totalMs: 0 }}
         expandedTurns={new Set([0])}
         expandedTools={new Set()}
         onToggleTurn={() => {}}
@@ -201,11 +201,21 @@ describe('TraceSidebar', () => {
           toolChoice: { type: 'auto', disable_parallel_tool_use: false },
           requestPayloadCaptured: true,
         },
+        usage: {
+          inputTokens: 826,
+          outputTokens: 339,
+          totalTokens: 1165,
+          cacheReadTokens: 5500,
+        },
       },
     ])
 
     fireEvent.click(screen.getByText('Show prompt data'))
 
+    expect(screen.getByText(/Prompt accounting:/)).toBeTruthy()
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('prompt tok =') ?? false).length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('826 uncached + 5500 cache read') ?? false).length).toBeGreaterThan(0)
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('formatted chars, not model tokens') ?? false).length).toBeGreaterThan(0)
     expect(screen.getByText('System Prompt')).toBeTruthy()
     expect(screen.getByText('Messages (IN)')).toBeTruthy()
     expect(screen.getByText('Tools (IN)')).toBeTruthy()

@@ -1114,15 +1114,21 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
   // ── Session metrics ──
   const sessionMetrics = useMemo(() => {
-    let totalInput = 0, totalOutput = 0, totalTools = 0, llmCalls = 0
+    let totalInput = 0, totalCacheRead = 0, totalCacheWrite = 0, totalOutput = 0, totalTools = 0, llmCalls = 0
     for (const steps of turnTraces) {
       for (const step of steps) {
-        if (step.usage) { totalInput += step.usage.inputTokens || 0; totalOutput += step.usage.outputTokens || 0; llmCalls++ }
+        if (step.usage) {
+          totalInput += step.usage.inputTokens || 0
+          totalCacheRead += step.usage.cacheReadTokens || 0
+          totalCacheWrite += step.usage.cacheWriteTokens || 0
+          totalOutput += step.usage.outputTokens || 0
+          llmCalls++
+        }
         if (step.stage === 'Tools' || step.stage === 'Knowledge retrieval') totalTools += step.detail?.length || 0
       }
     }
     const totalMs = turnTotalMs.reduce((a, b) => a + b, 0)
-    return { totalInput, totalOutput, totalTools, llmCalls, totalMs }
+    return { totalInput, totalCacheRead, totalCacheWrite, totalOutput, totalTools, llmCalls, totalMs }
   }, [turnTraces, turnTotalMs])
   const shouldRenderTraceSidebar = !sidebarCollapsed
     || responding
@@ -1134,7 +1140,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     const labels: Record<string, string> = {
       'trace.sessionTokens': 'tokens', 'trace.sessionWall': 'wall',
       'trace.sessionLlm': 'llm', 'trace.sessionTools': 'tools',
-      'trace.breakdownInput': 'input', 'trace.breakdownOutput': 'output',
+      'trace.breakdownInput': 'prompt', 'trace.breakdownOutput': 'output',
       'trace.breakdownCache': 'cache hit', 'trace.breakdownLlm': 'llm',
       'trace.breakdownTools': 'tools', 'trace.breakdownTokPerS': 'tok/s',
       'trace.inputLabel': 'Input', 'trace.outputLabel': 'Output',

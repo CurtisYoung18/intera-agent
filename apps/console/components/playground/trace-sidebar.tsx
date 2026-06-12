@@ -33,6 +33,8 @@ interface TraceSidebarProps {
   turnTotalMs: number[]
   sessionMetrics: {
     totalInput: number
+    totalCacheRead: number
+    totalCacheWrite: number
     totalOutput: number
     totalTools: number
     llmCalls: number
@@ -88,9 +90,30 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
   )
 }
 
+function promptTokenTotal(usage?: PlaygroundTraceStep['usage']): number {
+  if (!usage) return 0
+  return (usage.inputTokens || 0) + (usage.cacheReadTokens || 0) + (usage.cacheWriteTokens || 0)
+}
+
+function promptAccountingParts(usage?: PlaygroundTraceStep['usage']): string[] {
+  if (!usage) return []
+
+  const parts: string[] = []
+  const uncached = usage.inputTokens || 0
+  const cacheRead = usage.cacheReadTokens || 0
+  const cacheWrite = usage.cacheWriteTokens || 0
+
+  if (uncached > 0 || (cacheRead === 0 && cacheWrite === 0)) parts.push(`${uncached} uncached`)
+  if (cacheRead > 0) parts.push(`${cacheRead} cache read`)
+  if (cacheWrite > 0) parts.push(`${cacheWrite} cache write`)
+
+  return parts
+}
+
 function SessionMetricsGrid({ metrics, tb }: { metrics: TraceSidebarProps['sessionMetrics']; tb: (k: string) => string }) {
-  const { totalInput, totalOutput, totalTools, llmCalls, totalMs } = metrics
-  const totalTokens = totalInput + totalOutput
+  const { totalInput, totalCacheRead, totalCacheWrite, totalOutput, totalTools, llmCalls, totalMs } = metrics
+  const totalPrompt = totalInput + totalCacheRead + totalCacheWrite
+  const totalTokens = totalPrompt + totalOutput
 
   const fmtTokens = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n)
   const fmtMs = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 's' : n + 'ms'
@@ -381,7 +404,7 @@ function PromptSection({ label, data, color }: { label: string; data: string; co
           fontSize: 10, color: 'var(--indigo)', padding: '2px 0',
           fontWeight: 600,
         }}>
-          Show all ({data.length.toLocaleString()} chars)
+          Show all ({data.length.toLocaleString()} formatted chars)
         </button>
       )}
     </div>
@@ -396,6 +419,9 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
     step.promptData.toolChoice != null
   )
   const [showPromptData, setShowPromptData] = useState(false)
+  const promptTokens = promptTokenTotal(step.usage)
+  const accountingParts = promptAccountingParts(step.usage)
+  const hasPromptAccounting = promptTokens > 0 && (accountingParts.length > 1 || hasPromptData)
 
   const formatPromptValue = (value: unknown): string => {
     if (typeof value === 'string') return value
@@ -425,7 +451,7 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
             fontSize: 10, color: '#b8a99a',
             marginLeft: 'auto', fontFamily: 'var(--font-mono)',
           }}>
-            &uarr;{step.usage.inputTokens || 0} &darr;{step.usage.outputTokens || 0} tok
+            {promptTokens || step.usage.inputTokens || 0} prompt · {step.usage.outputTokens || 0} out tok
           </span>
         )}
       </div>
@@ -457,6 +483,22 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
               </button>
               {showPromptData && (
                 <div style={{ marginTop: 6 }}>
+                  {hasPromptAccounting && (
+                    <div style={{
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: 'rgba(255,252,249,0.55)',
+                      border: '1px solid rgba(0,0,0,0.04)',
+                      fontSize: 10.5,
+                      color: '#8a7e74',
+                      lineHeight: 1.55,
+                      marginBottom: 6,
+                    }}>
+                      <strong style={{ color: '#5a524b' }}>Prompt accounting:</strong>{' '}
+                      {promptTokens.toLocaleString()} prompt tok = {accountingParts.join(' + ')}.
+                      {' '}The drawers below show formatted chars, not model tokens.
+                    </div>
+                  )}
                   {Boolean(step.promptData!.systemPrompt) && (
                     <PromptSection label="System Prompt" data={formatPromptValue(step.promptData!.systemPrompt)} color="var(--indigo)" />
                   )}
@@ -552,14 +594,16 @@ function TurnSection({
   liveTools: LiveTool[]; expandedTools: Set<string>; onToggleTool: (key: string) => void; onToggleTurn: (idx: number) => void
   tb: (k: string) => string
 }) {
-  let turnInput = 0, turnOutput = 0, cacheRead = 0
+  let turnInput = 0, turnOutput = 0, cacheRead = 0, cacheWrite = 0
   const modelStep = steps.find((s) => s.stage === 'Model generation')
   if (modelStep?.usage) {
     turnInput = modelStep.usage.inputTokens || 0
     turnOutput = modelStep.usage.outputTokens || 0
     cacheRead = modelStep.usage.cacheReadTokens || 0
+    cacheWrite = modelStep.usage.cacheWriteTokens || 0
   }
-  const cachePct = (turnInput + cacheRead) > 0 ? Math.round(cacheRead / (turnInput + cacheRead) * 100) : 0
+  const turnPrompt = turnInput + cacheRead + cacheWrite
+  const cachePct = turnPrompt > 0 ? Math.round(cacheRead / turnPrompt * 100) : 0
   const toolSteps = steps.filter((s) => s.stage === 'Tools' || s.stage === 'Knowledge retrieval')
   const toolCount = toolSteps.reduce((sum, s) => sum + (s.detail?.length || 0), 0)
   const hasLiveTools = isLatest && isResponding && liveTools.length > 0
@@ -631,7 +675,7 @@ function TurnSection({
               display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
               gap: 5, padding: '6px 14px 10px 26px',
             }}>
-              <BreakdownCell label={tb('trace.breakdownInput')} value={String(turnInput)} />
+              <BreakdownCell label={tb('trace.breakdownInput')} value={String(turnPrompt)} />
               <BreakdownCell label={tb('trace.breakdownOutput')} value={String(turnOutput)} />
               <BreakdownCell label={tb('trace.breakdownCache')} value={`${cachePct}%`} />
               <BreakdownCell label={tb('trace.breakdownLlm')} value={modelStep.ms >= 1000 ? (modelStep.ms / 1000).toFixed(1) + 's' : modelStep.ms + 'ms'} />
