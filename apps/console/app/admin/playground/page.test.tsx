@@ -257,6 +257,120 @@ describe('PlaygroundPage snapshot truth', () => {
     })
   })
 
+  it('ignores restored runtime truth when the selected model has changed since the last turn', async () => {
+    const staleRuntimeTruth = {
+      model: 'deepseek-v4-flash',
+      imageSupport: {
+        status: 'unsupported',
+        label: 'Unsupported',
+        source: 'configured_model_registry',
+        note: 'Resolved from configured model metadata for DeepSeek V4 Flash.',
+      },
+      executionSurface: {
+        mode: 'runtime_only',
+        label: 'Runtime-backed surface',
+        note: 'No operational dry-run interception was detected in the active tool surface.',
+      },
+      toolSummary: {
+        mockedDryRun: 0,
+        runtimeBacked: 1,
+        runtimeManaged: 0,
+        staticFixture: 0,
+        unknown: 0,
+      },
+      warnings: [],
+    }
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url === '/api/admin/agent-configs') {
+        return jsonResponse({
+          data: {
+            configs: [{ id: 'agent-1', name: 'Gaming Support Draft', version: 3, isActive: true }],
+          },
+        })
+      }
+      if (url === '/api/admin/models') {
+        return jsonResponse({
+          data: {
+            models,
+          },
+        })
+      }
+      if (url === '/api/admin/playground/sessions?configId=agent-1') {
+        return jsonResponse({
+          data: {
+            sessions: [{ chatId: 'chat-1', firstMessage: 'old turn', createdAt: '2026-06-12T00:00:00.000Z' }],
+          },
+        })
+      }
+      if (url === '/api/admin/playground/sessions/chat-1?configId=agent-1') {
+        return jsonResponse({
+          data: {
+            chatId: 'chat-1',
+            messages: [{ id: 'm-1', role: 'user', content: 'old turn', createdAt: '2026-06-12T00:00:00.000Z' }],
+            traces: [
+              {
+                id: 'trace-1',
+                actionType: 'user_message',
+                title: 'User message',
+                detail: 'Old message',
+                payload: '{}',
+                createdAt: '2026-06-12T00:00:00.000Z',
+              },
+              {
+                id: 'trace-2',
+                actionType: 'llm_request_start',
+                title: 'LLM request',
+                detail: 'Old runtime truth',
+                payload: JSON.stringify({
+                  messages: [],
+                  playgroundCapabilityTruth: staleRuntimeTruth,
+                }),
+                createdAt: '2026-06-12T00:00:00.050Z',
+              },
+            ],
+            renderHintsMap: {},
+          },
+        })
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }))
+
+    await renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('DeepSeek V4 Flash')).toBeDefined()
+      expect(screen.getAllByText('Not supported').length).toBeGreaterThan(0)
+    })
+
+    currentAgentPayload = {
+      data: {
+        resolvedModel: 'openai/gpt-4o',
+        config: {
+          name: 'Gaming Support Draft',
+          model: 'openai/gpt-4o',
+          temperature: 0.2,
+          memoryStrategy: shortMemory,
+          coreSystemPrompt: 'Updated prompt from Brain and Memory',
+        },
+      },
+    }
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(AGENT_CONFIG_UPDATED_EVENT, {
+          detail: { agentId: 'agent-1' },
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('GPT-4o')).toBeDefined()
+      expect(screen.getAllByText('Supported').length).toBeGreaterThan(0)
+    })
+  })
+
   it('keeps the debug entry truthful and hides the hook pill details when hook data is unavailable', async () => {
     failHooksRequest = true
     currentAgentPayload = {

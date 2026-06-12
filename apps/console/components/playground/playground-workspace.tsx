@@ -160,6 +160,22 @@ function findLatestRuntimeTruth(turnTraces: Array<Array<{ runtimeTruth?: Playgro
   return null
 }
 
+function runtimeTruthMatchesSnapshot(runtimeTruth: PlaygroundCapabilityTruth, snapshot: AgentSnapshot | null): boolean {
+  if (!snapshot) return true
+  const runtimeModel = runtimeTruth.model.trim().toLowerCase()
+  const snapshotId = snapshot.resolvedModelId.trim().toLowerCase()
+  const snapshotLabel = snapshot.resolvedModelLabel.trim().toLowerCase()
+  return runtimeModel === snapshotId || runtimeModel === snapshotLabel
+}
+
+function resolveCurrentRuntimeTruth(
+  snapshot: AgentSnapshot | null,
+  runtimeTruth: PlaygroundCapabilityTruth | null,
+): PlaygroundCapabilityTruth | null {
+  if (!runtimeTruth) return null
+  return runtimeTruthMatchesSnapshot(runtimeTruth, snapshot) ? runtimeTruth : null
+}
+
 function deriveVisionSupport(snapshot: AgentSnapshot | null, models: ModelInfo[], runtimeTruth: PlaygroundCapabilityTruth | null): VisionSupportState {
   if (runtimeTruth?.imageSupport) {
     return {
@@ -840,7 +856,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   }, [immersiveMode, measureSidebarInset])
 
   const latestRuntimeTruth = useMemo(() => findLatestRuntimeTruth(turnTraces), [turnTraces])
-  const visionSupport = useMemo(() => deriveVisionSupport(snapshot, models, latestRuntimeTruth), [snapshot, models, latestRuntimeTruth])
+  const currentRuntimeTruth = useMemo(
+    () => resolveCurrentRuntimeTruth(snapshot, latestRuntimeTruth),
+    [latestRuntimeTruth, snapshot],
+  )
+  const visionSupport = useMemo(() => deriveVisionSupport(snapshot, models, currentRuntimeTruth), [snapshot, models, currentRuntimeTruth])
   const canAttachImages = visionSupport.status === 'supported'
   const latestTurnDigest = useMemo(
     () => buildTurnDebugDigest(turnTraces, turnTotalMs, responding, chatMessages, reply),
@@ -867,12 +887,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const workspaceTitle = surface === 'pilot-lab'
     ? (isZh ? '运行调试工作台' : 'Runtime test desk')
     : (isZh ? 'Playground 兼容工作台' : 'Playground compatibility desk')
-  const executionSurfaceLabel = latestRuntimeTruth?.executionSurface.label ?? (
+  const executionSurfaceLabel = currentRuntimeTruth?.executionSurface.label ?? (
     toolExecutionMode === 'dry_run'
       ? (isZh ? 'Dry-run 工具模式' : 'Dry-run tool mode')
       : (isZh ? 'Runtime 工具模式' : 'Runtime tool mode')
   )
-  const executionSurfaceNote = latestRuntimeTruth?.executionSurface.note
+  const executionSurfaceNote = currentRuntimeTruth?.executionSurface.note
     ?? (isZh
       ? (toolExecutionMode === 'dry_run'
           ? 'Prompt、Hook、Procedure runtime、trace 写入和会话恢复都走真实 AgentLoop 路径；业务工具会被 dry-run 拦截。'
@@ -880,8 +900,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       : (toolExecutionMode === 'dry_run'
           ? 'Prompting, Hooks, Procedure runtime, trace writing, and session restore are real runtime paths. Operational tools are intercepted.'
           : 'Prompting, Hooks, Procedure runtime, trace writing, session restore, and configured tools use the real AgentLoop path.'))
-  const toolSurfaceSummary = latestRuntimeTruth ? formatToolSurfaceSummary(latestRuntimeTruth.toolSummary) : (isZh ? '首轮运行后刷新' : 'Refreshes after the first run')
-  const runtimeWarnings = latestRuntimeTruth?.warnings ?? (
+  const toolSurfaceSummary = currentRuntimeTruth ? formatToolSurfaceSummary(currentRuntimeTruth.toolSummary) : (isZh ? '首轮运行后刷新' : 'Refreshes after the first run')
+  const runtimeWarnings = currentRuntimeTruth?.warnings ?? (
     toolExecutionMode === 'dry_run'
       ? [isZh ? '业务工具会在 dry-run 下被模拟。' : 'Operational tools are mocked in dry-run mode.']
       : []
