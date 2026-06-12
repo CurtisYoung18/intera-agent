@@ -15,7 +15,6 @@ import {
   Users2,
   FlaskConical,
   TestTubeDiagonal,
-  Bot,
   SlidersHorizontal,
 } from 'lucide-react'
 import { useConsoleLocale } from '@/components/locale-provider'
@@ -119,15 +118,6 @@ function CollapsedSidebarMark() {
 }
 
 type NavDensity = 'default' | 'compact' | 'tight'
-
-function formatSidebarModel(model?: string | null) {
-  if (!model) return 'model unavailable'
-  if (model.includes('deepseek-v4-flash')) return 'deepseek/v4-flash'
-  if (model.includes('deepseek-v4-pro')) return 'deepseek/v4-pro'
-  if (model.includes('gemini-3.5-flash')) return 'google/gemini-3.5-flash'
-  if (model.includes('MiniMax-M2.7-highspeed')) return 'minimax/m2.7'
-  return model.replace(/^models\//, '').replace(/-/g, '/')
-}
 
 export default function ConsoleSidebar() {
   const pathname = usePathname()
@@ -301,18 +291,15 @@ export default function ConsoleSidebar() {
                 className="group flex min-w-0 flex-1 items-center gap-3 rounded-[18px] border border-white/75 bg-white/[0.74] px-3 py-3 text-left shadow-[0_10px_22px_rgba(21,23,25,0.05),inset_0_1px_0_rgba(255,255,255,0.68)] transition hover:border-[rgba(53,127,124,0.22)] hover:bg-white/[0.94]"
                 aria-label={t('sidebar.openAgents')}
               >
-                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] text-[var(--color-accent-primary)]">
-                  <Bot className="h-5 w-5" strokeWidth={1.8} />
-                  <span
-                    aria-hidden
-                    className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white ${
-                      selectedAgent?.isActive ? 'bg-[var(--color-signal-success)]' : 'bg-[var(--color-signal-warning)]'
-                    }`}
-                  />
-                </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-[16px] font-semibold leading-5 text-[var(--color-text-primary)]">
+                    <span
+                      aria-hidden
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                        selectedAgent?.isActive ? 'bg-[var(--color-signal-success)]' : 'bg-[var(--color-signal-warning)]'
+                      }`}
+                    />
+                    <span className="min-w-0 truncate text-[16px] font-semibold leading-5 text-[var(--color-text-primary)]">
                       {selectedAgent?.name ?? t('common.loading')}
                     </span>
                     {selectedAgent ? (
@@ -324,9 +311,6 @@ export default function ConsoleSidebar() {
                         v{selectedAgent.version}
                       </span>
                     ) : null}
-                  </span>
-                  <span className="mt-1 block truncate font-mono text-[12px] text-[var(--color-text-tertiary)]">
-                    {formatSidebarModel(selectedAgent?.model)}
                   </span>
                 </span>
                 <ChevronDown className="h-4 w-4 shrink-0 text-[var(--color-text-tertiary)] transition group-hover:text-[var(--color-accent-primary)]" strokeWidth={2} />

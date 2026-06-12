@@ -12,7 +12,6 @@ import {
   Loader2,
   PackageOpen,
   RotateCcw,
-  SendHorizontal,
   Upload,
   X,
 } from 'lucide-react'
@@ -689,9 +688,6 @@ export default function ReleaseCommandCenter() {
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
-  const openPilotLab = useCallback(() => {
-    window.location.assign('/build/pilot-lab')
-  }, [])
 
   useEffect(() => {
     if (agentLoading) return
@@ -1104,14 +1100,6 @@ export default function ReleaseCommandCenter() {
               scenariosById={data.scenariosById}
               templates={data.templates}
               onSelectVersion={selectAgent}
-            />
-
-            <ReleaseEvidenceRailCard
-              current={selectedVersion}
-              latestReceipt={selectedReceipt}
-              onOpen={openPilotLab}
-              validation={selectedValidation}
-              validationSnapshot={selectedValidationSnapshot}
             />
           </div>
         </div>
@@ -1604,68 +1592,6 @@ function ReleaseTimelineRailCard({
             {locale === 'zh' ? '还没有任何版本。' : 'No versions retained yet.'}
           </div>
         )}
-      </div>
-    </aside>
-  )
-}
-
-function ReleaseEvidenceRailCard({
-  current,
-  latestReceipt,
-  onOpen,
-  validation,
-  validationSnapshot,
-}: {
-  current: AgentVersion | null
-  latestReceipt: ScenarioReceipt | null
-  onOpen: () => void
-  validation: ScenarioValidationSummary | undefined
-  validationSnapshot: VersionValidationSnapshot
-}) {
-  const { locale } = useConsoleLocale()
-  return (
-    <aside className="intera-q2-panel overflow-hidden">
-      <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-text-tertiary)]">
-          {locale === 'zh' ? '验证证据' : 'Validation evidence'}
-        </p>
-      </div>
-
-      <div className="space-y-4 p-5">
-        <div className={`rounded-[16px] border px-4 py-4 text-[13px] ${toneClass(validationSnapshot.tone)}`}>
-          <p className="font-semibold text-[var(--color-text-primary)]">{validationSnapshot.label}</p>
-          <p className="mt-2 leading-6 text-[var(--color-text-secondary)]">{validationSnapshot.detail}</p>
-        </div>
-
-        {latestReceipt ? (
-          <div className="rounded-[16px] border border-[var(--color-border-subtle)] bg-[rgba(255,255,255,0.62)] px-4 py-4">
-            <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">{latestReceipt.scenarioName}</p>
-            <p className="mt-2 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-              {executionModeLabel(latestReceipt.executionMode, locale)} · {latestReceipt.status}
-            </p>
-            <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
-              {locale === 'zh' ? '运行于' : 'Run'} {formatDate(locale, latestReceipt.completedAt ?? latestReceipt.finishedAt ?? latestReceipt.startedAt)}
-            </p>
-            {current ? (
-              <p className="mt-3 rounded-[12px] bg-[var(--color-bg-surface-muted)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-tertiary)]">
-                v{current.version} · {validation?.runtimeValidated ? (locale === 'zh' ? 'runtime-backed' : 'runtime-backed') : executionModeLabel(latestReceipt.executionMode, locale)}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <div className="rounded-[16px] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-surface-muted)] px-4 py-4 text-[13px] leading-6 text-[var(--color-text-secondary)]">
-            {locale === 'zh' ? '这个版本还没有任何 Scenario 回执。发布前请先运行 Pilot Lab 验证。' : 'No Scenario receipt is recorded for this version yet. Run Pilot Lab validation before publishing.'}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={onOpen}
-          className="intera-q2-button inline-flex min-h-[44px] w-full items-center justify-center gap-2 border border-[var(--color-border-strong)] bg-white/84 px-4 py-2 text-[14px] font-semibold text-[var(--color-text-primary)] shadow-[0_8px_24px_rgba(21,23,25,0.04)] transition hover:border-[rgba(53,127,124,0.28)] hover:bg-white"
-        >
-          <SendHorizontal className="h-4 w-4" />
-          <span>{locale === 'zh' ? '在 Pilot Lab 打开' : 'Open in Pilot Lab'}</span>
-        </button>
       </div>
     </aside>
   )

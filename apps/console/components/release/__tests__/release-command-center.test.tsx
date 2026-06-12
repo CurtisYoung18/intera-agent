@@ -322,7 +322,7 @@ afterEach(() => {
 })
 
 describe('ReleaseCommandCenter', () => {
-  it('renders timeline, retention guidance, and selected validation evidence', async () => {
+  it('renders timeline and retention guidance without the separate validation evidence rail', async () => {
     installFetchMock()
     await renderReleaseCommandCenter()
 
@@ -334,7 +334,7 @@ describe('ReleaseCommandCenter', () => {
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Historical').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Changed since last validation').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Fixture-only/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Validation evidence')).toBeNull()
     expect(screen.getByRole('button', { name: 'Create editable draft' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Rollback preview' })).toBeDefined()
     expect(screen.getByText('Required secrets')).toBeDefined()
