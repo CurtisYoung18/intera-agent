@@ -5,16 +5,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => {
   const configsByOrg: Record<string, Record<string, unknown>[]> = {
     default: [
-      { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
-      { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, releaseNote: 'Launch baseline', publishedAt: new Date(), publishedBy: 'user_1', createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, releaseNote: null, publishedAt: null, publishedBy: 'unknown_publisher_id', createdAt: new Date(), updatedAt: new Date() },
     ],
     orgB: [
       { id: 'ac3', orgId: 'orgB', name: 'OrgB Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
+  const usersById: Record<string, { id: string; email: string; name: string | null }> = {
+    user_1: { id: 'user_1', email: 'owner@intera.ai', name: 'Owner Name' },
+  }
   const mockGetSession = vi.fn()
 
-  return { configsByOrg, mockGetSession }
+  return { configsByOrg, usersById, mockGetSession }
 })
 
 // Mock clearConfigCache
@@ -71,6 +74,12 @@ vi.mock('@/lib/db/repo-for-org', () => ({
         organization: {
           upsert: vi.fn(async () => ({ id: orgId, name: 'Demo Org' })),
         },
+        user: {
+          findMany: vi.fn(async (args: any) => {
+            const ids: string[] = args?.where?.id?.in ?? []
+            return ids.map((id) => h.usersById[id]).filter(Boolean)
+          }),
+        },
         $transaction: vi.fn(async (cb: any) => {
           const tx = {
             tool: { findMany: vi.fn(async () => []), create: vi.fn(async (args: any) => args.data) },
@@ -121,8 +130,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
   h.configsByOrg.default = [
-    { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
-    { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ac1', orgId: 'default', name: 'Default', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: 4096, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, releaseNote: 'Launch baseline', publishedAt: new Date(), publishedBy: 'user_1', createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ac2', orgId: 'default', name: 'Support Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, releaseNote: null, publishedAt: null, publishedBy: 'unknown_publisher_id', createdAt: new Date(), updatedAt: new Date() },
   ]
   h.configsByOrg.orgB = [
     { id: 'ac3', orgId: 'orgB', name: 'OrgB Agent', version: 1, isActive: true, parentId: null, model: 'deepseek-v4-flash', temperature: 0.5, thinkingBudget: 4096, maxIterations: 20, maxOutputTokens: null, systemPrompt: '', coreSystemPrompt: null, showThinking: false, memoryStrategy: '{}', gptbotsApiKey: null, invariantCheck: false, resumePrompt: null, debugMode: false, createdAt: new Date(), updatedAt: new Date() },
@@ -135,6 +144,10 @@ describe('G1 — Uniform envelope', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(Array.isArray(body.data.configs)).toBe(true)
+    expect(body.data.configs[0].publisherEmail).toBe('owner@intera.ai')
+    expect(body.data.configs[0].publisherName).toBe('Owner Name')
+    expect(body.data.configs[1].publisherEmail).toBeNull()
+    expect(body.data.configs[1].publisherName).toBeNull()
   })
 
   it('POST with empty body creates default agent (201)', async () => {

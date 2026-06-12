@@ -393,3 +393,15 @@ Use this format for each new item:
 - Historical note: This item records production setup readiness only. The final counted J1B Playground receipts on 2026-06-11 still reported `toolExecutionMode=mocked`; see the separate scope-gap item above for the current acceptance boundary.
 - Owner decision needed: None for tool/procedure seeding. Historical follow-up complete: the full J1B 12-scenario matrix is now indexed in `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md`.
 - Follow-up owner: delivery lead / coding-team lead
+
+### 2026-06-12 - CONS-R1 Release Lifecycle Uses Integer Auto-Increment Versions
+
+- Area: Release / agent version lifecycle
+- Status: open
+- Severity: P2
+- Uncertainty: R1a needs a stable candidate-vs-historical rule before any broader lifecycle redesign. Current product/runtime semantics still use integer `version` rows per `(orgId, name)` family and `parentId` lineage. There is no separate release token, timestamp rank, or schema-side candidate marker.
+- Default action taken: Keep the existing integer auto-increment version scheme for R1a. Classify a non-live row as the editable candidate only when it is directly forked from the current live row (`parentId === live.id`) or its integer `version` is newer than the live row. Treat all other non-live rows as historical. Do not add schema fields or Phase R1b semantics in this lane.
+- Why this default: It fixes the concrete Release misclassification bug on the current production schema without widening into a migration lane or introducing ambiguous mixed version semantics mid-goal.
+- Evidence: Lane contract `doc/handoffs/LANE_CONS_R1_RELEASE_VERSION_LIFECYCLE.md` Phase R1a; forthcoming local/prod receipts under `.artifacts/delivery-audit/2026-06-12/cons-r1a/**`.
+- Owner decision needed: Tomorrow review can still choose a richer lifecycle marker in a later lane, but R1a proceeds on integer auto-increment as the binding default.
+- Follow-up owner: architect / release lane owner
