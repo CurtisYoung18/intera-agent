@@ -4,7 +4,6 @@
 
 import { z } from 'zod'
 import { defineRoute, ConflictError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 
 const stringifyMaybe = (val: unknown): string => {
@@ -16,11 +15,11 @@ const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigI
 
 export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const sources = await repo.raw.knowledgeSource.findMany({
       where: { agentConfigId },
       orderBy: { name: 'asc' },
@@ -46,10 +45,10 @@ type CreateInput = z.infer<typeof createSchema>
 
 export const POST = defineRoute<CreateInput>({
   method: 'POST',
+  scope: 'agent',
   inputSchema: createSchema,
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
     try {
       const source = await repo.raw.knowledgeSource.create({
         data: {

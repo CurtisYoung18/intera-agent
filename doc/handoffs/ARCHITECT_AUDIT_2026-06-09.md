@@ -45,7 +45,7 @@ Required direction:
 - React owns presentation, diff review, and explicit accept/reject.
 - No frontend hardcoded proposal builder should remain as the production path.
 
-Dispatch: use `P1 - ConfigPilot typed configuration tools` in `POST_FOUNDATION_DISPATCH_PROMPTS.md`.
+Dispatch history: `P1 - ConfigPilot typed configuration tools` now lives in [`../archive/source-history/POST_FOUNDATION_DISPATCH_PROMPTS.md`](../archive/source-history/POST_FOUNDATION_DISPATCH_PROMPTS.md).
 
 ### 2. System Tool Names Still Leak Old Product Model
 

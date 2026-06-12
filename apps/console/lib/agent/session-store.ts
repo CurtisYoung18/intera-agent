@@ -1,5 +1,5 @@
 /**
- * session-store.ts — In-memory session registry for runtime Agent loops.
+ * session-store.ts — Runtime session registry for Agent loops.
  *
  * Architecture (inspired by Claude Code's single-process runtime model):
  *   GET /api/cases/[caseId]/stream  → opens a long-lived SSE, runs a sessionLoop()
@@ -12,16 +12,14 @@
  *     If POST fires before SSE loop calls dequeue(), the message is buffered.
  *     If SSE loop is already waiting, it's notified immediately.
  *   - Sessions are kept in a WeakRef-free Map with a TTL; a periodic cleanup
- *     purges sessions idle for > SESSION_TTL_MS.
- *   - On server restart all sessions are lost; the SSE endpoint reinitialises
- *     AgentLoop from DB (same as the old per-message /api/messages path).
+ *     evicts idle sessions after preserving durable ProcedureRun state.
+ *   - ProcedureRun state is write-through durable: Postgres is the restart
+ *     boundary, while this module remains the in-process cache/queue adapter.
  *
- * R3 boundary:
- *   ProcedureRun state is authoritative only inside this in-memory runtime
- *   tracker. It is intentionally not persisted to ChatMemory/UserProfile or a
- *   Prisma table in V1. This is acceptable for the current single-process,
- *   restart-loses-active-runtime deployment; multi-instance or restart-safe
- *   ProcedureRuns require Redis/leases or a later schema lane.
+ * R3/M2 boundary:
+ *   ProcedureRun state must not be persisted through ChatMemory/UserProfile or
+ *   public memory APIs. Durable authority is the ProcedureRun table introduced
+ *   by consolidation M2; in-memory state is an adapter cache only.
  */
 
 import type { AgentLoop } from './loop'
@@ -39,6 +37,7 @@ import {
   isProcedureV2Definition,
   normalizeProcedureDefinition,
 } from '@intera/shared/contracts/case-types'
+import { prisma } from '@intera/shared/prisma'
 
 // ─── Queued message shape ─────────────────────────────────────────────────────
 
@@ -188,6 +187,7 @@ export interface ProcedureRunSignalState {
 
 export interface ProcedureRunState {
   runId: string
+  agentConfigId?: string
   procedureId: string
   caseType: string
   displayName: string
@@ -208,6 +208,7 @@ export interface ProcedureRunState {
   timeline: RuntimeEvent[]
   definition?: ProcedureDefinition
   reason?: string
+  outcome?: string | null
   confidence?: number
   currentProcedureAction?: 'pause' | 'complete' | 'abandon'
   startedAt: string
@@ -302,6 +303,7 @@ export class MessageQueue {
 export interface CaseSession {
   caseId: string
   sessionId: string
+  agentConfigId?: string | null
   /** Populated after AgentLoop.create() resolves inside the SSE handler. */
   loop: AgentLoop | null
   /** True once the SSE handler has started its session loop. */
@@ -312,6 +314,7 @@ export interface CaseSession {
   latestInputEpoch: number
   runtimeEvents: RuntimeEvent[]
   procedureRuntime: ProcedureRuntimeState
+  procedureRuntimeHydrated: boolean
   aborted: boolean
   lastActiveAt: number
 }
@@ -323,6 +326,141 @@ const sessions = new Map<string, CaseSession>()
 /** TTL for idle sessions (30 minutes). */
 const SESSION_TTL_MS = 30 * 60 * 1000
 
+interface PersistedProcedureRunRecord {
+  id: string
+  caseId: string
+  agentConfigId: string
+  procedureId: string
+  procedureVersion: string
+  status: string
+  inputEpoch: number
+  needsReconcile: boolean
+  currentStepId: string | null
+  outcome: string | null
+  state: unknown
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+interface HydratedProcedureRuntime {
+  latestInputEpoch: number
+  runs: PersistedProcedureRunRecord[]
+}
+
+interface ProcedureRunPersistenceAdapter {
+  loadProcedureRuntime(caseId: string): Promise<HydratedProcedureRuntime>
+  saveProcedureRun(record: PersistedProcedureRunRecord): Promise<void>
+  saveCaseInputEpoch(caseId: string, inputEpoch: number): Promise<void>
+}
+
+const noopProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
+  async loadProcedureRuntime() {
+    return { latestInputEpoch: 0, runs: [] }
+  },
+  async saveProcedureRun() {},
+  async saveCaseInputEpoch() {},
+}
+
+const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
+  async loadProcedureRuntime(caseId) {
+    const [caseRow, runs] = await Promise.all([
+      prisma.case.findUnique({
+        where: { id: caseId },
+        select: { runtimeInputEpoch: true },
+      }),
+      prisma.procedureRun.findMany({
+        where: {
+          caseId,
+          status: { in: ['active', 'paused'] },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+    ])
+    return {
+      latestInputEpoch: caseRow?.runtimeInputEpoch ?? 0,
+      runs: runs.map((run) => ({
+        id: run.id,
+        caseId: run.caseId,
+        agentConfigId: run.agentConfigId,
+        procedureId: run.procedureId,
+        procedureVersion: run.procedureVersion,
+        status: run.status,
+        inputEpoch: run.inputEpoch,
+        needsReconcile: run.needsReconcile,
+        currentStepId: run.currentStepId,
+        outcome: run.outcome,
+        state: run.state,
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt,
+      })),
+    }
+  },
+  async saveProcedureRun(record) {
+    await prisma.procedureRun.upsert({
+      where: { id: record.id },
+      update: {
+        caseId: record.caseId,
+        agentConfigId: record.agentConfigId,
+        procedureId: record.procedureId,
+        procedureVersion: record.procedureVersion,
+        status: record.status,
+        inputEpoch: record.inputEpoch,
+        needsReconcile: record.needsReconcile,
+        currentStepId: record.currentStepId,
+        outcome: record.outcome,
+        state: record.state as object,
+      },
+      create: {
+        id: record.id,
+        caseId: record.caseId,
+        agentConfigId: record.agentConfigId,
+        procedureId: record.procedureId,
+        procedureVersion: record.procedureVersion,
+        status: record.status,
+        inputEpoch: record.inputEpoch,
+        needsReconcile: record.needsReconcile,
+        currentStepId: record.currentStepId,
+        outcome: record.outcome,
+        state: record.state as object,
+      },
+    })
+  },
+  async saveCaseInputEpoch(caseId, inputEpoch) {
+    await prisma.case.updateMany({
+      where: { id: caseId },
+      data: { runtimeInputEpoch: inputEpoch },
+    })
+  },
+}
+
+let procedureRunPersistence: ProcedureRunPersistenceAdapter =
+  process.env.NODE_ENV === 'test'
+    ? noopProcedureRunPersistence
+    : prismaProcedureRunPersistence
+
+const runPersistQueues = new Map<string, Promise<void>>()
+const caseEpochPersistQueues = new Map<string, Promise<void>>()
+
+export function setProcedureRunPersistenceForTest(adapter: ProcedureRunPersistenceAdapter | null): void {
+  procedureRunPersistence = adapter ?? (
+    process.env.NODE_ENV === 'test'
+      ? noopProcedureRunPersistence
+      : prismaProcedureRunPersistence
+  )
+  runPersistQueues.clear()
+  caseEpochPersistQueues.clear()
+}
+
+export async function flushProcedureRunPersistence(caseId?: string): Promise<void> {
+  const runPromises = [...runPersistQueues.entries()]
+    .filter(([runId]) => !caseId || runId.startsWith(`${caseId}:`))
+    .map(([, promise]) => promise)
+  const casePromises = [...caseEpochPersistQueues.entries()]
+    .filter(([key]) => !caseId || key === caseId)
+    .map(([, promise]) => promise)
+  await Promise.all([...runPromises, ...casePromises])
+}
+
 /**
  * Return the existing session for caseId, or create a new one.
  * Called by both the SSE route (first consumer) and the POST route (first producer).
@@ -333,6 +471,41 @@ export function getOrCreateSession(caseId: string): CaseSession {
 
   const session = createSession(caseId)
   sessions.set(caseId, session)
+  return session
+}
+
+export function bindProcedureRuntimeAgentConfig(caseId: string, agentConfigId?: string | null): CaseSession {
+  const session = getOrCreateSession(caseId)
+  if (agentConfigId) session.agentConfigId = agentConfigId
+  return session
+}
+
+export async function hydrateProcedureRuntime(
+  caseId: string,
+  options: { agentConfigId?: string | null } = {},
+): Promise<CaseSession> {
+  const session = bindProcedureRuntimeAgentConfig(caseId, options.agentConfigId)
+  if (session.procedureRuntimeHydrated) return session
+
+  const hydrated = await procedureRunPersistence.loadProcedureRuntime(caseId)
+  session.latestInputEpoch = Math.max(session.latestInputEpoch, hydrated.latestInputEpoch)
+  const runs = hydrated.runs
+    .map(hydratePersistedRun)
+    .filter((run): run is ProcedureRunState => !!run)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+
+  const activeRuns = runs.filter((run) => run.status === 'active')
+  const pausedRuns = runs.filter((run) => run.status === 'paused')
+  const active = activeRuns[0]
+  session.procedureRuntime = {
+    activeProcedureRun: active,
+    pausedProcedureRuns: [
+      ...activeRuns.slice(1).map((run) => ({ ...run, status: 'paused' as const })),
+      ...pausedRuns,
+    ],
+    completedProcedureRuns: [],
+  }
+  session.procedureRuntimeHydrated = true
   return session
 }
 
@@ -406,6 +579,7 @@ export function appendRuntimeEvent(
     active.timeline.push(event)
     active.updatedAt = event.createdAt
     active.inputEpoch = session.latestInputEpoch
+    scheduleRunPersist(session, active)
   }
   session.lastActiveAt = Date.now()
   return event
@@ -556,10 +730,12 @@ export function recordProcedureConditionEvaluation(caseId: string, input: {
   const step = currentStep(run) ?? run.steps[0]
   if (step) refreshStepBranchStates(run, step)
   syncCurrentStepAfterProgress(run, now)
+  scheduleRunPersist(session, run)
   return { ok: true, run: cloneRun(run) }
 }
 
 export function startProcedureRun(caseId: string, input: {
+  agentConfigId?: string
   procedureId: string
   displayName: string
   procedure?: Procedure | ProcedureDefinition
@@ -595,6 +771,7 @@ export function startProcedureRun(caseId: string, input: {
       summary: `start_procedure idempotent for ${input.procedureId}`,
       metadata: { idempotent: true, requestId: input.requestId },
     })
+    scheduleRunPersist(session, active)
     return { run: cloneRun(active), idempotent: true }
   }
 
@@ -618,6 +795,7 @@ export function startProcedureRun(caseId: string, input: {
     } else {
       state.completedProcedureRuns.push(active)
     }
+    scheduleRunPersist(session, active)
     state.activeProcedureRun = undefined
   }
 
@@ -629,6 +807,7 @@ export function startProcedureRun(caseId: string, input: {
   const run: ProcedureRunState = resumed
     ? {
         ...resumed,
+        agentConfigId: input.agentConfigId ?? session.agentConfigId ?? resumed.agentConfigId,
         status: 'active',
         inputEpoch: session.latestInputEpoch,
         reason: input.reason ?? resumed.reason,
@@ -646,6 +825,7 @@ export function startProcedureRun(caseId: string, input: {
       }
     : {
         runId: `proc_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+        agentConfigId: input.agentConfigId ?? session.agentConfigId ?? undefined,
         procedureId: input.procedureId,
         caseType: input.procedureId,
         displayName: input.displayName,
@@ -690,6 +870,7 @@ export function startProcedureRun(caseId: string, input: {
     summary: `${resumed ? 'Resumed' : 'Started'} ProcedureRun ${run.procedureId}`,
     metadata: { requestId: input.requestId, idempotent: false },
   })
+  scheduleRunPersist(session, run)
   return { run: cloneRun(run), idempotent: false, pausedRun: pausedRun ? cloneRun(pausedRun) : undefined }
 }
 
@@ -702,7 +883,7 @@ export function recordProcedureToolCall(caseId: string, input: {
   const session = sessions.get(caseId)
   const run = session?.procedureRuntime.activeProcedureRun
   if (!session || !run) return null
-  return appendProcedureTimeline(session, run, {
+  const event = appendProcedureTimeline(session, run, {
     origin: 'system',
     source: 'tool_call',
     basedOnInputEpoch: input.basedOnInputEpoch ?? session.latestInputEpoch,
@@ -714,6 +895,8 @@ export function recordProcedureToolCall(caseId: string, input: {
       evidenceState: 'canonical',
     },
   })
+  scheduleRunPersist(session, run)
+  return event
 }
 
 export function recordProcedureToolResult(caseId: string, input: {
@@ -763,6 +946,7 @@ export function recordProcedureToolResult(caseId: string, input: {
       usableForProgress,
     },
   })
+  scheduleRunPersist(session, run)
   return { stale, run: cloneRun(run) }
 }
 
@@ -804,6 +988,7 @@ export function recordProcedureTextReply(caseId: string, input: {
       alreadyStreamed: input.alreadyStreamed === true,
     },
   })
+  scheduleRunPersist(session, run)
   return { stale, run: cloneRun(run) }
 }
 
@@ -835,6 +1020,7 @@ export function reconcileProcedureInput(caseId: string, input: {
       memoryWrite: false,
     },
   })
+  scheduleRunPersist(session, run)
   return { ok: true, cleared, run: cloneRun(run) }
 }
 
@@ -859,6 +1045,7 @@ export function finalizeProcedureRun(caseId: string, input: {
       summary: 'finalize_procedure blocked because the ProcedureRun needs reconciliation',
       metadata: { evidenceState: 'stale', terminal: true },
     })
+    scheduleRunPersist(session, run)
     return { ok: false, stale: true, run: cloneRun(run), error: 'Reconcile latest customer messages before finalizing.' }
   }
   const finalizeBlockers = finalizationBlockers(run)
@@ -875,6 +1062,7 @@ export function finalizeProcedureRun(caseId: string, input: {
         blockers: finalizeBlockers,
       },
     })
+    scheduleRunPersist(session, run)
     return {
       ok: false,
       stale: false,
@@ -893,6 +1081,7 @@ export function finalizeProcedureRun(caseId: string, input: {
   })
   session.procedureRuntime.completedProcedureRuns.push(run)
   session.procedureRuntime.activeProcedureRun = undefined
+  scheduleRunPersist(session, run)
   return { ok: true, stale: false, run: cloneRun(run) }
 }
 
@@ -1012,12 +1201,22 @@ export function procedureRunPromptTail(caseId: string): string {
   return lines.join('\n')
 }
 
-/** Mark a session as aborted and remove it from the registry. */
-export function closeSession(caseId: string): void {
+/** Mark a session as aborted and remove it from the registry after terminal run state is durable. */
+export async function closeSession(caseId: string): Promise<void> {
   const session = sessions.get(caseId)
-  if (session) {
-    session.aborted = true
-    session.queue.abort()
+  if (!session) return
+
+  session.aborted = true
+  session.queue.abort()
+  const needsDurableFlush = cancelRemainingProcedureRuns(
+    session,
+    'abandoned',
+    'Session closed before ProcedureRun completed.',
+  )
+  if (needsDurableFlush) {
+    await flushProcedureRunPersistence(caseId)
+  }
+  if (sessions.get(caseId) === session) {
     sessions.delete(caseId)
   }
 }
@@ -1031,21 +1230,35 @@ export function hasSession(caseId: string): boolean {
 // ─── TTL cleanup ──────────────────────────────────────────────────────────────
 
 /** Purge sessions idle longer than SESSION_TTL_MS. Runs every 5 minutes. */
-function cleanupStaleSessions() {
-  const now = Date.now()
+async function cleanupStaleSessions(now = Date.now()): Promise<void> {
+  const evictions: Promise<void>[] = []
   for (const [caseId, session] of sessions.entries()) {
     if (now - session.lastActiveAt > SESSION_TTL_MS) {
       console.log(`[SessionStore] Evicting idle session: ${caseId}`)
       session.aborted = true
       session.queue.abort()
-      sessions.delete(caseId)
+      const needsDurableFlush = pauseActiveRunForEviction(session)
+      const evict = (needsDurableFlush ? flushProcedureRunPersistence(caseId) : Promise.resolve())
+        .then(() => {
+          if (sessions.get(caseId) === session) {
+            sessions.delete(caseId)
+          }
+        })
+      evictions.push(evict)
     }
   }
+  await Promise.all(evictions)
+}
+
+export async function cleanupStaleSessionsForTest(now = Date.now()): Promise<void> {
+  await cleanupStaleSessions(now)
 }
 
 // Only register the interval once per process (module is a singleton).
 if (typeof setInterval !== 'undefined') {
-  setInterval(cleanupStaleSessions, 5 * 60 * 1000).unref?.()
+  setInterval(() => {
+    void cleanupStaleSessions()
+  }, 5 * 60 * 1000).unref?.()
 }
 
 /** Session count — for observability. */
@@ -1064,6 +1277,7 @@ function createSession(caseId: string): CaseSession {
     latestInputEpoch: 0,
     runtimeEvents: [],
     procedureRuntime: { pausedProcedureRuns: [], completedProcedureRuns: [] },
+    procedureRuntimeHydrated: false,
     aborted: false,
     lastActiveAt: Date.now(),
   }
@@ -1091,7 +1305,7 @@ function normalizeQueuedMessage(session: CaseSession, msg: QueuedMessageInput): 
 }
 
 function appendInputEventToActiveRun(session: CaseSession, event: RuntimeEvent): void {
-  const active = session.procedureRuntime.activeProcedureRun
+  const active = session.procedureRuntime.activeProcedureRun ?? resumePausedRunForInput(session, event)
   if (!active || !isInputSource(event.source)) return
   active.timeline.push({ ...event, runId: active.runId })
   active.updatedAt = event.createdAt
@@ -1104,6 +1318,7 @@ function appendInputEventToActiveRun(session: CaseSession, event: RuntimeEvent):
   }
   refreshNoProgressSignal(active)
   syncCurrentStepAfterProgress(active, event.createdAt)
+  scheduleRunPersist(session, active)
 }
 
 function createRuntimeEvent(input: Partial<RuntimeEvent> & {
@@ -1141,6 +1356,7 @@ function createRuntimeEvent(input: Partial<RuntimeEvent> & {
 
 function nextInputEpoch(session: CaseSession): number {
   session.latestInputEpoch += 1
+  scheduleCaseInputEpochPersist(session)
   const active = session.procedureRuntime.activeProcedureRun
   if (active) {
     active.inputEpoch = session.latestInputEpoch
@@ -1152,6 +1368,181 @@ function nextInputEpoch(session: CaseSession): number {
 
 function isInputSource(source: RuntimeEventSource): boolean {
   return source === 'customer_message' || source === 'customer_form_result' || source === 'human_task_result'
+}
+
+export function clearSessionsForTest(caseId?: string): void {
+  if (caseId) {
+    sessions.delete(caseId)
+    return
+  }
+  sessions.clear()
+}
+
+function scheduleCaseInputEpochPersist(session: CaseSession): void {
+  const previous = caseEpochPersistQueues.get(session.caseId) ?? Promise.resolve()
+  const inputEpoch = session.latestInputEpoch
+  const next = previous
+    .catch(() => undefined)
+    .then(() => procedureRunPersistence.saveCaseInputEpoch(session.caseId, inputEpoch))
+  caseEpochPersistQueues.set(session.caseId, next)
+  void next.catch((error) => {
+    console.error('[SessionStore] Failed to persist Case.runtimeInputEpoch:', error)
+  })
+}
+
+function scheduleRunPersist(session: CaseSession, run: ProcedureRunState): void {
+  const record = toPersistedProcedureRun(session, run)
+  const queueKey = `${session.caseId}:${run.runId}`
+  const previous = runPersistQueues.get(queueKey) ?? Promise.resolve()
+  const next = previous
+    .catch(() => undefined)
+    .then(() => procedureRunPersistence.saveProcedureRun(record))
+  runPersistQueues.set(queueKey, next)
+  void next.catch((error) => {
+    console.error('[SessionStore] Failed to persist ProcedureRun:', error)
+  })
+}
+
+function toPersistedProcedureRun(session: CaseSession, run: ProcedureRunState): PersistedProcedureRunRecord {
+  const agentConfigId = run.agentConfigId ?? session.agentConfigId ?? 'unknown'
+  run.agentConfigId = agentConfigId
+  return {
+    id: run.runId,
+    caseId: session.caseId,
+    agentConfigId,
+    procedureId: run.procedureId,
+    procedureVersion: run.procedureVersion ?? 'v2',
+    status: run.status,
+    inputEpoch: run.inputEpoch,
+    needsReconcile: run.needsReconcile,
+    currentStepId: run.currentStepId,
+    outcome: run.outcome ?? null,
+    state: cloneRun(run),
+  }
+}
+
+function hydratePersistedRun(record: PersistedProcedureRunRecord): ProcedureRunState | null {
+  const raw = isRecord(record.state) ? record.state : {}
+  const status = isProcedureRunStatus(record.status) ? record.status : 'paused'
+  const procedureVersion = record.procedureVersion === 'v1' ? 'v1' : 'v2'
+  return {
+    runId: stringFrom(raw.runId) ?? record.id,
+    agentConfigId: stringFrom(raw.agentConfigId) ?? record.agentConfigId,
+    procedureId: stringFrom(raw.procedureId) ?? record.procedureId,
+    caseType: stringFrom(raw.caseType) ?? record.procedureId,
+    displayName: stringFrom(raw.displayName) ?? record.procedureId,
+    procedureVersion,
+    status,
+    inputEpoch: record.inputEpoch,
+    lastReconciledInputEpoch: numberFrom(raw.lastReconciledInputEpoch) ?? record.inputEpoch,
+    needsReconcile: record.needsReconcile,
+    currentStepId: stringFrom(raw.currentStepId) ?? null,
+    steps: Array.isArray(raw.steps) ? raw.steps as ProcedureRunStepState[] : [],
+    inputs: Array.isArray(raw.inputs) ? raw.inputs as ProcedureRunInputState[] : [],
+    evidenceToolCallIds: Array.isArray(raw.evidenceToolCallIds) ? raw.evidenceToolCallIds as string[] : [],
+    evidence: Array.isArray(raw.evidence) ? raw.evidence as ProcedureRunEvidenceState[] : [],
+    evaluations: Array.isArray(raw.evaluations) ? raw.evaluations as ProcedureRunConditionEvaluationState[] : [],
+    signals: Array.isArray(raw.signals) ? raw.signals as ProcedureRunSignalState[] : [],
+    legacyFacts: isRecord(raw.legacyFacts) ? raw.legacyFacts : {},
+    blockers: Array.isArray(raw.blockers) ? raw.blockers as string[] : [],
+    timeline: Array.isArray(raw.timeline) ? raw.timeline as RuntimeEvent[] : [],
+    definition: isRecord(raw.definition) ? raw.definition as unknown as ProcedureDefinition : undefined,
+    reason: stringFrom(raw.reason),
+    outcome: stringFrom(raw.outcome) ?? record.outcome ?? undefined,
+    confidence: numberFrom(raw.confidence),
+    currentProcedureAction: isCurrentProcedureAction(raw.currentProcedureAction)
+      ? raw.currentProcedureAction
+      : undefined,
+    startedAt: stringFrom(raw.startedAt) ?? dateString(record.createdAt) ?? new Date().toISOString(),
+    updatedAt: stringFrom(raw.updatedAt) ?? dateString(record.updatedAt) ?? new Date().toISOString(),
+    lastStartRequestId: stringFrom(raw.lastStartRequestId),
+  }
+}
+
+function pauseActiveRunForEviction(session: CaseSession): boolean {
+  const active = session.procedureRuntime.activeProcedureRun
+  if (!active) return false
+  active.status = 'paused'
+  active.reason = 'session evicted'
+  active.updatedAt = new Date().toISOString()
+  active.outcome = active.outcome ?? null
+  appendProcedureTimeline(session, active, {
+    origin: 'system',
+    source: 'control',
+    summary: 'ProcedureRun paused because the in-memory session was evicted',
+    metadata: { reason: 'session evicted' },
+  })
+  session.procedureRuntime.activeProcedureRun = undefined
+  if (!session.procedureRuntime.pausedProcedureRuns.some((run) => run.runId === active.runId)) {
+    session.procedureRuntime.pausedProcedureRuns.push(active)
+  }
+  scheduleRunPersist(session, active)
+  return true
+}
+
+function cancelRemainingProcedureRuns(session: CaseSession, outcome: string, reason: string): boolean {
+  const remaining = [
+    ...(session.procedureRuntime.activeProcedureRun ? [session.procedureRuntime.activeProcedureRun] : []),
+    ...session.procedureRuntime.pausedProcedureRuns,
+  ]
+  if (remaining.length === 0) return false
+  for (const run of remaining) {
+    run.status = 'cancelled'
+    run.outcome = outcome
+    run.reason = reason
+    run.updatedAt = new Date().toISOString()
+    appendProcedureTimeline(session, run, {
+      origin: 'system',
+      source: 'control',
+      summary: `ProcedureRun cancelled: ${outcome}`,
+      metadata: { terminal: true, outcome, reason },
+    })
+    scheduleRunPersist(session, run)
+  }
+  session.procedureRuntime.activeProcedureRun = undefined
+  session.procedureRuntime.pausedProcedureRuns = []
+  session.procedureRuntime.completedProcedureRuns.push(...remaining)
+  return true
+}
+
+function resumePausedRunForInput(session: CaseSession, event: RuntimeEvent): ProcedureRunState | undefined {
+  if (event.source !== 'human_task_result') return undefined
+  const resumed = session.procedureRuntime.pausedProcedureRuns.shift()
+  if (!resumed) return undefined
+  resumed.status = 'active'
+  resumed.reason = 'Resumed after human task result.'
+  resumed.updatedAt = event.createdAt
+  resumed.inputEpoch = session.latestInputEpoch
+  resumed.needsReconcile = resumed.lastReconciledInputEpoch < session.latestInputEpoch
+  session.procedureRuntime.activeProcedureRun = resumed
+  appendProcedureTimeline(session, resumed, {
+    origin: 'system',
+    source: 'control',
+    summary: 'ProcedureRun resumed after human task result',
+    metadata: { sourceEventId: event.eventId },
+  })
+  return resumed
+}
+
+function isProcedureRunStatus(value: unknown): value is ProcedureRunStatus {
+  return value === 'active' || value === 'paused' || value === 'completed' || value === 'cancelled'
+}
+
+function isCurrentProcedureAction(value: unknown): value is ProcedureRunState['currentProcedureAction'] {
+  return value === 'pause' || value === 'complete' || value === 'abandon'
+}
+
+function stringFrom(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function numberFrom(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function dateString(value: Date | string | undefined): string | undefined {
+  if (value instanceof Date) return value.toISOString()
+  return typeof value === 'string' ? value : undefined
 }
 
 function captureRunInput(run: ProcedureRunState, event: RuntimeEvent): void {

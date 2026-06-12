@@ -2,6 +2,20 @@
 
 **Purpose:** make authenticated local Console smoke reproducible instead of rediscovering auth and DB quirks every lane.
 
+## Recurring Regression Default
+
+Recurring Console regression should be proven by scheduled CI receipt bundles, not by opening a fresh manual screenshot lane each time.
+
+Use:
+
+```bash
+npm run ci:receipts
+```
+
+The bundle is written to `.artifacts/ci/<date>/<run-id>/` and includes runtime-runner Scenario receipts plus the existing authenticated Playwright smoke screenshots when the host has DB/auth available. Manual screenshot lanes remain for new-surface acceptance, visual QA of freshly changed UI, or a blocked CI receipt that needs human diagnosis. Do not delete historical evidence or the existing `smoke:console` script.
+
+A bundle produced with `CI_RECEIPTS_SKIP_SMOKE=1` is runtime-only scheduling proof. It is useful for proving the script can run unattended, but it is **partial** and does not satisfy the golden-loop screenshot gate.
+
 ## The Local Auth Trap
 
 Console login currently issues `intera_session` with `secure: true` in:
@@ -26,7 +40,7 @@ Use this gate:
 
 ```text
 UI route changed?
-  yes -> attempt browser smoke once using the approved path below.
+  yes -> attempt browser smoke once using the approved path below, or rely on the scheduled CI receipt bundle when this is recurring regression with no new surface.
   no  -> do not require browser smoke; use focused tests + tsc + keyless tests + build.
 
 Browser smoke blocked by local DB/auth setup for >15 minutes?
@@ -59,6 +73,20 @@ DATABASE_URL='postgresql://intera:intera@localhost:5434/intera' \
 npm run smoke:console
 ```
 
+For recurring regression on the scheduled host, run the receipt wrapper instead:
+
+```bash
+npm run ci:receipts
+```
+
+If the host is not ready for screenshots yet, an explicit runtime-only proof can be produced with:
+
+```bash
+CI_RECEIPTS_SKIP_SMOKE=1 npm run ci:receipts
+```
+
+Do not count that runtime-only proof as a full regression pass.
+
 What it does:
 
 - checks `/api/health`
@@ -68,6 +96,10 @@ What it does:
 - verifies the current Build / Operate / Settings route matrix
 - verifies legacy `/admin/*` and `/ops/*` entry points land on the new native surfaces
 - writes screenshots + `summary.json` to `.artifacts/final-smoke/`
+
+When called through `npm run ci:receipts`, the same screenshots and summary are redirected into `.artifacts/ci/<date>/<run-id>/screenshots/` and mirrored into the CONS-M7A delivery-audit receipt.
+
+The wrapper labels the screenshot phase as `blocked` when prerequisites such as `STAFF_PASSWORD`, `SMOKE_PASSWORD`, `/api/health`, or DB connectivity are missing. A `blocked` screenshot phase means runtime receipts may be green, but the M7A screenshot gate is still open.
 
 3. If `npm run smoke:console` fails:
 
@@ -98,3 +130,13 @@ This repo now has a known-good local path:
 - `npm run smoke:console` as the single approved authenticated smoke path
 
 The cookie is still issued with `secure: true` in app code. The script does not change product behavior; it only turns the real session cookie into a reproducible local Playwright fixture for verification.
+
+## Manual Screenshot Lanes
+
+Keep manual screenshot lanes for:
+
+- new Console surfaces or meaningful UI changes that need first-time acceptance
+- visual polish review that cannot be inferred from scheduled receipts
+- CI receipt failures where the bundle points to an auth, DB, route, overflow, or screenshot blocker
+
+Do not use manual screenshot lanes as the default recurring regression path once scheduled CI receipts are available.

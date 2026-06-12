@@ -246,6 +246,7 @@ model Case {
   source  String  @default("live")
   goal    String?
   blocker String?
+  runtimeInputEpoch Int @default(0)
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -258,6 +259,25 @@ model Case {
 
   @@index([chatId])
   @@map("cases")
+}
+
+model ProcedureRun {
+  id               String   @id
+  caseId           String
+  agentConfigId    String
+  procedureId      String
+  procedureVersion String   @default("v2")
+  status           String
+  inputEpoch       Int      @default(0)
+  needsReconcile   Boolean  @default(false)
+  currentStepId    String?
+  outcome          String?
+  state            Json
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([caseId, status])
+  @@index([agentConfigId, procedureId, status])
 }
 
 // ============================================

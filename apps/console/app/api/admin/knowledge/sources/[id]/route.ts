@@ -4,7 +4,6 @@
 
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 interface KnowledgeSourceParams { id: string }
@@ -18,11 +17,11 @@ const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigI
 
 export const GET = defineRoute<z.infer<typeof getQuerySchema>, KnowledgeSourceParams>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const source = await repo.raw.knowledgeSource.findFirst({
       where: { id: params.id, agentConfigId },
     })
@@ -48,10 +47,10 @@ type UpdateInput = z.infer<typeof updateSchema>
 
 export const PUT = defineRoute<UpdateInput, KnowledgeSourceParams>({
   method: 'PUT',
+  scope: 'agent',
   inputSchema: updateSchema,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const { id } = params
     const existing = await repo.raw.knowledgeSource.findFirst({
       where: { id, agentConfigId },
@@ -81,11 +80,11 @@ export const PUT = defineRoute<UpdateInput, KnowledgeSourceParams>({
 
 export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, KnowledgeSourceParams>({
   method: 'DELETE',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const { id } = params
     const existing = await repo.raw.knowledgeSource.findFirst({
       where: { id, agentConfigId },

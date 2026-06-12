@@ -1,29 +1,16 @@
 # Master Build Handoff — Intera Agent
 
-**Last updated:** 2026-06-10
+**Last updated:** 2026-06-12
 **Audience:** founder, architect, coding-team leads, parallel AI coding sessions
 **Current macro priority:** Foundation Reset before commercial customer deployment
 
 Read first:
 
-1. [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md) - collaboration protocol, verification gates, repo context.
-2. [`../README.md`](../README.md) - doc map and current vocabulary.
-3. [`FOUNDATION_RESET_ROADMAP_CURRENT.md`](./FOUNDATION_RESET_ROADMAP_CURRENT.md) - current Mermaid roadmap from project start through remaining delivery checkpoints.
-4. [`PLATFORM_DELIVERY_AUDIT_GOALS.md`](./PLATFORM_DELIVERY_AUDIT_GOALS.md) - strict phase-by-phase delivery goals, proof requirements, screenshot receipts, and the high-quality acceptance bar for first customer deployment.
-5. [`CODEX_GOAL_DISPATCH.md`](./CODEX_GOAL_DISPATCH.md) - short Goal-mode prompt plus the long-running execution contract, strict stop conditions, and production proof requirements.
-6. [`DELIVERY_UNCERTAINTY_LOG.md`](./DELIVERY_UNCERTAINTY_LOG.md) - running review queue for uncertain points, defaults, blockers, and owner decisions.
-7. [`../strategy/2026-06-10-pilot-commercial-readiness-proposal.md`](../strategy/2026-06-10-pilot-commercial-readiness-proposal.md) - executable Gate A-D implementation guide and acceptance contract for commercial Pilot readiness.
-8. [`BROWSER_SMOKE_RUNBOOK.md`](./BROWSER_SMOKE_RUNBOOK.md) - local browser-smoke/auth timebox rules.
-9. [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompts and historical lane prompts for zero-context coding sessions; do not redispatch shipped lanes without an explicit repair ask.
-10. [`ARCHITECT_AUDIT_2026-06-09.md`](./ARCHITECT_AUDIT_2026-06-09.md) - current risk map and next-lane split before first commercial deployment.
-11. [`COMPONENT_TRUTH_AUDIT_2026-06-10.md`](./COMPONENT_TRUTH_AUDIT_2026-06-10.md) - current implementation-truth audit for Build Components, Pilot Lab compatibility, and legacy entry points.
-12. [`PLAYGROUND_TRUTH_AUDIT_2026-06-10.md`](./PLAYGROUND_TRUTH_AUDIT_2026-06-10.md) - current product/runtime truth for Pilot vs Playground, runtime-backed vs fixture-only validation, and compatibility leftovers.
-13. [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) - historical prompts for the shipped F1-F7/UX0 foundation lanes.
-14. [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md) - active reset plan.
-15. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - architecture source of truth.
-16. [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md) - Console IA, visual system, and UI refactor lanes.
-17. [`CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md`](./CONSOLE_NATIVE_REBUILD_AND_REGRESSION_PLAN.md) - native page rebuild rule, backend contract matrix, and regression gates for Build / Operate / Settings.
-18. [`CONSOLE_FINAL_REGRESSION_CHECKLIST.md`](./CONSOLE_FINAL_REGRESSION_CHECKLIST.md) - copy-paste final invariant, command gates, and route-by-route smoke checklist.
+1. [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) - current architecture source of truth.
+2. [`FOUNDATION_RESET_ROADMAP_CURRENT.md`](./FOUNDATION_RESET_ROADMAP_CURRENT.md) - the single live roadmap.
+3. [`MASTER_BUILD_HANDOFF.md`](./MASTER_BUILD_HANDOFF.md) - this dispatch contract and active-lanes table.
+4. [`DELIVERY_UNCERTAINTY_LOG.md`](./DELIVERY_UNCERTAINTY_LOG.md) - running review queue for uncertain points, defaults, blockers, and owner decisions.
+5. [`../spec/2026-06-12-architecture-consolidation-modules-spec.md`](../spec/2026-06-12-architecture-consolidation-modules-spec.md) - module dispatch spec M1-M7.
 
 ---
 
@@ -74,6 +61,10 @@ Before any coding session edits files, its owned files must be declared either h
 | Lane | Owner/session | Status | Owned files | Notes |
 |---|---|---|---|---|
 | GOAL-P0-PILOT-GATE-A-D | Codex Goal thread `019eb1e6-12c0-7842-b98f-172cfb988f2b` | Active | `packages/shared/prisma/schema.prisma`, `packages/shared/prisma/migrations/20260610000000_add_pilot_persistence/**`, `packages/shared/contracts/pilot.ts`, `apps/console/lib/pilot/**`, `apps/console/app/api/admin/pilot/**`, `apps/console/app/api/admin/config-pilot/**`, `apps/console/lib/config-pilot/**`, `apps/console/app/build/pilot-lab/**`, `scripts/smoke-console-auth.mjs`, `doc/handoffs/DELIVERY_UNCERTAINTY_LOG.md`, `.artifacts/delivery-audit/2026-06-10/**`, `.artifacts/delivery-audit/2026-06-11/production-parity-audit/**`, `.artifacts/delivery-audit/2026-06-11/production-post-deploy/**`, `.artifacts/final-smoke/**`, `.learnings/ERRORS.md` | Gate A-D is deployed to production test and authenticated production Playwright proof is now live. The 2026-06-11 authenticated acceptance run created durable Pilot session/proposal/receipt/handoff artifacts, but it also exposed a standalone deploy bug where Scenario receipts were stored under `.next/standalone` and disappeared after redeploy. Fix `d136258f` (`fix(scenarios): preserve receipts across standalone deploys`) is deployed to production test; a fresh runtime-backed receipt baseline now exists and the same receipt is about to be re-read after a second deploy to close the persistence blocker. See `DELIVERY_UNCERTAINTY_LOG.md` and `.artifacts/delivery-audit/2026-06-11/production-authenticated-acceptance/scenario-store-persistence-summary.md`. |
+| CONS-M2 | Codex worker `019ebaca-6428-7983-a69a-d2a2447a75ca` (`Beauvoir`) | Local code/test + migration gates green; blocked on production restart receipt | `packages/shared/prisma/schema.prisma`, `packages/shared/prisma/migrations/2026061200xx_add_procedure_run/**`, `apps/console/lib/agent/session-store.ts`, `apps/console/lib/agent/__tests__/unit/session-store.test.ts`, `apps/console/lib/agent/__tests__/unit/procedure-run-durability.test.ts`, `apps/console/app/api/messages/route.ts` hydration call sites, `doc/spec/Intera_Harness_架构梳理.md` | Durable ProcedureRun state. Exclusive schema lane for Wave 1. `closeSession` and TTL eviction now await durability-critical ProcedureRun writes before dropping session state, and `prisma migrate deploy` now passes on local `postgresql://intera:intera@localhost:5434/intera`. Do not start CONS-M1 or any other schema lane until this is merged and verified. |
+| CONS-M5 | Codex worker `019ebaca-650b-7233-a71e-f6c8a294fca1` (`Avicenna`) | Local gates green; merge-ready for owned scope | `apps/console/lib/api/define-route.ts`, `apps/console/lib/api/assert-agent-in-org.ts`, 11 admin sub-module routes currently calling `assertAgentInOrg`, `scripts/check-isolation-seam.mjs`, `package.json`, `apps/console/app/api/admin/tools/__tests__/cross-org-isolation.test.ts` | Mechanize tenant isolation through `defineRoute(scope)`, remove duplicated manual assertions, prove CI guard red-on-canary and green-after. Wave 1 manifest ownership stays here; shared script wiring for other lanes must land through coordinator after this lane merges. |
+| CONS-M7A | Codex worker `019ebaca-655a-7c53-a159-e491d89462e2` (`Parfit`) | Local full bundles green; merge-ready for owned scope | `scripts/ci-receipts.mjs`, `scripts/smoke-console-auth.mjs` reuse only, `.artifacts/ci/**`, `deploy/**` scheduling note, `doc/handoffs/BROWSER_SMOKE_RUNBOOK.md` | Receipts-as-CI artifacts only. Zero runtime/product-code behavior changes allowed. Two consecutive authenticated full bundles now pass locally after isolating each screenshot route in its own Playwright page, eliminating cross-route false-positive console failures. |
+| CONS-M7B | Codex worker `019ebaca-6b36-7691-aaa4-d8720885d062` (`Averroes`) | Docs lane complete; merge-ready for owned scope | `doc/README.md`, `doc/handoffs/**` moves/archive only, `doc/archive/**` | Compress read-first docs and add vocabulary lock. Preserve this active-lanes table and current uncertainty log entries while editing handoff docs. |
 
 Rules:
 
@@ -176,7 +167,7 @@ Recommended coding-team shape:
 - UI2 is now reopened product scope on `main`: visual-system convergence only. Do not run it on `hotfix/live-testing`.
 - UI2-A, UI2-B, UI2-C, and UI2-D are shipped locally. Final integration gate is the next checkpoint before push/deploy.
 - Hotfix worktree remains for online minimal repair and small UI bug fixes only. Backport hotfix commits into main with adaptation; do not merge old deploy/main wholesale into main.
-- Use [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md) only for repair-oriented zero-context sessions. Do not redispatch from the shipped F1-F7 prompts or from already-shipped post-foundation lane blocks.
+- Source-history prompt blocks live under [`../archive/`](../archive/). Do not redispatch from the shipped F1-F7 prompts or from already-shipped post-foundation lane blocks.
 
 ---
 
@@ -306,6 +297,7 @@ For doc-only changes, run link/terminology greps and report the remaining old te
 Do not keep long historical task tables in this file. Use:
 
 - [`../what's done/`](../what's%20done/) for shipped receipts.
+- [`../archive/`](../archive/) for source-history docs and the archive index.
 - [`../archive/superseded/`](../archive/superseded/) for replaced plans.
 - [`HARD_BUGS.md`](./HARD_BUGS.md) for live landmines.
 - [`../strategy/2026-06-08-long-term-architecture-review.md`](../strategy/2026-06-08-long-term-architecture-review.md) for the strategic diagnosis.

@@ -73,6 +73,14 @@ rg -n "CaseType|case type|Guardrail|guardrail|Policy|policy|Skill|skill|Sub-Agen
   apps/console/components/memory
 ```
 
+The Procedure/Playbook vocabulary lock has a separate grep gate:
+
+```bash
+rg -i "playbook" apps packages --type ts
+```
+
+Only i18n dictionary values may remain. New API, schema, runtime, package, trace, route, or component identifiers must use `Procedure`, not `Playbook`.
+
 Allowlist only when the hit is:
 
 - an internal type/interface name

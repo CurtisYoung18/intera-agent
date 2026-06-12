@@ -4,7 +4,6 @@
 
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { procedureDefinitionSchema } from '@intera/shared/contracts/case-types'
 
@@ -19,11 +18,11 @@ const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigI
 
 export const GET = defineRoute<z.infer<typeof getQuerySchema>, CaseTypeParams>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const ct = await repo.raw.caseType.findUnique({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })
@@ -50,10 +49,10 @@ type UpdateInput = z.infer<typeof updateSchema>
 
 export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
   method: 'PUT',
+  scope: 'agent',
   inputSchema: updateSchema,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const existing = await repo.raw.caseType.findUnique({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })
@@ -80,11 +79,11 @@ export const PUT = defineRoute<UpdateInput, CaseTypeParams>({
 
 export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, CaseTypeParams>({
   method: 'DELETE',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const existing = await repo.raw.caseType.findUnique({
       where: { agentConfigId_type: { agentConfigId, type: params.name } },
     })

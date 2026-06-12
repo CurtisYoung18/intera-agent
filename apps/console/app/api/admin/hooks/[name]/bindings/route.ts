@@ -2,7 +2,6 @@
 // Creates a HookBinding after validating the referenced scope belongs to the same agent.
 
 import { ConflictError, defineRoute, NotFoundError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiCreated } from '@intera/shared/contracts/envelope'
 import {
   hookBindingCreateInputSchema,
@@ -16,12 +15,12 @@ import {
 
 export const POST = defineRoute<HookBindingCreateInput, HookRouteParams>({
   method: 'POST',
+  scope: 'agent',
   inputSchema: hookBindingCreateInputSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, enabled, ...scopeInput } = input
     const hookName = params.name
-    await assertAgentInOrg(repo, agentConfigId)
 
     const hook = await repo.raw.hook.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: hookName } },

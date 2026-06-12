@@ -39,6 +39,58 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-12 - CONS-M2 Production Restart Receipt Still Pending After Local Migration Proof
+
+- Area: Consolidation M2 / ProcedureRun durability / migration verification
+- Status: open
+- Severity: P0
+- Uncertainty: CONS-M2's local durability and migration proof is now complete, but the required production restart/resume receipt on `https://demo.anytrans.ai` still has not been executed from this lane.
+- Default action taken: Started the existing local Homebrew Postgres 16 cluster on port `5434`, created the expected `intera` role/database, reran `prisma migrate deploy` against `postgresql://intera:intera@localhost:5434/intera`, and confirmed the new `202606120001_add_procedure_run` migration applied cleanly. The lane's remaining blocker is now only the production `intera-console.service` restart/resume proof.
+- Why this default: The local proof can and should be completed automatically once safe local Postgres exists, but the lane still must not claim production durability proof without the actual mid-run restart/resume evidence on `demo.anytrans.ai`.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m2/receipt.md`; local command output from `pg_ctl ... -o "-p 5434" start`, role/database creation on `localhost:5434`, and successful `npx prisma migrate deploy --schema=packages/shared/prisma/schema.prisma`; rework tests in `apps/console/lib/agent/__tests__/unit/procedure-run-durability.test.ts`.
+- Production URL / screenshot / receipt: Pending. Required target remains `https://demo.anytrans.ai` with `intera-console.service` restarted mid-run and ProcedureRun timeline continuity captured.
+- Owner decision needed: Provide the production restart/testing path for the second-phase receipt, or surface the SSH credential in the active secure session so the architect can execute the restart proof directly.
+- Follow-up owner: delivery lead / infrastructure owner
+
+### 2026-06-12 - CONS-M5 Raw-Access Guard Uses Reviewed Allowlist For Out-Of-Lane Admin Routes
+
+- Area: Tenant isolation / admin API seam / consolidation M5
+- Status: default-applied
+- Severity: P2
+- Uncertainty: The M5 dispatch names 11 admin sub-module route files for migration, but this spawned checkout has additional admin API files containing `repo.raw` or direct Prisma access because parallel lanes and older org-scoped routes are also present. Migrating those additional routes would change behavior outside the CONS-M5 owned-file list, especially routes with no-agent fallback, org-scoped parent resources, playground export/session reads, and helper-only modules.
+- Default action taken: Migrated only the 11 owned admin sub-module route files to `defineRoute({ scope: 'agent' })`, removed their hand-rolled `assertAgentInOrg` calls, and added `scripts/check-isolation-seam.mjs` with a reviewed allowlist for the remaining raw-access admin files. The guard fails any new unreviewed raw/direct-Prisma admin route without `scope: 'agent'`.
+- Why this default: It mechanizes the customer-2 isolation seam for the lane-owned sub-module routes without silently changing unrelated admin route semantics during concurrent consolidation work.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m5/summary.md`; `scripts/check-isolation-seam.mjs`; `apps/console/app/api/admin/tools/__tests__/cross-org-isolation.test.ts`
+- Production URL / screenshot / receipt: No production deploy performed for this internal API seam lane. Local guard red-on-canary/green-after and keyless tests are recorded in `.artifacts/delivery-audit/2026-06-12/cons-m5/summary.md`.
+- Owner decision needed: Confirm whether a later lane should convert currently allowlisted raw-access admin files to explicit `scope: 'agent'` or `scope: 'org'` declarations once their route semantics are reviewed.
+- Follow-up owner: architect / delivery lead
+
+### 2026-06-12 - CONS-M7A Local Screenshot Gate Recovered After Smoke Harness Isolation Fix
+
+- Area: Receipt CI / browser smoke / consolidation M7A
+- Status: fixed
+- Severity: P2
+- Uncertainty: The first local full smoke attempt was a false negative from the harness itself: `scripts/smoke-console-auth.mjs` reused one Playwright page across route transitions, so aborted fetches from the previous route could be misattributed to the next route as console errors.
+- Default action taken: Restored the local smoke prerequisites (local Postgres on `5434`, seeded owner login, healthy dev server on `127.0.0.1:3001`), changed the smoke harness to open a fresh page per route, then reran `npm run smoke:console` and two consecutive full `npm run ci:receipts` bundles. All phases passed, including authenticated desktop/mobile golden-loop screenshots.
+- Why this default: M7A is only as trustworthy as its harness. A route-isolated browser page is the smallest fix that removes cross-route console contamination without changing product/runtime behavior.
+- Evidence: `.artifacts/final-smoke/m7a-rerun/summary.json`; `.artifacts/delivery-audit/2026-06-12/cons-m7a/20260612T163547/summary.md`; `.artifacts/delivery-audit/2026-06-12/cons-m7a/20260612T163659/summary.md`; `scripts/smoke-console-auth.mjs`
+- Production URL / screenshot / receipt: This fix closes the local smoke harness gap only. Production acceptance for any user-facing lane remains governed by `https://demo.anytrans.ai` per `PLATFORM_DELIVERY_AUDIT_GOALS.md`.
+- Owner decision needed: None for local lane truth. If desired later, install the documented cron/systemd-timer on the host and archive two production-host automated bundles as an ops follow-up.
+- Follow-up owner: none
+
+### 2026-06-12 - Consolidation Spec And Dispatch Docs Need Repo-Relative Landing
+
+- Area: Docs compression / consolidation dispatch
+- Status: fixed
+- Severity: P2
+- Uncertainty: The authoritative M1-M7 consolidation dispatch, spec, and execution plan were initially present only as coordinator reference material on the desktop main checkout, which forced spawned lanes to treat them as read-only authority instead of normal repo-relative docs.
+- Default action taken: The coordinator landed the three consolidation docs into the repo (`doc/handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md`, `doc/spec/2026-06-12-architecture-consolidation-modules-spec.md`, `doc/to-do/2026-06-12-consolidation-m1-m7-execution-plan.md`) and simplified the live read-first entries back to normal repo-relative links.
+- Why this default: Consolidation implementation lanes need repo-local normative docs; leaving them desktop-only would keep dispatch brittle and make documentation truth machine-dependent.
+- Evidence: `doc/handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md`; `doc/spec/2026-06-12-architecture-consolidation-modules-spec.md`; `doc/to-do/2026-06-12-consolidation-m1-m7-execution-plan.md`; `.artifacts/delivery-audit/2026-06-12/cons-m7b/summary.md`
+- Production URL / screenshot / receipt: Not applicable; docs-only lane.
+- Owner decision needed: None.
+- Follow-up owner: architect / coordinator
+
 ### 2026-06-12 - Procedure v2 Merge-Candidate Is Green In Code But Missing Authenticated UI Proof
 
 - Area: Procedure authoring / runtime / local verification

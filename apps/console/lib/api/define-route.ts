@@ -24,6 +24,7 @@ import { getSession, type ActiveSession } from '@/lib/auth'
 import { resolveOrgFromApiKey, isTrustedInternalCall } from '@/lib/api-auth'
 import { prisma } from '@intera/shared/prisma'
 import { logger } from '@/lib/logger'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 
 // ── Typed errors handlers can throw ──
 export class RouteError extends Error {
@@ -96,6 +97,7 @@ type NextRouteContext<Params> = { params: Promise<Params> }
 /** Roles that can access this route. Omit for unauthenticated access.
  *  The handler won't be called if the session role doesn't match. */
 type Role = 'owner' | 'admin' | 'operator' | 'viewer'
+type RouteScope = 'agent' | 'org'
 
 interface RouteDef<Input, Params> {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -110,6 +112,8 @@ interface RouteDef<Input, Params> {
   requireRole?: Role[]
   /** Auth mode — how orgId is resolved. Default: 'session'. */
   auth?: AuthMode
+  /** Tenant boundary for this route. Agent-scoped routes assert org ownership before handler code runs. */
+  scope?: RouteScope
   handler: (ctx: RouteContext<Input, Params>) => Promise<ApiEnvelope<unknown> | NextResponse>
 }
 
@@ -160,6 +164,11 @@ export function defineRoute<Input = void, Params = void>(
 
       // 2. Build tenant-scoped repo
       const repo = repoForOrg(session.orgId)
+
+      if (def.scope === 'agent') {
+        const agentConfigId = resolveAgentConfigId(input, params, req)
+        await assertAgentInOrg(repo, agentConfigId)
+      }
 
       // 3. Build audit writer — currently a no-op structured logger.
       //    Lane D (G3 identity) will wire this to the AuditLog table.
@@ -289,4 +298,30 @@ function buildLogger(session: RouteSession): RouteLogger {
 function envelopeResponse(envelope: ApiEnvelope<unknown>, statusOverride?: number): NextResponse {
   const status = statusOverride ?? (envelope.ok ? 200 : errorCodeToStatus[envelope.error.code])
   return NextResponse.json(envelope, { status })
+}
+
+function resolveAgentConfigId(input: unknown, params: unknown, req: NextRequest): string | undefined {
+  return (
+    readAgentConfigId(input)
+    ?? readAgentConfigId(params)
+    ?? readAgentConfigIdFromSearch(req)
+  )
+}
+
+function readAgentConfigId(source: unknown): string | undefined {
+  if (!source || typeof source !== 'object') return undefined
+  const record = source as Record<string, unknown>
+  for (const key of ['agentConfigId', 'agentId']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim().length > 0) return value
+  }
+  return undefined
+}
+
+function readAgentConfigIdFromSearch(req: NextRequest): string | undefined {
+  for (const key of ['agentConfigId', 'agentId']) {
+    const value = req.nextUrl.searchParams.get(key)
+    if (value && value.trim().length > 0) return value
+  }
+  return undefined
 }

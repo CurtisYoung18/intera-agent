@@ -2,7 +2,6 @@
 // Foundation Reset F4: item-level Hook CRUD, scoped by agentConfigId.
 
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
   agentConfigQuerySchema,
@@ -22,11 +21,11 @@ import {
 
 export const GET = defineRoute<AgentConfigQueryInput, HookRouteParams>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: agentConfigQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
 
     const hook = await repo.raw.hook.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
@@ -44,12 +43,12 @@ export const GET = defineRoute<AgentConfigQueryInput, HookRouteParams>({
 
 export const PUT = defineRoute<HookUpdateInput, HookRouteParams>({
   method: 'PUT',
+  scope: 'agent',
   inputSchema: hookUpdateInputSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, handler, handlerKind, ...fields } = input
     const hookName = params.name
-    await assertAgentInOrg(repo, agentConfigId)
 
     const existing = await repo.raw.hook.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: hookName } },
@@ -95,13 +94,13 @@ export const PUT = defineRoute<HookUpdateInput, HookRouteParams>({
 
 export const DELETE = defineRoute<AgentConfigQueryInput, HookRouteParams>({
   method: 'DELETE',
+  scope: 'agent',
   inputSchema: agentConfigQuerySchema,
   parseQuery: true,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
     const hookName = params.name
-    await assertAgentInOrg(repo, agentConfigId)
 
     const existing = await repo.raw.hook.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: hookName } },

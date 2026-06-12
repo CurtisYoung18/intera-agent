@@ -1,23 +1,15 @@
 # Intera Documentation Map
 
-**Last updated:** 2026-06-10
-**Purpose:** keep the docs usable for parallel AI coding teams after the shipped Foundation Reset baseline and the Q3 truth-cleanup pass.
+**Last updated:** 2026-06-12
+**Purpose:** keep the docs usable for parallel AI coding teams after the Foundation Reset and during the architecture consolidation program.
 
 ## Read order
 
-1. [`handoffs/GENERIC_HANDOFF.md`](./handoffs/GENERIC_HANDOFF.md) - stable repo context and collaboration rules.
-2. [`handoffs/MASTER_BUILD_HANDOFF.md`](./handoffs/MASTER_BUILD_HANDOFF.md) - current macro priority, active lanes, and dispatch order.
-3. [`handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md`](./handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md) - Mermaid roadmap from project start through remaining P0 delivery checkpoints.
-4. [`handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](./handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) - strict first-customer delivery goals, screenshot/receipt requirements, and high-quality acceptance bar.
-5. [`handoffs/CODEX_GOAL_DISPATCH.md`](./handoffs/CODEX_GOAL_DISPATCH.md) - short Goal-mode prompt plus strict long-run execution contract and stop conditions.
-6. [`handoffs/DELIVERY_UNCERTAINTY_LOG.md`](./handoffs/DELIVERY_UNCERTAINTY_LOG.md) - running review queue for uncertain points, defaults, blockers, and owner decisions.
-7. [`strategy/2026-06-10-pilot-commercial-readiness-proposal.md`](./strategy/2026-06-10-pilot-commercial-readiness-proposal.md) - executable Gate A-D implementation guide and acceptance contract for the commercial Pilot cockpit.
-8. [`handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md`](./handoffs/POST_FOUNDATION_DISPATCH_PROMPTS.md) - repair-ready prompt history after the shipped baseline; do not redispatch shipped lanes from it without an explicit repair ask.
-9. [`to-do/2026-06-08-foundation-reset-domain-model.md`](./to-do/2026-06-08-foundation-reset-domain-model.md) - the owner-approved reset plan and historical migration record.
-10. [`spec/Intera_Harness_架构梳理.md`](./spec/Intera_Harness_架构梳理.md) - current product and architecture source of truth.
-11. [`spec/Intera_UI_UX_Design_System.md`](./spec/Intera_UI_UX_Design_System.md) - current Console IA, visual system, and UI refactor lanes.
-12. [`strategy/2026-06-08-long-term-architecture-review.md`](./strategy/2026-06-08-long-term-architecture-review.md) - strategic diagnosis that led to the reset.
-13. [`handoffs/HARD_BUGS.md`](./handoffs/HARD_BUGS.md) - live landmines that still matter while the reset is underway.
+1. [`spec/Intera_Harness_架构梳理.md`](./spec/Intera_Harness_架构梳理.md) - current product and architecture source of truth.
+2. [`handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md`](./handoffs/FOUNDATION_RESET_ROADMAP_CURRENT.md) - the single live roadmap.
+3. [`handoffs/MASTER_BUILD_HANDOFF.md`](./handoffs/MASTER_BUILD_HANDOFF.md) - current dispatch, active lanes, and coordination rules.
+4. [`handoffs/DELIVERY_UNCERTAINTY_LOG.md`](./handoffs/DELIVERY_UNCERTAINTY_LOG.md) - running review queue for uncertain points, defaults, blockers, and owner decisions.
+5. [`spec/2026-06-12-architecture-consolidation-modules-spec.md`](./spec/2026-06-12-architecture-consolidation-modules-spec.md) - module dispatch spec M1-M7.
 
 ## Current vocabulary
 
@@ -27,7 +19,7 @@ Use these names in new docs, APIs, UI, traces, and package manifests:
 |---|---|
 | `Runtime shell` | Transitional durable persistence record. New product copy should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory. |
 | `Procedure type` | Configurable issue category and routing target. |
-| `Procedure` | Soft customer-service process attached to a Procedure type. |
+| `Procedure` | Soft customer-service process attached to a Procedure type. This is the only API, schema, runtime, package, and trace identifier. |
 | `ProcedureStep` | A selectable/configurable step inside a Procedure. |
 | `Tool` | Any Agent-callable capability. |
 | `Hook` | Hard control layer for PreToolUse, PostToolUse, and Stop checkpoints. |
@@ -36,6 +28,8 @@ Use these names in new docs, APIs, UI, traces, and package manifests:
 | `Scenario` | Delivery validation case and receipt source. |
 | `ConfigPilot` | Conversational configuration assistant that writes only through typed APIs. |
 | `Quiet Agent Studio` | First-launch UI theme: unified light-first product shell with focused light workspaces. |
+
+UI copy may render `Procedure` as "Playbook" through i18n dictionary values only. Do not introduce new `playbook` code identifiers, route names, schema fields, runtime event names, package keys, or trace keys.
 
 Legacy names may appear in historical receipts, raw input, archived plans, and the original philosophy reference: `Skill`, `Policy`, `Guardrail`, `stage`, `sub-agent`, `preFinalize`.
 
@@ -58,6 +52,7 @@ Legacy names may appear in historical receipts, raw input, archived plans, and t
 | [`tools-real/`](./tools-real/) | Reference | Real API/tool notes from the current gaming/iGaming sample domain. |
 | [`GPTBots知识库API/`](./GPTBots知识库API/) | Vendor reference | GPTBots knowledge API notes. |
 | [`what's done/`](./what's%20done/) | Historical receipts | Shipped work logs. Useful evidence, not current truth. |
+| [`archive/`](./archive/) | Archived | Source history, superseded plans, and evidence indexes. Start at [`archive/README.md`](./archive/README.md). |
 | [`archive/superseded/`](./archive/superseded/) | Archived | Plans/spec supplements replaced by the Foundation Reset. |
 
 ## Governance rules
@@ -67,3 +62,4 @@ Legacy names may appear in historical receipts, raw input, archived plans, and t
 - Move replaced plans/specs to `archive/superseded/`.
 - Do not duplicate roadmap detail into every handoff; link to the reset plan.
 - Historical receipts may keep old terminology if changing it would distort evidence.
+- Final terminology sweeps must include `rg -i "playbook" apps packages --type ts`; only i18n dictionary values may remain.

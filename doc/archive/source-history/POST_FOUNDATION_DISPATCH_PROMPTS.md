@@ -6,7 +6,7 @@
 
 The old [`FOUNDATION_RESET_LANE_PROMPTS.md`](./FOUNDATION_RESET_LANE_PROMPTS.md) file is historical. Do not redispatch F1-F7 from it.
 
-**Status on 2026-06-10:** P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`. The lane blocks below are historical repair prompts unless the coordinator explicitly reopens one. For current truth and next-step status, read [`MASTER_BUILD_HANDOFF.md`](./MASTER_BUILD_HANDOFF.md) first.
+**Status on 2026-06-10:** P1, R3, S2, U-Pilot, PKG1, BASE1, and Q3-B1 are already shipped on local `main`. The lane blocks below are historical repair prompts unless the coordinator explicitly reopens one. For current truth and next-step status, read [`MASTER_BUILD_HANDOFF.md`](../../handoffs/MASTER_BUILD_HANDOFF.md) first.
 
 ---
 

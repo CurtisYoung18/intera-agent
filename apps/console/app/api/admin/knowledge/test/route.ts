@@ -3,7 +3,6 @@
 
 import { z } from 'zod'
 import { defineRoute, NotFoundError, RouteError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 const GPTBOTS_API = 'https://api-sg.gptbots.ai/v1/vector/match'
@@ -47,9 +46,9 @@ function normalizeMatch(item: any) {
 
 export const POST = defineRoute<TestInput>({
   method: 'POST',
+  scope: 'agent',
   inputSchema: testSchema,
   async handler({ input, repo }) {
-    await assertAgentInOrg(repo, input.agentConfigId)
     const apiKey = await getApiKey(repo, input.agentConfigId)
     if (!apiKey) {
       throw new RouteError('internal', 'GPTBots API key is not configured for this Agent. Add it in Knowledge -> GPTBots API.', undefined, 503)

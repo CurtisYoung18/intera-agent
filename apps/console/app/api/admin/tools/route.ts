@@ -5,7 +5,6 @@
 import { z } from 'zod'
 import { ValidationError } from '@/lib/api/define-route'
 import { defineRoute } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import {
   toolCreateRequestSchema,
@@ -19,11 +18,11 @@ const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigI
 // ── GET ──
 export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
 
     let tools = await repo.raw.tool.findMany({
       where: { agentConfigId },
@@ -77,11 +76,11 @@ type PostInput = z.infer<typeof postBodySchema>
 
 export const POST = defineRoute<PostInput>({
   method: 'POST',
+  scope: 'agent',
   inputSchema: postBodySchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
     if (RETIRED_TOOL_NAMES.has(fields.name)) {
       throw new ValidationError(`Tool "${fields.name}" is retired and can no longer be created.`)
     }

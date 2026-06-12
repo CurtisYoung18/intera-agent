@@ -4,7 +4,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
-import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type CaseSession, type RuntimeEventSource } from '@/lib/agent/session-store'
 import {
   hasProviderOrDisplayContent,
   hydrateMessageFromDb,
@@ -12,6 +11,17 @@ import {
   serializeMessageForPersistence,
   type MessagePersistenceRecord,
 } from '@/lib/agent/provider-transcript'
+import {
+  bindProcedureRuntimeAgentConfig,
+  enqueueMessageOrCreate,
+  flushProcedureRunPersistence,
+  getOrCreateSession,
+  hasSession,
+  hydrateProcedureRuntime,
+  recordInitialInputEvent,
+  type CaseSession,
+  type RuntimeEventSource,
+} from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { prisma } from '@intera/shared/prisma'
@@ -699,7 +709,14 @@ export async function POST(request: NextRequest) {
 
         // ── Concurrency guard: if an AgentLoop is already running for this caseId,
         //     enqueue the message and return 202 — don't create a second loop.
-        if (hasSession(resolvedCaseId)) {
+        const existingLiveSession = hasSession(resolvedCaseId)
+        if (!existingLiveSession) {
+          await hydrateProcedureRuntime(resolvedCaseId, { agentConfigId: resolvedAgentConfigId })
+        } else {
+          bindProcedureRuntimeAgentConfig(resolvedCaseId, resolvedAgentConfigId)
+        }
+
+        if (existingLiveSession) {
           enqueueMessageOrCreate(resolvedCaseId, {
             content: userMessage,
             contentBlocks,
@@ -707,6 +724,7 @@ export async function POST(request: NextRequest) {
             source: runtimeInputSource,
             origin: runtimeInputSource === 'human_task_result' ? 'human' : 'customer',
           })
+          await flushProcedureRunPersistence(resolvedCaseId)
           sendEvent({
             type: 'withheld',
             data: 'Message queued — agent is currently processing',
@@ -734,6 +752,7 @@ export async function POST(request: NextRequest) {
           source: runtimeInputSource,
           origin: runtimeInputSource === 'human_task_result' ? 'human' : 'customer',
         })
+        await flushProcedureRunPersistence(resolvedCaseId)
 
         const agentLoop = await AgentLoop.create({
           config: agentConfig,

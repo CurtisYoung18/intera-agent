@@ -2,7 +2,6 @@
 // Foundation Reset F4: canonical Hook admin API, scoped by agentConfigId.
 
 import { defineRoute } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiCreated, apiOk } from '@intera/shared/contracts/envelope'
 import {
   agentConfigQuerySchema,
@@ -23,11 +22,11 @@ import {
 
 export const GET = defineRoute<AgentConfigQueryInput>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: agentConfigQuerySchema,
   parseQuery: true,
   async handler({ input, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
 
     const [hooks, bindings, caseTypes, tools] = await Promise.all([
       repo.raw.hook.findMany({
@@ -70,11 +69,11 @@ export const GET = defineRoute<AgentConfigQueryInput>({
 
 export const POST = defineRoute<HookCreateInput>({
   method: 'POST',
+  scope: 'agent',
   inputSchema: hookCreateInputSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, repo, audit }) {
     const { agentConfigId, handler, handlerKind, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
 
     const normalizedHandler = normalizeHandler(handlerKind, handler)
     await validateHandlerToolReferences(repo, agentConfigId, normalizedHandler)

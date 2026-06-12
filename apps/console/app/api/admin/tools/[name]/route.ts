@@ -4,7 +4,6 @@
 
 import { z } from 'zod'
 import { defineRoute, ForbiddenError, NotFoundError, ValidationError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
   toolUpdateRequestSchema,
@@ -36,11 +35,11 @@ const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigI
 
 export const GET = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     if (isRetired(params.name)) throw new NotFoundError(`Tool "${params.name}" not found`)
     const tool = await repo.raw.tool.findUnique({
       where: { agentConfigId_name: { agentConfigId, name: params.name } },
@@ -58,11 +57,11 @@ type PutInput = z.infer<typeof putBodySchema>
 
 export const PUT = defineRoute<PutInput, ToolParams>({
   method: 'PUT',
+  scope: 'agent',
   inputSchema: putBodySchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
     if (isRetired(params.name)) throw new NotFoundError(`Tool "${params.name}" not found`)
 
     const existing = await repo.raw.tool.findUnique({
@@ -113,12 +112,12 @@ export const PUT = defineRoute<PutInput, ToolParams>({
 // ── DELETE ──
 export const DELETE = defineRoute<z.infer<typeof getQuerySchema>, ToolParams>({
   method: 'DELETE',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
     if (isRetired(params.name)) throw new NotFoundError(`Tool "${params.name}" not found`)
     if (isProtected(params.name)) {
       throw new ForbiddenError(`Cannot delete protected tool "${params.name}"`)

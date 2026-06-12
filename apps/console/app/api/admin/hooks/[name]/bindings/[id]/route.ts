@@ -2,7 +2,7 @@
 // Foundation Reset F4: nested HookBinding CRUD.
 
 import { ConflictError, defineRoute, NotFoundError } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
+import type { RepoForOrg } from '@/lib/db/repo-for-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
   agentConfigQuerySchema,
@@ -19,7 +19,7 @@ import {
 } from '../../../_helpers'
 
 async function findHookAndBinding(
-  repo: Parameters<typeof assertAgentInOrg>[0],
+  repo: RepoForOrg,
   agentConfigId: string,
   hookName: string,
   bindingId: string,
@@ -39,12 +39,12 @@ async function findHookAndBinding(
 
 export const GET = defineRoute<AgentConfigQueryInput, HookBindingRouteParams>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: agentConfigQuerySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
     const { agentConfigId } = input
     const { name, id } = params
-    await assertAgentInOrg(repo, agentConfigId)
 
     const { hook, binding } = await findHookAndBinding(repo, agentConfigId, name, id)
     return apiOk({ binding: serializeBinding(binding, hook.name) })
@@ -53,12 +53,12 @@ export const GET = defineRoute<AgentConfigQueryInput, HookBindingRouteParams>({
 
 export const PUT = defineRoute<HookBindingUpdateInput, HookBindingRouteParams>({
   method: 'PUT',
+  scope: 'agent',
   inputSchema: hookBindingUpdateInputSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId, enabled } = input
     const { name, id } = params
-    await assertAgentInOrg(repo, agentConfigId)
 
     const { hook, binding: existing } = await findHookAndBinding(repo, agentConfigId, name, id)
     const data: Record<string, unknown> = {}
@@ -93,13 +93,13 @@ export const PUT = defineRoute<HookBindingUpdateInput, HookBindingRouteParams>({
 
 export const DELETE = defineRoute<AgentConfigQueryInput, HookBindingRouteParams>({
   method: 'DELETE',
+  scope: 'agent',
   inputSchema: agentConfigQuerySchema,
   parseQuery: true,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo, audit }) {
     const { agentConfigId } = input
     const { name, id } = params
-    await assertAgentInOrg(repo, agentConfigId)
 
     const { hook, binding } = await findHookAndBinding(repo, agentConfigId, name, id)
     await repo.raw.hookBinding.delete({ where: { id: binding.id } })

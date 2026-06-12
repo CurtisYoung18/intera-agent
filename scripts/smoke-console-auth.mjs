@@ -206,6 +206,32 @@ async function smokeLegacyRedirect(page, route, expectedPathname) {
   }
 }
 
+async function smokeRoutesInContext(context, routes, width, height) {
+  const results = []
+  for (const route of routes) {
+    const page = await context.newPage()
+    try {
+      results.push(await smokeRoute(page, route, width, height))
+    } finally {
+      await page.close()
+    }
+  }
+  return results
+}
+
+async function smokeLegacyRedirectsInContext(context, routes) {
+  const results = []
+  for (const [route, expectedPathname] of routes) {
+    const page = await context.newPage()
+    try {
+      results.push(await smokeLegacyRedirect(page, route, expectedPathname))
+    } finally {
+      await page.close()
+    }
+  }
+  return results
+}
+
 async function main() {
   const sessionCookie = await loginAndGetCookie()
   const detailRoutes = await discoverDetailRoutes(sessionCookie)
@@ -257,11 +283,7 @@ async function main() {
   try {
     const desktopContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     await desktopContext.addCookies(contextCookies)
-    const desktopPage = await desktopContext.newPage()
-    const desktop = []
-    for (const route of desktopRoutes) {
-      desktop.push(await smokeRoute(desktopPage, route, 1440, 900))
-    }
+    const desktop = await smokeRoutesInContext(desktopContext, desktopRoutes, 1440, 900)
     await desktopContext.close()
 
     const mobileContext = await browser.newContext({
@@ -271,20 +293,12 @@ async function main() {
         'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
     })
     await mobileContext.addCookies(contextCookies)
-    const mobilePage = await mobileContext.newPage()
-    const mobile = []
-    for (const route of mobileRoutes) {
-      mobile.push(await smokeRoute(mobilePage, route, 390, 844))
-    }
+    const mobile = await smokeRoutesInContext(mobileContext, mobileRoutes, 390, 844)
     await mobileContext.close()
 
     const redirectContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
     await redirectContext.addCookies(contextCookies)
-    const redirectPage = await redirectContext.newPage()
-    const legacyRedirects = []
-    for (const [route, expectedPathname] of legacyRedirectRoutes) {
-      legacyRedirects.push(await smokeLegacyRedirect(redirectPage, route, expectedPathname))
-    }
+    const legacyRedirects = await smokeLegacyRedirectsInContext(redirectContext, legacyRedirectRoutes)
     await redirectContext.close()
 
     const summary = { desktop, mobile, legacyRedirects }

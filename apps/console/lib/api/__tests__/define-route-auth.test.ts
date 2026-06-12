@@ -2,8 +2,25 @@
 // correct orgId, and error cases produce correct status codes.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { z } from 'zod'
 
 // ── Mocks (hoisted by vitest) ──
+
+const h = vi.hoisted(() => {
+  const agentConfigs: Record<string, { id: string; orgId: string }> = {}
+  const repoForOrgMock = vi.fn((orgId: string) => ({
+    orgId,
+    agentConfig: {
+      findUnique: vi.fn(async (args: any) => {
+        const id = args?.where?.id
+        const config = agentConfigs[id]
+        if (!config || config.orgId !== orgId) return null
+        return { id: config.id }
+      }),
+    },
+  }))
+  return { agentConfigs, repoForOrgMock }
+})
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -16,6 +33,10 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/api-auth', () => ({
   resolveOrgFromApiKey: vi.fn(),
   isTrustedInternalCall: vi.fn(),
+}))
+
+vi.mock('@/lib/db/repo-for-org', () => ({
+  repoForOrg: h.repoForOrgMock,
 }))
 
 vi.mock('@intera/shared/prisma', () => {
@@ -47,7 +68,10 @@ import { prisma } from '@intera/shared/prisma'
 
 // ── Helpers ──
 
-function mkReq(url = 'http://localhost/api/test', opts?: { headers?: Record<string, string> }): NextRequest {
+function mkReq(
+  url = 'http://localhost/api/test',
+  opts?: { method?: string; headers?: Record<string, string>; body?: BodyInit },
+): NextRequest {
   return new NextRequest(new URL(url), opts)
 }
 
@@ -58,6 +82,8 @@ const mockFindFirst = (prisma as any).channelBinding.findFirst as ReturnType<typ
 
 beforeEach(() => {
   vi.clearAllMocks()
+  h.agentConfigs.agent_a = { id: 'agent_a', orgId: 'acme' }
+  h.agentConfigs.agent_b = { id: 'agent_b', orgId: 'other-org' }
 })
 
 // ── Tests ──
@@ -131,6 +157,78 @@ describe('defineRoute auth modes', () => {
 
       await handler(mkReq())
       expect(called).toBe(true)
+    })
+  })
+
+  // ─── scope: agent ───
+
+  describe('scope: agent', () => {
+    it('rejects a foreign query agentConfigId before the route handler runs', async () => {
+      mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
+
+      let called = false
+      const handler = defineRoute<{ agentConfigId: string }>({
+        method: 'GET',
+        scope: 'agent',
+        inputSchema: z.object({ agentConfigId: z.string() }),
+        parseQuery: true,
+        handler: async () => {
+          called = true
+          return { ok: true, data: {} }
+        },
+      })
+
+      const res = await handler(mkReq('http://localhost/api/test?agentConfigId=agent_b'))
+      const body = await res.json()
+
+      expect(res.status).toBe(404)
+      expect(body.error.code).toBe('not_found')
+      expect(called).toBe(false)
+    })
+
+    it('allows an owned body agentConfigId before invoking the route handler', async () => {
+      mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
+
+      let captured: any = null
+      const handler = defineRoute<{ agentConfigId: string }>({
+        method: 'POST',
+        scope: 'agent',
+        inputSchema: z.object({ agentConfigId: z.string() }),
+        handler: async (ctx) => {
+          captured = ctx.input
+          return { ok: true, data: { ok: true } }
+        },
+      })
+
+      const res = await handler(mkReq('http://localhost/api/test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentConfigId: 'agent_a' }),
+      }))
+
+      expect(res.status).toBe(200)
+      expect(captured).toEqual({ agentConfigId: 'agent_a' })
+    })
+
+    it('resolves agentConfigId from route params when the route carries the agent id in the path', async () => {
+      mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
+
+      let called = false
+      const handler = defineRoute<void, { agentConfigId: string }>({
+        method: 'GET',
+        scope: 'agent',
+        handler: async () => {
+          called = true
+          return { ok: true, data: {} }
+        },
+      })
+
+      const res = await handler(mkReq(), { params: Promise.resolve({ agentConfigId: 'agent_b' }) })
+      const body = await res.json()
+
+      expect(res.status).toBe(404)
+      expect(body.error.code).toBe('not_found')
+      expect(called).toBe(false)
     })
   })
 

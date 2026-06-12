@@ -4,7 +4,6 @@
 
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import { procedureDefinitionSchema } from '@intera/shared/contracts/case-types'
 
@@ -17,11 +16,11 @@ const getQuerySchema = z.object({ agentConfigId: z.string().min(1, 'agentConfigI
 
 export const GET = defineRoute<z.infer<typeof getQuerySchema>>({
   method: 'GET',
+  scope: 'agent',
   inputSchema: getQuerySchema,
   parseQuery: true,
   async handler({ input, repo }) {
     const { agentConfigId } = input
-    await assertAgentInOrg(repo, agentConfigId)
 
     const types = await repo.raw.caseType.findMany({
       where: { agentConfigId },
@@ -49,10 +48,10 @@ type CreateInput = z.infer<typeof createSchema>
 
 export const POST = defineRoute<CreateInput>({
   method: 'POST',
+  scope: 'agent',
   inputSchema: createSchema,
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
-    await assertAgentInOrg(repo, agentConfigId)
     const ct = await repo.raw.caseType.create({
       data: {
         agentConfigId,

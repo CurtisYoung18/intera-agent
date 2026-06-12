@@ -6,7 +6,8 @@
 // therefore use `repo.raw.tool.*` (UNSCOPED Prisma) keyed by a CLIENT-SUPPLIED
 // `agentConfigId`, with NO check that the agentConfig belongs to the caller's
 // `session.orgId`. The real isolation boundary is now: "does this agentConfigId
-// belong to session.orgId?" — and it is currently NOT enforced at the route seam.
+// belong to session.orgId?" CONS-M5 centralizes that seam through
+// defineRoute({ scope: 'agent' }).
 //
 // This test reproduces the production data model faithfully:
 //   • Tool rows have NO org_id; they can only be filtered by agentConfigId
@@ -18,9 +19,9 @@
 // belongs to ORG B's agent. A correct handler MUST 403/404 and return NO org-B
 // data, and (for writes) MUST NOT mutate org-B's rows.
 //
-// EXPECTED RESULT AGAINST CURRENT CODE: RED. The handler trusts the client id and
-// leaks / mutates org-B data. Flip to GREEN once an ownership check
-// (e.g. assertAgentInOrg) is wired into the sub-module routes.
+// Template rule: every new admin sub-module route that reads/writes agent-scoped
+// rows through repo.raw.* must add a red->green cross-org case modeled on this
+// file before merge.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -105,6 +106,7 @@ vi.mock('@/lib/tool-classifications', () => ({
   SYSTEM_TOOL_NAMES: new Set<string>(),
   SPECIAL_TOOL_NAMES: new Set<string>(),
   CHANNEL_TOOL_NAMES: new Set<string>(),
+  RETIRED_TOOL_NAMES: new Set<string>(),
 }))
 // BUILT_IN_TOOLS empty so GET does not auto-create rows that confuse the count.
 vi.mock('@/lib/agent/tools', () => ({ BUILT_IN_TOOLS: [] }))

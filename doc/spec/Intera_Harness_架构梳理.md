@@ -158,12 +158,13 @@ Target state shape:
 ```ts
 type ProcedureRunState = {
   runId: string
+  agentConfigId?: string
   procedureId: string
   status: 'active' | 'paused' | 'completed' | 'cancelled'
   inputEpoch: number
   lastReconciledInputEpoch: number
   needsReconcile: boolean
-  currentStepId: string
+  currentStepId: string | null
   steps: Array<{
     id: string
     status: 'pending' | 'active' | 'completed' | 'skipped' | 'blocked'
@@ -171,8 +172,11 @@ type ProcedureRunState = {
     completedAt?: string
     evidenceToolCallIds: string[]
   }>
-  facts: Record<string, unknown>
+  evidence: Array<unknown>
+  evaluations: Array<unknown>
+  signals: Array<unknown>
   blockers: string[]
+  outcome?: 'resolved_by_agent' | 'handed_off' | 'abandoned' | 'expired'
   timeline: Array<{
     eventId: string
     epoch: number
@@ -195,11 +199,12 @@ Runtime owns the timeline. The model may propose actions, but runtime is the jud
 - whether a new user message continues, supplements, pauses, resumes, or starts a Procedure
 - when Tool evidence advances or blocks a step
 
-R3 implementation boundary:
+R3/M2 implementation boundary:
 
-- First version should not add a Prisma `ProcedureRun` table unless a schema lane is explicitly approved.
-- Authoritative active/paused ProcedureRun state belongs in runtime/session-store.
-- A chat/session may have one active ProcedureRun plus paused/pending ProcedureRuns.
+- Consolidation spec M2 (`2026-06-12-architecture-consolidation-modules-spec.md` §3) is the schema approval for durable ProcedureRun state.
+- Authoritative active/paused ProcedureRun state is write-through durable in Postgres `ProcedureRun`; `session-store` is the in-process cache and queue adapter.
+- `Case.runtimeInputEpoch` is the durable per-case epoch counter. `session-store` may cache it, but restart/eviction must hydrate from `Case.runtimeInputEpoch`.
+- A chat/session may have one active ProcedureRun plus paused/pending ProcedureRuns hydrated from rows with `status IN ('active','paused')`.
 - Durable `ActionTrace` can record evidence/audit events, but active ProcedureRun state must not leak through confirmedFacts, UserProfile, case export, case detail payloads, or public memory APIs.
 - If a temporary internal mirror remains in ChatMemory/toolResults, API/export/compact/dashboard readers must filter it.
 - `ProcedureRunState` is the only authority for active run state. Compact summaries, ChatMemory, UserProfile, and raw model-visible tool_result history can provide context/evidence but cannot create, resume, complete, clear reconcile, or advance a ProcedureRun.
@@ -297,7 +302,7 @@ Implications for Intera:
 - Memory Tools are not fake Tool results. `remember`, `read_chat_memory`, and `read_user_profile` must connect to real storage and real retrieval before being presented as a closed product loop.
 - Customer form results and human task results are input events. They increment `inputEpoch` and require the Agent to reconcile current state before any terminal action.
 - `start_procedure(procedureId)` must be idempotent by request/event id and active run state. Retries or duplicate network requests should return the existing run or no-op safely, not create duplicate pending runs.
-- R3 V1 may keep ProcedureRun state in memory/session-store only under a single-process, restart-loses-active-runtime assumption. Multi-instance or restart-resilient deployment requires Redis/lease or a later schema lane.
+- After consolidation M2, ProcedureRun state is restart-resilient through Postgres write-through plus hydration. The single-process assumption still applies to the transient in-memory message queue and live stream ownership until the M3 runtime split; multi-instance work/Redis leases remain frozen.
 
 ### 3.5 Runtime, Chat Memory, And User Profile Boundaries
 

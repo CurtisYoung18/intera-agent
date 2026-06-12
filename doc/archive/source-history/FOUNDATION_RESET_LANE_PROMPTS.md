@@ -5,16 +5,16 @@
 **Purpose:** preserve the original first-wave lane prompts for audit/history.
 **Baseline:** `origin/main` at or after `373d2eed docs: Procedure Phase 3 shipped`.
 
-For new zero-context coding sessions, dispatch from [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md), not this file.
+For new zero-context coding sessions, dispatch from the current read-first docs, not this file. The later post-foundation prompt history is archived next to this file at [`POST_FOUNDATION_DISPATCH_PROMPTS.md`](./POST_FOUNDATION_DISPATCH_PROMPTS.md).
 
 Use these prompts with the current docs:
 
-- [`GENERIC_HANDOFF.md`](./GENERIC_HANDOFF.md)
-- [`MASTER_BUILD_HANDOFF.md`](./MASTER_BUILD_HANDOFF.md)
-- [`../README.md`](../README.md)
-- [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md)
-- [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md)
-- [`../spec/Intera_UI_UX_Design_System.md`](../spec/Intera_UI_UX_Design_System.md)
+- [`GENERIC_HANDOFF.md`](../../handoffs/GENERIC_HANDOFF.md)
+- [`MASTER_BUILD_HANDOFF.md`](../../handoffs/MASTER_BUILD_HANDOFF.md)
+- [`../README.md`](../../README.md)
+- [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../../to-do/2026-06-08-foundation-reset-domain-model.md)
+- [`../spec/Intera_Harness_架构梳理.md`](../../spec/Intera_Harness_架构梳理.md)
+- [`../spec/Intera_UI_UX_Design_System.md`](../../spec/Intera_UI_UX_Design_System.md)
 
 ---
 
