@@ -129,5 +129,6 @@ describe('ConsoleSidebar', () => {
     })
 
     expect(screen.getByRole('button', { name: /Expand sidebar/i })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Manage agents/i }).textContent).toContain('J1B')
   })
 })

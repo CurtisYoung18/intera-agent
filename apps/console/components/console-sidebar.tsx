@@ -276,6 +276,36 @@ export default function ConsoleSidebar() {
         </div>
 
         {/* Agent switcher — always visible below logo */}
+        {collapsed && (
+          <div className="flex-shrink-0 border-b border-black/[0.04] px-2 py-3">
+            <button
+              type="button"
+              onClick={() => setAgentDrawerOpen(true)}
+              className="flex w-full flex-col items-center gap-1.5 rounded-[18px] border border-white/75 bg-white/[0.78] px-2 py-2.5 text-center shadow-[0_10px_20px_rgba(21,23,25,0.06),inset_0_1px_0_rgba(255,255,255,0.68)] transition hover:border-[rgba(53,127,124,0.22)] hover:bg-white/[0.94]"
+              title={t('sidebar.openAgents')}
+              aria-label={t('sidebar.openAgents')}
+            >
+              <span
+                aria-hidden
+                className={`h-2.5 w-2.5 rounded-full ${
+                  selectedAgent?.isActive ? 'bg-[var(--color-signal-success)]' : 'bg-[var(--color-signal-warning)]'
+                }`}
+              />
+              <span className="max-w-full truncate text-[12px] font-semibold leading-4 text-[var(--color-text-primary)]">
+                {selectedAgent?.name ?? t('common.loading')}
+              </span>
+              {selectedAgent ? (
+                <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                  selectedAgent.isActive
+                    ? 'border-[rgba(111,158,114,0.26)] bg-[rgba(111,158,114,0.12)] text-[var(--color-signal-success)]'
+                    : 'border-[rgba(213,150,61,0.28)] bg-[rgba(213,150,61,0.13)] text-[var(--color-signal-warning)]'
+                }`}>
+                  v{selectedAgent.version}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        )}
         {!collapsed && (
           <div className="flex-shrink-0 border-b border-black/[0.04] px-3 py-3">
             <div className="mb-2 flex items-center gap-2 px-2">
