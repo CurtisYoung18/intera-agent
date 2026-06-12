@@ -176,7 +176,9 @@ const RELEASE_COPY = {
     templatePreviewErrorPrefix: 'Template previews are isolated because export failed for:',
     publishDialogAria: 'Publish version',
     explicitPublish: 'Explicit publish',
+    explicitRollback: 'Explicit rollback',
     publishVersionTitle: (name: string, version: number) => `Publish ${name} v${version}`,
+    rollbackVersionTitle: (name: string, version: number) => `Rollback ${name} to v${version}`,
     publishHistoricalHint: 'This reactivates the selected historical version. Rollback preview stays read-only until you confirm publish.',
     publishDraftHint: 'This activates the selected non-live version for customer channels. Draft save and import actions remain isolated until publish.',
     closePublishDialogAria: 'Close publish dialog',
@@ -186,6 +188,9 @@ const RELEASE_COPY = {
     overrideReasonPlaceholder: 'Required because validation is stale, failing, or missing.',
     cancel: 'Cancel',
     publishVersionButton: 'Publish version',
+    rollbackVersionButton: (version: number) => `Rollback to v${version}`,
+    rollbackReadyTitle: 'Ready to roll back',
+    rollbackReadyDetail: (version: number) => `Historical v${version} is selected. Confirm rollback only after reviewing the diff and validation state.`,
     rollbackPreview: 'Rollback preview',
     releaseSafety: 'Release safety',
     rollbackPreviewDescription: (liveVersion: number | string, selectedVersion: string) => `Preview how live v${liveVersion} differs from ${selectedVersion} before any mutation. This drawer never activates rollback by itself.`,
@@ -300,7 +305,9 @@ const RELEASE_COPY = {
     templatePreviewErrorPrefix: '以下版本导出失败，因此模板预览被隔离显示：',
     publishDialogAria: '发布版本确认',
     explicitPublish: '明确发布',
+    explicitRollback: '明确回退',
     publishVersionTitle: (name: string, version: number) => `发布 ${name} v${version}`,
+    rollbackVersionTitle: (name: string, version: number) => `回退 ${name} 到 v${version}`,
     publishHistoricalHint: '这会重新激活选中的历史版本。在你最终确认发布前，回滚预览始终保持只读。',
     publishDraftHint: '这会把当前选中的非 live 版本推到客户渠道。草稿保存和导入动作在发布前都保持隔离。',
     closePublishDialogAria: '关闭发布弹窗',
@@ -310,6 +317,9 @@ const RELEASE_COPY = {
     overrideReasonPlaceholder: '因为验证过期、失败或缺失，所以这里必须填写原因。',
     cancel: '取消',
     publishVersionButton: '确认发布版本',
+    rollbackVersionButton: (version: number) => `回退到 v${version}`,
+    rollbackReadyTitle: '准备回退',
+    rollbackReadyDetail: (version: number) => `当前已选历史版本 v${version}。请先看完 diff 与验证状态，再明确确认回退。`,
     rollbackPreview: '回滚预览',
     releaseSafety: '发布安全',
     rollbackPreviewDescription: (liveVersion: number | string, selectedVersion: string) => `先预览 live v${liveVersion} 与${selectedVersion}之间的差异，再决定是否操作。这个抽屉本身不会触发回滚。`,
@@ -1144,9 +1154,13 @@ export default function ReleaseCommandCenter() {
           <section role="dialog" aria-label={copy.publishDialogAria} className="w-full max-w-lg rounded-[var(--radius-panel)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{copy.explicitPublish}</p>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
+                  {selectedRole === 'historical' ? copy.explicitRollback : copy.explicitPublish}
+                </p>
                 <h2 className="mt-1 text-[18px] font-semibold text-[var(--color-text-primary)]">
-                  {copy.publishVersionTitle(selectedVersion?.name ?? '', selectedVersion?.version ?? 0)}
+                  {selectedRole === 'historical'
+                    ? copy.rollbackVersionTitle(selectedVersion?.name ?? '', selectedVersion?.version ?? 0)
+                    : copy.publishVersionTitle(selectedVersion?.name ?? '', selectedVersion?.version ?? 0)}
                 </h2>
                 <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
                   {selectedRole === 'historical'
@@ -1179,7 +1193,9 @@ export default function ReleaseCommandCenter() {
               <button type="button" onClick={() => setPublishOpen(false)} className="rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">{copy.cancel}</button>
               <button type="button" disabled={busyAction === 'publish' || (overrideRequired && !overrideReason.trim())} onClick={handlePublish} className="inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[color:color-mix(in_srgb,var(--color-accent-primary)_45%,transparent)] bg-[var(--color-accent-primary)] px-3 py-2 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
                 {busyAction === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageOpen className="h-4 w-4" />}
-                {copy.publishVersionButton}
+                {selectedRole === 'historical'
+                  ? copy.rollbackVersionButton(selectedVersion?.version ?? 0)
+                  : copy.publishVersionButton}
               </button>
             </div>
           </section>
@@ -1416,17 +1432,25 @@ function ReleasePublishVerdictBar({
   slotsLeft: number
 }) {
   const { locale } = useConsoleLocale()
-  const mode = !draft
+  const copy = releaseCopy(locale)
+  const isHistoricalSelection = selectedRole === 'historical' && Boolean(selectedVersion)
+  const mode = isHistoricalSelection
+    ? 'rollback'
+    : !draft
     ? 'createDraft'
     : selectedRole === 'live' || !selectedVersion || selectedVersion.id === draftVersionId
       ? (selectedRole === 'draft' ? 'publish' : 'reviewDraft')
       : 'publish'
-  const metricsDiffSummary = mode === 'publish' ? diffSummary : draftDiffSummary
-  const metricsValidationSnapshot = mode === 'publish' ? selectedValidationSnapshot : draftValidationSnapshot
+  const metricsDiffSummary = mode === 'publish' || mode === 'rollback' ? diffSummary : draftDiffSummary
+  const metricsValidationSnapshot = mode === 'publish' || mode === 'rollback' ? selectedValidationSnapshot : draftValidationSnapshot
   const tone = mode === 'createDraft'
     ? 'warning'
     : mode === 'reviewDraft'
       ? metricsValidationSnapshot.tone === 'danger' ? 'danger' : metricsValidationSnapshot.tone === 'warning' ? 'warning' : 'success'
+      : mode === 'rollback'
+        ? !canPublish
+          ? 'neutral'
+          : overrideRequired ? 'warning' : selectedValidationSnapshot.tone === 'danger' ? 'danger' : 'success'
       : !canPublish
         ? 'neutral'
         : overrideRequired ? 'warning' : selectedValidationSnapshot.tone === 'danger' ? 'danger' : 'success'
@@ -1441,6 +1465,8 @@ function ReleasePublishVerdictBar({
     ? (locale === 'zh' ? '先创建候选版本' : 'Create a candidate first')
     : mode === 'reviewDraft'
       ? (locale === 'zh' ? '草稿已就绪，先完成审查' : 'Draft ready for review')
+      : mode === 'rollback'
+        ? copy.rollbackReadyTitle
       : !canPublish
         ? (locale === 'zh' ? '选择一个候选版本' : 'Select a candidate')
         : overrideRequired
@@ -1456,6 +1482,10 @@ function ReleasePublishVerdictBar({
           ? `草稿 v${draft.version} 已经准备好，包含 ${draftDiffSummary.changedRows} 行变更、${draftDiffSummary.changedGroups} 个分组。先打开它，再判断是否发布。`
           : `Draft v${draft.version} is already waiting with ${draftDiffSummary.changedRows} changed rows across ${draftDiffSummary.changedGroups} groups. Open it first, then decide whether to publish.`)
         : (publishDisabledReason ?? (locale === 'zh' ? '请先从右侧时间线选择草稿或历史版本。' : 'Select a draft or historical version from the timeline.'))
+      : mode === 'rollback'
+        ? (selectedVersion
+          ? copy.rollbackReadyDetail(selectedVersion.version)
+          : (publishDisabledReason ?? (locale === 'zh' ? '请先从右侧时间线选择一个历史版本。' : 'Select a historical version from the timeline first.')))
       : !canPublish
         ? (publishDisabledReason ?? (locale === 'zh' ? '请先从右侧时间线选择草稿或历史版本。' : 'Select a draft or historical version from the timeline.'))
         : selectedValidationSnapshot.detail
@@ -1488,6 +1518,8 @@ function ReleasePublishVerdictBar({
               ? <CheckCircle2 className="h-5 w-5" />
               : mode === 'reviewDraft'
                 ? <ArrowRightCircle className="h-5 w-5" />
+                : mode === 'rollback'
+                  ? <RotateCcw className="h-5 w-5" />
                 : tone === 'danger'
                   ? <AlertTriangle className="h-5 w-5" />
                   : <AlertTriangle className="h-5 w-5" />}
@@ -1515,8 +1547,10 @@ function ReleasePublishVerdictBar({
             ? (locale === 'zh' ? '派生可编辑草稿' : 'Create editable draft')
             : mode === 'reviewDraft'
               ? (locale === 'zh' ? '查看当前草稿' : 'Review current draft')
+              : mode === 'rollback'
+                ? (selectedVersion ? copy.rollbackVersionButton(selectedVersion.version) : (locale === 'zh' ? '回退当前版本' : 'Roll back selected version'))
               : (locale === 'zh' ? '发布当前版本' : 'Publish selected version')}
-          disabled={mode === 'createDraft' ? duplicateBusy : mode === 'publish' ? (!canPublish || busy) : false}
+          disabled={mode === 'createDraft' ? duplicateBusy : mode === 'publish' || mode === 'rollback' ? (!canPublish || busy) : false}
           onClick={mode === 'createDraft' ? onCreateDraft : mode === 'reviewDraft' ? onReviewDraft : onPublish}
           className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[16px] border border-[rgba(29,52,59,0.12)] bg-[linear-gradient(135deg,#1f575d_0%,#2f7b78_52%,#469892_100%)] px-5 py-3 text-[18px] font-semibold text-white shadow-[0_20px_34px_-18px_rgba(24,83,88,0.78),inset_0_1px_0_rgba(255,255,255,0.2)] transition hover:translate-y-[-1px] hover:brightness-[1.03] hover:shadow-[0_22px_38px_-18px_rgba(24,83,88,0.9),inset_0_1px_0_rgba(255,255,255,0.22)] disabled:cursor-not-allowed disabled:opacity-45 xl:w-auto xl:justify-self-end"
         >
@@ -1524,6 +1558,10 @@ function ReleasePublishVerdictBar({
             ? (duplicateBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Copy className="h-5 w-5" />)
             : mode === 'reviewDraft'
               ? <ArrowRightCircle className="h-5 w-5" />
+              : mode === 'rollback'
+                ? busy
+                  ? <Loader2 className="h-5 w-5 animate-spin" />
+                  : <RotateCcw className="h-5 w-5" />
               : busy
                 ? <Loader2 className="h-5 w-5 animate-spin" />
                 : <PackageOpen className="h-5 w-5" />}
@@ -1532,6 +1570,8 @@ function ReleasePublishVerdictBar({
               ? (locale === 'zh' ? '创建草稿' : 'Create draft')
               : mode === 'reviewDraft'
                 ? (draft ? (locale === 'zh' ? `查看 v${draft.version}` : `Review v${draft.version}`) : (locale === 'zh' ? '查看草稿' : 'Review draft'))
+                : mode === 'rollback'
+                  ? (selectedVersion ? copy.rollbackVersionButton(selectedVersion.version) : (locale === 'zh' ? '回退当前版本' : 'Roll back selected version'))
                 : selectedVersion ? (locale === 'zh' ? `发布 v${selectedVersion.version}` : `Publish v${selectedVersion.version}`) : (locale === 'zh' ? '发布' : 'Publish')}
           </span>
         </button>
@@ -2186,7 +2226,15 @@ function PackageActionsPanel({
           <ActionButton icon={<FileDown className="h-4 w-4" />} label={locale === 'zh' ? '导出当前包' : 'Export selected package'} busy={busyAction === 'export'} onClick={onExport} />
           <ActionButton icon={<Upload className="h-4 w-4" />} label={locale === 'zh' ? '导入包' : 'Import package'} busy={busyAction === 'import'} onClick={onImportClick} />
           <ActionButton icon={<Copy className="h-4 w-4" />} label={locale === 'zh' ? '派生可编辑草稿' : 'Create editable draft'} busy={busyAction === 'duplicate'} onClick={onDuplicate} />
-          <ActionButton icon={<PackageOpen className="h-4 w-4" />} label={locale === 'zh' ? '发布当前版本' : 'Publish selected version'} busy={busyAction === 'publish'} disabled={!canPublish} onClick={onPublish} />
+          <ActionButton
+            icon={role === 'historical' ? <RotateCcw className="h-4 w-4" /> : <PackageOpen className="h-4 w-4" />}
+            label={role === 'historical'
+              ? current ? copy.rollbackVersionButton(current.version) : (locale === 'zh' ? '回退当前版本' : 'Roll back selected version')
+              : (locale === 'zh' ? '发布当前版本' : 'Publish selected version')}
+            busy={busyAction === 'publish'}
+            disabled={!canPublish}
+            onClick={onPublish}
+          />
           <ActionButton icon={<RotateCcw className="h-4 w-4" />} label={copy.rollbackPreview} disabled={!rollbackTarget} onClick={onRollback} />
         </div>
 

@@ -533,10 +533,15 @@ describe('ReleaseCommandCenter', () => {
 
     await renderReleaseCommandCenter()
 
-    expect(screen.getByText('Create a candidate first')).toBeDefined()
+    expect(screen.getByText('Ready to roll back')).toBeDefined()
     expect(screen.queryByText('Draft ready for review')).toBeNull()
     expect(screen.getByText('Rollback preview between live v3 and historical v1.')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Rollback preview' })).toBeDefined()
+    expect(screen.getAllByRole('button', { name: 'Rollback to v1' }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rollback to v1' })[0] as HTMLElement)
+
+    expect(await screen.findByText('Rollback Gaming Support to v1')).toBeDefined()
   })
 
   it('treats a direct child of live as the only candidate and routes the review CTA to it', async () => {
