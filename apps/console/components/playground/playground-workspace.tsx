@@ -1132,10 +1132,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     }
   }, [selectedAgentId, debugMode, canAttachImages, visionSupport.status, snapshot?.resolvedModelLabel])
 
+  const canSubmitManualTurn = message.trim().length > 0 || attachedImages.length > 0
+
   const submitManualTurn = useCallback(() => {
     const trimmed = message.trim()
-    if (!trimmed) return
     const queuedImages = attachedImagesRef.current
+    if (!trimmed && queuedImages.length === 0) return
     setMessage('')
     setAttachedImages([])
     if (responding) {
@@ -1148,7 +1150,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const handleComposerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !composingRef.current) {
       event.preventDefault()
-      if (message.trim()) submitManualTurn()
+      if (message.trim() || attachedImagesRef.current.length > 0) submitManualTurn()
     }
   }, [message, submitManualTurn])
 
@@ -2003,43 +2005,45 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 }}
               />
               <button
+                type="button"
+                aria-label={responding ? (isZh ? '排队手动运行时测试' : 'Queue manual runtime test turn') : (isZh ? '发送手动运行时测试' : 'Send manual runtime test turn')}
                 onClick={submitManualTurn}
-                disabled={!message.trim()}
+                disabled={!canSubmitManualTurn}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 40, height: 40, borderRadius: 14,
-                  background: message.trim()
+                  background: canSubmitManualTurn
                     ? responding
                       ? 'linear-gradient(145deg, #88a8ff, #6d86f2 52%, #5f6fe0)'
                       : 'linear-gradient(145deg, #82b0ff, #5b8af7 52%, #4d69dc)'
                     : 'rgba(0,0,0,0.06)',
-                  border: message.trim() ? '1px solid rgba(255,255,255,0.55)' : '1px solid rgba(0,0,0,0.04)',
-                  boxShadow: message.trim()
+                  border: canSubmitManualTurn ? '1px solid rgba(255,255,255,0.55)' : '1px solid rgba(0,0,0,0.04)',
+                  boxShadow: canSubmitManualTurn
                     ? '0 10px 24px rgba(91,138,247,0.24), inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -8px 16px rgba(55,84,176,0.2)'
                     : 'inset 0 1px 0 rgba(255,255,255,0.28)',
-                  cursor: message.trim() ? 'pointer' : 'default',
-                  opacity: message.trim() ? 1 : 0.4,
-                  transform: message.trim() ? 'translateY(-0.5px)' : 'none',
+                  cursor: canSubmitManualTurn ? 'pointer' : 'default',
+                  opacity: canSubmitManualTurn ? 1 : 0.4,
+                  transform: canSubmitManualTurn ? 'translateY(-0.5px)' : 'none',
                   transition: 'all 0.18s ease',
                   flexShrink: 0,
                 }}
                 onMouseEnter={e => {
-                  if (!message.trim()) return
+                  if (!canSubmitManualTurn) return
                   e.currentTarget.style.transform = 'translateY(-1.5px) scale(1.01)'
                   e.currentTarget.style.boxShadow = '0 14px 28px rgba(91,138,247,0.28), inset 0 1px 0 rgba(255,255,255,0.36), inset 0 -8px 16px rgba(55,84,176,0.22)'
                 }}
                 onMouseLeave={e => {
-                  if (!message.trim()) return
+                  if (!canSubmitManualTurn) return
                   e.currentTarget.style.transform = 'translateY(-0.5px)'
                   e.currentTarget.style.boxShadow = '0 10px 24px rgba(91,138,247,0.24), inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -8px 16px rgba(55,84,176,0.2)'
                 }}
                 onMouseDown={e => {
-                  if (!message.trim()) return
+                  if (!canSubmitManualTurn) return
                   e.currentTarget.style.transform = 'translateY(0.5px) scale(0.985)'
                   e.currentTarget.style.boxShadow = '0 6px 14px rgba(91,138,247,0.2), inset 0 2px 6px rgba(55,84,176,0.24)'
                 }}
                 onMouseUp={e => {
-                  if (!message.trim()) return
+                  if (!canSubmitManualTurn) return
                   e.currentTarget.style.transform = 'translateY(-1.5px) scale(1.01)'
                   e.currentTarget.style.boxShadow = '0 14px 28px rgba(91,138,247,0.28), inset 0 1px 0 rgba(255,255,255,0.36), inset 0 -8px 16px rgba(55,84,176,0.22)'
                 }}

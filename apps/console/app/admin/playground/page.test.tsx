@@ -115,6 +115,20 @@ function jsonResponse(body: unknown) {
   } as Response
 }
 
+function sseResponse(events: unknown[]) {
+  const encoder = new TextEncoder()
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream({
+      start(controller) {
+        for (const event of events) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        controller.close()
+      },
+    }),
+  } as Response
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -368,6 +382,102 @@ describe('PlaygroundPage snapshot truth', () => {
     await waitFor(() => {
       expect(screen.getByText('GPT-4o')).toBeDefined()
       expect(screen.getAllByText('Supported').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('allows submitting an attached image without typed text', async () => {
+    currentAgentPayload = {
+      data: {
+        resolvedModel: 'openai/gpt-4o',
+        config: {
+          name: 'Gaming Support Draft',
+          model: 'openai/gpt-4o',
+          temperature: 0.2,
+          memoryStrategy: shortMemory,
+          coreSystemPrompt: 'Vision prompt',
+        },
+      },
+    }
+
+    const runBodies: any[] = []
+    vi.stubGlobal('FileReader', class {
+      result: string | ArrayBuffer | null = null
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null
+      onerror: (() => void) | null = null
+
+      readAsDataURL() {
+        this.result = 'data:image/png;base64,abc123'
+        this.onload?.({ target: this } as unknown as ProgressEvent<FileReader>)
+      }
+    } as unknown as typeof FileReader)
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url === '/api/admin/agent-configs') {
+        return jsonResponse({
+          data: {
+            configs: [{ id: 'agent-1', name: 'Gaming Support Draft', version: 3, isActive: true }],
+          },
+        })
+      }
+      if (url === '/api/admin/models') {
+        return jsonResponse({
+          data: {
+            models,
+          },
+        })
+      }
+      if (url === '/api/admin/playground/sessions?configId=agent-1') {
+        return jsonResponse({
+          data: {
+            sessions: [],
+          },
+        })
+      }
+      if (url === '/api/admin/playground/run') {
+        runBodies.push(JSON.parse(String(init?.body)))
+        return sseResponse([
+          { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: '2026-06-12T00:00:00.000Z' },
+        ])
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }))
+
+    await renderPage()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Supported').length).toBeGreaterThan(0)
+    })
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    expect(fileInput).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [new File(['image-bytes'], 'receipt.png', { type: 'image/png' })] },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByAltText('receipt.png')).toBeDefined()
+    })
+
+    const sendButton = screen.getByRole('button', { name: /Send manual runtime test turn/i }) as HTMLButtonElement
+    expect(sendButton.disabled).toBe(false)
+
+    await act(async () => {
+      fireEvent.click(sendButton)
+    })
+
+    await waitFor(() => {
+      expect(runBodies).toHaveLength(1)
+    })
+    expect(runBodies[0]).toMatchObject({
+      message: '',
+      configId: 'agent-1',
+      contentBlocks: [{
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
+      }],
     })
   })
 

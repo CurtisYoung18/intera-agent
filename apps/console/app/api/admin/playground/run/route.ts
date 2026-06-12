@@ -22,9 +22,17 @@ export async function POST(request: NextRequest) {
       status: 400, headers: { 'Content-Type': 'application/json' },
     })
   }
-  const message = (body.message as string)?.trim()
-  if (!message || message.length > 5000) {
-    return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'message required (max 5000 chars)' } }), {
+  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  const contentBlocks = Array.isArray(body.contentBlocks) ? body.contentBlocks : []
+  const hasContentBlock = contentBlocks.some((block) => {
+    if (!block || typeof block !== 'object') return false
+    const candidate = block as { type?: unknown; text?: unknown; source?: { type?: unknown; data?: unknown } }
+    if (candidate.type === 'text') return typeof candidate.text === 'string' && candidate.text.trim().length > 0
+    if (candidate.type === 'image') return candidate.source?.type === 'base64' && typeof candidate.source.data === 'string' && candidate.source.data.length > 0
+    return false
+  })
+  if ((!message && !hasContentBlock) || message.length > 5000) {
+    return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'message or image content required (message max 5000 chars)' } }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     })
   }
@@ -39,7 +47,7 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const send = (event: SSEEvent) => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)) } catch { /* client disconnected */ } }
       try {
-        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks: body.contentBlocks, chatId: body.chatId, userId: vendor.userId ?? 'playground' })) { send(event) }
+        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks, chatId: body.chatId, userId: vendor.userId ?? 'playground' })) { send(event) }
       } catch (err) {
         send({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Internal error' }, timestamp: new Date().toISOString() })
       } finally { try { controller.close() } catch { /* ignore */ } }

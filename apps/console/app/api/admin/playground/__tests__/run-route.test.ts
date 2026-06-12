@@ -72,6 +72,27 @@ describe('POST /api/admin/playground/run', () => {
     }))
   })
 
+  it('accepts image-only turns', async () => {
+    const contentBlocks = [{
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
+    }]
+
+    const res = await POST(makeRequest({
+      message: '',
+      configId: 'agent-1',
+      contentBlocks,
+    }))
+
+    expect(res.status).toBe(200)
+    await readSse(res)
+    expect(h.mockRunPlaygroundTurn).toHaveBeenCalledWith(expect.objectContaining({
+      message: '',
+      configId: 'agent-1',
+      contentBlocks,
+    }))
+  })
+
   it('allows explicit dry-run mode for side-effect-safe debugging', async () => {
     const res = await POST(makeRequest({
       message: 'hello',
