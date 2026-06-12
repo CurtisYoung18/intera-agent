@@ -43,6 +43,8 @@ const configs = [
     releaseNote: 'Original launch baseline',
     publishedAt: '2026-06-01T02:00:00.000Z',
     publishedBy: 'launch-owner',
+    publisherEmail: 'launch-owner@intera.ai',
+    publisherName: 'Launch Owner',
   },
   {
     id: 'live-2',
@@ -56,6 +58,8 @@ const configs = [
     releaseNote: 'Stable launch package',
     publishedAt: '2026-06-02T02:00:00.000Z',
     publishedBy: 'lead-delivery',
+    publisherEmail: 'lead-delivery@intera.ai',
+    publisherName: 'Lead Delivery',
   },
   {
     id: 'draft-3',
@@ -69,6 +73,8 @@ const configs = [
     releaseNote: null,
     publishedAt: null,
     publishedBy: null,
+    publisherEmail: null,
+    publisherName: null,
   },
 ]
 
@@ -119,134 +125,166 @@ function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400) {
   } as unknown as Response
 }
 
-function installFetchMock(options: { forkLimit?: boolean } = {}) {
+function makeScenarioPayload(overrides: Record<string, unknown>) {
+  return {
+    scenarios: [],
+    receipts: [],
+    validation: {
+      state: 'Not validated',
+      changedAt: null,
+      lastValidatedAt: null,
+      lastReceiptId: null,
+      lastReceiptStatus: null,
+      lastReceiptExecutionMode: null,
+      runtimeValidated: false,
+      runtimeValidatedAt: null,
+      overrideRequired: true,
+    },
+    ...overrides,
+  }
+}
+
+function buildReleaseFixture(options: {
+  configs?: Array<Record<string, unknown>>
+  scenariosById?: Record<string, unknown>
+  templatesById?: Record<string, unknown>
+} = {}): {
+  configs: Array<Record<string, unknown>>
+  scenariosById: Record<string, unknown>
+  templatesById: Record<string, unknown>
+} {
+  return {
+    configs: options.configs ?? configs,
+    scenariosById: {
+      'history-1': makeScenarioPayload({
+        receipts: [{
+          scenarioName: 'launch_baseline',
+          runId: 'run_history',
+          status: 'pass',
+          executionMode: 'agentRuntime',
+          toolExecutionMode: 'live',
+          startedAt: '2026-06-01T02:00:00.000Z',
+          completedAt: '2026-06-01T02:02:00.000Z',
+          finishedAt: '2026-06-01T02:02:00.000Z',
+          agentConfigId: 'history-1',
+          summary: 'Original launch validation passed',
+          evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
+          checks: [{ name: 'baseline', passed: true }],
+          traceId: 'trace_history',
+        }],
+        validation: {
+          state: 'Validated',
+          changedAt: '2026-06-01T02:02:00.000Z',
+          lastValidatedAt: '2026-06-01T02:02:00.000Z',
+          lastReceiptId: 'run_history',
+          lastReceiptStatus: 'pass',
+          lastReceiptExecutionMode: 'agentRuntime',
+          runtimeValidated: true,
+          runtimeValidatedAt: '2026-06-01T02:02:00.000Z',
+          overrideRequired: false,
+        },
+      }),
+      'live-2': makeScenarioPayload({
+        receipts: [{
+          scenarioName: 'live_release_check',
+          runId: 'run_live',
+          status: 'pass',
+          executionMode: 'agentRuntime',
+          toolExecutionMode: 'live',
+          startedAt: '2026-06-02T02:00:00.000Z',
+          completedAt: '2026-06-02T02:02:00.000Z',
+          finishedAt: '2026-06-02T02:02:00.000Z',
+          agentConfigId: 'live-2',
+          summary: 'Live release validation passed',
+          evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
+          checks: [{ name: 'baseline', passed: true }],
+          traceId: 'trace_live',
+        }],
+        validation: {
+          state: 'Validated',
+          changedAt: '2026-06-02T02:02:00.000Z',
+          lastValidatedAt: '2026-06-02T02:02:00.000Z',
+          lastReceiptId: 'run_live',
+          lastReceiptStatus: 'pass',
+          lastReceiptExecutionMode: 'agentRuntime',
+          runtimeValidated: true,
+          runtimeValidatedAt: '2026-06-02T02:02:00.000Z',
+          overrideRequired: false,
+        },
+      }),
+      'draft-3': makeScenarioPayload({
+        receipts: [{
+          scenarioName: 'deposit_happy_path',
+          runId: 'run_draft',
+          status: 'pass',
+          executionMode: 'fixture',
+          toolExecutionMode: 'mocked',
+          startedAt: '2026-06-04T00:00:00.000Z',
+          completedAt: '2026-06-04T00:02:00.000Z',
+          finishedAt: '2026-06-04T00:02:00.000Z',
+          agentConfigId: 'draft-3',
+          summary: 'All required evidence matched',
+          evidence: { toolsCalled: ['get_deposit_status'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
+          checks: [],
+          traceId: 'trace_draft',
+        }],
+        validation: {
+          state: 'Changed since last validation',
+          changedAt: '2026-06-04T01:00:00.000Z',
+          lastValidatedAt: '2026-06-04T00:02:00.000Z',
+          lastReceiptId: 'run_draft',
+          lastReceiptStatus: 'pass',
+          lastReceiptExecutionMode: 'fixture',
+          runtimeValidated: false,
+          overrideRequired: true,
+        },
+      }),
+      ...(options.scenariosById ?? {}),
+    },
+    templatesById: {
+      'history-1': historyTemplate,
+      'live-2': liveTemplate,
+      'draft-3': draftTemplate,
+      ...(options.templatesById ?? {}),
+    },
+  }
+}
+
+function installFetchMock(options: {
+  configs?: Array<Record<string, unknown>>
+  scenariosById?: Record<string, unknown>
+  templatesById?: Record<string, unknown>
+  forkLimit?: boolean
+} = {}) {
+  const fixture = buildReleaseFixture(options)
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input)
-    if (url === '/api/admin/agent-configs') {
-      return jsonResponse({ ok: true, data: { configs } })
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/admin/agent-configs') {
+      return jsonResponse({ ok: true, data: { configs: fixture.configs } })
     }
 
-    if (url === '/api/admin/scenarios?agentConfigId=history-1') {
-      return jsonResponse({
-        ok: true,
-        data: {
-          scenarios: [],
-          receipts: [{
-            scenarioName: 'launch_baseline',
-            runId: 'run_history',
-            status: 'pass',
-            executionMode: 'agentRuntime',
-            toolExecutionMode: 'live',
-            startedAt: '2026-06-01T02:00:00.000Z',
-            completedAt: '2026-06-01T02:02:00.000Z',
-            finishedAt: '2026-06-01T02:02:00.000Z',
-            agentConfigId: 'history-1',
-            summary: 'Original launch validation passed',
-            evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
-            checks: [{ name: 'baseline', passed: true }],
-            traceId: 'trace_history',
-          }],
-          validation: {
-            state: 'Validated',
-            changedAt: '2026-06-01T02:02:00.000Z',
-            lastValidatedAt: '2026-06-01T02:02:00.000Z',
-            lastReceiptId: 'run_history',
-            lastReceiptStatus: 'pass',
-            lastReceiptExecutionMode: 'agentRuntime',
-            runtimeValidated: true,
-            runtimeValidatedAt: '2026-06-01T02:02:00.000Z',
-            overrideRequired: false,
-          },
-        },
-      })
+    if (url.pathname === '/api/admin/scenarios') {
+      const agentConfigId = url.searchParams.get('agentConfigId')
+      const payload = agentConfigId ? fixture.scenariosById[agentConfigId] : null
+      if (!payload) throw new Error(`Unexpected scenarios request: ${String(input)}`)
+      return jsonResponse({ ok: true, data: payload })
     }
 
-    if (url === '/api/admin/scenarios?agentConfigId=live-2') {
-      return jsonResponse({
-        ok: true,
-        data: {
-          scenarios: [],
-          receipts: [{
-            scenarioName: 'live_release_check',
-            runId: 'run_live',
-            status: 'pass',
-            executionMode: 'agentRuntime',
-            toolExecutionMode: 'live',
-            startedAt: '2026-06-02T02:00:00.000Z',
-            completedAt: '2026-06-02T02:02:00.000Z',
-            finishedAt: '2026-06-02T02:02:00.000Z',
-            agentConfigId: 'live-2',
-            summary: 'Live release validation passed',
-            evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
-            checks: [{ name: 'baseline', passed: true }],
-            traceId: 'trace_live',
-          }],
-          validation: {
-            state: 'Validated',
-            changedAt: '2026-06-02T02:02:00.000Z',
-            lastValidatedAt: '2026-06-02T02:02:00.000Z',
-            lastReceiptId: 'run_live',
-            lastReceiptStatus: 'pass',
-            lastReceiptExecutionMode: 'agentRuntime',
-            runtimeValidated: true,
-            runtimeValidatedAt: '2026-06-02T02:02:00.000Z',
-            overrideRequired: false,
-          },
-        },
-      })
+    if (url.pathname === '/api/admin/agent-templates/export') {
+      const agentConfigId = url.searchParams.get('agentConfigId')
+      const template = agentConfigId ? fixture.templatesById[agentConfigId] : null
+      if (!template) throw new Error(`Unexpected export request: ${String(input)}`)
+      if (url.searchParams.get('download') === '1') return jsonResponse(template)
+      return jsonResponse({ ok: true, data: { template, filename: `${agentConfigId}.intera-agent.json` } })
     }
 
-    if (url === '/api/admin/scenarios?agentConfigId=draft-3') {
-      return jsonResponse({
-        ok: true,
-        data: {
-          scenarios: [],
-          receipts: [{
-            scenarioName: 'deposit_happy_path',
-            runId: 'run_draft',
-            status: 'pass',
-            executionMode: 'fixture',
-            toolExecutionMode: 'mocked',
-            startedAt: '2026-06-04T00:00:00.000Z',
-            completedAt: '2026-06-04T00:02:00.000Z',
-            finishedAt: '2026-06-04T00:02:00.000Z',
-            agentConfigId: 'draft-3',
-            summary: 'All required evidence matched',
-            evidence: { toolsCalled: ['get_deposit_status'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
-            checks: [],
-            traceId: 'trace_draft',
-          }],
-          validation: {
-            state: 'Changed since last validation',
-            changedAt: '2026-06-04T01:00:00.000Z',
-            lastValidatedAt: '2026-06-04T00:02:00.000Z',
-            lastReceiptId: 'run_draft',
-            lastReceiptStatus: 'pass',
-            lastReceiptExecutionMode: 'fixture',
-            runtimeValidated: false,
-            overrideRequired: true,
-          },
-        },
-      })
+    if (url.pathname.match(/^\/api\/admin\/agent-configs\/[^/]+\/activate$/) && init?.method === 'PUT') {
+      const targetId = url.pathname.split('/')[4]
+      const target = fixture.configs.find((config) => config.id === targetId)
+      if (!target) throw new Error(`Unexpected activate request: ${String(input)}`)
+      return jsonResponse({ ok: true, data: { config: { ...target, isActive: true }, validation: { overrideRequired: true, overrideReason: 'Reviewed stale receipt.' } } })
     }
-
-    if (url === '/api/admin/agent-templates/export?agentConfigId=history-1') {
-      return jsonResponse({ ok: true, data: { template: historyTemplate, filename: 'history.intera-agent.json' } })
-    }
-    if (url === '/api/admin/agent-templates/export?agentConfigId=live-2') {
-      return jsonResponse({ ok: true, data: { template: liveTemplate, filename: 'live.intera-agent.json' } })
-    }
-    if (url === '/api/admin/agent-templates/export?agentConfigId=draft-3') {
-      return jsonResponse({ ok: true, data: { template: draftTemplate, filename: 'draft.intera-agent.json' } })
-    }
-    if (url === '/api/admin/agent-templates/export?agentConfigId=draft-3&download=1') {
-      return jsonResponse(draftTemplate)
-    }
-
-    if (url === '/api/admin/agent-configs/draft-3/activate' && init?.method === 'PUT') {
-      return jsonResponse({ ok: true, data: { config: { ...configs[2], isActive: true }, validation: { overrideRequired: true, overrideReason: 'Reviewed stale receipt.' } } })
-    }
-    if (url === '/api/admin/agent-configs/draft-3/fork' && init?.method === 'POST') {
+    if (url.pathname.match(/^\/api\/admin\/agent-configs\/[^/]+\/fork$/) && init?.method === 'POST') {
       if (options.forkLimit) {
         return jsonResponse({
           ok: false,
@@ -257,10 +295,13 @@ function installFetchMock(options: { forkLimit?: boolean } = {}) {
           },
         }, false, 400)
       }
-      return jsonResponse({ ok: true, data: { config: { ...configs[2], id: 'draft-4', version: 4 } } }, true, 201)
+      const targetId = url.pathname.split('/')[4]
+      const target = fixture.configs.find((config) => config.id === targetId)
+      if (!target) throw new Error(`Unexpected fork request: ${String(input)}`)
+      return jsonResponse({ ok: true, data: { config: { ...target, id: 'draft-4', version: Number(target.version) + 1 } } }, true, 201)
     }
 
-    if (url === '/api/admin/agent-templates/import' && init?.method === 'POST') {
+    if (url.pathname === '/api/admin/agent-templates/import' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body))
       if (body.dryRun) {
         return jsonResponse({
@@ -282,10 +323,11 @@ function installFetchMock(options: { forkLimit?: boolean } = {}) {
           },
         })
       }
-      return jsonResponse({ ok: true, data: { config: { ...configs[2], id: 'imported-1', name: 'Imported Starter' }, imported: {}, warnings: [] } }, true, 201)
+      const importBase = fixture.configs.find((config) => config.id === 'draft-3') ?? fixture.configs[fixture.configs.length - 1] ?? {}
+      return jsonResponse({ ok: true, data: { config: { ...importBase, id: 'imported-1', name: 'Imported Starter' }, imported: {}, warnings: [] } }, true, 201)
     }
 
-    throw new Error(`Unexpected fetch: ${url}`)
+    throw new Error(`Unexpected fetch: ${String(input)}`)
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -338,6 +380,8 @@ describe('ReleaseCommandCenter', () => {
     expect(screen.getByRole('button', { name: 'Create editable draft' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Rollback preview' })).toBeDefined()
     expect(screen.getByText('Required secrets')).toBeDefined()
+    expect(screen.getAllByText(/lead-delivery@intera.ai/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Stable launch package/).length).toBeGreaterThan(0)
   })
 
   it('requires an override reason before publishing stale validation', async () => {
@@ -415,5 +459,188 @@ describe('ReleaseCommandCenter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create editable draft' }))
 
     await screen.findByText(/Maximum retained versions is 5/)
+  })
+
+  it('keeps historical-only families out of the draft lane and uses rollback copy for reactivation', async () => {
+    h.context.selectedAgentId = 'history-1'
+    installFetchMock({
+      configs: [
+        {
+          id: 'history-1',
+          name: 'Gaming Support',
+          version: 1,
+          isActive: false,
+          parentId: null,
+          model: 'deepseek-v4-flash',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          updatedAt: '2026-06-01T01:00:00.000Z',
+          releaseNote: 'Original launch baseline',
+          publishedAt: '2026-06-01T02:00:00.000Z',
+          publishedBy: 'launch-owner',
+          publisherEmail: 'launch-owner@intera.ai',
+          publisherName: 'Launch Owner',
+        },
+        {
+          id: 'live-3',
+          name: 'Gaming Support',
+          version: 3,
+          isActive: true,
+          parentId: 'history-1',
+          model: 'deepseek-v4-flash',
+          createdAt: '2026-06-03T00:00:00.000Z',
+          updatedAt: '2026-06-03T01:00:00.000Z',
+          releaseNote: 'Current production baseline',
+          publishedAt: '2026-06-03T02:00:00.000Z',
+          publishedBy: 'release-captain',
+          publisherEmail: 'release-captain@intera.ai',
+          publisherName: 'Release Captain',
+        },
+      ],
+      scenariosById: {
+        'live-3': makeScenarioPayload({
+          receipts: [{
+            scenarioName: 'live_release_check',
+            runId: 'run_live_3',
+            status: 'pass',
+            executionMode: 'agentRuntime',
+            toolExecutionMode: 'live',
+            startedAt: '2026-06-03T02:00:00.000Z',
+            completedAt: '2026-06-03T02:02:00.000Z',
+            finishedAt: '2026-06-03T02:02:00.000Z',
+            agentConfigId: 'live-3',
+            summary: 'Live release validation passed',
+            evidence: { toolsCalled: ['get_latest_deposit'], hookDecisions: [], knowledgeHits: [], humanTransfer: false, handoff: [] },
+            checks: [{ name: 'baseline', passed: true }],
+            traceId: 'trace_live_3',
+          }],
+          validation: {
+            state: 'Validated',
+            changedAt: '2026-06-03T02:02:00.000Z',
+            lastValidatedAt: '2026-06-03T02:02:00.000Z',
+            lastReceiptId: 'run_live_3',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'agentRuntime',
+            runtimeValidated: true,
+            runtimeValidatedAt: '2026-06-03T02:02:00.000Z',
+            overrideRequired: false,
+          },
+        }),
+      },
+      templatesById: {
+        'live-3': liveTemplate,
+      },
+    })
+
+    await renderReleaseCommandCenter()
+
+    expect(screen.getByText('Create a candidate first')).toBeDefined()
+    expect(screen.queryByText('Draft ready for review')).toBeNull()
+    expect(screen.getByText('Rollback preview between live v3 and historical v1.')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Rollback preview' })).toBeDefined()
+  })
+
+  it('treats a direct child of live as the only candidate and routes the review CTA to it', async () => {
+    h.context.selectedAgentId = 'live-3'
+    installFetchMock({
+      configs: [
+        {
+          id: 'history-2',
+          name: 'Gaming Support',
+          version: 2,
+          isActive: false,
+          parentId: null,
+          model: 'deepseek-v4-flash',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          updatedAt: '2026-06-02T01:00:00.000Z',
+          releaseNote: 'Earlier retained release',
+          publishedAt: '2026-06-02T02:00:00.000Z',
+          publishedBy: 'ops-2',
+          publisherEmail: 'ops-2@intera.ai',
+          publisherName: 'Ops Two',
+        },
+        {
+          id: 'live-3',
+          name: 'Gaming Support',
+          version: 3,
+          isActive: true,
+          parentId: 'history-2',
+          model: 'deepseek-v4-flash',
+          createdAt: '2026-06-03T00:00:00.000Z',
+          updatedAt: '2026-06-03T01:00:00.000Z',
+          releaseNote: 'Current production baseline',
+          publishedAt: '2026-06-03T02:00:00.000Z',
+          publishedBy: 'release-captain',
+          publisherEmail: 'release-captain@intera.ai',
+          publisherName: 'Release Captain',
+        },
+        {
+          id: 'draft-4',
+          name: 'Gaming Support',
+          version: 4,
+          isActive: false,
+          parentId: 'live-3',
+          model: 'deepseek-v4-flash',
+          createdAt: '2026-06-04T00:00:00.000Z',
+          updatedAt: '2026-06-04T01:00:00.000Z',
+          releaseNote: null,
+          publishedAt: null,
+          publishedBy: null,
+          publisherEmail: null,
+          publisherName: null,
+        },
+      ],
+      scenariosById: {
+        'history-2': makeScenarioPayload({
+          validation: {
+            state: 'Validated',
+            changedAt: '2026-06-02T02:02:00.000Z',
+            lastValidatedAt: '2026-06-02T02:02:00.000Z',
+            lastReceiptId: 'run_history_2',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'agentRuntime',
+            runtimeValidated: true,
+            runtimeValidatedAt: '2026-06-02T02:02:00.000Z',
+            overrideRequired: false,
+          },
+        }),
+        'live-3': makeScenarioPayload({
+          validation: {
+            state: 'Validated',
+            changedAt: '2026-06-03T02:02:00.000Z',
+            lastValidatedAt: '2026-06-03T02:02:00.000Z',
+            lastReceiptId: 'run_live_3',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'agentRuntime',
+            runtimeValidated: true,
+            runtimeValidatedAt: '2026-06-03T02:02:00.000Z',
+            overrideRequired: false,
+          },
+        }),
+        'draft-4': makeScenarioPayload({
+          validation: {
+            state: 'Changed since last validation',
+            changedAt: '2026-06-04T01:00:00.000Z',
+            lastValidatedAt: '2026-06-04T00:02:00.000Z',
+            lastReceiptId: 'run_draft_4',
+            lastReceiptStatus: 'pass',
+            lastReceiptExecutionMode: 'fixture',
+            runtimeValidated: false,
+            overrideRequired: true,
+          },
+        }),
+      },
+      templatesById: {
+        'history-2': historyTemplate,
+        'live-3': liveTemplate,
+        'draft-4': draftTemplate,
+      },
+    })
+
+    await renderReleaseCommandCenter()
+
+    expect(screen.getByText('Draft ready for review')).toBeDefined()
+    expect(screen.getByText('Review v4')).toBeDefined()
+    expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Historical').length).toBeGreaterThan(0)
   })
 })

@@ -37,6 +37,8 @@ interface AgentVersion {
   releaseNote?: string | null
   publishedAt?: string | null
   publishedBy?: string | null
+  publisherEmail?: string | null
+  publisherName?: string | null
 }
 
 interface ScenarioListResponse {
@@ -538,6 +540,32 @@ function versionRoleFor(config: AgentVersion | null, liveId: string | null, draf
   return 'historical'
 }
 
+function isEditableCandidate(config: AgentVersion, live: AgentVersion | null) {
+  if (!live || config.isActive) return false
+  return config.parentId === live.id || config.version > live.version
+}
+
+function pickEditableCandidate(family: AgentVersion[], live: AgentVersion | null) {
+  return [...family]
+    .filter((config) => isEditableCandidate(config, live))
+    .sort((a, b) => b.version - a.version)[0] ?? null
+}
+
+function truncatePublisherId(value: string) {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value
+}
+
+function publisherDisplay(config: AgentVersion | null, locale: ReleaseLocale) {
+  if (!config) return locale === 'zh' ? '不可用' : 'Unavailable'
+  const email = config.publisherEmail?.trim()
+  const name = config.publisherName?.trim()
+  if (email && name) return `${email} · ${name}`
+  if (email) return email
+  if (name) return name
+  if (config.publishedBy) return truncatePublisherId(config.publishedBy)
+  return locale === 'zh' ? '不可用' : 'Unavailable'
+}
+
 function roleLabel(role: VersionRole, locale: ReleaseLocale) {
   const copy = releaseCopy(locale)
   if (role === 'live') return copy.live
@@ -704,7 +732,7 @@ export default function ReleaseCommandCenter() {
 
         const family = current ? configs.filter((config) => config.name === current.name).sort((a, b) => a.version - b.version) : []
         const live = family.find((config) => config.isActive) ?? configs.find((config) => config.isActive) ?? current
-        const draft = [...family].filter((config) => !config.isActive).sort((a, b) => b.version - a.version)[0] ?? null
+        const draft = pickEditableCandidate(family, live)
         const history = family.filter((config) => config.id !== live?.id && config.id !== draft?.id).sort((a, b) => b.version - a.version)
         const versionIds = family.map((config) => config.id)
 
@@ -1261,12 +1289,12 @@ function ReleaseVersionCompareRow({
         eyebrow={locale === 'zh' ? '当前 LIVE' : 'Now live'}
         metaLabel={locale === 'zh' ? '发布于' : 'published'}
         metaValue={formatDate(locale, live?.publishedAt ?? live?.updatedAt)}
-        detail={live?.publishedBy ? (locale === 'zh' ? `发布人 ${live.publishedBy}` : `by ${live.publishedBy}`) : (locale === 'zh' ? '发布人不可用' : 'Publisher unavailable')}
+        detail={live ? (locale === 'zh' ? `发布人 ${publisherDisplay(live, locale)}` : `by ${publisherDisplay(live, locale)}`) : (locale === 'zh' ? '发布人不可用' : 'Publisher unavailable')}
         pill={liveValidationSnapshot.label}
         pillTone={liveValidationSnapshot.tone}
       />
 
-      <div className="pointer-events-none hidden xl:flex xl:items-center xl:justify-center">
+      <div className={`pointer-events-none hidden xl:flex xl:items-center xl:justify-center ${draft ? '' : 'opacity-0'}`}>
         <div className="flex w-full items-center justify-center">
           <span className="h-px flex-1 bg-[color:color-mix(in_srgb,var(--color-border-subtle)_78%,transparent)]" />
           <span className="mx-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[color:color-mix(in_srgb,var(--color-border-subtle)_86%,white)] bg-[rgba(247,247,243,0.96)] text-[var(--color-text-tertiary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-sm">
@@ -1575,18 +1603,24 @@ function ReleaseTimelineRailCard({
                 <div className={`min-w-0 flex-1 rounded-[15px] border px-4 py-4 transition ${current
                   ? 'border-[color:color-mix(in_srgb,var(--color-accent-primary)_20%,var(--color-border-subtle))] bg-white shadow-[0_12px_28px_rgba(21,23,25,0.06)]'
                   : 'border-transparent bg-transparent group-hover:border-[var(--color-border-subtle)] group-hover:bg-white/72'}`}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[16px] font-semibold text-[var(--color-text-primary)]">v{config.version}</span>
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
-                      {roleLabel(role, locale)}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">{validationSnapshot.label}</p>
-                  <p className={`mt-1 text-[11px] ${current ? 'text-[var(--color-text-secondary)]' : 'truncate text-[var(--color-text-tertiary)]'}`}>{diffLabel}</p>
-                </div>
-              </button>
-            )
-          })
+	                  <div className="flex items-center gap-2">
+	                    <span className="text-[16px] font-semibold text-[var(--color-text-primary)]">v{config.version}</span>
+	                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
+	                      {roleLabel(role, locale)}
+	                    </span>
+	                  </div>
+	                  <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">{validationSnapshot.label}</p>
+	                  <p className={`mt-1 text-[11px] leading-4 ${current ? 'text-[var(--color-text-secondary)]' : 'truncate text-[var(--color-text-tertiary)]'}`}>
+	                    {locale === 'zh' ? '发布人' : 'Publisher'} · {publisherDisplay(config, locale)}
+	                  </p>
+	                  <p className={`mt-1 text-[11px] leading-4 ${current ? 'text-[var(--color-text-secondary)]' : 'truncate text-[var(--color-text-tertiary)]'}`}>
+	                    {config.releaseNote ?? (locale === 'zh' ? '发布说明未填写' : 'Release note not recorded')}
+	                  </p>
+	                  <p className={`mt-1 text-[11px] ${current ? 'text-[var(--color-text-secondary)]' : 'truncate text-[var(--color-text-tertiary)]'}`}>{diffLabel}</p>
+	                </div>
+	              </button>
+	            )
+	          })
         ) : (
           <div className="px-2 py-4 text-[13px] text-[var(--color-text-secondary)]">
             {locale === 'zh' ? '还没有任何版本。' : 'No versions retained yet.'}
@@ -1870,8 +1904,9 @@ function VersionTimelineRow({
         <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-secondary)]">{roleSubtitle(role, locale)}</p>
         <div className="mt-3 space-y-1 text-[12px] text-[var(--color-text-tertiary)]">
           <p>{config.publishedAt ? `${locale === 'zh' ? '发布时间' : 'Published'} ${formatDate(locale, config.publishedAt)}` : locale === 'zh' ? '尚未发布' : 'Not published yet'}</p>
-          <p>{config.publishedBy ? `${locale === 'zh' ? '发布人' : 'Published by'} ${config.publishedBy}` : locale === 'zh' ? '发布人不可用' : 'Publisher unavailable'}</p>
+          <p>{locale === 'zh' ? '发布人' : 'Published by'} {publisherDisplay(config, locale)}</p>
           <p>{locale === 'zh' ? '最后编辑' : 'Last edited'} {formatDate(locale, config.updatedAt)}</p>
+          <p>{config.releaseNote ? `${locale === 'zh' ? '发布说明' : 'Release note'} ${config.releaseNote}` : locale === 'zh' ? '发布说明未填写' : 'Release note not recorded'}</p>
         </div>
       </div>
 
@@ -1954,7 +1989,7 @@ function SelectedVersionCard({
               { label: locale === 'zh' ? '来源' : 'Lineage', value: parentVersion ? `${locale === 'zh' ? '派生自' : 'Forked from'} v${parentVersion}` : locale === 'zh' ? '原始家族基线' : 'Original family baseline' },
               { label: locale === 'zh' ? '更新时间' : 'Updated', value: formatDate(locale, config.updatedAt) },
               { label: locale === 'zh' ? '发布时间' : 'Published', value: formatDate(locale, config.publishedAt, locale === 'zh' ? '尚未发布' : 'Not published') },
-              { label: locale === 'zh' ? '发布人' : 'Publisher', value: config.publishedBy || (locale === 'zh' ? '不可用' : 'Unavailable') },
+              { label: locale === 'zh' ? '发布人' : 'Publisher', value: publisherDisplay(config, locale) },
             ]}
           />
 

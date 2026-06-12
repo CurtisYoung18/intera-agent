@@ -39,6 +39,19 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-12 - Consolidation Wave 1 Dispatch Uses Clean Worker Lanes While Main Carries WIP
+
+- Area: Consolidation M1-M7 dispatch / worktree hygiene / Wave sequencing
+- Status: default-applied
+- Severity: P1
+- Uncertainty: The consolidation contract/plan/spec are currently present as untracked docs in `/Users/curtis/Desktop/intera-agent`, while the calling Codex thread is in a clean detached worktree that does not contain those untracked files. Earlier planning notes also warned that `apps/console/app/build/components/procedures/[name]/page.tsx` might carry WIP before CONS-M1, but the immediate status check for that exact path did not show it dirty at Wave 1 dispatch time. The broader desktop `main` worktree still carries many unrelated historical artifacts and local changes from delivery/procedure/session lanes.
+- Default action taken: Dispatched Wave 1 workers as isolated lanes with prompts that copy the relevant task lists, remove lists, owned files, gates, standing rules, and instruct workers to read the authoritative untracked docs from `/Users/curtis/Desktop/intera-agent` as read-only reference if absent in their spawned worktree. CONS-M1 remains blocked until CONS-M2 is merged and verified, and before Wave 2 the coordinator must re-check/land/discard any Procedure editor WIP explicitly.
+- Why this default: It lets the non-overlapping Wave 1 lanes proceed without destroying or accidentally staging unrelated WIP. It also preserves the contract's sequencing guarantees: no M1 work, no second schema lane, no parallel edits to `session-store.ts`/`loop.ts` beyond CONS-M2 ownership.
+- Evidence: MASTER active-lanes table now lists CONS-M2 (`Beauvoir`), CONS-M5 (`Avicenna`), CONS-M7A (`Parfit`), and CONS-M7B (`Averroes`). Dispatch prompts required production receipts on `https://demo.anytrans.ai` per `PLATFORM_DELIVERY_AUDIT_GOALS.md` and freeze-list compliance per consolidation spec §9.
+- Production URL / screenshot / receipt: Dispatch-only coordination item; no production test performed in this coordinator turn.
+- Owner decision needed: Tomorrow, confirm whether the untracked consolidation docs should be committed before workers merge back, and re-confirm the Wave 2 WIP gate decision for the Procedure editor before CONS-M1 starts.
+- Follow-up owner: architect / coordinator
+
 ### 2026-06-12 - Procedure v2 Merge-Candidate Is Green In Code But Missing Authenticated UI Proof
 
 - Area: Procedure authoring / runtime / local verification
@@ -341,3 +354,15 @@ Use this format for each new item:
 - Historical note: This item records production setup readiness only. The final counted J1B Playground receipts on 2026-06-11 still reported `toolExecutionMode=mocked`; see the separate scope-gap item above for the current acceptance boundary.
 - Owner decision needed: None for tool/procedure seeding. Historical follow-up complete: the full J1B 12-scenario matrix is now indexed in `.artifacts/delivery-audit/2026-06-11/j1b-scenarios/final-j1b-acceptance-index.md`.
 - Follow-up owner: delivery lead / coding-team lead
+
+### 2026-06-12 - CONS-R1 Release Lifecycle Uses Integer Auto-Increment Versions
+
+- Area: Release / agent version lifecycle
+- Status: open
+- Severity: P2
+- Uncertainty: R1a needs a stable candidate-vs-historical rule before any broader lifecycle redesign. Current product/runtime semantics still use integer `version` rows per `(orgId, name)` family and `parentId` lineage. There is no separate release token, timestamp rank, or schema-side candidate marker.
+- Default action taken: Keep the existing integer auto-increment version scheme for R1a. Classify a non-live row as the editable candidate only when it is directly forked from the current live row (`parentId === live.id`) or its integer `version` is newer than the live row. Treat all other non-live rows as historical. Do not add schema fields or Phase R1b semantics in this lane.
+- Why this default: It fixes the concrete Release misclassification bug on the current production schema without widening into a migration lane or introducing ambiguous mixed version semantics mid-goal.
+- Evidence: Lane contract `doc/handoffs/LANE_CONS_R1_RELEASE_VERSION_LIFECYCLE.md` Phase R1a; forthcoming local/prod receipts under `.artifacts/delivery-audit/2026-06-12/cons-r1a/**`.
+- Owner decision needed: Tomorrow review can still choose a richer lifecycle marker in a later lane, but R1a proceeds on integer auto-increment as the binding default.
+- Follow-up owner: architect / release lane owner
