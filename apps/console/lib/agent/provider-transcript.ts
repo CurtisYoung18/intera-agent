@@ -38,6 +38,7 @@ export interface MessagePersistenceRecord {
   caseId: string
   role: string
   content: string
+  createdAt: Date
   contentBlocks?: unknown
   providerContent?: ProviderContentBlock[]
   providerMeta?: ProviderMeta
@@ -226,6 +227,7 @@ export function serializeMessageForPersistence(
     caseId,
     role: message.role,
     content: persistableMessageText(message.content),
+    createdAt: message.createdAt,
     contentBlocks: message.contentBlocks ?? undefined,
     providerContent: normalizeProviderContent(message.providerContent ?? legacyProviderContent(message)),
     providerMeta: normalizeProviderMeta(message.providerMeta),

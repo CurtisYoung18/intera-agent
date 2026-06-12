@@ -33,6 +33,7 @@ describe('provider transcript serialization', () => {
     }
 
     const serialized = serializeMessageForPersistence(message, 'case-1')
+    expect(serialized.createdAt).toEqual(message.createdAt)
     expect(serialized.providerContent).toEqual([
       { type: 'text', text: 'Let me check.' },
       { type: 'tool_use', id: 'toolu_1', name: 'lookup_deposit', input: { member_id: 'M123' } },

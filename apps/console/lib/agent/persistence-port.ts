@@ -31,6 +31,7 @@ export interface MessageRecord {
   caseId: string
   role: string
   content: string
+  createdAt?: Date
   contentBlocks?: unknown
   providerContent?: unknown
   providerMeta?: unknown
