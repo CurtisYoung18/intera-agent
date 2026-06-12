@@ -210,6 +210,14 @@ export const scenarioObservedEvidenceInputSchema = z.object({
     reconcileEvidence: z.array(z.record(z.unknown())).default([]),
     procedureRuns: z.array(scenarioProcedureRuntimeSnapshotSchema).default([]),
     eventsObserved: z.number().int().nonnegative().optional(),
+    transcriptHealth: z.object({
+      providerTranscriptPersisted: z.boolean().default(false),
+      toolPairsChecked: z.number().int().nonnegative().default(0),
+      toolPairsRepaired: z.number().int().nonnegative().default(0),
+      orphanToolResultsDropped: z.number().int().nonnegative().default(0),
+      legacyRowsSkipped: z.number().int().nonnegative().default(0),
+      compactPairsSummarized: z.number().int().nonnegative().default(0),
+    }).partial().optional(),
   }).partial().optional(),
 })
 export type ScenarioObservedEvidenceInput = z.infer<typeof scenarioObservedEvidenceInputSchema>

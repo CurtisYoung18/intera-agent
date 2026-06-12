@@ -24,6 +24,12 @@ export type ActionType =
   | 'llm_request_start'
   | 'llm_response'
   | 'microcompact'
+  | 'provider_transcript_health'
+  | 'provider_transcript_persisted'
+  | 'provider_transcript_repair'
+  | 'provider_transcript_orphan_drop'
+  | 'provider_transcript_legacy_skip'
+  | 'provider_transcript_compact_summary'
   // ── LiveChat / multi-agent trace ──
   | 'incoming_chat'
   | 'chat_deactivated'

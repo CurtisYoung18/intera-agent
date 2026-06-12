@@ -27,11 +27,43 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
 
+export type ProviderContentBlock =
+  | ContentBlock
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content?: string; is_error?: boolean }
+
+export type ProviderFamily = 'anthropic' | 'openai' | 'deepseek' | 'unknown'
+export type ProviderVisibility = 'customer' | 'operator' | 'internal'
+export type ProviderTranscriptKind =
+  | 'natural_message'
+  | 'assistant_response'
+  | 'tool_result'
+  | 'hook_feedback'
+  | 'synthetic_repair'
+export type ProviderRepairReason =
+  | 'missing_tool_result'
+  | 'orphan_tool_result'
+  | 'legacy_row'
+  | 'compact_boundary'
+  | 'budget_replacement'
+
+export interface ProviderMeta {
+  protocolVersion: 1
+  providerFamily?: ProviderFamily
+  visibility?: ProviderVisibility
+  transcriptKind?: ProviderTranscriptKind
+  sourceAssistantMessageId?: string
+  toolUseIds?: string[]
+  repairReason?: ProviderRepairReason
+}
+
 export interface BaseMessage {
   id: string
   role: MessageRole
   content: string
   contentBlocks?: ContentBlock[]
+  providerContent?: ProviderContentBlock[]
+  providerMeta?: ProviderMeta
   createdAt: Date
 }
 

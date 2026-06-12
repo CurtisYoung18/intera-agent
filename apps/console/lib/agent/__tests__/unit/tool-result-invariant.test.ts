@@ -6,6 +6,7 @@ import {
   type SynthesisReason,
 } from '../../tool-result-invariant'
 import type { ToolUse } from '@intera/shared/types'
+import { assistantProviderContent, toolResultProviderContent } from '../../provider-transcript'
 
 function makeToolUse(id: string, name: string): ToolUse {
   return { id, name, input: {} }
@@ -140,6 +141,25 @@ describe('assertToolResultInvariant', () => {
         { tool_use_id: 'b', type: 'tool_result' },
       ]},
     ]
+    expect(() => assertToolResultInvariant(messages)).not.toThrow()
+  })
+
+  it('checks hydrated providerContent tool_use and tool_result blocks', () => {
+    const messages = [
+      {
+        role: 'assistant',
+        content: '',
+        providerContent: assistantProviderContent('', [makeToolUse('persisted', 'read')]),
+      },
+      {
+        role: 'user',
+        content: '',
+        providerContent: toolResultProviderContent([
+          { type: 'tool_result', tool_use_id: 'persisted', content: 'ok' },
+        ]),
+      },
+    ]
+
     expect(() => assertToolResultInvariant(messages)).not.toThrow()
   })
 

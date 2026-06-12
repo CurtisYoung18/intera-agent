@@ -4,6 +4,7 @@
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { getActiveVendor } from '@/lib/auth'
+import { hydrateMessageFromDb, isCustomerVisibleMessage } from '@/lib/agent/provider-transcript'
 import { z } from 'zod'
 
 /** Extract agent config id from chatId format pg_{configId}_{timestamp}_{random}. */
@@ -40,7 +41,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     const messages = await repo.raw.message.findMany({
       where: { caseId: c.id },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, role: true, content: true, contentBlocks: true, createdAt: true },
+      select: { id: true, role: true, content: true, contentBlocks: true, providerContent: true, providerMeta: true, createdAt: true },
     })
 
     // Load traces for this case
@@ -75,7 +76,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
 
     return apiOk({
       chatId: params.chatId,
-      messages: messages.map((m) => ({
+      messages: messages.map((m) => hydrateMessageFromDb(m as any)).filter(isCustomerVisibleMessage).map((m) => ({
         id: m.id,
         role: m.role,
         content: m.content,

@@ -16,6 +16,7 @@ import { withRetry, CannotRetryError } from './api/with-retry'
 import { getProviderConfig, createAgentClient } from './api/provider-config'
 import { CASE_COMPACT_PROMPT } from './case-compact-prompt'
 import { PROFILE_COMPACT_PROMPT } from './profile-compact-prompt'
+import { providerTranscriptCompactText, selectProviderMessageWindow } from './provider-transcript'
 
 /**
  * @deprecated Replaced by CASE_COMPACT_PROMPT (intra-case) and
@@ -70,11 +71,11 @@ export async function compactConversation(
   const systemPrompt = strategy.compactPrompt || defaultPrompt
 
   const apiMessages = messages
-    .filter((m) => typeof m.content === 'string' && m.content.trim().length > 0)
     .map((m) => ({
       role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-      content: m.content as string,
+      content: providerTranscriptCompactText(m),
     }))
+    .filter((m): m is { role: 'user' | 'assistant'; content: string } => !!m.content)
     .slice(-(strategy.compactMaxMessages || 20))
 
   try {
@@ -144,6 +145,9 @@ export async function contextCollapse(
 export function reactiveCompact(messages: Message[], keepLast: number = 4): Message[] {
   if (messages.length <= keepLast) return messages
   const systemMsgs = messages.filter((m) => m.role === 'system')
-  const recentMsgs = messages.slice(-keepLast)
+  const recentMsgs = selectProviderMessageWindow(
+    messages.filter((m) => m.role !== 'system'),
+    keepLast,
+  )
   return [...systemMsgs, ...recentMsgs]
 }

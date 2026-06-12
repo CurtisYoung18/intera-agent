@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
     tool: { findMany: vi.fn() },
     knowledgeSource: { findMany: vi.fn() },
     message: { findMany: vi.fn(), upsert: vi.fn() },
+    actionTrace: { create: vi.fn() },
     chatMemory: { upsert: vi.fn() },
   }
   return {
@@ -99,6 +100,7 @@ beforeEach(() => {
   closeSession('case-queued')
   closeSession('case-drain')
   closeSession('case-v2-form')
+  closeSession('case-provider-reload')
 
   h.resolveOrgFromApiKey.mockResolvedValue({ orgId: 'org-a', agentConfigId: 'agent-a' })
   h.isTrustedInternalCall.mockReturnValue(false)
@@ -123,6 +125,7 @@ beforeEach(() => {
   h.prisma.knowledgeSource.findMany.mockResolvedValue([])
   h.prisma.message.findMany.mockResolvedValue([])
   h.prisma.message.upsert.mockResolvedValue({})
+  h.prisma.actionTrace.create.mockResolvedValue({})
   h.prisma.$transaction.mockImplementation(async (ops) => ops)
   h.prisma.chatMemory.upsert.mockResolvedValue({})
   h.agentLoopCreate.mockResolvedValue(mockLoop())
@@ -134,6 +137,7 @@ afterEach(() => {
   closeSession('case-queued')
   closeSession('case-drain')
   closeSession('case-v2-form')
+  closeSession('case-provider-reload')
 })
 
 describe('POST /api/messages runtime session guards', () => {
@@ -207,6 +211,64 @@ describe('POST /api/messages runtime session guards', () => {
     expect(hasSession('case-queued')).toBe(true)
   })
 
+  it('hydrates persisted provider transcript before a follow-up HTTP turn runs', async () => {
+    const priorCreatedAt = new Date('2026-06-12T00:00:00Z')
+    h.prisma.case.findUnique.mockResolvedValueOnce({ id: 'case-provider-reload', status: 'open' })
+    h.prisma.message.findMany.mockResolvedValueOnce([
+      {
+        id: 'assistant-tool-use',
+        role: 'assistant',
+        content: 'Checking that now.',
+        contentBlocks: null,
+        providerContent: [
+          { type: 'text', text: 'Checking that now.' },
+          { type: 'tool_use', id: 'toolu_1', name: 'lookup_deposit', input: { member_id: 'M123' } },
+        ],
+        providerMeta: { protocolVersion: 1, visibility: 'customer', transcriptKind: 'assistant_response', toolUseIds: ['toolu_1'] },
+        createdAt: priorCreatedAt,
+      },
+      {
+        id: 'tool-result',
+        role: 'user',
+        content: '',
+        contentBlocks: null,
+        providerContent: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: '{"ok":true}' },
+        ],
+        providerMeta: { protocolVersion: 1, visibility: 'internal', transcriptKind: 'tool_result', toolUseIds: ['toolu_1'] },
+        createdAt: priorCreatedAt,
+      },
+    ])
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      message: 'what happened next?',
+      caseId: 'case-provider-reload',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(loop.loadMessages).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'assistant-tool-use',
+        providerContent: expect.arrayContaining([
+          expect.objectContaining({ type: 'tool_use', id: 'toolu_1', name: 'lookup_deposit' }),
+        ]),
+        toolUses: [{ id: 'toolu_1', name: 'lookup_deposit', input: { member_id: 'M123' } }],
+      }),
+      expect.objectContaining({
+        id: 'tool-result',
+        providerContent: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: '{"ok":true}', is_error: undefined },
+        ],
+        providerMeta: expect.objectContaining({ visibility: 'internal', transcriptKind: 'tool_result' }),
+      }),
+    ])
+  })
+
   it('drains queued follow-up turns and persists the follow-up result before returning', async () => {
     const primaryMemory = {
       confirmedFacts: {},
@@ -246,7 +308,13 @@ describe('POST /api/messages runtime session guards', () => {
     })
     const followupLoop = mockLoop({
       run: vi.fn(async () => ({
-        messages: [{ id: 'msg-followup', role: 'assistant', content: 'follow-up reply' }],
+        messages: [{
+          id: 'msg-followup',
+          role: 'assistant',
+          content: 'follow-up reply',
+          providerContent: [{ type: 'text', text: 'follow-up reply' }],
+          providerMeta: { protocolVersion: 1, visibility: 'customer', transcriptKind: 'assistant_response' },
+        }],
         caseStatus: 'open',
         transition: 'next_turn',
         reason: 'drained',
@@ -254,6 +322,33 @@ describe('POST /api/messages runtime session guards', () => {
       getMemorySummary: vi.fn(() => followupMemory),
       getCaseType: vi.fn(() => 'deposit_issue'),
     })
+    const persistedToolPair = [
+      {
+        id: 'assistant-tool-use',
+        role: 'assistant',
+        content: '',
+        contentBlocks: null,
+        providerContent: [
+          { type: 'tool_use', id: 'toolu_follow', name: 'lookup_balance', input: { member_id: 'M123' } },
+        ],
+        providerMeta: { protocolVersion: 1, visibility: 'customer', transcriptKind: 'assistant_response', toolUseIds: ['toolu_follow'] },
+        createdAt: new Date('2026-06-12T00:00:00Z'),
+      },
+      {
+        id: 'tool-result-follow',
+        role: 'user',
+        content: '',
+        contentBlocks: null,
+        providerContent: [
+          { type: 'tool_result', tool_use_id: 'toolu_follow', content: '{"balance":10}' },
+        ],
+        providerMeta: { protocolVersion: 1, visibility: 'internal', transcriptKind: 'tool_result', toolUseIds: ['toolu_follow'] },
+        createdAt: new Date('2026-06-12T00:00:01Z'),
+      },
+    ]
+    h.prisma.message.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(persistedToolPair)
     h.agentLoopCreate
       .mockResolvedValueOnce(primaryLoop)
       .mockResolvedValueOnce(followupLoop)
@@ -268,6 +363,16 @@ describe('POST /api/messages runtime session guards', () => {
     const events = await readSse(res)
 
     expect(h.agentLoopCreate).toHaveBeenCalledTimes(2)
+    expect(followupLoop.loadMessages).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'assistant-tool-use',
+        toolUses: [{ id: 'toolu_follow', name: 'lookup_balance', input: { member_id: 'M123' } }],
+      }),
+      expect.objectContaining({
+        id: 'tool-result-follow',
+        providerMeta: expect.objectContaining({ visibility: 'internal' }),
+      }),
+    ])
     expect(followupLoop.loadMemory).toHaveBeenCalledWith(primaryMemory)
     expect(followupLoop.run).toHaveBeenCalledWith('queued follow-up', expect.any(Function), undefined)
     expect(h.prisma.case.upsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -290,6 +395,14 @@ describe('POST /api/messages runtime session guards', () => {
       }),
     }))
     expect(h.prisma.$transaction).toHaveBeenCalled()
+    expect(h.prisma.actionTrace.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        caseId: 'case-drain',
+        chatId: 'chat-1',
+        actionType: 'provider_transcript_persisted',
+        payload: expect.stringContaining('"providerTranscriptPersisted":true'),
+      }),
+    }))
     expect(events.some((event) => event.type === 'message_stop' && event.data?.reason === 'drained')).toBe(true)
     expect(hasSession('case-drain')).toBe(false)
   })

@@ -87,6 +87,32 @@ describe('runtime-backed Scenario evidence', () => {
         payload: JSON.stringify({ runId: 'run-1', inputEpoch: 2 }),
         createdAt: '2026-06-10T00:00:03.500Z',
       },
+      {
+        caseId: 'case-1',
+        actionType: 'provider_transcript_health',
+        title: 'Provider transcript health',
+        payload: JSON.stringify({
+          providerTranscriptPersisted: false,
+          providerTranscriptPresent: true,
+          toolPairsChecked: 2,
+          toolPairsRepaired: 1,
+          orphanToolResultsDropped: 0,
+          legacyRowsSkipped: 1,
+          compactPairsSummarized: 0,
+        }),
+        createdAt: '2026-06-10T00:00:03.750Z',
+      },
+      {
+        caseId: 'case-1',
+        actionType: 'provider_transcript_persisted',
+        title: 'Provider transcript persisted',
+        payload: JSON.stringify({
+          providerTranscriptPersisted: true,
+          providerTranscriptMessageCount: 2,
+          providerTranscriptBlockCount: 3,
+        }),
+        createdAt: '2026-06-10T00:00:03.900Z',
+      },
     ]
 
     const evidence = buildRuntimeEvidence({
@@ -114,6 +140,14 @@ describe('runtime-backed Scenario evidence', () => {
     expect(evidence.runtime?.staleEvidence).toHaveLength(1)
     expect(evidence.runtime?.reconcileEvidence).toHaveLength(1)
     expect(evidence.runtime?.transition).toBe('waiting_human')
+    expect(evidence.runtime?.transcriptHealth).toMatchObject({
+      providerTranscriptPersisted: true,
+      toolPairsChecked: 2,
+      toolPairsRepaired: 1,
+      orphanToolResultsDropped: 0,
+      legacyRowsSkipped: 1,
+      compactPairsSummarized: 0,
+    })
   })
 
   it('captures knowledge-search hits for scenario receipts', () => {

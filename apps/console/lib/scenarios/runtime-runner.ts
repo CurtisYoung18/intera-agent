@@ -155,6 +155,7 @@ export function buildRuntimeEvidence(input: {
     : toolResults.map((result) => result.name)
   const humanEvidence = collectHumanTransfer(input.events, toolCalls, toolResults, hookDecisions)
   const runtimeEvidence = collectRuntimeEvidence(rawTrace)
+  const transcriptHealth = collectTranscriptHealth(rawTrace)
   const blockedEvent = input.events.find((event) => event.type === 'error')
   const transition = latestMessageStopReason(input.events) ?? 'next_turn'
   const finalStatus = blockedEvent
@@ -187,6 +188,7 @@ export function buildRuntimeEvidence(input: {
       reconcileEvidence: runtimeEvidence.reconcileEvidence,
       procedureRuns: input.procedureRuns ?? [],
       eventsObserved: input.events.length,
+      transcriptHealth,
     },
   }
 }
@@ -501,6 +503,35 @@ function collectRuntimeEvidence(rawTrace: TraceRecord[]): {
   return { staleEvidence, reconcileEvidence }
 }
 
+function collectTranscriptHealth(rawTrace: TraceRecord[]): NonNullable<NonNullable<ScenarioObservedEvidenceInput['runtime']>['transcriptHealth']> {
+  const health = {
+    providerTranscriptPersisted: false,
+    toolPairsChecked: 0,
+    toolPairsRepaired: 0,
+    orphanToolResultsDropped: 0,
+    legacyRowsSkipped: 0,
+    compactPairsSummarized: 0,
+  }
+
+  for (const record of rawTrace) {
+    const payload = parsePayload(record.payload)
+    if (!payload) continue
+    if (record.actionType === 'provider_transcript_persisted') {
+      health.providerTranscriptPersisted ||= payload.providerTranscriptPersisted === true
+      continue
+    }
+    if (record.actionType !== 'provider_transcript_health') continue
+    health.providerTranscriptPersisted ||= payload.providerTranscriptPersisted === true
+    health.toolPairsChecked += asCount(payload.toolPairsChecked)
+    health.toolPairsRepaired += asCount(payload.toolPairsRepaired)
+    health.orphanToolResultsDropped += asCount(payload.orphanToolResultsDropped)
+    health.legacyRowsSkipped += asCount(payload.legacyRowsSkipped)
+    health.compactPairsSummarized += asCount(payload.compactPairsSummarized)
+  }
+
+  return health
+}
+
 function detectToolExecutionMode(value: unknown): ScenarioToolExecutionMode {
   if (hasDryRunMarker(value)) return 'mocked'
   return 'runtime'
@@ -542,6 +573,10 @@ function parsePayload(payload: string | null | undefined): Record<string, unknow
   } catch {
     return undefined
   }
+}
+
+function asCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
 }
 
 function latestMessageStopReason(events: SSEEvent[]): string | undefined {

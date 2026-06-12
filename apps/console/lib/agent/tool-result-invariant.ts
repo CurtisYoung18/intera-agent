@@ -10,6 +10,7 @@
 // Based on Claude Code's yieldMissingToolResultBlocks + createSyntheticErrorMessage.
 
 import type { ToolUse } from '@intera/shared/types'
+import { normalizeProviderContent, providerContentToToolUses } from './provider-transcript'
 
 // ── Synthesis reason ────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ interface MessageLike {
   role: string
   content: unknown
   toolUses?: ToolUse[]
+  providerContent?: unknown
 }
 
 /**
@@ -108,15 +110,18 @@ export function assertToolResultInvariant(messages: MessageLike[]): void {
   const pending = new Map<string, string>() // tool_use_id → tool name
 
   for (const msg of messages) {
-    if (msg.role === 'assistant' && msg.toolUses) {
-      for (const tu of msg.toolUses) {
+    if (msg.role === 'assistant') {
+      const toolUses = providerContentToToolUses(msg.providerContent).length > 0
+        ? providerContentToToolUses(msg.providerContent)
+        : msg.toolUses ?? []
+      for (const tu of toolUses) {
         pending.set(tu.id, tu.name)
       }
     }
 
     if (msg.role === 'user') {
       // Check if this user message contains tool_result blocks
-      const content = msg.content
+      const content = normalizeProviderContent(msg.providerContent) ?? msg.content
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block && typeof block === 'object' && 'tool_use_id' in block) {

@@ -32,6 +32,8 @@ export interface MessageRecord {
   role: string
   content: string
   contentBlocks?: unknown
+  providerContent?: unknown
+  providerMeta?: unknown
   isStreaming?: boolean
 }
 
@@ -123,7 +125,13 @@ export function createPrismaPersistence(): PersistencePort {
         messages.map((msg) =>
           prisma.message.upsert({
             where: { id: msg.id },
-            update: { content: msg.content, contentBlocks: msg.contentBlocks ?? undefined, isStreaming: false },
+            update: {
+              content: msg.content,
+              contentBlocks: msg.contentBlocks ?? undefined,
+              providerContent: msg.providerContent ?? undefined,
+              providerMeta: msg.providerMeta ?? undefined,
+              isStreaming: false,
+            },
             create: msg as any,
           }),
         ),

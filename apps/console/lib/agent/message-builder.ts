@@ -1,8 +1,15 @@
 // Message construction utilities — extracted from AgentLoop.
 
-import type { Message, ContentBlock, MemoryStrategy } from '@intera/shared/types'
+import type { Message, ContentBlock, MemoryStrategy, ProviderContentBlock } from '@intera/shared/types'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
+import {
+  mergeTranscriptHealthMetrics,
+  normalizeProviderContent,
+  normalizeProviderTranscriptMessages,
+  selectProviderMessageWindowWithMetrics,
+  type TranscriptHealthMetrics,
+} from './provider-transcript'
 
 function normalizeImageData(data: unknown): string | null {
   if (typeof data !== 'string') return null
@@ -106,15 +113,22 @@ export function addToolResultMessages(
 }
 
 /** Build Anthropic-format messages array from recent conversation history. */
-export function buildApiMessages(
+export function buildApiMessagesWithTranscriptHealth(
   messages: Message[],
   chatMemory: ChatMemoryManager,
   memoryStrategy: MemoryStrategy,
-): any {
+): { messages: any; metrics: TranscriptHealthMetrics } {
   const limit = memoryStrategy.l1MaxMessages * 2
-  const recentMessages = messages.slice(-limit)
+  const windowed = selectProviderMessageWindowWithMetrics(messages, limit)
+  const normalized = normalizeProviderTranscriptMessages(windowed.messages)
+  const metrics = mergeTranscriptHealthMetrics(windowed.metrics, normalized.metrics)
 
   const toAnthropic = (msg: Message): { role: string; content: unknown } => {
+    const providerContent = normalizeProviderContent(msg.providerContent)
+    if (providerContent?.length) {
+      return { role: msg.role, content: providerContent.map(toAnthropicProviderBlock) }
+    }
+
     const contentBlocks = normalizeContentBlocks(msg.contentBlocks)
     if (contentBlocks?.length) {
       const blocks = []
@@ -153,8 +167,44 @@ export function buildApiMessages(
     }
     const summaryMsg = makeUserMessage(`[Case context from previous turns — use this to stay oriented]\n${summaryText}`)
     const apiSummary = toAnthropic(summaryMsg)
-    return [apiSummary, ...recentMessages.map(toAnthropic)] as any
+    return { messages: [apiSummary, ...normalized.messages.map(toAnthropic)] as any, metrics }
   }
 
-  return recentMessages.map(toAnthropic) as any
+  return { messages: normalized.messages.map(toAnthropic) as any, metrics }
+}
+
+export function buildApiMessages(
+  messages: Message[],
+  chatMemory: ChatMemoryManager,
+  memoryStrategy: MemoryStrategy,
+): any {
+  return buildApiMessagesWithTranscriptHealth(messages, chatMemory, memoryStrategy).messages
+}
+
+function toAnthropicProviderBlock(block: ProviderContentBlock): ProviderContentBlock {
+  if (block.type === 'text') return { type: 'text', text: block.text }
+  if (block.type === 'image') {
+    return {
+      type: 'image',
+      source: {
+        type: block.source.type,
+        media_type: block.source.media_type,
+        data: block.source.data,
+      },
+    }
+  }
+  if (block.type === 'tool_use') {
+    return {
+      type: 'tool_use',
+      id: block.id,
+      name: block.name,
+      input: block.input ?? {},
+    }
+  }
+  return {
+    type: 'tool_result',
+    tool_use_id: block.tool_use_id,
+    content: block.content,
+    is_error: block.is_error,
+  }
 }

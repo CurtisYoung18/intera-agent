@@ -10,7 +10,7 @@ import {
   type PlaygroundToolExecutionTruth,
   type PlaygroundTraceStep,
 } from './trace-aggregator'
-import type { ContentBlock, SSEEvent, ToolDefinition } from '@intera/shared/types'
+import type { ContentBlock, Message, SSEEvent, ToolDefinition } from '@intera/shared/types'
 import { buildModePrompt } from './buildModePrompt'
 import { loadAgentConfig } from './config-loader'
 import { buildModelList } from './build-model-list'
@@ -19,6 +19,12 @@ import { getProcedureRuntime, recordInitialInputEvent } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
+import {
+  hasProviderOrDisplayContent,
+  hydrateMessageFromDb,
+  providerTranscriptPersistenceReceipt,
+  serializeMessageForPersistence,
+} from './provider-transcript'
 
 /** Lightweight overrides for playground runs. Real AgentConfig is loaded from DB. */
 export interface PlaygroundConfig {
@@ -456,13 +462,7 @@ export async function* runPlaygroundTurn(input: {
   })
   if (priorMessages.length > 0) {
     agentLoop.loadMessages(
-      priorMessages.map((m: any) => ({
-        id: m.id,
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-        contentBlocks: (m as any).contentBlocks ?? undefined,
-        createdAt: m.createdAt,
-      })),
+      priorMessages.map((m: any) => hydrateMessageFromDb(m)),
     )
   }
 
@@ -483,6 +483,7 @@ export async function* runPlaygroundTurn(input: {
   const pending: SSEEvent[] = []
   let resolveNext: (() => void) | null = null
   let runDone = false
+  let loopMessages: Message[] = []
   const wake = () => { const r = resolveNext; resolveNext = null; r?.() }
 
   const sendEvent = (event: SSEEvent) => {
@@ -500,7 +501,8 @@ export async function* runPlaygroundTurn(input: {
   // ── Run the REAL agent loop concurrently with the stream consumer ──
   void (async () => {
     try {
-      await agentLoop.run(message, sendEvent, contentBlocks)
+      const result = await agentLoop.run(message, sendEvent, contentBlocks)
+      loopMessages = result.messages
     } catch (err) {
       pending.push({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Agent loop failed' }, timestamp: new Date().toISOString() })
     } finally {
@@ -518,11 +520,30 @@ export async function* runPlaygroundTurn(input: {
     await new Promise<void>((resolve) => { resolveNext = resolve })
   }
 
-  // ── Persist messages to DB (AgentLoop does NOT call saveMessages itself) ──
-  await persistence.saveMessages([
-    { id: turnId, role: 'user', content: message, contentBlocks, caseId },
-    { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
-  ])
+  // ── Persist full AgentLoop transcript, including internal provider tool_result rows. ──
+  const transcriptMessages = loopMessages
+    .filter((msg) => hasProviderOrDisplayContent(msg))
+    .map((msg) => serializeMessageForPersistence(msg, caseId))
+  if (transcriptMessages.length > 0) {
+    await persistence.saveMessages(transcriptMessages)
+    const receipt = providerTranscriptPersistenceReceipt(transcriptMessages)
+    if (receipt.providerTranscriptPersisted) {
+      await persistence.saveTrace({
+        caseId,
+        chatId: effectiveChatId,
+        actionType: 'provider_transcript_persisted',
+        title: 'Provider transcript persisted',
+        detail: `${receipt.providerTranscriptMessageCount} provider transcript message(s) persisted`,
+        payload: JSON.stringify(receipt),
+        createdAt: new Date().toISOString(),
+      })
+    }
+  } else {
+    await persistence.saveMessages([
+      { id: turnId, role: 'user', content: message, contentBlocks, caseId },
+      { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: reply, caseId },
+    ])
+  }
 
   // ── Aggregate traces ──
   const totalMs = Math.max(1, Date.now() - startTime)

@@ -4,7 +4,22 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowUpRight, CheckCircle2, GitBranch, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CheckCircle2,
+  ChevronDown,
+  GitBranch,
+  ListChecks,
+  Loader2,
+  Play,
+  Plus,
+  Settings,
+  Sparkles,
+  Square,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { BuildComponentsRouteShell } from '../../_components/components-route-shell'
 import { useConsoleLocale } from '@/components/locale-provider'
 import ChipInput from '@/components/ui/chip-input'
@@ -718,125 +733,127 @@ function ActionEditor({
   removable: boolean
 }) {
   return (
-    <div className="rounded-[18px] border border-black/[0.06] bg-white/88 p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-semibold text-[var(--mist)]">{action.label || actionLabel(t, action.kind)}</p>
-          <p className="mt-1 font-mono text-[10px] text-[var(--fog)]">{action.id}</p>
-        </div>
+    <div className="group/action rounded-[16px] border border-transparent bg-white/55 px-3 py-3 transition hover:border-black/[0.06] hover:bg-white">
+      <div className="grid gap-2 lg:grid-cols-[168px_minmax(0,1fr)_auto]">
+        <select
+          value={action.kind}
+          onChange={(event) => onChange({ kind: event.target.value as ProcedureV2ActionKindContract })}
+          className="h-10 rounded-full border border-black/[0.07] bg-black/[0.03] px-3 text-[12px] font-semibold text-[var(--mist)] outline-none transition focus:border-[#357f7c]/40 focus:bg-white"
+          aria-label={t('procedureEditor.form.actionKind')}
+        >
+          {PROCEDURE_V2_ACTION_KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {actionLabel(t, kind)}
+            </option>
+          ))}
+        </select>
+        <input
+          value={action.label}
+          onChange={(event) => onChange({ label: event.target.value })}
+          className="h-10 rounded-xl border border-black/[0.07] bg-white px-3 text-[14px] text-[var(--mist)] outline-none transition placeholder:text-[var(--fog)]/55 focus:border-[#357f7c]/40 focus:ring-4 focus:ring-[#357f7c]/[0.08]"
+          placeholder={actionLabel(t, action.kind)}
+          aria-label={t('procedureEditor.form.customerSafeLabel')}
+        />
         {removable ? (
           <button
             type="button"
             onClick={onRemove}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium text-vermillion transition-colors hover:bg-vermillion/[0.06]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[var(--fog)] transition hover:bg-vermillion/[0.08] hover:text-vermillion"
+            aria-label={t('procedureEditor.actions.remove')}
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('procedureEditor.actions.remove')}
+            <Trash2 className="h-4 w-4" />
           </button>
         ) : null}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <MetaField label={t('procedureEditor.form.actionKind')}>
-          <select
-            value={action.kind}
-            onChange={(event) => onChange({ kind: event.target.value as ProcedureV2ActionKindContract })}
-            className="glass-input-console text-[13px]"
-          >
-            {PROCEDURE_V2_ACTION_KINDS.map((kind) => (
-              <option key={kind} value={kind}>
-                {actionLabel(t, kind)}
-              </option>
-            ))}
-          </select>
-        </MetaField>
-        <MetaField label={t('procedureEditor.form.customerSafeLabel')}>
-          <input
-            value={action.label}
-            onChange={(event) => onChange({ label: event.target.value })}
-            className="glass-input-console text-[13px]"
-          />
-        </MetaField>
-      </div>
+      <textarea
+        value={action.guidance}
+        onChange={(event) => onChange({ guidance: event.target.value })}
+        rows={2}
+        className="mt-2 min-h-[64px] w-full resize-y rounded-xl border border-transparent bg-transparent px-3 py-2 text-[13px] leading-6 text-[var(--mist)] outline-none transition placeholder:text-[var(--fog)]/55 focus:border-black/[0.08] focus:bg-white"
+        placeholder={t('procedureEditor.form.guidance')}
+      />
 
-      <MetaField label={t('procedureEditor.form.guidance')}>
-        <textarea
-          value={action.guidance}
-          onChange={(event) => onChange({ guidance: event.target.value })}
-          rows={2}
-          className="glass-input-console mt-3 resize-y text-[13px]"
-        />
-      </MetaField>
+      <details className="mt-1 rounded-xl border border-black/[0.05] bg-black/[0.015] px-3 py-2">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[11px] font-medium text-[var(--fog)]">
+          <span className="inline-flex items-center gap-2">
+            <ListChecks className="h-3.5 w-3.5" />
+            {t('procedureEditor.form.actionDetails')}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5" />
+        </summary>
+        <div className="mt-3 space-y-3">
+          <label className="inline-flex items-center gap-2 text-[12px] text-[var(--mist)]">
+            <input
+              type="checkbox"
+              checked={action.required}
+              onChange={(event) => onChange({ required: event.target.checked })}
+              className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
+            />
+            {t('procedureEditor.form.requiredBeforeStep')}
+          </label>
 
-      <label className="mt-3 inline-flex items-center gap-2 text-[12px] text-[var(--mist)]">
-        <input
-          type="checkbox"
-          checked={action.required}
-          onChange={(event) => onChange({ required: event.target.checked })}
-          className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
-        />
-        {t('procedureEditor.form.requiredBeforeStep')}
-      </label>
+          {action.kind === 'ask' ? (
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.fieldsToCapture')}</p>
+              <ChipInput
+                values={action.fields}
+                onChange={(values) => onChange({ fields: values })}
+                placeholder={t('procedureEditor.placeholder.fieldsToCapture')}
+              />
+            </div>
+          ) : null}
 
-      {action.kind === 'ask' ? (
-        <div className="mt-3 space-y-2">
-          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.fieldsToCapture')}</p>
-          <ChipInput
-            values={action.fields}
-            onChange={(values) => onChange({ fields: values })}
-            placeholder={t('procedureEditor.placeholder.fieldsToCapture')}
-          />
+          {action.kind === 'search_knowledge' ? (
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.suggestedKnowledgeSources')}</p>
+              <ChipInput
+                values={action.suggestedSources}
+                onChange={(values) => onChange({ suggestedSources: values })}
+                placeholder={t('procedureEditor.placeholder.suggestedKnowledgeSources')}
+              />
+            </div>
+          ) : null}
+
+          {action.kind === 'call_tool' ? (
+            <MetaField label={t('procedureEditor.form.toolName')}>
+              <input
+                value={action.toolName}
+                onChange={(event) => onChange({ toolName: event.target.value })}
+                className="glass-input-console font-mono text-[13px]"
+                placeholder={t('procedureEditor.placeholder.toolName')}
+              />
+            </MetaField>
+          ) : null}
+
+          {action.kind === 'request_human_handoff' ? (
+            <MetaField label={t('procedureEditor.form.queue')}>
+              <input
+                value={action.queue}
+                onChange={(event) => onChange({ queue: event.target.value })}
+                className="glass-input-console text-[13px]"
+                placeholder={t('procedureEditor.placeholder.queue')}
+              />
+            </MetaField>
+          ) : null}
+
+          {action.kind === 'end' ? (
+            <MetaField label={t('procedureEditor.form.endStatus')}>
+              <select
+                value={action.endStatus}
+                onChange={(event) => onChange({ endStatus: event.target.value as ActionDraft['endStatus'] })}
+                className="glass-input-console text-[13px]"
+              >
+                {END_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {endStatusLabel(t, status)}
+                  </option>
+                ))}
+              </select>
+            </MetaField>
+          ) : null}
         </div>
-      ) : null}
-
-      {action.kind === 'search_knowledge' ? (
-        <div className="mt-3 space-y-2">
-          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.suggestedKnowledgeSources')}</p>
-          <ChipInput
-            values={action.suggestedSources}
-            onChange={(values) => onChange({ suggestedSources: values })}
-            placeholder={t('procedureEditor.placeholder.suggestedKnowledgeSources')}
-          />
-        </div>
-      ) : null}
-
-      {action.kind === 'call_tool' ? (
-        <MetaField label={t('procedureEditor.form.toolName')}>
-          <input
-            value={action.toolName}
-            onChange={(event) => onChange({ toolName: event.target.value })}
-            className="glass-input-console mt-3 font-mono text-[13px]"
-            placeholder={t('procedureEditor.placeholder.toolName')}
-          />
-        </MetaField>
-      ) : null}
-
-      {action.kind === 'request_human_handoff' ? (
-        <MetaField label={t('procedureEditor.form.queue')}>
-          <input
-            value={action.queue}
-            onChange={(event) => onChange({ queue: event.target.value })}
-            className="glass-input-console mt-3 text-[13px]"
-            placeholder={t('procedureEditor.placeholder.queue')}
-          />
-        </MetaField>
-      ) : null}
-
-      {action.kind === 'end' ? (
-        <MetaField label={t('procedureEditor.form.endStatus')}>
-          <select
-            value={action.endStatus}
-            onChange={(event) => onChange({ endStatus: event.target.value as ActionDraft['endStatus'] })}
-            className="glass-input-console mt-3 text-[13px]"
-          >
-            {END_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {endStatusLabel(t, status)}
-              </option>
-            ))}
-          </select>
-        </MetaField>
-      ) : null}
+      </details>
     </div>
   )
 }
@@ -858,29 +875,24 @@ function BranchEditor({
   onActionRemove: (actionId: string) => void
   onRemove: () => void
 }) {
+  const conditionText = branch.kind === 'else'
+    ? t('procedureEditor.hints.elseBranch')
+    : branch.conditionLabel || branch.llmPrompt || branch.toolName || branch.field || branchKindLabel(t, branch.kind)
+
   return (
-    <div className="rounded-[18px] border border-[#357f7c]/16 bg-[#f6fbfb] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-semibold text-[var(--mist)]">{branch.label || branchKindLabel(t, branch.kind)}</p>
-          <p className="mt-1 font-mono text-[10px] text-[var(--fog)]">{branch.id}</p>
-        </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium text-vermillion transition-colors hover:bg-vermillion/[0.06]"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {t('procedureEditor.actions.removeBranch')}
-        </button>
+    <div className="relative pl-9">
+      <div className="absolute left-3 top-9 bottom-0 w-px bg-black/[0.08]" />
+      <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-lg bg-[#eee9ff] text-indigo shadow-sm">
+        <GitBranch className="h-3.5 w-3.5" />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <MetaField label={t('procedureEditor.form.branchKind')}>
+      <div className="rounded-[20px] border border-black/[0.07] bg-white p-4 shadow-[0_12px_32px_rgba(20,27,35,0.045)]">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={branch.kind}
             onChange={(event) => onChange({ kind: event.target.value as BranchDraft['kind'] })}
-            className="glass-input-console text-[13px]"
+            className="h-9 rounded-full border border-black/[0.07] bg-black/[0.03] px-3 text-[12px] font-semibold text-[var(--mist)] outline-none focus:border-[#357f7c]/40"
+            aria-label={t('procedureEditor.form.branchKind')}
           >
             {BRANCH_KINDS.map((kind) => (
               <option key={kind} value={kind}>
@@ -888,176 +900,207 @@ function BranchEditor({
               </option>
             ))}
           </select>
-        </MetaField>
-        <MetaField label={t('procedureEditor.form.label')}>
           <input
             value={branch.label}
             onChange={(event) => onChange({ label: event.target.value })}
-            className="glass-input-console text-[13px]"
+            className="h-9 min-w-0 flex-1 rounded-full border border-transparent bg-transparent px-3 text-[13px] font-medium text-[var(--mist)] outline-none transition placeholder:text-[var(--fog)]/55 focus:border-black/[0.08] focus:bg-white"
             placeholder={t('procedureEditor.placeholder.branchLabel')}
+            aria-label={t('procedureEditor.form.label')}
           />
-        </MetaField>
-      </div>
-
-      <MetaField label={t('procedureEditor.form.operatorGuidance')}>
-        <textarea
-          value={branch.guidance}
-          onChange={(event) => onChange({ guidance: event.target.value })}
-          rows={2}
-          className="glass-input-console mt-3 resize-y text-[13px]"
-        />
-      </MetaField>
-
-      {branch.kind !== 'else' ? (
-        <div className="mt-3 rounded-[16px] border border-black/[0.06] bg-white/80 p-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <MetaField label={t('procedureEditor.form.conditionType')}>
-              <select
-                value={branch.conditionKind}
-                onChange={(event) => onChange({ conditionKind: event.target.value as BranchDraft['conditionKind'] })}
-                className="glass-input-console text-[13px]"
-              >
-                {PROCEDURE_CONDITION_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {conditionKindLabel(t, kind)}
-                  </option>
-                ))}
-              </select>
-            </MetaField>
-            <MetaField label={t('procedureEditor.form.conditionLabel')}>
-              <input
-                value={branch.conditionLabel}
-                onChange={(event) => onChange({ conditionLabel: event.target.value })}
-                className="glass-input-console text-[13px]"
-                placeholder={t('procedureEditor.placeholder.conditionLabel')}
-              />
-            </MetaField>
-          </div>
-
-          {branch.conditionKind === 'llm_eval' ? (
-            <MetaField label={t('procedureEditor.form.llmPrompt')}>
-              <>
-                <textarea
-                  value={branch.llmPrompt}
-                  onChange={(event) => onChange({ llmPrompt: event.target.value })}
-                  rows={2}
-                  className="glass-input-console mt-3 resize-y text-[13px]"
-                  placeholder={t('procedureEditor.placeholder.llmPrompt')}
-                />
-                <p className="mt-2 text-[11px] text-[var(--fog)]">
-                  {t('procedureEditor.hints.llmPrompt')}
-                </p>
-              </>
-            </MetaField>
-          ) : null}
-
-          {branch.conditionKind === 'tool_event' ? (
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <MetaField label={t('procedureEditor.form.toolName')}>
-                <input
-                  value={branch.toolName}
-                  onChange={(event) => onChange({ toolName: event.target.value })}
-                  className="glass-input-console font-mono text-[13px]"
-                  placeholder={t('procedureEditor.placeholder.toolName')}
-                />
-              </MetaField>
-              <MetaField label={t('procedureEditor.form.toolEvent')}>
-                <select
-                  value={branch.toolEvent}
-                  onChange={(event) => onChange({ toolEvent: event.target.value as BranchDraft['toolEvent'] })}
-                  className="glass-input-console text-[13px]"
-                >
-                  {TOOL_EVENTS.map((event) => (
-                    <option key={event} value={event}>
-                      {toolEventLabel(t, event)}
-                    </option>
-                  ))}
-                </select>
-              </MetaField>
-            </div>
-          ) : null}
-
-          {branch.conditionKind === 'form_field' ? (
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <MetaField label={t('procedureEditor.form.field')}>
-                <input
-                  value={branch.field}
-                  onChange={(event) => onChange({ field: event.target.value })}
-                  className="glass-input-console text-[13px]"
-                  placeholder={t('procedureEditor.placeholder.field')}
-                />
-              </MetaField>
-              <MetaField label={t('procedureEditor.form.operator')}>
-                <select
-                  value={branch.operator}
-                  onChange={(event) => onChange({ operator: event.target.value as BranchDraft['operator'] })}
-                  className="glass-input-console text-[13px]"
-                >
-                  <option value="present">{formOperatorLabel(t, 'present')}</option>
-                  <option value="equals">{formOperatorLabel(t, 'equals')}</option>
-                </select>
-              </MetaField>
-              <MetaField label={t('procedureEditor.form.value')}>
-                <input
-                  value={branch.value}
-                  onChange={(event) => onChange({ value: event.target.value })}
-                  className="glass-input-console text-[13px]"
-                  disabled={branch.operator !== 'equals'}
-                  placeholder={t('procedureEditor.placeholder.value')}
-                />
-              </MetaField>
-            </div>
-          ) : null}
-
-          {branch.conditionKind === 'runtime_signal' ? (
-            <MetaField label={t('procedureEditor.form.runtimeSignal')}>
-              <>
-                <select
-                  value={branch.signal}
-                  onChange={(event) => onChange({ signal: event.target.value as ProcedureRuntimeSignalContract })}
-                  className="glass-input-console mt-3 text-[13px]"
-                >
-                  {PROCEDURE_RUNTIME_SIGNALS.map((signal) => (
-                    <option key={signal} value={signal}>
-                      {runtimeSignalLabel(t, signal)}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-[11px] text-[var(--fog)]">
-                  {t('procedureEditor.hints.runtimeSignal')}
-                </p>
-              </>
-            </MetaField>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mt-3 rounded-[16px] border border-dashed border-black/[0.08] bg-white/70 px-4 py-3 text-[12px] text-[var(--fog)]">
-          {t('procedureEditor.hints.elseBranch')}
-        </div>
-      )}
-
-      <div className="mt-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.branchActions')}</p>
           <button
             type="button"
-            onClick={onActionAdd}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo/18 bg-indigo/[0.08] px-3 py-1.5 text-[11px] font-semibold text-indigo transition-colors hover:bg-indigo/[0.14]"
+            onClick={onRemove}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--fog)] transition hover:bg-vermillion/[0.08] hover:text-vermillion"
+            aria-label={t('procedureEditor.actions.removeBranch')}
           >
-            <Plus className="h-3.5 w-3.5" />
-            {t('procedureEditor.actions.addBranchAction')}
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
-        <div className="space-y-3">
-          {branch.actions.map((action) => (
-            <ActionEditor
-              key={action.id}
-              t={t}
-              action={action}
-              onChange={(patch) => onActionChange(action.id, patch)}
-              onRemove={() => onActionRemove(action.id)}
-              removable={branch.actions.length > 1}
-            />
+
+        <textarea
+          value={branch.kind === 'else' ? branch.guidance : conditionText}
+          onChange={(event) => {
+            if (branch.kind === 'else') {
+              onChange({ guidance: event.target.value })
+            } else if (branch.conditionKind === 'llm_eval') {
+              onChange({ llmPrompt: event.target.value })
+            } else {
+              onChange({ conditionLabel: event.target.value })
+            }
+          }}
+          rows={2}
+          className="mt-3 min-h-[58px] w-full resize-y rounded-xl border border-black/[0.07] bg-white px-4 py-3 text-[14px] leading-6 text-[var(--mist)] outline-none transition focus:border-[#357f7c]/40 focus:ring-4 focus:ring-[#357f7c]/[0.08]"
+          placeholder={branch.kind === 'else' ? t('procedureEditor.hints.elseBranch') : t('procedureEditor.form.condition')}
+        />
+
+        <details className="mt-3 rounded-xl border border-black/[0.05] bg-black/[0.015] px-3 py-2">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[11px] font-medium text-[var(--fog)]">
+            <span className="inline-flex items-center gap-2">
+              <Settings className="h-3.5 w-3.5" />
+              {t('procedureEditor.form.conditionDetails')}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </summary>
+
+          <div className="mt-3 space-y-3">
+            <MetaField label={t('procedureEditor.form.operatorGuidance')}>
+              <textarea
+                value={branch.guidance}
+                onChange={(event) => onChange({ guidance: event.target.value })}
+                rows={2}
+                className="glass-input-console resize-y text-[13px]"
+              />
+            </MetaField>
+
+            {branch.kind !== 'else' ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <MetaField label={t('procedureEditor.form.conditionType')}>
+                    <select
+                      value={branch.conditionKind}
+                      onChange={(event) => onChange({ conditionKind: event.target.value as BranchDraft['conditionKind'] })}
+                      className="glass-input-console text-[13px]"
+                    >
+                      {PROCEDURE_CONDITION_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {conditionKindLabel(t, kind)}
+                        </option>
+                      ))}
+                    </select>
+                  </MetaField>
+                  <MetaField label={t('procedureEditor.form.conditionLabel')}>
+                    <input
+                      value={branch.conditionLabel}
+                      onChange={(event) => onChange({ conditionLabel: event.target.value })}
+                      className="glass-input-console text-[13px]"
+                      placeholder={t('procedureEditor.placeholder.conditionLabel')}
+                    />
+                  </MetaField>
+                </div>
+
+                {branch.conditionKind === 'llm_eval' ? (
+                  <MetaField label={t('procedureEditor.form.llmPrompt')}>
+                    <>
+                      <textarea
+                        value={branch.llmPrompt}
+                        onChange={(event) => onChange({ llmPrompt: event.target.value })}
+                        rows={2}
+                        className="glass-input-console resize-y text-[13px]"
+                        placeholder={t('procedureEditor.placeholder.llmPrompt')}
+                      />
+                      <p className="mt-2 text-[11px] text-[var(--fog)]">
+                        {t('procedureEditor.hints.llmPrompt')}
+                      </p>
+                    </>
+                  </MetaField>
+                ) : null}
+
+                {branch.conditionKind === 'tool_event' ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <MetaField label={t('procedureEditor.form.toolName')}>
+                      <input
+                        value={branch.toolName}
+                        onChange={(event) => onChange({ toolName: event.target.value })}
+                        className="glass-input-console font-mono text-[13px]"
+                        placeholder={t('procedureEditor.placeholder.toolName')}
+                      />
+                    </MetaField>
+                    <MetaField label={t('procedureEditor.form.toolEvent')}>
+                      <select
+                        value={branch.toolEvent}
+                        onChange={(event) => onChange({ toolEvent: event.target.value as BranchDraft['toolEvent'] })}
+                        className="glass-input-console text-[13px]"
+                      >
+                        {TOOL_EVENTS.map((event) => (
+                          <option key={event} value={event}>
+                            {toolEventLabel(t, event)}
+                          </option>
+                        ))}
+                      </select>
+                    </MetaField>
+                  </div>
+                ) : null}
+
+                {branch.conditionKind === 'form_field' ? (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <MetaField label={t('procedureEditor.form.field')}>
+                      <input
+                        value={branch.field}
+                        onChange={(event) => onChange({ field: event.target.value })}
+                        className="glass-input-console text-[13px]"
+                        placeholder={t('procedureEditor.placeholder.field')}
+                      />
+                    </MetaField>
+                    <MetaField label={t('procedureEditor.form.operator')}>
+                      <select
+                        value={branch.operator}
+                        onChange={(event) => onChange({ operator: event.target.value as BranchDraft['operator'] })}
+                        className="glass-input-console text-[13px]"
+                      >
+                        <option value="present">{formOperatorLabel(t, 'present')}</option>
+                        <option value="equals">{formOperatorLabel(t, 'equals')}</option>
+                      </select>
+                    </MetaField>
+                    <MetaField label={t('procedureEditor.form.value')}>
+                      <input
+                        value={branch.value}
+                        onChange={(event) => onChange({ value: event.target.value })}
+                        className="glass-input-console text-[13px]"
+                        disabled={branch.operator !== 'equals'}
+                        placeholder={t('procedureEditor.placeholder.value')}
+                      />
+                    </MetaField>
+                  </div>
+                ) : null}
+
+                {branch.conditionKind === 'runtime_signal' ? (
+                  <MetaField label={t('procedureEditor.form.runtimeSignal')}>
+                    <>
+                      <select
+                        value={branch.signal}
+                        onChange={(event) => onChange({ signal: event.target.value as ProcedureRuntimeSignalContract })}
+                        className="glass-input-console text-[13px]"
+                      >
+                        {PROCEDURE_RUNTIME_SIGNALS.map((signal) => (
+                          <option key={signal} value={signal}>
+                            {runtimeSignalLabel(t, signal)}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-2 text-[11px] text-[var(--fog)]">
+                        {t('procedureEditor.hints.runtimeSignal')}
+                      </p>
+                    </>
+                  </MetaField>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </details>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.branchActions')}</p>
+            <button
+              type="button"
+              onClick={onActionAdd}
+              className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-1.5 text-[11px] font-semibold text-[var(--mist)] transition hover:border-indigo/20 hover:text-indigo"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t('procedureEditor.actions.addBranchAction')}
+            </button>
+          </div>
+          {branch.actions.map((action, index) => (
+            <div key={action.id} className="grid gap-3 md:grid-cols-[28px_minmax(0,1fr)]">
+              <span className="pt-4 text-right text-[12px] font-medium text-[var(--fog)]">{index + 1}.</span>
+              <ActionEditor
+                t={t}
+                action={action}
+                onChange={(patch) => onActionChange(action.id, patch)}
+                onRemove={() => onActionRemove(action.id)}
+                removable={branch.actions.length > 1}
+              />
+            </div>
           ))}
         </div>
       </div>
@@ -1085,6 +1128,8 @@ export default function BuildProcedureDetailPage() {
   const [hookStepDrafts, setHookStepDrafts] = useState<Record<string, string>>({})
   const [newHookDrafts, setNewHookDrafts] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState<ProcedureEditorDraft>(() => createEmptyDraft(t))
+  const [rightPanelMode, setRightPanelMode] = useState<'preview' | 'simulation'>('simulation')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [simulation, setSimulation] = useState<ProcedureSimulationInputContract>({
     signals: [],
     toolNames: [],
@@ -1452,671 +1497,760 @@ export default function BuildProcedureDetailPage() {
     >
       <VersionContextBar />
       <PageLoader loading={loading} error={error} onRetry={() => load()}>
-        <div className="mx-auto max-w-[1320px] px-8 py-8">
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <Link
-              href="/build/components/procedures"
-              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--fog)] transition-colors hover:text-[var(--mist)]"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              {t('procedureEditor.back')}
-            </Link>
-
-            <div className="flex items-center gap-2">
-              {saveSuccess ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-malachite/18 bg-malachite/[0.08] px-3 py-1.5 text-[12px] font-medium text-malachite">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {saveSuccess}
+        <div className="min-h-[calc(100vh-112px)] bg-[#fbfaf6]">
+          <div className="sticky top-0 z-30 border-b border-black/[0.08] bg-[#fffefa]/95 backdrop-blur-xl">
+            <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <Link
+                  href="/build/components/procedures"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--fog)] transition hover:bg-black/[0.04] hover:text-[var(--mist)]"
+                  aria-label={t('procedureEditor.back')}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-black/[0.08] bg-white text-[var(--mist)] shadow-sm">
+                  <ListChecks className="h-4 w-4" />
                 </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium text-vermillion transition-colors hover:bg-vermillion/[0.06] disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t('common.delete')}
-              </button>
-              <button
-                type="button"
-                onClick={save}
-                disabled={saving || !dirty}
-                className="inline-flex items-center gap-2 rounded-xl border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-4 py-2.5 text-[13px] font-semibold text-[#357f7c] transition-colors hover:bg-[#357f7c]/[0.14] disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {t('procedureEditor.actions.saveProcedure')}
-              </button>
+                <input
+                  value={draft.displayName}
+                  onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))}
+                  className="min-w-0 flex-1 bg-transparent text-[22px] font-semibold leading-tight text-[var(--mist)] outline-none placeholder:text-[var(--fog)]/60 md:text-[26px]"
+                  placeholder={t('procedureEditor.defaults.newProcedure')}
+                  aria-label={t('procedureEditor.form.displayName')}
+                />
+                <span className="hidden shrink-0 rounded-full bg-black/[0.04] px-3 py-1 text-[12px] font-medium text-[var(--mist)] sm:inline-flex">
+                  {t('procedureEditor.status.draft')}
+                </span>
+                <span className="hidden shrink-0 text-[13px] text-[var(--fog)] sm:inline-flex">
+                  {saveStateLabel}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                {saveSuccess ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-malachite/18 bg-malachite/[0.08] px-3 py-1.5 text-[12px] font-medium text-malachite">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {saveSuccess}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/[0.04] text-[var(--mist)] transition hover:bg-black/[0.07]"
+                  aria-label={t('procedureEditor.actions.settings')}
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightPanelMode('simulation')}
+                  className="inline-flex items-center gap-2 rounded-full bg-black/[0.04] px-4 py-2 text-[13px] font-semibold text-[var(--mist)] transition hover:bg-black/[0.07]"
+                >
+                  <Play className="h-4 w-4" />
+                  {t('procedureEditor.actions.test')}
+                </button>
+                <button
+                  type="button"
+                  onClick={save}
+                  disabled={saving || !dirty}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#128a20] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(18,138,32,0.22)] transition hover:bg-[#0f7a1c] disabled:bg-black/[0.08] disabled:text-[var(--fog)] disabled:shadow-none"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {t('common.save')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={saving}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/[0.04] text-[var(--fog)] transition hover:bg-vermillion/[0.08] hover:text-vermillion disabled:opacity-50"
+                  aria-label={t('common.delete')}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                <Link
+                  href="/build/components/procedures"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/[0.04] text-[var(--mist)] transition hover:bg-black/[0.07]"
+                  aria-label={t('procedureEditor.actions.close')}
+                >
+                  <X className="h-4 w-4" />
+                </Link>
+              </div>
             </div>
+            {saveError ? (
+              <div className="border-t border-vermillion/15 bg-vermillion/[0.06] px-6 py-2 text-[12px] text-vermillion">
+                {saveError}
+              </div>
+            ) : null}
           </div>
 
-          {saveError ? (
-            <div className="mb-4 rounded-xl border border-vermillion/15 bg-vermillion/[0.06] px-4 py-3 text-[12px] text-vermillion">
-              {saveError}
-            </div>
-          ) : null}
-
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.72fr)_minmax(360px,0.28fr)]">
-            <section className="space-y-6">
-              <div className="rounded-[26px] border border-black/[0.06] bg-[linear-gradient(145deg,rgba(255,255,255,0.94),rgba(247,251,250,0.84))] p-6 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#357f7c]">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {t('procedureEditor.badge.v2')}
+          <div className="grid xl:grid-cols-[minmax(0,1fr)_390px]">
+            <main className="min-w-0 border-r border-black/[0.08] bg-[#fffefa]">
+              <div className="mx-auto max-w-[1020px] px-4 py-8 md:px-8 lg:px-12">
+                <section className="grid gap-5 md:grid-cols-[72px_minmax(0,1fr)]">
+                  <div className="hidden justify-end pt-9 md:flex">
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-black/[0.04] text-[var(--mist)]">
+                      <ListChecks className="h-5 w-5" />
+                    </span>
                   </div>
-                    <h1 className="mt-4 text-[24px] font-semibold text-[var(--mist)]">{draft.displayName || draft.type || t('procedureEditor.defaults.newProcedure')}</h1>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center rounded-full border border-black/[0.06] bg-white/78 px-3 py-1 text-[11px] font-semibold text-[var(--mist)]">
-                        {t('procedureEditor.status.draft')}
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-2 rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1 text-[11px] font-semibold uppercase text-[#357f7c]">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {t('procedureEditor.badge.v2')}
                       </span>
-                      <span className="inline-flex items-center rounded-full border border-black/[0.06] bg-white/78 px-3 py-1 text-[11px] font-medium text-[var(--fog)]">
-                        {saveStateLabel}
+                      <span className="rounded-full border border-black/[0.07] bg-white px-3 py-1 text-[11px] font-medium text-[var(--fog)]">
+                        {draft.type || t('procedureEditor.form.procedureKey')}
+                      </span>
+                      <span className="rounded-full border border-black/[0.07] bg-white px-3 py-1 text-[11px] font-medium text-[var(--fog)]">
+                        {draft.enabled ? t('common.enabled') : t('common.disabled')}
                       </span>
                     </div>
-                    <p className="mt-2 max-w-[720px] text-[13px] leading-6 text-[var(--fog)]">
-                      {t('procedureEditor.header.description')}
-                    </p>
-                  </div>
-                  <div className="rounded-[20px] border border-black/[0.06] bg-white/70 px-4 py-3 text-[12px] text-[var(--fog)]">
-                    <p className="font-semibold text-[var(--mist)]">{t('procedureEditor.header.compatibilityTitle')}</p>
-                    <p className="mt-2 leading-5">
-                      {t('procedureEditor.header.compatibilityBody')}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <MetaField label={t('procedureEditor.form.displayName')}>
-                    <input
-                      value={draft.displayName}
-                      onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))}
-                      className="glass-input-console text-[13px]"
-                    />
-                  </MetaField>
-                  <MetaField label={t('procedureEditor.form.procedureKey')}>
-                    <input
-                      value={draft.type}
-                      onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
-                      className="glass-input-console font-mono text-[13px]"
-                    />
-                  </MetaField>
-                  <MetaField label={t('procedureEditor.form.icon')}>
-                    <input
-                      value={draft.icon}
-                      onChange={(event) => setDraft((current) => ({ ...current, icon: event.target.value }))}
-                      className="glass-input-console text-[13px]"
-                    />
-                  </MetaField>
-                  <MetaField label={t('procedureEditor.form.maxAutoTurns')}>
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={draft.maxAutoTurns}
-                      onChange={(event) => setDraft((current) => ({ ...current, maxAutoTurns: Number(event.target.value || 10) }))}
-                      className="glass-input-console text-[13px]"
-                    />
-                  </MetaField>
-                </div>
-
-                <MetaField label={t('procedureEditor.form.whenToUse')}>
-                  <textarea
-                    value={draft.whenToUse}
-                    onChange={(event) => setDraft((current) => ({ ...current, whenToUse: event.target.value }))}
-                    rows={3}
-                    className="glass-input-console mt-4 resize-y text-[13px]"
-                    placeholder={t('procedureEditor.placeholder.whenToUse')}
-                  />
-                </MetaField>
-
-                <MetaField label={t('common.description')}>
-                  <textarea
-                    value={draft.description}
-                    onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
-                    rows={2}
-                    className="glass-input-console mt-4 resize-y text-[13px]"
-                  />
-                </MetaField>
-
-                <MetaField label={t('procedureEditor.form.overview')}>
-                  <textarea
-                    value={draft.overview}
-                    onChange={(event) => setDraft((current) => ({ ...current, overview: event.target.value }))}
-                    rows={3}
-                    className="glass-input-console mt-4 resize-y text-[13px]"
-                    placeholder={t('procedureEditor.placeholder.overview')}
-                  />
-                </MetaField>
-
-                <MetaField label={t('caseTypes.defaultGoal')}>
-                  <textarea
-                    value={draft.defaultGoal}
-                    onChange={(event) => setDraft((current) => ({ ...current, defaultGoal: event.target.value }))}
-                    rows={2}
-                    className="glass-input-console mt-4 resize-y text-[13px]"
-                  />
-                </MetaField>
-
-                <label className="mt-4 inline-flex items-center gap-2 text-[13px] text-[var(--mist)]">
-                  <input
-                    type="checkbox"
-                    checked={draft.enabled}
-                    onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))}
-                    className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
-                  />
-                  {t('caseTypes.enabledForRouting')}
-                </label>
-              </div>
-
-              <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.78] p-6 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <div className="mb-5">
-                  <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.knowledgeAndHandoff')}</h2>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
-                    {t('procedureEditor.section.knowledgeAndHandoffHint')}
-                  </p>
-                </div>
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.requiredFacts')}</p>
-                    <ChipInput
-                      values={draft.requiredFacts}
-                      onChange={(values) => setDraft((current) => ({ ...current, requiredFacts: values }))}
-                      placeholder={t('procedureEditor.placeholder.requiredFacts')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.escalateOn')}</p>
-                    <ChipInput
-                      values={draft.escalateOn}
-                      onChange={(values) => setDraft((current) => ({ ...current, escalateOn: values }))}
-                      placeholder={t('procedureEditor.placeholder.escalateOn')}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-4">
-                  <MetaField label={t('procedureEditor.form.knowledgeGuidance')}>
+                    <h2 className="text-[24px] font-semibold leading-tight text-[var(--mist)] md:text-[28px]">
+                      {t('procedureEditor.form.whenToUse')}
+                    </h2>
                     <textarea
-                      value={draft.knowledgeGuidance}
-                      onChange={(event) => setDraft((current) => ({ ...current, knowledgeGuidance: event.target.value }))}
-                      rows={3}
-                      className="glass-input-console resize-y text-[13px]"
-                      placeholder={t('procedureEditor.placeholder.knowledgeGuidance')}
+                      value={draft.whenToUse}
+                      onChange={(event) => setDraft((current) => ({ ...current, whenToUse: event.target.value }))}
+                      rows={6}
+                      className="mt-5 w-full resize-y rounded-[18px] border border-black/[0.10] bg-white px-5 py-4 text-[17px] leading-8 text-[var(--mist)] shadow-[0_16px_44px_rgba(20,27,35,0.08)] outline-none transition placeholder:text-[var(--fog)]/55 focus:border-[#357f7c]/40 focus:ring-4 focus:ring-[#357f7c]/[0.08]"
+                      placeholder={t('procedureEditor.placeholder.whenToUse')}
                     />
-                  </MetaField>
-                  <MetaField label={t('procedureEditor.form.handoffGuidance')}>
-                    <textarea
-                      value={draft.handoffGuidance}
-                      onChange={(event) => setDraft((current) => ({ ...current, handoffGuidance: event.target.value }))}
-                      rows={3}
-                      className="glass-input-console resize-y text-[13px]"
-                      placeholder={t('procedureEditor.placeholder.handoffGuidance')}
-                    />
-                  </MetaField>
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.autoCloseConditions')}</p>
-                    <ChipInput
-                      values={draft.autoCloseConditions}
-                      onChange={(values) => setDraft((current) => ({ ...current, autoCloseConditions: values }))}
-                      placeholder={t('procedureEditor.placeholder.autoCloseConditions')}
-                    />
-                  </div>
-                </div>
-              </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-1.5 text-[12px] text-[var(--mist)]">
+                        <ListChecks className="h-3.5 w-3.5" />
+                        {t('procedureEditor.section.orderedSteps')}: {draft.steps.length}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-1.5 text-[12px] text-[var(--mist)]">
+                        <GitBranch className="h-3.5 w-3.5" />
+                        {t('procedureEditor.status.branches')}: {draft.steps.reduce((count, step) => count + step.branches.length, 0)}
+                      </span>
+                    </div>
 
-              <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.78] p-6 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <div className="mb-5 flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-[15px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.orderedSteps')}</h2>
-                    <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
-                      {t('procedureEditor.section.orderedStepsHint')}
-                    </p>
+                    <details
+                      open={advancedOpen}
+                      onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+                      className="mt-5 rounded-[18px] border border-black/[0.07] bg-black/[0.02] px-4 py-3"
+                    >
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[13px] font-semibold text-[var(--mist)]">
+                        <span>{t('procedureEditor.section.advanced')}</span>
+                        <ChevronDown className="h-4 w-4 text-[var(--fog)]" />
+                      </summary>
+                      <div className="mt-4 space-y-5">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <MetaField label={t('procedureEditor.form.procedureKey')}>
+                            <input
+                              value={draft.type}
+                              onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
+                              className="glass-input-console font-mono text-[13px]"
+                            />
+                          </MetaField>
+                          <MetaField label={t('procedureEditor.form.icon')}>
+                            <input
+                              value={draft.icon}
+                              onChange={(event) => setDraft((current) => ({ ...current, icon: event.target.value }))}
+                              className="glass-input-console text-[13px]"
+                            />
+                          </MetaField>
+                          <MetaField label={t('procedureEditor.form.maxAutoTurns')}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={draft.maxAutoTurns}
+                              onChange={(event) => setDraft((current) => ({ ...current, maxAutoTurns: Number(event.target.value || 10) }))}
+                              className="glass-input-console text-[13px]"
+                            />
+                          </MetaField>
+                          <label className="flex items-end gap-2 pb-2 text-[13px] text-[var(--mist)]">
+                            <input
+                              type="checkbox"
+                              checked={draft.enabled}
+                              onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))}
+                              className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
+                            />
+                            {t('caseTypes.enabledForRouting')}
+                          </label>
+                        </div>
+                        <MetaField label={t('common.description')}>
+                          <textarea
+                            value={draft.description}
+                            onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                            rows={2}
+                            className="glass-input-console resize-y text-[13px]"
+                          />
+                        </MetaField>
+                        <MetaField label={t('procedureEditor.form.overview')}>
+                          <textarea
+                            value={draft.overview}
+                            onChange={(event) => setDraft((current) => ({ ...current, overview: event.target.value }))}
+                            rows={3}
+                            className="glass-input-console resize-y text-[13px]"
+                            placeholder={t('procedureEditor.placeholder.overview')}
+                          />
+                        </MetaField>
+                        <MetaField label={t('caseTypes.defaultGoal')}>
+                          <textarea
+                            value={draft.defaultGoal}
+                            onChange={(event) => setDraft((current) => ({ ...current, defaultGoal: event.target.value }))}
+                            rows={2}
+                            className="glass-input-console resize-y text-[13px]"
+                          />
+                        </MetaField>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.requiredFacts')}</p>
+                            <ChipInput
+                              values={draft.requiredFacts}
+                              onChange={(values) => setDraft((current) => ({ ...current, requiredFacts: values }))}
+                              placeholder={t('procedureEditor.placeholder.requiredFacts')}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.escalateOn')}</p>
+                            <ChipInput
+                              values={draft.escalateOn}
+                              onChange={(values) => setDraft((current) => ({ ...current, escalateOn: values }))}
+                              placeholder={t('procedureEditor.placeholder.escalateOn')}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <MetaField label={t('procedureEditor.form.knowledgeGuidance')}>
+                            <textarea
+                              value={draft.knowledgeGuidance}
+                              onChange={(event) => setDraft((current) => ({ ...current, knowledgeGuidance: event.target.value }))}
+                              rows={3}
+                              className="glass-input-console resize-y text-[13px]"
+                              placeholder={t('procedureEditor.placeholder.knowledgeGuidance')}
+                            />
+                          </MetaField>
+                          <MetaField label={t('procedureEditor.form.handoffGuidance')}>
+                            <textarea
+                              value={draft.handoffGuidance}
+                              onChange={(event) => setDraft((current) => ({ ...current, handoffGuidance: event.target.value }))}
+                              rows={3}
+                              className="glass-input-console resize-y text-[13px]"
+                              placeholder={t('procedureEditor.placeholder.handoffGuidance')}
+                            />
+                          </MetaField>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.form.autoCloseConditions')}</p>
+                          <ChipInput
+                            values={draft.autoCloseConditions}
+                            onChange={(values) => setDraft((current) => ({ ...current, autoCloseConditions: values }))}
+                            placeholder={t('procedureEditor.placeholder.autoCloseConditions')}
+                          />
+                        </div>
+                      </div>
+                    </details>
                   </div>
-                  <button
-                    type="button"
-                    onClick={addStep}
-                    className="inline-flex items-center gap-2 rounded-xl border border-indigo/18 bg-indigo/[0.08] px-3.5 py-2 text-[12px] font-semibold text-indigo transition-colors hover:bg-indigo/[0.14]"
-                  >
-                    <Plus className="h-4 w-4" />
-                    {t('procedureEditor.actions.addStep')}
-                  </button>
-                </div>
+                </section>
 
-                <div className="space-y-6">
+                <section className="mt-14 space-y-10">
                   {draft.steps.map((step, index) => {
                     const bindings = getStepBindings(step.id)
                     const availableHooks = availableHooksForStep(step.id)
                     const busy = hookBusyStepId === step.id
                     return (
-                      <div key={step.id} className="rounded-[22px] border border-black/[0.06] bg-[rgba(255,255,255,0.84)] p-5">
-                        <div className="mb-4 flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-[13px] font-semibold text-[var(--mist)]">{step.title || t('procedureEditor.defaults.stepTitle', { n: index + 1 })}</p>
-                            <p className="mt-1 font-mono text-[10px] text-[var(--fog)]">{step.id}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeStep(step.id)}
-                            disabled={draft.steps.length === 1}
-                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium text-vermillion transition-colors hover:bg-vermillion/[0.06] disabled:opacity-40"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {t('procedureEditor.actions.remove')}
-                          </button>
+                      <div key={step.id} className="grid gap-4 md:grid-cols-[72px_minmax(0,1fr)]">
+                        <div className="pt-3 text-right text-[13px] font-medium text-[var(--fog)]">
+                          {index + 1}.
                         </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <MetaField label={t('procedureEditor.form.stepKey')}>
-                            <input
-                              value={step.id}
-                              onChange={(event) => updateStep(step.id, { id: event.target.value })}
-                              className="glass-input-console font-mono text-[13px]"
-                            />
-                          </MetaField>
-                          <MetaField label={t('procedureEditor.form.stepTitle')}>
+                        <div className="min-w-0">
+                          <div className="flex items-start gap-3">
                             <input
                               value={step.title}
                               onChange={(event) => updateStep(step.id, { title: event.target.value })}
-                              className="glass-input-console text-[13px]"
+                              className="min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-2 py-1 text-[18px] font-semibold leading-7 text-[var(--mist)] outline-none transition placeholder:text-[var(--fog)]/55 focus:border-black/[0.08] focus:bg-white"
+                              placeholder={t('procedureEditor.defaults.stepTitle', { n: index + 1 })}
+                              aria-label={t('procedureEditor.form.stepTitle')}
                             />
-                          </MetaField>
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => removeStep(step.id)}
+                              disabled={draft.steps.length === 1}
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--fog)] transition hover:bg-vermillion/[0.08] hover:text-vermillion disabled:opacity-40"
+                              aria-label={t('procedureEditor.actions.remove')}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
 
-                        <MetaField label={t('procedureEditor.form.operatorGuidance')}>
                           <textarea
                             value={step.guidance}
                             onChange={(event) => updateStep(step.id, { guidance: event.target.value })}
                             rows={3}
-                            className="glass-input-console mt-4 resize-y text-[13px]"
+                            className="mt-2 min-h-[84px] w-full resize-y rounded-[16px] border border-transparent bg-transparent px-2 py-2 text-[16px] leading-8 text-[var(--mist)] outline-none transition placeholder:text-[var(--fog)]/55 focus:border-black/[0.08] focus:bg-white"
+                            placeholder={t('procedureEditor.form.operatorGuidance')}
                           />
-                        </MetaField>
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <MetaField label={t('procedureEditor.form.completionGuidance')}>
-                            <textarea
-                              value={step.completionGuidance}
-                              onChange={(event) => updateStep(step.id, { completionGuidance: event.target.value })}
-                              rows={2}
-                              className="glass-input-console resize-y text-[13px]"
-                              placeholder={t('procedureEditor.placeholder.completionGuidance')}
-                            />
-                          </MetaField>
-                          <MetaField label={t('procedureEditor.form.skipGuidance')}>
-                            <textarea
-                              value={step.skipGuidance}
-                              onChange={(event) => updateStep(step.id, { skipGuidance: event.target.value })}
-                              rows={2}
-                              className="glass-input-console resize-y text-[13px]"
-                              placeholder={t('procedureEditor.placeholder.skipGuidance')}
-                            />
-                          </MetaField>
-                        </div>
+                          <details className="mt-2 rounded-xl border border-black/[0.05] bg-black/[0.015] px-3 py-2">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[11px] font-medium text-[var(--fog)]">
+                              <span>{t('procedureEditor.section.stepControls')}</span>
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </summary>
+                            <div className="mt-3 grid gap-3 md:grid-cols-3">
+                              <MetaField label={t('procedureEditor.form.stepKey')}>
+                                <input
+                                  value={step.id}
+                                  onChange={(event) => updateStep(step.id, { id: event.target.value })}
+                                  className="glass-input-console font-mono text-[13px]"
+                                />
+                              </MetaField>
+                              <MetaField label={t('procedureEditor.form.completionGuidance')}>
+                                <textarea
+                                  value={step.completionGuidance}
+                                  onChange={(event) => updateStep(step.id, { completionGuidance: event.target.value })}
+                                  rows={2}
+                                  className="glass-input-console resize-y text-[13px]"
+                                  placeholder={t('procedureEditor.placeholder.completionGuidance')}
+                                />
+                              </MetaField>
+                              <MetaField label={t('procedureEditor.form.skipGuidance')}>
+                                <textarea
+                                  value={step.skipGuidance}
+                                  onChange={(event) => updateStep(step.id, { skipGuidance: event.target.value })}
+                                  rows={2}
+                                  className="glass-input-console resize-y text-[13px]"
+                                  placeholder={t('procedureEditor.placeholder.skipGuidance')}
+                                />
+                              </MetaField>
+                            </div>
+                          </details>
 
-                        <div className="mt-5">
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.defaultActions')}</p>
-                            <button
-                              type="button"
-                              onClick={() => addAction(step.id)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo/18 bg-indigo/[0.08] px-3 py-1.5 text-[11px] font-semibold text-indigo transition-colors hover:bg-indigo/[0.14]"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                              {t('procedureEditor.actions.addAction')}
-                            </button>
-                          </div>
-                          <div className="space-y-3">
-                            {step.actions.map((action) => (
-                              <ActionEditor
-                                key={action.id}
-                                t={t}
-                                action={action}
-                                onChange={(patch) => updateAction(step.id, action.id, patch)}
-                                onRemove={() => removeAction(step.id, action.id)}
-                                removable={step.actions.length > 1}
-                              />
+                          <div className="mt-4 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.defaultActions')}</p>
+                              <button
+                                type="button"
+                                onClick={() => addAction(step.id)}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-1.5 text-[11px] font-semibold text-[var(--mist)] transition hover:border-indigo/20 hover:text-indigo"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                {t('procedureEditor.actions.addAction')}
+                              </button>
+                            </div>
+                            {step.actions.map((action, actionIndex) => (
+                              <div key={action.id} className="grid gap-3 md:grid-cols-[28px_minmax(0,1fr)]">
+                                <span className="pt-4 text-right text-[12px] font-medium text-[var(--fog)]">{actionIndex + 1}.</span>
+                                <ActionEditor
+                                  t={t}
+                                  action={action}
+                                  onChange={(patch) => updateAction(step.id, action.id, patch)}
+                                  onRemove={() => removeAction(step.id, action.id)}
+                                  removable={step.actions.length > 1}
+                                />
+                              </div>
                             ))}
                           </div>
-                        </div>
 
-                        <div className="mt-6">
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.branches')}</p>
-                              <p className="mt-1 text-[11px] text-[var(--fog)]">
-                                {t('procedureEditor.section.branchesHint')}
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {step.branches.length === 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => addBranch(step.id, 'if')}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1.5 text-[11px] font-semibold text-[#357f7c] transition-colors hover:bg-[#357f7c]/[0.14]"
-                                >
-                                  <GitBranch className="h-3.5 w-3.5" />
-                                  {t('procedureEditor.actions.addIf')}
-                                </button>
-                              ) : (
-                                <>
+                          <div className="mt-5 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.branches')}</p>
+                                <p className="mt-1 text-[11px] text-[var(--fog)]">{t('procedureEditor.section.branchesHint')}</p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {step.branches.length === 0 ? (
                                   <button
                                     type="button"
-                                    onClick={() => addBranch(step.id, 'else_if')}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1.5 text-[11px] font-semibold text-[#357f7c] transition-colors hover:bg-[#357f7c]/[0.14]"
+                                    onClick={() => addBranch(step.id, 'if')}
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1.5 text-[11px] font-semibold text-[#357f7c] transition hover:bg-[#357f7c]/[0.14]"
                                   >
                                     <GitBranch className="h-3.5 w-3.5" />
-                                    {t('procedureEditor.actions.addElseIf')}
+                                    {t('procedureEditor.actions.addIf')}
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => addBranch(step.id, 'else')}
-                                    disabled={step.branches.some((branch) => branch.kind === 'else')}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-black/[0.06] bg-white/84 px-3 py-1.5 text-[11px] font-semibold text-[var(--mist)] transition-colors hover:text-indigo disabled:opacity-40"
-                                  >
-                                    <GitBranch className="h-3.5 w-3.5" />
-                                    {t('procedureEditor.actions.addElse')}
-                                  </button>
-                                </>
-                              )}
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => addBranch(step.id, 'else_if')}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1.5 text-[11px] font-semibold text-[#357f7c] transition hover:bg-[#357f7c]/[0.14]"
+                                    >
+                                      <GitBranch className="h-3.5 w-3.5" />
+                                      {t('procedureEditor.actions.addElseIf')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => addBranch(step.id, 'else')}
+                                      disabled={step.branches.some((branch) => branch.kind === 'else')}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-1.5 text-[11px] font-semibold text-[var(--mist)] transition hover:text-indigo disabled:opacity-40"
+                                    >
+                                      <GitBranch className="h-3.5 w-3.5" />
+                                      {t('procedureEditor.actions.addElse')}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </div>
-                          </div>
-
-                          {step.branches.length === 0 ? (
-                            <div className="rounded-[18px] border border-dashed border-black/[0.08] bg-white/60 px-4 py-4 text-[12px] text-[var(--fog)]">
-                              {t('procedureEditor.section.branchesEmpty')}
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {step.branches.map((branch) => (
-                                <BranchEditor
-                                  key={branch.id}
-                                  t={t}
-                                  branch={branch}
-                                  onChange={(patch) => updateBranch(step.id, branch.id, patch)}
-                                  onActionChange={(actionId, patch) => updateBranchAction(step.id, branch.id, actionId, patch)}
-                                  onActionAdd={() => addBranchAction(step.id, branch.id)}
-                                  onActionRemove={(actionId) => removeBranchAction(step.id, branch.id, actionId)}
-                                  onRemove={() => removeBranch(step.id, branch.id)}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="mt-6 rounded-[18px] border border-black/[0.06] bg-[rgba(250,248,242,0.72)] p-4">
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.stepHooks')}</p>
-                              <p className="mt-1 text-[11px] text-[var(--fog)]">
-                                {t('procedureEditor.section.stepHooksHint')}
-                              </p>
-                            </div>
-                            <Link
-                              href="/build/components/hooks"
-                              className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] bg-white/84 px-3 py-1.5 text-[11px] font-medium text-[var(--mist)] transition-colors hover:text-indigo"
-                            >
-                              {t('procedureEditor.actions.openHooks')}
-                              <ArrowUpRight className="h-3.5 w-3.5" />
-                            </Link>
-                          </div>
-
-                          <div className="mb-4 flex flex-wrap gap-2">
-                            {bindings.length === 0 ? (
-                              <span className="text-[11px] text-[var(--fog)]">{t('procedureEditor.section.noHookBindings')}</span>
+                            {step.branches.length === 0 ? (
+                              <div className="rounded-[16px] border border-dashed border-black/[0.10] bg-black/[0.015] px-4 py-4 text-[12px] text-[var(--fog)]">
+                                {t('procedureEditor.section.branchesEmpty')}
+                              </div>
                             ) : (
-                              bindings.map((binding) => (
-                                <span
-                                  key={binding.id}
-                                  className="inline-flex items-center gap-2 rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5 text-[11px] font-medium text-[var(--mist)]"
-                                >
-                                  {binding.hookName}
-                                  <button
-                                    type="button"
-                                    onClick={() => removeStepBinding(step.id, binding.hookName || '', binding.id)}
-                                    disabled={busy}
-                                    className="text-vermillion transition-opacity hover:opacity-80 disabled:opacity-40"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
-                                </span>
-                              ))
+                              <div className="space-y-4">
+                                {step.branches.map((branch) => (
+                                  <BranchEditor
+                                    key={branch.id}
+                                    t={t}
+                                    branch={branch}
+                                    onChange={(patch) => updateBranch(step.id, branch.id, patch)}
+                                    onActionChange={(actionId, patch) => updateBranchAction(step.id, branch.id, actionId, patch)}
+                                    onActionAdd={() => addBranchAction(step.id, branch.id)}
+                                    onActionRemove={(actionId) => removeBranchAction(step.id, branch.id, actionId)}
+                                    onRemove={() => removeBranch(step.id, branch.id)}
+                                  />
+                                ))}
+                              </div>
                             )}
                           </div>
 
-                          <div className="grid gap-3 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <span className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.section.bindExistingHook')}</span>
-                              <div className="flex gap-2">
-                                <select
-                                  value={hookStepDrafts[step.id] || ''}
-                                  onChange={(event) => setHookStepDrafts((current) => ({ ...current, [step.id]: event.target.value }))}
-                                  className="glass-input-console text-[12px]"
+                          <details className="mt-5 rounded-[16px] border border-black/[0.06] bg-[#faf8f1] px-4 py-3">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[12px] font-semibold text-[var(--mist)]">
+                              <span>{t('procedureEditor.section.stepHooks')}</span>
+                              <ChevronDown className="h-3.5 w-3.5 text-[var(--fog)]" />
+                            </summary>
+                            <div className="mt-4 space-y-4">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="text-[11px] leading-5 text-[var(--fog)]">{t('procedureEditor.section.stepHooksHint')}</p>
+                                <Link
+                                  href="/build/components/hooks"
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--mist)] transition hover:text-indigo"
                                 >
-                                  <option value="">{t('procedureEditor.placeholder.selectHook')}</option>
-                                  {availableHooks.map((hook) => (
-                                    <option key={hook.id} value={hook.name}>
-                                      {hook.displayName || hook.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button
-                                  type="button"
-                                  onClick={() => bindExistingHookToStep(step.id)}
-                                  disabled={!hookStepDrafts[step.id] || busy}
-                                  className="rounded-xl border border-black/[0.06] bg-white/84 px-3 py-2 text-[12px] font-semibold text-[var(--mist)] transition-colors hover:text-indigo disabled:opacity-40"
-                                >
-                                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('procedureEditor.actions.bind')}
-                                </button>
+                                  {t('procedureEditor.actions.openHooks')}
+                                  <ArrowUpRight className="h-3.5 w-3.5" />
+                                </Link>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {bindings.length === 0 ? (
+                                  <span className="text-[11px] text-[var(--fog)]">{t('procedureEditor.section.noHookBindings')}</span>
+                                ) : (
+                                  bindings.map((binding) => (
+                                    <span
+                                      key={binding.id}
+                                      className="inline-flex items-center gap-2 rounded-full border border-black/[0.06] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--mist)]"
+                                    >
+                                      {binding.hookName}
+                                      <button
+                                        type="button"
+                                        onClick={() => removeStepBinding(step.id, binding.hookName || '', binding.id)}
+                                        disabled={busy}
+                                        className="text-vermillion transition-opacity hover:opacity-80 disabled:opacity-40"
+                                        aria-label={t('procedureEditor.actions.remove')}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <div className="space-y-2">
+                                  <span className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.section.bindExistingHook')}</span>
+                                  <div className="flex gap-2">
+                                    <select
+                                      value={hookStepDrafts[step.id] || ''}
+                                      onChange={(event) => setHookStepDrafts((current) => ({ ...current, [step.id]: event.target.value }))}
+                                      className="glass-input-console text-[12px]"
+                                    >
+                                      <option value="">{t('procedureEditor.placeholder.selectHook')}</option>
+                                      {availableHooks.map((hook) => (
+                                        <option key={hook.id} value={hook.name}>
+                                          {hook.displayName || hook.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => bindExistingHookToStep(step.id)}
+                                      disabled={!hookStepDrafts[step.id] || busy}
+                                      className="rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--mist)] transition hover:text-indigo disabled:opacity-40"
+                                    >
+                                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('procedureEditor.actions.bind')}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <span className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.section.createAndBindHook')}</span>
+                                  <div className="flex gap-2">
+                                    <input
+                                      value={newHookDrafts[step.id] || ''}
+                                      onChange={(event) => setNewHookDrafts((current) => ({ ...current, [step.id]: event.target.value }))}
+                                      placeholder={t('procedureEditor.placeholder.newHookName')}
+                                      className="glass-input-console text-[12px]"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => createAndBindHookToStep(step.id)}
+                                      disabled={!newHookDrafts[step.id] || busy}
+                                      className="rounded-xl border border-indigo/18 bg-indigo/[0.08] px-3 py-2 text-[12px] font-semibold text-indigo transition hover:bg-indigo/[0.14] disabled:opacity-40"
+                                    >
+                                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('procedureEditor.actions.create')}
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-
-                            <div className="space-y-2">
-                              <span className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.section.createAndBindHook')}</span>
-                              <div className="flex gap-2">
-                                <input
-                                  value={newHookDrafts[step.id] || ''}
-                                  onChange={(event) => setNewHookDrafts((current) => ({ ...current, [step.id]: event.target.value }))}
-                                  placeholder={t('procedureEditor.placeholder.newHookName')}
-                                  className="glass-input-console text-[12px]"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => createAndBindHookToStep(step.id)}
-                                  disabled={!newHookDrafts[step.id] || busy}
-                                  className="rounded-xl border border-indigo/18 bg-indigo/[0.08] px-3 py-2 text-[12px] font-semibold text-indigo transition-colors hover:bg-indigo/[0.14] disabled:opacity-40"
-                                >
-                                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('procedureEditor.actions.create')}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                          </details>
                         </div>
                       </div>
                     )
                   })}
-                </div>
+                  <div className="grid gap-4 md:grid-cols-[72px_minmax(0,1fr)]">
+                    <div className="hidden md:block" />
+                    <button
+                      type="button"
+                      onClick={addStep}
+                      className="inline-flex w-fit items-center gap-2 rounded-full border border-black/[0.07] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--mist)] shadow-sm transition hover:border-indigo/20 hover:text-indigo"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {t('procedureEditor.actions.addStep')}
+                    </button>
+                  </div>
+                </section>
               </div>
-            </section>
+            </main>
 
-            <aside className="space-y-6">
-              <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.78] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.preview.title')}</p>
-                <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedureDefinition.whenToUse}</p>
-                {procedureDefinition.overview ? (
-                  <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedureDefinition.overview}</p>
-                ) : null}
+            <aside className="min-w-0 bg-white">
+              <div className="sticky top-[73px] max-h-[calc(100vh-73px)] overflow-y-auto">
+                <div className="border-b border-black/[0.08] px-6 py-4">
+                  <div className="flex items-center gap-6">
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelMode('preview')}
+                      className={`border-b-2 pb-3 text-[14px] font-semibold transition ${
+                        rightPanelMode === 'preview'
+                          ? 'border-[#f05a28] text-[var(--mist)]'
+                          : 'border-transparent text-[var(--fog)] hover:text-[var(--mist)]'
+                      }`}
+                    >
+                      {t('procedureEditor.panel.preview')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelMode('simulation')}
+                      className={`border-b-2 pb-3 text-[14px] font-semibold transition ${
+                        rightPanelMode === 'simulation'
+                          ? 'border-[#f05a28] text-[var(--mist)]'
+                          : 'border-transparent text-[var(--fog)] hover:text-[var(--mist)]'
+                      }`}
+                    >
+                      {t('procedureEditor.panel.simulations')}
+                    </button>
+                  </div>
+                </div>
 
-                <div className="mt-4 space-y-3">
-                  {procedureDefinition.steps.map((step) => (
-                    <div key={step.id} className="rounded-[16px] border border-black/[0.06] bg-white/88 p-3">
-                      <p className="text-[12px] font-semibold text-[var(--mist)]">{step.title}</p>
-                      <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">{step.guidance}</p>
-                      {step.actions.length > 0 ? (
-                        <div className="mt-2 space-y-1 text-[11px] text-[var(--fog)]">
-                          {step.actions.map((action) => (
-                            <div key={action.id}>{t('procedureEditor.preview.actionLine', { summary: summarizeAction(t, action) })}</div>
-                          ))}
-                        </div>
+                {rightPanelMode === 'preview' ? (
+                  <div className="space-y-4 p-6">
+                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
+                      <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.preview.title')}</p>
+                      <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedureDefinition.whenToUse}</p>
+                      {procedureDefinition.overview ? (
+                        <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedureDefinition.overview}</p>
                       ) : null}
-                      {step.branches.length > 0 ? (
-                        <div className="mt-2 space-y-1 text-[11px] text-[var(--fog)]">
-                          {step.branches.map((branch) => (
-                            <div key={branch.id}>
-                              {t('procedureEditor.preview.branchLine', { kind: branchKindLabel(t, branch.kind), summary: summarizeCondition(t, branch) })}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.78] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.simulation.title')}</p>
-                    <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
-                      {t('procedureEditor.simulation.description')}
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-2.5 py-1 text-[11px] font-medium text-[#357f7c]">
-                    {simulationStatusLabel(t, simulationReceipt.status)}
-                  </span>
-                </div>
-                <div className="mt-3 rounded-[16px] border border-amber-500/20 bg-amber-500/[0.08] px-3 py-3 text-[11px] leading-5 text-[var(--mist)]">
-                  {t('procedureEditor.simulation.previewWarning')}
-                </div>
-
-                <div className="mt-4 space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.activeSignals')}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {PROCEDURE_RUNTIME_SIGNALS.map((signal) => {
-                        const active = simulation.signals.includes(signal)
-                        return (
-                          <button
-                            key={signal}
-                            type="button"
-                            onClick={() => setSimulation((current) => ({
-                              ...current,
-                              signals: active
-                                ? current.signals.filter((value) => value !== signal)
-                                : [...current.signals, signal],
-                            }))}
-                            className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                              active
-                                ? 'border border-[#357f7c]/18 bg-[#357f7c]/[0.10] text-[#357f7c]'
-                                : 'border border-black/[0.06] bg-white/84 text-[var(--fog)]'
-                            }`}
-                          >
-                            {runtimeSignalLabel(t, signal)}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.toolNames')}</p>
-                    <ChipInput
-                      values={simulation.toolNames}
-                      onChange={(values) => setSimulation((current) => ({ ...current, toolNames: values }))}
-                      placeholder={t('procedureEditor.placeholder.simulationToolNames')}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.formFields')}</p>
-                    <ChipInput
-                      values={simulation.formFields}
-                      onChange={(values) => setSimulation((current) => ({ ...current, formFields: values }))}
-                      placeholder={t('procedureEditor.placeholder.simulationFormFields')}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.llmConditionIds')}</p>
-                    <ChipInput
-                      values={simulation.matchedLlmConditionIds || []}
-                      onChange={(values) => setSimulation((current) => ({ ...current, matchedLlmConditionIds: values }))}
-                      placeholder={t('procedureEditor.placeholder.llmConditionIds')}
-                    />
-                    <p className="text-[11px] text-[var(--fog)]">
-                      {t('procedureEditor.simulation.llmConditionIdsHint')}
-                    </p>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <MetaField label={t('procedureEditor.simulation.knowledgeSearches')}>
-                      <input
-                        type="number"
-                        min={0}
-                        value={simulation.knowledgeSearches}
-                        onChange={(event) => setSimulation((current) => ({ ...current, knowledgeSearches: Number(event.target.value || 0) }))}
-                        className="glass-input-console text-[13px]"
-                      />
-                    </MetaField>
-                    <div className="space-y-2 pt-5 text-[12px] text-[var(--mist)]">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={simulation.handoffRequested}
-                          onChange={(event) => setSimulation((current) => ({ ...current, handoffRequested: event.target.checked }))}
-                          className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
-                        />
-                        {t('procedureEditor.simulation.handoffRequested')}
-                      </label>
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={simulation.ended}
-                          onChange={(event) => setSimulation((current) => ({ ...current, ended: event.target.checked }))}
-                          className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
-                        />
-                        {t('procedureEditor.simulation.ended')}
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-[18px] border border-black/[0.06] bg-[rgba(247,250,249,0.84)] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.simulation.receipt')}</p>
-                    <span className="text-[11px] text-[var(--fog)]">{t('procedureEditor.simulation.activeStep', { stepId: simulationReceipt.activeStepId || t('procedureEditor.simulation.none') })}</span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {simulationReceipt.steps.map((step) => (
-                      <div key={step.stepId} className="rounded-[14px] border border-black/[0.06] bg-white/84 px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-[12px] font-medium text-[var(--mist)]">{step.title}</p>
-                          <span className="text-[11px] text-[var(--fog)]">{simulationStepStatusLabel(t, step.status)}</span>
-                        </div>
+                    {procedureDefinition.steps.map((step) => (
+                      <div key={step.id} className="rounded-[20px] border border-black/[0.08] bg-white p-5">
+                        <p className="text-[14px] font-semibold text-[var(--mist)]">{step.title}</p>
+                        <p className="mt-2 text-[12px] leading-6 text-[var(--fog)]">{step.guidance}</p>
+                        {step.actions.length > 0 ? (
+                          <div className="mt-3 space-y-1 text-[11px] text-[var(--fog)]">
+                            {step.actions.map((action) => (
+                              <div key={action.id}>{t('procedureEditor.preview.actionLine', { summary: summarizeAction(t, action) })}</div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {step.branches.length > 0 ? (
+                          <div className="mt-3 space-y-1 text-[11px] text-[var(--fog)]">
+                            {step.branches.map((branch) => (
+                              <div key={branch.id}>
+                                {t('procedureEditor.preview.branchLine', { kind: branchKindLabel(t, branch.kind), summary: summarizeCondition(t, branch) })}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>
-                </div>
-              </div>
+                ) : (
+                  <div className="space-y-4 p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSimulation({
+                          signals: [],
+                          toolNames: [],
+                          formFields: [],
+                          matchedLlmConditionIds: [],
+                          knowledgeSearches: 0,
+                          handoffRequested: false,
+                          ended: false,
+                        })}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-2 text-[13px] font-semibold text-[var(--mist)] transition hover:bg-black/[0.03]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        {t('procedureEditor.actions.newSimulation')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSimulation((current) => ({ ...current, ended: true }))}
+                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-[var(--mist)] transition hover:bg-black/[0.04]"
+                      >
+                        <Square className="h-3.5 w-3.5 fill-current" />
+                        {t('procedureEditor.actions.stopAll')}
+                      </button>
+                    </div>
 
-              <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.78] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.currentStatus')}</p>
-                <div className="mt-3 space-y-2 text-[12px] text-[var(--fog)]">
-                  <div className="flex items-center justify-between">
-                    <span>{t('procedureEditor.status.routing')}</span>
-                    <span className="font-medium text-[var(--mist)]">{draft.enabled ? t('common.enabled') : t('common.disabled')}</span>
+                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.simulation.title')}</p>
+                          <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
+                            {t('procedureEditor.simulation.description')}
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-2.5 py-1 text-[11px] font-medium text-[#357f7c]">
+                          {simulationStatusLabel(t, simulationReceipt.status)}
+                        </span>
+                      </div>
+                      <div className="mt-3 rounded-[16px] border border-amber-500/20 bg-amber-500/[0.08] px-3 py-3 text-[11px] leading-5 text-[var(--mist)]">
+                        {t('procedureEditor.simulation.previewWarning')}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.activeSignals')}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {PROCEDURE_RUNTIME_SIGNALS.map((signal) => {
+                              const active = simulation.signals.includes(signal)
+                              return (
+                                <button
+                                  key={signal}
+                                  type="button"
+                                  onClick={() => setSimulation((current) => ({
+                                    ...current,
+                                    signals: active
+                                      ? current.signals.filter((value) => value !== signal)
+                                      : [...current.signals, signal],
+                                  }))}
+                                  className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+                                    active
+                                      ? 'border border-[#357f7c]/18 bg-[#357f7c]/[0.10] text-[#357f7c]'
+                                      : 'border border-black/[0.06] bg-white text-[var(--fog)] hover:text-[var(--mist)]'
+                                  }`}
+                                >
+                                  {runtimeSignalLabel(t, signal)}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.toolNames')}</p>
+                          <ChipInput
+                            values={simulation.toolNames}
+                            onChange={(values) => setSimulation((current) => ({ ...current, toolNames: values }))}
+                            placeholder={t('procedureEditor.placeholder.simulationToolNames')}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.formFields')}</p>
+                          <ChipInput
+                            values={simulation.formFields}
+                            onChange={(values) => setSimulation((current) => ({ ...current, formFields: values }))}
+                            placeholder={t('procedureEditor.placeholder.simulationFormFields')}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.llmConditionIds')}</p>
+                          <ChipInput
+                            values={simulation.matchedLlmConditionIds || []}
+                            onChange={(values) => setSimulation((current) => ({ ...current, matchedLlmConditionIds: values }))}
+                            placeholder={t('procedureEditor.placeholder.llmConditionIds')}
+                          />
+                          <p className="text-[11px] text-[var(--fog)]">
+                            {t('procedureEditor.simulation.llmConditionIdsHint')}
+                          </p>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                          <MetaField label={t('procedureEditor.simulation.knowledgeSearches')}>
+                            <input
+                              type="number"
+                              min={0}
+                              value={simulation.knowledgeSearches}
+                              onChange={(event) => setSimulation((current) => ({ ...current, knowledgeSearches: Number(event.target.value || 0) }))}
+                              className="glass-input-console text-[13px]"
+                            />
+                          </MetaField>
+                          <div className="space-y-2 text-[12px] text-[var(--mist)]">
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={simulation.handoffRequested}
+                                onChange={(event) => setSimulation((current) => ({ ...current, handoffRequested: event.target.checked }))}
+                                className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
+                              />
+                              {t('procedureEditor.simulation.handoffRequested')}
+                            </label>
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={simulation.ended}
+                                onChange={(event) => setSimulation((current) => ({ ...current, ended: event.target.checked }))}
+                                className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
+                              />
+                              {t('procedureEditor.simulation.ended')}
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.simulation.receipt')}</p>
+                        <span className="text-[11px] text-[var(--fog)]">{t('procedureEditor.simulation.activeStep', { stepId: simulationReceipt.activeStepId || t('procedureEditor.simulation.none') })}</span>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {simulationReceipt.steps.map((step) => (
+                          <div key={step.stepId} className="rounded-[16px] border border-black/[0.08] bg-[#fbfaf6] px-4 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-[13px] font-semibold text-[var(--mist)]">{step.title}</p>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] text-[var(--fog)]">
+                                {simulationStepStatusLabel(t, step.status)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span>{t('procedureEditor.status.steps')}</span>
-                    <span className="font-medium text-[var(--mist)]">{draft.steps.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>{t('procedureEditor.status.branches')}</span>
-                    <span className="font-medium text-[var(--mist)]">{draft.steps.reduce((count, step) => count + step.branches.length, 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>{t('procedureEditor.status.saveState')}</span>
-                    <span className="font-medium text-[var(--mist)]">{saveStateLabel}</span>
+                )}
+
+                <div className="border-t border-black/[0.08] p-6">
+                  <div className="rounded-[20px] border border-black/[0.08] bg-[#fbfaf6] p-5">
+                    <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.currentStatus')}</p>
+                    <div className="mt-3 space-y-2 text-[12px] text-[var(--fog)]">
+                      <div className="flex items-center justify-between">
+                        <span>{t('procedureEditor.status.routing')}</span>
+                        <span className="font-medium text-[var(--mist)]">{draft.enabled ? t('common.enabled') : t('common.disabled')}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>{t('procedureEditor.status.steps')}</span>
+                        <span className="font-medium text-[var(--mist)]">{draft.steps.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>{t('procedureEditor.status.branches')}</span>
+                        <span className="font-medium text-[var(--mist)]">{draft.steps.reduce((count, step) => count + step.branches.length, 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>{t('procedureEditor.status.saveState')}</span>
+                        <span className="font-medium text-[var(--mist)]">{saveStateLabel}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

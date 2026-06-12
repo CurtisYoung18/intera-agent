@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { hydrateMessageFromDb, isCustomerVisibleMessage } from '@/lib/agent/provider-transcript'
 
 const querySchema = z.object({
   limit: z.string().optional().default('100'),
@@ -18,7 +19,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
     const limit = Math.min(parseInt(input.limit), 500)
     const offset = parseInt(input.offset)
 
-    const [caseData, messages, total] = await Promise.all([
+    const [caseData, messages] = await Promise.all([
       repo.case.findUnique({
         where: { id: params.id },
         select: { type: true, status: true, createdAt: true },
@@ -26,14 +27,22 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
       repo.raw.message.findMany({
         where: { caseId: params.id },
         orderBy: { createdAt: 'asc' },
-        take: limit,
-        skip: offset,
       }),
-      repo.raw.message.count({ where: { caseId: params.id } }),
     ])
 
     if (!caseData) throw new NotFoundError('ProcedureRun not found')
 
-    return apiOk({ caseType: caseData.type, status: caseData.status, createdAt: caseData.createdAt, messages, total })
+    const visibleMessages = messages
+      .map((message) => hydrateMessageFromDb(message as any))
+      .filter(isCustomerVisibleMessage)
+    const pagedMessages = visibleMessages.slice(offset, offset + limit)
+
+    return apiOk({
+      caseType: caseData.type,
+      status: caseData.status,
+      createdAt: caseData.createdAt,
+      messages: pagedMessages,
+      total: visibleMessages.length,
+    })
   },
 })

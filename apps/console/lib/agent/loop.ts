@@ -41,9 +41,10 @@ import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks
 // ---------------------------------------------------------------------------
 
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
-import { makeUserMessage, buildApiMessages } from './message-builder'
+import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
 import { buildToolResultMessageFromSynthesis, buildHookFeedbackMessage } from './tool-result-manager'
+import { assistantProviderContent, makeProviderMeta, selectProviderMessageWindow, type TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import {
@@ -417,7 +418,8 @@ export class AgentLoop {
 
       if (this.abortController.signal.aborted) break
 
-      const apiMessages = this.buildApiMessages()
+      const { messages: apiMessages, metrics: transcriptHealth } = this.buildApiMessages()
+      await this.writeProviderTranscriptHealth(transcriptHealth)
 
       if (debugLogsEnabled) {
         console.log('[DebugMode] stagePrompt:', stagePrompt.slice(0, 3000))
@@ -828,6 +830,15 @@ export class AgentLoop {
         // Populate toolUses on assistantMessage so buildApiMessages can include
         // them as content blocks for the next API call (required by Anthropic API).
         assistantMessage.toolUses = toolUses.length > 0 ? toolUses : undefined
+        assistantMessage.providerContent = assistantProviderContent(assistantMessage.content, toolUses)
+        if (assistantMessage.providerContent?.length) {
+          assistantMessage.providerMeta = makeProviderMeta({
+            providerFamily: 'anthropic',
+            visibility: 'customer',
+            transcriptKind: 'assistant_response',
+            toolUseIds: toolUses.map((toolUse) => toolUse.id),
+          })
+        }
 
         if (toolUses.length > 0) {
           const synthesisBlocks = synthesizeMissingToolResults({
@@ -1788,7 +1799,33 @@ export class AgentLoop {
   }
 
   private buildApiMessages() {
-    return buildApiMessages(this.messages, this.chatMemory, this.deps.config.memoryStrategy)
+    return buildApiMessagesWithTranscriptHealth(this.messages, this.chatMemory, this.deps.config.memoryStrategy)
+  }
+
+  private async writeProviderTranscriptHealth(metrics: TranscriptHealthMetrics): Promise<void> {
+    await this.traceWriter.write('provider_transcript_health', 'Provider transcript invariant check', {
+      providerTranscriptPersisted: false,
+      providerTranscriptPresent: metrics.providerTranscriptPersisted,
+      toolPairsChecked: metrics.toolPairsChecked,
+      toolPairsRepaired: metrics.toolPairsRepaired,
+      orphanToolResultsDropped: metrics.orphanToolResultsDropped,
+      legacyRowsSkipped: metrics.legacyRowsSkipped,
+      compactPairsSummarized: metrics.compactPairsSummarized,
+    })
+
+    for (const detail of metrics.details) {
+      const title =
+        detail.event === 'synthetic_repair' ? 'Provider transcript synthetic repair' :
+        detail.event === 'orphan_drop' || detail.event === 'duplicate_drop' ? 'Provider transcript orphan result dropped' :
+        detail.event === 'legacy_skip' ? 'Provider transcript legacy row skipped' :
+        'Provider transcript compact pair summarized'
+      const actionType =
+        detail.event === 'synthetic_repair' ? 'provider_transcript_repair' :
+        detail.event === 'orphan_drop' || detail.event === 'duplicate_drop' ? 'provider_transcript_orphan_drop' :
+        detail.event === 'legacy_skip' ? 'provider_transcript_legacy_skip' :
+        'provider_transcript_compact_summary'
+      await this.traceWriter.write(actionType, title, detail as unknown as Record<string, unknown>)
+    }
   }
 
   private async checkAndCompact(): Promise<{
@@ -1845,7 +1882,7 @@ export class AgentLoop {
         await this.performCompaction()
         const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
-          this.messages = this.messages.slice(-keepCount)
+          this.messages = selectProviderMessageWindow(this.messages, keepCount)
         }
         this.userMessagesSinceLastCompact = 0
         await this.traceWriter.write('loop_decision', 'Compacted', {
@@ -1867,7 +1904,7 @@ export class AgentLoop {
         await this.performCompaction()
         const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
-          this.messages = this.messages.slice(-keepCount)
+          this.messages = selectProviderMessageWindow(this.messages, keepCount)
         }
         this.userMessagesSinceLastCompact = 0
         await this.traceWriter.write('loop_decision', 'Compacted', {
@@ -1888,7 +1925,7 @@ export class AgentLoop {
         await this.performCompaction()
         const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
         if (this.deps.config.memoryStrategy.enableSnip !== false) {
-          this.messages = this.messages.slice(-keepCount)
+          this.messages = selectProviderMessageWindow(this.messages, keepCount)
         }
         this.userMessagesSinceLastCompact = 0
         await this.traceWriter.write('loop_decision', 'Compacted', {

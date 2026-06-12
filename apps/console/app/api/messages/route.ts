@@ -4,8 +4,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AgentLoop } from '@/lib/agent/loop'
-import { hasPersistableMessageContent, persistableMessageText } from '@/lib/agent/persistable-message'
 import { enqueueMessageOrCreate, getOrCreateSession, hasSession, recordInitialInputEvent, type CaseSession, type RuntimeEventSource } from '@/lib/agent/session-store'
+import {
+  hasProviderOrDisplayContent,
+  hydrateMessageFromDb,
+  providerTranscriptPersistenceReceipt,
+  serializeMessageForPersistence,
+  type MessagePersistenceRecord,
+} from '@/lib/agent/provider-transcript'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { prisma } from '@intera/shared/prisma'
@@ -75,6 +81,29 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
   if (!raw) return {}
   if (typeof raw !== 'string') return raw
   try { return JSON.parse(raw) } catch { return {} }
+}
+
+async function writeProviderTranscriptPersistedTrace(
+  caseId: string,
+  chatId: string | undefined,
+  messages: MessagePersistenceRecord[],
+): Promise<void> {
+  const receipt = providerTranscriptPersistenceReceipt(messages)
+  if (!receipt.providerTranscriptPersisted) return
+  try {
+    await prisma.actionTrace.create({
+      data: {
+        caseId,
+        chatId,
+        actionType: 'provider_transcript_persisted',
+        title: 'Provider transcript persisted',
+        detail: `${receipt.providerTranscriptMessageCount} provider transcript message(s) persisted`,
+        payload: JSON.stringify(receipt),
+      },
+    })
+  } catch (err) {
+    console.error('[Intera] Failed to write provider transcript persistence trace:', err)
+  }
 }
 
 /** Lightweight LLM-based intent routing: classify a user message to the best
@@ -739,13 +768,7 @@ export async function POST(request: NextRequest) {
           })
           if (priorMessages.length > 0) {
             agentLoop.loadMessages(
-              priorMessages.map((m: { id: string; role: string; content: string; createdAt: Date; contentBlocks?: unknown }) => ({
-                id: m.id,
-                role: m.role as 'user' | 'assistant',
-                content: m.content,
-                contentBlocks: (m as any).contentBlocks ?? undefined,
-                createdAt: m.createdAt,
-              })),
+              priorMessages.map((m) => hydrateMessageFromDb(m as any)),
             )
           }
         } catch (err) { console.error('[Intera] Failed to load prior messages:', err) }
@@ -777,12 +800,7 @@ export async function POST(request: NextRequest) {
               take: 50,
             })
             if (priorMsgs.length > 0) {
-              followup.loadMessages(priorMsgs.map((m: { id: string; role: string; content: string; createdAt: Date; contentBlocks?: unknown }) => ({
-                id: m.id, role: m.role as 'user' | 'assistant',
-                content: m.content,
-                contentBlocks: (m as any).contentBlocks ?? undefined,
-                createdAt: m.createdAt,
-              })))
+              followup.loadMessages(priorMsgs.map((m) => hydrateMessageFromDb(m as any)))
             }
           } catch (_) { /* non-critical */ }
           // Re-load memory from the master loop
@@ -825,20 +843,28 @@ export async function POST(request: NextRequest) {
                 },
               })
               const msgsToPersist = result.messages
-                .filter((m) => hasPersistableMessageContent(m))
-                .map((m) => ({
-                  id: m.id, caseId: resolvedCaseId, role: m.role,
-                  content: persistableMessageText(m.content), contentBlocks: m.contentBlocks ?? undefined, isStreaming: false,
-                }))
+                .filter((m) => hasProviderOrDisplayContent(m))
+                .map((m) => serializeMessageForPersistence(m, resolvedCaseId))
               if (msgsToPersist.length > 0) {
                 await prisma.$transaction(
                   msgsToPersist.map((msg) =>
                     prisma.message.upsert({
                       where: { id: msg.id },
-                      update: { content: msg.content, contentBlocks: msg.contentBlocks ?? undefined, isStreaming: false },
-                      create: msg,
+                      update: {
+                        content: msg.content,
+                        contentBlocks: msg.contentBlocks ?? undefined,
+                        providerContent: (msg.providerContent ?? undefined) as any,
+                        providerMeta: (msg.providerMeta ?? undefined) as any,
+                        isStreaming: false,
+                      },
+                      create: msg as any,
                     }),
                   ),
+                )
+                await writeProviderTranscriptPersistedTrace(
+                  resolvedCaseId,
+                  typeof chatId === 'string' ? chatId : undefined,
+                  msgsToPersist,
                 )
               }
             } catch (e) {
@@ -907,25 +933,29 @@ export async function POST(request: NextRequest) {
         // ── Persist messages to DB (always, even for casual chat) ──
         try {
           const messagesToPersist = result.messages
-            .filter((m) => hasPersistableMessageContent(m))
-            .map((m) => ({
-              id: m.id,
-              caseId: resolvedCaseId,
-              role: m.role,
-              content: persistableMessageText(m.content),
-              contentBlocks: m.contentBlocks ?? undefined,
-              isStreaming: false,
-            }))
+            .filter((m) => hasProviderOrDisplayContent(m))
+            .map((m) => serializeMessageForPersistence(m, resolvedCaseId))
 
           if (messagesToPersist.length > 0) {
             await prisma.$transaction(
               messagesToPersist.map((msg) =>
                 prisma.message.upsert({
                   where: { id: msg.id },
-                  update: { content: msg.content, contentBlocks: msg.contentBlocks ?? undefined, isStreaming: false },
-                  create: msg,
+                  update: {
+                    content: msg.content,
+                    contentBlocks: msg.contentBlocks ?? undefined,
+                    providerContent: (msg.providerContent ?? undefined) as any,
+                    providerMeta: (msg.providerMeta ?? undefined) as any,
+                    isStreaming: false,
+                  },
+                  create: msg as any,
                 }),
               ),
+            )
+            await writeProviderTranscriptPersistedTrace(
+              resolvedCaseId,
+              typeof chatId === 'string' ? chatId : undefined,
+              messagesToPersist,
             )
           }
         } catch (err) {

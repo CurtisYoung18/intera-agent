@@ -112,6 +112,41 @@ describe('compactConversation routing', () => {
     expect(systemArg).toBe(CASE_COMPACT_PROMPT)
   })
 
+  it('includes provider-only tool_use and tool_result evidence in compact messages', async () => {
+    const { compactConversation } = await import('../compact')
+    const messages: Message[] = [
+      {
+        id: 'assistant-tool-use',
+        role: 'assistant',
+        content: '',
+        providerContent: [
+          { type: 'tool_use', id: 'toolu_1', name: 'lookup_deposit', input: { member_id: 'M123' } },
+        ],
+        providerMeta: { protocolVersion: 1, visibility: 'customer', transcriptKind: 'assistant_response' },
+        createdAt: new Date(),
+      },
+      {
+        id: 'tool-result',
+        role: 'user',
+        content: '',
+        providerContent: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: '{"deposit":100}' },
+        ],
+        providerMeta: { protocolVersion: 1, visibility: 'internal', transcriptKind: 'tool_result' },
+        createdAt: new Date(),
+      },
+    ]
+    const strategy = makeStrategy()
+
+    await compactConversation(messages, strategy, { purpose: 'case' })
+
+    const apiMessages = mockCreate.mock.calls[0][0].messages
+    expect(apiMessages).toEqual([
+      expect.objectContaining({ role: 'assistant', content: expect.stringContaining('lookup_deposit') }),
+      expect.objectContaining({ role: 'user', content: expect.stringContaining('"deposit":100') }),
+    ])
+  })
+
   it('still respects custom compactPrompt when provided', async () => {
     const { compactConversation } = await import('../compact')
     const messages = makeMessages(10)

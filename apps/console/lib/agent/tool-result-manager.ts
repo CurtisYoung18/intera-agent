@@ -10,6 +10,7 @@
 import type { Message, ToolUse } from '@intera/shared/types'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { ToolResultBlock } from './tool-result-invariant'
+import { makeProviderMeta, toolResultProviderContent } from './provider-transcript'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -52,7 +53,13 @@ export function buildHookFeedbackMessage(feedback: string): Message {
   return {
     id: crypto.randomUUID(),
     role: 'user',
-    content: feedback,
+    content: '',
+    providerContent: [{ type: 'text', text: feedback }],
+    providerMeta: makeProviderMeta({
+      providerFamily: 'anthropic',
+      visibility: 'internal',
+      transcriptKind: 'hook_feedback',
+    }),
     createdAt: new Date(),
   }
 }
@@ -62,13 +69,18 @@ export function buildHookFeedbackMessage(feedback: string): Message {
 // ---------------------------------------------------------------------------
 
 function wrapAsUserMessage(blocks: ToolResultBlock[]): Message {
+  const toolUseIds = blocks.map((block) => block.tool_use_id)
   return {
     id: crypto.randomUUID(),
     role: 'user',
-    // Anthropic API expects tool_result as structured content blocks.
-    // Cast through unknown because our Message type declares content: string,
-    // but buildApiMessages passes content through as-is to the API.
-    content: blocks as unknown as string,
+    content: '',
+    providerContent: toolResultProviderContent(blocks),
+    providerMeta: makeProviderMeta({
+      providerFamily: 'anthropic',
+      visibility: 'internal',
+      transcriptKind: 'tool_result',
+      toolUseIds,
+    }),
     createdAt: new Date(),
   } as Message
 }

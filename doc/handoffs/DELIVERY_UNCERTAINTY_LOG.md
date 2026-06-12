@@ -52,6 +52,19 @@ Use this format for each new item:
 - Owner decision needed: Confirm whether injected runtime-proof receipts are sufficient before a separate live-provider proof lane. Confirm the production `llm_eval` provider/model/timeout/failure policy. Confirm whether `no_progress_loop` should stay at the current default threshold of `3` customer messages without progress. Confirm whether existing saved v1 procedures should remain lazy-compatible or get a later explicit migration plan. Confirm whether `paused + reason=waiting_human` should remain the persisted handoff terminal state until a future dedicated status type exists. Confirm whether Delivery Agent 1 may merge/cherry-pick before authenticated local editor screenshots are available, or whether a dedicated local env/smoke lane must land first.
 - Follow-up owner: founder / architect / delivery lead
 
+### 2026-06-12 - Provider Transcript Persistence Defaults
+
+- Area: AgentLoop / message persistence / provider transcript durability
+- Status: default-applied
+- Severity: P1
+- Uncertainty: The spec requires durable provider transcript truth but does not mandate a backfill job for legacy rows, an exact payload-retention cap for historical tool results, or whether compact windows must obey a hard message count when that would split an Anthropic `tool_use` / `tool_result` pair.
+- Default action taken: Added nullable JSON `Message.providerContent` and `Message.providerMeta`; left legacy rows backward-compatible without destructive backfill; persisted full first-class provider transcript blocks for new assistant `tool_use` and internal user `tool_result` rows; hid internal provider rows from customer-visible message APIs; made provider windows pair-aware even when preserving the matching assistant row exceeds the nominal recent-message count; added trace/receipt counters for persisted transcript, checked pairs, repairs, orphan drops, legacy skips, and compact pair summaries.
+- Why this default: Nullable JSON preserves production compatibility and keeps the reversible runtime truth alongside existing display fields. Pair-aware windows are safer than honoring a hard count that can create invalid provider input. Avoiding a backfill prevents historical lossy rows from being rewritten as false evidence.
+- Evidence: `apps/console/lib/agent/provider-transcript.ts`; `apps/console/lib/agent/message-builder.ts`; `apps/console/lib/agent/loop.ts`; `apps/console/app/api/messages/route.ts`; `packages/shared/prisma/migrations/20260612000000_add_message_provider_transcript/migration.sql`; `.artifacts/delivery-audit/2026-06-12/session-transcript-tool-results/summary.md`
+- Production URL / screenshot / receipt: Local receipt path planned at `.artifacts/delivery-audit/2026-06-12/session-transcript-tool-results/summary.md`; no push or production deploy authorized for this branch.
+- Owner decision needed: Confirm whether historical Message rows need an explicit backfill/reindex job, whether provider tool-result payload retention should be capped or redacted beyond current trace truncation, and whether pair-aware provider windows may continue to exceed the nominal message count when required to keep protocol pairs valid.
+- Follow-up owner: architect / delivery lead
+
 ### 2026-06-11 - LiveChat Webhook URL Broke Across Agent Publish
 
 - Area: LiveChat / Agent publish / integration boundary

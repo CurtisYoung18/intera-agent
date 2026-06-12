@@ -45,6 +45,13 @@ const RECEIPT_COPY = {
     noFinalStatus: 'No final status recorded.',
     notRecorded: 'Not recorded',
     staleRuntimeWarning: 'Runtime recorded stale evidence that still requires reconciliation.',
+    transcriptHealth: 'Transcript health',
+    providerTranscriptPersisted: 'Provider transcript persisted',
+    toolPairsChecked: 'Tool pairs checked',
+    toolPairsRepaired: 'Tool pairs repaired',
+    orphanToolResultsDropped: 'Orphan results dropped',
+    legacyRowsSkipped: 'Legacy rows skipped',
+    compactPairsSummarized: 'Compact pairs summarized',
     phraseChecks: 'Phrase checks',
     noPhraseChecks: 'No required or forbidden phrase checks.',
     expectationChecks: 'Expectation checks',
@@ -90,6 +97,13 @@ const RECEIPT_COPY = {
     noFinalStatus: '还没有记录最终状态。',
     notRecorded: '未记录',
     staleRuntimeWarning: '运行时记录到了仍待对齐的过期证据。',
+    transcriptHealth: 'Transcript 健康度',
+    providerTranscriptPersisted: 'Provider transcript 已持久化',
+    toolPairsChecked: '已检查 Tool 配对',
+    toolPairsRepaired: '已修复 Tool 配对',
+    orphanToolResultsDropped: '已丢弃孤立结果',
+    legacyRowsSkipped: '已跳过旧行',
+    compactPairsSummarized: 'Compact 已总结配对',
     phraseChecks: '短语检查',
     noPhraseChecks: '还没有必需/禁用短语检查。',
     expectationChecks: '预期检查',
@@ -132,6 +146,7 @@ export function ScenarioReceiptPanel({
   }
 
   const evidence = receipt.evidence
+  const transcriptHealth = evidence.runtime?.transcriptHealth
   const phraseChecks = receipt.checks.filter(isPhraseCheck)
   const remainingChecks = receipt.checks.filter((check) => !isPhraseCheck(check))
 
@@ -245,6 +260,19 @@ export function ScenarioReceiptPanel({
           </div>
         </EvidenceSection>
 
+        {transcriptHealth && (
+          <EvidenceSection icon={ShieldCheck} title={copy.transcriptHealth} empty={copy.noEntries}>
+            <div className="grid gap-2 text-xs text-[var(--color-text-secondary)]">
+              <HealthRow label={copy.providerTranscriptPersisted} value={transcriptHealth.providerTranscriptPersisted ? copy.pass : copy.fail} />
+              <HealthRow label={copy.toolPairsChecked} value={String(transcriptHealth.toolPairsChecked ?? 0)} />
+              <HealthRow label={copy.toolPairsRepaired} value={String(transcriptHealth.toolPairsRepaired ?? 0)} />
+              <HealthRow label={copy.orphanToolResultsDropped} value={String(transcriptHealth.orphanToolResultsDropped ?? 0)} />
+              <HealthRow label={copy.legacyRowsSkipped} value={String(transcriptHealth.legacyRowsSkipped ?? 0)} />
+              <HealthRow label={copy.compactPairsSummarized} value={String(transcriptHealth.compactPairsSummarized ?? 0)} />
+            </div>
+          </EvidenceSection>
+        )}
+
         <EvidenceSection icon={AlertTriangle} title={copy.phraseChecks} empty={copy.noPhraseChecks} isEmpty={phraseChecks.length === 0}>
           <CheckList checks={phraseChecks} locale={locale} />
         </EvidenceSection>
@@ -331,6 +359,15 @@ function EvidenceSection({
       </div>
       {emptyState ? <p className="text-xs text-[var(--color-text-tertiary)]">{empty}</p> : children}
     </section>
+  )
+}
+
+function HealthRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2">
+      <span>{label}</span>
+      <span className="font-mono text-[var(--color-text-primary)]">{value}</span>
+    </div>
   )
 }
 
