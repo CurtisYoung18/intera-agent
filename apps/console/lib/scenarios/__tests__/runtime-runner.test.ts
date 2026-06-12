@@ -113,6 +113,71 @@ describe('runtime-backed Scenario evidence', () => {
     expect(evidence.humanTransfer).toBe(true)
     expect(evidence.runtime?.staleEvidence).toHaveLength(1)
     expect(evidence.runtime?.reconcileEvidence).toHaveLength(1)
+    expect(evidence.runtime?.transition).toBe('waiting_human')
+  })
+
+  it('captures knowledge-search hits for scenario receipts', () => {
+    const events: SSEEvent[] = [
+      { type: 'tool_result', data: { name: 'kb_search_deposit_faq', status: 'completed', result: { ok: true, output: { hits: [{ id: 'faq-1', title: 'Deposit FAQ' }] } } }, timestamp: '2026-06-10T00:00:02.000Z' },
+      { type: 'message_stop', data: { reason: 'next_turn' }, timestamp: '2026-06-10T00:00:03.000Z' },
+    ]
+
+    const evidence = buildRuntimeEvidence({
+      events,
+      finalResponse: '',
+      chatId: 'chat-knowledge',
+      caseId: 'case-knowledge',
+      caseType: 'deposit_not_credited',
+      traceId: 'trace-knowledge',
+    })
+
+    expect(evidence.toolsCalled).toEqual(['kb_search_deposit_faq'])
+    expect(evidence.knowledgeHits).toEqual([
+      expect.objectContaining({
+        source: 'deposit_faq',
+        toolName: 'kb_search_deposit_faq',
+        documentId: 'faq-1',
+        title: 'Deposit FAQ',
+      }),
+    ])
+    expect(evidence.runtime?.transition).toBe('next_turn')
+  })
+
+  it('keeps ProcedureRun runtime snapshots in the runtime receipt block', () => {
+    const evidence = buildRuntimeEvidence({
+      events: [{ type: 'message_stop', data: { reason: 'waiting_human' }, timestamp: '2026-06-10T00:00:03.000Z' }],
+      finalResponse: 'I will hand this to a person.',
+      chatId: 'chat-procedure',
+      caseId: 'case-procedure',
+      traceId: 'trace-procedure',
+      procedureRuns: [
+        {
+          runId: 'run-1',
+          procedureId: 'deposit_issue',
+          displayName: 'Deposit',
+          status: 'paused',
+          reason: 'Waiting for human handoff task task-1.',
+          version: 'v2',
+          currentStepId: null,
+          blockers: [],
+          inputs: [{ eventId: 'evt-1', inputEpoch: 1, source: 'customer_message', origin: 'customer', createdAt: '2026-06-10T00:00:00.000Z', content: 'Where is the deposit page?' }],
+          branches: [{ stepId: 'triage', branchId: 'docs_only', kind: 'if', status: 'matched', reason: 'Observed create_human_task.' }],
+          evaluations: [{ id: 'eval-1', branchId: 'docs_only', conditionId: 'docs_only_eval', label: 'documentation only', decision: 'matched', reason: 'The customer explicitly asked for a human.', basedOnInputEpoch: 1, createdAt: '2026-06-10T00:00:01.000Z' }],
+          evidence: [{ id: 'handoff-1', kind: 'handoff', label: 'Human handoff requested', state: 'canonical', metadata: { outcome: 'succeeded' } }],
+        },
+      ],
+    })
+
+    expect(evidence.runtime?.procedureRuns?.[0]).toMatchObject({
+      procedureId: 'deposit_issue',
+      version: 'v2',
+      status: 'paused',
+      reason: 'Waiting for human handoff task task-1.',
+      currentStepId: null,
+    })
+    expect(evidence.runtime?.procedureRuns?.[0]?.evaluations?.[0]).toMatchObject({
+      decision: 'matched',
+    })
   })
 
   it('returns a runtime-backed receipt through an injected executor', async () => {
@@ -131,6 +196,21 @@ describe('runtime-backed Scenario evidence', () => {
           handoff: [{ required: true, target: 'human' }],
           finalResponse: 'A human specialist will review this safely.',
           finalStatus: 'waiting_human',
+          runtime: {
+            procedureRuns: [{
+              runId: 'run-1',
+              procedureId: 'deposit_issue',
+              displayName: 'Deposit',
+              status: 'completed',
+              version: 'v2',
+              currentStepId: 'handoff',
+              blockers: [],
+              inputs: [],
+              branches: [],
+              evaluations: [],
+              evidence: [],
+            }],
+          },
         },
       }),
     })
@@ -138,6 +218,7 @@ describe('runtime-backed Scenario evidence', () => {
     expect(receipt.executionMode).toBe('agentRuntime')
     expect(receipt.status).toBe('pass')
     expect(receipt.evidence.caseType).toBe('deposit_not_credited')
+    expect(receipt.evidence.runtime?.procedureRuns?.[0]?.procedureId).toBe('deposit_issue')
     expect(receipt.failureReasons).toEqual([])
   })
 })

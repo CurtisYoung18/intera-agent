@@ -14,6 +14,7 @@ import type { ToolRouter } from './tools'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
+import { recordProcedureToolResult } from './session-store'
 
 export interface CaseLoopServices {
   caseId: string
@@ -46,7 +47,10 @@ export class CaseAgentLoop {
     _bootstrapNewCase?: boolean,
   ) {
     if (caseSchema.procedure && caseSchema.procedure.steps.length > 0) {
-      this.procedureExecutor = new ProcedureExecutor(caseSchema.procedure, caseSchema.type)
+      this.procedureExecutor = new ProcedureExecutor(
+        caseSchema.procedureDefinition ?? caseSchema.procedure,
+        caseSchema.type,
+      )
     }
     this._currentStage = this.readCaseStatus()
   }
@@ -226,6 +230,38 @@ export class CaseAgentLoop {
         taskId = task.id
 
         await this.services.traceWriter.writeHumanTaskCreated(task.id, queue)
+        humanTaskResult.output = {
+          ok: true,
+          output: { taskId: task.id, queue, status: 'pending', persisted: true },
+          latencyMs: humanTaskResult.latencyMs,
+        }
+        if (humanTaskResult.toolUse) {
+          humanTaskResult.toolUse.result = humanTaskResult.output as any
+          humanTaskResult.toolUse.status = 'completed'
+        }
+        recordProcedureToolResult(this.services.caseId, {
+          toolName: humanTaskResult.name,
+          toolUseId: humanTaskResult.toolUse?.id,
+          toolOutput: { taskId: task.id, queue, status: 'pending', persisted: true },
+        })
+        sendEvent({
+          type: 'tool_result',
+          data: {
+            name: humanTaskResult.name,
+            status: 'completed',
+            result: humanTaskResult.output,
+          },
+          timestamp: new Date().toISOString(),
+        })
+        await this.services.traceWriter.write(
+          'tool_result',
+          `Tool: ${humanTaskResult.name}`,
+          {
+            toolName: humanTaskResult.name,
+            output: { taskId: task.id, queue, status: 'pending', persisted: true },
+            iteration: iterationCount,
+          },
+        )
 
         const messages = this.services.getMessages()
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -259,6 +295,39 @@ export class CaseAgentLoop {
     }
 
     if (!taskId) {
+      humanTaskResult.output = {
+        ok: false,
+        output: null,
+        error: 'Unable to create the human task. Please retry or contact support.',
+        latencyMs: humanTaskResult.latencyMs,
+      }
+      if (humanTaskResult.toolUse) {
+        humanTaskResult.toolUse.result = humanTaskResult.output as any
+        humanTaskResult.toolUse.status = 'error'
+      }
+      recordProcedureToolResult(this.services.caseId, {
+        toolName: humanTaskResult.name,
+        toolUseId: humanTaskResult.toolUse?.id,
+        toolError: 'Unable to create the human task. Please retry or contact support.',
+      })
+      sendEvent({
+        type: 'tool_result',
+        data: {
+          name: humanTaskResult.name,
+          status: 'error',
+          result: humanTaskResult.output,
+        },
+        timestamp: new Date().toISOString(),
+      })
+      await this.services.traceWriter.write(
+        'tool_result',
+        `Tool: ${humanTaskResult.name}`,
+        {
+          toolName: humanTaskResult.name,
+          error: 'Unable to create the human task. Please retry or contact support.',
+          iteration: iterationCount,
+        },
+      )
       sendEvent({
         type: 'core_agent_progress',
         data: {

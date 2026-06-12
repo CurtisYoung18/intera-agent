@@ -39,6 +39,19 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-12 - Procedure v2 Merge-Candidate Is Green In Code But Missing Authenticated UI Proof
+
+- Area: Procedure authoring / runtime / local verification
+- Status: default-applied
+- Severity: P2
+- Uncertainty: This lane is green for local merge-candidate review on top of latest `main`, but it still lacks one critical proof class: authenticated local Procedure editor screenshots. The runtime/build/tests side is green. The remaining gap is environment-side. The repo runbook expects a local DB-backed Console on `127.0.0.1:3001`, but `localhost:5434` is currently an SSH listener rather than the expected local Postgres container, the sibling `.env.local` points at that tunnel, and the tunnel no longer accepts the assumed local `intera:intera` credentials. An isolated `initdb` attempt also hung at the host level, and a temporary Homebrew `postgresql@16` service could be started/stopped safely but never exposed a usable socket/TCP listener for this lane. Separately, live `llm_eval` provider proof was still not run because the shell exposes no usable provider credentials.
+- Default action taken: Rebased the branch onto latest `main`, fixed the `build:console` blocker by removing the redundant legacy `/admin/integrations` and `/admin/memory` pages, closed the ProcedureRun false positive by pausing successful persisted handoffs with a clear terminal reason, kept `runtime_signal` as hint-only, sanitized `llm_eval` metadata to prompt-hash form, blocked v2 `confirmedFacts` writes at the `/api/messages` boundary while preserving v1 behavior, tightened the Procedure editor copy/state affordances, archived the Fin reference image, and marked the lane `PARTIAL PASS` instead of claiming authenticated UI proof that does not exist.
+- Why this default: It closes the code-side P0/P1 blockers for merge-candidate review without pretending that injected proof equals live provider proof or that an unauthenticated/auth-gate screenshot equals a verified editor smoke pass.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/baseline-audit.md`; `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/summary.md`; `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/procedure-v2-runtime-receipt.json`; `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/procedure-v2-runtime-receipt.md`
+- Production URL / screenshot / receipt: No production deploy was performed. Runtime proof lives at `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/procedure-v2-runtime-receipt.json`. The Fin reference image is archived at `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/reference-fin-procedure-ui.png`. Strongest actual local browser evidence remains the auth/degraded gate screenshot `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/screenshots/procedure-route-auth-gate.png`, which is explicitly not authenticated editor proof.
+- Owner decision needed: Confirm whether injected runtime-proof receipts are sufficient before a separate live-provider proof lane. Confirm the production `llm_eval` provider/model/timeout/failure policy. Confirm whether `no_progress_loop` should stay at the current default threshold of `3` customer messages without progress. Confirm whether existing saved v1 procedures should remain lazy-compatible or get a later explicit migration plan. Confirm whether `paused + reason=waiting_human` should remain the persisted handoff terminal state until a future dedicated status type exists. Confirm whether Delivery Agent 1 may merge/cherry-pick before authenticated local editor screenshots are available, or whether a dedicated local env/smoke lane must land first.
+- Follow-up owner: founder / architect / delivery lead
+
 ### 2026-06-11 - LiveChat Webhook URL Broke Across Agent Publish
 
 - Area: LiveChat / Agent publish / integration boundary

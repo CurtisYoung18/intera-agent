@@ -25,7 +25,20 @@
  */
 
 import type { AgentLoop } from './loop'
-import type { Procedure, ContentBlock } from '@intera/shared/types'
+import type {
+  ContentBlock,
+  Procedure,
+  ProcedureDefinition,
+  ProcedureRuntimeSignal,
+  ProcedureV2Action,
+  ProcedureV2Branch,
+  ProcedureV2Step,
+} from '@intera/shared/types'
+import {
+  buildProcedureConditionLabel,
+  isProcedureV2Definition,
+  normalizeProcedureDefinition,
+} from '@intera/shared/contracts/case-types'
 
 // ─── Queued message shape ─────────────────────────────────────────────────────
 
@@ -37,6 +50,7 @@ export type RuntimeEventSource =
   | 'tool_call'
   | 'tool_result'
   | 'text_reply'
+  | 'evaluator'
   | 'hook_decision'
   | 'reconcile'
   | 'remember'
@@ -92,10 +106,84 @@ export interface ProcedureRunStepState {
   action: string
   target?: string
   required?: boolean
+  title?: string
+  guidance?: string
   status: ProcedureStepStatus
   startedAt?: string
   completedAt?: string
   evidenceToolCallIds: string[]
+  actions?: ProcedureRunActionState[]
+  branches?: ProcedureRunBranchState[]
+  skipReason?: string
+  completionReason?: string
+}
+
+export interface ProcedureRunActionState {
+  id: string
+  kind: string
+  label: string
+  target?: string
+  guidance?: string
+  branchId?: string
+  required?: boolean
+  status: ProcedureStepStatus
+  evidenceIds: string[]
+}
+
+export interface ProcedureRunBranchState {
+  id: string
+  kind: 'if' | 'else_if' | 'else'
+  label?: string
+  conditionLabel?: string
+  status: 'pending' | 'matched' | 'skipped'
+  reason?: string
+  actionIds: string[]
+}
+
+export interface ProcedureRunInputState {
+  eventId: string
+  inputEpoch: number
+  source: Extract<RuntimeEventSource, 'customer_message' | 'customer_form_result' | 'human_task_result'>
+  origin: RuntimeEventOrigin
+  createdAt: string
+  content?: string
+  formAnswers?: Record<string, string>
+  summary?: string
+}
+
+export type ProcedureConditionEvaluationDecision = 'matched' | 'skipped' | 'pending' | 'error'
+
+export interface ProcedureRunConditionEvaluationState {
+  id: string
+  branchId: string
+  conditionId: string
+  label: string
+  decision: ProcedureConditionEvaluationDecision
+  reason: string
+  basedOnInputEpoch: number
+  model?: string
+  createdAt: string
+  metadata?: Record<string, unknown>
+}
+
+export interface ProcedureRunEvidenceState {
+  id: string
+  kind: 'tool' | 'knowledge' | 'form' | 'handoff' | 'text_reply' | 'runtime_signal' | 'evaluator'
+  stepId?: string
+  actionId?: string
+  branchId?: string
+  label: string
+  toolName?: string
+  basedOnInputEpoch?: number
+  state: 'canonical' | 'stale'
+  createdAt: string
+  metadata?: Record<string, unknown>
+}
+
+export interface ProcedureRunSignalState {
+  signal: ProcedureRuntimeSignal
+  active: boolean
+  reason: string
 }
 
 export interface ProcedureRunState {
@@ -103,16 +191,22 @@ export interface ProcedureRunState {
   procedureId: string
   caseType: string
   displayName: string
+  procedureVersion?: 'v1' | 'v2'
   status: ProcedureRunStatus
   inputEpoch: number
   lastReconciledInputEpoch: number
   needsReconcile: boolean
   currentStepId: string | null
   steps: ProcedureRunStepState[]
+  inputs: ProcedureRunInputState[]
   evidenceToolCallIds: string[]
-  facts: Record<string, unknown>
+  evidence: ProcedureRunEvidenceState[]
+  evaluations: ProcedureRunConditionEvaluationState[]
+  signals: ProcedureRunSignalState[]
+  legacyFacts: Record<string, unknown>
   blockers: string[]
   timeline: RuntimeEvent[]
+  definition?: ProcedureDefinition
   reason?: string
   confidence?: number
   currentProcedureAction?: 'pause' | 'complete' | 'abandon'
@@ -125,6 +219,22 @@ export interface ProcedureRuntimeState {
   activeProcedureRun?: ProcedureRunState
   pausedProcedureRuns: ProcedureRunState[]
   completedProcedureRuns: ProcedureRunState[]
+}
+
+export interface PendingProcedureLlmEvaluation {
+  caseId: string
+  runId: string
+  procedureId: string
+  procedureDisplayName: string
+  stepId: string
+  stepTitle?: string
+  branchId: string
+  branchLabel?: string
+  conditionId: string
+  prompt: string
+  basedOnInputEpoch: number
+  recentInputs: ProcedureRunInputState[]
+  recentEvidence: ProcedureRunEvidenceState[]
 }
 
 // ─── MessageQueue ─────────────────────────────────────────────────────────────
@@ -323,10 +433,136 @@ export function getActiveProcedureRun(caseId: string): ProcedureRunState | undef
   return active ? cloneRun(active) : undefined
 }
 
+export function getPendingProcedureLlmEvaluations(caseId: string): PendingProcedureLlmEvaluation[] {
+  const run = sessions.get(caseId)?.procedureRuntime.activeProcedureRun
+  if (!run || run.procedureVersion !== 'v2') return []
+  const step = currentStep(run)
+  if (!step?.branches?.length || !run.definition || !isProcedureV2Definition(run.definition)) return []
+  const matchedBranchId = step.branches.find((branch) => branch.status === 'matched')?.id
+
+  const pending: PendingProcedureLlmEvaluation[] = []
+  for (const branch of step.branches) {
+    if (matchedBranchId && branch.id !== matchedBranchId) continue
+    const branchDefinition = findBranchDefinition(run, branch.id)
+    const condition = branchDefinition?.condition
+    if (!condition || condition.kind !== 'llm_eval') continue
+    const conditionId = condition.id ?? branch.id
+    const latest = latestConditionEvaluation(run, branch.id, conditionId)
+    if (latest && latest.basedOnInputEpoch >= run.inputEpoch && (latest.decision === 'matched' || latest.decision === 'skipped')) {
+      continue
+    }
+    pending.push({
+      caseId,
+      runId: run.runId,
+      procedureId: run.procedureId,
+      procedureDisplayName: run.displayName,
+      stepId: step.id,
+      stepTitle: step.title,
+      branchId: branch.id,
+      branchLabel: branch.conditionLabel || branch.label,
+      conditionId,
+      prompt: condition.prompt,
+      basedOnInputEpoch: run.inputEpoch,
+      recentInputs: run.inputs.slice(-6).map((entry) => ({
+        ...entry,
+        formAnswers: entry.formAnswers ? { ...entry.formAnswers } : undefined,
+      })),
+      recentEvidence: run.evidence.slice(-8).map((entry) => ({
+        ...entry,
+        metadata: entry.metadata ? { ...entry.metadata } : undefined,
+      })),
+    })
+  }
+  return pending
+}
+
+export function recordProcedureConditionEvaluation(caseId: string, input: {
+  runId: string
+  branchId: string
+  conditionId: string
+  label: string
+  decision: ProcedureConditionEvaluationDecision
+  reason: string
+  basedOnInputEpoch: number
+  model?: string
+  metadata?: Record<string, unknown>
+}): { ok: boolean; run?: ProcedureRunState; error?: string } {
+  const session = sessions.get(caseId)
+  const run = session?.procedureRuntime.activeProcedureRun
+  if (!session || !run || run.runId !== input.runId) {
+    return { ok: false, error: 'No matching active ProcedureRun.' }
+  }
+
+  const now = new Date().toISOString()
+  const evaluation: ProcedureRunConditionEvaluationState = {
+    id: `eval:${input.branchId}:${input.conditionId}:${input.basedOnInputEpoch}`,
+    branchId: input.branchId,
+    conditionId: input.conditionId,
+    label: input.label,
+    decision: input.decision,
+    reason: input.reason,
+    basedOnInputEpoch: input.basedOnInputEpoch,
+    model: input.model,
+    createdAt: now,
+    metadata: input.metadata ? { ...input.metadata } : undefined,
+  }
+  const existingIndex = run.evaluations.findIndex((entry) =>
+    entry.branchId === input.branchId &&
+    entry.conditionId === input.conditionId &&
+    entry.basedOnInputEpoch === input.basedOnInputEpoch,
+  )
+  if (existingIndex >= 0) {
+    run.evaluations[existingIndex] = evaluation
+  } else {
+    run.evaluations.push(evaluation)
+  }
+
+  upsertEvidence(run, {
+    id: evaluation.id,
+    kind: 'evaluator',
+    branchId: input.branchId,
+    label: `${input.label}: ${input.decision}`,
+    basedOnInputEpoch: input.basedOnInputEpoch,
+    state: 'canonical',
+    createdAt: now,
+    metadata: {
+      decision: input.decision,
+      reason: input.reason,
+      model: input.model,
+      ...(input.metadata ?? {}),
+    },
+  })
+  clearRunBlocker(run, `eval:${input.branchId}`)
+  if (input.decision === 'error' || input.decision === 'pending') {
+    setRunBlocker(
+      run,
+      `eval:${input.branchId}`,
+      input.reason || `${input.label} is not ready yet.`,
+    )
+  }
+  appendProcedureTimeline(session, run, {
+    origin: 'system',
+    source: 'evaluator',
+    basedOnInputEpoch: input.basedOnInputEpoch,
+    summary: `Procedure llm_eval ${input.decision}: ${input.label}`,
+    metadata: {
+      branchId: input.branchId,
+      conditionId: input.conditionId,
+      decision: input.decision,
+      reason: input.reason,
+      model: input.model,
+    },
+  })
+  const step = currentStep(run) ?? run.steps[0]
+  if (step) refreshStepBranchStates(run, step)
+  syncCurrentStepAfterProgress(run, now)
+  return { ok: true, run: cloneRun(run) }
+}
+
 export function startProcedureRun(caseId: string, input: {
   procedureId: string
   displayName: string
-  procedure?: Procedure
+  procedure?: Procedure | ProcedureDefinition
   reason?: string
   confidence?: number
   collectedFacts?: Record<string, unknown>
@@ -346,7 +582,12 @@ export function startProcedureRun(caseId: string, input: {
     active.lastStartRequestId = input.requestId ?? active.lastStartRequestId
     active.reason = input.reason ?? active.reason
     active.confidence = input.confidence ?? active.confidence
-    if (input.collectedFacts) active.facts = { ...active.facts, ...filterRuntimeAuthorityKeys(input.collectedFacts) }
+    if (input.collectedFacts && active.procedureVersion !== 'v2') {
+      active.legacyFacts = {
+        ...active.legacyFacts,
+        ...filterRuntimeAuthorityKeys(input.collectedFacts),
+      }
+    }
     active.updatedAt = now
     appendProcedureTimeline(session, active, {
       origin: 'system',
@@ -382,6 +623,9 @@ export function startProcedureRun(caseId: string, input: {
 
   const resumedIndex = state.pausedProcedureRuns.findIndex((run) => run.procedureId === input.procedureId)
   const resumed = resumedIndex >= 0 ? state.pausedProcedureRuns.splice(resumedIndex, 1)[0] : undefined
+  const procedureVersion = input.procedure
+    ? isProcedureV2Definition(input.procedure) ? 'v2' : 'v1'
+    : undefined
   const run: ProcedureRunState = resumed
     ? {
         ...resumed,
@@ -389,25 +633,40 @@ export function startProcedureRun(caseId: string, input: {
         inputEpoch: session.latestInputEpoch,
         reason: input.reason ?? resumed.reason,
         confidence: input.confidence ?? resumed.confidence,
-        facts: { ...resumed.facts, ...filterRuntimeAuthorityKeys(input.collectedFacts ?? {}) },
+        legacyFacts: resumed.procedureVersion === 'v2'
+          ? {}
+          : {
+              ...resumed.legacyFacts,
+              ...filterRuntimeAuthorityKeys(input.collectedFacts ?? {}),
+            },
         updatedAt: now,
         lastStartRequestId: input.requestId ?? resumed.lastStartRequestId,
+        procedureVersion: resumed.procedureVersion ?? procedureVersion,
+        definition: resumed.definition ?? input.procedure,
       }
     : {
         runId: `proc_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
         procedureId: input.procedureId,
         caseType: input.procedureId,
         displayName: input.displayName,
+        procedureVersion,
         status: 'active',
         inputEpoch: session.latestInputEpoch,
         lastReconciledInputEpoch: session.latestInputEpoch,
         needsReconcile: false,
         currentStepId: null,
         steps: buildInitialSteps(input.procedure),
+        inputs: [],
         evidenceToolCallIds: [],
-        facts: filterRuntimeAuthorityKeys(input.collectedFacts ?? {}),
+        evidence: [],
+        evaluations: [],
+        signals: [],
+        legacyFacts: procedureVersion === 'v2'
+          ? {}
+          : filterRuntimeAuthorityKeys(input.collectedFacts ?? {}),
         blockers: [],
         timeline: [],
+        definition: input.procedure,
         reason: input.reason,
         confidence: input.confidence,
         currentProcedureAction: input.currentProcedureAction,
@@ -415,6 +674,7 @@ export function startProcedureRun(caseId: string, input: {
         updatedAt: now,
         lastStartRequestId: input.requestId,
       }
+  seedRunInputsFromRuntime(session, run)
   if (!run.currentStepId) {
     const first = run.steps.find((step) => step.status === 'pending') ?? run.steps[0]
     if (first) {
@@ -469,28 +729,21 @@ export function recordProcedureToolResult(caseId: string, input: {
 
   const basedOn = input.basedOnInputEpoch ?? session.latestInputEpoch
   const stale = basedOn < session.latestInputEpoch
-  const evidenceId = input.toolUseId ?? `${input.toolName}:${Date.now()}`
-  if (!run.evidenceToolCallIds.includes(evidenceId)) run.evidenceToolCallIds.push(evidenceId)
-
-  const currentStep = run.steps.find((step) => step.id === run.currentStepId)
-  if (currentStep && !currentStep.evidenceToolCallIds.includes(evidenceId)) {
-    currentStep.evidenceToolCallIds.push(evidenceId)
-  }
 
   if (stale) {
     run.needsReconcile = true
     run.blockers = [...new Set([...run.blockers, 'New customer input arrived after this tool/action began.'])]
-  } else {
-    const usableForProgress = isUsableProcedureEvidence(input.toolOutput, input.toolError)
-    if (usableForProgress) {
-      run.blockers = run.blockers.filter((blocker) => blocker !== blockingEvidenceMessage(input.toolName))
-      maybeAdvanceCurrentStep(run, input.toolName)
-    } else {
-      run.blockers = [...new Set([...run.blockers, blockingEvidenceMessage(input.toolName)])]
-    }
   }
 
-  const usableForProgress = !stale && isUsableProcedureEvidence(input.toolOutput, input.toolError)
+  const assessment = assessProcedureToolOutcome(input.toolName, input.toolOutput, input.toolError)
+  const recordedAt = new Date().toISOString()
+  applyToolEvidenceToRun(session, run, input, stale, basedOn, recordedAt, assessment)
+  const stillActive = session.procedureRuntime.activeProcedureRun?.runId === run.runId
+  if (stillActive) {
+    syncCurrentStepAfterProgress(run)
+    refreshNoProgressSignal(run)
+  }
+  const usableForProgress = !stale && assessment.outcome === 'succeeded'
   appendProcedureTimeline(session, run, {
     origin: 'system',
     source: 'tool_result',
@@ -505,6 +758,7 @@ export function recordProcedureToolResult(caseId: string, input: {
       toolUseId: input.toolUseId,
       output: input.toolOutput,
       error: input.toolError,
+      outcome: stale ? 'stale' : assessment.outcome,
       evidenceState: stale ? 'stale' : 'canonical',
       usableForProgress,
     },
@@ -522,10 +776,23 @@ export function recordProcedureTextReply(caseId: string, input: {
   if (!session || !run) return { stale: false }
   const basedOn = input.basedOnInputEpoch ?? session.latestInputEpoch
   const stale = basedOn < session.latestInputEpoch
+  const recordedAt = new Date().toISOString()
   if (stale) {
     run.needsReconcile = true
     run.blockers = [...new Set([...run.blockers, 'A customer-visible reply was based on stale input.'])]
   }
+  upsertEvidence(run, {
+    id: `text:${recordedAt}:${basedOn}`,
+    kind: 'text_reply',
+    label: stale ? 'Stale customer-facing reply withheld' : 'Customer-facing reply drafted',
+    state: stale ? 'stale' : 'canonical',
+    createdAt: recordedAt,
+    basedOnInputEpoch: basedOn,
+    metadata: {
+      textPreview: input.text.slice(0, 240),
+      alreadyStreamed: input.alreadyStreamed === true,
+    },
+  })
   appendProcedureTimeline(session, run, {
     origin: 'system',
     source: 'text_reply',
@@ -594,6 +861,27 @@ export function finalizeProcedureRun(caseId: string, input: {
     })
     return { ok: false, stale: true, run: cloneRun(run), error: 'Reconcile latest customer messages before finalizing.' }
   }
+  const finalizeBlockers = finalizationBlockers(run)
+  if (finalizeBlockers.length > 0) {
+    run.blockers = [...new Set([...run.blockers, ...finalizeBlockers])]
+    appendProcedureTimeline(session, run, {
+      origin: 'system',
+      source: 'tool_result',
+      basedOnInputEpoch: basedOn,
+      summary: 'finalize_procedure blocked because the ProcedureRun is incomplete or has unresolved blockers',
+      metadata: {
+        evidenceState: 'canonical',
+        terminal: true,
+        blockers: finalizeBlockers,
+      },
+    })
+    return {
+      ok: false,
+      stale: false,
+      run: cloneRun(run),
+      error: finalizeBlockers[0],
+    }
+  }
   run.status = input.status ?? 'completed'
   run.updatedAt = new Date().toISOString()
   appendProcedureTimeline(session, run, {
@@ -614,17 +902,36 @@ export function procedureRunPromptTail(caseId: string): string {
   const lines: string[] = [
     '<procedure_run_runtime>',
     'This block is dynamic runtime context. It is not chat memory or user profile.',
-    'ProcedureRunState is the canonical authority for active/paused runs, currentStepId, inputEpoch, needsReconcile, stale evidence, and step status.',
+    'ProcedureRunState is the canonical authority for active/paused runs, currentStepId, inputEpoch, branch state, evidence, and reconcile requirements.',
   ]
   const renderRun = (run: ProcedureRunState, label: string) => {
     lines.push('')
     lines.push(`## ${label}: ${run.displayName} (${run.procedureId})`)
     lines.push(`- runId: ${run.runId}`)
+    lines.push(`- version: ${run.procedureVersion ?? 'v1'}`)
     lines.push(`- status: ${run.status}`)
     lines.push(`- inputEpoch: ${run.inputEpoch}`)
     lines.push(`- lastReconciledInputEpoch: ${run.lastReconciledInputEpoch}`)
     lines.push(`- needsReconcile: ${run.needsReconcile}`)
     lines.push(`- currentStepId: ${run.currentStepId ?? 'none'}`)
+    const activeSignals = run.signals.filter((signal) => signal.active)
+    if (activeSignals.length) {
+      lines.push(`- activeSafetyHints: ${activeSignals.map((signal) => signal.signal).join(', ')}`)
+      for (const signal of activeSignals) {
+        lines.push(`  safety_hint ${signal.signal}: ${signal.reason}`)
+      }
+    }
+    if (run.inputs.length) {
+      lines.push('')
+      lines.push('Recent structured inputs:')
+      for (const entry of run.inputs.slice(-6)) {
+        const content = entry.content?.trim()
+        const form = entry.formAnswers && Object.keys(entry.formAnswers).length > 0
+          ? ` form=${JSON.stringify(entry.formAnswers)}`
+          : ''
+        lines.push(`- [epoch ${entry.inputEpoch}] ${entry.source}${form}${content ? ` content=${JSON.stringify(content.slice(0, 240))}` : ''}`)
+      }
+    }
     if (run.needsReconcile) {
       lines.push('')
       lines.push('New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, call reconcile_procedure_input with the active runId and latest inputEpoch.')
@@ -639,13 +946,53 @@ export function procedureRunPromptTail(caseId: string): string {
         }
       }
     }
+    if (run.blockers.length) {
+      lines.push('')
+      lines.push('Open blockers:')
+      for (const blocker of run.blockers.slice(-8)) {
+        lines.push(`- ${blocker}`)
+      }
+    }
     if (run.steps.length) {
       lines.push('')
       lines.push('Steps:')
       for (const step of run.steps) {
         const evidence = step.evidenceToolCallIds.length ? ` evidence=${step.evidenceToolCallIds.join(',')}` : ''
         const target = step.target ? ` target=${step.target}` : ''
-        lines.push(`- ${step.id}: ${step.status} action=${step.action}${target}${evidence}`)
+        const title = step.title ? ` title=${JSON.stringify(step.title)}` : ''
+        lines.push(`- ${step.id}: ${step.status} action=${step.action}${target}${title}${evidence}`)
+        if (step.actions?.length) {
+          for (const action of step.actions) {
+            const branch = action.branchId ? ` branch=${action.branchId}` : ''
+            const actionTarget = action.target ? ` target=${action.target}` : ''
+            lines.push(`  action ${action.id}: ${action.status} kind=${action.kind}${branch}${actionTarget}`)
+          }
+        }
+        if (step.branches?.length) {
+          for (const branch of step.branches) {
+            const labelText = branch.conditionLabel || branch.label || branch.kind
+            lines.push(`  branch ${branch.id}: ${branch.status} ${labelText}`)
+          }
+        }
+      }
+    }
+    if (run.evaluations.length) {
+      lines.push('')
+      lines.push('Evaluator receipts:')
+      for (const evaluation of run.evaluations.slice(-8)) {
+        const model = evaluation.model ? ` model=${evaluation.model}` : ''
+        lines.push(`- branch=${evaluation.branchId} decision=${evaluation.decision} basedOnInputEpoch=${evaluation.basedOnInputEpoch}${model}: ${evaluation.reason}`)
+      }
+    }
+    if (run.evidence.length) {
+      lines.push('')
+      lines.push('Recent runtime evidence:')
+      for (const evidence of run.evidence.slice(-8)) {
+        const scope = evidence.stepId ? ` step=${evidence.stepId}` : ''
+        const action = evidence.actionId ? ` action=${evidence.actionId}` : ''
+        const stateText = ` state=${evidence.state}`
+        const outcome = typeof evidence.metadata?.outcome === 'string' ? ` outcome=${evidence.metadata.outcome}` : ''
+        lines.push(`- ${evidence.kind}${scope}${action}${stateText}${outcome}: ${evidence.label}`)
       }
     }
     const recent = run.timeline.slice(-8)
@@ -748,6 +1095,15 @@ function appendInputEventToActiveRun(session: CaseSession, event: RuntimeEvent):
   if (!active || !isInputSource(event.source)) return
   active.timeline.push({ ...event, runId: active.runId })
   active.updatedAt = event.createdAt
+  captureRunInput(active, event)
+  if (event.formAnswers && Object.keys(event.formAnswers).length > 0) {
+    applyFormEvidenceToRun(active, event)
+  }
+  if (event.content) {
+    updateSignalsFromInput(active, event.content)
+  }
+  refreshNoProgressSignal(active)
+  syncCurrentStepAfterProgress(active, event.createdAt)
 }
 
 function createRuntimeEvent(input: Partial<RuntimeEvent> & {
@@ -798,19 +1154,80 @@ function isInputSource(source: RuntimeEventSource): boolean {
   return source === 'customer_message' || source === 'customer_form_result' || source === 'human_task_result'
 }
 
+function captureRunInput(run: ProcedureRunState, event: RuntimeEvent): void {
+  if (!isInputSource(event.source)) return
+  const next: ProcedureRunInputState = {
+    eventId: event.eventId,
+    inputEpoch: event.inputEpoch,
+    source: event.source as ProcedureRunInputState['source'],
+    origin: event.origin,
+    createdAt: event.createdAt,
+    content: event.content,
+    formAnswers: event.formAnswers ? { ...event.formAnswers } : undefined,
+    summary: event.summary,
+  }
+  const existingIndex = run.inputs.findIndex((entry) => entry.eventId === event.eventId)
+  if (existingIndex >= 0) {
+    run.inputs[existingIndex] = next
+  } else {
+    run.inputs.push(next)
+  }
+}
+
+function seedRunInputsFromRuntime(session: CaseSession, run: ProcedureRunState): void {
+  for (const event of session.runtimeEvents) {
+    if (!isInputSource(event.source)) continue
+    captureRunInput(run, event)
+  }
+}
+
 function defaultPriority(source: RuntimeEventSource): number {
   return source === 'control' ? -100 : 0
 }
 
-function buildInitialSteps(procedure?: Procedure): ProcedureRunStepState[] {
-  return (procedure?.steps ?? []).map((step) => ({
-    id: step.id,
-    action: step.action,
-    target: step.target,
-    required: step.required === true ? true : undefined,
-    status: 'pending',
-    evidenceToolCallIds: [],
-  }))
+function buildInitialSteps(procedure?: Procedure | ProcedureDefinition): ProcedureRunStepState[] {
+  if (!procedure) return []
+  if (!isProcedureV2Definition(procedure)) {
+    return procedure.steps.map((step) => ({
+      id: step.id,
+      action: step.action,
+      target: step.target,
+      required: step.required === true ? true : undefined,
+      title: buildLegacyStepTitle(step),
+      guidance: step.guidance,
+      status: 'pending',
+      evidenceToolCallIds: [],
+    }))
+  }
+
+  const normalized = normalizeProcedureDefinition(procedure)
+  return procedure.steps.map((step, index) => {
+    const normalizedStep = normalized.steps[index]
+    return {
+      id: step.id,
+      action: normalizedStep?.action ?? 'decide',
+      target: normalizedStep?.target,
+      required: true,
+      title: step.title,
+      guidance: step.guidance,
+      status: 'pending',
+      evidenceToolCallIds: [],
+      actions: [
+        ...step.actions.map((action) => toActionState(action)),
+        ...(step.branches ?? []).flatMap((branch) =>
+          branch.actions.map((action) => toActionState(action, branch.id)),
+        ),
+      ],
+      branches: (step.branches ?? []).map((branch) => ({
+        id: branch.id,
+        kind: branch.kind,
+        label: branch.label,
+        conditionLabel: buildProcedureConditionLabel(branch.condition),
+        status: 'pending',
+        actionIds: branch.actions.map((action) => action.id),
+      })),
+    }
+  })
 }
 
 function appendProcedureTimeline(
@@ -837,48 +1254,481 @@ function appendProcedureTimeline(
   return event
 }
 
-function maybeAdvanceCurrentStep(run: ProcedureRunState, toolName: string): void {
-  const now = new Date().toISOString()
-  const current = run.steps.find((step) => step.id === run.currentStepId)
-  if (current && stepMatchesTool(current, toolName)) {
-    current.status = 'completed'
-    current.completedAt = now
-    const next = run.steps.find((step) => step.status === 'pending')
-    if (next) {
-      next.status = 'active'
-      next.startedAt = now
-      run.currentStepId = next.id
-    } else {
-      run.currentStepId = current.id
+function buildLegacyStepTitle(step: Procedure['steps'][number]): string {
+  if (step.guidance?.trim()) return step.guidance.trim()
+  if (step.target?.trim()) return `${step.action} ${step.target.trim()}`
+  return step.action
+}
+
+function toActionState(action: ProcedureV2Action, branchId?: string): ProcedureRunActionState {
+  return {
+    id: action.id,
+    kind: action.kind,
+    label: action.label,
+    target: targetForAction(action),
+    guidance: action.guidance,
+    branchId,
+    required: action.required,
+    status: 'pending',
+    evidenceIds: [],
+  }
+}
+
+function targetForAction(action: ProcedureV2Action): string | undefined {
+  switch (action.kind) {
+    case 'ask':
+      return action.fields?.length ? action.fields.join(', ') : 'customer_details'
+    case 'search_knowledge':
+      return action.suggestedSources?.length ? action.suggestedSources.join(', ') : 'knowledge_base'
+    case 'call_tool':
+      return action.toolName
+    case 'request_human_handoff':
+      return action.queue || 'general'
+    case 'end':
+      return action.status || 'completed'
+  }
+}
+
+function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): void {
+  const formAnswers = event.formAnswers
+  if (!formAnswers) return
+  for (const [field, value] of Object.entries(formAnswers)) {
+    upsertEvidence(run, {
+      id: `form:${event.eventId}:${field}`,
+      kind: 'form',
+      label: `Captured form field ${field}`,
+      state: 'canonical',
+      createdAt: event.createdAt,
+      basedOnInputEpoch: event.inputEpoch,
+      metadata: { field, value },
+    })
+  }
+
+  const current = currentStep(run)
+  if (!current?.actions?.length) return
+
+  let progressed = false
+  for (const action of current.actions) {
+    if (action.kind !== 'ask') continue
+    const fields = action.target?.split(',').map((field) => field.trim()).filter(Boolean) ?? []
+    const hasAnswer = fields.length === 0
+      ? Object.keys(formAnswers).length > 0
+      : fields.some((field) => field in formAnswers)
+    if (!hasAnswer) continue
+    action.status = 'completed'
+    clearRunBlocker(run, `action:${action.id}`)
+    action.evidenceIds.push(
+      ...Object.keys(formAnswers)
+        .filter((field) => fields.length === 0 || fields.includes(field))
+        .map((field) => `form:${event.eventId}:${field}`),
+    )
+    progressed = true
+  }
+
+  if (progressed) {
+    clearProcedureSignal(run, 'no_progress_loop')
+    if (current.status === 'blocked') current.status = 'active'
+    refreshStepBranchStates(run, current)
+  }
+}
+
+function updateSignalsFromInput(run: ProcedureRunState, content: string): void {
+  const text = content.trim()
+  if (!text) return
+
+  if (isExplicitHumanRequest(text)) {
+    setProcedureSignal(run, 'explicit_human_request', 'Customer explicitly asked for a person.')
+  }
+  if (isKnowledgeGapRequest(text)) {
+    setProcedureSignal(run, 'knowledge_gap', 'Customer asked where to find something or lacked context.')
+  }
+}
+
+function isExplicitHumanRequest(text: string): boolean {
+  return [
+    /(?:speak|talk|chat|connect|transfer|hand(?:\s+me)?)\s+(?:me\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|person|agent|specialist|representative)/i,
+    /\b(?:human|live)\s+(?:agent|support|person)\b/i,
+    /\b(?:real|actual)\s+person\b/i,
+    /人工|真人|客服|专员/,
+  ].some((pattern) => pattern.test(text))
+}
+
+function isKnowledgeGapRequest(text: string): boolean {
+  return [
+    /where\s+(?:do|can)\s+i\s+find/i,
+    /how\s+do\s+i\s+find/i,
+    /what(?:'s| is)\s+the\s+link/i,
+    /which\s+page/i,
+    /哪里.*找|在哪.*找|去哪里.*找|什么页面|什么链接/,
+  ].some((pattern) => pattern.test(text))
+}
+
+function setProcedureSignal(run: ProcedureRunState, signal: ProcedureRuntimeSignal, reason: string): void {
+  const existing = run.signals.find((entry) => entry.signal === signal)
+  if (existing) {
+    existing.active = true
+    existing.reason = reason
+    return
+  }
+  run.signals.push({ signal, active: true, reason })
+}
+
+function clearProcedureSignal(run: ProcedureRunState, signal: ProcedureRuntimeSignal): void {
+  const existing = run.signals.find((entry) => entry.signal === signal)
+  if (existing) existing.active = false
+}
+
+function refreshNoProgressSignal(run: ProcedureRunState): void {
+  const stepId = run.currentStepId
+  if (!stepId) return
+  const latestProgressAt = latestProgressTimestamp(run, stepId)
+  const repeatedInputs = run.timeline.filter((event) =>
+    event.source === 'customer_message' &&
+    event.inputEpoch > run.lastReconciledInputEpoch &&
+    (!latestProgressAt || event.createdAt >= latestProgressAt)
+  )
+  if (repeatedInputs.length >= 3) {
+    setProcedureSignal(
+      run,
+      'no_progress_loop',
+      `Customer sent ${repeatedInputs.length} new messages while step ${stepId} remained open.`,
+    )
+  }
+}
+
+function latestProgressTimestamp(run: ProcedureRunState, stepId: string): string | undefined {
+  let latest: string | undefined
+  for (const step of run.steps) {
+    if (step.id !== stepId) continue
+    if (step.completedAt && (!latest || step.completedAt > latest)) latest = step.completedAt
+    if (step.startedAt && (!latest || step.startedAt > latest)) latest = step.startedAt
+    if (step.actions) {
+      for (const action of step.actions) {
+        if (action.status === 'completed') {
+          for (const evidenceId of action.evidenceIds) {
+            const evidence = run.evidence.find((entry) => entry.id === evidenceId)
+            if (evidence?.createdAt && (!latest || evidence.createdAt > latest)) latest = evidence.createdAt
+          }
+        }
+      }
+    }
+  }
+  return latest
+}
+
+function upsertEvidence(run: ProcedureRunState, evidence: ProcedureRunEvidenceState): void {
+  const existingIndex = run.evidence.findIndex((entry) => entry.id === evidence.id)
+  if (existingIndex >= 0) {
+    run.evidence[existingIndex] = evidence
+  } else {
+    run.evidence.push(evidence)
+  }
+}
+
+function currentStep(run: ProcedureRunState): ProcedureRunStepState | undefined {
+  return run.steps.find((step) => step.id === run.currentStepId)
+}
+
+function refreshStepBranchStates(run: ProcedureRunState, step: ProcedureRunStepState): void {
+  if (!step.branches?.length) return
+
+  const lockedMatch = step.branches.find((branch) => branch.status === 'matched')
+  if (lockedMatch) {
+    for (const branch of step.branches) {
+      if (branch.id !== lockedMatch.id) {
+        branch.status = 'skipped'
+        branch.reason = branch.reason ?? 'Another branch already matched.'
+      }
+    }
+    for (const action of step.actions ?? []) {
+      if (action.branchId && action.branchId !== lockedMatch.id && action.status === 'pending') {
+        action.status = 'skipped'
+      }
+    }
+    return
+  }
+
+  let matchedBranchId: string | undefined
+  let hasPendingCondition = false
+
+  for (const branch of step.branches) {
+    if (branch.kind === 'else') {
+      if (matchedBranchId) {
+        branch.status = 'skipped'
+        branch.reason = 'Another branch already matched.'
+      } else if (hasPendingCondition) {
+        branch.status = 'pending'
+        branch.reason = 'Waiting for earlier branch evidence.'
+      } else {
+        branch.status = 'matched'
+        branch.reason = branch.reason ?? 'Fallback branch matched.'
+        matchedBranchId = branch.id
+      }
+      continue
+    }
+
+    const evaluation = evaluateBranchCondition(run, branch)
+    if (evaluation.status === 'matched' && !matchedBranchId) {
+      branch.status = 'matched'
+      branch.reason = evaluation.reason
+      matchedBranchId = branch.id
+      continue
+    }
+
+    if (evaluation.status === 'skipped') {
+      branch.status = 'skipped'
+      branch.reason = evaluation.reason
+      continue
+    }
+
+    branch.status = 'pending'
+    branch.reason = evaluation.reason
+    hasPendingCondition = true
+  }
+
+  if (matchedBranchId) {
+    for (const branch of step.branches) {
+      if (branch.id !== matchedBranchId) {
+        branch.status = 'skipped'
+        branch.reason = 'Another branch already matched.'
+      }
+    }
+    for (const action of step.actions ?? []) {
+      if (action.branchId && action.branchId !== matchedBranchId && action.status === 'pending') {
+        action.status = 'skipped'
+      }
     }
   }
 }
 
-function blockingEvidenceMessage(toolName: string): string {
-  return `Tool ${toolName} returned unusable evidence. Resolve the failure before advancing the ProcedureRun.`
+interface BranchConditionResolution {
+  status: 'matched' | 'skipped' | 'pending'
+  reason: string
 }
 
-function isUsableProcedureEvidence(toolOutput: unknown, toolError?: string): boolean {
-  if (typeof toolError === 'string' && toolError.trim().length > 0) return false
-  if (toolOutput == null) return false
-  if (typeof toolOutput === 'string') return toolOutput.trim().length > 0
-  if (Array.isArray(toolOutput)) return toolOutput.length > 0
-  if (typeof toolOutput !== 'object') return true
+function evaluateBranchCondition(
+  run: ProcedureRunState,
+  branch: ProcedureRunBranchState,
+): BranchConditionResolution {
+  const definition = findBranchDefinition(run, branch.id)
+  const condition = definition?.condition
+  if (!condition) {
+    return {
+      status: branch.kind === 'else' ? 'matched' : 'pending',
+      reason: branch.kind === 'else'
+        ? 'Fallback branch matched.'
+        : 'Waiting for runtime condition data.',
+    }
+  }
 
-  const record = toolOutput as Record<string, unknown>
-  if ('ok' in record && record.ok === false) return false
-  if ('success' in record && record.success === false) return false
-  if (typeof record.error === 'string' && record.error.trim().length > 0) return false
-  if (Array.isArray(record.errors) && record.errors.length > 0) return false
-  if (isPlainRecord(record.errors) && Object.keys(record.errors).length > 0) return false
-  if (Object.keys(record).length === 0) return false
-
-  return Object.entries(record).some(([key, value]) => hasSubstantiveProcedureField(key, value))
+  switch (condition.kind) {
+    case 'llm_eval': {
+      const latest = latestConditionEvaluation(run, branch.id, condition.id ?? branch.id)
+      if (!latest || latest.basedOnInputEpoch < run.inputEpoch) {
+        return {
+          status: 'pending',
+          reason: 'Waiting for a current llm_eval evaluator receipt.',
+        }
+      }
+      if (latest.decision === 'matched') {
+        return { status: 'matched', reason: latest.reason || 'llm_eval matched.' }
+      }
+      if (latest.decision === 'skipped') {
+        return { status: 'skipped', reason: latest.reason || 'llm_eval did not match.' }
+      }
+      return {
+        status: 'pending',
+        reason: latest.reason || 'llm_eval is pending or unavailable.',
+      }
+    }
+    case 'runtime_signal': {
+      const signal = run.signals.find((entry) => entry.signal === condition.signal && entry.active)
+      return {
+        status: 'pending',
+        reason: signal
+          ? `Safety hint only: ${condition.signal} is active, but runtime_signal cannot complete a branch without structured evidence.`
+          : `Safety hint only: runtime_signal "${condition.signal}" is not structured branch truth.`,
+      }
+    }
+    case 'form_field': {
+      const formEvidence = run.evidence.filter((entry) => entry.kind === 'form')
+      if (formEvidence.length === 0) {
+        return { status: 'pending', reason: 'Waiting for form evidence.' }
+      }
+      const matchingField = formEvidence.find((entry) => entry.metadata?.field === condition.field)
+      if (!matchingField) {
+        return { status: 'skipped', reason: `No form evidence captured for ${condition.field}.` }
+      }
+      const value = typeof matchingField.metadata?.value === 'string' ? matchingField.metadata.value : undefined
+      if (condition.operator === 'equals') {
+        return value === condition.value
+          ? { status: 'matched', reason: `Form field ${condition.field} equals ${condition.value}.` }
+          : { status: 'skipped', reason: `Form field ${condition.field} did not equal ${condition.value}.` }
+      }
+      return value
+        ? { status: 'matched', reason: `Form field ${condition.field} is present.` }
+        : { status: 'skipped', reason: `Form field ${condition.field} is missing.` }
+    }
+    case 'tool_event': {
+      const sawCall = run.timeline.some((event) =>
+        event.source === 'tool_call' && event.metadata?.toolName === condition.toolName,
+      )
+      const toolEvidence = run.evidence.filter((entry) => entry.toolName === condition.toolName)
+      if (!sawCall && toolEvidence.length === 0) {
+        return { status: 'pending', reason: `Waiting for ${condition.toolName} to run.` }
+      }
+      if (condition.event === 'called') {
+        return sawCall
+          ? { status: 'matched', reason: `${condition.toolName} was called.` }
+          : { status: 'pending', reason: `Waiting for ${condition.toolName} to be called.` }
+      }
+      if (condition.event === 'stale') {
+        return toolEvidence.some((entry) => entry.state === 'stale')
+          ? { status: 'matched', reason: `${condition.toolName} produced stale evidence.` }
+          : { status: 'skipped', reason: `${condition.toolName} has no stale evidence.` }
+      }
+      if (condition.event === 'failed') {
+        return toolEvidence.some((entry) => entry.metadata?.outcome === 'failed' || entry.metadata?.outcome === 'schema_invalid')
+          ? { status: 'matched', reason: `${condition.toolName} failed.` }
+          : { status: 'skipped', reason: `${condition.toolName} has not failed.` }
+      }
+      if (condition.event === 'empty_result') {
+        return toolEvidence.some((entry) => entry.metadata?.outcome === 'empty_result')
+          ? { status: 'matched', reason: `${condition.toolName} returned an empty result.` }
+          : { status: 'skipped', reason: `${condition.toolName} has not returned an empty result.` }
+      }
+      return toolEvidence.some((entry) => entry.state === 'canonical' && entry.metadata?.outcome === 'succeeded')
+        ? { status: 'matched', reason: `${condition.toolName} succeeded.` }
+        : { status: 'skipped', reason: `${condition.toolName} has not succeeded.` }
+    }
+  }
 }
 
-function hasSubstantiveProcedureField(key: string, value: unknown): boolean {
-  if (['ok', 'success', 'is_v3', 'ver', 'error', 'errors'].includes(key)) return false
-  return hasSubstantiveToolValue(value)
+function latestConditionEvaluation(
+  run: ProcedureRunState,
+  branchId: string,
+  conditionId: string,
+): ProcedureRunConditionEvaluationState | undefined {
+  return [...run.evaluations]
+    .filter((entry) => entry.branchId === branchId && entry.conditionId === conditionId)
+    .sort((left, right) =>
+      left.basedOnInputEpoch === right.basedOnInputEpoch
+        ? right.createdAt.localeCompare(left.createdAt)
+        : right.basedOnInputEpoch - left.basedOnInputEpoch,
+    )[0]
+}
+
+function findBranchDefinition(
+  run: ProcedureRunState,
+  branchId: string,
+): ProcedureV2Branch | undefined {
+  if (!run.definition || !isProcedureV2Definition(run.definition)) return undefined
+  for (const step of run.definition.steps) {
+    const branch = (step.branches ?? []).find((candidate) => candidate.id === branchId)
+    if (branch) return branch
+  }
+  return undefined
+}
+
+function syncCurrentStepAfterProgress(run: ProcedureRunState, now = new Date().toISOString()): void {
+  const current = currentStep(run)
+  if (current) {
+    refreshStepBranchStates(run, current)
+    maybeCompleteStep(run, current, now)
+  }
+
+  const active = currentStep(run)
+  if (active && (active.status === 'active' || active.status === 'blocked')) {
+    run.currentStepId = active.id
+    return
+  }
+
+  const next = run.steps.find((step) => step.status === 'pending')
+  if (next) {
+    next.status = 'active'
+    next.startedAt = next.startedAt ?? now
+    run.currentStepId = next.id
+    return
+  }
+
+  const lastCompleted = lastMatchingStep(run.steps, (step) => step.status === 'completed' || step.status === 'skipped')
+  run.currentStepId = lastCompleted?.id ?? run.currentStepId
+}
+
+function maybeCompleteStep(run: ProcedureRunState, step: ProcedureRunStepState, now: string): void {
+  if (step.status === 'completed' || step.status === 'skipped') return
+
+  if (!step.actions?.length) {
+    if (step.action !== 'ask' || step.evidenceToolCallIds.length > 0) {
+      if (
+        step.action !== 'use' &&
+        step.action !== 'read' &&
+        step.action !== 'escalate' &&
+        step.action !== 'finalize'
+      ) {
+        step.status = 'completed'
+        step.completedAt = step.completedAt ?? now
+      }
+    }
+    return
+  }
+
+  const matchedBranchId = step.branches?.find((branch) => branch.status === 'matched')?.id
+  const relevantActions = (step.actions ?? []).filter((action) => !action.branchId || action.branchId === matchedBranchId)
+  if (relevantActions.length === 0) return
+
+  const pendingRequired = relevantActions.filter((action) =>
+    action.required !== false &&
+    action.status !== 'completed' &&
+    action.status !== 'skipped',
+  )
+  if (pendingRequired.length > 0) {
+    if (step.status !== 'blocked') step.status = 'active'
+    return
+  }
+
+  if (relevantActions.some((action) => action.status === 'completed' || action.status === 'skipped')) {
+    step.status = 'completed'
+    step.completedAt = step.completedAt ?? now
+    step.completionReason = step.completionReason ?? 'Required runtime evidence collected.'
+    clearProcedureSignal(run, 'no_progress_loop')
+    clearProcedureSignal(run, 'knowledge_gap')
+  }
+}
+
+function lastMatchingStep(
+  steps: ProcedureRunStepState[],
+  predicate: (step: ProcedureRunStepState) => boolean,
+): ProcedureRunStepState | undefined {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    if (predicate(steps[index])) return steps[index]
+  }
+  return undefined
+}
+
+function markBranchMatched(step: ProcedureRunStepState, branchId: string, reason: string): void {
+  for (const branch of step.branches ?? []) {
+    if (branch.id === branchId) {
+      branch.status = 'matched'
+      branch.reason = reason
+      continue
+    }
+    branch.status = 'skipped'
+    branch.reason = 'Another branch already matched.'
+  }
+  for (const action of step.actions ?? []) {
+    if (action.branchId && action.branchId !== branchId && action.status === 'pending') {
+      action.status = 'skipped'
+    }
+  }
+}
+
+type ProcedureToolOutcome = 'succeeded' | 'failed' | 'empty_result' | 'schema_invalid' | 'requested'
+
+interface ProcedureToolAssessment {
+  outcome: ProcedureToolOutcome
+  label: string
+  error?: string
 }
 
 function hasSubstantiveToolValue(value: unknown): boolean {
@@ -886,15 +1736,388 @@ function hasSubstantiveToolValue(value: unknown): boolean {
   if (typeof value === 'string') return value.trim().length > 0
   if (typeof value === 'number' || typeof value === 'boolean') return true
   if (Array.isArray(value)) return value.length > 0
-  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+  if (isRecord(value)) return Object.values(value).some((entry) => hasSubstantiveToolValue(entry))
   return true
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+function hasSubstantiveToolPayload(record: Record<string, unknown>): boolean {
+  return Object.entries(record).some(([key, value]) => {
+    if (['ok', 'success', 'is_v3', 'ver', 'error', 'errors', 'persisted'].includes(key)) return false
+    return hasSubstantiveToolValue(value)
+  })
 }
 
-function stepMatchesTool(step: ProcedureRunStepState, toolName: string): boolean {
+function setRunBlocker(run: ProcedureRunState, key: string, message: string): void {
+  clearRunBlocker(run, key)
+  run.blockers.push(`[${key}] ${message}`)
+}
+
+function clearRunBlocker(run: ProcedureRunState, key: string): void {
+  run.blockers = run.blockers.filter((entry) => !entry.startsWith(`[${key}] `))
+}
+
+function assessProcedureToolOutcome(
+  toolName: string,
+  toolOutput: unknown,
+  toolError?: string,
+): ProcedureToolAssessment {
+  if (toolError?.trim()) {
+    return {
+      outcome: 'failed',
+      label: `${toolName} failed`,
+      error: toolError.trim(),
+    }
+  }
+
+  if (toolName === 'create_human_task') {
+    if (isRecord(toolOutput) && toolOutput.persisted === true && typeof toolOutput.taskId === 'string') {
+      return { outcome: 'succeeded', label: 'Human handoff persisted' }
+    }
+    if (isRecord(toolOutput) && typeof toolOutput.taskId === 'string' && toolOutput.status === 'pending') {
+      return { outcome: 'requested', label: 'Human handoff requested but not yet persisted' }
+    }
+    return { outcome: 'schema_invalid', label: 'Human handoff returned an unexpected payload' }
+  }
+
+  if (toolName.startsWith('kb_search_')) {
+    if (Array.isArray(toolOutput)) {
+      return toolOutput.length > 0
+        ? { outcome: 'succeeded', label: 'Knowledge search returned hits' }
+        : { outcome: 'empty_result', label: 'Knowledge search returned no hits' }
+    }
+    if (isRecord(toolOutput) && Array.isArray(toolOutput.hits)) {
+      return toolOutput.hits.length > 0
+        ? { outcome: 'succeeded', label: 'Knowledge search returned hits' }
+        : { outcome: 'empty_result', label: 'Knowledge search returned no hits' }
+    }
+    if (isRecord(toolOutput) && Array.isArray(toolOutput.list)) {
+      return toolOutput.list.length > 0
+        ? { outcome: 'succeeded', label: 'Knowledge search returned hits' }
+        : { outcome: 'empty_result', label: 'Knowledge search returned no hits' }
+    }
+    return { outcome: 'schema_invalid', label: 'Knowledge search returned an unexpected payload' }
+  }
+
+  if (toolOutput == null) {
+    return { outcome: 'empty_result', label: `${toolName} returned no payload` }
+  }
+  if (Array.isArray(toolOutput)) {
+    return toolOutput.length > 0
+      ? { outcome: 'succeeded', label: `${toolName} returned data` }
+      : { outcome: 'empty_result', label: `${toolName} returned an empty list` }
+  }
+  if (isRecord(toolOutput)) {
+    if (toolOutput.ok === false || toolOutput.success === false) {
+      return {
+        outcome: 'failed',
+        label: `${toolName} reported a failed result`,
+        error: typeof toolOutput.error === 'string'
+          ? toolOutput.error
+          : Array.isArray(toolOutput.errors)
+            ? toolOutput.errors.join('; ')
+            : isRecord(toolOutput.errors)
+              ? Object.entries(toolOutput.errors).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('; ')
+              : undefined,
+      }
+    }
+    if (typeof toolOutput.error === 'string' && toolOutput.error.trim().length > 0) {
+      return {
+        outcome: 'failed',
+        label: `${toolName} reported an error`,
+        error: toolOutput.error.trim(),
+      }
+    }
+    if (Array.isArray(toolOutput.errors) && toolOutput.errors.length > 0) {
+      return {
+        outcome: 'failed',
+        label: `${toolName} reported validation errors`,
+        error: toolOutput.errors.map((entry) => String(entry)).join('; '),
+      }
+    }
+    if (isRecord(toolOutput.errors) && Object.keys(toolOutput.errors).length > 0) {
+      return {
+        outcome: 'failed',
+        label: `${toolName} reported field errors`,
+        error: Object.entries(toolOutput.errors).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('; '),
+      }
+    }
+    if (Object.keys(toolOutput).length === 0 || !hasSubstantiveToolPayload(toolOutput)) {
+      return { outcome: 'empty_result', label: `${toolName} returned an empty object` }
+    }
+    return { outcome: 'succeeded', label: `${toolName} returned data` }
+  }
+  if (typeof toolOutput === 'string' && toolOutput.trim().length === 0) {
+    return { outcome: 'empty_result', label: `${toolName} returned an empty string` }
+  }
+  return { outcome: 'succeeded', label: `${toolName} returned data` }
+}
+
+function blockerForToolAssessment(
+  toolName: string,
+  assessment: ProcedureToolAssessment,
+): string | undefined {
+  switch (assessment.outcome) {
+    case 'failed':
+      return `${toolName} failed${assessment.error ? `: ${assessment.error}` : '.'} Retry, ask a clarifying question, or hand off safely before proceeding.`
+    case 'empty_result':
+      return `${toolName} returned no usable result. Ask a clarifying question, retry with a better query, or hand off safely before proceeding.`
+    case 'schema_invalid':
+      return `${toolName} returned an unexpected payload. Treat it as unusable and recover before proceeding.`
+    case 'requested':
+      return `${toolName} has not produced persisted handoff evidence yet.`
+    default:
+      return undefined
+  }
+}
+
+function applyToolEvidenceToRun(
+  session: CaseSession,
+  run: ProcedureRunState,
+  input: {
+    toolName: string
+    toolUseId?: string
+    toolOutput?: unknown
+    toolError?: string
+  },
+  stale: boolean,
+  basedOnInputEpoch: number,
+  createdAt: string,
+  assessment: ProcedureToolAssessment = assessProcedureToolOutcome(input.toolName, input.toolOutput, input.toolError),
+): void {
+  const evidenceId = input.toolUseId ?? `${input.toolName}:${Date.now()}`
+  const match = findMatchingToolStep(run, input.toolName)
+  const evidenceKind = input.toolName.startsWith('kb_search_')
+    ? 'knowledge'
+    : input.toolName === 'create_human_task'
+      ? 'handoff'
+      : 'tool'
+
+  if (!run.evidenceToolCallIds.includes(evidenceId)) run.evidenceToolCallIds.push(evidenceId)
+
+  const evidence: ProcedureRunEvidenceState = {
+    id: evidenceId,
+    kind: evidenceKind,
+    stepId: match?.step.id,
+    actionId: match?.action?.id,
+    branchId: match?.action?.branchId,
+    label: buildToolEvidenceLabel(input.toolName, evidenceKind),
+    toolName: input.toolName,
+    basedOnInputEpoch,
+    state: stale ? 'stale' : 'canonical',
+    createdAt,
+    metadata: {
+      output: input.toolOutput,
+      error: input.toolError,
+      outcome: stale ? 'stale' : assessment.outcome,
+    },
+  }
+  upsertEvidence(run, evidence)
+
+  if (match?.step && !match.step.evidenceToolCallIds.includes(evidenceId)) {
+    match.step.evidenceToolCallIds.push(evidenceId)
+  }
+
+  if (!match) {
+    if (input.toolName.startsWith('kb_search_') && !stale && assessment.outcome === 'succeeded') {
+      clearProcedureSignal(run, 'knowledge_gap')
+    }
+    return
+  }
+
+  if (match.action && !match.action.evidenceIds.includes(evidenceId)) {
+    match.action.evidenceIds.push(evidenceId)
+  }
+
+  const blockerKey = `action:${match.action?.id ?? match.step.id}`
+  if (stale) {
+    setRunBlocker(
+      run,
+      blockerKey,
+      `Stale ${input.toolName} evidence must be reconciled before this step can advance.`,
+    )
+    return
+  }
+
+  if (match.action?.branchId && assessment.outcome === 'succeeded') {
+    markBranchMatched(match.step, match.action.branchId, `Observed ${input.toolName}.`)
+  }
+
+  if (match.action) {
+    if (match.action.kind === 'ask') {
+      match.action.status = 'active'
+      match.step.status = 'blocked'
+      match.step.skipReason = undefined
+      match.step.completionReason = 'Waiting for customer input.'
+      setRunBlocker(run, blockerKey, 'Waiting for the customer to submit the requested form fields.')
+    } else if (assessment.outcome === 'succeeded') {
+      clearRunBlocker(run, blockerKey)
+      match.action.status = 'completed'
+      match.step.status = 'active'
+      match.step.completionReason = `Observed ${input.toolName}.`
+    } else if (assessment.outcome === 'requested') {
+      setRunBlocker(run, blockerKey, blockerForToolAssessment(input.toolName, assessment) ?? `${input.toolName} is still pending.`)
+      match.action.status = 'active'
+      match.step.status = 'active'
+      match.step.completionReason = undefined
+    } else {
+      setRunBlocker(run, blockerKey, blockerForToolAssessment(input.toolName, assessment) ?? `${input.toolName} did not complete successfully.`)
+      match.action.status = 'blocked'
+      match.step.status = 'blocked'
+      match.step.completionReason = undefined
+    }
+  } else if (stepMatchesLegacyTool(match.step, input.toolName)) {
+    if (assessment.outcome === 'succeeded') {
+      clearRunBlocker(run, blockerKey)
+      match.step.status = 'completed'
+      match.step.completedAt = createdAt
+      match.step.completionReason = `Observed ${input.toolName}.`
+    } else {
+      setRunBlocker(run, blockerKey, blockerForToolAssessment(input.toolName, assessment) ?? `${input.toolName} did not complete successfully.`)
+      match.step.status = 'blocked'
+      match.step.completedAt = undefined
+      match.step.completionReason = undefined
+    }
+  }
+
+  if (input.toolName.startsWith('kb_search_') && assessment.outcome === 'succeeded') {
+    clearProcedureSignal(run, 'knowledge_gap')
+  }
+  if (input.toolName === 'create_human_task' && assessment.outcome === 'succeeded') {
+    clearProcedureSignal(run, 'explicit_human_request')
+    clearProcedureSignal(run, 'no_progress_loop')
+    clearProcedureSignal(run, 'knowledge_gap')
+    transitionRunToWaitingHuman(session, run, match, createdAt, input.toolOutput)
+  }
+}
+
+function transitionRunToWaitingHuman(
+  session: CaseSession,
+  run: ProcedureRunState,
+  match: { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null,
+  createdAt: string,
+  toolOutput?: unknown,
+): void {
+  const taskId = isRecord(toolOutput) && typeof toolOutput.taskId === 'string'
+    ? toolOutput.taskId
+    : undefined
+  const queue = isRecord(toolOutput) && typeof toolOutput.queue === 'string'
+    ? toolOutput.queue
+    : undefined
+
+  if (match?.step) {
+    const handoffActionId = match.action?.id
+    const matchedBranchId = match.action?.branchId ?? match.step.branches?.find((branch) => branch.status === 'matched')?.id
+
+    for (const action of match.step.actions ?? []) {
+      clearRunBlocker(run, `action:${action.id}`)
+      if (action.id === handoffActionId) {
+        action.status = 'completed'
+        continue
+      }
+      if (action.status !== 'completed') {
+        action.status = 'skipped'
+      }
+    }
+
+    if (matchedBranchId) {
+      for (const branch of match.step.branches ?? []) {
+        if (branch.id === matchedBranchId) {
+          branch.status = 'matched'
+          branch.reason = branch.reason || 'Persisted human handoff evidence observed.'
+        } else {
+          branch.status = 'skipped'
+          branch.reason = 'Another branch already matched.'
+        }
+      }
+    }
+
+    match.step.status = 'completed'
+    match.step.completedAt = createdAt
+    match.step.completionReason = taskId
+      ? `Persisted human handoff task ${taskId} created.`
+      : 'Persisted human handoff created.'
+  }
+
+  run.blockers = []
+  run.status = 'paused'
+  run.currentStepId = null
+  run.reason = taskId
+    ? `Waiting for human handoff task ${taskId}.`
+    : 'Waiting for human handoff.'
+  run.updatedAt = createdAt
+
+  if (session.procedureRuntime.activeProcedureRun?.runId === run.runId) {
+    session.procedureRuntime.activeProcedureRun = undefined
+    if (!session.procedureRuntime.pausedProcedureRuns.some((candidate) => candidate.runId === run.runId)) {
+      session.procedureRuntime.pausedProcedureRuns.push(run)
+    }
+  }
+
+  appendProcedureTimeline(session, run, {
+    origin: 'system',
+    source: 'control',
+    basedOnInputEpoch: run.inputEpoch,
+    summary: taskId
+      ? `ProcedureRun paused for human handoff task ${taskId}`
+      : 'ProcedureRun paused for human handoff',
+    metadata: {
+      terminal: true,
+      waitingHuman: true,
+      taskId,
+      queue,
+      persisted: true,
+    },
+  })
+}
+
+function buildToolEvidenceLabel(toolName: string, kind: ProcedureRunEvidenceState['kind']): string {
+  switch (kind) {
+    case 'knowledge':
+      return `Knowledge search completed with ${toolName}`
+    case 'handoff':
+      return 'Human handoff requested'
+    default:
+      return `Tool result captured for ${toolName}`
+  }
+}
+
+function findMatchingToolStep(
+  run: ProcedureRunState,
+  toolName: string,
+): { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null {
+  const stepsInPriority = [
+    ...(run.currentStepId ? run.steps.filter((step) => step.id === run.currentStepId) : []),
+    ...run.steps.filter((step) => step.id !== run.currentStepId),
+  ]
+
+  for (const step of stepsInPriority) {
+    const action = (step.actions ?? []).find((candidate) => actionMatchesTool(candidate, toolName))
+    if (action) return { step, action }
+    if (stepMatchesLegacyTool(step, toolName)) return { step }
+  }
+
+  return null
+}
+
+function actionMatchesTool(action: ProcedureRunActionState, toolName: string): boolean {
+  switch (action.kind) {
+    case 'call_tool':
+      return action.target === toolName
+    case 'search_knowledge':
+      return toolName.startsWith('kb_search_')
+    case 'ask':
+      return toolName === 'ask_user_questions'
+    case 'request_human_handoff':
+      return toolName === 'create_human_task'
+    case 'end':
+      return toolName === 'finalize_procedure'
+    default:
+      return false
+  }
+}
+
+function stepMatchesLegacyTool(step: ProcedureRunStepState, toolName: string): boolean {
+  if (step.actions?.length) return false
   if (step.target && step.target === toolName) return true
   if (step.action === 'ask' && toolName === 'ask_user_questions') return true
   if (step.action === 'escalate' && toolName === 'create_human_task') return true
@@ -909,6 +2132,8 @@ export function isRuntimeAuthorityKey(key: string): boolean {
     'ProcedureRun',
     'procedureRunState',
     'currentStepId',
+    'inputs',
+    'evaluations',
     'needsReconcile',
     'lastReconciledInputEpoch',
     'inputEpoch',
@@ -925,13 +2150,64 @@ export function filterRuntimeAuthorityKeys(value: Record<string, unknown>): Reco
   )
 }
 
+function finalizationBlockers(run: ProcedureRunState): string[] {
+  const blockers = [...run.blockers]
+  if (run.procedureVersion === 'v2') {
+    const incompleteRequiredSteps = run.steps.filter((step) =>
+      step.required !== false &&
+      step.status !== 'completed' &&
+      step.status !== 'skipped',
+    )
+    for (const step of incompleteRequiredSteps) {
+      blockers.push(`Step "${step.title || step.id}" is still ${step.status}.`)
+    }
+
+    const pendingEval = currentStep(run)?.branches?.find((branch) => branch.status === 'pending')
+    if (pendingEval) {
+      blockers.push(`Branch "${pendingEval.conditionLabel || pendingEval.label || pendingEval.id}" still needs structured evidence or an evaluator receipt.`)
+    }
+
+    const activeHints = run.signals.filter((signal) => signal.active)
+    for (const signal of activeHints) {
+      if (signal.signal === 'explicit_human_request' || signal.signal === 'no_progress_loop') {
+        blockers.push(`Safety hint "${signal.signal}" is still active: ${signal.reason}`)
+      }
+    }
+  }
+
+  return [...new Set(blockers)]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 function cloneRun(run: ProcedureRunState): ProcedureRunState {
   return {
     ...run,
-    steps: run.steps.map((step) => ({ ...step, evidenceToolCallIds: [...step.evidenceToolCallIds] })),
+    steps: run.steps.map((step) => ({
+      ...step,
+      evidenceToolCallIds: [...step.evidenceToolCallIds],
+      actions: step.actions?.map((action) => ({ ...action, evidenceIds: [...action.evidenceIds] })),
+      branches: step.branches?.map((branch) => ({ ...branch, actionIds: [...branch.actionIds] })),
+    })),
+    inputs: run.inputs.map((entry) => ({
+      ...entry,
+      formAnswers: entry.formAnswers ? { ...entry.formAnswers } : undefined,
+    })),
     evidenceToolCallIds: [...run.evidenceToolCallIds],
-    facts: { ...run.facts },
+    evidence: run.evidence.map((entry) => ({
+      ...entry,
+      metadata: entry.metadata ? { ...entry.metadata } : undefined,
+    })),
+    evaluations: run.evaluations.map((entry) => ({
+      ...entry,
+      metadata: entry.metadata ? { ...entry.metadata } : undefined,
+    })),
+    signals: run.signals.map((signal) => ({ ...signal })),
+    legacyFacts: { ...run.legacyFacts },
     blockers: [...run.blockers],
     timeline: run.timeline.map((event) => ({ ...event, metadata: event.metadata ? { ...event.metadata } : undefined })),
+    definition: run.definition ? JSON.parse(JSON.stringify(run.definition)) as ProcedureDefinition : undefined,
   }
 }

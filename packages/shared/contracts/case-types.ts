@@ -2,46 +2,85 @@
 
 import { z } from 'zod'
 import { stableNameSchema } from './hooks'
+import {
+  PROCEDURE_ACTIONS,
+  PROCEDURE_CONDITION_KINDS,
+  PROCEDURE_RUNTIME_SIGNALS,
+  PROCEDURE_V2_ACTION_KINDS,
+  buildProcedureActionSummary,
+  buildProcedureConditionLabel,
+  isProcedureV2Definition,
+  normalizeProcedureDefinition,
+  parseProcedure,
+  parseProcedureDefinition,
+  procedureActionSchema,
+  procedureConditionKindSchema,
+  procedureConditionSchema,
+  procedureDefinitionSchema,
+  procedureRuntimeSignalSchema,
+  procedureSchema,
+  procedureSimulationInputSchema,
+  procedureSimulationReceiptSchema,
+  procedureStepSchema,
+  procedureV2ActionKindSchema,
+  procedureV2ActionSchema,
+  procedureV2BranchSchema,
+  procedureV2Schema,
+  procedureV2StepSchema,
+  simulateProcedureDefinition,
+  type ProcedureConditionContract,
+  type ProcedureContract,
+  type ProcedureDefinitionContract,
+  type ProcedureRuntimeSignalContract,
+  type ProcedureSimulationInputContract,
+  type ProcedureSimulationReceiptContract,
+  type ProcedureV2ActionContract,
+  type ProcedureV2ActionKindContract,
+  type ProcedureV2BranchContract,
+  type ProcedureV2Contract,
+  type ProcedureV2StepContract,
+} from './procedures'
 
-// ── Procedure (single-agent ordered SOP — Procedure refactor, Phase 1, additive) ──
-// Mirrors the plain TS `Procedure`/`ProcedureStep`/`ProcedureAction` in @intera/shared/types
-// (types stays zod-free; the procedure-contract test guards that these two stay aligned).
-export const PROCEDURE_ACTIONS = [
-  'use',
-  'read',
-  'ask',
-  'decide',
-  'tag',
-  'escalate',
-  'finalize',
-] as const
-export const procedureActionSchema = z.enum(PROCEDURE_ACTIONS)
+export {
+  PROCEDURE_ACTIONS,
+  PROCEDURE_CONDITION_KINDS,
+  PROCEDURE_RUNTIME_SIGNALS,
+  PROCEDURE_V2_ACTION_KINDS,
+  buildProcedureActionSummary,
+  buildProcedureConditionLabel,
+  isProcedureV2Definition,
+  normalizeProcedureDefinition,
+  parseProcedure,
+  parseProcedureDefinition,
+  procedureActionSchema,
+  procedureConditionKindSchema,
+  procedureConditionSchema,
+  procedureDefinitionSchema,
+  procedureRuntimeSignalSchema,
+  procedureSchema,
+  procedureSimulationInputSchema,
+  procedureSimulationReceiptSchema,
+  procedureStepSchema,
+  procedureV2ActionKindSchema,
+  procedureV2ActionSchema,
+  procedureV2BranchSchema,
+  procedureV2Schema,
+  procedureV2StepSchema,
+  simulateProcedureDefinition,
+}
 
-export const procedureStepSchema = z.object({
-  id: z.string().min(1, 'step id is required'),
-  action: procedureActionSchema,
-  target: z.string().optional(),
-  guidance: z.string().optional(),
-  when: z.string().optional(),
-  required: z.boolean().optional(),
-})
-
-export const procedureSchema = z.object({
-  steps: z.array(procedureStepSchema),
-})
-export type ProcedureContract = z.infer<typeof procedureSchema>
-
-/** Safe runtime parse of a `CaseType.procedure` JSON string → typed Procedure, or null. Never throws. */
-export function parseProcedure(json: string | null | undefined): ProcedureContract | null {
-  if (!json) return null
-  let raw: unknown
-  try {
-    raw = JSON.parse(json)
-  } catch {
-    return null
-  }
-  const r = procedureSchema.safeParse(raw)
-  return r.success ? r.data : null
+export type {
+  ProcedureConditionContract,
+  ProcedureContract,
+  ProcedureDefinitionContract,
+  ProcedureRuntimeSignalContract,
+  ProcedureSimulationInputContract,
+  ProcedureSimulationReceiptContract,
+  ProcedureV2ActionContract,
+  ProcedureV2ActionKindContract,
+  ProcedureV2BranchContract,
+  ProcedureV2Contract,
+  ProcedureV2StepContract,
 }
 
 // ── Case type item ──
@@ -56,7 +95,7 @@ export const caseTypeItemSchema = z.object({
   escalateOn: z.string(),
   autoCloseConditions: z.string().nullable().optional(),
   enabled: z.boolean(),
-  procedure: z.string().nullable().optional(), // JSON: Procedure
+  procedure: z.string().nullable().optional(),
   maxAutoTurns: z.number().optional(),
   createdAt: z.date().or(z.string()).optional(),
   updatedAt: z.date().or(z.string()).optional(),
@@ -81,8 +120,7 @@ export const caseTypeCreateRequestSchema = z.object({
   escalateOn: z.union([z.string(), z.array(z.string())]).optional().default('[]'),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional().default(true),
-  // Accept a JSON string or a typed Procedure.
-  procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
+  procedure: z.union([z.string(), procedureDefinitionSchema]).nullable().optional(),
   maxAutoTurns: z.number().optional().default(10),
 })
 export type CaseTypeCreateRequest = z.infer<typeof caseTypeCreateRequestSchema>
@@ -110,7 +148,7 @@ export const caseTypeUpdateRequestSchema = z.object({
   escalateOn: z.union([z.string(), z.array(z.string())]).optional(),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional(),
-  procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
+  procedure: z.union([z.string(), procedureDefinitionSchema]).nullable().optional(),
   maxAutoTurns: z.number().optional(),
 })
 export type CaseTypeUpdateRequest = z.infer<typeof caseTypeUpdateRequestSchema>
@@ -132,7 +170,7 @@ export const templateCaseTypeSchema = z.object({
   escalateOn: z.array(z.string()).default([]),
   autoCloseConditions: z.record(z.unknown()).optional(),
   enabled: z.boolean().default(true),
-  procedure: procedureSchema.optional(),
+  procedure: procedureDefinitionSchema.optional(),
   maxAutoTurns: z.number().int().positive().default(10),
   legacy: z.record(z.unknown()).optional(),
 })

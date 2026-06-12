@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
-import { procedureSchema } from '@intera/shared/contracts/case-types'
+import { procedureDefinitionSchema } from '@intera/shared/contracts/case-types'
 
 const stringifyMaybe = (val: unknown): string => {
   if (typeof val === 'string') return val
@@ -42,7 +42,7 @@ const createSchema = z.object({
   escalateOn: z.union([z.string(), z.array(z.string())]).optional().default('[]'),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional().default(true),
-  procedure: z.union([z.string(), procedureSchema]).nullable().optional(),
+  procedure: z.union([z.string(), procedureDefinitionSchema]).nullable().optional(),
   maxAutoTurns: z.number().optional().default(10),
 })
 type CreateInput = z.infer<typeof createSchema>

@@ -8,6 +8,7 @@
 import { CORE_SYSTEM_PROMPT } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext, type PromptContext } from './prompt-resolver'
 import type { CaseSchemaConfig } from '@intera/shared/types'
+import { isProcedureV2Definition } from '@intera/shared/contracts/case-types'
 
 export interface BuildModePromptInput {
   agentConfigId: string
@@ -82,6 +83,10 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
 
   // When a case is active, additionally inject case-specific blocks
   if (input.hasActiveCase) {
+    const usesProcedureV2 = !!(
+      input.caseSchema?.procedureDefinition &&
+      isProcedureV2Definition(input.caseSchema.procedureDefinition)
+    )
     const caseCtx = await buildPromptContext({
       agentConfigId: input.agentConfigId,
           caseSchema: input.caseSchema
@@ -92,7 +97,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
             escalateOn: input.caseSchema.escalateOn,
           }
         : null,
-      caseState: input.caseState ?? null,
+      caseState: usesProcedureV2 ? null : (input.caseState ?? null),
       sessionBinding: input.sessionBinding ?? null,
       available_tools: input.availableTools ?? [],
     })

@@ -21,7 +21,7 @@ export const createHumanTaskTool: Tool<Input, Output> = {
     return 'Create a human task for manual confirmation or processing. ' +
       'This will pause the agent loop until a human responds. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
-      'their answers will be automatically ingested as confirmedFacts when they resolve the task.'
+      'their answers return as structured runtime input when they resolve the task.'
   },
 
   isEnabled() { return true },

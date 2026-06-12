@@ -44,7 +44,7 @@ vi.mock('@/lib/agent/loop', () => ({
 }))
 
 import { POST } from '@/app/api/messages/route'
-import { closeSession, enqueueMessageOrCreate, getOrCreateSession, hasSession } from '@/lib/agent/session-store'
+import { closeSession, enqueueMessageOrCreate, getOrCreateSession, getRuntimeEvents, hasSession } from '@/lib/agent/session-store'
 
 function makeRequest(body: unknown) {
   return new NextRequest('http://localhost/api/messages', {
@@ -98,6 +98,7 @@ beforeEach(() => {
   closeSession('case-cross-org')
   closeSession('case-queued')
   closeSession('case-drain')
+  closeSession('case-v2-form')
 
   h.resolveOrgFromApiKey.mockResolvedValue({ orgId: 'org-a', agentConfigId: 'agent-a' })
   h.isTrustedInternalCall.mockReturnValue(false)
@@ -132,6 +133,7 @@ afterEach(() => {
   closeSession('case-cross-org')
   closeSession('case-queued')
   closeSession('case-drain')
+  closeSession('case-v2-form')
 })
 
 describe('POST /api/messages runtime session guards', () => {
@@ -290,5 +292,102 @@ describe('POST /api/messages runtime session guards', () => {
     expect(h.prisma.$transaction).toHaveBeenCalled()
     expect(events.some((event) => event.type === 'message_stop' && event.data?.reason === 'drained')).toBe(true)
     expect(hasSession('case-drain')).toBe(false)
+  })
+
+  it('does not merge form answers into confirmedFacts or persist new chatMemory facts for active Procedure v2 cases', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-v2-form',
+      type: 'deposit_issue',
+      status: 'open',
+      memory: {
+        confirmedFacts: JSON.stringify({ legacyMemberId: 'LEG-1' }),
+        missingFacts: JSON.stringify(['memberId']),
+        toolsCalled: JSON.stringify([]),
+        toolResults: JSON.stringify({}),
+        keyEvents: JSON.stringify([]),
+        summary: '',
+      },
+    })
+    h.prisma.caseType.findUnique.mockResolvedValue({
+      type: 'deposit_issue',
+      displayName: 'Deposit issue',
+      description: null,
+      icon: 'D',
+      requiredFacts: '[]',
+      defaultGoal: 'Help the customer with deposit issues.',
+      escalateOn: '[]',
+      autoCloseConditions: null,
+      maxAutoTurns: 3,
+      procedure: JSON.stringify({
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'collect_member_id',
+            title: 'Collect the member id',
+            guidance: 'Use structured runtime inputs.',
+            actions: [
+              {
+                id: 'ask_member_id',
+                kind: 'ask',
+                label: 'Ask for member id',
+                fields: ['memberId'],
+              },
+            ],
+            branches: [],
+          },
+        ],
+      }),
+    })
+
+    const loop = mockLoop({
+      getMemorySummary: vi.fn(() => ({
+        confirmedFacts: { memberId: 'M123', legacyMemberId: 'LEG-1' },
+        missingFacts: [],
+        toolsCalled: [],
+        toolResults: {},
+        keyEvents: [],
+        summary: '',
+        todos: null,
+        caseStatus: 'open',
+      })),
+      getCaseType: vi.fn(() => 'deposit_issue'),
+    })
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      formResult: {
+        caseId: 'case-v2-form',
+        answers: { memberId: 'M123' },
+      },
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.buildModePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      caseState: expect.objectContaining({
+        confirmedFacts: { legacyMemberId: 'LEG-1' },
+        missingFacts: ['memberId'],
+      }),
+    }))
+    expect(h.prisma.chatMemory.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { caseId: 'case-v2-form' },
+      update: expect.objectContaining({
+        confirmedFacts: JSON.stringify({ legacyMemberId: 'LEG-1' }),
+      }),
+    }))
+
+    const runtimeEvents = getRuntimeEvents('case-v2-form')
+    expect(runtimeEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_form_result',
+          formAnswers: { memberId: 'M123' },
+        }),
+      ]),
+    )
+    closeSession('case-v2-form')
   })
 })

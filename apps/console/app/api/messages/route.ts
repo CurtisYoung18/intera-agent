@@ -15,7 +15,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
-import { parseProcedure } from '@intera/shared/contracts/case-types'
+import { isProcedureV2Definition, parseProcedure, parseProcedureDefinition } from '@intera/shared/contracts/case-types'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 
 // Verify env vars at module load (logged once per cold start)
@@ -53,7 +53,8 @@ function schemaFromCaseTypeRow(caseType: {
   maxAutoTurns?: number | null
 }): CaseSchemaConfig {
   const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
-  const procedure = parseProcedure(caseType.procedure)
+  const procedureDefinition = parseProcedureDefinition(caseType.procedure)
+  const procedure = procedureDefinition ? parseProcedure(caseType.procedure) : null
 
   return {
     type: caseType.type,
@@ -65,6 +66,7 @@ function schemaFromCaseTypeRow(caseType: {
     escalateOn: (parseMemoryJson(caseType.escalateOn) as string[]) || [],
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
     procedure: procedure ?? undefined,
+    procedureDefinition: procedureDefinition ?? undefined,
     maxAutoTurns: typeof caseType.maxAutoTurns === 'number' ? caseType.maxAutoTurns : undefined,
   }
 }
@@ -383,7 +385,7 @@ export async function POST(request: NextRequest) {
               // Check for pending interactions first
               const pendingTask = await prisma.humanTask.findFirst({
                 where: {
-                  caseId: { in: activeCases.map((c) => c.id) },
+                  caseId: { in: activeCases.map((c: { id: string }) => c.id) },
                   status: 'pending',
                 },
                 orderBy: { createdAt: 'desc' },
@@ -534,7 +536,7 @@ export async function POST(request: NextRequest) {
                   await prisma.humanTask.update({
                     where: { id: resolvedTask.id },
                     data: { notifiedAt: new Date() },
-                  }).catch((err) => { console.error('[Intera] Failed to mark humanTask notifiedAt:', err) })
+                  }).catch((err: unknown) => { console.error('[Intera] Failed to mark humanTask notifiedAt:', err) })
                 }
               } catch (err) { console.error('[Intera] Auto-resume humanTask lookup failed:', err) }
             }
@@ -595,15 +597,17 @@ export async function POST(request: NextRequest) {
 
         // ── Resolve prompt placeholders with live Console config ──
         const existingMemoryData = existingMemory as Record<string, unknown> | null
+        const existingConfirmedFacts = ((parseMemoryJson(existingMemoryData?.confirmedFacts as string) as Record<string, unknown>) || {})
+        const activeProcedureV2 = !!caseSchema?.procedureDefinition && isProcedureV2Definition(caseSchema.procedureDefinition)
         const resolvedCaseState = existingMemoryData ? {
-          confirmedFacts: (parseMemoryJson(existingMemoryData.confirmedFacts as string) as Record<string, unknown>) || {},
+          confirmedFacts: { ...existingConfirmedFacts },
           toolsCalled: (parseMemoryJson(existingMemoryData.toolsCalled as string) as string[]) || [],
           missingFacts: (parseMemoryJson(existingMemoryData.missingFacts as string) as string[]) || [],
         } : undefined
 
         // Merge form answers into confirmed facts so the system prompt reflects
         // structured form data — prevents stale DB-only facts from misleading the agent.
-        if (resolvedCaseState && formAnswers) {
+        if (resolvedCaseState && formAnswers && !activeProcedureV2) {
           for (const [key, value] of Object.entries(formAnswers)) {
             if (value && value.trim()) {
               resolvedCaseState.confirmedFacts[key] = value.trim()
@@ -735,7 +739,7 @@ export async function POST(request: NextRequest) {
           })
           if (priorMessages.length > 0) {
             agentLoop.loadMessages(
-              priorMessages.map((m) => ({
+              priorMessages.map((m: { id: string; role: string; content: string; createdAt: Date; contentBlocks?: unknown }) => ({
                 id: m.id,
                 role: m.role as 'user' | 'assistant',
                 content: m.content,
@@ -773,7 +777,7 @@ export async function POST(request: NextRequest) {
               take: 50,
             })
             if (priorMsgs.length > 0) {
-              followup.loadMessages(priorMsgs.map((m) => ({
+              followup.loadMessages(priorMsgs.map((m: { id: string; role: string; content: string; createdAt: Date; contentBlocks?: unknown }) => ({
                 id: m.id, role: m.role as 'user' | 'assistant',
                 content: m.content,
                 contentBlocks: (m as any).contentBlocks ?? undefined,
@@ -797,10 +801,11 @@ export async function POST(request: NextRequest) {
                   type: caseTypeForUpsert, status: result.caseStatus, chatId,
                 },
               })
+              const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : followupMem.confirmedFacts
               await prisma.chatMemory.upsert({
                 where: { caseId: resolvedCaseId },
                 update: {
-                  confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
+                  confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
                   toolsCalled: JSON.stringify(followupMem.toolsCalled),
                   toolResults: JSON.stringify(followupMem.toolResults),
@@ -810,7 +815,7 @@ export async function POST(request: NextRequest) {
                 },
                 create: {
                   caseId: resolvedCaseId,
-                  confirmedFacts: JSON.stringify(followupMem.confirmedFacts),
+                  confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
                   toolsCalled: JSON.stringify(followupMem.toolsCalled),
                   toolResults: JSON.stringify(followupMem.toolResults),
@@ -870,10 +875,11 @@ export async function POST(request: NextRequest) {
                 chatId,
               },
             })
+            const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : mem.confirmedFacts
             await prisma.chatMemory.upsert({
               where: { caseId: resolvedCaseId },
               update: {
-                confirmedFacts: JSON.stringify(mem.confirmedFacts),
+                confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                 missingFacts: JSON.stringify(mem.missingFacts),
                 toolsCalled: JSON.stringify(mem.toolsCalled),
                 toolResults: JSON.stringify(mem.toolResults),
@@ -883,7 +889,7 @@ export async function POST(request: NextRequest) {
               },
               create: {
                 caseId: resolvedCaseId,
-                confirmedFacts: JSON.stringify(mem.confirmedFacts),
+                confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                 missingFacts: JSON.stringify(mem.missingFacts),
                 toolsCalled: JSON.stringify(mem.toolsCalled),
                 toolResults: JSON.stringify(mem.toolResults),

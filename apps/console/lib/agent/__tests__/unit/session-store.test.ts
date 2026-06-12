@@ -4,14 +4,19 @@ import {
   getOrCreateSession,
   closeSession,
   enqueueMessageOrCreate,
+  getActiveProcedureRun,
+  getProcedureRuntime,
   recordInitialInputEvent,
   getRuntimeEvents,
   startProcedureRun,
+  getPendingProcedureLlmEvaluations,
+  recordProcedureConditionEvaluation,
   recordProcedureToolCall,
   recordProcedureToolResult,
   reconcileProcedureInput,
   recordProcedureTextReply,
   filterRuntimeAuthorityKeys,
+  finalizeProcedureRun,
 } from '../../session-store'
 
 describe('hasSession', () => {
@@ -157,8 +162,8 @@ describe('R3 runtime event protocol', () => {
 
     expect(empty.stale).toBe(false)
     expect(empty.run?.currentStepId).toBe('lookup')
-    expect(empty.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('active')
-    expect(empty.run?.blockers).toContain('Tool get_latest_deposit returned unusable evidence. Resolve the failure before advancing the ProcedureRun.')
+    expect(empty.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('blocked')
+    expect(empty.run?.blockers).toContain('[action:lookup] get_latest_deposit returned no usable result. Ask a clarifying question, retry with a better query, or hand off safely before proceeding.')
     closeSession(caseId)
   })
 
@@ -190,8 +195,8 @@ describe('R3 runtime event protocol', () => {
 
     expect(failed.stale).toBe(false)
     expect(failed.run?.currentStepId).toBe('lookup')
-    expect(failed.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('active')
-    expect(failed.run?.blockers).toContain('Tool get_latest_withdrawal returned unusable evidence. Resolve the failure before advancing the ProcedureRun.')
+    expect(failed.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('blocked')
+    expect(failed.run?.blockers[0]).toContain('get_latest_withdrawal failed')
     closeSession(caseId)
   })
 
@@ -210,6 +215,423 @@ describe('R3 runtime event protocol', () => {
     expect(stale.run?.runId).toBe(started.run.runId)
     expect(stale.run?.currentStepId).toBe('lookup')
     expect(stale.run?.needsReconcile).toBe(true)
+    closeSession(caseId)
+  })
+
+  it('raises and clears the explicit human request runtime signal on the v2 path', () => {
+    const caseId = 'r3-human-request-signal'
+    recordInitialInputEvent(caseId, { content: 'start' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'triage',
+            title: 'Triage the request',
+            guidance: 'Work out whether the customer needs a person right away.',
+            actions: [],
+            branches: [
+              {
+                id: 'customer_wants_human',
+                kind: 'if',
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                actions: [
+                  {
+                    id: 'handoff_now',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, { content: 'Please connect me to a human agent right now.' })
+    expect(getActiveProcedureRun(caseId)?.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signal: 'explicit_human_request', active: true }),
+      ]),
+    )
+    expect(getActiveProcedureRun(caseId)?.steps[0]?.branches?.[0]?.status).toBe('pending')
+
+    const handoff = recordProcedureToolResult(caseId, {
+      toolName: 'create_human_task',
+      toolUseId: 'handoff-1',
+      basedOnInputEpoch: 2,
+      toolOutput: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
+    })
+    expect(handoff.stale).toBe(false)
+    expect(handoff.run?.signals.find((signal) => signal.signal === 'explicit_human_request')?.active).toBe(false)
+    closeSession(caseId)
+  })
+
+  it('raises the knowledge gap signal and clears it after knowledge search evidence lands', () => {
+    const caseId = 'r3-knowledge-gap'
+    recordInitialInputEvent(caseId, { content: 'start' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'orient_customer',
+            title: 'Orient the customer',
+            guidance: 'Point the customer to the right documentation when they are missing context.',
+            actions: [
+              {
+                id: 'search_docs',
+                kind: 'search_knowledge',
+                label: 'Search the deposit FAQ',
+                suggestedSources: ['Deposit FAQ'],
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, { content: 'Where do I find the deposit receipt page?' })
+    expect(getActiveProcedureRun(caseId)?.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signal: 'knowledge_gap', active: true }),
+      ]),
+    )
+
+    const knowledge = recordProcedureToolResult(caseId, {
+      toolName: 'kb_search_deposit_faq',
+      toolUseId: 'kb-1',
+      basedOnInputEpoch: 2,
+      toolOutput: { hits: [{ id: 'faq-1', title: 'Deposit receipt guide' }] },
+    })
+    expect(knowledge.stale).toBe(false)
+    expect(knowledge.run?.signals.find((signal) => signal.signal === 'knowledge_gap')?.active).toBe(false)
+    expect(knowledge.run?.steps.find((step) => step.id === 'orient_customer')?.status).toBe('completed')
+    closeSession(caseId)
+  })
+
+  it('records llm_eval receipts and uses them to resolve v2 branches', () => {
+    const caseId = 'r3-llm-eval'
+    recordInitialInputEvent(caseId, { content: 'I only need the public FAQ link.' })
+    const started = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'triage',
+            title: 'Decide whether the customer only needs documentation',
+            guidance: 'Route documentation-only requests to knowledge search.',
+            actions: [],
+            branches: [
+              {
+                id: 'docs_only',
+                kind: 'if',
+                condition: {
+                  id: 'docs_only_eval',
+                  kind: 'llm_eval',
+                  prompt: 'Does the customer only need documentation or a public link, with no account-specific action?',
+                },
+                actions: [
+                  {
+                    id: 'search_docs',
+                    kind: 'search_knowledge',
+                    label: 'Search the FAQ',
+                    suggestedSources: ['Deposit FAQ'],
+                  },
+                ],
+              },
+              {
+                id: 'fallback',
+                kind: 'else',
+                actions: [
+                  {
+                    id: 'handoff',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    const pending = getPendingProcedureLlmEvaluations(caseId)
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      runId: started.run.runId,
+      branchId: 'docs_only',
+      conditionId: 'docs_only_eval',
+    })
+
+    const receipt = recordProcedureConditionEvaluation(caseId, {
+      runId: started.run.runId,
+      branchId: 'docs_only',
+      conditionId: 'docs_only_eval',
+      label: 'documentation only',
+      decision: 'matched',
+      reason: 'The customer explicitly asked for a public FAQ link and did not request account-specific action.',
+      basedOnInputEpoch: 1,
+      model: 'test-evaluator',
+    })
+    expect(receipt.ok).toBe(true)
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.steps[0]?.branches?.find((branch) => branch.id === 'docs_only')).toMatchObject({
+      status: 'matched',
+    })
+    expect(active?.evaluations[0]).toMatchObject({
+      branchId: 'docs_only',
+      decision: 'matched',
+      model: 'test-evaluator',
+    })
+    closeSession(caseId)
+  })
+
+  it('captures v2 form answers as runtime inputs and evidence without writing legacy facts', () => {
+    const caseId = 'r3-v2-form-runtime-truth'
+    recordInitialInputEvent(caseId, { content: 'I can send the member id.' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'collect_member_id',
+            title: 'Collect the member id',
+            guidance: 'Ask the customer for their member id.',
+            actions: [
+              {
+                id: 'ask_member_id',
+                kind: 'ask',
+                label: 'Ask for member id',
+                fields: ['memberId'],
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Tool ask_user_questions result: {"memberId":"M123"}',
+      source: 'customer_form_result',
+      origin: 'customer',
+      formAnswers: { memberId: 'M123' },
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.legacyFacts).toEqual({})
+    expect(active?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_form_result',
+          formAnswers: { memberId: 'M123' },
+        }),
+      ]),
+    )
+    expect(active?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'form',
+          metadata: expect.objectContaining({ field: 'memberId', value: 'M123' }),
+        }),
+      ]),
+    )
+    expect(active?.steps.find((step) => step.id === 'collect_member_id')).toMatchObject({
+      status: 'completed',
+    })
+    closeSession(caseId)
+  })
+
+  it('blocks v2 steps on empty knowledge results instead of treating them as success', () => {
+    const caseId = 'r3-empty-kb'
+    recordInitialInputEvent(caseId, { content: 'Where do I find the statement page?' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'orient_customer',
+            title: 'Orient the customer',
+            guidance: 'Use knowledge search before answering.',
+            actions: [
+              {
+                id: 'search_docs',
+                kind: 'search_knowledge',
+                label: 'Search the FAQ',
+                suggestedSources: ['Deposit FAQ'],
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    const knowledge = recordProcedureToolResult(caseId, {
+      toolName: 'kb_search_deposit_faq',
+      toolUseId: 'kb-empty',
+      basedOnInputEpoch: 1,
+      toolOutput: { hits: [] },
+    })
+    expect(knowledge.run?.steps.find((step) => step.id === 'orient_customer')).toMatchObject({
+      status: 'blocked',
+    })
+    expect(knowledge.run?.evidence.find((entry) => entry.id === 'kb-empty')?.metadata).toMatchObject({
+      outcome: 'empty_result',
+    })
+    expect(finalizeProcedureRun(caseId, { runId: knowledge.run?.runId })).toMatchObject({
+      ok: false,
+      stale: false,
+    })
+    closeSession(caseId)
+  })
+
+  it('pauses the ProcedureRun after persisted handoff and clears stale blockers from prior empty knowledge results', () => {
+    const caseId = 'r3-v2-handoff-terminal'
+    recordInitialInputEvent(caseId, { content: 'Where do I find the deposit receipt page?' })
+    const started = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'guide_or_handoff',
+            title: 'Guide or hand off',
+            guidance: 'Search docs first, then hand off when needed.',
+            actions: [],
+            branches: [
+              {
+                id: 'handoff_after_failed_docs_or_explicit_request',
+                kind: 'if',
+                condition: {
+                  id: 'handoff_eval',
+                  kind: 'llm_eval',
+                  prompt: 'Should the case now be handed to a human because the customer explicitly asks for one or the documentation lookup failed?',
+                },
+                actions: [
+                  {
+                    id: 'search_docs',
+                    kind: 'search_knowledge',
+                    label: 'Search the FAQ',
+                    suggestedSources: ['deposit_faq'],
+                    required: false,
+                  },
+                  {
+                    id: 'request_handoff',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+              {
+                id: 'finish_without_handoff',
+                kind: 'else',
+                actions: [
+                  {
+                    id: 'end_step',
+                    kind: 'end',
+                    label: 'End the procedure',
+                    status: 'completed',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    recordProcedureConditionEvaluation(caseId, {
+      runId: started.run.runId,
+      branchId: 'handoff_after_failed_docs_or_explicit_request',
+      conditionId: 'handoff_eval',
+      label: 'handoff after failed docs',
+      decision: 'matched',
+      reason: 'The customer still needs a person after the documentation lookup did not help.',
+      basedOnInputEpoch: 1,
+      model: 'test-evaluator',
+      metadata: { mode: 'test' },
+    })
+    recordProcedureToolResult(caseId, {
+      toolName: 'kb_search_deposit_faq',
+      toolUseId: 'kb-empty',
+      basedOnInputEpoch: 1,
+      toolOutput: { hits: [] },
+    })
+
+    const pendingHandoff = recordProcedureToolResult(caseId, {
+      toolName: 'create_human_task',
+      toolUseId: 'handoff-pending',
+      basedOnInputEpoch: 1,
+      toolOutput: { taskId: 'task-1', queue: 'general', status: 'pending' },
+    })
+    expect(getActiveProcedureRun(caseId)?.status).toBe('active')
+    expect(pendingHandoff.run?.blockers).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('has not produced persisted handoff evidence yet'),
+      ]),
+    )
+
+    const persistedHandoff = recordProcedureToolResult(caseId, {
+      toolName: 'create_human_task',
+      toolUseId: 'handoff-1',
+      basedOnInputEpoch: 1,
+      toolOutput: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
+    })
+
+    expect(getActiveProcedureRun(caseId)).toBeUndefined()
+    const paused = getProcedureRuntime(caseId).pausedProcedureRuns[0]
+    expect(paused).toMatchObject({
+      runId: started.run.runId,
+      status: 'paused',
+      currentStepId: null,
+      reason: 'Waiting for human handoff task task-1.',
+      blockers: [],
+    })
+    const step = paused.steps.find((entry) => entry.id === 'guide_or_handoff')
+    expect(step).toMatchObject({
+      status: 'completed',
+      completionReason: 'Persisted human handoff task task-1 created.',
+    })
+    expect(step?.actions?.find((action) => action.id === 'search_docs')?.status).toBe('skipped')
+    expect(step?.actions?.find((action) => action.id === 'request_handoff')?.status).toBe('completed')
+    expect(step?.branches?.find((branch) => branch.id === 'handoff_after_failed_docs_or_explicit_request')).toMatchObject({
+      status: 'matched',
+    })
+    expect(step?.branches?.find((branch) => branch.id === 'finish_without_handoff')).toMatchObject({
+      status: 'skipped',
+      reason: 'Another branch already matched.',
+    })
+    expect(paused.evidence.find((entry) => entry.id === 'handoff-1')?.metadata).toMatchObject({
+      outcome: 'succeeded',
+      output: expect.objectContaining({ persisted: true }),
+    })
+    expect(persistedHandoff.run?.status).toBe('paused')
+    expect(persistedHandoff.run?.blockers).toEqual([])
     closeSession(caseId)
   })
 

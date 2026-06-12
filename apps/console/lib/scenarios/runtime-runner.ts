@@ -3,6 +3,7 @@ import { runPlaygroundTurn, type PlaygroundResult } from '@/lib/agent/playground
 import type { SavedScenario, ScenarioObservedEvidenceInput, ScenarioReceipt, ScenarioReceiptFailureReason, ScenarioReceiptStatus, ScenarioToolExecutionMode } from '@intera/shared/contracts/scenarios'
 import type { ContentBlock, SSEEvent } from '@intera/shared/types'
 import { buildScenarioReceipt } from './runner'
+import { getProcedureRuntime } from '@/lib/agent/session-store'
 
 interface RuntimeExecutorInput {
   scenario: SavedScenario
@@ -117,6 +118,7 @@ export async function executeScenarioThroughPlayground(input: RuntimeExecutorInp
     caseId,
     caseType: latestTrace?.caseType,
     traceId: latestTrace?.turnId,
+    procedureRuns: snapshotProcedureRuns(caseId),
   })
   const errors = events.filter((event) => event.type === 'error')
   const failureReasons = errors.map((event) => ({
@@ -141,6 +143,7 @@ export function buildRuntimeEvidence(input: {
   caseId?: string
   caseType?: string
   traceId?: string
+  procedureRuns?: NonNullable<NonNullable<ScenarioObservedEvidenceInput['runtime']>['procedureRuns']>
 }): ScenarioObservedEvidenceInput {
   const rawTrace = input.rawTrace ?? []
   const toolCalls = collectToolCalls(input.events)
@@ -153,13 +156,14 @@ export function buildRuntimeEvidence(input: {
   const humanEvidence = collectHumanTransfer(input.events, toolCalls, toolResults, hookDecisions)
   const runtimeEvidence = collectRuntimeEvidence(rawTrace)
   const blockedEvent = input.events.find((event) => event.type === 'error')
+  const transition = latestMessageStopReason(input.events) ?? 'next_turn'
   const finalStatus = blockedEvent
     ? 'blocked'
     : humanEvidence.humanTransfer
       ? 'waiting_human'
       : input.finalResponse?.trim()
         ? 'completed'
-        : latestMessageStopReason(input.events) ?? 'next_turn'
+        : transition
 
   return {
     caseType: input.caseType || undefined,
@@ -177,12 +181,82 @@ export function buildRuntimeEvidence(input: {
       sessionId: input.traceId,
       chatId: input.chatId,
       caseId: input.caseId,
+      transition,
       blockedReason: blockedEvent ? eventMessage(blockedEvent) : undefined,
       staleEvidence: runtimeEvidence.staleEvidence,
       reconcileEvidence: runtimeEvidence.reconcileEvidence,
+      procedureRuns: input.procedureRuns ?? [],
       eventsObserved: input.events.length,
     },
   }
+}
+
+function snapshotProcedureRuns(
+  caseId: string | undefined,
+): NonNullable<NonNullable<ScenarioObservedEvidenceInput['runtime']>['procedureRuns']> {
+  if (!caseId) return []
+  const runtime = getProcedureRuntime(caseId)
+  const runs = [
+    ...(runtime.activeProcedureRun ? [runtime.activeProcedureRun] : []),
+    ...runtime.pausedProcedureRuns,
+    ...runtime.completedProcedureRuns,
+  ]
+  return runs.map((run) => ({
+    runId: run.runId,
+    procedureId: run.procedureId,
+    displayName: run.displayName,
+    status: run.status,
+    reason: run.reason,
+    version: run.procedureVersion,
+    currentStepId: run.currentStepId,
+    blockers: [...run.blockers],
+    inputs: run.inputs.map((entry) => ({
+      eventId: entry.eventId,
+      inputEpoch: entry.inputEpoch,
+      source: entry.source,
+      origin: entry.origin,
+      createdAt: entry.createdAt,
+      content: entry.content,
+      formAnswers: entry.formAnswers,
+      summary: entry.summary,
+    })),
+    branches: run.steps.flatMap((step) =>
+      (step.branches ?? []).map((branch) => ({
+        stepId: step.id,
+        branchId: branch.id,
+        kind: branch.kind,
+        label: branch.label,
+        conditionLabel: branch.conditionLabel,
+        status: branch.status,
+        reason: branch.reason,
+      })),
+    ),
+    evaluations: run.evaluations.map((entry) => ({
+      id: entry.id,
+      branchId: entry.branchId,
+      conditionId: entry.conditionId,
+      label: entry.label,
+      decision: entry.decision,
+      reason: entry.reason,
+      basedOnInputEpoch: entry.basedOnInputEpoch,
+      model: entry.model,
+      createdAt: entry.createdAt,
+      metadata: entry.metadata,
+    })),
+    evidence: run.evidence.slice(-12).map((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      stepId: entry.stepId,
+      actionId: entry.actionId,
+      branchId: entry.branchId,
+      label: entry.label,
+      toolName: entry.toolName,
+      basedOnInputEpoch: entry.basedOnInputEpoch,
+      state: entry.state,
+      createdAt: entry.createdAt,
+      metadata: entry.metadata,
+    })),
+  }))
 }
 
 function collectToolCalls(events: SSEEvent[]): NonNullable<ScenarioObservedEvidenceInput['toolCalls']> {
@@ -238,7 +312,9 @@ function collectToolResults(
       at: asIso(record.createdAt),
     })
   }
-  return dedupeBy(results, (result) => `${result.name}:${result.toolUseId ?? ''}:${result.at ?? ''}:${JSON.stringify(result.output ?? null)}`)
+  return dropProvisionalSystemManagedResults(
+    dedupeBy(results, (result) => `${result.name}:${result.toolUseId ?? ''}:${result.at ?? ''}:${JSON.stringify(result.output ?? null)}`),
+  )
 }
 
 function collectKnowledgeHits(
@@ -277,7 +353,7 @@ function collectKnowledgeHits(
 
 function extractKnowledgeDocuments(output: unknown): Array<Record<string, unknown>> {
   if (!isRecord(output)) return []
-  for (const field of ['results', 'list', 'matches', 'items']) {
+  for (const field of ['results', 'list', 'matches', 'items', 'hits']) {
     const value = output[field]
     if (Array.isArray(value)) return value.filter(isRecord)
   }
@@ -496,6 +572,26 @@ function dedupeBy<T>(items: T[], keyFor: (item: T) => string): T[] {
     result.push(item)
   }
   return result
+}
+
+function dropProvisionalSystemManagedResults(
+  results: NonNullable<ScenarioObservedEvidenceInput['toolResults']>,
+): NonNullable<ScenarioObservedEvidenceInput['toolResults']> {
+  const hasResolvedHandoff = results.some((result) =>
+    result.name === 'create_human_task' &&
+    (
+      result.error ||
+      (isRecord(result.output) && result.output.persisted === true)
+    ),
+  )
+  if (!hasResolvedHandoff) return results
+  return results.filter((result) =>
+    !(
+      result.name === 'create_human_task' &&
+      isRecord(result.output) &&
+      result.output.handled === 'system_managed'
+    ),
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

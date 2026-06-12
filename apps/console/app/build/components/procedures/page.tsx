@@ -21,6 +21,34 @@ function procedureStepCount(item: CaseTypeItem) {
   return parseProcedure(item.procedure ?? null)?.steps.length ?? 0
 }
 
+function buildNewProcedureDefinition(t: ReturnType<typeof useConsoleLocale>['t']) {
+  return {
+    version: 'v2' as const,
+    whenToUse: t('caseTypes.defaults.whenToUse'),
+    overview: '',
+    knowledgeGuidance: '',
+    handoffGuidance: '',
+    steps: [
+      {
+        id: 'step_1',
+        title: t('caseTypes.defaults.stepTitle'),
+        guidance: t('caseTypes.defaults.stepGuidance'),
+        actions: [
+          {
+            id: 'step_1_ask',
+            kind: 'ask' as const,
+            label: t('caseTypes.defaults.actionLabel'),
+            guidance: '',
+            required: true,
+            fields: [],
+          },
+        ],
+        branches: [],
+      },
+    ],
+  }
+}
+
 export default function BuildProceduresPage() {
   const { t } = useConsoleLocale()
   const agentConfigId = useSelectedAgentId()
@@ -37,7 +65,7 @@ export default function BuildProceduresPage() {
   const load = useCallback(async () => {
     if (!agentConfigId) {
       setItems([])
-      setError('Select an agent version first')
+      setError(t('caseTypes.error.selectAgent'))
       setLoading(false)
       return
     }
@@ -49,11 +77,11 @@ export default function BuildProceduresPage() {
       setItems(result.data.types || [])
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load Procedure types')
+      setError(err instanceof Error ? err.message : t('caseTypes.error.load'))
     } finally {
       setLoading(false)
     }
-  }, [agentConfigId])
+  }, [agentConfigId, t])
 
   useEffect(() => {
     setLoading(true)
@@ -84,7 +112,7 @@ export default function BuildProceduresPage() {
         body: {
           agentConfigId,
           type,
-          displayName: 'New Procedure Type',
+          displayName: t('caseTypes.defaults.displayName'),
           description: '',
           icon: '\u{1F4CB}',
           requiredFacts: [],
@@ -92,18 +120,18 @@ export default function BuildProceduresPage() {
           escalateOn: [],
           autoCloseConditions: [],
           enabled: true,
-          procedure: { steps: [] },
+          procedure: buildNewProcedureDefinition(t),
           maxAutoTurns: 10,
         },
       })
       await bustConfigCache(orgId).catch(() => {})
       router.push(`/build/components/procedures/${encodeURIComponent(result.data.caseType.type)}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create Procedure type')
+      setError(err instanceof Error ? err.message : t('caseTypes.error.create'))
     } finally {
       setSavingName(null)
     }
-  }, [agentConfigId, orgId, router])
+  }, [agentConfigId, orgId, router, t])
 
   const handleToggle = useCallback(async (item: CaseTypeItem) => {
     if (!agentConfigId) return
@@ -119,11 +147,11 @@ export default function BuildProceduresPage() {
       await bustConfigCache(orgId).catch(() => {})
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update Procedure type')
+      setError(err instanceof Error ? err.message : t('caseTypes.error.update'))
     } finally {
       setSavingName(null)
     }
-  }, [agentConfigId, load, orgId])
+  }, [agentConfigId, load, orgId, t])
 
   const handleDelete = useCallback(async () => {
     if (!agentConfigId || !confirmDeleteName) return
@@ -137,11 +165,11 @@ export default function BuildProceduresPage() {
       await bustConfigCache(orgId).catch(() => {})
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete Procedure type')
+      setError(err instanceof Error ? err.message : t('caseTypes.error.delete'))
     } finally {
       setSavingName(null)
     }
-  }, [agentConfigId, confirmDeleteName, load, orgId])
+  }, [agentConfigId, confirmDeleteName, load, orgId, t])
 
   return (
     <BuildComponentsRouteShell

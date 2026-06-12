@@ -16,7 +16,7 @@ import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
 import type { CaseAgentLoop } from './case-agent-loop'
-import { parseProcedure } from '@intera/shared/contracts/case-types'
+import { isProcedureV2Definition, parseProcedure, parseProcedureDefinition } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import { startProcedureRun } from './session-store'
@@ -131,7 +131,9 @@ async function handleStartProcedure(
     if (!ctRow) return { kind: 'pass' }
 
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
-    const procedure = parseProcedure((ctRow as { procedure?: string | null }).procedure)
+    const procedureJson = (ctRow as { procedure?: string | null }).procedure
+    const procedureDefinition = parseProcedureDefinition(procedureJson)
+    const procedure = parseProcedure(procedureJson)
 
     const schema: CaseSchemaConfig = {
       type: ctRow.type,
@@ -143,19 +145,25 @@ async function handleStartProcedure(
       escalateOn: safeJson<string[]>(ctRow.escalateOn, []),
       autoCloseConditions: safeJson<Record<string, unknown> | undefined>(ctRow.autoCloseConditions, undefined),
       procedure: procedure ?? undefined,
+      procedureDefinition: procedureDefinition ?? undefined,
       maxAutoTurns: ctRow.maxAutoTurns ?? undefined,
     }
 
-    if (collectedFacts) {
+    const isProcedureV2 = !!(
+      schema.procedureDefinition &&
+      isProcedureV2Definition(schema.procedureDefinition)
+    )
+
+    if (collectedFacts && !isProcedureV2) {
       ctx.chatMemory.setConfirmedFactsBulk(collectedFacts)
     }
     const start = startProcedureRun(ctx.caseId, {
       procedureId: ctRow.type,
       displayName: ctRow.displayName,
-      procedure: schema.procedure,
+      procedure: schema.procedureDefinition ?? schema.procedure,
       reason,
       confidence,
-      collectedFacts,
+      collectedFacts: isProcedureV2 ? undefined : collectedFacts,
       requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
       currentProcedureAction: requestedCurrentAction,
     })

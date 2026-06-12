@@ -201,6 +201,42 @@ describe('R3 HookContext and memory boundaries', () => {
     closeSession(caseId)
   })
 
+  it('hides confirmedFacts and rejects chat fact writes on Procedure v2 runs', async () => {
+    const caseId = 'r3-v2-memory-boundary'
+    recordInitialInputEvent(caseId, { content: 'I need help with a deposit page' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'triage',
+            title: 'Triage',
+            guidance: 'Use runtime evidence only.',
+            actions: [],
+            branches: [],
+          },
+        ],
+      },
+    })
+    const loop = makeLoop(caseId)
+
+    const remember = await (loop as unknown as { rememberToolOutput: Function }).rememberToolOutput({
+      scope: 'chat',
+      facts: { memberId: 'M123' },
+      reason: 'customer typed a member id in free text',
+    })
+    const read = (loop as unknown as { readChatMemoryToolOutput: Function }).readChatMemoryToolOutput()
+
+    expect(remember.ok).toBe(false)
+    expect(String(remember.error)).toContain('Procedure v2')
+    expect(read.confirmedFactsAvailable).toBe(false)
+    expect(read.confirmedFacts).toEqual({})
+    closeSession(caseId)
+  })
+
   it('remember(scope="user") writes what read_user_profile reads', async () => {
     const loop = makeLoop('r3-user-memory')
     await (loop as unknown as { rememberToolOutput: Function }).rememberToolOutput({

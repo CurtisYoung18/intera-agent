@@ -360,6 +360,8 @@ export interface CaseSchemaConfig {
   autoCloseConditions?: Record<string, unknown>
   /** Ordered Procedure executed by the single main agent. When present, the case runs the Procedure path. */
   procedure?: Procedure
+  /** Backward-compatible richer Procedure definition for Procedure v2 authoring/runtime. */
+  procedureDefinition?: ProcedureDefinition
   /** Safety bound on auto-continuation turns. */
   maxAutoTurns?: number
 }
@@ -404,6 +406,138 @@ export interface ProcedureStep {
 export interface Procedure {
   /** Ordered; the agent follows but may adapt (skip when false, reorder if evidence present, loop back). */
   steps: ProcedureStep[]
+}
+
+export type ProcedureV2ActionKind =
+  | 'ask'
+  | 'search_knowledge'
+  | 'call_tool'
+  | 'request_human_handoff'
+  | 'end'
+
+export type ProcedureConditionKind =
+  | 'llm_eval'
+  | 'tool_event'
+  | 'form_field'
+  | 'runtime_signal'
+
+export type ProcedureRuntimeSignal =
+  | 'explicit_human_request'
+  | 'no_progress_loop'
+  | 'knowledge_gap'
+
+export type ProcedureCondition =
+  | {
+      id?: string
+      kind: 'llm_eval'
+      label?: string
+      prompt: string
+    }
+  | {
+      id?: string
+      kind: 'tool_event'
+      label?: string
+      toolName: string
+      event: 'called' | 'succeeded' | 'failed' | 'stale' | 'empty_result'
+    }
+  | {
+      id?: string
+      kind: 'form_field'
+      label?: string
+      field: string
+      operator: 'present' | 'equals'
+      value?: string
+    }
+  | {
+      id?: string
+      kind: 'runtime_signal'
+      label?: string
+      signal: ProcedureRuntimeSignal
+    }
+
+interface ProcedureV2ActionBase {
+  id: string
+  label: string
+  guidance?: string
+  required?: boolean
+}
+
+export type ProcedureV2Action =
+  | (ProcedureV2ActionBase & {
+      kind: 'ask'
+      fields?: string[]
+    })
+  | (ProcedureV2ActionBase & {
+      kind: 'search_knowledge'
+      suggestedSources?: string[]
+    })
+  | (ProcedureV2ActionBase & {
+      kind: 'call_tool'
+      toolName: string
+    })
+  | (ProcedureV2ActionBase & {
+      kind: 'request_human_handoff'
+      queue?: string
+    })
+  | (ProcedureV2ActionBase & {
+      kind: 'end'
+      status?: 'completed' | 'cancelled'
+    })
+
+export interface ProcedureV2Branch {
+  id: string
+  kind: 'if' | 'else_if' | 'else'
+  label?: string
+  condition?: ProcedureCondition
+  guidance?: string
+  actions: ProcedureV2Action[]
+}
+
+export interface ProcedureV2Step {
+  id: string
+  title: string
+  guidance: string
+  actions: ProcedureV2Action[]
+  branches?: ProcedureV2Branch[]
+  skipGuidance?: string
+  completionGuidance?: string
+}
+
+export interface ProcedureV2 {
+  version: 'v2'
+  whenToUse: string
+  overview?: string
+  knowledgeGuidance?: string
+  handoffGuidance?: string
+  steps: ProcedureV2Step[]
+}
+
+export type ProcedureDefinition = Procedure | ProcedureV2
+
+export interface ProcedureSimulationInput {
+  signals: ProcedureRuntimeSignal[]
+  toolNames: string[]
+  formFields: string[]
+  knowledgeSearches: number
+  handoffRequested: boolean
+  ended: boolean
+  matchedLlmConditionIds?: string[]
+}
+
+export interface ProcedureSimulationStep {
+  stepId: string
+  title: string
+  status: 'pending' | 'active' | 'completed' | 'skipped'
+  matchedBranchId?: string
+  reason?: string
+}
+
+export interface ProcedureSimulationReceipt {
+  status: 'ready' | 'completed' | 'handoff'
+  activeStepId?: string
+  steps: ProcedureSimulationStep[]
+  notes: string[]
+  matchedSignals: ProcedureRuntimeSignal[]
 }
 
 // ============================================

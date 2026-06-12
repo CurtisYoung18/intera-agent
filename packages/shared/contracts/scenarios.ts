@@ -135,6 +135,59 @@ export const scenarioHandoffEvidenceSchema = z.object({
 }).passthrough()
 export type ScenarioHandoffEvidence = z.infer<typeof scenarioHandoffEvidenceSchema>
 
+export const scenarioProcedureInputEvidenceSchema = z.object({
+  eventId: z.string(),
+  inputEpoch: z.number().int().nonnegative(),
+  source: z.string(),
+  origin: z.string(),
+  createdAt: z.string(),
+  content: z.string().optional(),
+  formAnswers: z.record(z.string()).optional(),
+  summary: z.string().optional(),
+}).passthrough()
+export type ScenarioProcedureInputEvidence = z.infer<typeof scenarioProcedureInputEvidenceSchema>
+
+export const scenarioProcedureBranchEvidenceSchema = z.object({
+  stepId: z.string(),
+  branchId: z.string(),
+  kind: z.string(),
+  label: z.string().optional(),
+  conditionLabel: z.string().optional(),
+  status: z.string(),
+  reason: z.string().optional(),
+}).passthrough()
+export type ScenarioProcedureBranchEvidence = z.infer<typeof scenarioProcedureBranchEvidenceSchema>
+
+export const scenarioProcedureEvaluationEvidenceSchema = z.object({
+  id: z.string(),
+  branchId: z.string(),
+  conditionId: z.string(),
+  label: z.string(),
+  decision: z.string(),
+  reason: z.string(),
+  basedOnInputEpoch: z.number().int().nonnegative(),
+  model: z.string().optional(),
+  createdAt: z.string(),
+  metadata: z.record(z.unknown()).optional(),
+}).passthrough()
+export type ScenarioProcedureEvaluationEvidence = z.infer<typeof scenarioProcedureEvaluationEvidenceSchema>
+
+export const scenarioProcedureRuntimeSnapshotSchema = z.object({
+  runId: z.string(),
+  procedureId: stableNameSchema,
+  displayName: z.string(),
+  status: z.string(),
+  reason: z.string().optional(),
+  version: z.string().optional(),
+  currentStepId: z.string().nullable().optional(),
+  blockers: z.array(z.string()).default([]),
+  inputs: z.array(scenarioProcedureInputEvidenceSchema).default([]),
+  branches: z.array(scenarioProcedureBranchEvidenceSchema).default([]),
+  evaluations: z.array(scenarioProcedureEvaluationEvidenceSchema).default([]),
+  evidence: z.array(z.record(z.unknown())).default([]),
+}).passthrough()
+export type ScenarioProcedureRuntimeSnapshot = z.infer<typeof scenarioProcedureRuntimeSnapshotSchema>
+
 export const scenarioObservedEvidenceInputSchema = z.object({
   caseType: stableNameSchema.optional(),
   toolsCalled: z.array(stableNameSchema).optional(),
@@ -155,6 +208,7 @@ export const scenarioObservedEvidenceInputSchema = z.object({
     blockedReason: z.string().optional(),
     staleEvidence: z.array(z.record(z.unknown())).default([]),
     reconcileEvidence: z.array(z.record(z.unknown())).default([]),
+    procedureRuns: z.array(scenarioProcedureRuntimeSnapshotSchema).default([]),
     eventsObserved: z.number().int().nonnegative().optional(),
   }).partial().optional(),
 })

@@ -51,13 +51,16 @@ import {
   filterRuntimeAuthorityKeys,
   finalizeProcedureRun,
   getActiveProcedureRun,
+  getPendingProcedureLlmEvaluations,
   latestInputEpoch,
   procedureRunPromptTail,
   reconcileProcedureInput,
+  recordProcedureConditionEvaluation,
   recordProcedureTextReply,
   recordProcedureToolCall,
   recordProcedureToolResult,
 } from './session-store'
+import { evaluateProcedureLlmCondition } from './procedure-llm-evaluator'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -310,6 +313,8 @@ export class AgentLoop {
       // Consultation mode: human operator is reviewing the case via the same chat UI.
       // Restrict the agent to pure conversation + finalize_consultation only.
       const isConsultation = this.chatMemory.getSummary().caseStatus === 'waiting_human'
+
+      await this.evaluatePendingProcedureConditions()
 
       // Emit case progress for active Procedure cases.
       if (isCaseActive) {
@@ -1192,6 +1197,37 @@ export class AgentLoop {
   // Helpers
   // -----------------------------------------------------------------------
 
+  private async evaluatePendingProcedureConditions(): Promise<void> {
+    const pending = getPendingProcedureLlmEvaluations(this.deps.caseId)
+    for (const evaluation of pending) {
+      const result = await evaluateProcedureLlmCondition(evaluation, this.deps.config)
+      recordProcedureConditionEvaluation(this.deps.caseId, {
+        runId: evaluation.runId,
+        branchId: evaluation.branchId,
+        conditionId: evaluation.conditionId,
+        label: evaluation.branchLabel || evaluation.branchId,
+        decision: result.decision,
+        reason: result.reason,
+        basedOnInputEpoch: evaluation.basedOnInputEpoch,
+        model: result.model,
+        metadata: result.metadata,
+      })
+      await this.traceWriter.write(
+        'loop_decision',
+        `Procedure llm_eval receipt: ${evaluation.branchId}`,
+        {
+          runId: evaluation.runId,
+          branchId: evaluation.branchId,
+          conditionId: evaluation.conditionId,
+          basedOnInputEpoch: evaluation.basedOnInputEpoch,
+          decision: result.decision,
+          reason: result.reason,
+          model: result.model,
+        },
+      )
+    }
+  }
+
   private async resolveRuntimeToolResults(
     toolResults: ToolExecutionResult[],
     toolBasedOnEpoch: Map<string, number>,
@@ -1300,7 +1336,7 @@ export class AgentLoop {
           })
           await this.traceWriter.writeHumanTaskCreated(task.id, queue)
           this.pendingHumanTaskEscalation = { taskId: task.id, queue }
-          this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending' })
+          this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending', persisted: true })
         } catch (error) {
           console.error('[AgentLoop] Failed to persist create_human_task in general mode:', error)
           this.replaceToolOutput(result, {
@@ -1327,10 +1363,13 @@ export class AgentLoop {
 
   private readChatMemoryToolOutput(): Record<string, unknown> {
     const summary = this.chatMemory.getSummary()
+    const activeRun = getActiveProcedureRun(this.deps.caseId)
+    const exposeConfirmedFacts = activeRun?.procedureVersion !== 'v2'
     return {
       scope: 'chat',
       authority: 'context_only_not_procedure_run_state',
-      confirmedFacts: summary.confirmedFacts,
+      confirmedFacts: exposeConfirmedFacts ? summary.confirmedFacts : {},
+      confirmedFactsAvailable: exposeConfirmedFacts,
       toolsCalled: summary.toolsCalled,
       keyEvents: summary.keyEvents.slice(-20),
       compactSummary: summary.summary || '',
@@ -1396,8 +1435,30 @@ export class AgentLoop {
     const filteredFacts = filterRuntimeAuthorityKeys(candidateFacts)
     const rejectedKeys = Object.keys(candidateFacts).filter((candidateKey) => !(candidateKey in filteredFacts))
     const reason = String(input.reason || 'No reason supplied.')
+    const activeRun = getActiveProcedureRun(this.deps.caseId)
 
     if (scope === 'chat') {
+      if (activeRun?.procedureVersion === 'v2' && Object.keys(filteredFacts).length > 0) {
+        appendRuntimeEvent(this.deps.caseId, {
+          origin: 'system',
+          source: 'remember',
+          summary: `remember(scope="chat") rejected during Procedure v2: ${reason}`,
+          metadata: {
+            attemptedKeys: Object.keys(filteredFacts),
+            rejectedKeys,
+            memoryScope: 'chat',
+            procedureVersion: 'v2',
+          },
+        })
+        return {
+          ok: false,
+          scope: 'chat',
+          writtenKeys: [],
+          rejectedKeys: [...rejectedKeys, ...Object.keys(filteredFacts)],
+          error: 'Procedure v2 does not accept chat confirmed-fact writes. Use runtime evidence, form results, tool results, or UserProfile instead.',
+          authority: 'runtime_truth_only',
+        }
+      }
       if (Object.keys(filteredFacts).length > 0) {
         this.chatMemory.setConfirmedFactsBulk(filteredFacts)
       }

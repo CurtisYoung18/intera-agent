@@ -104,7 +104,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
         procedureId: { type: 'string', description: 'Procedure id / Procedure type slug, e.g. deposit_issue, account_access.' },
         reason: { type: 'string', description: 'Why this Procedure matches the customer message.' },
         confidence: { type: 'number', description: 'Optional confidence from 0 to 1.' },
-        collectedFacts: { type: 'object', description: 'Business facts already collected from the customer message.' },
+        collectedFacts: { type: 'object', description: 'Optional structured details already observed from the customer message. Procedure v2 treats these as unverified context, not runtime truth.' },
         currentProcedureAction: {
           type: 'string',
           enum: ['pause', 'complete', 'abandon'],
@@ -227,7 +227,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'This will pause the agent loop until a human responds. ' +
       'It creates the durable handoff record and triggers channel-specific handoff UI/transfer behavior. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
-      'their answers will be automatically ingested as confirmedFacts when they resolve the task.',
+      'their answers come back as structured runtime input for the next Procedure step.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -235,7 +235,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
         question: { type: 'string', description: 'Structured question for human' },
         fields: {
           type: 'array',
-          description: 'Optional structured form fields for the operator to fill. Their answers flow back as confirmedFacts.',
+          description: 'Optional structured form fields for the operator to fill. Their answers flow back as structured runtime input.',
           items: {
             type: 'object',
             properties: {
