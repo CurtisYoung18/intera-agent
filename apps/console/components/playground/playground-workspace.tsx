@@ -467,7 +467,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const prevOrgIdRef = useRef<string | null>(null)
   const prevUserIdRef = useRef<string | null>(null)
   const hasRestoredRef = useRef(false)
-  const isRestoringRef = useRef(false)
   const prevAgentConfigIdRef = useRef<string | null>(null)
 
   // ── Message queue (allow typing while responding) ──
@@ -512,10 +511,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     prevOrgIdRef.current = orgId
     prevUserIdRef.current = userBoundaryId
 
-    // Skip if restore is already in-flight (context loaded while fetch is running)
-    if (!isSwitch && isRestoringRef.current) return
-
-    isRestoringRef.current = true
     setIsRestoringSession(true)
 
     if (isSwitch) {
@@ -651,7 +646,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       if (!cancelled) {
         setIsRestoringSession(false)
       }
-      isRestoringRef.current = false
     })
     // Cancel in-flight fetch when switching agent/org/user or scoped storage keys.
     return () => { cancelled = true }
