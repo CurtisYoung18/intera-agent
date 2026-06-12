@@ -96,7 +96,11 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
 function deriveCaseStatusFromRuntimeProcedure(
   runtimeProcedure: { status?: string } | null | undefined,
   currentCaseStatus: string | null | undefined,
+  options?: { resumeFromHumanTaskResult?: boolean },
 ): string | undefined {
+  if (options?.resumeFromHumanTaskResult && runtimeProcedure?.status === 'paused') {
+    return 'investigating'
+  }
   if (runtimeProcedure?.status === 'paused') return 'waiting_human'
   if (runtimeProcedure?.status === 'active') {
     return currentCaseStatus === 'resolved' || currentCaseStatus === 'escalated'
@@ -636,13 +640,16 @@ export async function POST(request: NextRequest) {
         }
 
         // FK: traces/messages reference Case.caseId — rows must exist before AgentLoop writes ActionTrace/Message.
+        const isHumanTaskResumeInput = runtimeInputSource === 'human_task_result'
         const inferredCaseTypeForRecord =
           caseSchema?.type ??
           runtimeProcedure?.procedureId ??
           bodyCaseType ??
           'general'
         const inferredCaseStatusForRecord =
-          deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus) ??
+          deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus, {
+            resumeFromHumanTaskResult: isHumanTaskResumeInput,
+          }) ??
           'created'
 
         try {
@@ -823,7 +830,9 @@ export async function POST(request: NextRequest) {
         if (existingMemory) {
           const memData = { ...(existingMemory as Record<string, unknown>) }
           const runtimeBackedCaseStatus =
-            deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus) ??
+            deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus, {
+              resumeFromHumanTaskResult: isHumanTaskResumeInput,
+            }) ??
             inferredCaseStatusForRecord
           if (runtimeBackedCaseStatus) {
             memData.caseStatus = runtimeBackedCaseStatus
