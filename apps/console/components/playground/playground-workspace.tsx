@@ -421,7 +421,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     try { return localStorage.getItem('pg_chatId') } catch { return null }
   })
 
-  const composerRef = useRef<HTMLInputElement>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const emptyTraceAutocollapseRef = useRef(false)
@@ -450,6 +450,20 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
   const queuedMessagesRef = useRef<Array<{ text: string; images: AttachedImage[] }>>([])
   useEffect(() => { queuedMessagesRef.current = queuedMessages }, [queuedMessages])
+
+  const syncComposerHeight = useCallback(() => {
+    const composer = composerRef.current
+    if (!composer) return
+
+    composer.style.height = '0px'
+    const nextHeight = Math.min(Math.max(composer.scrollHeight, 42), 132)
+    composer.style.height = `${nextHeight}px`
+    composer.style.overflowY = composer.scrollHeight > 132 ? 'auto' : 'hidden'
+  }, [])
+
+  useEffect(() => {
+    syncComposerHeight()
+  }, [message, syncComposerHeight])
 
   // Auto-send next queued message when current turn finishes
   const respondingRef = useRef(false)
@@ -1105,10 +1119,10 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     runTurn(trimmed, queuedImages)
   }, [message, responding, runTurn])
 
-  const handleComposerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !composingRef.current && message.trim()) {
+  const handleComposerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey && !composingRef.current) {
       event.preventDefault()
-      submitManualTurn()
+      if (message.trim()) submitManualTurn()
     }
   }, [message, submitManualTurn])
 
@@ -1872,7 +1886,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             )}
 
             <div style={{
-              display: 'flex', gap: 8,
+              display: 'flex', alignItems: 'flex-end', gap: 8,
               background: 'rgba(255,255,255,0.55)',
               backdropFilter: 'blur(16px)',
               WebkitBackdropFilter: 'blur(16px)',
@@ -1918,11 +1932,14 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 />
               </label>
 
-              <input
+              <textarea
                 ref={composerRef}
-                type="text"
                 value={message}
-                onChange={e => setMessage(e.target.value)}
+                rows={1}
+                onChange={e => {
+                  setMessage(e.target.value)
+                  syncComposerHeight()
+                }}
                 onKeyDown={handleComposerKeyDown}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={() => { composingRef.current = false }}
@@ -1951,9 +1968,12 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 placeholder={responding ? (isZh ? '排队下一轮手动测试…' : 'Queue the next manual turn…') : (isZh ? '输入一轮手动运行时测试…' : 'Type a manual runtime test turn…')}
                 style={{
                   flex: 1, border: 'none', background: 'transparent',
-                  fontSize: 13, color: 'var(--mist)',
+                  fontSize: 13, lineHeight: 1.55, color: 'var(--mist)',
                   outline: 'none', fontFamily: 'inherit',
                   padding: '10px 8px 10px 14px',
+                  resize: 'none',
+                  minHeight: 42,
+                  maxHeight: 132,
                 }}
               />
               <button
@@ -1961,19 +1981,44 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 disabled={!message.trim()}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 36, height: 36, borderRadius: 12,
+                  width: 40, height: 40, borderRadius: 14,
                   background: message.trim()
                     ? responding
-                      ? 'linear-gradient(135deg, #8b6ff5, #d491e6)'
-                      : 'linear-gradient(135deg, #5b8af7, #8b6ff5)'
+                      ? 'linear-gradient(145deg, #88a8ff, #6d86f2 52%, #5f6fe0)'
+                      : 'linear-gradient(145deg, #82b0ff, #5b8af7 52%, #4d69dc)'
                     : 'rgba(0,0,0,0.06)',
-                  border: 'none', cursor: message.trim() ? 'pointer' : 'default',
+                  border: message.trim() ? '1px solid rgba(255,255,255,0.55)' : '1px solid rgba(0,0,0,0.04)',
+                  boxShadow: message.trim()
+                    ? '0 10px 24px rgba(91,138,247,0.24), inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -8px 16px rgba(55,84,176,0.2)'
+                    : 'inset 0 1px 0 rgba(255,255,255,0.28)',
+                  cursor: message.trim() ? 'pointer' : 'default',
                   opacity: message.trim() ? 1 : 0.4,
-                  transition: 'all 0.15s',
+                  transform: message.trim() ? 'translateY(-0.5px)' : 'none',
+                  transition: 'all 0.18s ease',
                   flexShrink: 0,
                 }}
+                onMouseEnter={e => {
+                  if (!message.trim()) return
+                  e.currentTarget.style.transform = 'translateY(-1.5px) scale(1.01)'
+                  e.currentTarget.style.boxShadow = '0 14px 28px rgba(91,138,247,0.28), inset 0 1px 0 rgba(255,255,255,0.36), inset 0 -8px 16px rgba(55,84,176,0.22)'
+                }}
+                onMouseLeave={e => {
+                  if (!message.trim()) return
+                  e.currentTarget.style.transform = 'translateY(-0.5px)'
+                  e.currentTarget.style.boxShadow = '0 10px 24px rgba(91,138,247,0.24), inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -8px 16px rgba(55,84,176,0.2)'
+                }}
+                onMouseDown={e => {
+                  if (!message.trim()) return
+                  e.currentTarget.style.transform = 'translateY(0.5px) scale(0.985)'
+                  e.currentTarget.style.boxShadow = '0 6px 14px rgba(91,138,247,0.2), inset 0 2px 6px rgba(55,84,176,0.24)'
+                }}
+                onMouseUp={e => {
+                  if (!message.trim()) return
+                  e.currentTarget.style.transform = 'translateY(-1.5px) scale(1.01)'
+                  e.currentTarget.style.boxShadow = '0 14px 28px rgba(91,138,247,0.28), inset 0 1px 0 rgba(255,255,255,0.36), inset 0 -8px 16px rgba(55,84,176,0.22)'
+                }}
               >
-                <Send size={14} color="white" />
+                <Send size={14} color="white" style={{ transform: 'translateX(0.5px) rotate(-8deg)' }} />
               </button>
             </div>
 
