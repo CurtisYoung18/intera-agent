@@ -64,6 +64,7 @@ type OutcomeBucket = 'resolvedByAgent' | 'handedOff' | 'abandoned' | 'active' | 
 
 const ACTIVE_STATUSES = new Set(['active', 'paused', 'waiting_human'])
 const TERMINAL_STATUSES = new Set(['completed', 'cancelled'])
+const HANDOFF_OUTCOMES = new Set(['handed_off', 'human_handoff'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -95,7 +96,7 @@ function classifyRun(input: ProcedureMetricsRunInput): OutcomeBucket {
   const status = input.status.toLowerCase()
   const outcome = String(input.outcome ?? '').toLowerCase()
   if (outcome === 'resolved_by_agent') return 'resolvedByAgent'
-  if (outcome === 'handed_off') return 'handedOff'
+  if (HANDOFF_OUTCOMES.has(outcome)) return 'handedOff'
   if (outcome === 'abandoned' || outcome === 'expired') return 'abandoned'
   if (status === 'cancelled') return 'abandoned'
   if (ACTIVE_STATUSES.has(status)) return 'active'

@@ -161,4 +161,24 @@ describe('procedure metrics', () => {
     expect(row.handedOff).toBe(6)
     expect(row.recentRuns).toHaveLength(8)
   })
+
+  it('counts legacy human_handoff outcomes as real handoffs', () => {
+    const summary = summarizeProcedureMetrics([
+      run({
+        id: 'legacy-human-handoff',
+        status: 'completed',
+        outcome: 'human_handoff',
+        updatedAt: '2026-06-12T10:10:00.000Z',
+      }),
+    ], NOW)
+
+    expect(summary.handedOff).toBe(1)
+    expect(summary.unknownTerminal).toBe(0)
+    expect(summary.handoffRate).toBe(1)
+    expect(summary.rows[0]).toMatchObject({
+      handedOff: 1,
+      unknownTerminal: 0,
+      handoffRate: 1,
+    })
+  })
 })
