@@ -240,6 +240,119 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('withholds a human-handoff promise until create_human_task produces persisted evidence', () => {
+    const caseId = 'r3-human-promise-gate'
+    recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
+    startProcedureRun(caseId, {
+      procedureId: 'human_support_requested',
+      displayName: 'Human support requested',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use when the customer wants a human agent.',
+        steps: [
+          {
+            id: 'handoff',
+            title: 'Request human support',
+            guidance: 'Create a persisted human handoff before promising one to the customer.',
+            actions: [
+              {
+                id: 'handoff_now',
+                kind: 'request_human_handoff',
+                label: 'Request human help',
+                queue: 'general',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    const reply = recordProcedureTextReply(caseId, {
+      text: '已安排人工客服为您继续处理，请稍候。',
+      basedOnInputEpoch: 1,
+    })
+
+    expect(reply.stale).toBe(false)
+    expect(reply.blockedReason).toContain('human-handoff promise')
+    expect(reply.run?.blockers).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('human-handoff promise'),
+      ]),
+    )
+    expect(reply.run?.evidence.at(-1)).toMatchObject({
+      kind: 'text_reply',
+      label: 'Unsafe human-handoff promise withheld',
+      state: 'stale',
+      metadata: expect.objectContaining({
+        blockedReason: expect.stringContaining('human-handoff promise'),
+      }),
+    })
+    closeSession(caseId)
+  })
+
+  it('allows a human-handoff promise after persisted create_human_task evidence exists', () => {
+    const caseId = 'r3-human-promise-allowed'
+    recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
+    startProcedureRun(caseId, {
+      procedureId: 'human_support_requested',
+      displayName: 'Human support requested',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use when the customer wants a human agent.',
+        steps: [
+          {
+            id: 'handoff',
+            title: 'Request human support',
+            guidance: 'Create a persisted human handoff before promising one to the customer.',
+            actions: [
+              {
+                id: 'handoff_now',
+                kind: 'request_human_handoff',
+                label: 'Request human help',
+                queue: 'general',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    const session = getOrCreateSession(caseId)
+    session.procedureRuntime.activeProcedureRun?.evidence.push({
+      id: 'handoff-1',
+      kind: 'handoff',
+      label: 'Human handoff requested',
+      toolName: 'create_human_task',
+      basedOnInputEpoch: 1,
+      state: 'canonical',
+      createdAt: new Date().toISOString(),
+      metadata: {
+        outcome: 'succeeded',
+        output: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
+      },
+    })
+
+    const reply = recordProcedureTextReply(caseId, {
+      text: '已安排人工客服继续处理，专员将尽快与您联系。',
+      basedOnInputEpoch: 1,
+    })
+
+    expect(reply.stale).toBe(false)
+    expect(reply.blockedReason).toBeUndefined()
+    expect(reply.run?.blockers).toEqual([])
+    expect(reply.run?.evidence.at(-1)).toMatchObject({
+      kind: 'text_reply',
+      label: 'Customer-facing reply drafted',
+      state: 'canonical',
+      metadata: expect.objectContaining({
+        blockedReason: undefined,
+      }),
+    })
+    closeSession(caseId)
+  })
+
   it('raises and clears the explicit human request runtime signal on the v2 path', () => {
     const caseId = 'r3-human-request-signal'
     recordInitialInputEvent(caseId, { content: 'start' })

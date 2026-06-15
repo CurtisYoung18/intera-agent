@@ -929,42 +929,57 @@ export function recordProcedureTextReply(caseId: string, input: {
   text: string
   basedOnInputEpoch?: number
   alreadyStreamed?: boolean
-}): { stale: boolean; run?: ProcedureRunState } {
+}): { stale: boolean; blockedReason?: string; run?: ProcedureRunState } {
   const session = sessions.get(caseId)
   const run = session?.procedureRuntime.activeProcedureRun
   if (!session || !run) return { stale: false }
   const basedOn = input.basedOnInputEpoch ?? session.latestInputEpoch
   const stale = basedOn < session.latestInputEpoch
   const recordedAt = new Date().toISOString()
+  let blockedReason: string | undefined
   if (stale) {
     run.needsReconcile = true
     run.blockers = [...new Set([...run.blockers, 'A customer-visible reply was based on stale input.'])]
   }
+  if (!stale && promisesHumanHandoff(input.text) && !hasPersistedHandoffEvidence(run)) {
+    blockedReason = 'A customer-facing human-handoff promise was drafted before create_human_task produced persisted evidence.'
+    run.blockers = [...new Set([...run.blockers, blockedReason])]
+  }
   upsertEvidence(run, {
     id: `text:${recordedAt}:${basedOn}`,
     kind: 'text_reply',
-    label: stale ? 'Stale customer-facing reply withheld' : 'Customer-facing reply drafted',
-    state: stale ? 'stale' : 'canonical',
+    label: stale
+      ? 'Stale customer-facing reply withheld'
+      : blockedReason
+        ? 'Unsafe human-handoff promise withheld'
+        : 'Customer-facing reply drafted',
+    state: stale || blockedReason ? 'stale' : 'canonical',
     createdAt: recordedAt,
     basedOnInputEpoch: basedOn,
     metadata: {
       textPreview: input.text.slice(0, 240),
       alreadyStreamed: input.alreadyStreamed === true,
+      blockedReason,
     },
   })
   appendProcedureTimeline(session, run, {
     origin: 'system',
     source: 'text_reply',
     basedOnInputEpoch: basedOn,
-    summary: `${stale ? 'Stale' : 'Current'} text reply${input.alreadyStreamed ? ' already streamed' : ''}`,
+    summary: stale
+      ? `Stale text reply${input.alreadyStreamed ? ' already streamed' : ''}`
+      : blockedReason
+        ? 'Unsafe human-handoff promise withheld'
+        : `Current text reply${input.alreadyStreamed ? ' already streamed' : ''}`,
     metadata: {
       textPreview: input.text.slice(0, 240),
-      evidenceState: stale ? 'stale' : 'canonical',
+      evidenceState: stale || blockedReason ? 'stale' : 'canonical',
       alreadyStreamed: input.alreadyStreamed === true,
+      blockedReason,
     },
   })
   scheduleRunPersist(session, run)
-  return { stale, run: cloneRun(run) }
+  return { stale, blockedReason, run: cloneRun(run) }
 }
 
 export function reconcileProcedureInput(caseId: string, input: {
@@ -2755,6 +2770,33 @@ function finalizationBlockers(run: ProcedureRunState): string[] {
   }
 
   return [...new Set(blockers)]
+}
+
+function promisesHumanHandoff(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return [
+    /(?:i|we)\s+(?:have|\'ve)\s+(?:created|opened|submitted|arranged|escalated)\s+(?:a\s+)?(?:ticket|case|handoff|human support request)/i,
+    /(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)/i,
+    /已为您创建工单/,
+    /已经为您创建工单/,
+    /已安排人工/,
+    /将安排人工/,
+    /已转人工/,
+    /已经转人工/,
+    /已为您转接/,
+    /专员将尽快与您联系/,
+  ].some((pattern) => pattern.test(trimmed))
+}
+
+function hasPersistedHandoffEvidence(run: ProcedureRunState): boolean {
+  return run.evidence.some((entry) =>
+    entry.kind === 'handoff' &&
+    (
+      entry.metadata?.outcome === 'succeeded' ||
+      (isRecord(entry.metadata?.output) && entry.metadata.output.persisted === true)
+    ),
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
