@@ -287,8 +287,15 @@ export async function* runPlaygroundTurn(input: {
   contentBlocks?: ContentBlock[]
   chatId?: string
   userId?: string
+  formResult?: {
+    caseId?: string
+    answers: Record<string, string>
+  }
 }): AsyncGenerator<SSEEvent> {
-  const { orgId, message, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId } = input
+  const { orgId, playgroundConfig: pc, chatId: inputChatId, userId: inputUserId, formResult } = input
+  const message = formResult
+    ? `Tool ask_user_questions result: ${JSON.stringify(formResult.answers)}`
+    : input.message
   const agentConfigId = input.configId || orgId
   const contentBlocks = normalizeContentBlocks(input.contentBlocks)
   const dryRun = pc.toolExecutionMode === 'dry_run'
@@ -422,7 +429,8 @@ export async function* runPlaygroundTurn(input: {
     content: message,
     contentBlocks,
     origin: 'customer',
-    source: 'customer_message',
+    source: formResult ? 'customer_form_result' : 'customer_message',
+    formAnswers: formResult?.answers,
   })
 
   const agentLoop = await AgentLoop.create({

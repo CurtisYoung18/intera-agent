@@ -16,13 +16,34 @@ export async function POST(request: NextRequest) {
       status: 401, headers: { 'Content-Type': 'application/json' },
     })
   }
-  let body: { message?: string; config?: Partial<PlaygroundConfig>; configId?: string | null; contentBlocks?: ContentBlock[]; chatId?: string }
+  let body: {
+    message?: string
+    config?: Partial<PlaygroundConfig>
+    configId?: string | null
+    contentBlocks?: ContentBlock[]
+    chatId?: string
+    formResult?: {
+      caseId?: string
+      answers?: Record<string, string>
+    }
+  }
   try { body = await request.json() } catch {
     return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'Invalid JSON body' } }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     })
   }
   const message = typeof body.message === 'string' ? body.message.trim() : ''
+  const formResult = body.formResult && typeof body.formResult === 'object'
+    ? {
+        caseId: typeof body.formResult.caseId === 'string' ? body.formResult.caseId : undefined,
+        answers: body.formResult.answers && typeof body.formResult.answers === 'object'
+          ? Object.fromEntries(
+              Object.entries(body.formResult.answers).map(([key, value]) => [key, String(value ?? '')]),
+            )
+          : {},
+      }
+    : undefined
+  const hasFormResult = !!formResult && Object.keys(formResult.answers).length > 0
   const contentBlocks = Array.isArray(body.contentBlocks) ? body.contentBlocks : []
   const hasContentBlock = contentBlocks.some((block) => {
     if (!block || typeof block !== 'object') return false
@@ -31,7 +52,7 @@ export async function POST(request: NextRequest) {
     if (candidate.type === 'image') return candidate.source?.type === 'base64' && typeof candidate.source.data === 'string' && candidate.source.data.length > 0
     return false
   })
-  if ((!message && !hasContentBlock) || message.length > 5000) {
+  if ((!message && !hasContentBlock && !hasFormResult) || message.length > 5000) {
     return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'message or image content required (message max 5000 chars)' } }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     })
@@ -47,7 +68,16 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const send = (event: SSEEvent) => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)) } catch { /* client disconnected */ } }
       try {
-        for await (const event of runPlaygroundTurn({ orgId, message, playgroundConfig, configId: body.configId ?? undefined, contentBlocks, chatId: body.chatId, userId: vendor.userId ?? 'playground' })) { send(event) }
+        for await (const event of runPlaygroundTurn({
+          orgId,
+          message,
+          formResult,
+          playgroundConfig,
+          configId: body.configId ?? undefined,
+          contentBlocks,
+          chatId: body.chatId,
+          userId: vendor.userId ?? 'playground',
+        })) { send(event) }
       } catch (err) {
         send({ type: 'error', data: { code: 'internal', message: err instanceof Error ? err.message : 'Internal error' }, timestamp: new Date().toISOString() })
       } finally { try { controller.close() } catch { /* ignore */ } }
