@@ -1143,6 +1143,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   }, [selectedAgentId, debugMode, canAttachImages, visionSupport.status, snapshot?.resolvedModelLabel])
 
   const canSubmitManualTurn = message.trim().length > 0 || attachedImages.length > 0
+  const showEmptyQuickStarts = chatMessages.length === 0 && !responding && !error && !isRestoringSession
+  const showCompactQuickStarts = !showEmptyQuickStarts && !responding && !isRestoringSession && !message.trim() && attachedImages.length === 0
 
   const submitManualTurn = useCallback(() => {
     const trimmed = message.trim()
@@ -1548,7 +1550,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             display: 'flex', flexDirection: 'column',
           }}>
             {/* ── Empty state ── */}
-            {chatMessages.length === 0 && !responding && !error && !isRestoringSession && (
+            {showEmptyQuickStarts && (
               <div className="pg-empty-state">
                 <div className="pg-quickstarts-grid">
                   {quickStarts.map(q => (
@@ -1878,6 +1880,26 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             position: 'relative', zIndex: 1, flexShrink: 0,
             width: '100%', padding: '12px 16px 12px 24px',
           }}>
+            {showCompactQuickStarts && (
+              <div className="pg-quickstart-rail" aria-label={isZh ? '快速测试提示词' : 'Quick test prompts'}>
+                <div className="pg-quickstart-rail-kicker">{isZh ? '快速测试' : 'Quick tests'}</div>
+                <div className="pg-quickstart-rail-scroll">
+                  {quickStarts.map((q) => (
+                    <button
+                      key={q.label}
+                      type="button"
+                      className="pg-quickstart-chip"
+                      onClick={() => { runTurn(q.label); setMessage('') }}
+                      title={q.hint}
+                    >
+                      <span>{q.label}</span>
+                      <small>{q.hint}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── Attached image previews ── */}
             {attachedImages.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
