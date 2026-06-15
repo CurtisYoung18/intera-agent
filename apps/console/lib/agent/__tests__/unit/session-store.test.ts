@@ -740,6 +740,63 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('treats migrated aggregate detail ask fields as satisfied by structured form answers', () => {
+    const caseId = 'r3-aggregate-detail-field'
+    recordInitialInputEvent(caseId, { content: 'I need help with a missing withdrawal.' })
+    startProcedureRun(caseId, {
+      procedureId: 'withdrawal_not_credited',
+      displayName: 'Withdrawal not credited',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for withdrawal issues',
+        steps: [
+          {
+            id: 'collect_withdrawal_details',
+            title: 'Collect withdrawal details',
+            guidance: 'Collect the withdrawal details.',
+            actions: [
+              {
+                id: 'ask_withdrawal_details',
+                kind: 'ask',
+                label: 'Ask for withdrawal details',
+                fields: ['withdrawal_missing_details'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'lookup_latest_withdrawal',
+            title: 'Lookup latest withdrawal',
+            guidance: 'Check the latest withdrawal.',
+            actions: [
+              {
+                id: 'lookup_latest_withdrawal_tool',
+                kind: 'call_tool',
+                label: 'Lookup latest withdrawal',
+                toolName: 'get_latest_withdrawal',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Tool ask_user_questions result: {"member_id":"JAYA113C88F","reference_number":"WD9988"}',
+      source: 'customer_form_result',
+      origin: 'customer',
+      formAnswers: { member_id: 'JAYA113C88F', reference_number: 'WD9988' },
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.steps.find((step) => step.id === 'collect_withdrawal_details')).toMatchObject({
+      status: 'completed',
+    })
+    expect(active?.currentStepId).toBe('lookup_latest_withdrawal')
+    closeSession(caseId)
+  })
+
   it('consumes collectedFacts from the start_procedure turn as structured runtime input', () => {
     const caseId = 'r3-start-procedure-collected-facts'
     recordInitialInputEvent(caseId, { content: '我的 member_id 是 JAYA113C88F，请人工帮我处理。' })
@@ -763,8 +820,8 @@ describe('R3 runtime event protocol', () => {
               {
                 id: 'ask_member_id',
                 kind: 'ask',
-                label: 'Ask for member id',
-                fields: ['memberId'],
+                label: 'Ask for frozen account details',
+                fields: ['frozen_account_details'],
               },
             ],
             branches: [],

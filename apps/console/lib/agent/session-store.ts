@@ -1856,6 +1856,8 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
     const fields = action.target?.split(',').map((field) => field.trim()).filter(Boolean) ?? []
     const hasAnswer = fields.length === 0
       ? Object.keys(formAnswers).length > 0
+      : isAggregateDetailCollection(fields)
+        ? Object.keys(formAnswers).length > 0
       : fields.some((field) => hasMatchingFormField(formAnswers, field))
     if (!hasAnswer) continue
     action.status = 'completed'
@@ -1889,6 +1891,15 @@ function updateSignalsFromInput(run: ProcedureRunState, content: string): void {
 
 function hasMatchingFormField(formAnswers: Record<string, string>, expectedField: string): boolean {
   return Object.keys(formAnswers).some((field) => formFieldMatches(field, expectedField))
+}
+
+function isAggregateDetailCollection(fields: string[]): boolean {
+  return fields.length === 1 && isAggregateDetailField(fields[0])
+}
+
+function isAggregateDetailField(field: string): boolean {
+  const normalized = field.trim().replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[\s-]+/g, '_').toLowerCase()
+  return normalized.endsWith('_details') || normalized.endsWith('_detail')
 }
 
 function formFieldMatches(actualField: string, expectedField: string): boolean {
