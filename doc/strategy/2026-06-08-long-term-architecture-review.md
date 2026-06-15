@@ -3,7 +3,7 @@
 **Date:** 2026-06-08 | **Author:** architect (review only — code executed by the coding-agent team) | **Branch:** `main`
 **Method:** code-first. Every claim below was checked against the working tree, not the handoffs (which `GENERIC_HANDOFF §0.6` warns may be stale). Citations are `file:symbol` (lines drift).
 
-> **Read order:** this is a *strategic* review (the "why we plateaued" and the sequence out). It is now a diagnosis source for the active Foundation Reset, not the implementation plan. Dispatch coding work from [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md).
+> **Read order:** this is a *strategic* review (the "why we plateaued" and the sequence out). It is now a diagnosis source for the active Foundation Reset, not the implementation plan. Dispatch coding work from [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md).
 
 ---
 
@@ -78,7 +78,7 @@ The handoffs are the team's source of truth. At the time of this review, several
 
 **2026-06-08 doc reset status:** the live map has now been cleaned:
 
-- [`../handoffs/MASTER_BUILD_HANDOFF.md`](../handoffs/MASTER_BUILD_HANDOFF.md) points to Foundation Reset as the current macro priority.
+- [`../archive/retired-handoffs/MASTER_BUILD_HANDOFF.md`](../archive/retired-handoffs/MASTER_BUILD_HANDOFF.md) points to Foundation Reset as the current macro priority.
 - [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md) is rewritten as the current architecture source of truth.
 - The old standalone Procedure plan is archived at [`../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md`](../archive/superseded/2026-06-08-case-type-procedure-orchestration-refactor.md).
 - The Procedure supplement is merged into the architecture doc and archived at [`../archive/superseded/Intera_Customer_Service_Procedure_Model.md`](../archive/superseded/Intera_Customer_Service_Procedure_Model.md).
@@ -108,7 +108,7 @@ The owner later expanded that into a broader Foundation Reset:
 - Scenario Lab as delivery validation
 - no long-term dual-read/dual-write compatibility for the old model
 
-That broader reset is now the implementation source. Dispatch from [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md).
+That broader reset is now the implementation source. Dispatch from [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md).
 
 ---
 
@@ -117,10 +117,10 @@ That broader reset is now the implementation source. Dispatch from [`../to-do/20
 Ordered by leverage:
 
 **P0 — Safe local DB + dev/prod parity.**
-Shipped 2026-06-08. See [`../what's done/2026-06-08-foundation-safe-local-db.md`](../what's%20done/2026-06-08-foundation-safe-local-db.md). This removed the worst verification blocker.
+Shipped 2026-06-08. See [`../archive/shipped/2026-06-08-foundation-safe-local-db.md`](../archive/shipped/2026-06-08-foundation-safe-local-db.md). This removed the worst verification blocker.
 
 **P1 — Foundation Reset domain model.**
-Active. Run F0-F8 from [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md). This is the main path to the commercial customer delivery chain.
+Active. Run F0-F8 from [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md). This is the main path to the commercial customer delivery chain.
 
 **P2 — Tenant isolation hardening around agent-scoped config.**
 L5 is code-fixed, but every new admin sub-module route should continue to prove orgId -> agentConfig ownership. Do not reintroduce raw agentConfig access without the guard.
@@ -146,4 +146,4 @@ Shared trace aggregation for playground and ops, FE editor-hook consolidation, p
 
 ---
 
-*Companion docs: [`../handoffs/HARD_BUGS.md`](../handoffs/HARD_BUGS.md), [`../handoffs/MASTER_BUILD_HANDOFF.md`](../handoffs/MASTER_BUILD_HANDOFF.md), and [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md).*
+*Companion docs: [`../handoffs/HARD_BUGS.md`](../handoffs/HARD_BUGS.md), [`../archive/retired-handoffs/MASTER_BUILD_HANDOFF.md`](../archive/retired-handoffs/MASTER_BUILD_HANDOFF.md), and [`../spec/Intera_Harness_架构梳理.md`](../spec/Intera_Harness_架构梳理.md).*

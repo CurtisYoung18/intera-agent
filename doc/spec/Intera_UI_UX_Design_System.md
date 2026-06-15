@@ -4,7 +4,7 @@
 **Status:** CURRENT companion source of truth for the Console UI/UX reset
 **Audience:** founder, architect, UI/UX lead, frontend lanes, AI coding teams
 **Related architecture:** [`Intera_Harness_架构梳理.md`](./Intera_Harness_架构梳理.md)
-**Related implementation plan:** [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md)
+**Related implementation plan:** [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md)
 
 This document freezes the owner-approved UI/UX direction for Intera before the commercial delivery reset. It should guide route structure, layout, design tokens, component behavior, i18n, and UI refactor lane ownership.
 
