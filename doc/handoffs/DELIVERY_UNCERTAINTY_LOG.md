@@ -549,3 +549,33 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: Production Scenario patch flow used the authenticated admin route on `https://demo.anytrans.ai/build/pilot-lab`; the original readback stored under `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle/scenario-patch-summary.json` showed `finalStatus=waiting_human` persisted but no `procedureStatus` / `procedureOutcome` keys returned. A fresh authenticated recheck on 2026-06-15 08:37 CST against `human_support_requested_basic` produced the same result in `.artifacts/delivery-audit/2026-06-15/cons-m1-scenario-terminal-proof-production-now/summary.json`: before update, after `PUT`, and immediate reread all still omitted `procedureStatus` / `procedureOutcome`.
 - Owner decision needed: Confirm whether M1 must deploy the updated Scenario contract/UI before final J1B bundle sign-off, or whether owner-reviewed runtime receipts are sufficient for this one acceptance wave while the production authoring surface catches up.
 - Follow-up owner: CONS-M1 lane owner / architect / delivery lead
+
+### 2026-06-15 - CONS-M1 Production Snapshot Migration Proof Is Now Closed, And It Shows J1B Still Persists Legacy Procedures
+
+- Area: CONS-M1 / production data-plane proof / Procedure migration
+- Status: fixed
+- Severity: P1
+- Uncertainty: The earlier M1 blocker required a real production-snapshot copy, not just a safe-local DB row or a synthetic fixture. Until that snapshot existed, it was still possible that the checked-in migration script only worked on the local sample row and not on the actual J1B production case-type set.
+- Default action taken: Logged into `https://demo.anytrans.ai` with the approved test admin account, exported the live J1B case-type list from `/api/admin/case-types?agentConfigId=cmq4q82mx0001qj32gt8htfiq`, then ran `scripts/migrate-procedures-v1-to-v2.mjs` in the new snapshot-input mode against that exported JSON and emitted a migrated output copy. Finally, ran a second validator pass over the migrated copy to prove every row now normalizes as v2.
+- Why this default: It closes the snapshot blocker honestly without mutating production rows, and it proves the migration script on a real production-derived dataset instead of a hand-built or safe-local substitute.
+- Evidence: `scripts/migrate-procedures-v1-to-v2.mjs`; `scripts/migrate-procedures-v1-to-v2.test.ts`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-snapshot-proof/summary.md`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-snapshot-proof/case-types-production-snapshot.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-snapshot-proof/migration-summary.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-snapshot-proof/post-migration-validation.json`
+- Production URL / screenshot / receipt: Authenticated export source was `https://demo.anytrans.ai/api/admin/case-types?agentConfigId=cmq4q82mx0001qj32gt8htfiq`. The exported snapshot contained `12` stored J1B CaseType procedures; migration result was `migrated=12`, `alreadyV2=0`, `invalid=0`, and the post-migration validator proved `12/12` rows parse as `status='v2'`.
+- Owner decision needed: None for the snapshot blocker itself. The new production-truth implication is that J1B still persists legacy Procedure payloads on `demo.anytrans.ai` today, so deploy/data migration parity must still be addressed before anyone claims the live data plane is already v2-native.
+- Follow-up owner: CONS-M1 lane owner / deploy owner
+
+### 2026-06-15 - Refreshed Wave-2 J1B Production Bundle Still Fails 10 Of 36 Scenarios After Scenario Patching
+
+- Area: CONS-M1 / production acceptance / J1B matrix rerun
+- Status: open
+- Severity: P1
+- Uncertainty: After refreshing the stale Scenario expectations to the current runtime contract on production, it was still unknown whether the remaining M1 blocker was mostly "old expectations" or mostly "real runtime behavior gaps". The previous bundle receipt was stale enough that it could not answer that cleanly.
+- Default action taken: Re-ran the production Scenario patch script into a fresh artifact folder, then ran the full 36-scenario J1B bundle again on `https://demo.anytrans.ai`. Preserved per-scenario receipts, the refreshed `summary.json`, and UI screenshots for both the pass-proof and fail-proof states.
+- Why this default: It turns the broad blocker into a concrete current-state matrix with exact failing scenario names and failure reasons, so follow-up work can target runtime/taxonomy issues instead of reopening already-fixed Scenario expectation drift.
+- Evidence: `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle-refresh/scenario-patch-summary.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle-refresh/summary.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle-refresh/pilot-lab-bundle-pass-receipt.png`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle-refresh/pilot-lab-bundle-failure.png`
+- Production URL / screenshot / receipt: Production target remained `https://demo.anytrans.ai` on J1B draft `cmq4q82mx0001qj32gt8htfiq`. The refreshed bundle result is `26` pass / `10` fail. Current concrete failures are:
+  - structured-collection/runtime mismatches: `withdrawal_not_credited_reference_first`, `duplicate_deposit_basic`, `promotion_claim_failed_member_first_followup_bonus`
+  - direct-human / reset-path escalation mismatches: `human_support_requested_followup_member`, `human_support_requested_direct_detailed`, `login_password_reset_phone_changed`, `withdrawal_password_reset_phone_changed`
+  - taxonomy / routing mismatches: `account_wallet_frozen_basic`, `account_wallet_frozen_followup_member`, `account_wallet_frozen_login_locked`
+- Historical note: this rerun also reaffirmed the separate terminal-proof gap. Even when a handoff-shaped scenario passed, production receipts still exposed `procedureStatus=null` and `procedureOutcome=null`, so owner-approved handoff-finalizes proof still cannot be signed off on the currently deployed production receipt surface.
+- Owner decision needed: None before the next engineering pass. The default next action is to treat the `10` failures as real runtime/prompt/taxonomy gaps, while treating the `procedureStatus/procedureOutcome` nulls as a separate deploy-parity blocker rather than folding both problems into one vague "J1B still failing" statement.
+- Follow-up owner: CONS-M1 lane owner / runtime owner / delivery lead
