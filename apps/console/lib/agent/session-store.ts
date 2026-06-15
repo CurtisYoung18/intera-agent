@@ -34,6 +34,11 @@ import type {
 import {
   buildProcedureConditionLabel,
 } from '@intera/shared/contracts/case-types'
+import {
+  applyProcedureRunEvent,
+  type ProcedureRunKernelEffect,
+  type ProcedureRunKernelMatch,
+} from '@intera/runtime-core/procedure-run-kernel'
 import { prisma } from '@intera/shared/prisma'
 
 // ─── Queued message shape ─────────────────────────────────────────────────────
@@ -1072,15 +1077,16 @@ export function finalizeProcedureRun(caseId: string, input: {
       error: finalizeBlockers[0],
     }
   }
-  run.status = input.status ?? 'completed'
-  run.updatedAt = new Date().toISOString()
-  appendProcedureTimeline(session, run, {
-    origin: 'system',
-    source: 'tool_result',
+  const transition = applyProcedureRunEvent(run, {
+    type: 'finalize',
+    status: input.status ?? 'completed',
     basedOnInputEpoch: basedOn,
-    summary: input.summary ?? `ProcedureRun ${run.status}`,
-    metadata: { terminal: true, evidenceState: 'canonical' },
+    summary: input.summary,
+  }, {
+    now: new Date().toISOString(),
   })
+  applyProcedureRunKernelState(run, transition.state)
+  appendProcedureRunKernelEffects(session, run, transition.effects)
   session.procedureRuntime.completedProcedureRuns.push(run)
   session.procedureRuntime.activeProcedureRun = undefined
   scheduleRunPersist(session, run)
@@ -2331,6 +2337,27 @@ function clearRunBlocker(run: ProcedureRunState, key: string): void {
   run.blockers = run.blockers.filter((entry) => !entry.startsWith(`[${key}] `))
 }
 
+function applyProcedureRunKernelState(run: ProcedureRunState, next: ProcedureRunState): void {
+  Object.assign(run, next)
+}
+
+function appendProcedureRunKernelEffects(
+  session: CaseSession,
+  run: ProcedureRunState,
+  effects: ProcedureRunKernelEffect[],
+): void {
+  for (const effect of effects) {
+    if (effect.type !== 'timeline') continue
+    appendProcedureTimeline(session, run, {
+      origin: effect.origin,
+      source: effect.source,
+      basedOnInputEpoch: effect.basedOnInputEpoch,
+      summary: effect.summary,
+      metadata: effect.metadata,
+    })
+  }
+}
+
 function assessProcedureToolOutcome(
   toolName: string,
   toolOutput: unknown,
@@ -2570,49 +2597,18 @@ function finalizeRunForHumanHandoff(
   const queue = isRecord(toolOutput) && typeof toolOutput.queue === 'string'
     ? toolOutput.queue
     : undefined
-
-  if (match?.step) {
-    const handoffActionId = match.action?.id
-    const matchedBranchId = match.action?.branchId ?? match.step.branches?.find((branch) => branch.status === 'matched')?.id
-
-    for (const action of match.step.actions ?? []) {
-      clearRunBlocker(run, `action:${action.id}`)
-      if (action.id === handoffActionId) {
-        action.status = 'completed'
-        continue
-      }
-      if (action.status !== 'completed') {
-        action.status = 'skipped'
-      }
-    }
-
-    if (matchedBranchId) {
-      for (const branch of match.step.branches ?? []) {
-        if (branch.id === matchedBranchId) {
-          branch.status = 'matched'
-          branch.reason = branch.reason || 'Persisted human handoff evidence observed.'
-        } else {
-          branch.status = 'skipped'
-          branch.reason = 'Another branch already matched.'
-        }
-      }
-    }
-
-    match.step.status = 'completed'
-    match.step.completedAt = createdAt
-    match.step.completionReason = taskId
-      ? `Persisted human handoff task ${taskId} created.`
-      : 'Persisted human handoff created.'
-  }
-
-  run.blockers = []
-  run.status = 'completed'
-  run.currentStepId = null
-  run.reason = taskId
-    ? `Finalized after human handoff task ${taskId}.`
-    : 'Finalized after human handoff.'
-  run.outcome = 'handed_off'
-  run.updatedAt = createdAt
+  const kernelMatch: ProcedureRunKernelMatch | null = match?.step
+    ? { stepId: match.step.id, actionId: match.action?.id }
+    : null
+  const transition = applyProcedureRunEvent(run, {
+    type: 'human_handoff_finalized',
+    taskId,
+    queue,
+    match: kernelMatch,
+  }, {
+    now: createdAt,
+  })
+  applyProcedureRunKernelState(run, transition.state)
 
   if (session.procedureRuntime.activeProcedureRun?.runId === run.runId) {
     session.procedureRuntime.activeProcedureRun = undefined
@@ -2623,22 +2619,7 @@ function finalizeRunForHumanHandoff(
     session.procedureRuntime.completedProcedureRuns.push(run)
   }
 
-  appendProcedureTimeline(session, run, {
-    origin: 'system',
-    source: 'control',
-    basedOnInputEpoch: run.inputEpoch,
-    summary: taskId
-      ? `ProcedureRun finalized after human handoff task ${taskId}`
-      : 'ProcedureRun finalized after human handoff',
-    metadata: {
-      terminal: true,
-      handoffFinalized: true,
-      taskId,
-      queue,
-      persisted: true,
-      outcome: 'handed_off',
-    },
-  })
+  appendProcedureRunKernelEffects(session, run, transition.effects)
   scheduleRunPersist(session, run)
 }
 

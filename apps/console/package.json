@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@intera/runtime-core": "*",
     "@intera/shared": "*",
     "@xyflow/react": "^12.11.0",
     "bcryptjs": "^3.0.3",

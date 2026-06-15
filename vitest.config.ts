@@ -5,9 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'apps/console'),
-    },
+    alias: [
+      { find: '@intera/runtime-core', replacement: path.resolve(__dirname, 'packages/runtime-core/src') },
+      { find: '@', replacement: path.resolve(__dirname, 'apps/console') },
+    ],
   },
   test: {
     setupFiles: ['./apps/console/lib/agent/__tests__/vitest-setup.ts'],

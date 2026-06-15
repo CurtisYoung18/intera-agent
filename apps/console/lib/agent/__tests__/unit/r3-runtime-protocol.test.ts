@@ -6,8 +6,9 @@ import { ToolRouter } from '../../tools'
 import { selectPromptAndTools, type PromptSelectorContext } from '../../prompt-selector'
 import type { ConversationLoop } from '../../conversation-loop'
 import type { CaseAgentLoop } from '../../case-agent-loop'
-import type { ChatMemoryManager } from '../../memory'
 import { createMemoryPersistence } from '../../persistence-port'
+import { RuntimeManagedToolResolver } from '../../runtime-managed-tools'
+import type { ToolExecutionResult } from '../../streaming-tool-executor'
 import {
   closeSession,
   procedureRunPromptTail,
@@ -86,6 +87,34 @@ function makeLoop(caseId: string): AgentLoop {
   })
 }
 
+async function resolveRuntimeTool(loop: AgentLoop, name: string, input: Record<string, unknown> = {}): Promise<unknown> {
+  const anyLoop = loop as any
+  const result: ToolExecutionResult = {
+    name,
+    output: { ok: true, output: 'placeholder', latencyMs: 1 },
+    latencyMs: 1,
+    toolUse: { id: `toolu_${name}`, name, input },
+  }
+
+  await new RuntimeManagedToolResolver({
+    caseId: anyLoop.deps.caseId,
+    orgId: anyLoop.deps.orgId,
+    userId: anyLoop.deps.userId,
+    chatId: anyLoop.deps.chatId,
+    config: anyLoop.deps.config,
+    caseSchema: anyLoop.deps.caseSchema,
+    messages: anyLoop.messages,
+    chatMemory: anyLoop.chatMemory,
+    persistence: anyLoop.persistence,
+    traceWriter: anyLoop.traceWriter,
+    dryRun: anyLoop.dryRun,
+    persistRuntimeMemory: anyLoop.deps.persistRuntimeMemory,
+    canCreateHumanTaskInGeneralMode: false,
+  }).resolve([result], new Map([[`toolu_${name}`, 1]]), 1)
+
+  return (result.output as { output?: unknown }).output
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   h.userProfileFindUnique.mockResolvedValue(null)
@@ -118,10 +147,10 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect((router.getTool('remember')?.inputSchema as { properties?: { scope?: { enum?: string[] } } })?.properties?.scope?.enum).toEqual(['user'])
   })
 
-  it('handles get_current_time as a runtime-managed system tool', () => {
+  it('handles get_current_time as a runtime-managed system tool', async () => {
     const router = new ToolRouter('agent_1')
     const loop = makeLoop('r3-current-time')
-    const output = (loop as unknown as { currentTimeToolOutput: Function }).currentTimeToolOutput()
+    const output = await resolveRuntimeTool(loop, 'get_current_time') as Record<string, unknown>
 
     expect(router.getTool('get_current_time')?.mode).toBe('system_managed')
     expect(router.getTool('get_current_time')?.toolCategory).toBe('system_info')
@@ -209,16 +238,16 @@ describe('R3 HookContext and memory boundaries', () => {
     })
     const loop = makeLoop(caseId)
 
-    const remember = await (loop as unknown as { rememberToolOutput: Function }).rememberToolOutput({
+    const remember = await resolveRuntimeTool(loop, 'remember', {
       scope: 'chat',
       facts: { memberId: 'M123', currentStepId: 'close', needsReconcile: false },
       reason: 'customer provided member id',
     })
-    const read = (loop as unknown as { readChatMemoryToolOutput: Function }).readChatMemoryToolOutput()
+    const read = await resolveRuntimeTool(loop, 'read_chat_memory')
 
-    expect(remember.ok).toBe(false)
-    expect(remember.writtenKeys).toEqual([])
-    expect(remember.rejectedKeys.sort()).toEqual(['currentStepId', 'memberId', 'needsReconcile'].sort())
+    expect((remember as any).ok).toBe(false)
+    expect((remember as any).writtenKeys).toEqual([])
+    expect((remember as any).rejectedKeys.sort()).toEqual(['currentStepId', 'memberId', 'needsReconcile'].sort())
     expect(read).not.toHaveProperty('contextMap')
     expect(read).not.toHaveProperty('contextMapAvailable')
     expect(JSON.stringify(read)).not.toContain('currentStepId')
@@ -247,15 +276,15 @@ describe('R3 HookContext and memory boundaries', () => {
     })
     const loop = makeLoop(caseId)
 
-    const remember = await (loop as unknown as { rememberToolOutput: Function }).rememberToolOutput({
+    const remember = await resolveRuntimeTool(loop, 'remember', {
       scope: 'chat',
       facts: { memberId: 'M123' },
       reason: 'customer typed a member id in free text',
     })
-    const read = (loop as unknown as { readChatMemoryToolOutput: Function }).readChatMemoryToolOutput()
+    const read = await resolveRuntimeTool(loop, 'read_chat_memory')
 
-    expect(remember.ok).toBe(false)
-    expect(String(remember.error)).toContain('Chat-scoped fact writes are no longer supported')
+    expect((remember as any).ok).toBe(false)
+    expect(String((remember as any).error)).toContain('Chat-scoped fact writes are no longer supported')
     expect(read).not.toHaveProperty('contextMapAvailable')
     expect(read).not.toHaveProperty('contextMap')
     closeSession(caseId)
@@ -263,7 +292,7 @@ describe('R3 HookContext and memory boundaries', () => {
 
   it('remember(scope="user") writes what read_user_profile reads', async () => {
     const loop = makeLoop('r3-user-memory')
-    await (loop as unknown as { rememberToolOutput: Function }).rememberToolOutput({
+    await resolveRuntimeTool(loop, 'remember', {
       scope: 'user',
       key: 'preference',
       value: 'prefers SMS updates',
@@ -283,8 +312,8 @@ describe('R3 HookContext and memory boundaries', () => {
       lastSeenAt: null,
     })
 
-    const read = await (loop as unknown as { readUserProfileToolOutput: Function }).readUserProfileToolOutput()
-    expect(read.profile).toContain('prefers SMS updates')
+    const read = await resolveRuntimeTool(loop, 'read_user_profile')
+    expect((read as any).profile).toContain('prefers SMS updates')
     expect(JSON.stringify(read)).not.toContain('currentStepId')
   })
 })

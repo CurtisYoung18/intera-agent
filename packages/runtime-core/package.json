@@ -1,0 +1,35 @@
+{
+  "name": "@intera/runtime-core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./case-type-slugs": "./src/case-type-slugs.ts",
+    "./customer-messages": "./src/customer-messages.ts",
+    "./debug-logger": "./src/debug-logger.ts",
+    "./deepseek-prefix-chat": "./src/deepseek-prefix-chat.ts",
+    "./identity": "./src/identity.ts",
+    "./persistable-message": "./src/persistable-message.ts",
+    "./persistence-port": "./src/persistence-port.ts",
+    "./profiler": "./src/profiler.ts",
+    "./procedure-run-kernel": "./src/procedure-run-kernel.ts",
+    "./provider-tool-turn": "./src/provider-tool-turn.ts",
+    "./prompt-resolver": "./src/prompt-resolver.ts",
+    "./provider-transcript": "./src/provider-transcript.ts",
+    "./resolve-model": "./src/resolve-model.ts",
+    "./streaming-text-sanitizer": "./src/streaming-text-sanitizer.ts",
+    "./trace": "./src/trace.ts",
+    "./trace-aggregator": "./src/trace-aggregator.ts",
+    "./tool-names": "./src/tool-names.ts",
+    "./tool-result-invariant": "./src/tool-result-invariant.ts",
+    "./usage-accounting": "./src/usage-accounting.ts"
+  },
+  "dependencies": {
+    "@intera/shared": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

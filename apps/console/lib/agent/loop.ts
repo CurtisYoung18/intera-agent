@@ -10,7 +10,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
-import { StreamingToolExecutor, unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
+import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { ChatMemoryManager, ChatSessionManager } from './memory'
 import { HookEngine, type HookEvaluationResult } from './hook-engine'
 import { ToolRouter } from './tools'
@@ -18,7 +18,6 @@ import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
 import { microCompact } from './microCompact'
-import { synthesizeMissingToolResults, assertToolResultInvariant } from './tool-result-invariant'
 import { classifyError } from './api/error-classifier'
 import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
@@ -27,7 +26,7 @@ import { Profiler } from './profiler'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { buildModelList } from './build-model-list'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
-import { consumeStream, buildToolUsesFromBlocks, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
+import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
 import { profileKey } from './identity'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
@@ -43,20 +42,15 @@ import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
 import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
-import { buildToolResultMessageFromSynthesis, buildHookFeedbackMessage } from './tool-result-manager'
-import { assistantProviderContent, makeProviderMeta, selectProviderMessageWindow, type TranscriptHealthMetrics } from './provider-transcript'
+import { selectProviderMessageWindow, type TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import { buildHumanHandoffQuestion } from './human-handoff'
 import {
-  appendRuntimeEvent,
-  filterRuntimeAuthorityKeys,
-  finalizeProcedureRun,
   getActiveProcedureRun,
   getPendingProcedureLlmEvaluations,
   latestInputEpoch,
   procedureRunPromptTail,
-  reconcileProcedureInput,
   recordProcedureConditionEvaluation,
   recordProcedureTextReply,
   recordProcedureToolCall,
@@ -64,6 +58,16 @@ import {
 } from './session-store'
 import { evaluateProcedureLlmCondition } from './procedure-llm-evaluator'
 import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
+import {
+  RuntimeManagedToolResolver,
+  shouldPersistToolResultToChatMemory,
+  shouldRecordProcedureEvidence,
+} from './runtime-managed-tools'
+import {
+  assertProviderToolTurnInvariant,
+  finalizeProviderToolTurn,
+  type SynthesisReason,
+} from '@intera/runtime-core/provider-tool-turn'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -266,7 +270,7 @@ export class AgentLoop {
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
     // S1 tool-result invariant: track why each tool_use didn't produce a real result
-    const missingReasons = new Map<string, import('./tool-result-invariant').SynthesisReason>()
+    const missingReasons = new Map<string, SynthesisReason>()
     const pendingHookFeedback: string[] = []
     let stopRetryCount = 0
 
@@ -730,7 +734,24 @@ export class AgentLoop {
 
       // ── Wait for all tools to finish ─────────────────────────
       let toolResults = await toolExecutor.waitForAll()
-      await this.resolveRuntimeToolResults(toolResults, toolBasedOnEpoch, iterationBasedOnInputEpoch)
+      const runtimeToolResolution = await new RuntimeManagedToolResolver({
+        caseId: this.deps.caseId,
+        orgId: this.deps.orgId,
+        userId: this.deps.userId,
+        chatId: this.deps.chatId,
+        config: this.deps.config,
+        caseSchema: this.deps.caseSchema,
+        messages: this.messages,
+        chatMemory: this.chatMemory,
+        persistence: this.persistence,
+        traceWriter: this.traceWriter,
+        dryRun: this.dryRun,
+        persistRuntimeMemory: this.deps.persistRuntimeMemory,
+        canCreateHumanTaskInGeneralMode: !this.caseLoop,
+      }).resolve(toolResults, toolBasedOnEpoch, iterationBasedOnInputEpoch)
+      if (runtimeToolResolution.pendingHumanTaskEscalation) {
+        this.pendingHumanTaskEscalation = runtimeToolResolution.pendingHumanTaskEscalation
+      }
       for (const tr of toolResults) {
         this.profiler.addToolExecution(tr.latencyMs || 0)
       }
@@ -837,68 +858,28 @@ export class AgentLoop {
       // API-format user messages with structured tool_result blocks.
       // This replaces the legacy addToolResultMessages (assistant text format).
       if (assistantMessage) {
-        const toolUseBlocks = blocks
-          ? [...(blocks as unknown as Map<unknown, { type: string; id: string; name: string }>).values()]
-            .filter((b) => b.type === 'tool_use')
-          : []
-        const trimmedToolUseIds = new Set(toolResults.map((r) => r.toolUse?.id ?? r.name))
+        const providerToolTurn = finalizeProviderToolTurn({
+          assistantMessage,
+          toolUseBlocks: [...blocks.values()],
+          completedResults: toolResults.map((r) => ({
+            toolUseId: r.toolUse?.id ?? r.name,
+            output: r.output,
+            isError: (r.output as { ok?: boolean })?.ok === false,
+          })),
+          missingReasons,
+          pendingHookFeedback,
+          createId: () => crypto.randomUUID(),
+          createdAt: new Date(),
+        })
 
-        // For any tool_use_id without a completed result AND without a missingReasons
-        // entry, record 'stream_aborted' (defensive default)
-        for (const tuBlock of toolUseBlocks) {
-          const id = (tuBlock as { id: string }).id
-          if (!trimmedToolUseIds.has(id) && !missingReasons.has(id)) {
-            missingReasons.set(id, 'stream_aborted')
-          }
-        }
-
-        // Build ToolUse[] from blocks (assistantMessage.toolUses is not populated
-        // by the stream handler — we must extract from the blocks map directly).
-        // L6: parse is guarded (parseToolInput → {} on bad JSON). A max_tokens-
-        // truncated or alt-provider-malformed tool_use must synthesize an error
-        // tool_result below, not throw out of the loop and kill the whole turn.
-        const toolUses: ToolUse[] = buildToolUsesFromBlocks(toolUseBlocks as unknown as StreamContentBlock[])
-
-        // Populate toolUses on assistantMessage so buildApiMessages can include
-        // them as content blocks for the next API call (required by Anthropic API).
-        assistantMessage.toolUses = toolUses.length > 0 ? toolUses : undefined
-        assistantMessage.providerContent = assistantProviderContent(assistantMessage.content, toolUses)
-        if (assistantMessage.providerContent?.length) {
-          assistantMessage.providerMeta = makeProviderMeta({
-            providerFamily: 'anthropic',
-            visibility: 'customer',
-            transcriptKind: 'assistant_response',
-            toolUseIds: toolUses.map((toolUse) => toolUse.id),
-          })
-        }
-
-        if (toolUses.length > 0) {
-          const synthesisBlocks = synthesizeMissingToolResults({
-            toolUses,
-            completedResults: toolResults.map((r) => ({
-              toolUseId: r.toolUse?.id ?? r.name,
-              output: r.output,
-              isError: (r.output as { ok?: boolean })?.ok === false,
-            })),
-            missingReasons,
-          })
-
-          // Push user message with structured tool_result blocks (Anthropic API format).
-          // Handles both completed results (wrapped) and missing results (synthesized).
-          this.messages.push(buildToolResultMessageFromSynthesis(synthesisBlocks))
-        }
-
-        // Push pending Hook feedback AFTER the tool_result message
-        for (const feedback of pendingHookFeedback) {
-          this.messages.push(buildHookFeedbackMessage(feedback))
-        }
+        this.messages.push(...providerToolTurn.messagesToAppend)
         pendingHookFeedback.length = 0
         missingReasons.clear()
 
         // Dev-only invariant assertion
         if (invariantCheckEnabled) {
           try {
-            assertToolResultInvariant(
+            assertProviderToolTurnInvariant(
               this.messages.filter((m) => 'role' in m) as Array<{ role: string; content: unknown; toolUses?: ToolUse[] }>,
             )
           } catch (err) {
@@ -1022,11 +1003,11 @@ export class AgentLoop {
       // ── Apply tool results to Case Memory ────────────────────
       for (const result of toolResults) {
         const payload = unwrapToolExecutionPayload(result.output)
-        if (this.shouldPersistToolResultToChatMemory(result.name)) {
+        if (shouldPersistToolResultToChatMemory(result.name)) {
           await this.chatMemory.applyToolResult(result.name, payload)
         }
         const basedOnInputEpoch = result.toolUse?.id ? toolBasedOnEpoch.get(result.toolUse.id) : undefined
-        if (this.shouldRecordProcedureEvidence(result.name)) {
+        if (shouldRecordProcedureEvidence(result.name)) {
           const toolDefinition = this.toolRouter.getTool(result.name)
           recordProcedureToolResult(this.deps.caseId, {
             toolName: result.name,
@@ -1281,338 +1262,6 @@ export class AgentLoop {
         },
       )
     }
-  }
-
-  private async resolveRuntimeToolResults(
-    toolResults: ToolExecutionResult[],
-    toolBasedOnEpoch: Map<string, number>,
-    iterationBasedOnInputEpoch: number,
-  ): Promise<void> {
-    for (const result of toolResults) {
-      const input = (result.toolUse?.input ?? {}) as Record<string, unknown>
-      const basedOnInputEpoch = result.toolUse?.id
-        ? toolBasedOnEpoch.get(result.toolUse.id) ?? iterationBasedOnInputEpoch
-        : iterationBasedOnInputEpoch
-
-      if (result.name === 'read_chat_memory') {
-        this.replaceToolOutput(result, this.readChatMemoryToolOutput())
-      }
-
-      if (result.name === 'read_user_profile') {
-        this.replaceToolOutput(result, await this.readUserProfileToolOutput())
-      }
-
-      if (result.name === 'remember') {
-        this.replaceToolOutput(result, await this.rememberToolOutput(input))
-      }
-
-      if (result.name === 'get_current_time') {
-        this.replaceToolOutput(result, this.currentTimeToolOutput())
-      }
-
-      if (result.name === 'reconcile_procedure_input') {
-        const runId = String(input.runId || '')
-        const upToInputEpoch = Number(input.upToInputEpoch)
-        const decision = String(input.decision || '')
-        const summary = String(input.summary || '')
-        const reconcile = reconcileProcedureInput(this.deps.caseId, {
-          runId,
-          upToInputEpoch,
-          decision,
-          summary,
-        })
-        this.replaceToolOutput(result, reconcile.ok
-          ? {
-              ok: true,
-              cleared: reconcile.cleared,
-              runId,
-              upToInputEpoch,
-              latestInputEpoch: latestInputEpoch(this.deps.caseId),
-              note: 'Reconcile is a runtime action only; no chat or user memory was written.',
-            }
-          : { ok: false, error: reconcile.error },
-        )
-      }
-
-      if (result.name === 'finalize_procedure') {
-        const final = finalizeProcedureRun(this.deps.caseId, {
-          runId: typeof input.runId === 'string' ? input.runId : undefined,
-          status: input.status === 'cancelled' ? 'cancelled' : 'completed',
-          basedOnInputEpoch,
-          summary: typeof input.conclusion === 'string' ? input.conclusion : undefined,
-        })
-        this.replaceToolOutput(result, final.ok
-          ? {
-              ok: true,
-              status: final.run?.status ?? 'completed',
-              runId: final.run?.runId,
-              procedureId: final.run?.procedureId,
-              conclusion: input.conclusion,
-              basis: input.basis,
-            }
-          : {
-              ok: false,
-              error: final.error ?? 'Unable to finalize ProcedureRun.',
-              stale: final.stale,
-              latestInputEpoch: latestInputEpoch(this.deps.caseId),
-            },
-          !final.ok,
-        )
-      }
-
-      if (result.name === 'create_human_task' && !this.caseLoop) {
-        const queue = String(input.queue || 'general')
-        const question = buildHumanHandoffQuestion({
-          baseQuestion: String(input.question || 'Human task requested'),
-          caseType: this.deps.caseSchema?.type,
-          latestCustomerMessage: latestUserText(this.messages),
-          contextMap: this.chatMemory.getSummary().contextMap,
-        })
-        const taskFields = Array.isArray(input.fields) ? input.fields : undefined
-        const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-
-        try {
-          await this.persistence.ensureCase({
-            id: this.deps.caseId,
-            orgId: this.deps.orgId,
-            userId: this.deps.userId,
-            type: resolvedCaseType,
-            status: 'waiting_human',
-            blocker: `Waiting for ${queue}`,
-            chatId: this.deps.chatId ?? this.deps.caseId,
-          })
-          this.chatMemory.setCaseStatus('waiting_human')
-          await this.persistence.saveMemory(this.deps.caseId, {
-            caseId: this.deps.caseId,
-            ...this.chatMemory.getDbFields(),
-            humanTaskStatus: 'pending',
-          })
-          const task = await this.persistence.createHumanTask({
-            caseId: this.deps.caseId,
-            queue,
-            question,
-            fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
-            status: 'pending',
-          })
-          await this.traceWriter.writeHumanTaskCreated(task.id, queue)
-          this.pendingHumanTaskEscalation = { taskId: task.id, queue, question }
-          this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending', persisted: true })
-        } catch (error) {
-          console.error('[AgentLoop] Failed to persist create_human_task in general mode:', error)
-          this.replaceToolOutput(result, {
-            error: 'Unable to create the human task. Please retry or contact support.',
-          }, true)
-        }
-      }
-    }
-  }
-
-  private replaceToolOutput(result: ToolExecutionResult, payload: unknown, isError = false): void {
-    const output = {
-      ok: !isError,
-      output: payload,
-      error: isError && this.isRecord(payload) && typeof payload.error === 'string' ? payload.error : undefined,
-      latencyMs: result.latencyMs,
-    }
-    result.output = output
-    if (result.toolUse) {
-      result.toolUse.result = output
-      result.toolUse.status = isError ? 'error' : 'completed'
-    }
-  }
-
-  private readChatMemoryToolOutput(): Record<string, unknown> {
-    const summary = this.chatMemory.getSummary()
-    return {
-      scope: 'chat',
-      authority: 'context_only_not_procedure_run_state',
-      toolsCalled: summary.toolsCalled,
-      keyEvents: summary.keyEvents.slice(-20),
-      compactSummary: summary.summary || '',
-      openItems: (summary.todos ?? []).filter((todo) => todo.status !== 'completed' && todo.status !== 'cancelled'),
-      stats: {
-        missingFacts: summary.missingFacts,
-        toolCount: summary.toolsCalled.length,
-        keyEventCount: summary.keyEvents.length,
-      },
-    }
-  }
-
-  private async readUserProfileToolOutput(): Promise<Record<string, unknown>> {
-    const key = profileKey(this.deps.userId, this.deps.chatId)
-    if (!key || !this.shouldPersistRuntimeMemory()) {
-      return {
-        scope: 'user',
-        authority: 'long_term_profile_not_procedure_run_state',
-        profile: '',
-        sections: {},
-        stats: {},
-      }
-    }
-    const row = await prisma.userProfile.findUnique({
-      where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
-      select: {
-        profile: true,
-        sections: true,
-        totalChats: true,
-        totalCases: true,
-        resolvedCases: true,
-        escalatedCases: true,
-        lastCaseType: true,
-        firstSeenAt: true,
-        lastSeenAt: true,
-      },
-    }).catch(() => null)
-    return {
-      scope: 'user',
-      authority: 'long_term_profile_not_procedure_run_state',
-      profile: row?.profile ?? '',
-      sections: this.safeJson(row?.sections, {}),
-      stats: row
-        ? {
-            totalChats: row.totalChats,
-            totalCases: row.totalCases,
-            resolvedCases: row.resolvedCases,
-            escalatedCases: row.escalatedCases,
-            lastCaseType: row.lastCaseType,
-            firstSeenAt: row.firstSeenAt,
-            lastSeenAt: row.lastSeenAt,
-          }
-        : {},
-    }
-  }
-
-  private async rememberToolOutput(input: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const scope = input.scope === 'user' ? 'user' : 'chat'
-    const rawFacts = this.isRecord(input.facts) ? input.facts : {}
-    const key = typeof input.key === 'string' ? input.key : undefined
-    const value = input.value
-    const candidateFacts = key ? { ...rawFacts, [key]: value } : rawFacts
-    const filteredFacts = filterRuntimeAuthorityKeys(candidateFacts)
-    const rejectedKeys = Object.keys(candidateFacts).filter((candidateKey) => !(candidateKey in filteredFacts))
-    const reason = String(input.reason || 'No reason supplied.')
-
-    if (scope === 'chat') {
-      appendRuntimeEvent(this.deps.caseId, {
-        origin: 'system',
-        source: 'remember',
-        summary: `remember(scope="chat") rejected: ${reason}`,
-        metadata: {
-          attemptedKeys: Object.keys(filteredFacts),
-          rejectedKeys,
-          memoryScope: 'chat',
-          status: 'rejected',
-        },
-      })
-      return {
-        ok: false,
-        scope: 'chat',
-        writtenKeys: [],
-        rejectedKeys: [...rejectedKeys, ...Object.keys(filteredFacts)],
-        error: 'Chat-scoped fact writes are no longer supported. Use runtime evidence, form results, tool results, or UserProfile instead.',
-        authority: 'read_only_context',
-      }
-    }
-
-    const profileKeyValue = profileKey(this.deps.userId, this.deps.chatId)
-    if (!profileKeyValue) {
-      return { ok: false, scope: 'user', error: 'No stable user/chat identity is available for UserProfile writes.', rejectedKeys }
-    }
-
-    const bullets = Object.entries(filteredFacts).map(([factKey, factValue]) => `- ${factKey}: ${JSON.stringify(factValue)}`)
-    if (bullets.length === 0 && typeof value === 'string' && !key) {
-      bullets.push(`- ${value}`)
-    }
-    const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
-    if (this.shouldPersistRuntimeMemory()) {
-      const existing = await prisma.userProfile.findUnique({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: profileKeyValue } },
-        select: { profile: true },
-      }).catch(() => null)
-      const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
-      const merged = mergeProfile(existing?.profile ?? '', incoming, maxTokens)
-      const stats = await recomputeProfileStats(prisma, profileKeyValue, this.deps.orgId)
-      await prisma.userProfile.upsert({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: profileKeyValue } },
-        create: { userId: profileKeyValue, orgId: this.deps.orgId, profile: merged.profile, sections: merged.sections, ...stats },
-        update: { profile: merged.profile, sections: merged.sections, ...stats },
-      }).catch((err: unknown) => {
-        console.warn('[AgentLoop] remember(scope="user") failed:', err)
-      })
-    }
-    appendRuntimeEvent(this.deps.caseId, {
-      origin: 'system',
-      source: 'remember',
-      summary: `remember(scope="user"): ${reason}`,
-      metadata: { writtenKeys: Object.keys(filteredFacts), rejectedKeys, memoryScope: 'user' },
-    })
-    return {
-      ok: true,
-      scope: 'user',
-      writtenKeys: Object.keys(filteredFacts),
-      rejectedKeys,
-      readsFrom: 'read_user_profile',
-      authority: 'memory_context_only',
-    }
-  }
-
-  private currentTimeToolOutput(): Record<string, unknown> {
-    const now = new Date()
-    const timeZone = 'Asia/Shanghai'
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-      weekday: 'long',
-    }).formatToParts(now)
-    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
-    const localDate = `${get('year')}-${get('month')}-${get('day')}`
-    const localTime = `${get('hour')}:${get('minute')}:${get('second')}`
-    return {
-      utcTime: now.toISOString(),
-      timeZone,
-      localDate,
-      localTime,
-      localDateTime: `${localDate} ${localTime}`,
-      dayOfWeek: get('weekday'),
-    }
-  }
-
-  private shouldPersistToolResultToChatMemory(toolName: string): boolean {
-    return ![
-      'start_procedure',
-      'reconcile_procedure_input',
-      'finalize_procedure',
-      'remember',
-      'read_chat_memory',
-      'read_user_profile',
-      'get_current_time',
-    ].includes(toolName)
-  }
-
-  private shouldRecordProcedureEvidence(toolName: string): boolean {
-    return ![
-      'start_procedure',
-      'reconcile_procedure_input',
-      'remember',
-      'read_chat_memory',
-      'read_user_profile',
-      'get_current_time',
-    ].includes(toolName)
-  }
-
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return !!value && typeof value === 'object' && !Array.isArray(value)
-  }
-
-  private safeJson(value: unknown, fallback: unknown): unknown {
-    if (typeof value !== 'string') return value ?? fallback
-    try { return JSON.parse(value) } catch { return fallback }
   }
 
   private buildHookContext(

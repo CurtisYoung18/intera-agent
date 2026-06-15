@@ -16,6 +16,8 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
+      "@intera/runtime-core": ["../../packages/runtime-core/src/index.ts"],
+      "@intera/runtime-core/*": ["../../packages/runtime-core/src/*.ts"],
       "@intera/shared": ["../../packages/shared/index.ts"],
       "@intera/shared/*": ["../../packages/shared/*"]
     }
