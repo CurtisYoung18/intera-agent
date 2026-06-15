@@ -579,3 +579,42 @@ Use this format for each new item:
 - Historical note: this rerun also reaffirmed the separate terminal-proof gap. Even when a handoff-shaped scenario passed, production receipts still exposed `procedureStatus=null` and `procedureOutcome=null`, so owner-approved handoff-finalizes proof still cannot be signed off on the currently deployed production receipt surface.
 - Owner decision needed: None before the next engineering pass. The default next action is to treat the `10` failures as real current production acceptance failures, but not to over-attribute them yet: the same lane proved that all `12` production J1B case types are still stored in legacy Procedure form, so root-cause attribution remains split between legacy live data, runtime/prompt/taxonomy behavior, and the separate `procedureStatus/procedureOutcome` deploy-parity blocker.
 - Follow-up owner: CONS-M1 lane owner / runtime owner / delivery lead
+
+### 2026-06-15 - CONS-M1 Live J1B CaseType Rows Were Updated In Place To Procedure V2 And Revalidated 12/12
+
+- Area: CONS-M1 / production data-plane parity / J1B case types
+- Status: fixed
+- Severity: P1
+- Uncertainty: The earlier snapshot proof closed the migration-script correctness gap, but it also proved a more uncomfortable truth: all `12` live J1B CaseType rows on `https://demo.anytrans.ai` were still persisted in legacy Procedure form. Until those rows were updated or explicitly exempted, any remaining production failures could still be hand-waved away as "maybe the runtime is fine, maybe the live data plane is just stale."
+- Default action taken: Applied the already-migrated v2 payloads back to the authenticated J1B CaseType admin API on `https://demo.anytrans.ai`, then ran a second final sequential readback validator over all `12` rows. The first parallel readback was timing-noisy and is preserved only as historical context; the authoritative proof is the final sequential validator.
+- Why this default: It removes the biggest remaining data-plane ambiguity before further runtime debugging. After this point, follow-up scenario failures are no longer fairly attributable to "J1B is still running entirely on legacy stored procedures."
+- Evidence: `.artifacts/delivery-audit/2026-06-15/cons-m1-production-v2-apply/summary.md`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-v2-apply/apply-summary.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-v2-apply/readback-after-apply-final.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-production-v2-apply/readback-validation-final.json`
+- Production URL / screenshot / receipt: Authenticated writes targeted the J1B draft under `https://demo.anytrans.ai` with `agentConfigId=cmq4q82mx0001qj32gt8htfiq`. Final authoritative validation result: `12` checked, `0` bad.
+- Owner decision needed: None. The live J1B case-type data plane is now v2-shaped; remaining blockers should be debugged as real runtime/receipt issues unless new contradictory evidence appears.
+- Follow-up owner: CONS-M1 lane owner / runtime owner
+
+### 2026-06-15 - Targeted Rerun After Live J1B V2 Apply Recovered 6 Of The 10 Failing Scenarios, Leaving 4 Narrower Runtime Gaps
+
+- Area: CONS-M1 / production acceptance / targeted J1B rerun
+- Status: open
+- Severity: P1
+- Uncertainty: Once the live J1B CaseType rows were actually updated to v2, it was still unclear whether the previous `10` failures would mostly disappear, partially recover, or remain unchanged. Without that rerun, the lane could not tell whether to focus next on data parity or on runtime logic.
+- Default action taken: Re-ran only the `10` scenarios that had failed in the refreshed 36-scenario bundle, using the live J1B draft after the in-place v2 apply.
+- Why this default: It provides a fast attribution split. If most failures recovered, the lane learns the live legacy data plane was a major factor. If a narrower residue remains, the next code pass can target concrete runtime behavior rather than broad migration uncertainty.
+- Evidence: `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-targeted-after-v2-apply/summary.md`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-targeted-after-v2-apply/summary.json`
+- Production URL / screenshot / receipt: Production target remained `https://demo.anytrans.ai` on J1B draft `cmq4q82mx0001qj32gt8htfiq`. Targeted rerun result: `6` recovered and `4` still failing. Recovered: `human_support_requested_followup_member`, `human_support_requested_direct_detailed`, `account_wallet_frozen_basic`, `account_wallet_frozen_followup_member`, `withdrawal_password_reset_phone_changed`, `promotion_claim_failed_member_first_followup_bonus`. Remaining failures: `withdrawal_not_credited_reference_first`, `duplicate_deposit_basic`, `account_wallet_frozen_login_locked`, `login_password_reset_phone_changed`.
+- Owner decision needed: None before the next code pass. The lane should now treat those `4` failures as the live current blocker set.
+- Follow-up owner: CONS-M1 lane owner / runtime owner
+
+### 2026-06-15 - `start_procedure` Still Appears To Drop Same-Turn `collectedFacts` When A New ProcedureRun Starts
+
+- Area: CONS-M1 / runtime continuity / Procedure start semantics
+- Status: open
+- Severity: P0
+- Uncertainty: The narrowed set of `4` remaining production failures still shared a suspicious pattern: the triggering user message already contained useful structured evidence such as `member_id`, reference numbers, or an explicit request for human support; `start_procedure` was called from that same turn; yet the fresh ProcedureRun often asked for those facts again or failed to branch/handoff as if they had never been provided.
+- Default action taken: Did not guess-fix in production. Instead, traced the targeted receipts and current owned runtime code to isolate the likely seam. The strongest signal is that `toolInput.collectedFacts` is present on the `start_procedure` call, but `handleStartProcedure()` does not reconcile that payload into the newly started run, and `startProcedureRun()` currently seeds raw input events without an explicit same-turn collected-fact ingest step.
+- Why this default: It narrows the next engineering slice to a falsifiable runtime hypothesis instead of leaving the lane with a vague "some scenarios still fail" statement.
+- Evidence: `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-targeted-after-v2-apply/account_wallet_frozen_login_locked.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-targeted-after-v2-apply/withdrawal_not_credited_reference_first.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-targeted-after-v2-apply/duplicate_deposit_basic.json`; `apps/console/lib/agent/tool-interceptor.ts`; `apps/console/lib/agent/session-store.ts`
+- Production URL / screenshot / receipt: In `account_wallet_frozen_login_locked`, the `start_procedure` input carried `collectedFacts.member_id=JAYA113C88F` and `request_human_support=true`, but the run stayed on `collect_frozen_details` and never called `create_human_task`. In `withdrawal_not_credited_reference_first`, the trigger turn already carried `member_id` and reference text, but the run never advanced into `get_latest_withdrawal`.
+- Owner decision needed: None before local implementation. Default next move is to add focused runtime tests for same-turn `collectedFacts` carry-forward and then patch the Procedure start path locally before another production rerun.
+- Follow-up owner: CONS-M1 lane owner / runtime owner
