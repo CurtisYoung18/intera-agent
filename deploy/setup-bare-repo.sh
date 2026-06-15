@@ -40,7 +40,20 @@ echo "[deploy] cp static + public + prisma..."
 cp -r apps/console/.next/static apps/console/.next/standalone/apps/console/.next/static
 cp -r apps/console/public apps/console/.next/standalone/apps/console/public
 sudo cp -r node_modules/.prisma apps/console/.next/standalone/node_modules/.prisma
-echo "[deploy] restarting..."
+if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
+  echo "[deploy] restarting runtime..."
+  if ! systemctl list-unit-files intera-runtime.service >/dev/null 2>&1; then
+    echo "INTERA_RUNTIME_URL is set but intera-runtime.service is not installed" >&2
+    exit 1
+  fi
+  sudo systemctl restart intera-runtime
+  sleep 1
+  curl -fsS "${INTERA_RUNTIME_URL%/}/internal/health"
+  echo ""
+else
+  echo "[deploy] runtime disabled; INTERA_RUNTIME_URL not set"
+fi
+echo "[deploy] restarting console..."
 sudo systemctl restart intera-console
 sleep 3
 curl -s localhost:3000/api/health

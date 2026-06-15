@@ -63,6 +63,20 @@ if [ ! -d apps/console/.next/standalone/node_modules/@prisma/client ]; then
   cp -r node_modules/@prisma/client apps/console/.next/standalone/node_modules/@prisma/client
 fi
 
+if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
+  echo "=== Restart runtime ==="
+  if ! systemctl list-unit-files intera-runtime.service >/dev/null 2>&1; then
+    echo "INTERA_RUNTIME_URL is set but intera-runtime.service is not installed" >&2
+    exit 1
+  fi
+  sudo systemctl restart intera-runtime
+  sleep 1
+  curl -fsS "${INTERA_RUNTIME_URL%/}/internal/health" && echo ""
+else
+  echo "=== Runtime ==="
+  echo "INTERA_RUNTIME_URL not set; skipping intera-runtime.service"
+fi
+
 echo "=== Restart ==="
 sudo systemctl restart intera-console
 
