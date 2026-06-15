@@ -1,14 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Brain, CheckCircle2, Loader2, Save } from 'lucide-react'
+import { CheckCircle2, Loader2, Save } from 'lucide-react'
 import HighlightedTextarea from '@/components/admin/highlighted-textarea'
-import {
-  drawerFieldClass,
-  DrawerCheckboxRail,
-  DrawerSection,
-  DrawerShell,
-} from '@/components/admin/agent-config-drawer-ui'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { emitAgentConfigUpdated } from '@/lib/agent-config-events'
@@ -77,7 +71,7 @@ function NumField({
         min={min}
         max={max}
         step={step}
-        className={`glass-input-console w-full font-mono ${drawerFieldClass(true)}`}
+        className="glass-input-console h-11 w-full rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 font-mono text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]"
       />
     </label>
   )
@@ -182,19 +176,12 @@ export default function ModelWorkspace() {
 
   const selectedModel = models.find((item) => item.id === config.model)
   const supportsThinking = selectedModel?.supportsThinking ?? false
+  const fieldClass = 'glass-input-console h-11 w-full rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]'
 
   return (
     <PageLoader loading={false} error={null} onRetry={() => window.location.reload()}>
       <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <h2 className="text-[18px] font-semibold tracking-tight text-[var(--mist)]">
-              Model and prompts
-            </h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-[var(--fog)]">
-              Control the customer-facing model, generation limits, and the stable core prompt that defines this Agent&apos;s behavior.
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex min-h-9 items-center gap-2">
             {saveResult === 'saved' ? (
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-800">
@@ -218,102 +205,119 @@ export default function ModelWorkspace() {
           </div>
         </div>
 
-        <DrawerShell>
-          <DrawerSection
-            accent="#8b6ff5"
-            title="Runtime model"
-            lead="The primary model handles customer-facing responses. These controls stay in Brain rather than a detached admin page."
-          >
-            <label className="space-y-1.5 block">
+        <section className="intera-q2-panel overflow-hidden">
+          <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+            <h2 className="text-[16px] font-semibold text-[var(--mist)]">Model configuration</h2>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
+              Control the runtime model and generation limits that shape the customer-facing Agent response.
+            </p>
+          </div>
+          <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
+            <label className="space-y-1.5 md:col-span-2">
               <span className="text-[11px] font-medium text-[var(--fog)]">Model</span>
               <select
                 value={config.model}
                 onChange={(event) => update('model', event.target.value)}
-                className={`glass-input-console ${drawerFieldClass(true)} w-full`}
+                className={fieldClass}
               >
                 {renderModelOptions(models)}
               </select>
             </label>
-          </DrawerSection>
 
-          <DrawerSection accent="#8b6ff5" title="Generation controls">
-            <label className="space-y-1.5 block">
-              <span className="text-[11px] font-medium text-[var(--fog)]">
-                Temperature ({config.temperature})
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={config.temperature}
-                onChange={(event) => update('temperature', parseFloat(event.target.value))}
-                className="mt-1 w-full accent-indigo"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <span className="text-[11px] font-medium text-[var(--fog)]">Temperature</span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={config.temperature}
+                  onChange={(event) => update('temperature', parseFloat(event.target.value) || 0)}
+                  className={`${fieldClass} w-[96px] font-mono`}
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={config.temperature}
+                  onChange={(event) => update('temperature', parseFloat(event.target.value))}
+                  className="w-full accent-[var(--color-accent-primary)]"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
               <NumField label="Thinking budget" value={config.thinkingBudget} onChange={(value) => update('thinkingBudget', value)} />
               <NumField label="Max iterations" value={config.maxIterations} onChange={(value) => update('maxIterations', value)} />
+            </div>
+
+            <div className="md:col-span-2 lg:max-w-[360px]">
               <NumField label="Max output tokens" value={config.maxOutputTokens} onChange={(value) => update('maxOutputTokens', value)} />
             </div>
 
-            <DrawerCheckboxRail accent="#8b6ff5">
-              <label className={`flex items-center gap-2 rounded-lg px-1 py-0.5 ${supportsThinking ? 'cursor-pointer hover:bg-white/50' : 'cursor-not-allowed opacity-50'}`}>
-                <input
-                  type="checkbox"
-                  checked={!!config.extendedThinking && supportsThinking}
-                  disabled={!supportsThinking}
-                  onChange={(event) => update('extendedThinking', event.target.checked)}
-                  className="rounded accent-indigo"
-                />
-                <span className="text-[12px] text-[var(--mist)]">
-                  Extended thinking
-                  {!supportsThinking ? <span className="ml-1 text-[10px] text-[var(--smoke)]">unsupported by selected model</span> : null}
-                </span>
-              </label>
-            </DrawerCheckboxRail>
-          </DrawerSection>
-
-          <DrawerSection
-            accent="#5b8af7"
-            title="Core prompt"
-            lead="Stable prompt prefix. Runtime Procedure overlays and Memory context append later."
-            actions={
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm('Reset the core prompt to the current default?')) {
-                    update('coreSystemPrompt', CLEAN_CORE_PROMPT)
-                  }
-                }}
-                className="rounded-full border border-lavender/30 bg-white/70 px-3.5 py-1.5 text-[11px] font-semibold text-lavender shadow-sm hover:bg-lavender/15"
-              >
-                Reset to default
-              </button>
-            }
-          >
-            <div className="flex flex-col gap-3">
-              <HighlightedTextarea
-                id="brain-core-system-prompt"
-                value={config.coreSystemPrompt}
-                onChange={(value) => update('coreSystemPrompt', value)}
-                spellCheck={false}
-                className={`w-full ${drawerFieldClass(true)}`}
+            <label className={`inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface-muted)] px-3 py-2 text-[12px] ${supportsThinking ? 'text-[var(--mist)]' : 'cursor-not-allowed text-[var(--smoke)] opacity-70'}`}>
+              <input
+                type="checkbox"
+                checked={!!config.extendedThinking && supportsThinking}
+                disabled={!supportsThinking}
+                onChange={(event) => update('extendedThinking', event.target.checked)}
+                className="rounded accent-[var(--color-accent-primary)]"
               />
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
-                <span>{config.coreSystemPrompt?.length ?? 0} chars</span>
-                <span>
-                  System tokens like <code>{'{{...}}'}</code> are injected at runtime and kept out of the editable text.
-                </span>
-              </div>
-            </div>
-          </DrawerSection>
+              <span>
+                Extended thinking
+                {!supportsThinking ? <span className="ml-1 text-[10px]">unsupported by selected model</span> : null}
+              </span>
+            </label>
+          </div>
+        </section>
 
-          <DrawerSection
-            accent="#357f7c"
-            title="Assembled prompt preview"
-            lead="Current backend-assembled discovery prompt after save. Use this to inspect what the runtime will actually send."
-          >
+        <section className="intera-q2-panel overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4">
+            <div>
+              <h2 className="text-[16px] font-semibold text-[var(--mist)]">Core prompt</h2>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
+                Stable prompt prefix. Runtime Procedure overlays and Memory context append later.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Reset the core prompt to the current default?')) {
+                  update('coreSystemPrompt', CLEAN_CORE_PROMPT)
+                }
+              }}
+              className="rounded-full border border-[var(--color-border-subtle)] bg-white px-3.5 py-1.5 text-[11px] font-semibold text-[var(--color-accent-primary)] shadow-sm hover:bg-[var(--color-bg-surface-muted)]"
+            >
+              Reset to default
+            </button>
+          </div>
+          <div className="space-y-3 px-5 py-5">
+            <HighlightedTextarea
+              id="brain-core-system-prompt"
+              value={config.coreSystemPrompt}
+              onChange={(value) => update('coreSystemPrompt', value)}
+              spellCheck={false}
+              className="min-h-[320px] w-full rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-4 py-3 text-[13px] text-[var(--color-text-primary)]"
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-2 text-[10px] text-[var(--fog)]/75">
+              <span>{config.coreSystemPrompt?.length ?? 0} chars</span>
+              <span>
+                System tokens like <code>{'{{...}}'}</code> are injected at runtime and kept out of the editable text.
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="intera-q2-panel overflow-hidden">
+          <div className="border-b border-[var(--color-border-subtle)] px-5 py-4">
+            <h2 className="text-[16px] font-semibold text-[var(--mist)]">Assembled prompt preview</h2>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--fog)]">
+              Inspect the backend-assembled discovery prompt that the runtime will actually send after save.
+            </p>
+          </div>
+          <div className="px-5 py-5">
             {previewLoading ? (
               <div className="flex items-center gap-2 py-2 text-[12px] text-[var(--fog)]">
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -326,8 +330,8 @@ export default function ModelWorkspace() {
             ) : (
               <span className="text-[11px] text-[var(--fog)]">Preview unavailable.</span>
             )}
-          </DrawerSection>
-        </DrawerShell>
+          </div>
+        </section>
       </div>
     </PageLoader>
   )

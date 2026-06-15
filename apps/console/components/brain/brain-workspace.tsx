@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Brain, Database, FlaskConical, ScrollText, UserRound } from 'lucide-react'
+import { Brain, Database, FlaskConical, UserRound } from 'lucide-react'
 import VersionContextBar from '@/components/admin/version-context-bar'
 import MemoryStrategyWorkspace, { type BrainMemorySection } from '@/components/memory/memory-strategy-workspace'
 import ModelWorkspace from '@/components/brain/model-workspace'
@@ -71,55 +71,45 @@ export default function BrainWorkspace() {
   }
 
   return (
-    <div>
-      <VersionContextBar />
-      <main className="mx-auto max-w-7xl px-6 py-7 sm:px-8">
-        <div className="space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]">
-                Build / Components / Brain
-              </p>
-              <h1 className="mt-2 text-[26px] font-semibold tracking-tight text-[var(--mist)]">
-                Brain workspace
-              </h1>
-              <p className="mt-2 text-[13px] leading-relaxed text-[var(--fog)]">
-                Configure the Agent&apos;s model, prompt boundary, memory behavior, profile promotion, and compact-test workflow inside one native Build workspace.
-              </p>
-            </div>
-            <div className="rounded-lg border border-black/[0.08] bg-white/70 px-4 py-3 text-[12px] leading-5 text-[var(--fog)]">
-              Procedure runtime state stays outside confirmed facts and profile memory.
-            </div>
-          </div>
+    <div className="mx-auto max-w-[1180px] space-y-6">
+      <section className="intera-q2-panel overflow-hidden">
+        <VersionContextBar />
+      </section>
 
-          <div className="grid gap-2 rounded-lg border border-black/[0.08] bg-white/65 p-1 sm:grid-cols-4">
-            {BRAIN_SECTIONS.map((item) => {
-              const active = section === item.id
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => selectSection(item.id)}
-                  className={`flex min-h-[72px] items-start gap-3 rounded-md px-3 py-2.5 text-left transition ${
-                    active ? 'bg-white shadow-sm ring-1 ring-black/[0.08]' : 'hover:bg-white/70'
-                  }`}
-                >
-                  <item.icon className={`mt-0.5 h-4 w-4 ${active ? 'text-cyan-700' : 'text-[var(--fog)]'}`} />
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-semibold text-[var(--mist)]">{item.label}</span>
-                    <span className="mt-0.5 block text-[11px] leading-snug text-[var(--fog)]">{item.description}</span>
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-
-          {section === 'model' ? <ModelWorkspace /> : null}
-          {section !== 'model' ? (
-            <MemoryStrategyWorkspace embedded lockedSection={toMemorySection(section)} initialSection={toMemorySection(section)} />
-          ) : null}
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <h1 className="text-[34px] font-semibold tracking-tight text-[var(--mist)]">Brain</h1>
+          <p className="max-w-4xl text-[14px] leading-6 text-[var(--fog)]">
+            Configure the Agent&apos;s model, memory, profile, and compact-test behavior inside the same Components workspace.
+          </p>
         </div>
-      </main>
+
+        <div className="flex flex-wrap gap-2 border-b border-[var(--color-border-subtle)] pb-3">
+          {BRAIN_SECTIONS.map((item) => {
+            const active = section === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => selectSection(item.id)}
+                className={`intera-q2-button inline-flex min-h-10 items-center gap-2 border px-3.5 py-2 text-[13px] font-semibold transition ${
+                  active
+                    ? 'border-[rgba(53,127,124,0.28)] bg-[rgba(53,127,124,0.09)] text-[var(--color-accent-primary)]'
+                    : 'border-[var(--color-border-subtle)] bg-white/80 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface-muted)] hover:text-[var(--color-text-primary)]'
+                }`}
+              >
+                <item.icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {section === 'model' ? <ModelWorkspace /> : null}
+        {section !== 'model' ? (
+          <MemoryStrategyWorkspace embedded lockedSection={toMemorySection(section)} initialSection={toMemorySection(section)} />
+        ) : null}
+      </div>
     </div>
   )
 }

@@ -11,6 +11,7 @@ import {
   EyeOff,
   Globe,
   Headset,
+  KeyRound,
   Loader2,
   MessageCircle,
   Plug,
@@ -19,7 +20,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/confirm-dialog'
-import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
+import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
 import LiveChatChannelWorkspace from './livechat-channel-workspace'
@@ -29,6 +30,8 @@ type ChannelInfo = {
   id: string
   label: string
   description: string
+  supportText: string
+  capabilities: string[]
   icon: typeof Plug
   active: boolean
   comingSoon: boolean
@@ -55,6 +58,8 @@ const CHANNELS: ChannelInfo[] = [
     id: 'livechat',
     label: 'LiveChat',
     description: 'Connection · Routing · Rendering · Human Handoff',
+    supportText: 'Configure routing, rendering, escalation, and webhook delivery.',
+    capabilities: ['Routing', 'Rendering', 'Handoff'],
     icon: MessageCircle,
     active: true,
     comingSoon: false,
@@ -63,6 +68,8 @@ const CHANNELS: ChannelInfo[] = [
     id: 'web-chat',
     label: 'Web Chat',
     description: 'Embedded widget · Session entry point',
+    supportText: 'Keep the embedded entry point inside the Build workspace.',
+    capabilities: ['Embed', 'Session entry'],
     icon: Globe,
     active: true,
     comingSoon: false,
@@ -71,6 +78,8 @@ const CHANNELS: ChannelInfo[] = [
     id: 'telegram',
     label: 'Telegram',
     description: 'Customer messaging channel',
+    supportText: 'Prepared as the next delivery lane after the active channels.',
+    capabilities: ['Queued'],
     icon: Send,
     active: false,
     comingSoon: true,
@@ -79,6 +88,8 @@ const CHANNELS: ChannelInfo[] = [
     id: 'livedesk',
     label: 'LiveDesk',
     description: 'Customer service platform integration',
+    supportText: 'Reserved for the next service-platform integration lane.',
+    capabilities: ['Queued'],
     icon: Headset,
     active: false,
     comingSoon: true,
@@ -109,7 +120,11 @@ function ChannelsTab({
   selectedChannel: string | null
 }) {
   const router = useRouter()
+  const { locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
   const agentConfigId = useSelectedAgentId()
+  const activeChannels = CHANNELS.filter((channel) => channel.active && !channel.comingSoon)
+  const queuedChannels = CHANNELS.filter((channel) => channel.comingSoon)
 
   if (selectedChannel === 'livechat') {
     return (
@@ -125,68 +140,105 @@ function ChannelsTab({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-2xl border border-black/[0.05] bg-white/64 px-5 py-4 text-[12px] leading-6 text-[var(--fog)] shadow-[var(--shadow-card)]">
-        Channel setup belongs inside Build because delivery staff need to bind the active Agent version, human-handoff target, and rendering behavior without leaving the current workspace.
-      </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {CHANNELS.map((channel) => {
-          const Icon = channel.icon
-          const badge = channel.active
-            ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-malachite/20 bg-malachite/10 px-2 py-0.5 text-[10px] font-medium text-malachite">
-                  <span className="h-1.5 w-1.5 rounded-full bg-malachite" />
-                  Active
-                </span>
-              )
-            : channel.comingSoon
-              ? <span className="inline-flex rounded-full border border-black/[0.06] bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium text-[var(--fog)]">Coming soon</span>
-              : <span className="inline-flex rounded-full border border-amber/20 bg-amber/10 px-2 py-0.5 text-[10px] font-medium text-amber">Inactive</span>
-
-          const inner = (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${channel.active ? 'bg-indigo/[0.08]' : 'bg-black/[0.03]'}`}>
-                    <Icon className={`h-5 w-5 ${channel.active ? 'text-indigo' : 'text-[var(--fog)]'}`} />
+    <div className="space-y-9">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-[18px] font-semibold text-[var(--mist)]">{isZh ? '已启用的渠道' : 'Active channels'}</h2>
+          <p className="mt-1 text-[12px] text-[var(--fog)]">
+            {isZh ? '管理已经接入当前 Build 工作区的交付渠道。' : 'Manage the delivery channels that are already wired into the current Build workspace.'}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {activeChannels.map((channel) => {
+            const Icon = channel.icon
+            return (
+              <button
+                key={channel.id}
+                type="button"
+                onClick={() => router.push(routeFor(basePath, 'channels', channel.id))}
+                className={`${channelCardCls(channel)} min-h-[220px]`}
+              >
+                <div className="flex h-full flex-col gap-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo/[0.08]">
+                        <Icon className="h-5 w-5 text-indigo" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[18px] font-semibold text-[var(--mist)]">{channel.label}</p>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-malachite/20 bg-malachite/10 px-2 py-0.5 text-[10px] font-medium text-malachite">
+                            <span className="h-1.5 w-1.5 rounded-full bg-malachite" />
+                            {isZh ? '活跃' : 'Active'}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[12px] font-medium text-[var(--fog)]">{channel.description}</p>
+                      </div>
+                    </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-[var(--fog)]/35 transition-all group-hover:translate-x-0.5 group-hover:text-indigo" />
                   </div>
-                  <div>
-                    <p className="text-[14px] font-semibold text-[var(--mist)]">{channel.label}</p>
-                    <p className="mt-0.5 text-[11px] text-[var(--fog)]">{channel.description}</p>
+
+                  <p className="text-left text-[13px] leading-6 text-[var(--fog)]">{channel.supportText}</p>
+
+                  <div className="mt-auto grid gap-2 sm:grid-cols-3">
+                    {channel.capabilities.map((capability) => (
+                      <div
+                        key={capability}
+                        className="rounded-2xl border border-black/[0.05] bg-white/78 px-3 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
+                      >
+                        <p className="text-[11px] text-[var(--fog)]">{isZh ? '能力' : 'Capability'}</p>
+                        <p className="mt-1 text-[13px] font-semibold text-[var(--mist)]">{capability}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                {channel.active ? <ArrowRight className="h-4 w-4 text-[var(--fog)]/30 transition-all group-hover:translate-x-0.5 group-hover:text-indigo" /> : null}
-              </div>
-              <div className="mt-3">{badge}</div>
-            </>
-          )
+              </button>
+            )
+          })}
+        </div>
+      </section>
 
-          if (channel.comingSoon) {
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-[18px] font-semibold text-[var(--mist)]">{isZh ? '计划中的渠道' : 'Planned channels'}</h2>
+          <p className="mt-1 text-[12px] text-[var(--fog)]">
+            {isZh ? '先收敛当前活跃渠道，后续再逐步接入下一批渠道。' : 'Reserved next so the active channel setup can stay focused and stable.'}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {queuedChannels.map((channel) => {
+            const Icon = channel.icon
             return (
-              <div key={channel.id} className={channelCardCls(channel)}>
-                {inner}
+              <div key={channel.id} className={`${channelCardCls(channel)} min-h-[168px]`}>
+                <div className="flex h-full flex-col gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black/[0.03]">
+                      <Icon className="h-5 w-5 text-[var(--fog)]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[18px] font-semibold text-[var(--mist)]">{channel.label}</p>
+                        <span className="inline-flex rounded-full border border-black/[0.06] bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium text-[var(--fog)]">
+                          {isZh ? '即将推出' : 'Coming soon'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[12px] font-medium text-[var(--fog)]">{channel.description}</p>
+                    </div>
+                  </div>
+                  <p className="text-[13px] leading-6 text-[var(--fog)]">{channel.supportText}</p>
+                </div>
               </div>
             )
-          }
-
-          return (
-            <button
-              key={channel.id}
-              type="button"
-              onClick={() => router.push(routeFor(basePath, 'channels', channel.id))}
-              className={channelCardCls(channel)}
-            >
-              {inner}
-            </button>
-          )
-        })}
-      </div>
+          })}
+        </div>
+      </section>
     </div>
   )
 }
 
 function ApiKeysTab() {
   const { t, locale } = useConsoleLocale()
+  const isZh = locale === 'zh'
   const [keys, setKeys] = useState<ApiKeyRow[]>([])
   const [agents, setAgents] = useState<AgentOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -334,11 +386,6 @@ function ApiKeysTab() {
     return config ? `${config.name} v${config.version}` : `${agentConfigId.slice(0, 8)}…`
   }
 
-  const chatsEndpointDesc =
-    locale === 'zh'
-      ? '按用户读取会话记录与状态（含组织解析）'
-      : 'List conversation records for a user (with org resolution)'
-
   return (
     <>
       <div className="max-w-4xl">
@@ -440,7 +487,6 @@ function ApiKeysTab() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-[10px] text-[var(--fog)] opacity-60">{t('apiKeys.bindAgentConfigHint')}</p>
               </div>
               <div className="flex justify-end gap-2">
                 <button
@@ -468,27 +514,38 @@ function ApiKeysTab() {
           </div>
         ) : null}
 
-        <div className="mb-4 flex justify-end">
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 rounded-xl bg-[var(--indigo)] px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            <Plus size={14} />
-            {t('apiKeys.newKey')}
-          </button>
-        </div>
+        {keys.length > 0 || showForm ? (
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 rounded-xl bg-[var(--indigo)] px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <Plus size={14} />
+              {t('apiKeys.newKey')}
+            </button>
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="flex justify-center py-12">
             <Loader2 size={16} className="animate-spin text-[var(--fog)]" />
           </div>
         ) : keys.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-black/[0.03]">
-              <Plus size={18} className="text-[var(--fog)] opacity-30" />
+          <div className="rounded-[28px] border border-black/[0.05] bg-white/72 px-6 py-16 text-center shadow-[0_18px_40px_rgba(21,23,25,0.05)]">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] bg-indigo/[0.08]">
+              <KeyRound size={22} className="text-indigo" />
             </div>
-            <p className="text-[13px] text-[var(--fog)] opacity-50">{t('apiKeys.empty')}</p>
+            <p className="text-[24px] font-semibold tracking-tight text-[var(--mist)]">{isZh ? '还没有 API 密钥' : 'No API keys yet'}</p>
+            <p className="mx-auto mt-2 max-w-md text-[13px] leading-6 text-[var(--fog)]">{t('apiKeys.empty')}</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[var(--indigo)] px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              <Plus size={14} />
+              {t('apiKeys.newKey')}
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -536,46 +593,6 @@ function ApiKeysTab() {
             ))}
           </div>
         )}
-
-        <div className="mt-10">
-          <h2 className="mb-4 text-[14px] font-bold text-[var(--mist)]">{t('apiKeys.howToUse')}</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-black/[0.06] bg-white/60 p-5 backdrop-blur-xl">
-              <p className="mb-3 text-[12px] font-bold text-[var(--mist)]">{t('apiKeys.authTitle')}</p>
-              <p className="mb-3 text-[11px] leading-relaxed text-[var(--fog)]">{t('apiKeys.authDesc')}</p>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-xl bg-black/[0.03] p-3 font-mono text-[10px] leading-relaxed text-[var(--mist)]">{`curl https://demo.anytrans.ai/api/messages \\
-  -H "Authorization: Bearer intera_sk_live_…"
-  -H "Content-Type: application/json"
-  -d '{"message":"Hello","userId":"u_1"}'`}</pre>
-            </div>
-
-            <div className="rounded-2xl border border-black/[0.06] bg-white/60 p-5 backdrop-blur-xl">
-              <p className="mb-3 text-[12px] font-bold text-[var(--mist)]">{t('apiKeys.endpointsTitle')}</p>
-              <div className="flex flex-col gap-2">
-                {[
-                  { method: 'POST', path: '/api/messages', desc: t('apiKeys.mainEndpointDesc') },
-                  { method: 'GET', path: '/api/chats?userId=…', desc: chatsEndpointDesc },
-                ].map((endpoint) => (
-                  <div key={endpoint.path} className="flex items-start gap-3 border-b border-black/[0.04] py-2 last:border-0">
-                    <span className="w-[38px] shrink-0 rounded-md bg-indigo/[0.06] px-1.5 py-0.5 text-center font-mono text-[10px] font-bold text-[var(--indigo)]">{endpoint.method}</span>
-                    <div>
-                      <p className="font-mono text-[11px] font-semibold text-[var(--mist)]">{endpoint.path}</p>
-                      <p className="mt-0.5 text-[10px] text-[var(--fog)] opacity-60">{endpoint.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {agents.length > 1 ? (
-            <div className="mt-4 rounded-2xl border border-indigo/[0.08] bg-indigo/[0.03] p-4">
-              <p className="text-[11px] leading-relaxed text-[var(--mist)]">
-                <strong>{t('apiKeys.tip')}:</strong> {t('apiKeys.tipDesc')}
-              </p>
-            </div>
-          ) : null}
-        </div>
       </div>
 
       <ConfirmDialog
@@ -597,25 +614,24 @@ function IntegrationsWorkspaceInner({ basePath }: { basePath: string }) {
   const selectedChannel = searchParams.get('channel')
 
   return (
-    <div className="px-8 py-8">
-      <VersionContextBar />
-      <div className="mb-6 mt-6 flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/20 bg-white/60 shadow-sm backdrop-blur-sm">
+    <div className="mx-auto max-w-[1180px] space-y-7 px-2 py-2">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/20 bg-white/70 shadow-sm backdrop-blur-sm">
           <Plug className="h-4.5 w-4.5 text-purple-500" />
         </div>
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--mist)]">{t('integrationsPage.title')}</h1>
-          <p className="mt-1 text-[12px] text-[var(--fog)]">Connect delivery channels, API access, and handoff destinations without leaving the current Build workspace.</p>
+          <h1 className="text-[32px] font-semibold tracking-tight text-[var(--mist)]">{t('integrationsPage.title')}</h1>
+          <p className="mt-1 text-[14px] text-[var(--fog)]">Connect delivery channels, API access, and handoff destinations without leaving the current Build workspace.</p>
         </div>
       </div>
 
-      <div className="mb-8 flex gap-0 border-b border-black/5">
+      <div className="flex gap-0 border-b border-black/5">
         {(['channels', 'apiKeys'] as const).map((tabKey) => (
           <button
             key={tabKey}
             type="button"
             onClick={() => router.push(routeFor(basePath, tabKey))}
-            className={`relative -mb-px px-5 py-2.5 text-[13px] font-medium transition-colors ${
+            className={`relative -mb-px px-5 py-3 text-[14px] font-medium transition-colors ${
               tab === tabKey ? 'text-[var(--mist)]' : 'text-[var(--fog)]/60 hover:text-[var(--fog)]'
             }`}
           >

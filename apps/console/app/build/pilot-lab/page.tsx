@@ -758,7 +758,7 @@ export default function PilotLabPage() {
   if (activeTab === 'playground') {
     return (
       <div className="intera-q2-page flex h-full min-h-0 flex-col overflow-hidden px-3 py-3 text-[var(--color-text-primary)] sm:px-4 lg:px-5">
-        <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-3">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1540px] flex-1 flex-col gap-3">
           <VersionContextBar />
           <PilotLabTabs activeTab="playground" t={t} />
           <div className="min-h-0 flex-1 overflow-hidden">
@@ -771,7 +771,7 @@ export default function PilotLabPage() {
 
   return (
     <div className="intera-q2-page flex h-full min-h-0 flex-col overflow-hidden px-3 py-3 text-[var(--color-text-primary)] sm:px-4 lg:px-5">
-      <div className="mx-auto flex min-h-0 w-full max-w-[1580px] flex-1 flex-col gap-3">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1540px] flex-1 flex-col gap-3">
         <VersionContextBar />
 
         <PilotLabTabs activeTab="pilot" t={t} />
@@ -783,12 +783,12 @@ export default function PilotLabPage() {
           </div>
         )}
 
-        <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
-          <main className="intera-q2-panel flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <section className="flex flex-col gap-3 border-b border-[var(--color-border-subtle)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
+          <main className="intera-q2-panel flex min-h-0 min-w-0 flex-col overflow-hidden bg-white/88 shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
+            <section className="flex flex-col gap-3 border-b border-[var(--color-border-subtle)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div className="min-w-0">
                 <p className="text-[12px] font-medium text-[var(--color-text-tertiary)]">{copy.currentAgent}</p>
-                <h2 className="truncate text-[16px] font-semibold text-[var(--color-text-primary)]">
+                <h2 className="truncate text-[18px] font-semibold text-[var(--color-text-primary)]">
                   {context ? `${context.selected.name} v${context.selected.version}` : copy.loadingDraftContext}
                 </h2>
               </div>
@@ -803,7 +803,7 @@ export default function PilotLabPage() {
               </div>
             </section>
 
-            <section className="min-h-0 flex-1 overflow-y-auto bg-[color:color-mix(in_srgb,var(--color-bg-surface-muted)_62%,white)] px-4 py-5 sm:px-6">
+            <section className="min-h-0 flex-1 overflow-y-auto bg-[color:color-mix(in_srgb,var(--color-bg-surface-muted)_36%,white)] px-5 py-5 sm:px-6">
               <div className="mx-auto flex max-w-[860px] flex-col gap-4">
                 {messages.map((message) => (
                   <ChatBubble key={message.id} message={message} />
@@ -823,7 +823,7 @@ export default function PilotLabPage() {
               </div>
             </section>
 
-            <section className="sticky bottom-0 border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-4 py-3 sm:px-5">
+            <section className="sticky bottom-0 border-t border-[var(--color-border-subtle)] bg-white/92 px-5 py-3 backdrop-blur sm:px-6">
               <form
                 className="mx-auto flex max-w-[920px] items-end gap-2"
                 onSubmit={(event) => {
@@ -914,7 +914,7 @@ function PilotLabTabs({ activeTab, t, compact = false }: { activeTab: 'pilot' | 
   ]
 
   return (
-    <nav className={`${compact ? 'flex flex-shrink-0 flex-wrap gap-2 px-1' : 'intera-q2-panel flex flex-wrap gap-2 p-3'}`} aria-label={t('pilotLab.tabs.aria')}>
+    <nav className={`${compact ? 'flex flex-shrink-0 flex-wrap gap-2 px-1' : 'intera-q2-panel flex flex-wrap gap-2 p-3.5 shadow-[0_12px_28px_rgba(21,23,25,0.04)]'}`} aria-label={t('pilotLab.tabs.aria')}>
       {tabs.map((tab) => {
         const active = activeTab === tab.id
         return (
@@ -922,7 +922,7 @@ function PilotLabTabs({ activeTab, t, compact = false }: { activeTab: 'pilot' | 
             key={tab.id}
             href={tab.href}
             aria-current={active ? 'page' : undefined}
-            className={`intera-q2-button inline-flex min-h-10 items-center gap-2 border px-3 py-2 text-left text-[13px] font-semibold transition ${
+            className={`intera-q2-button inline-flex min-h-10 items-center gap-2 border px-3.5 py-2 text-left text-[13px] font-semibold transition ${
               active
                 ? 'border-[rgba(53,127,124,0.28)] bg-[rgba(53,127,124,0.09)] text-[var(--color-accent-primary)]'
                 : 'border-[var(--color-border-subtle)] bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-surface-muted)]'
@@ -985,7 +985,7 @@ function QuickPromptRow({ disabled, onSelect }: { disabled: boolean; onSelect: (
           type="button"
           disabled={disabled}
           onClick={() => onSelect(prompt)}
-          className="intera-q2-button min-h-11 border border-[var(--color-border-subtle)] bg-white/80 px-3 py-2 text-left text-[12px] leading-4 text-[var(--color-text-secondary)] hover:border-[rgba(53,127,124,0.28)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+          className="intera-q2-button min-h-11 rounded-[18px] border border-[var(--color-border-subtle)] bg-white/86 px-3 py-2 text-left text-[12px] leading-4 text-[var(--color-text-secondary)] shadow-[0_8px_18px_rgba(21,23,25,0.03)] hover:border-[rgba(53,127,124,0.28)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
         >
           {prompt}
         </button>
@@ -1086,7 +1086,7 @@ function ControlPanel({
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
   return (
-    <aside className="min-h-0 min-w-0 space-y-3 overflow-y-auto xl:h-full xl:pr-1">
+    <aside className="min-h-0 min-w-0 space-y-2.5 overflow-y-auto xl:h-full">
       <section className="intera-q2-rail p-4">
         <PanelHeader icon={ClipboardList} title={isZh ? '当前上下文' : 'Current context'} eyebrow={isZh ? '草稿视角' : 'Draft lens'} />
         {context ? (
@@ -1639,12 +1639,12 @@ function PilotArtifactBlock({
 function PanelHeader({ icon: Icon, title, eyebrow }: { icon: typeof ClipboardList; title: string; eyebrow: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] bg-[rgba(53,127,124,0.09)] text-[var(--color-accent-primary)]">
+      <span className="flex h-8 w-8 items-center justify-center rounded-[14px] bg-[rgba(53,127,124,0.09)] text-[var(--color-accent-primary)]">
         <Icon size={14} />
       </span>
       <div>
-        <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">{eyebrow}</p>
-        <h3 className="text-[14px] font-semibold text-[var(--color-text-primary)]">{title}</h3>
+        <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">{eyebrow}</p>
+        <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">{title}</h3>
       </div>
     </div>
   )

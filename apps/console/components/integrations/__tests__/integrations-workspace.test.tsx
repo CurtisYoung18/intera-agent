@@ -80,13 +80,14 @@ describe('IntegrationsWorkspace', () => {
     expect(mockPush).toHaveBeenCalledWith('/build/components/integrations?tab=channels&channel=livechat')
   })
 
-  it('uses current conversation endpoint copy instead of legacy cases endpoint', async () => {
+  it('shows a focused API key empty state without the old help sections', async () => {
     search = new URLSearchParams('tab=apiKeys')
     const { default: IntegrationsWorkspace } = await import('@/components/integrations/integrations-workspace')
 
     render(<IntegrationsWorkspace />)
 
-    expect(await screen.findByText('/api/chats?userId=…')).toBeDefined()
-    expect(screen.queryByText('/api/cases?userId=…')).toBeNull()
+    expect(await screen.findByRole('button', { name: 'New Key' })).toBeDefined()
+    expect(screen.getByText('No API keys yet')).toBeDefined()
+    expect(screen.queryByText('How to use API keys')).toBeNull()
   })
 })
