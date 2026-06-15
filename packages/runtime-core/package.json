@@ -18,6 +18,7 @@
     "./procedure-run-progress": "./src/procedure-run-progress.ts",
     "./procedure-run-signals": "./src/procedure-run-signals.ts",
     "./procedure-run-finalization": "./src/procedure-run-finalization.ts",
+    "./procedure-run-hydration": "./src/procedure-run-hydration.ts",
     "./procedure-run-tool-assessment": "./src/procedure-run-tool-assessment.ts",
     "./procedure-run-tool-matching": "./src/procedure-run-tool-matching.ts",
     "./provider-tool-turn": "./src/provider-tool-turn.ts",

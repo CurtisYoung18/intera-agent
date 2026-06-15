@@ -1,21 +1,5 @@
 import { prisma } from '@intera/shared/prisma'
-
-export interface PersistedProcedureRunRecord {
-  id: string
-  caseId: string
-  orgId?: string
-  chatId?: string
-  agentConfigId: string
-  procedureId: string
-  status: string
-  inputEpoch: number
-  needsReconcile: boolean
-  currentStepId: string | null
-  outcome: string | null
-  state: unknown
-  createdAt?: Date | string
-  updatedAt?: Date | string
-}
+import type { PersistedProcedureRunRecord } from '@intera/runtime-core/procedure-run-hydration'
 
 export interface HydratedProcedureRuntime {
   latestInputEpoch: number

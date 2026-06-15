@@ -42,13 +42,13 @@ import {
   flushProcedureRunPersistence,
   loadProcedureRuntime,
   setProcedureRunPersistenceForTest,
-  type PersistedProcedureRunRecord,
   type ProcedureRunPersistenceAdapter,
 } from './procedure-run-persistence'
 import {
   hydratePersistedRun,
   normalizeHydratedRun,
-} from './procedure-run-hydration'
+  type PersistedProcedureRunRecord,
+} from '@intera/runtime-core/procedure-run-hydration'
 import {
   currentStep,
   findBranchDefinition,
