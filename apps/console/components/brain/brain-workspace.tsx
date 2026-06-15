@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Brain, Database, FlaskConical, UserRound } from 'lucide-react'
+import { Brain, Database } from 'lucide-react'
 import VersionContextBar from '@/components/admin/version-context-bar'
-import MemoryStrategyWorkspace, { type BrainMemorySection } from '@/components/memory/memory-strategy-workspace'
+import MemoryStrategyWorkspace from '@/components/memory/memory-strategy-workspace'
 import ModelWorkspace from '@/components/brain/model-workspace'
 
-type BrainSection = 'model' | 'memory' | 'profile' | 'compact-test'
+type BrainSection = 'model' | 'memory'
 
 const BRAIN_SECTIONS: Array<{
   id: BrainSection
@@ -24,33 +24,16 @@ const BRAIN_SECTIONS: Array<{
   {
     id: 'memory',
     label: 'Memory',
-    description: 'Strategy, thresholds, preserve rules, and extraction behavior.',
+    description: 'Compaction, long-term memory, and fact extraction behavior.',
     icon: Database,
-  },
-  {
-    id: 'profile',
-    label: 'Profile',
-    description: 'Long-term profile promotion separate from ProcedureRun state.',
-    icon: UserRound,
-  },
-  {
-    id: 'compact-test',
-    label: 'Compact Test',
-    description: 'Dry-run a fixed fixture before publishing any memory changes.',
-    icon: FlaskConical,
   },
 ]
 
 function sectionFromMode(mode: string | null): BrainSection {
   if (mode === 'model' || mode === 'prompt' || mode === 'settings') return 'model'
-  if (mode === 'profile') return 'profile'
-  if (mode === 'compact-test' || mode === 'compact' || mode === 'test') return 'compact-test'
+  if (mode === 'profile' || mode === 'compact-test' || mode === 'compact' || mode === 'test') return 'memory'
   if (mode === 'memory') return 'memory'
   return 'model'
-}
-
-function toMemorySection(section: Exclude<BrainSection, 'model'>): BrainMemorySection {
-  return section
 }
 
 export default function BrainWorkspace() {
@@ -80,7 +63,7 @@ export default function BrainWorkspace() {
         <div className="space-y-2">
           <h1 className="text-[34px] font-semibold tracking-tight text-[var(--mist)]">Brain</h1>
           <p className="max-w-4xl text-[14px] leading-6 text-[var(--fog)]">
-            Configure the Agent&apos;s model, memory, profile, and compact-test behavior inside the same Components workspace.
+            Configure the Agent&apos;s model and memory inside the same Components workspace.
           </p>
         </div>
 
@@ -106,9 +89,7 @@ export default function BrainWorkspace() {
         </div>
 
         {section === 'model' ? <ModelWorkspace /> : null}
-        {section !== 'model' ? (
-          <MemoryStrategyWorkspace embedded lockedSection={toMemorySection(section)} initialSection={toMemorySection(section)} />
-        ) : null}
+        {section === 'memory' ? <MemoryStrategyWorkspace embedded /> : null}
       </div>
     </div>
   )

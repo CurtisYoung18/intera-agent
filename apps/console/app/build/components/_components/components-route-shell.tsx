@@ -20,7 +20,7 @@ const COMPONENT_ROUTE_COPY = {
     navAria: 'Components sections',
     preservedBadge: 'Existing save and test flows preserved',
     descriptions: {
-      brain: 'Adjust memory, model, profile, and compact-test behavior inside the same Components workspace.',
+      brain: 'Adjust memory and model behavior inside the same Components workspace.',
       procedures: 'Keep the existing Procedure builder flows, but anchor them inside the Build material system and local Components navigation.',
       procedureDetail: 'Inspect and save Procedure details while staying inside the local Components route family.',
       tools: 'Open tool editing, mock-fixture, and endpoint test flows without leaving the local Components workspace.',
@@ -33,7 +33,7 @@ const COMPONENT_ROUTE_COPY = {
     navAria: '组件分区',
     preservedBadge: '保留现有保存与测试流程',
     descriptions: {
-      brain: '在同一个 Components 工作区里调整记忆、模型、画像和 compact-test 行为。',
+      brain: '在同一个 Components 工作区里调整记忆和模型行为。',
       procedures: '保留现有 Procedure 搭建流程，但把它稳定收进 Build 的材质体系和本地 Components 导航里。',
       procedureDetail: '在本地 Components 路由体系中查看并保存 Procedure 细节。',
       tools: '在不离开本地 Components 工作区的情况下完成工具编辑、静态样例和端点测试。',
