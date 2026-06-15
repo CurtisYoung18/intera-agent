@@ -63,6 +63,13 @@ import {
   updateSignalsFromInput,
 } from './procedure-run-signals'
 import {
+  finalizationBlockers,
+  findHandoffMatch,
+  findLatestPersistedHandoffEvidence,
+  hasPersistedHandoffEvidence,
+  promisesHumanHandoff,
+} from './procedure-run-finalization'
+import {
   assessProcedureToolOutcome,
   blockerForToolAssessment,
   type ProcedureToolAssessment,
@@ -1612,60 +1619,6 @@ export function isRuntimeAuthorityKey(key: string): boolean {
 export function filterRuntimeAuthorityKeys(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(value).filter(([key]) => !isRuntimeAuthorityKey(key)),
-  )
-}
-
-function finalizationBlockers(run: ProcedureRunState): string[] {
-  const blockers = [...run.blockers]
-  if (run.definition?.version === 'v2') {
-    const incompleteRequiredSteps = run.steps.filter((step) =>
-      step.status !== 'completed' &&
-      step.status !== 'skipped',
-    )
-    for (const step of incompleteRequiredSteps) {
-      blockers.push(`Step "${step.title || step.id}" is still ${step.status}.`)
-    }
-
-    const pendingEval = currentStep(run)?.branches?.find((branch) => branch.status === 'pending')
-    if (pendingEval) {
-      blockers.push(`Branch "${pendingEval.conditionLabel || pendingEval.label || pendingEval.id}" still needs structured evidence or an evaluator receipt.`)
-    }
-
-    const activeHints = run.signals.filter((signal) => signal.active)
-    for (const signal of activeHints) {
-      if (signal.signal === 'explicit_human_request' || signal.signal === 'no_progress_loop') {
-        blockers.push(`Safety hint "${signal.signal}" is still active: ${signal.reason}`)
-      }
-    }
-  }
-
-  return [...new Set(blockers)]
-}
-
-function promisesHumanHandoff(text: string): boolean {
-  const trimmed = text.trim()
-  if (!trimmed) return false
-  return [
-    /(?:i|we)\s+(?:have|\'ve)\s+(?:created|opened|submitted|arranged|escalated)\s+(?:a\s+)?(?:ticket|case|handoff|human support request)/i,
-    /(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)/i,
-    /已为您创建工单/,
-    /已经为您创建工单/,
-    /已安排人工/,
-    /将安排人工/,
-    /已转人工/,
-    /已经转人工/,
-    /已为您转接/,
-    /专员将尽快与您联系/,
-  ].some((pattern) => pattern.test(trimmed))
-}
-
-function hasPersistedHandoffEvidence(run: ProcedureRunState): boolean {
-  return run.evidence.some((entry) =>
-    entry.kind === 'handoff' &&
-    (
-      entry.metadata?.outcome === 'succeeded' ||
-      (isRecord(entry.metadata?.output) && entry.metadata.output.persisted === true)
-    ),
   )
 }
 
