@@ -910,6 +910,212 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('treats plain-text customer replies as structured answers for aggregate ask steps', () => {
+    const caseId = 'r3-plain-text-aggregate-detail-field'
+    recordInitialInputEvent(caseId, { content: 'I need help with a missing withdrawal.' })
+    startProcedureRun(caseId, {
+      procedureId: 'withdrawal_not_credited',
+      displayName: 'Withdrawal not credited',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for withdrawal issues',
+        steps: [
+          {
+            id: 'collect_withdrawal_details',
+            title: 'Collect withdrawal details',
+            guidance: 'Collect the withdrawal details.',
+            actions: [
+              {
+                id: 'ask_withdrawal_details',
+                kind: 'ask',
+                label: 'Ask for withdrawal details',
+                fields: ['withdrawal_missing_details'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'lookup_latest_withdrawal',
+            title: 'Lookup latest withdrawal',
+            guidance: 'Check the latest withdrawal.',
+            actions: [
+              {
+                id: 'lookup_latest_withdrawal_tool',
+                kind: 'call_tool',
+                label: 'Lookup latest withdrawal',
+                toolName: 'get_latest_withdrawal',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: '我的 member_id 是 JAYA113C88F，参考号是 WD9988。',
+      source: 'customer_message',
+      origin: 'customer',
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_message',
+          formAnswers: expect.objectContaining({
+            member_id: 'JAYA113C88F',
+            reference_number: 'WD9988',
+          }),
+        }),
+      ]),
+    )
+    expect(active?.steps.find((step) => step.id === 'collect_withdrawal_details')).toMatchObject({
+      status: 'completed',
+    })
+    expect(active?.currentStepId).toBe('lookup_latest_withdrawal')
+    closeSession(caseId)
+  })
+
+  it('treats plain-text member and channel replies as structured answers for duplicate deposit flows', () => {
+    const caseId = 'r3-plain-text-duplicate-deposit'
+    recordInitialInputEvent(caseId, { content: '我不小心存款了两次。' })
+    startProcedureRun(caseId, {
+      procedureId: 'duplicate_deposit',
+      displayName: 'Duplicate deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for duplicate deposit issues',
+        steps: [
+          {
+            id: 'collect_duplicate_details',
+            title: 'Collect duplicate deposit details',
+            guidance: 'Collect the duplicate deposit details.',
+            actions: [
+              {
+                id: 'ask_duplicate_details',
+                kind: 'ask',
+                label: 'Ask for duplicate deposit details',
+                fields: ['duplicate_deposit_details'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'review_recent_transactions',
+            title: 'Review recent transactions',
+            guidance: 'Inspect recent transaction history.',
+            actions: [
+              {
+                id: 'review_recent_transactions_tool',
+                kind: 'call_tool',
+                label: 'Run get_transaction_history',
+                toolName: 'get_transaction_history',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'member_id 是 JAYA113C88F，支付方式是银行转账。',
+      source: 'customer_message',
+      origin: 'customer',
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_message',
+          formAnswers: expect.objectContaining({
+            member_id: 'JAYA113C88F',
+            payment_channel: '银行转账',
+          }),
+        }),
+      ]),
+    )
+    expect(active?.steps.find((step) => step.id === 'collect_duplicate_details')).toMatchObject({
+      status: 'completed',
+    })
+    expect(active?.currentStepId).toBe('review_recent_transactions')
+    closeSession(caseId)
+  })
+
+  it('preserves explicit-human-request signals while extracting plain-text procedure answers', () => {
+    const caseId = 'r3-plain-text-human-request'
+    recordInitialInputEvent(caseId, { content: '账号冻结了。' })
+    startProcedureRun(caseId, {
+      procedureId: 'account_wallet_frozen',
+      displayName: 'Account frozen',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for account frozen issues',
+        steps: [
+          {
+            id: 'collect_frozen_details',
+            title: 'Collect frozen details',
+            guidance: 'Collect member id and symptoms.',
+            actions: [
+              {
+                id: 'ask_frozen_details',
+                kind: 'ask',
+                label: 'Ask for frozen details',
+                fields: ['frozen_account_details'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'lookup_account_status',
+            title: 'Lookup account status',
+            guidance: 'Check live account status.',
+            actions: [
+              {
+                id: 'lookup_account_status_tool',
+                kind: 'call_tool',
+                label: 'Run get_account_status',
+                toolName: 'get_account_status',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: '我的 member_id 是 JAYA113C88F，请人工帮我处理。',
+      source: 'customer_message',
+      origin: 'customer',
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_message',
+          formAnswers: expect.objectContaining({
+            member_id: 'JAYA113C88F',
+            request_human_support: 'true',
+          }),
+        }),
+      ]),
+    )
+    expect(active?.steps.find((step) => step.id === 'collect_frozen_details')).toMatchObject({
+      status: 'completed',
+    })
+    expect(active?.currentStepId).toBe('lookup_account_status')
+    expect(active?.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signal: 'explicit_human_request', active: true }),
+      ]),
+    )
+    closeSession(caseId)
+  })
+
   it('consumes procedureInputs from the start_procedure turn as structured runtime input', () => {
     const caseId = 'r3-start-procedure-inputs'
     recordInitialInputEvent(caseId, { content: '我的 member_id 是 JAYA113C88F，请人工帮我处理。' })
