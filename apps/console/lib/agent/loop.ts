@@ -9,7 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
-import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
+import { StreamingToolExecutor } from './streaming-tool-executor'
 import { ChatMemoryManager } from './memory'
 import { HookEngine } from './hook-engine'
 import { ToolRouter } from './tools'
@@ -43,13 +43,10 @@ import {
   procedureRunPromptTail,
   recordProcedureTextReply,
   recordProcedureToolCall,
-  recordProcedureToolResult,
 } from './session-store'
 import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
 import {
   RuntimeManagedToolResolver,
-  shouldPersistToolResultToChatMemory,
-  shouldRecordProcedureEvidence,
 } from './runtime-managed-tools'
 import { RuntimeMemoryLifecycle } from './runtime-memory-lifecycle'
 import {
@@ -63,6 +60,7 @@ import { buildHookHitCounts, TurnPreflight } from './turn-preflight'
 import { ProcedureConditionCheckpoint } from './procedure-condition-checkpoint'
 import { HookContextBuilder } from './hook-context-builder'
 import { TurnExitHandler } from './turn-exit-handler'
+import { PostToolUsePhase, addHookFeedbackMessage } from './post-tool-use-phase'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -156,6 +154,7 @@ export class AgentLoop {
   private procedureConditionCheckpoint: ProcedureConditionCheckpoint
   private hookContextBuilder: HookContextBuilder
   private turnExitHandler: TurnExitHandler
+  private postToolUsePhase: PostToolUsePhase
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -239,6 +238,16 @@ export class AgentLoop {
       getCurrentStage: () => this.currentStage,
       getIterationCount: () => this.iterationCount,
       getNudgeCount: () => this.nudgeCount,
+    })
+    this.postToolUsePhase = new PostToolUsePhase({
+      caseId: deps.caseId,
+      chatMemory: this.chatMemory,
+      getHookEngine: () => this.hookEngine,
+      hookContextBuilder: this.hookContextBuilder,
+      traceWriter: this.traceWriter,
+      getToolRouter: () => this.toolRouter,
+      addMessage: addHookFeedbackMessage(this.messages),
+      buildToolInterceptorContext: () => this.buildToolInterceptorContext(),
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -1010,83 +1019,15 @@ export class AgentLoop {
         }
       }
 
-      // ── Apply tool results to Case Memory ────────────────────
-      for (const result of toolResults) {
-        const payload = unwrapToolExecutionPayload(result.output)
-        if (shouldPersistToolResultToChatMemory(result.name)) {
-          await this.chatMemory.applyToolResult(result.name, payload)
-        }
-        const basedOnInputEpoch = result.toolUse?.id ? toolBasedOnEpoch.get(result.toolUse.id) : undefined
-        if (shouldRecordProcedureEvidence(result.name)) {
-          const toolDefinition = this.toolRouter.getTool(result.name)
-          recordProcedureToolResult(this.deps.caseId, {
-            toolName: result.name,
-            toolUseId: result.toolUse?.id,
-            basedOnInputEpoch: basedOnInputEpoch ?? iterationBasedOnInputEpoch,
-            toolOutput: payload,
-            toolError: (result.output as { error?: string })?.error,
-            isKnowledgeTool: !!toolDefinition?.knowledgeSourceId,
-          })
-        }
-        await this.traceWriter.write(
-          'tool_result',
-          `Tool: ${result.name}`,
-          { toolName: result.name, output: payload, latencyMs: result.latencyMs, iteration: this.iterationCount, input: result.toolUse?.input, renderHints: result.renderHints, basedOnInputEpoch: basedOnInputEpoch ?? iterationBasedOnInputEpoch },
-        )
-      }
-
-      // ── PostToolUse Hook evaluation ──
-      if (toolResults.length > 0) {
-        // Tools were called — reset nudge count (LLM is complying)
-        if (this.nudgeCount > 0) this.nudgeCount = 0
-        try {
-          for (const result of toolResults) {
-            const payload = unwrapToolExecutionPayload(result.output)
-            const postHookEval = await this.hookEngine.evaluate('PostToolUse', {
-              ...this.hookContextBuilder.build('PostToolUse', {
-                toolName: result.name,
-                toolInput: result.toolUse?.input,
-                toolOutput: payload,
-                toolError: (result.output as { error?: string })?.error,
-              }),
-            }, buildHitCounts())
-
-            for (const r of postHookEval.results) {
-              if (r.action !== 'allow') {
-                this.chatMemory.recordHookHit(r.hookName)
-                await this.traceWriter.write(
-                  'loop_decision',
-                  `Hook ${r.action}: ${r.hookName}`,
-                  {
-                    checkpoint: 'PostToolUse',
-                    result: r.action,
-                    reason: r.reason,
-                    toolName: result.name,
-                    model: r.modelUsed,
-                  },
-                )
-              }
-            }
-
-            // Inject Hook feedback into message stream
-            if (postHookEval.feedbackMessage) {
-              this.messages.push(makeUserMessage(postHookEval.feedbackMessage))
-            }
-
-            if (postHookEval.pendingToolCalls && postHookEval.pendingToolCalls.length > 0) {
-              await hookToolCalls(this.buildToolInterceptorContext(), postHookEval, sendEvent)
-            }
-
-            if (!postHookEval.pendingToolCalls || postHookEval.pendingToolCalls.length === 0) {
-              if (postHookEval.summary === 'escalate') {
-                await hookToolCalls(this.buildToolInterceptorContext(), postHookEval, sendEvent)
-              }
-            }
-          }
-        } catch (hookErr) {
-          console.error('[AgentLoop] PostToolUse Hook evaluation failed:', hookErr)
-        }
-      }
+      const postToolUse = await this.postToolUsePhase.run({
+        toolResults,
+        toolBasedOnEpoch,
+        iterationBasedOnInputEpoch,
+        iterationCount: this.iterationCount,
+        nudgeCount: this.nudgeCount,
+        sendEvent,
+      })
+      this.nudgeCount = postToolUse.nudgeCount
 
       // ── Add to message history ───────────────────────────────
       // NOTE: Tool results are now added via S1 synthesis above (unified format).
