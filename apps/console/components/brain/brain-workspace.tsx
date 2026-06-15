@@ -4,30 +4,42 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Brain, Database } from 'lucide-react'
 import VersionContextBar from '@/components/admin/version-context-bar'
+import { useConsoleLocale } from '@/components/locale-provider'
 import MemoryStrategyWorkspace from '@/components/memory/memory-strategy-workspace'
 import ModelWorkspace from '@/components/brain/model-workspace'
 
 type BrainSection = 'model' | 'memory'
 
-const BRAIN_SECTIONS: Array<{
-  id: BrainSection
-  label: string
-  description: string
-  icon: typeof Brain
-}> = [
-  {
-    id: 'model',
-    label: 'Model',
-    description: 'Primary model, generation controls, and core prompt.',
-    icon: Brain,
+const BRAIN_COPY = {
+  en: {
+    title: 'Brain',
+    description: "Configure the Agent's model and memory inside the same Components workspace.",
+    sections: {
+      model: {
+        label: 'Model',
+        description: 'Primary model, generation controls, and core prompt.',
+      },
+      memory: {
+        label: 'Memory',
+        description: 'Compaction, long-term memory, and fact extraction behavior.',
+      },
+    },
   },
-  {
-    id: 'memory',
-    label: 'Memory',
-    description: 'Compaction, long-term memory, and fact extraction behavior.',
-    icon: Database,
+  zh: {
+    title: '大脑',
+    description: '在同一个 Components 工作区里配置 Agent 的模型与记忆。',
+    sections: {
+      model: {
+        label: '模型',
+        description: '主模型、生成控制与核心提示词。',
+      },
+      memory: {
+        label: '记忆',
+        description: '压缩、长期记忆与事实提取行为。',
+      },
+    },
   },
-]
+} as const
 
 function sectionFromMode(mode: string | null): BrainSection {
   if (mode === 'model' || mode === 'prompt' || mode === 'settings') return 'model'
@@ -39,8 +51,27 @@ function sectionFromMode(mode: string | null): BrainSection {
 export default function BrainWorkspace() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { locale } = useConsoleLocale()
+  const copy = BRAIN_COPY[locale]
   const initialSection = useMemo(() => sectionFromMode(searchParams.get('mode')), [searchParams])
   const [section, setSection] = useState<BrainSection>(initialSection)
+  const sections = useMemo(
+    () => [
+      {
+        id: 'model' as const,
+        label: copy.sections.model.label,
+        description: copy.sections.model.description,
+        icon: Brain,
+      },
+      {
+        id: 'memory' as const,
+        label: copy.sections.memory.label,
+        description: copy.sections.memory.description,
+        icon: Database,
+      },
+    ],
+    [copy],
+  )
 
   useEffect(() => {
     setSection(initialSection)
@@ -61,14 +92,12 @@ export default function BrainWorkspace() {
 
       <div className="space-y-5">
         <div className="space-y-2">
-          <h1 className="text-[34px] font-semibold tracking-tight text-[var(--mist)]">Brain</h1>
-          <p className="max-w-4xl text-[14px] leading-6 text-[var(--fog)]">
-            Configure the Agent&apos;s model and memory inside the same Components workspace.
-          </p>
+          <h1 className="text-[34px] font-semibold tracking-tight text-[var(--mist)]">{copy.title}</h1>
+          <p className="max-w-4xl text-[14px] leading-6 text-[var(--fog)]">{copy.description}</p>
         </div>
 
         <div className="flex flex-wrap gap-2 border-b border-[var(--color-border-subtle)] pb-3">
-          {BRAIN_SECTIONS.map((item) => {
+          {sections.map((item) => {
             const active = section === item.id
             return (
               <button

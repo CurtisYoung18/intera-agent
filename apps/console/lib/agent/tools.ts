@@ -310,7 +310,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     toolCategory: 'operational',
     displayVerb: { text: 'Preparing your information form', icon: 'pulse' },
     zodSchema: z.object({
-      title: z.string(),
+      title: z.string().trim().min(1),
       description: z.string().optional(),
       fields: z.array(z.object({
         key: z.string(),
@@ -319,7 +319,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
         required: z.boolean().optional(),
         placeholder: z.string().optional(),
         options: z.array(z.string()).optional(),
-      })),
+      })).min(1),
     }),
   },
 ]
@@ -397,6 +397,7 @@ export class ToolRouter {
         // Preserve the built-in mode when DB has an invalid mode value.
         // The built-in definition is authoritative for mode.
         const builtinMode = router.tools.get(t.name)?.mode
+        const existing = router.tools.get(t.name)
         const mode = t.mode
           ? normalizeRuntimeMode(dbMode)
           : normalizeRuntimeMode(builtinMode)
@@ -416,6 +417,7 @@ export class ToolRouter {
           toolCategory: (t.toolCategory as 'system_info' | 'operational') || undefined,
           isConcurrencySafe: t.isConcurrencySafe,
           enabled: t.enabled,
+          zodSchema: existing?.zodSchema,
         })
       }
 

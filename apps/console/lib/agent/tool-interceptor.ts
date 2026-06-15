@@ -283,15 +283,36 @@ async function handleRequestUserInput(
   result: ToolExecutionResult,
   sendEvent: (event: SSEEvent) => void,
 ): Promise<InterceptAction> {
+  if (result.toolUse?.status !== 'completed') {
+    await ctx.traceWriter.write('loop_decision', 'Skip form_request: ask_user_questions did not complete', {
+      toolStatus: result.toolUse?.status ?? 'unknown',
+      toolInput: result.toolUse?.input ?? null,
+      toolOutput: result.output ?? null,
+    })
+    return { kind: 'pass' }
+  }
+
+  const toolInput = result.toolUse?.input || {}
+  const title = typeof toolInput.title === 'string' ? toolInput.title.trim() : ''
+  const description = typeof toolInput.description === 'string' ? toolInput.description : ''
+  const fields = Array.isArray(toolInput.fields)
+    ? toolInput.fields.filter((field): field is Record<string, unknown> => Boolean(field) && typeof field === 'object')
+    : []
+
+  if (!title || fields.length === 0) {
+    await ctx.traceWriter.write('loop_decision', 'Skip form_request: ask_user_questions missing renderable payload', {
+      toolStatus: result.toolUse.status,
+      title,
+      fieldCount: fields.length,
+      toolInput,
+    })
+    return { kind: 'pass' }
+  }
+
   await ctx.traceWriter.write('loop_decision', 'Exit: form requested', {
     toolCount: 1,
     iteration: 0,
   })
-
-  const toolInput = result.toolUse?.input || {}
-  const title = String(toolInput.title || 'Information Needed')
-  const description = String(toolInput.description || '')
-  const fields = (toolInput.fields as Array<Record<string, unknown>>) || []
 
   sendEvent({
     type: 'form_request',

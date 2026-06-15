@@ -122,4 +122,52 @@ describe('generated knowledge-search tool names', () => {
       embedding_rate: 0.9,
     })
   })
+
+  it('preserves built-in zod validation when a DB tool overrides ask_user_questions', async () => {
+    h.toolFindMany.mockResolvedValue([
+      {
+        id: 'tool-ask-form',
+        agentConfigId: 'agent-a',
+        name: 'ask_user_questions',
+        description: 'DB override',
+        inputSchema: JSON.stringify({
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            fields: { type: 'array' },
+          },
+          required: ['title', 'fields'],
+        }),
+        outputSchema: '{}',
+        mode: 'channel',
+        endpoint: null,
+        httpMethod: 'POST',
+        headers: null,
+        timeoutMs: 8000,
+        mockFixture: null,
+        displayVerb: null,
+        renderHints: null,
+        toolCategory: 'operational',
+        isConcurrencySafe: false,
+        enabled: true,
+      },
+    ])
+    h.knowledgeSourceFindMany.mockResolvedValue([])
+
+    const { ToolRouter } = await import('../../tools')
+    const { StreamingToolExecutor } = await import('../../streaming-tool-executor')
+    const router = await ToolRouter.create('agent-a', true)
+    const formTool = router.getTool('ask_user_questions')
+
+    expect(formTool?.zodSchema).toBeDefined()
+
+    const results = await StreamingToolExecutor.executeAll(
+      router.getToolDefinitions(),
+      [{ id: 'tool-1', name: 'ask_user_questions', input: {} }],
+    )
+
+    expect(results[0]?.toolUse?.status).toBe('error')
+    expect((results[0]?.output as { ok?: boolean; error?: string })?.ok).toBe(false)
+    expect((results[0]?.output as { error?: string })?.error).toContain('Input validation failed')
+  })
 })
