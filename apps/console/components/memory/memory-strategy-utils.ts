@@ -3,21 +3,8 @@ import { DEFAULT_MEMORY } from '@/app/admin/agent/types'
 
 export type MemoryMode = 'short' | 'balanced' | 'long' | 'custom'
 
-export type PreserveField =
-  | 'preserveFacts'
-  | 'preserveToolEvidence'
-  | 'preserveProcedureProgress'
-  | 'preserveHumanHandoffStatus'
-  | 'preserveProfileSignals'
-
 export type MemoryStrategyUi = MemoryStrategy & {
-  preserveFacts?: boolean
-  preserveToolEvidence?: boolean
-  preserveProcedureProgress?: boolean
-  preserveHumanHandoffStatus?: boolean
-  preserveProfileSignals?: boolean
   factExtractionModel?: string
-  profilePromotionRules?: string
 }
 
 type MemoryPreset = Pick<
@@ -48,22 +35,9 @@ export const MEMORY_MODE_PRESETS: Record<Exclude<MemoryMode, 'custom'>, MemoryPr
 
 const DEFAULT_MEMORY_UI: Pick<
   MemoryStrategyUi,
-  | 'preserveFacts'
-  | 'preserveToolEvidence'
-  | 'preserveProcedureProgress'
-  | 'preserveHumanHandoffStatus'
-  | 'preserveProfileSignals'
-  | 'factExtractionModel'
-  | 'profilePromotionRules'
+  'factExtractionModel'
 > = {
-  preserveFacts: true,
-  preserveToolEvidence: true,
-  preserveProcedureProgress: true,
-  preserveHumanHandoffStatus: true,
-  preserveProfileSignals: true,
   factExtractionModel: DEFAULT_MEMORY.compactModel,
-  profilePromotionRules:
-    'Promote stable identity, preference, risk, and service-history signals after repeated user confirmation or verified tool evidence.',
 }
 
 export function normalizeMemoryStrategy(raw: unknown): MemoryStrategyUi {
@@ -119,119 +93,5 @@ export function applyMemoryMode(strategy: MemoryStrategyUi, mode: Exclude<Memory
   return {
     ...strategy,
     ...MEMORY_MODE_PRESETS[mode],
-  }
-}
-
-export type CompactCheckKey = 'facts' | 'toolEvidence' | 'procedureProgress' | 'handoffStatus'
-
-export interface CompactCheck {
-  key: CompactCheckKey
-  label: string
-  detail: string
-  status: 'preserved' | 'missing' | 'disabled'
-}
-
-export interface CompactFixtureResult {
-  before: {
-    messages: number
-    approxTokens: number
-    summary: string
-  }
-  after: {
-    approxTokens: number
-    summary: string
-  }
-  checks: CompactCheck[]
-}
-
-function estimateTokens(text: string, strategy: MemoryStrategyUi): number {
-  const latin = text.replace(/[^\x00-\x7F]/g, '').length
-  const cjk = text.length - latin
-  return Math.max(
-    strategy.minTokenEstimate,
-    Math.ceil(latin / Math.max(1, strategy.latinCharPerToken)) +
-      Math.ceil(cjk / Math.max(1, strategy.cjkCharPerToken)),
-  )
-}
-
-function countMessages(text: string): number {
-  return text
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean).length
-}
-
-export function runCompactFixture(sample: string, strategy: MemoryStrategyUi): CompactFixtureResult {
-  const lower = sample.toLowerCase()
-  const hasFact = /txn|transaction|amount|member|order|deposit|withdraw|vip/.test(lower)
-  const hasToolEvidence = /tool|api|get_latest|query_|lookup|result/.test(lower)
-  const hasProcedureProgress = /procedure|step|verify|collect|handoff|resolve/.test(lower)
-  const hasHandoff = /human|handoff|transfer|operator|agent group/.test(lower)
-
-  const beforeTokens = estimateTokens(sample, strategy)
-  const preservedFacts = strategy.preserveFacts !== false && hasFact
-  const preservedToolEvidence = strategy.preserveToolEvidence !== false && hasToolEvidence
-  const preservedProcedureProgress = strategy.preserveProcedureProgress !== false && hasProcedureProgress
-  const preservedHandoff = strategy.preserveHumanHandoffStatus !== false && hasHandoff
-
-  const factsLine = preservedFacts
-    ? 'Business facts stay in confirmed facts: member, transaction, amount, and stated issue.'
-    : 'No durable business fact was detected for this fixture.'
-  const toolLine = preservedToolEvidence
-    ? 'Tool evidence is summarized with source and result status.'
-    : 'Tool evidence is not present or is disabled for this strategy.'
-  const procedureLine = preservedProcedureProgress
-    ? 'Procedure progress stays in working memory as current step state, not confirmedFacts.'
-    : 'Procedure runtime state needs review for this fixture.'
-  const handoffLine = preservedHandoff
-    ? 'Human handoff status remains visible for operator continuity.'
-    : 'No human handoff status was detected for this fixture.'
-
-  const afterSummary = [factsLine, toolLine, procedureLine, handoffLine].join(' ')
-
-  const checks: CompactCheck[] = [
-    {
-      key: 'facts',
-      label: 'Business facts',
-      detail: 'Facts belong in confirmedFacts only when they describe the customer or case.',
-      status: strategy.preserveFacts === false ? 'disabled' : preservedFacts ? 'preserved' : 'missing',
-    },
-    {
-      key: 'toolEvidence',
-      label: 'Tool evidence',
-      detail: 'Tool result source, freshness, and outcome remain audit evidence.',
-      status: strategy.preserveToolEvidence === false ? 'disabled' : preservedToolEvidence ? 'preserved' : 'missing',
-    },
-    {
-      key: 'procedureProgress',
-      label: 'Procedure progress',
-      detail: 'procedureRun stays in structured working memory instead of confirmedFacts.',
-      status:
-        strategy.preserveProcedureProgress === false
-          ? 'disabled'
-          : preservedProcedureProgress
-            ? 'preserved'
-            : 'missing',
-    },
-    {
-      key: 'handoffStatus',
-      label: 'Human handoff status',
-      detail: 'Handoff owner, reason, and waiting state stay available to delivery staff.',
-      status:
-        strategy.preserveHumanHandoffStatus === false ? 'disabled' : preservedHandoff ? 'preserved' : 'missing',
-    },
-  ]
-
-  return {
-    before: {
-      messages: countMessages(sample),
-      approxTokens: beforeTokens,
-      summary: 'Full sample transcript with all recent messages and evidence still attached.',
-    },
-    after: {
-      approxTokens: Math.max(strategy.minTokenEstimate, Math.ceil(beforeTokens * 0.34)),
-      summary: afterSummary,
-    },
-    checks,
   }
 }

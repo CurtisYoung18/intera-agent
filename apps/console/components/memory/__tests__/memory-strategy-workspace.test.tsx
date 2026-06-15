@@ -63,12 +63,12 @@ afterEach(() => {
   cleanup()
 })
 
-async function renderWorkspace(initialSection: 'memory' | 'profile' | 'compact-test' = 'memory') {
+async function renderWorkspace() {
   const { default: MemoryStrategyWorkspace } = await import('../memory-strategy-workspace')
   await act(async () => {
-    render(<MemoryStrategyWorkspace initialSection={initialSection} />)
+    render(<MemoryStrategyWorkspace />)
   })
-  await screen.findByText('Brain workspace')
+  await screen.findByText('Memory strategy')
 }
 
 describe('MemoryStrategyWorkspace', () => {
@@ -109,19 +109,11 @@ describe('MemoryStrategyWorkspace', () => {
     expect(screen.getByText('Circuit breaker failures')).toBeDefined()
   })
 
-  it('runs the local compact fixture and shows preservation categories', async () => {
-    await renderWorkspace('compact-test')
+  it('removes fake profile and compact-test sections', async () => {
+    await renderWorkspace()
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Run compact test/ }))
-    })
-
-    expect(screen.getByText('Before summary')).toBeDefined()
-    expect(screen.getByText('After summary')).toBeDefined()
-    expect(screen.getByText('Business facts')).toBeDefined()
-    expect(screen.getByText('Tool evidence')).toBeDefined()
-    expect(screen.getByText('Procedure progress')).toBeDefined()
-    expect(screen.getByText('Human handoff status')).toBeDefined()
-    expect(screen.getAllByText('preserved').length).toBeGreaterThanOrEqual(4)
+    expect(screen.queryByText('Profile promotion rules')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Run compact test/ })).toBeNull()
+    expect(screen.queryByText('Preserve rules')).toBeNull()
   })
 })
