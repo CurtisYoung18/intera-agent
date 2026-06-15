@@ -45,9 +45,6 @@ import {
   recordProcedureToolCall,
 } from './session-store'
 import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
-import {
-  RuntimeManagedToolResolver,
-} from './runtime-managed-tools'
 import { RuntimeMemoryLifecycle } from './runtime-memory-lifecycle'
 import {
   assertProviderToolTurnInvariant,
@@ -62,6 +59,7 @@ import { HookContextBuilder } from './hook-context-builder'
 import { TurnExitHandler } from './turn-exit-handler'
 import { PostToolUsePhase, addHookFeedbackMessage } from './post-tool-use-phase'
 import { NoToolTurnHandler } from './no-tool-turn-handler'
+import { ToolCompletionPhase } from './tool-completion-phase'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -136,6 +134,7 @@ export class AgentLoop {
   private turnExitHandler: TurnExitHandler
   private postToolUsePhase: PostToolUsePhase
   private noToolTurnHandler: NoToolTurnHandler
+  private toolCompletionPhase: ToolCompletionPhase
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -235,6 +234,22 @@ export class AgentLoop {
       getMessages: () => this.messages,
       addMessage: (message) => this.messages.push(message),
       getCurrentStage: () => this.currentStage,
+    })
+    this.toolCompletionPhase = new ToolCompletionPhase({
+      caseId: deps.caseId,
+      orgId: deps.orgId,
+      userId: deps.userId,
+      chatId: deps.chatId,
+      config: deps.config,
+      getCaseSchema: () => this.deps.caseSchema,
+      getMessages: () => this.messages,
+      chatMemory: this.chatMemory,
+      persistence: this.persistence,
+      traceWriter: this.traceWriter,
+      profiler: this.profiler,
+      dryRun: this.dryRun,
+      persistRuntimeMemory: deps.persistRuntimeMemory,
+      canCreateHumanTaskInGeneralMode: () => !this.caseLoop,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -740,27 +755,14 @@ export class AgentLoop {
       assistantMessage.isStreaming = false
 
       // ── Wait for all tools to finish ─────────────────────────
-      let toolResults = await toolExecutor.waitForAll()
-      const runtimeToolResolution = await new RuntimeManagedToolResolver({
-        caseId: this.deps.caseId,
-        orgId: this.deps.orgId,
-        userId: this.deps.userId,
-        chatId: this.deps.chatId,
-        config: this.deps.config,
-        caseSchema: this.deps.caseSchema,
-        messages: this.messages,
-        chatMemory: this.chatMemory,
-        persistence: this.persistence,
-        traceWriter: this.traceWriter,
-        dryRun: this.dryRun,
-        persistRuntimeMemory: this.deps.persistRuntimeMemory,
-        canCreateHumanTaskInGeneralMode: !this.caseLoop,
-      }).resolve(toolResults, toolBasedOnEpoch, iterationBasedOnInputEpoch)
-      if (runtimeToolResolution.pendingHumanTaskEscalation) {
-        this.pendingHumanTaskEscalation = runtimeToolResolution.pendingHumanTaskEscalation
-      }
-      for (const tr of toolResults) {
-        this.profiler.addToolExecution(tr.latencyMs || 0)
+      const toolCompletion = await this.toolCompletionPhase.run({
+        toolExecutor,
+        toolBasedOnEpoch,
+        iterationBasedOnInputEpoch,
+      })
+      const toolResults = toolCompletion.toolResults
+      if (toolCompletion.pendingHumanTaskEscalation) {
+        this.pendingHumanTaskEscalation = toolCompletion.pendingHumanTaskEscalation
       }
 
       let stopBlockedThisIteration = false
