@@ -120,4 +120,13 @@ describe('MemoryStrategyWorkspace', () => {
     expect(screen.queryByRole('button', { name: /Run compact test/ })).toBeNull()
     expect(screen.queryByText('Preserve rules')).toBeNull()
   })
+
+  it('shows preset summary metrics on each memory mode card', async () => {
+    await renderWorkspace()
+
+    expect(screen.getByText('20k tokens')).toBeDefined()
+    expect(screen.getByText('10 messages / approx 5 turns')).toBeDefined()
+    expect(screen.getByText('24 messages / approx 12 turns')).toBeDefined()
+    expect(screen.getAllByText('Keep at least').length).toBe(4)
+  })
 })
